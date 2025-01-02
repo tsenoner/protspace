@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.0.4 (2025-01-02)
+
+### Fixes
+
+* fix: wrong import in prepare_json ([`82efdf4`](https://github.com/tsenoner/protspace/commit/82efdf449976c4d00ce4661a9f1f1a31a0ad77a5))
+
+### Unknown
+
+* refactore: add quality check to prepare_json.py ([`f87cdb6`](https://github.com/tsenoner/protspace/commit/f87cdb626b1a5dda7e49298585bc388f6e1939f8))
+
+
 ## v1.0.3 (2024-12-18)
 
 ### Documentation
