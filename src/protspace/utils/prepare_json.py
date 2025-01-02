@@ -2,7 +2,7 @@ import argparse
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, frozen
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Literal
 
@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
 METRIC_TYPES = Literal["euclidean", "cosine"] # dimension reduction
 
-@frozen
-@dataclass
+@dataclass(frozen=True)
 class DimensionReductionConfig:
     """Configuration for dimension reduction methods.
 
