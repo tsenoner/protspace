@@ -37,6 +37,7 @@ examples/out/nuclease
 examples/out/final
 # --- scripts ---
 scripts
+src/protspace/assets/annotate.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

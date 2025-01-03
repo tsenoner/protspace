@@ -1,7 +1,7 @@
 import json
 import base64
 import zipfile
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional, Union
 from pathlib import Path
 
 from dash import Dash
@@ -16,12 +16,14 @@ from .plotting import create_styled_plot, save_plot
 class ProtSpace:
     """Main application class for ProtSpace."""
 
-    def __init__(self, pdb_zip: Optional[str] = None, default_json_file: Optional[str] = None):
+    def __init__(
+        self, pdb_zip: Optional[str] = None, default_json_file: Optional[str] = None
+    ):
         self.pdb_zip = pdb_zip
         self.default_json_data = None
         self.pdb_files_data = {}
         if default_json_file:
-            with open(default_json_file, 'r') as f:
+            with open(default_json_file, "r") as f:
                 self.default_json_data = json.load(f)
         if self.pdb_zip:
             self.load_pdb_files_from_zip(self.pdb_zip)
@@ -30,12 +32,14 @@ class ProtSpace:
         """Load PDB files from a ZIP archive and store them in pdb_files_data."""
         pdb_files = {}
         try:
-            with zipfile.ZipFile(zip_path, 'r') as z:
+            with zipfile.ZipFile(zip_path, "r") as z:
                 for file in z.namelist():
-                    if file.endswith('.pdb') or file.endswith('.cif'):
+                    if file.endswith(".pdb") or file.endswith(".cif"):
                         with z.open(file) as f:
                             content = f.read()
-                            pdb_files[Path(file).stem.replace(".", "_")] = base64.b64encode(content).decode('utf-8')
+                            pdb_files[Path(file).stem.replace(".", "_")] = (
+                                base64.b64encode(content).decode("utf-8")
+                            )
             self.pdb_files_data = pdb_files
         except Exception as e:
             print(f"Error loading PDB ZIP: {e}")
@@ -63,16 +67,19 @@ class ProtSpace:
     #     app = self.create_app()
     #     app.run_server(debug=debug, port=port)
 
-    def run_server(self, port: int = 8050, debug: bool = False, quiet: bool = False) -> None:
+    def run_server(
+        self, port: int = 8050, debug: bool = False, quiet: bool = False
+    ) -> None:
         import __main__
         import sys
         import os
+
         def is_interactive():
-            return not hasattr(__main__, '__file__')
+            return not hasattr(__main__, "__file__")
 
         def supress_output():
-            sys.stdout = open(os.devnull, 'w')
-            sys.stderr = open(os.devnull, 'w')
+            sys.stdout = open(os.devnull, "w")
+            sys.stderr = open(os.devnull, "w")
 
         if is_interactive():
             supress_output()
@@ -81,16 +88,15 @@ class ProtSpace:
             print("Press Ctrl+C to quit")
             supress_output()
 
-
         app = self.create_app()
         app.run_server(debug=debug, port=port)
 
-    #TODO: avoid duplicated code generalize the plotting logic into the plotting.py script and the callback uses that, so we canuse that too here
+    # TODO: avoid duplicated code generalize the plotting logic into the plotting.py script and the callback uses that, so we canuse that too here
     def generate_plot(
         self,
         projection: str,
         feature: str,
-        filename: str,
+        filename: Union[str, Path],
         width: int = 1600,
         height: int = 1000,
     ) -> None:
@@ -105,4 +111,4 @@ class ProtSpace:
             filename = Path(filename).with_suffix(".html")
         else:
             filename = Path(filename).with_suffix(".svg")
-        save_plot(fig, is_3d, width, height, filename)
+        save_plot(fig, is_3d, width, height, str(filename))
