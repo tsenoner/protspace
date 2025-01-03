@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v1.1.0 (2025-01-03)
+
+### Chores
+
+* chore: update example file ([`ec74ab7`](https://github.com/tsenoner/protspace/commit/ec74ab7090aaeb339b04c4cc53b84518f5ee36ce))
+
+* chore: update example file ([`94ef539`](https://github.com/tsenoner/protspace/commit/94ef539cd7d40027d40bad1740ffed1e74e9262a))
+
+### Features
+
+* feat: add help button ([`3c2c4c4`](https://github.com/tsenoner/protspace/commit/3c2c4c47b7947d121ff0158f0d0dccf3733e0607))
+
+
 ## v1.0.4 (2025-01-02)
 
 ### Fixes
