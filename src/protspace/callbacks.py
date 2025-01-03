@@ -10,10 +10,10 @@ from dash import no_update
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
+from .config import NAN_COLOR, MARKER_SHAPES
 from .data_loader import JsonReader
 from .data_processing import prepare_dataframe
 from .plotting import create_2d_plot, create_3d_plot, save_plot
-from .config import NAN_COLOR, MARKER_SHAPES
 
 
 def get_reader(json_data):
@@ -43,6 +43,25 @@ def parse_zip_contents(contents, filename):
 
 
 def setup_callbacks(app):
+    @app.callback(
+        Output("help-menu", "style"),
+        Input("help-button", "n_clicks"),
+        State("help-menu", "style"),
+    )
+    def toggle_help_menu(n_clicks, current_style):
+        if n_clicks is None:
+            return {"display": "none"}
+        if current_style["display"] == "none":
+            return {
+                "display": "block",
+                "width": "100%", #"300px",
+                "padding": "20px",
+                "backgroundColor": "#f0f0f0",
+                "borderRadius": "5px",
+            }
+        else:
+            return {"display": "none"}
+
     @app.callback(
         Output("json-data-store", "data", allow_duplicate=True),
         [

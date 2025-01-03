@@ -5,11 +5,11 @@ from dash_iconify import DashIconify
 
 from .config import MARKER_SHAPES, MARKER_SHAPES_2D
 from .data_loader import JsonReader
+from .layout_help import create_help_menu
 
 
 def create_layout(app):
     """Create the layout for the Dash application."""
-    dropdown_style = {"width": "24vw", "marginRight": "10px"}
 
     # Get default data if available
     default_json_data = app.get_default_json_data()
@@ -19,12 +19,8 @@ def create_layout(app):
         projections = sorted(reader.get_projection_names())
         protein_ids = sorted(reader.get_protein_ids())
 
-        feature_options = [
-            {"label": feature, "value": feature} for feature in features
-        ]
-        projection_options = [
-            {"label": proj, "value": proj} for proj in projections
-        ]
+        feature_options = [{"label": feature, "value": feature} for feature in features]
+        projection_options = [{"label": proj, "value": proj} for proj in projections]
         protein_options = [{"label": pid, "value": pid} for pid in protein_ids]
 
         # Select the first feature and projection
@@ -99,6 +95,16 @@ def create_layout(app):
                     [
                         html.Button(
                             DashIconify(
+                                icon="material-symbols:help-outline",
+                                width=24,
+                                height=24,
+                            ),
+                            id="help-button",
+                            title="Help",
+                            style={"marginLeft": "5px"},
+                        ),
+                        html.Button(
+                            DashIconify(
                                 icon="material-symbols:download",
                                 width=24,
                                 height=24,
@@ -135,9 +141,7 @@ def create_layout(app):
                             multiple=False,
                         ),
                         html.Button(
-                            DashIconify(
-                                icon="carbon:settings", width=24, height=24
-                            ),
+                            DashIconify(icon="carbon:settings", width=24, height=24),
                             id="settings-button",
                             title="Settings",
                             style={"marginLeft": "5px"},
@@ -231,9 +235,7 @@ def create_layout(app):
                                     id="marker-shape-dropdown",
                                     options=[
                                         {
-                                            "label": shape.replace(
-                                                "-", " "
-                                            ).title(),
+                                            "label": shape.replace("-", " ").title(),
                                             "value": shape,
                                         }
                                         for shape in marker_shapes
@@ -245,6 +247,17 @@ def create_layout(app):
                         html.Button("Apply", id="apply-style-button"),
                     ],
                     id="marker-style-controller",
+                    style={
+                        "display": "none",
+                        "width": "300px",
+                        "padding": "20px",
+                        "backgroundColor": "#f0f0f0",
+                        "borderRadius": "5px",
+                    },
+                ),
+                html.Div(
+                    create_help_menu(),
+                    id="help-menu",
                     style={
                         "display": "none",
                         "width": "300px",
