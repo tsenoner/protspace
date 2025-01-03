@@ -62,7 +62,7 @@ STOPSIGNAL SIGINT
 
 COPY --from=build --chown=app:app /app /app
 COPY data/Pla2g2/Pla2g2_pdb.zip /app/data/Pla2g2/Pla2g2_pdb.zip
-COPY data/Pla2g2/protspace_files/Pla2g2_noTransperancy.json /app/data/Pla2g2/protspace_files/Pla2g2_noTransperancy.json
+COPY data/Pla2g2/protspace_files/Pla2g2_customized.json /app/data/Pla2g2/protspace_files/Pla2g2_customized.json
 
 RUN <<EOT
 python -V
