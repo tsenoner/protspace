@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.1.1 (2025-01-04)
+
+### Code Style
+
+* style: update help menu ([`cb4262e`](https://github.com/tsenoner/protspace/commit/cb4262e0aa2d07048d8feb386ace1bdbf49ed133))
+
+### Fixes
+
+* fix: update workflow image ([`bbaf9dd`](https://github.com/tsenoner/protspace/commit/bbaf9dd5ca337aea2981b17ddaf37a8059eb998b))
+
+
 ## v1.1.0 (2025-01-03)
 
 ### Chores
