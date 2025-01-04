@@ -38,6 +38,7 @@ examples/out/final
 # --- scripts ---
 scripts
 src/protspace/assets/annotate.py
+src/protspace/assets/screenshot.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
