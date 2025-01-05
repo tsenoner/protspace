@@ -2311,6 +2311,7 @@ source = { editable = "." }
 dependencies = [
     { name = "dash" },
     { name = "dash-bio" },
+    { name = "dash-bootstrap-components" },
     { name = "dash-daq" },
     { name = "dash-iconify" },
     { name = "h5py" },
@@ -2334,7 +2335,6 @@ webserver = [
 dev = [
     { name = "biopython" },
     { name = "cairosvg" },
-    { name = "dash-bootstrap-components" },
     { name = "dash-mantine-components" },
     { name = "dash-treeview-antd" },
     { name = "holoviews" },
@@ -2356,6 +2356,7 @@ dev = [
 requires-dist = [
     { name = "dash", specifier = ">=2.18.1" },
     { name = "dash-bio", specifier = ">=1.0.2" },
+    { name = "dash-bootstrap-components", specifier = ">=1.6.0" },
     { name = "dash-daq", specifier = ">=0.5.0" },
     { name = "dash-iconify", specifier = ">=0.1.2" },
     { name = "gunicorn", marker = "extra == 'webserver'", specifier = ">=23.0.0" },
@@ -2375,7 +2376,6 @@ requires-dist = [
 dev = [
     { name = "biopython", specifier = ">=1.84" },
     { name = "cairosvg", specifier = ">=2.7.1" },
-    { name = "dash-bootstrap-components", specifier = ">=1.6.0" },
     { name = "dash-mantine-components", specifier = ">=0.14.5" },
     { name = "dash-treeview-antd", specifier = ">=0.0.1" },
     { name = "holoviews", specifier = ">=1.19.1" },
