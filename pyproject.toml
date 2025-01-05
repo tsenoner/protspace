@@ -9,6 +9,7 @@ requires-python = ">=3.10"
 
 dependencies = [
     "dash>=2.18.1",
+    "dash-bootstrap-components>=1.6.0",
     "dash-daq>=0.5.0",
     "dash-iconify>=0.1.2",
     "h5py>=3.12.1",
@@ -30,7 +31,6 @@ webserver = ["gunicorn>=23.0.0", "python-dotenv>=1.0.1"]
 dev-dependencies = [
     "biopython>=1.84",
     "cairosvg>=2.7.1",
-    "dash-bootstrap-components>=1.6.0",
     "dash-mantine-components>=0.14.5",
     "dash-treeview-antd>=0.0.1",
     "holoviews>=1.19.1",
