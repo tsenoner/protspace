@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v1.1.2 (2025-01-05)
+
+### Fixes
+
+* fix: add JSON instruction layout ([`1531335`](https://github.com/tsenoner/protspace/commit/1531335417e0c2f7187e3dab2963037b6c18bcf0))
+
+
 ## v1.1.1 (2025-01-04)
 
 ### Code Style
