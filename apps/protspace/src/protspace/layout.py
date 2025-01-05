@@ -42,10 +42,62 @@ def create_layout(app):
     pdb_files_data = app.get_pdb_files_data()
 
     common_layout = [
+        html.Div(
+    [
+        # Left: Rostlab logo
+        html.A(
+            html.Img(
+                src="assets/Helix simple flat.png",
+                style={
+                    "height": "60px",  # Maintain consistent height with GitHub icon
+                    "width": "auto",   # Maintain aspect ratio
+                    "cursor": "pointer",
+                }
+            ),
+            href="https://rostlab.org",
+            target="_blank",
+            title="Visit Rostlab",
+        ),
+        # Center: ProtSpace title
         html.H1(
             "ProtSpace",
-            style={"textAlign": "center", "margin": "0", "padding": "10px 0"},
+            style={
+                "margin": "0",
+                "padding": "10px 0",
+                "flexGrow": "0",
+            },
         ),
+        # Right: GitHub link
+        html.A(
+            html.Button(
+                DashIconify(
+                    icon="mdi:github",
+                    width=50,
+                    height=50,
+                ),
+                title="GitHub Repository",
+                style={
+                    "background": "none",
+                    "border": "none",
+                    "cursor": "pointer",
+                    "padding": "0",
+                },
+            ),
+            href="https://github.com/tsenoner/protspace",
+            target="_blank",
+        ),
+    ],
+    style={
+        "display": "flex",
+        "justifyContent": "space-between",
+        "alignItems": "center",
+    }
+),
+
+        # html.H1(
+        #     "ProtSpace",
+        #     style={"textAlign": "center", "margin": "0", "padding": "10px 0"},
+        # ),
         html.Div(
             [
                 html.Div(
@@ -264,7 +316,7 @@ def create_layout(app):
                         "padding": "20px",
                         "backgroundColor": "#f0f0f0",
                         "borderRadius": "5px",
-                    },
+                    }
                 ),
             ],
             style={"display": "flex", "justifyContent": "space-between"},

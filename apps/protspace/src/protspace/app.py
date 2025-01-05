@@ -4,6 +4,7 @@ import zipfile
 from typing import Any, Dict, Optional, Union
 from pathlib import Path
 
+import dash_bootstrap_components as dbc
 from dash import Dash
 
 from .callbacks import setup_callbacks
@@ -46,7 +47,7 @@ class ProtSpace:
 
     def create_app(self):
         """Create and configure the Dash app."""
-        app = Dash(__name__, suppress_callback_exceptions=True)
+        app = Dash(__name__, suppress_callback_exceptions=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
         app.title = "ProtSpace"
         app.layout = create_layout(self)
         setup_callbacks(app)
