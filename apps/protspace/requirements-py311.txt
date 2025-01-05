@@ -30,8 +30,11 @@ dash==2.18.2
     # via
     #   protspace (pyproject.toml)
     #   dash-bio
+    #   dash-bootstrap-components
     #   dash-daq
 dash-bio==1.0.2
+    # via protspace (pyproject.toml)
+dash-bootstrap-components==1.6.0
     # via protspace (pyproject.toml)
 dash-core-components==2.0.0
     # via dash

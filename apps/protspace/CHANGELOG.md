@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v1.1.3 (2025-01-05)
+
+### Fixes
+
+* fix: update the dependencies ([`f2b0009`](https://github.com/tsenoner/protspace/commit/f2b00090ff712ea4ab2ee3de4dda8f4bb15e244f))
+
+
 ## v1.1.2 (2025-01-05)
 
 ### Fixes
