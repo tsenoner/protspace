@@ -9,6 +9,7 @@ HELP_MENU_STYLES = {
     "detail_section": {"marginBottom": "20px"},
     "section_header": {"marginBottom": "-2px"},
     "container": {"maxHeight": "calc(100vh - 300px)", "overflowY": "auto"},
+    "link": {"color": "#0066cc", "textDecoration": "underline"},
 }
 
 
@@ -82,7 +83,9 @@ def create_help_menu():
                         ),
                         html.Ul(
                             [
-                                html.Li("Switch between features"),
+                                html.Li(
+                                    "Switch between features (columns provided in the CSV file)"
+                                ),
                                 html.Li(
                                     "Color-code data points based on protein properties"
                                 ),
@@ -99,11 +102,27 @@ def create_help_menu():
                         html.Ul(
                             [
                                 html.Li("Toggle between 2D and 3D visualizations"),
-                                html.Li("PCA: Preserves global structure"),
-                                html.Li("UMAP: Emphasizes local relationships"),
-                                html.Li(
-                                    "PaCMAP: Can emphasizes local and global patterns, based on choosen parameters"
-                                ),
+                                html.Li([
+                                    "PCA: Preserves global structure - ",
+                                    html.A("Pearson (1901)", href="https://doi.org/10.1080/14786440109462720", target="_blank", style=HELP_MENU_STYLES["link"]),
+                                ]),
+                                html.Li([
+                                    "UMAP: Emphasizes local relationships - ",
+                                    html.A("McInnes et al. (2018)", href="https://arxiv.org/abs/1802.03426", target="_blank", style=HELP_MENU_STYLES["link"])
+                                ]),
+                                html.Li([
+                                    "PaCMAP: Can emphasizes local and global patterns, based on choosen parameters - ",
+                                    html.A("Wang et al. (2021)", href="http://jmlr.org/papers/v22/20-1061.html", target="_blank", style=HELP_MENU_STYLES["link"])
+                                ]),
+                                html.Li([
+                                    "For a comparison of dimensionality reduction methods, see ",
+                                    html.A(
+                                        "Huang et al. (2022)",
+                                        href="https://www.nature.com/articles/s42003-022-03628-x",
+                                        target="_blank",
+                                        style=HELP_MENU_STYLES["link"],
+                                    ),
+                                ]),
                             ]
                         ),
                         html.H5(
