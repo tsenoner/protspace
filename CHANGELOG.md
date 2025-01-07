@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.1.4 (2025-01-07)
+
+### Documentation
+
+* docs: add citation links to help menu ([`61dc188`](https://github.com/tsenoner/protspace/commit/61dc1887e6a63c914b8355ddfafed6edc0d40362))
+
+### Fixes
+
+* fix: update annotation image ([`27fed47`](https://github.com/tsenoner/protspace/commit/27fed4727fdd9926a0e7918e8762de8c48ff0e84))
+
+
 ## v1.1.3 (2025-01-05)
 
 ### Fixes
