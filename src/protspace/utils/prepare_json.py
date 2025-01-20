@@ -84,7 +84,14 @@ class DimensionReductionConfig:
         try:
             method_signature = inspect.signature(method_function)
             method_parameters = list(method_signature.parameters.keys())
-            return {param: getattr(self, param) for param in method_parameters if hasattr(self, param)}
+            # Create a dictionary of lowercase attribute names to their original names
+            lowercase_attrs = {attr.lower(): attr for attr in vars(self)}
+
+            return {
+                param: getattr(self, lowercase_attrs[param.lower()])
+                for param in method_parameters
+                if param.lower() in lowercase_attrs
+            }
         except Exception as e:
             print(e)
             return {}
