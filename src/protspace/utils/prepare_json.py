@@ -1,7 +1,8 @@
-import argparse
 import csv
+import argparse
 import json
 import logging
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,6 +68,26 @@ class DimensionReductionConfig:
         if self.learning_rate <= 0:
             raise ValueError("learning_rate must be positive")
 
+    def to_dict_by_method(self, method: str) -> Dict[str, Any]:
+        from umap import UMAP
+        from pacmap import PaCMAP
+
+        try:
+            method_function = {"tsne": TSNE,
+                               "pca": PCA,
+                               "umap": UMAP,
+                               "pacmap": PaCMAP,
+                               "mds": MDS}[method]
+        except KeyError:
+            return {}
+
+        try:
+            method_signature = inspect.signature(method_function)
+            method_parameters = list(method_signature.parameters.keys())
+            return {param: getattr(self, param) for param in method_parameters if hasattr(self, param)}
+        except Exception as e:
+            print(e)
+            return {}
 
 class DimensionReducer(ABC):
     """Abstract base class for dimension reduction methods."""
