@@ -4,9 +4,9 @@ import json
 import logging
 import inspect
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Literal
+from typing import Any, Dict, List, Tuple, Literal, get_args
 
 import h5py
 import numpy as np
@@ -42,13 +42,13 @@ class DimensionReductionConfig:
         eps: Convergence tolerance (>0)
     """
 
-    n_components: int = field(default=2)
-    n_neighbors: int = field(default=15)
-    metric: METRIC_TYPES = field(default="euclidean")
+    n_components: int = field(default=2, metadata={"allowed": [2, 3]})
+    n_neighbors: int = field(default=15, metadata={"gt": 0})
+    metric: METRIC_TYPES = field(default="euclidean", metadata={"allowed": [m for m in get_args(METRIC_TYPES)]})
     precomputed: bool = field(default=False)
-    min_dist: float = field(default=0.1)
-    perplexity: int = field(default=30)
-    learning_rate: int = field(default=200)
+    min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
+    perplexity: int = field(default=30, metadata={"gte": 5, "lte": 50})
+    learning_rate: int = field(default=200, metadata={"gt": 0})
     mn_ratio: float = field(default=0.5)
     fp_ratio: float = field(default=2.0)
     n_init: int = field(default=4)
@@ -57,41 +57,57 @@ class DimensionReductionConfig:
 
     def __post_init__(self):
         """Validate configuration parameters."""
-        if self.n_components not in (2, 3):
-            raise ValueError("n_components must be 2 or 3")
-        if self.n_neighbors <= 0:
-            raise ValueError("n_neighbors must be positive")
-        if not 0 <= self.min_dist <= 1:
-            raise ValueError("min_dist must be between 0 and 1")
-        if not 5 <= self.perplexity <= 50:
-            raise ValueError("perplexity should be between 5 and 50")
-        if self.learning_rate <= 0:
-            raise ValueError("learning_rate must be positive")
+        for data_field in fields(self):
+            value = getattr(self, data_field.name)
+            metadata = data_field.metadata
+
+            if "allowed" in metadata:
+                if value not in metadata["allowed"]:
+                    raise ValueError(f"{data_field.name} must be one of {metadata['allowed']}")
+
+            if "gt" in metadata:
+                if value <= metadata["gt"]:
+                    raise ValueError(f"{data_field.name} must be greater than {metadata['gt']}")
+
+            if "lt" in metadata:
+                if value >= metadata["lt"]:
+                    raise ValueError(f"{data_field.name} must be less than {metadata['lt']}")
+
+            if "gte" in metadata:
+                if value < metadata["gte"]:
+                    raise ValueError(f"{data_field.name} must be greater than or equal to {metadata['gte']}")
+
+            if "lte" in metadata:
+                if value > metadata["lte"]:
+                    raise ValueError(f"{data_field.name} must be less than or equal to {metadata['lte']}")
 
     def to_dict_by_method(self, method: str) -> Dict[str, Any]:
         from umap import UMAP
         from pacmap import PaCMAP
 
-        try:
-            method_function = {"tsne": TSNE,
-                               "pca": PCA,
-                               "umap": UMAP,
-                               "pacmap": PaCMAP,
-                               "mds": MDS}[method]
-        except KeyError:
+        method_map = {
+            "tsne": TSNE,
+            "pca": PCA,
+            "umap": UMAP,
+            "pacmap": PaCMAP,
+            "mds": MDS
+        }
+
+        if method not in method_map:
             return {}
 
         try:
+            method_function = method_map[method]
             method_signature = inspect.signature(method_function)
             method_parameters = list(method_signature.parameters.keys())
             # Create a dictionary of lowercase attribute names to their original names
-            lowercase_attrs = {attr.lower(): attr for attr in vars(self)}
-
-            return {
-                param: getattr(self, lowercase_attrs[param.lower()])
-                for param in method_parameters
-                if param.lower() in lowercase_attrs
-            }
+            lowercase_fields = {data_field.name.lower(): data_field for data_field in fields(self)}
+            result = {}
+            for param in method_parameters:
+                if param.lower() in lowercase_fields:
+                    data_field = lowercase_fields[param.lower()]
+                    result[param] = {"default": data_field.default, **data_field.metadata}
+            return result
         except Exception as e:
             print(e)
             return {}
