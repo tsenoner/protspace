@@ -81,7 +81,7 @@ class DimensionReductionConfig:
                 if value > metadata["lte"]:
                     raise ValueError(f"{data_field.name} must be less than or equal to {metadata['lte']}")
 
-    def to_dict_by_method(self, method: str) -> Dict[str, Any]:
+    def parameters_by_method(self, method: str) -> List[Dict[str, Any]]:
         from umap import UMAP
         from pacmap import PaCMAP
 
@@ -94,7 +94,7 @@ class DimensionReductionConfig:
         }
 
         if method not in method_map:
-            return {}
+            return []
 
         try:
             method_function = method_map[method]
@@ -102,15 +102,15 @@ class DimensionReductionConfig:
             method_parameters = list(method_signature.parameters.keys())
             # Create a dictionary of lowercase attribute names to their original names
             lowercase_fields = {data_field.name.lower(): data_field for data_field in fields(self)}
-            result = {}
+            result = []
             for param in method_parameters:
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
-                    result[param] = {"name": param, "default": data_field.default, **data_field.metadata}
+                    result.append({"name": param, "default": data_field.default, **data_field.metadata})
             return result
         except Exception as e:
             print(e)
-            return {}
+            return []
 
 class DimensionReducer(ABC):
     """Abstract base class for dimension reduction methods."""
