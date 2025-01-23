@@ -6,7 +6,7 @@ import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Literal, get_args
+from typing import Any, Dict, List, Tuple, Literal, get_args, get_type_hints
 
 import h5py
 import numpy as np
@@ -96,6 +96,8 @@ class DimensionReductionConfig:
         if method not in method_map:
             return []
 
+        type_hints = get_type_hints(self.__class__)
+
         try:
             method_function = method_map[method]
             method_signature = inspect.signature(method_function)
@@ -106,9 +108,11 @@ class DimensionReductionConfig:
             for param in method_parameters:
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
+                    field_type = type_hints.get(data_field.name, Any)
+                    field_str = field_type.__name__
                     result.append({"name": param.lower(),
                                    "default": data_field.default,
-                                   "constraints": {**data_field.metadata}})
+                                   "constraints": {"type": field_str, **data_field.metadata}})
             return result
         except Exception as e:
             print(e)
