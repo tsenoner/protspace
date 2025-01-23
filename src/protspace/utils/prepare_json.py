@@ -106,7 +106,7 @@ class DimensionReductionConfig:
             for param in method_parameters:
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
-                    result.append({"name": param,
+                    result.append({"name": param.lower(),
                                    "default": data_field.default,
                                    "constraints": {**data_field.metadata}})
             return result
