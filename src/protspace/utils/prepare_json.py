@@ -49,11 +49,11 @@ class DimensionReductionConfig:
     min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
     perplexity: int = field(default=30, metadata={"gte": 5, "lte": 50})
     learning_rate: int = field(default=200, metadata={"gt": 0})
-    mn_ratio: float = field(default=0.5)
-    fp_ratio: float = field(default=2.0)
-    n_init: int = field(default=4)
-    max_iter: int = field(default=300)
-    eps: float = field(default=1e-3)
+    mn_ratio: float = field(default=0.5, metadata={"gte": 0, "lte": 1})
+    fp_ratio: float = field(default=2.0, metadata={"gt": 0})
+    n_init: int = field(default=4, metadata={"gt": 0})
+    max_iter: int = field(default=300, metadata={"gt": 0})
+    eps: float = field(default=1e-3, metadata={"gt": 0})
 
     def __post_init__(self):
         """Validate configuration parameters."""
