@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.1.5 (2025-01-28)
+
+### Documentation
+
+* docs: Add citation, web-service URL, fix parameter typo ([`ebf308d`](https://github.com/tsenoner/protspace/commit/ebf308d950ed408d362bf58014b2e3ac094cd98d))
+
+### Fixes
+
+* fix: add metadata delimiter definition option and sanity checks when creating .h5 ([`b4591ed`](https://github.com/tsenoner/protspace/commit/b4591ed38d523936c7b3ef29abf976a9b50de1f0))
+
+
 ## v1.1.4 (2025-01-07)
 
 ### Documentation
