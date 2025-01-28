@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Valididation and configuration
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
-METRIC_TYPES = Literal["euclidean", "cosine"] # dimension reduction
+METRIC_TYPES = Literal["euclidean", "cosine"]  # dimension reduction
+
 
 @dataclass(frozen=True)
 class DimensionReductionConfig:
@@ -173,9 +175,7 @@ class MDSReducer(DimensionReducer):
             n_init=self.config.n_init,
             max_iter=self.config.max_iter,
             eps=self.config.eps,
-            dissimilarity=(
-                "precomputed" if self.config.precomputed else "euclidean"
-            ),
+            dissimilarity=("precomputed" if self.config.precomputed else "euclidean"),
         ).fit_transform(data)
 
     def get_params(self) -> Dict[str, Any]:
@@ -208,18 +208,22 @@ class DataProcessor:
             "methods",
             "verbose",
             "custom_names",
+            "delimiter",
         ]:
             self.config.pop(arg, None)
         self.identifier_col = "identifier"
         self.custom_names = config.get("custom_names", {})
 
     def load_data(
-        self, input_path: Path, metadata_path: Path
+        self, input_path: Path, metadata_path: Path, delimiter: str
     ) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
         """Load and align input data with metadata, handling missing values gracefully."""
+        # Log the delimiter being used
+        logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
+
         # Load metadata if available
         try:
-            metadata = pd.read_csv(metadata_path)
+            metadata = pd.read_csv(metadata_path, delimiter=delimiter)
             if "identifier" not in metadata.columns:
                 logger.warning(
                     "Metadata CSV missing 'identifier' column - creating empty metadata"
@@ -284,7 +288,7 @@ class DataProcessor:
         config = DimensionReductionConfig(n_components=dims, **self.config)
 
         # Special handling for MDS when using similarity matrix
-        if method == "mds" and config.precomputed == True:
+        if method == "mds" and config.precomputed is True:
             # Convert similarity to dissimilarity matrix if needed
             if np.allclose(np.diag(data), 1):
                 # Convert similarity to distance: d = sqrt(max(s) - s)
@@ -295,9 +299,7 @@ class DataProcessor:
         reduced_data = reducer.fit_transform(data)
 
         method_spec = f"{method}{dims}"
-        projection_name = self.custom_names.get(
-            method_spec, f"{method.upper()}_{dims}"
-        )
+        projection_name = self.custom_names.get(method_spec, f"{method.upper()}_{dims}")
 
         return {
             "name": projection_name,
@@ -318,7 +320,12 @@ class DataProcessor:
         # Process features
         for _, row in metadata.iterrows():
             protein_id = row[self.identifier_col]
-            features = row.drop(self.identifier_col).infer_objects(copy=False).fillna("").to_dict()
+            features = (
+                row.drop(self.identifier_col)
+                .infer_objects(copy=False)
+                .fillna("")
+                .to_dict()
+            )
             output["protein_data"][protein_id] = {"features": features}
 
         # Process projections
@@ -393,6 +400,13 @@ def main():
         type=Path,
         required=True,
         help="Path to output JSON file",
+    )
+    # Specify delimiter argument with comma as default
+    parser.add_argument(
+        "--delimiter",
+        type=str,
+        default=",",
+        help="Specify delimiter for metadata file (default: comma)",
     )
 
     # Reduction methods
@@ -501,9 +515,7 @@ def main():
                 method, name = name_spec.split("=")
                 custom_names[method] = name
             except ValueError:
-                logger.warning(
-                    f"Invalid custom name specification: {name_spec}"
-                )
+                logger.warning(f"Invalid custom name specification: {name_spec}")
 
     # Add custom names to args
     args_dict = vars(args)
@@ -517,7 +529,9 @@ def main():
     try:
         # Process data
         processor = DataProcessor(args_dict)
-        metadata, data, headers = processor.load_data(args.input, args.metadata)
+        metadata, data, headers = processor.load_data(
+            args.input, args.metadata, delimiter=args.delimiter
+        )
 
         # Process each method
         reductions = []
