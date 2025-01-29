@@ -96,11 +96,19 @@ class DimensionReductionConfig:
         if method not in method_map:
             return []
 
+        def _get_parameter_desc_from_docstring(parameter: str, docstring: str) -> str:
+            large_splits = docstring.split(parameter)
+            large_split = large_splits[0] if len(large_splits) == 1 else large_splits[1]
+            param_split = large_split.split('\n\n')[0] if '\n' in large_split else large_split.split('\n')[0]
+            param_split_cleaned = param_split.replace('\n', '').replace('\t', '').strip()
+            return param_split_cleaned
+
         type_hints = get_type_hints(self.__class__)
 
         try:
             method_function = method_map[method]
             method_signature = inspect.signature(method_function)
+            docstring = inspect.getdoc(method_function)
             method_parameters = list(method_signature.parameters.keys())
             # Create a dictionary of lowercase attribute names to their original names
             lowercase_fields = {data_field.name.lower(): data_field for data_field in fields(self)}
@@ -108,11 +116,12 @@ class DimensionReductionConfig:
             for param in method_parameters:
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
-                    field_type = type_hints.get(data_field.name, Any)
-                    field_str = field_type.__name__
+                    field_type = type_hints.get(data_field.name, Any).__name__
+                    description = f"{param}{_get_parameter_desc_from_docstring(parameter=param, docstring=docstring)}"
                     result.append({"name": param.lower(),
                                    "default": data_field.default,
-                                   "constraints": {"type": field_str, **data_field.metadata}})
+                                   "description": description,
+                                   "constraints": {"type": field_type, **data_field.metadata}})
             return result
         except Exception as e:
             print(e)
