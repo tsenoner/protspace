@@ -97,10 +97,18 @@ class DimensionReductionConfig:
             return []
 
         def _get_parameter_desc_from_docstring(parameter: str, docstring: str) -> str:
-            large_splits = docstring.split(parameter)
+            large_splits = []
+            possible_split_variants = [f"{parameter} : ", f"{parameter}: ", f"{parameter}:", parameter]
+            for split_variant in possible_split_variants:
+                if split_variant in docstring:
+                    large_splits = docstring.split(split_variant)
+                    break
+            if len(large_splits) == 0:
+                return ""
             large_split = large_splits[0] if len(large_splits) == 1 else large_splits[1]
             param_split = large_split.split('\n\n')[0] if '\n' in large_split else large_split.split('\n')[0]
-            param_split_cleaned = param_split.replace('\n', '').replace('\t', '').strip()
+            param_split_cleaned = (param_split.replace('\n\n', '').replace('\t', '').
+                                   replace('  ', ' ').replace('   ', ' '). strip())
             return param_split_cleaned
 
         type_hints = get_type_hints(self.__class__)
@@ -114,10 +122,14 @@ class DimensionReductionConfig:
             lowercase_fields = {data_field.name.lower(): data_field for data_field in fields(self)}
             result = []
             for param in method_parameters:
+                if method == "mds" and param == "metric":
+                    continue  # Skip precomputed mds metric
+                if method == "umap" and param == "learning_rate":
+                    continue  # Learning rate only used for tSNE
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
                     field_type = type_hints.get(data_field.name, Any).__name__
-                    description = f"{param}{_get_parameter_desc_from_docstring(parameter=param, docstring=docstring)}"
+                    description = f"{param}: {_get_parameter_desc_from_docstring(parameter=param, docstring=docstring)}"
                     result.append({"name": param.lower(),
                                    "default": data_field.default,
                                    "description": description,
