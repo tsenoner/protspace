@@ -1,11 +1,12 @@
-import argparse
 import csv
+import argparse
 import json
 import logging
+import inspect
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Literal
+from typing import Any, Dict, List, Tuple, Literal, get_args, get_type_hints
 
 import h5py
 import numpy as np
@@ -41,32 +42,102 @@ class DimensionReductionConfig:
         eps: Convergence tolerance (>0)
     """
 
-    n_components: int = field(default=2)
-    n_neighbors: int = field(default=15)
-    metric: METRIC_TYPES = field(default="euclidean")
+    n_components: int = field(default=2, metadata={"allowed": [2, 3]})
+    n_neighbors: int = field(default=15, metadata={"gt": 0})
+    metric: METRIC_TYPES = field(default="euclidean", metadata={"allowed": [m for m in get_args(METRIC_TYPES)]})
     precomputed: bool = field(default=False)
-    min_dist: float = field(default=0.1)
-    perplexity: int = field(default=30)
-    learning_rate: int = field(default=200)
-    mn_ratio: float = field(default=0.5)
-    fp_ratio: float = field(default=2.0)
-    n_init: int = field(default=4)
-    max_iter: int = field(default=300)
-    eps: float = field(default=1e-3)
+    min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
+    perplexity: int = field(default=30, metadata={"gte": 5, "lte": 50})
+    learning_rate: int = field(default=200, metadata={"gt": 0})
+    mn_ratio: float = field(default=0.5, metadata={"gte": 0, "lte": 1})
+    fp_ratio: float = field(default=2.0, metadata={"gt": 0})
+    n_init: int = field(default=4, metadata={"gt": 0})
+    max_iter: int = field(default=300, metadata={"gt": 0})
+    eps: float = field(default=1e-3, metadata={"gt": 0})
 
     def __post_init__(self):
         """Validate configuration parameters."""
-        if self.n_components not in (2, 3):
-            raise ValueError("n_components must be 2 or 3")
-        if self.n_neighbors <= 0:
-            raise ValueError("n_neighbors must be positive")
-        if not 0 <= self.min_dist <= 1:
-            raise ValueError("min_dist must be between 0 and 1")
-        if not 5 <= self.perplexity <= 50:
-            raise ValueError("perplexity should be between 5 and 50")
-        if self.learning_rate <= 0:
-            raise ValueError("learning_rate must be positive")
+        for data_field in fields(self):
+            value = getattr(self, data_field.name)
+            metadata = data_field.metadata
 
+            if "allowed" in metadata:
+                if value not in metadata["allowed"]:
+                    raise ValueError(f"{data_field.name} must be one of {metadata['allowed']}")
+
+            if "gt" in metadata:
+                if value <= metadata["gt"]:
+                    raise ValueError(f"{data_field.name} must be greater than {metadata['gt']}")
+
+            if "lt" in metadata:
+                if value >= metadata["lt"]:
+                    raise ValueError(f"{data_field.name} must be less than {metadata['lt']}")
+
+            if "gte" in metadata:
+                if value < metadata["gte"]:
+                    raise ValueError(f"{data_field.name} must be greater than or equal to {metadata['gte']}")
+
+            if "lte" in metadata:
+                if value > metadata["lte"]:
+                    raise ValueError(f"{data_field.name} must be less than or equal to {metadata['lte']}")
+
+    def parameters_by_method(self, method: str) -> List[Dict[str, Any]]:
+        from umap import UMAP
+        from pacmap import PaCMAP
+
+        method_map = {
+            "tsne": TSNE,
+            "pca": PCA,
+            "umap": UMAP,
+            "pacmap": PaCMAP,
+            "mds": MDS
+        }
+
+        if method not in method_map:
+            return []
+
+        def _get_parameter_desc_from_docstring(parameter: str, docstring: str) -> str:
+            large_splits = []
+            possible_split_variants = [f"{parameter} : ", f"{parameter}: ", f"{parameter}:", parameter]
+            for split_variant in possible_split_variants:
+                if split_variant in docstring:
+                    large_splits = docstring.split(split_variant)
+                    break
+            if len(large_splits) == 0:
+                return ""
+            large_split = large_splits[0] if len(large_splits) == 1 else large_splits[1]
+            param_split = large_split.split('\n\n')[0] if '\n' in large_split else large_split.split('\n')[0]
+            param_split_cleaned = (param_split.replace('\n\n', '').replace('\t', '').
+                                   replace('  ', ' ').replace('   ', ' '). strip())
+            return param_split_cleaned
+
+        type_hints = get_type_hints(self.__class__)
+
+        try:
+            method_function = method_map[method]
+            method_signature = inspect.signature(method_function)
+            docstring = inspect.getdoc(method_function)
+            method_parameters = list(method_signature.parameters.keys())
+            # Create a dictionary of lowercase attribute names to their original names
+            lowercase_fields = {data_field.name.lower(): data_field for data_field in fields(self)}
+            result = []
+            for param in method_parameters:
+                if method == "mds" and param == "metric":
+                    continue  # Skip precomputed mds metric
+                if method == "umap" and param == "learning_rate":
+                    continue  # Learning rate only used for tSNE
+                if param.lower() in lowercase_fields:
+                    data_field = lowercase_fields[param.lower()]
+                    field_type = type_hints.get(data_field.name, Any).__name__
+                    description = f"{param}: {_get_parameter_desc_from_docstring(parameter=param, docstring=docstring)}"
+                    result.append({"name": param.lower(),
+                                   "default": data_field.default,
+                                   "description": description,
+                                   "constraints": {"type": field_type, **data_field.metadata}})
+            return result
+        except Exception as e:
+            print(e)
+            return []
 
 class DimensionReducer(ABC):
     """Abstract base class for dimension reduction methods."""
