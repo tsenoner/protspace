@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v1.1.6 (2025-03-28)
+
+### Documentation
+
+* docs: clearify the file upload in the embedding jupyter notebook ([`744b5bf`](https://github.com/tsenoner/protspace/commit/744b5bfe9905a151416f92dd6c3907662c276c60))
+
+### Fixes
+
+* fix: NaN process + app.run update ([`5250e33`](https://github.com/tsenoner/protspace/commit/5250e336929995f5ab0c20f59669c6b15da983b9))
+
+### Refactoring
+
+* refactor: check types ([`921e40d`](https://github.com/tsenoner/protspace/commit/921e40d1ab9f562712976d00a12675a4265e886c))
+
+### Unknown
+
+* Merge branch 'main' of https://github.com/tsenoner/protspace ([`2168cf1`](https://github.com/tsenoner/protspace/commit/2168cf1799c6106b00fd9a5675dea8c20affde9f))
+
+* Adding config file improvements (#5)
+
+* Adding to_dict_by_method to DimensionReductionConfig
+
+* Making parameter config matching case-insensitive
+
+* Adding constraints to config fields
+
+* Adding name to parameter dict
+
+* Changing to_dict to parameters_by_method and returning List
+
+* Adding separate key for parameter constraints
+
+* Separating frontend dependencies to optional dependencies
+
+* Adding frontend import error handling
+
+* Changing param.lower() in parameter dict by method function
+
+* Adding type hints to constraints
+
+* Adding additional metadata constraints for parameters
+
+* Adding experimental docstring extraction for method parameters
+
+* Improving parameter description cleaning ([`0f9d0d1`](https://github.com/tsenoner/protspace/commit/0f9d0d16e0fdab31a90eb60497f4db50f2396981))
+
+
 ## v1.1.5 (2025-01-28)
 
 ### Documentation
