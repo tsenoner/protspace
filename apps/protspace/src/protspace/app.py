@@ -90,7 +90,7 @@ class ProtSpace:
             supress_output()
 
         app = self.create_app()
-        app.run_server(debug=debug, port=port)
+        app.run(debug=debug, port=port)
 
     # TODO: avoid duplicated code generalize the plotting logic into the plotting.py script and the callback uses that, so we canuse that too here
     def generate_plot(

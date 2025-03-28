@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version < '3.11'",
@@ -2308,25 +2309,25 @@ name = "protspace"
 version = "1.1.5"
 source = { editable = "." }
 dependencies = [
-    { name = "dash" },
-    { name = "dash-bio" },
-    { name = "dash-bootstrap-components" },
-    { name = "dash-daq" },
-    { name = "dash-iconify" },
     { name = "h5py" },
-    { name = "kaleido" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pacmap" },
     { name = "pandas" },
-    { name = "plotly" },
     { name = "scikit-learn" },
     { name = "umap-learn" },
 ]
 
 [package.optional-dependencies]
-webserver = [
+frontend = [
+    { name = "dash" },
+    { name = "dash-bio" },
+    { name = "dash-bootstrap-components" },
+    { name = "dash-daq" },
+    { name = "dash-iconify" },
     { name = "gunicorn" },
+    { name = "kaleido" },
+    { name = "plotly" },
     { name = "python-dotenv" },
 ]
 
@@ -2353,23 +2354,24 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dash", specifier = ">=2.18.1" },
-    { name = "dash-bio", specifier = ">=1.0.2" },
-    { name = "dash-bootstrap-components", specifier = ">=1.6.0" },
-    { name = "dash-daq", specifier = ">=0.5.0" },
-    { name = "dash-iconify", specifier = ">=0.1.2" },
-    { name = "gunicorn", marker = "extra == 'webserver'", specifier = ">=23.0.0" },
+    { name = "dash", marker = "extra == 'frontend'", specifier = ">=2.18.1" },
+    { name = "dash-bio", marker = "extra == 'frontend'", specifier = ">=1.0.2" },
+    { name = "dash-bootstrap-components", marker = "extra == 'frontend'", specifier = ">=1.6.0" },
+    { name = "dash-daq", marker = "extra == 'frontend'", specifier = ">=0.5.0" },
+    { name = "dash-iconify", marker = "extra == 'frontend'", specifier = ">=0.1.2" },
+    { name = "gunicorn", marker = "extra == 'frontend'", specifier = ">=23.0.0" },
     { name = "h5py", specifier = ">=3.12.1" },
-    { name = "kaleido", specifier = ">=0.2.1,!=0.2.1.post1" },
+    { name = "kaleido", marker = "extra == 'frontend'", specifier = ">=0.2.1,!=0.2.1.post1" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "numpy", specifier = ">=1.23.0" },
     { name = "pacmap", specifier = ">=0.7.6" },
     { name = "pandas", specifier = ">=2.0.0" },
-    { name = "plotly", specifier = ">=5.24.1" },
-    { name = "python-dotenv", marker = "extra == 'webserver'", specifier = ">=1.0.1" },
+    { name = "plotly", marker = "extra == 'frontend'", specifier = ">=5.24.1" },
+    { name = "python-dotenv", marker = "extra == 'frontend'", specifier = ">=1.0.1" },
     { name = "scikit-learn", specifier = ">=1.5.2" },
     { name = "umap-learn", specifier = ">=0.5.7" },
 ]
+provides-extras = ["frontend"]
 
 [package.metadata.requires-dev]
 dev = [

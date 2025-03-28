@@ -1,4 +1,3 @@
-import csv
 import argparse
 import json
 import logging
@@ -44,7 +43,9 @@ class DimensionReductionConfig:
 
     n_components: int = field(default=2, metadata={"allowed": [2, 3]})
     n_neighbors: int = field(default=15, metadata={"gt": 0})
-    metric: METRIC_TYPES = field(default="euclidean", metadata={"allowed": [m for m in get_args(METRIC_TYPES)]})
+    metric: METRIC_TYPES = field(
+        default="euclidean", metadata={"allowed": [m for m in get_args(METRIC_TYPES)]}
+    )
     precomputed: bool = field(default=False)
     min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
     perplexity: int = field(default=30, metadata={"gte": 5, "lte": 50})
@@ -63,23 +64,33 @@ class DimensionReductionConfig:
 
             if "allowed" in metadata:
                 if value not in metadata["allowed"]:
-                    raise ValueError(f"{data_field.name} must be one of {metadata['allowed']}")
+                    raise ValueError(
+                        f"{data_field.name} must be one of {metadata['allowed']}"
+                    )
 
             if "gt" in metadata:
                 if value <= metadata["gt"]:
-                    raise ValueError(f"{data_field.name} must be greater than {metadata['gt']}")
+                    raise ValueError(
+                        f"{data_field.name} must be greater than {metadata['gt']}"
+                    )
 
             if "lt" in metadata:
                 if value >= metadata["lt"]:
-                    raise ValueError(f"{data_field.name} must be less than {metadata['lt']}")
+                    raise ValueError(
+                        f"{data_field.name} must be less than {metadata['lt']}"
+                    )
 
             if "gte" in metadata:
                 if value < metadata["gte"]:
-                    raise ValueError(f"{data_field.name} must be greater than or equal to {metadata['gte']}")
+                    raise ValueError(
+                        f"{data_field.name} must be greater than or equal to {metadata['gte']}"
+                    )
 
             if "lte" in metadata:
                 if value > metadata["lte"]:
-                    raise ValueError(f"{data_field.name} must be less than or equal to {metadata['lte']}")
+                    raise ValueError(
+                        f"{data_field.name} must be less than or equal to {metadata['lte']}"
+                    )
 
     def parameters_by_method(self, method: str) -> List[Dict[str, Any]]:
         from umap import UMAP
@@ -90,7 +101,7 @@ class DimensionReductionConfig:
             "pca": PCA,
             "umap": UMAP,
             "pacmap": PaCMAP,
-            "mds": MDS
+            "mds": MDS,
         }
 
         if method not in method_map:
@@ -98,7 +109,12 @@ class DimensionReductionConfig:
 
         def _get_parameter_desc_from_docstring(parameter: str, docstring: str) -> str:
             large_splits = []
-            possible_split_variants = [f"{parameter} : ", f"{parameter}: ", f"{parameter}:", parameter]
+            possible_split_variants = [
+                f"{parameter} : ",
+                f"{parameter}: ",
+                f"{parameter}:",
+                parameter,
+            ]
             for split_variant in possible_split_variants:
                 if split_variant in docstring:
                     large_splits = docstring.split(split_variant)
@@ -106,9 +122,18 @@ class DimensionReductionConfig:
             if len(large_splits) == 0:
                 return ""
             large_split = large_splits[0] if len(large_splits) == 1 else large_splits[1]
-            param_split = large_split.split('\n\n')[0] if '\n' in large_split else large_split.split('\n')[0]
-            param_split_cleaned = (param_split.replace('\n\n', '').replace('\t', '').
-                                   replace('  ', ' ').replace('   ', ' '). strip())
+            param_split = (
+                large_split.split("\n\n")[0]
+                if "\n" in large_split
+                else large_split.split("\n")[0]
+            )
+            param_split_cleaned = (
+                param_split.replace("\n\n", "")
+                .replace("\t", "")
+                .replace("  ", " ")
+                .replace("   ", " ")
+                .strip()
+            )
             return param_split_cleaned
 
         type_hints = get_type_hints(self.__class__)
@@ -119,7 +144,9 @@ class DimensionReductionConfig:
             docstring = inspect.getdoc(method_function)
             method_parameters = list(method_signature.parameters.keys())
             # Create a dictionary of lowercase attribute names to their original names
-            lowercase_fields = {data_field.name.lower(): data_field for data_field in fields(self)}
+            lowercase_fields = {
+                data_field.name.lower(): data_field for data_field in fields(self)
+            }
             result = []
             for param in method_parameters:
                 if method == "mds" and param == "metric":
@@ -130,14 +157,19 @@ class DimensionReductionConfig:
                     data_field = lowercase_fields[param.lower()]
                     field_type = type_hints.get(data_field.name, Any).__name__
                     description = f"{param}: {_get_parameter_desc_from_docstring(parameter=param, docstring=docstring)}"
-                    result.append({"name": param.lower(),
-                                   "default": data_field.default,
-                                   "description": description,
-                                   "constraints": {"type": field_type, **data_field.metadata}})
+                    result.append(
+                        {
+                            "name": param.lower(),
+                            "default": data_field.default,
+                            "description": description,
+                            "constraints": {"type": field_type, **data_field.metadata},
+                        }
+                    )
             return result
         except Exception as e:
             print(e)
             return []
+
 
 class DimensionReducer(ABC):
     """Abstract base class for dimension reduction methods."""
