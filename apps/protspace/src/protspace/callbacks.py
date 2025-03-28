@@ -245,7 +245,7 @@ def setup_callbacks(app):
         # Apply styles
         for value in df[selected_feature].unique():
             marker_style = {}
-            if value == "None": #"<NaN>":
+            if value == "<NaN>":
                 marker_style["color"] = NAN_COLOR
             else:
                 color = feature_colors.get(value)
