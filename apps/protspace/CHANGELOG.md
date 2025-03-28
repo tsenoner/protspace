@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v1.1.7 (2025-03-28)
+
+### Fixes
+
+* fix: NaN coloring ([`b6821be`](https://github.com/tsenoner/protspace/commit/b6821becf311f745eaebedafde662e86612a28f3))
+
+
 ## v1.1.6 (2025-03-28)
 
 ### Documentation
