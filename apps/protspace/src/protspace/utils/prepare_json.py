@@ -223,7 +223,7 @@ class DataProcessor:
 
         # Load metadata if available
         try:
-            metadata = pd.read_csv(metadata_path, delimiter=delimiter)
+            metadata = pd.read_csv(metadata_path, delimiter=delimiter).convert_dtypes()
             if "identifier" not in metadata.columns:
                 logger.warning(
                     "Metadata CSV missing 'identifier' column - creating empty metadata"
