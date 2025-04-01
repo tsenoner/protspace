@@ -57,8 +57,16 @@ Try ProtSpace instantly using our Google Colab notebooks:
 
 ## Installation
 
+There are two installation options:
+
+1. **Basic Installation** (dimensionality reduction only):
 ```bash
 pip install protspace
+```
+
+2. **Full Installation** (including visualization interface):
+```bash
+pip install "protspace[frontend]"
 ```
 
 ## Usage
