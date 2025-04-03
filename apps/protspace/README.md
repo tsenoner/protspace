@@ -23,7 +23,6 @@ Try ProtSpace instantly using our Google Colab notebooks:
 
 4. **Interactive Pfam & Clan Explorer**:
 [![Open Pfam Explorer In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/examples/notebook/PfamExplorer_ProtSpace.ipynb)
-Explore protein families (Pfam) and clans using protein embeddings using ProtSpace visualization.
 
 ## Table of Contents
 
