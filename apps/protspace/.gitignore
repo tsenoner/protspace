@@ -31,7 +31,8 @@ data/phages/embs
 data/sub_loc
 #nuclease
 data/nuclease
-# --- out ---
+# --- examples ---
+examples/data/
 examples/out/h_sapiens
 examples/out/nuclease
 examples/out/final
