@@ -23,6 +23,16 @@ logger = logging.getLogger(__name__)
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
 METRIC_TYPES = Literal["euclidean", "cosine"]  # dimension reduction
 
+# Method names constants
+PCA_NAME = "pca"
+TSNE_NAME = "tsne"
+UMAP_NAME = "umap"
+PACMAP_NAME = "pacmap"
+MDS_NAME = "mds"
+LOCALMAP_NAME = "localmap"
+
+ALL_METHODS = [PCA_NAME, TSNE_NAME, UMAP_NAME, PACMAP_NAME, MDS_NAME, LOCALMAP_NAME]
+
 
 @dataclass(frozen=True)
 class DimensionReductionConfig:
@@ -96,12 +106,12 @@ class DimensionReductionConfig:
 
     def parameters_by_method(self, method: str) -> List[Dict[str, Any]]:
         method_map = {
-            "tsne": TSNE,
-            "pca": PCA,
-            "umap": UMAP,
-            "pacmap": PaCMAP,
-            "mds": MDS,
-            "localmap": LocalMAP,
+            TSNE_NAME: TSNE,
+            PCA_NAME: PCA,
+            UMAP_NAME: UMAP,
+            PACMAP_NAME: PaCMAP,
+            MDS_NAME: MDS,
+            LOCALMAP_NAME: LocalMAP,
         }
 
         if method not in method_map:
@@ -149,22 +159,43 @@ class DimensionReductionConfig:
             }
             result = []
             for param in method_parameters:
-                if method == "mds" and param == "metric":
-                    continue  # Skip precomputed mds metric
-                if method == "umap" and param == "learning_rate":
-                    continue  # Learning rate only used for tSNE
-                if method == "localmap" and param == "metric":
-                    continue  # LocalMAP does not use metric parameter
+                # Exclude parameters not relevant for certain methods
+                if method == MDS_NAME and param == "metric":
+                    continue
+                if method == UMAP_NAME and param == "learning_rate":
+                    continue
+                if method == LOCALMAP_NAME and param == "metric":
+                    continue
+
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
-                    field_type = type_hints.get(data_field.name, Any).__name__
-                    description = f"{param}: {_get_parameter_desc_from_docstring(parameter=param, docstring=docstring)}"
+                    field_type_hint = type_hints.get(data_field.name, Any)
+                    field_type_name = getattr(
+                        field_type_hint, "__name__", str(field_type_hint)
+                    )
+                    if hasattr(
+                        field_type_hint, "__args__"
+                    ):  # Handle Literal, Union etc.
+                        field_type_name = str(field_type_hint).replace("typing.", "")
+
+                    doc_desc = _get_parameter_desc_from_docstring(
+                        parameter=param, docstring=docstring
+                    )
+                    description = (
+                        doc_desc
+                        if doc_desc
+                        else f"{data_field.name}: Config parameter. Default: {data_field.default}"
+                    )
+
                     result.append(
                         {
                             "name": param.lower(),
                             "default": data_field.default,
                             "description": description,
-                            "constraints": {"type": field_type, **data_field.metadata},
+                            "constraints": {
+                                "type": field_type_name,
+                                **data_field.metadata,
+                            },
                         }
                     )
             return result
@@ -334,12 +365,12 @@ class DataProcessor:
     """Main class for processing and reducing dimensionality of data."""
 
     REDUCERS = {
-        "pca": PCAReducer,
-        "tsne": TSNEReducer,
-        "umap": UMAPReducer,
-        "pacmap": PaCMAPReducer,
-        "mds": MDSReducer,
-        "localmap": LocalMAPReducer,
+        PCA_NAME: PCAReducer,
+        TSNE_NAME: TSNEReducer,
+        UMAP_NAME: UMAPReducer,
+        PACMAP_NAME: PaCMAPReducer,
+        MDS_NAME: MDSReducer,
+        LOCALMAP_NAME: LocalMAPReducer,
     }
 
     def __init__(self, config: Dict[str, Any]):
@@ -432,14 +463,18 @@ class DataProcessor:
         config = DimensionReductionConfig(n_components=dims, **self.config)
 
         # Special handling for MDS when using similarity matrix
-        if method == "mds" and config.precomputed is True:
+        if method == MDS_NAME and config.precomputed is True:
             # Convert similarity to dissimilarity matrix if needed
             if np.allclose(np.diag(data), 1):
                 # Convert similarity to distance: d = sqrt(max(s) - s)
                 max_sim = np.max(data)
                 data = np.sqrt(max_sim - data)
 
-        reducer = self.REDUCERS[method](config)
+        reducer_cls = self.REDUCERS.get(method)
+        if not reducer_cls:
+            raise ValueError(f"Unknown reduction method: {method}")
+
+        reducer = reducer_cls(config)
         reduced_data = reducer.fit_transform(data)
 
         method_spec = f"{method}{dims}"
@@ -558,7 +593,7 @@ def main():
         "--methods",
         nargs="+",
         default=["pca2"],
-        help="Reduction methods to use (e.g., pca2, tsne3, mds2, umap2, pacmap2, localmap2). Format: method_name + dimensions",
+        help=f"Reduction methods to use (e.g., {', '.join([m+'2' for m in ALL_METHODS])}). Format: method_name + dimensions",
     )
 
     # Custom names
@@ -684,7 +719,11 @@ def main():
             dims = int("".join(filter(str.isdigit, method_spec)))
 
             if method not in processor.REDUCERS:
-                raise ValueError(f"Unknown reduction method: {method}")
+                logger.warning(
+                    f"Unknown reduction method specified: {method}. Skipping."
+                )
+                continue  # Use logger.warning and continue instead of raising ValueError
+                # raise ValueError(f"Unknown reduction method: {method}") # Kept for reference
 
             logger.info(f"Applying {method.upper()}{dims} reduction")
             reductions.append(processor.process_reduction(data, method, dims))
