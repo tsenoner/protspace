@@ -1,6 +1,13 @@
 # CHANGELOG
 
 
+## v1.2.0 (2025-04-15)
+
+### Unknown
+
+* Merge branch 'main' of https://github.com/tsenoner/protspace ([`4b1e33d`](https://github.com/tsenoner/protspace/commit/4b1e33d306f7fe839368a53f2683c18f1523f83a))
+
+
 ## v1.1.8 (2025-04-15)
 
 ### Chores
@@ -9,17 +16,29 @@
 
 ### Documentation
 
+* docs: add image of the different 2D markers ([`a0da72a`](https://github.com/tsenoner/protspace/commit/a0da72ab426e21c0b1ba31c2e61660624fca5692))
+
 * docs: add note that external mode only works on Google Chrome ([`eb9dd10`](https://github.com/tsenoner/protspace/commit/eb9dd10b6986ba506cef40684e18558e30cf045a))
 
 * docs: add PfamExplorer notebook ([`67fc596`](https://github.com/tsenoner/protspace/commit/67fc5968b3461971cdaf8cd29c0e82f734fb3b36))
 
 * docs: update the README to reflect the changes in frontend dependencies ([`244b7ec`](https://github.com/tsenoner/protspace/commit/244b7ecf26d496c76e076401342fd6195813ccd9))
 
+### Features
+
+* feat(localmap): add new LocalMAP redundancy reduction ([`38d4982`](https://github.com/tsenoner/protspace/commit/38d498206552249c724cd469a8eae1290fde2d57))
+
 ### Fixes
 
 * fix(pca): switch to arpack solver for numerical stability
 
 Resolves `RuntimeWarning`s during PCA on `float16` embeddings by using `svd_solver='arpack'`. Removed prior dtype casting attempts. ([`0bf5b21`](https://github.com/tsenoner/protspace/commit/0bf5b21d06ac9f97aa2fb463b5a2b41f03ebaca8))
+
+### Refactoring
+
+* refactor(prepare_json): Improve maintainability ([`13af68f`](https://github.com/tsenoner/protspace/commit/13af68fb7153e623e7d323f56b0a5e34a5d0bc8b))
+
+* refactor(json-analysis): show all feature values on high verbosity ([`9b8b833`](https://github.com/tsenoner/protspace/commit/9b8b8333e4fc38967074c07da9e93cea893139ab))
 
 ### Unknown
 
