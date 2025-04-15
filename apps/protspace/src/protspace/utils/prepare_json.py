@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.manifold import MDS, TSNE
+from umap import UMAP
+from pacmap import PaCMAP, LocalMAP
 
 # Configure logging
 logging.basicConfig(format="%(levelname)s: %(message)s")
@@ -93,15 +95,13 @@ class DimensionReductionConfig:
                     )
 
     def parameters_by_method(self, method: str) -> List[Dict[str, Any]]:
-        from umap import UMAP
-        from pacmap import PaCMAP
-
         method_map = {
             "tsne": TSNE,
             "pca": PCA,
             "umap": UMAP,
             "pacmap": PaCMAP,
             "mds": MDS,
+            "localmap": LocalMAP,
         }
 
         if method not in method_map:
@@ -153,6 +153,8 @@ class DimensionReductionConfig:
                     continue  # Skip precomputed mds metric
                 if method == "umap" and param == "learning_rate":
                     continue  # Learning rate only used for tSNE
+                if method == "localmap" and param == "metric":
+                    continue  # LocalMAP does not use metric parameter
                 if param.lower() in lowercase_fields:
                     data_field = lowercase_fields[param.lower()]
                     field_type = type_hints.get(data_field.name, Any).__name__
@@ -250,8 +252,6 @@ class UMAPReducer(DimensionReducer):
     """UMAP (Uniform Manifold Approximation and Projection) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
-        from umap import UMAP
-
         return UMAP(
             n_components=self.config.n_components,
             n_neighbors=self.config.n_neighbors,
@@ -272,14 +272,32 @@ class PaCMAPReducer(DimensionReducer):
     """PaCMAP (Pairwise Controlled Manifold Approximation) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
-        from pacmap import PaCMAP
-
         return PaCMAP(
             n_components=self.config.n_components,
             n_neighbors=self.config.n_neighbors,
             MN_ratio=self.config.mn_ratio,
             FP_ratio=self.config.fp_ratio,
         ).fit_transform(data)
+
+    def get_params(self) -> Dict[str, Any]:
+        return {
+            "n_components": self.config.n_components,
+            "n_neighbors": self.config.n_neighbors,
+            "MN_ratio": self.config.mn_ratio,
+            "FP_ratio": self.config.fp_ratio,
+        }
+
+
+class LocalMAPReducer(DimensionReducer):
+    """LocalMAP (Local Manifold Approximation) reduction."""
+
+    def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        return LocalMAP(
+            n_components=self.config.n_components,
+            n_neighbors=self.config.n_neighbors,
+            MN_ratio=self.config.mn_ratio,
+            FP_ratio=self.config.fp_ratio,
+        ).fit_transform(data, init="pca")
 
     def get_params(self) -> Dict[str, Any]:
         return {
@@ -321,6 +339,7 @@ class DataProcessor:
         "umap": UMAPReducer,
         "pacmap": PaCMAPReducer,
         "mds": MDSReducer,
+        "localmap": LocalMAPReducer,
     }
 
     def __init__(self, config: Dict[str, Any]):
@@ -539,7 +558,7 @@ def main():
         "--methods",
         nargs="+",
         default=["pca2"],
-        help="Reduction methods to use (e.g., pca2, tsne3, mds2). Format: method_name + dimensions",
+        help="Reduction methods to use (e.g., pca2, tsne3, mds2, umap2, pacmap2, localmap2). Format: method_name + dimensions",
     )
 
     # Custom names
@@ -573,7 +592,7 @@ def main():
         "--n_neighbors",
         type=int,
         default=15,
-        help="Number of neighbors to consider (UMAP, PaCMAP)",
+        help="Number of neighbors to consider (UMAP, PaCMAP, LocalMAP)",
     )
     umap_group.add_argument(
         "--min_dist",
@@ -600,13 +619,13 @@ def main():
         "--mn_ratio",
         type=float,
         default=0.5,
-        help="MN ratio (Mid-near pairs ratio) for PaCMAP",
+        help="MN ratio (Mid-near pairs ratio) for PaCMAP and LocalMAP",
     )
     pacmap_group.add_argument(
         "--fp_ratio",
         type=float,
         default=2.0,
-        help="FP ratio (Further pairs ratio) for PaCMAP",
+        help="FP ratio (Further pairs ratio) for PaCMAP and LocalMAP",
     )
 
     # MDS parameters
