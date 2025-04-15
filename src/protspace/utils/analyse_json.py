@@ -2,6 +2,7 @@ import json
 import argparse
 from protspace.data_loader import JsonReader
 
+
 def print_dimensionality_reduction_info(reader: JsonReader, verbosity: int) -> None:
     """Print information about dimensionality reduction methods based on verbosity level."""
     projections = reader.get_projection_names()
@@ -23,6 +24,7 @@ def print_dimensionality_reduction_info(reader: JsonReader, verbosity: int) -> N
             for key, value in info["info"].items():
                 print(f"  - {key}: {value}")
 
+
 def print_feature_info(reader: JsonReader, verbosity: int) -> None:
     """Print feature information based on verbosity level."""
     features = reader.get_all_features()
@@ -36,8 +38,17 @@ def print_feature_info(reader: JsonReader, verbosity: int) -> None:
         unique_values = reader.get_unique_feature_values(feature)
         print(f"\nFeature: {feature}")
         print(f"Unique values: {len(unique_values)}")
-        if verbosity >= 2:
-            print("Values:", unique_values[:5], "..." if len(unique_values) > 5 else "")
+        # Print first 5 values for verbosity level 2
+        if verbosity == 2:
+            print(
+                "Values (first 5):",
+                unique_values[:5],
+                "..." if len(unique_values) > 5 else "",
+            )
+        # Print all values for verbosity level 3 or higher
+        elif verbosity >= 3:
+            print("Values (all):", unique_values)
+
 
 def print_visualization_info(reader: JsonReader) -> None:
     """Print information about feature colors and shapes if available."""
@@ -61,11 +72,17 @@ def print_visualization_info(reader: JsonReader) -> None:
             for value, shape in shapes.items():
                 print(f"  - {value}: {shape}")
 
+
 def main():
-    parser = argparse.ArgumentParser(description='Analyze ProtSpace JSON file.')
-    parser.add_argument('json_file', help='Path to the JSON file')
-    parser.add_argument('-v', '--verbose', action='count', default=0,
-                       help='Increase output verbosity (up to -vvv)')
+    parser = argparse.ArgumentParser(description="Analyze ProtSpace JSON file.")
+    parser.add_argument("json_file", help="Path to the JSON file")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase output verbosity (up to -vvv)",
+    )
     args = parser.parse_args()
 
     # Limit verbosity to 3
@@ -73,7 +90,7 @@ def main():
 
     try:
         # Read JSON file
-        with open(args.json_file, 'r') as f:
+        with open(args.json_file, "r") as f:
             data = json.load(f)
 
     except FileNotFoundError:
@@ -87,7 +104,7 @@ def main():
     reader = JsonReader(data)
 
     # Print basic statistics
-    print(f"Summary:")
+    print("Summary:")
     print(f"- Proteins: {len(reader.get_protein_ids())}")
     print(f"- Features: {len(reader.get_all_features())}")
     print(f"- Projections: {len(reader.get_projection_names())}")
