@@ -12,7 +12,7 @@ dependencies = [
     "matplotlib>=3.9.2",
     "scikit-learn>=1.5.2",
     "umap-learn>=0.5.7",
-    "pacmap>=0.7.6",
+    "pacmap>=0.8.0",
     "numpy>=1.23.0",
     "pandas>=2.0.0",
 ]
@@ -50,6 +50,7 @@ dev-dependencies = [
     "seaborn>=0.13.2",
     "pytest>=8.3.3",
     "polars>=1.26.0",
+    "taxopy>=0.14.0",
 ]
 
 [project.scripts]
