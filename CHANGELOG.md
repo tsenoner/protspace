@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v1.1.8 (2025-04-15)
+
+### Chores
+
+* chore: update notebooks to install protspace[frontend] ([`e5398b6`](https://github.com/tsenoner/protspace/commit/e5398b652971c026f09ed9458e168e481f7c19f5))
+
+### Documentation
+
+* docs: add note that external mode only works on Google Chrome ([`eb9dd10`](https://github.com/tsenoner/protspace/commit/eb9dd10b6986ba506cef40684e18558e30cf045a))
+
+* docs: add PfamExplorer notebook ([`67fc596`](https://github.com/tsenoner/protspace/commit/67fc5968b3461971cdaf8cd29c0e82f734fb3b36))
+
+* docs: update the README to reflect the changes in frontend dependencies ([`244b7ec`](https://github.com/tsenoner/protspace/commit/244b7ecf26d496c76e076401342fd6195813ccd9))
+
+### Fixes
+
+* fix(pca): switch to arpack solver for numerical stability
+
+Resolves `RuntimeWarning`s during PCA on `float16` embeddings by using `svd_solver='arpack'`. Removed prior dtype casting attempts. ([`0bf5b21`](https://github.com/tsenoner/protspace/commit/0bf5b21d06ac9f97aa2fb463b5a2b41f03ebaca8))
+
+### Unknown
+
+* example(pfamExplorer): extend description ([`8887d54`](https://github.com/tsenoner/protspace/commit/8887d54e733fd24da6fa1f4b981a3849cecaf38b))
+
+* example(pfamExplorer): add option to download generated JSON file ([`e5ba1cb`](https://github.com/tsenoner/protspace/commit/e5ba1cb4b3d0325fd2d806e84d74d513bfe34847))
+
+
 ## v1.1.7 (2025-03-28)
 
 ### Fixes
