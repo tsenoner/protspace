@@ -41,7 +41,7 @@ numpy==2.0.2
     #   umap-learn
 packaging==24.2
     # via matplotlib
-pacmap==0.7.6
+pacmap==0.8.0
     # via protspace (pyproject.toml)
 pandas==2.2.3
     # via protspace (pyproject.toml)
