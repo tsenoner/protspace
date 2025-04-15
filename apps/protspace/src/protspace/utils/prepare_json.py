@@ -189,19 +189,41 @@ class DimensionReducer(ABC):
 
 
 class PCAReducer(DimensionReducer):
-    """Principal Component Analysis reduction."""
+    """Principal Component Analysis reduction, preferring ARPACK solver."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
-        pca = PCA(n_components=self.config.n_components)
-        result = pca.fit_transform(data)
-        self.explained_variance = pca.explained_variance_ratio_.tolist()
-        return result
+        solver = "arpack"
+        n_samples, n_features = data.shape
+        k = self.config.n_components
+
+        # ARPACK requires n_components < min(shape), fallback to full SVD otherwise
+        if k >= min(n_samples, n_features):
+            logger.warning(
+                f"PCA: n_components ({k}) >= min(shape) ({min(n_samples, n_features)}). "
+                f"'arpack' solver unavailable, falling back to 'full' solver."
+            )
+            solver = "full"
+
+        pca = PCA(n_components=k, svd_solver=solver)
+        try:
+            result = pca.fit_transform(data)
+            self.explained_variance = pca.explained_variance_ratio_.tolist()
+            self.used_solver = solver  # Store the solver that was actually used
+            return result
+        except Exception as e:
+            logger.error(f"PCA failed using '{solver}' solver: {e}")
+            raise
 
     def get_params(self) -> Dict[str, Any]:
-        return {
+        """Get parameters used for the reduction."""
+        params = {
             "n_components": self.config.n_components,
-            "explained_variance_ratio": self.explained_variance,
+            # Report the solver used, default to 'arpack' if not set yet
+            "svd_solver": getattr(self, "used_solver", "arpack"),
         }
+        if hasattr(self, "explained_variance"):
+            params["explained_variance_ratio"] = self.explained_variance
+        return params
 
 
 class TSNEReducer(DimensionReducer):
