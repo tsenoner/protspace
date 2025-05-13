@@ -5,10 +5,11 @@ import csv
 from bioservices import UniProt
 import pandas as pd
 
-from ..config import FEATURES
-
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+# UniProt features
+FEATURES = ['id', 'accession', 'protein_existence', 'annotation_score']
 
 class ProteinFeatureExtractor:
     def __init__(
