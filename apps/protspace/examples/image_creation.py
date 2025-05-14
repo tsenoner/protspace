@@ -4,28 +4,34 @@ from pathlib import Path
 
 def main():
     # Path to the JSON file
-    json_file = "data/gfp/protspace/gfp_style.json"
+    json_file = "data/toxins/processed_data/toxins_generated.json"
 
     # Initialize the ProtSpaceApp
     protspace = ProtSpace(default_json_file=json_file)
 
+    # --- Print available projection names --- Uncomment if needed
+
+    # if protspace.default_json_data:
+    #     from protspace.data_loader import JsonReader
+    #     reader = JsonReader(protspace.default_json_data)
+    #     print("Available projection names:", reader.get_projection_names())
+
     # Generate images for specific projections and features
     projections = [
-        "prott5_umap2",
-        "prott5_umap3",
-        "seq_sim_umap2",
-        "seq_sim_mds2",
-        "struct_sim_umap2",
-        "struct_sim_mds2",
+        "PCA_2"
     ]
-    features = ["nr_mutations", "brightness_category"]
+    features = ["protein_existence", "annotation_score"]
+
+    # Create the output directory if it doesn't exist
+    output_dir = Path("examples/out/automatic_projections")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     for projection in projections:
         for feature in features:
             protspace.generate_plot(
                 projection=projection,
                 feature=feature,
-                filename=Path("examples/out/gfp") / f"{projection}_{feature}",
+                filename=output_dir / f"{projection}_{feature}",
                 width=1600,
                 height=1000,
             )
