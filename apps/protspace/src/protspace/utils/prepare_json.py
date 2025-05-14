@@ -45,40 +45,34 @@ class DataProcessor:
             self.config.pop(arg, None)
         self.identifier_col = "identifier"
         self.custom_names = config.get("custom_names", {})
-
+    
     def load_data(
-        self, input_path: Path, metadata: Union[Path, List], delimiter: str
+        self,
+        input_path: Path,
+        metadata: Union[Path, List], # If list, generates csv from uniprot features
+        delimiter: str
     ) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
-        """Load and align input data with metadata, handling missing values gracefully."""
-        # Log the delimiter being used
-        logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
+        
+        data, headers = self._load_input_file(input_path)
+        metadata = self._load_or_generate_metadata(headers, metadata, input_path, delimiter)
 
-        # Load metadata if available
-        try:
-            # csv generation logic
-            if isinstance(metadata, list):
-                logger.info(f"Setting ',' as delimiter since using automatic csv output")
-                if input_path.is_file():
-                    csv_output = input_path.parent / "metadata.csv"
-                else:
-                    csv_output = input_path / "metadata.csv"
-                
-                metadata = ProteinFeatureExtractor(
-                    input_path=input_path,
-                    features=metadata,
-                    csv_output=csv_output
-                ).to_pd()
-            # csv loading logic
-            else:
-                logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                metadata = pd.read_csv(metadata, delimiter=delimiter).convert_dtypes()
-        except Exception as e:
-            logger.warning(
-                f"Could not load metadata ({str(e)}) - creating empty metadata"
+        # Create full metadata with NaN for missing entries
+        full_metadata = pd.DataFrame({"identifier": headers})
+        if len(metadata.columns) > 1:
+            metadata = metadata.astype(str)
+            full_metadata = full_metadata.merge(
+                metadata.drop_duplicates("identifier"),
+                on="identifier",
+                how="left",
             )
-            metadata = pd.DataFrame(columns=["identifier"])
 
-        # Load input data based on file extension
+        return full_metadata, data, headers
+    
+    def _load_input_file(
+        self,
+        input_path: Path
+    ) -> Tuple[np.ndarray, List[str]]:
+        
         if input_path.suffix.lower() in EMBEDDING_EXTENSIONS:
             logger.info("Loading embeddings from HDF file")
             data, headers = [], []
@@ -88,6 +82,8 @@ class DataProcessor:
                     data.append(emb)
                     headers.append(header)
             data = np.array(data)
+            
+            return data, headers
 
         elif input_path.suffix.lower() == ".csv":
             logger.info("Loading similarity matrix from CSV file")
@@ -107,22 +103,50 @@ class DataProcessor:
                 )
                 data = (data + data.T) / 2
 
+            return data, headers
+
         else:
             raise ValueError(
                 "Input file must be either HDF (.hdf, .hdf5, .h5) or CSV (.csv)"
             )
 
-        # Create full metadata with NaN for missing entries
-        full_metadata = pd.DataFrame({"identifier": headers})
-        if len(metadata.columns) > 1:
-            metadata = metadata.astype(str)  # Convert all columns to strings
-            full_metadata = full_metadata.merge(
-                metadata.drop_duplicates("identifier"),
-                on="identifier",
-                how="left",
-            )
+    @staticmethod
+    def _load_or_generate_metadata(
+        headers: List[str],
+        metadata: str,
+        input_path: Path,
+        delimiter: str
+    ) -> pd.DataFrame:
 
-        return full_metadata, data, headers
+        try:
+            # csv generation logic
+            if metadata.endswith(".csv"):
+                logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
+                metadata = pd.read_csv(metadata, delimiter=delimiter).convert_dtypes()
+
+            else:
+                features = [feature.strip() for feature in metadata.split(",")]
+                logger.info(f"Setting ',' as delimiter since using automatic csv output")
+
+                input_path = input_path.absolute()
+                if input_path.is_file():
+                    csv_output = input_path.parent / "metadata.csv"
+                else:
+                    csv_output = input_path / "metadata.csv"
+                
+                metadata = ProteinFeatureExtractor(
+                    headers=headers,
+                    features=features,
+                    csv_output=csv_output
+                ).to_pd()
+
+        except Exception as e:
+            logger.warning(
+                f"Could not load metadata ({str(e)}) - creating empty metadata"
+            )
+            metadata = pd.DataFrame(columns=["identifier"])
+
+        return metadata
 
     def process_reduction(
         self, data: np.ndarray, method: str, dims: int
@@ -237,7 +261,7 @@ def main():
     parser.add_argument(
         "-m",
         "--metadata",
-        type=Path,
+        type=str,
         required=True,
         help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix)",
     )
