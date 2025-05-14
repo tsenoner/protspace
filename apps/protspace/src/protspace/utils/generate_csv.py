@@ -1,5 +1,6 @@
 import csv
 import pandas as pd
+from tqdm import tqdm
 from typing import List
 from pathlib import Path
 from bioservices import UniProt
@@ -31,12 +32,11 @@ class ProteinFeatureExtractor:
         return pd.read_csv(self.csv_output)
     
     def get_uniprot_features(self) -> str:
-        self.headers = self.headers[:10]
         batch_size = 100
         all_data = []
         first_batch = True
         
-        for i in range(0, len(self.headers), batch_size):
+        for i in tqdm(range(0, len(self.headers), batch_size), desc="Fetching UniProt features", unit="batch"):
             batch = self.headers[i:i+batch_size]
             query = '+OR+'.join([f"accession:{accession}" for accession in batch])
             columns = ','.join(self.features)
