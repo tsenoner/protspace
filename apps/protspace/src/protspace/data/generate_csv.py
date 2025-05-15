@@ -73,7 +73,7 @@ class ProteinFeatureExtractor:
 
     def _manage_headers(self, headers: List[str]) -> List[str]:
         managed_headers = []
-        prefixes = [">sp|", ">tr|", "sp|", "tr|"]
+        prefixes = ["sp|", "tr|"]
         for header in headers:
             header_lower = header.lower()
             if any(header_lower.startswith(prefix) for prefix in prefixes):
