@@ -1,6 +1,7 @@
 __version__ = "1.2.0"
 
-from .utils import add_feature_style, prepare_json
+from .data import prepare_json
+from .utils import add_feature_style
 
 __all__ = ["prepare_json", "add_feature_style"]
 
