@@ -36,23 +36,25 @@ class ProteinFeatureExtractor:
         all_data = []
         first_batch = True
         
-        for i in tqdm(range(0, len(self.headers), batch_size), desc="Fetching UniProt features", unit="batch"):
-            batch = self.headers[i:i+batch_size]
-            query = '+OR+'.join([f"accession:{accession}" for accession in batch])
-            columns = ','.join(self.features)
-            
-            data = self.u.search(
-                query=query,
-                columns=columns
-            )
-            
-            if data:
-                if first_batch:
-                    all_data.append(data)
-                    first_batch = False
-                else:
-                    # Skip the header
-                    all_data.append('\n'.join(data.strip().split('\n')[1:]))
+        with tqdm(total=len(self.headers), desc="Fetching UniProt features", unit="seq") as pbar:
+            for i in range(0, len(self.headers), batch_size):
+                batch = self.headers[i:i+batch_size]
+                query = '+OR+'.join([f"accession:{accession}" for accession in batch])
+                columns = ','.join(self.features)
+                
+                data = self.u.search(
+                    query=query,
+                    columns=columns
+                )
+                
+                if data:
+                    if first_batch:
+                        all_data.append(data)
+                        first_batch = False
+                    else:
+                        all_data.append('\n'.join(data.strip().split('\n')[1:]))
+                
+                pbar.update(len(batch))
         
         fetched_data = '\n'.join(all_data) if all_data else ""
         return fetched_data
