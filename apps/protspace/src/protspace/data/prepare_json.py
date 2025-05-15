@@ -126,7 +126,6 @@ class DataProcessor:
 
             else:
                 features = [feature.strip() for feature in metadata.split(",")]
-                logger.info(f"Setting ',' as delimiter since using automatic csv output")
 
                 input_path = input_path.absolute()
                 if input_path.is_file():
@@ -263,7 +262,7 @@ def main():
         "--metadata",
         type=str,
         required=True,
-        help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix)",
+        help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix). If want to generate CSV from UniProt features, use the following format: feature1,feature2,...",
     )
     parser.add_argument(
         "-o",
@@ -283,17 +282,17 @@ def main():
     # Reduction methods
     parser.add_argument(
         "--methods",
-        nargs="+",
-        default=["pca2"],
-        help=f"Reduction methods to use (e.g., {', '.join([m+'2' for m in ALL_METHODS])}). Format: method_name + dimensions",
+        type=str,
+        default="pca2",
+        help=f"Reduction methods to use (e.g., {','.join([m+'2' for m in ALL_METHODS])}). Format: method_name + dimensions",
     )
 
     # Custom names
     parser.add_argument(
         "--custom_names",
-        nargs="+",
-        metavar="METHOD=NAME",
-        help="Custom names for projections in format METHOD=NAME (e.g., pca2=PCA_2D)",
+        type=str,
+        metavar="METHOD1=NAME1,METHOD2=NAME2",
+        help="Custom names for projections in format METHOD=NAME separated by commas without spaces (e.g., pca2=PCA_2D,tsne2=t-SNE_2D)",
     )
 
     # Verbosity control
@@ -379,9 +378,10 @@ def main():
     args = parser.parse_args()
 
     # Process custom names
+    custom_names_list = args.custom_names.split(",")
     custom_names = {}
-    if args.custom_names:
-        for name_spec in args.custom_names:
+    if custom_names_list:
+        for name_spec in custom_names_list:
             try:
                 method, name = name_spec.split("=")
                 custom_names[method] = name
@@ -405,8 +405,9 @@ def main():
         )
 
         # Process each method
+        methods_list = args.methods.split(',')
         reductions = []
-        for method_spec in args.methods:
+        for method_spec in methods_list:
             method = "".join(filter(str.isalpha, method_spec))
             dims = int("".join(filter(str.isdigit, method_spec)))
 
@@ -424,7 +425,7 @@ def main():
         output = processor.create_output(metadata, reductions, headers)
         save_output(output, args.output)
         logger.info(
-            f"Successfully processed {len(headers)} items using {len(args.methods)} reduction methods"
+            f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
         )
 
     except Exception as e:
