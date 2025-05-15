@@ -8,9 +8,9 @@ import dash_bootstrap_components as dbc
 from dash import Dash
 
 from .callbacks import setup_callbacks
-from .layout import create_layout
-from .utils import JsonReader, prepare_dataframe
-from .plotting import create_styled_plot, save_plot
+from ..ui.layout import create_layout
+from ..utils import JsonReader, prepare_dataframe
+from ..visualization.plotting import create_styled_plot, save_plot
 
 
 class ProtSpace:
