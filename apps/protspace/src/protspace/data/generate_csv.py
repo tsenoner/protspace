@@ -69,7 +69,8 @@ class ProteinFeatureExtractor:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
             for row in data_rows:
-                writer.writerow(row)
+                modified_row = self._modify_if_needed(row, csv_headers)
+                writer.writerow(modified_row)
 
     def _manage_headers(self, headers: List[str]) -> List[str]:
         managed_headers = []
@@ -92,3 +93,21 @@ class ProteinFeatureExtractor:
             features.remove("accession")
 
         return ["accession"] + features
+    
+    def _modify_if_needed(
+        self,
+        row: List,
+        csv_headers: List
+    ) -> List:
+        
+        modified_row = row.copy()
+        
+        if 'annotation_score' in csv_headers:
+            idx = csv_headers.index('annotation_score')
+            if idx < len(row) and row[idx]:
+                try:
+                    modified_row[idx] = str(int(float(row[idx])))
+                except (ValueError, TypeError):
+                    pass
+                    
+        return modified_row
