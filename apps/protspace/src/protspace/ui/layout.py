@@ -3,9 +3,9 @@ from dash import dcc, html
 from dash_bio import NglMoleculeViewer
 from dash_iconify import DashIconify
 
-from .config import MARKER_SHAPES, MARKER_SHAPES_2D
-from .utils import JsonReader
-from .layout_help import create_help_menu
+from ..config import MARKER_SHAPES, MARKER_SHAPES_2D
+from ..utils import JsonReader
+from .help import create_help_menu
 
 
 def create_layout(app):
