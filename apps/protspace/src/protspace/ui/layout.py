@@ -47,7 +47,7 @@ def create_layout(app):
         # Left: Rostlab logo
         html.A(
             html.Img(
-                src="assets/Helix simple flat.png",
+                src="/assets/rostlab_logo.png",
                 style={
                     "height": "60px",  # Maintain consistent height with GitHub icon
                     "width": "auto",   # Maintain aspect ratio
