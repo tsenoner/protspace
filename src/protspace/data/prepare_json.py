@@ -2,14 +2,14 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union, Tuple, Literal
+from typing import Any, Dict, List, Union, Tuple
 
 import h5py
 import numpy as np
 import pandas as pd
 
-from .reducers import *
-from ..utils.generate_csv import ProteinFeatureExtractor
+from ..utils.reducers import *
+from .generate_csv import ProteinFeatureExtractor
 
 # Configure logging
 logging.basicConfig(format="%(levelname)s: %(message)s")

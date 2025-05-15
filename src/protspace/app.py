@@ -9,8 +9,7 @@ from dash import Dash
 
 from .callbacks import setup_callbacks
 from .layout import create_layout
-from .data_loader import JsonReader
-from .data_processing import prepare_dataframe
+from .utils import JsonReader, prepare_dataframe
 from .plotting import create_styled_plot, save_plot
 
 

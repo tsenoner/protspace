@@ -11,8 +11,7 @@ from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
 from .config import NAN_COLOR, MARKER_SHAPES
-from .data_loader import JsonReader
-from .data_processing import prepare_dataframe
+from .utils import JsonReader, prepare_dataframe
 from .plotting import create_2d_plot, create_3d_plot, save_plot
 
 

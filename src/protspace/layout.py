@@ -4,7 +4,7 @@ from dash_bio import NglMoleculeViewer
 from dash_iconify import DashIconify
 
 from .config import MARKER_SHAPES, MARKER_SHAPES_2D
-from .data_loader import JsonReader
+from .utils import JsonReader
 from .layout_help import create_help_menu
 
 

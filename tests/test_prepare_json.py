@@ -5,7 +5,7 @@ import pytest
 from numpy.testing import assert_array_almost_equal
 from scipy.spatial.distance import pdist, squareform
 
-from protspace.utils.prepare_json import DataProcessor
+from src.protspace.data.prepare_json import DataProcessor
 
 # Constants
 N_SAMPLES = 100
