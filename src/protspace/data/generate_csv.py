@@ -21,7 +21,7 @@ class ProteinFeatureExtractor:
         features: List,
         csv_output: Path
     ):
-        self.headers = headers
+        self.headers = self._manage_headers(headers)
         self.features = FEATURES if features is None else self._validate_features(features)
         self.u = UniProt(verbose=False)
         self.csv_output = csv_output
@@ -68,6 +68,18 @@ class ProteinFeatureExtractor:
             writer.writerow(csv_headers)
             for row in data_rows:
                 writer.writerow(row)
+
+    def _manage_headers(self, headers: List[str]) -> List[str]:
+        managed_headers = []
+        prefixes = [">sp|", ">tr|", "sp|", "tr|"]
+        for header in headers:
+            header_lower = header.lower()
+            if any(header_lower.startswith(prefix) for prefix in prefixes):
+                accession = header.split("|")[1]
+                managed_headers.append(accession)
+            else:
+                managed_headers.append(header)
+        return managed_headers
         
     def _validate_features(self, features: List) -> str:
         for feature in features:
