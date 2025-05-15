@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "h5py>=3.12.1",
     "matplotlib>=3.9.2",
-    "scikit-learn>=1.5.2",
+    "scikit-learn>=1.6.1",
     "umap-learn>=0.5.7",
     "pacmap>=0.8.0",
     "numpy>=1.23.0",
