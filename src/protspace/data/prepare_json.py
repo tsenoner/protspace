@@ -378,9 +378,9 @@ def main():
     args = parser.parse_args()
 
     # Process custom names
-    custom_names_list = args.custom_names.split(",")
     custom_names = {}
-    if custom_names_list:
+    if args.custom_names:
+        custom_names_list = args.custom_names.split(",")
         for name_spec in custom_names_list:
             try:
                 method, name = name_spec.split("=")
