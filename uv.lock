@@ -2642,6 +2642,7 @@ dependencies = [
     { name = "pacmap" },
     { name = "pandas" },
     { name = "scikit-learn" },
+    { name = "taxopy" },
     { name = "tqdm" },
     { name = "umap-learn" },
 ]
@@ -2700,6 +2701,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'frontend'", specifier = ">=5.24.1" },
     { name = "python-dotenv", marker = "extra == 'frontend'", specifier = ">=1.0.1" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
+    { name = "taxopy", specifier = ">=0.14.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "umap-learn", specifier = ">=0.5.7" },
 ]
