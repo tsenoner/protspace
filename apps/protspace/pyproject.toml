@@ -17,6 +17,7 @@ dependencies = [
     "pandas>=2.0.0",
     "bioservices>=1.12.1",
     "tqdm>=4.67.1",
+    "taxopy>=0.14.0",
 ]
 
 [project.optional-dependencies]
