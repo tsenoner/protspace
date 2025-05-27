@@ -9,6 +9,8 @@
 **/pdb/
 **/foldcomp/
 /data/light_attention
+/data/cath/
+/data/ec/
 # h_sapiens
 /data/h_sapiens
 /data/h_sapiens/embs/
