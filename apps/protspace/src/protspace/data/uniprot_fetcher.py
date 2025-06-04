@@ -24,7 +24,6 @@ class UniProtFetcher:
         self.u = UniProt(verbose=False)
     
     def fetch_features(self) -> List[NamedTuple]:
-        self.headers = self.headers[:10]
         batch_size = 100
         all_data = []
         first_batch = True
