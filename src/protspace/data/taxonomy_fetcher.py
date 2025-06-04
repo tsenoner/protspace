@@ -2,13 +2,17 @@ import logging
 from typing import List, Dict, Any
 from pathlib import Path
 from tqdm import tqdm
+from datetime import datetime, timedelta
 import taxopy
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Taxonomy features 
-TAXONOMY_FEATURES = ['taxon_name', 'genus']
+TAXONOMY_FEATURES = [
+    'taxon_name', 'superkingdom', 'kingdom', 'phylum',
+    'class', 'order','family', 'genus', 'species'
+]
 
 class TaxonomyFetcher:
     def __init__(
@@ -17,7 +21,7 @@ class TaxonomyFetcher:
         features: List = None
     ):
         self.taxon_ids = self._validate_taxon_ids(taxon_ids)
-        self.features = features or TAXONOMY_FEATURES
+        self.features = features
         self.taxdb = self._initialize_taxdb()
     
     def fetch_features(self) -> Dict[int, Dict[str, Any]]:
@@ -54,17 +58,21 @@ class TaxonomyFetcher:
                 taxon = taxopy.Taxon(taxon_id, self.taxdb)
                 ranks = taxon.rank_name_dictionary
 
-                taxonomy_info = {
+                # Fetch all available taxonomy information
+                full_taxonomy_info = {
                     "taxon_name": taxon.name,
-                    # "superkingdom": ranks.get("superkingdom", ""),
-                    # "kingdom": ranks.get("kingdom", ""),
-                    # "phylum": ranks.get("phylum", ""),
-                    # "class": ranks.get("class", ""),
-                    # "order": ranks.get("order", ""),
-                    # "family": ranks.get("family", ""),
+                    "superkingdom": ranks.get("superkingdom", ""),
+                    "kingdom": ranks.get("kingdom", ""),
+                    "phylum": ranks.get("phylum", ""),
+                    "class": ranks.get("class", ""),
+                    "order": ranks.get("order", ""),
+                    "family": ranks.get("family", ""),
                     "genus": ranks.get("genus", ""),
-                    # "species": ranks.get("species", "")
+                    "species": ranks.get("species", "")
                 }
+                
+                # Filter based on requested features
+                taxonomy_info = {feature: full_taxonomy_info.get(feature, "") for feature in self.features}
                 
                 result[taxon_id] = taxonomy_info
                 
@@ -81,17 +89,48 @@ class TaxonomyFetcher:
         nodes_file = db_dir / "nodes.dmp"
         names_file = db_dir / "names.dmp"
         merged_file = db_dir / "merged.dmp"
+        timestamp_file = db_dir / ".download_timestamp"
+        
+        # Check if cache needs refresh based on timestamp file
+        needs_refresh = False
+        if timestamp_file.exists():
+            try:
+                with open(timestamp_file, 'r') as f:
+                    download_time = datetime.fromisoformat(f.read().strip())
+                one_week_ago = datetime.now() - timedelta(weeks=1)
+                
+                if download_time < one_week_ago:
+                    logger.info("Your taxonomy dataset is more than one week old. Refreshing cache...")
+                    print("Your taxonomy dataset is more than one week old. Refreshing cache...")
+                    needs_refresh = True
+            except (ValueError, OSError) as e:
+                logger.warning(f"Could not read timestamp file: {e}. Will refresh cache.")
+                print(f"Could not read timestamp file: {e}. Will refresh cache.")
+                needs_refresh = True
+        else:
+            # No timestamp file means we should download
+            needs_refresh = True
+        
+        # Remove old files if refresh is needed
+        if needs_refresh:
+            for file_path in [nodes_file, names_file, merged_file, timestamp_file]:
+                if file_path.exists():
+                    file_path.unlink()
         
         # Load or download the database
-        if nodes_file.exists() and names_file.exists():
+        if nodes_file.exists() and names_file.exists() and not needs_refresh:
             logger.info(f"Loading existing taxopy database from {db_dir}")
             taxdb = taxopy.TaxDb(
                 nodes_dmp=str(nodes_file),
                 names_dmp=str(names_file),
-                merged_dmp=str(merged_file),
+                merged_dmp=str(merged_file) if merged_file.exists() else None,
             )
         else:
             logger.info(f"Downloading taxopy database to {db_dir}")
             taxdb = taxopy.TaxDb(taxdb_dir=str(db_dir), keep_files=True)
+            
+            # Create timestamp file after successful download
+            with open(timestamp_file, 'w') as f:
+                f.write(datetime.now().isoformat())
         
         return taxdb
