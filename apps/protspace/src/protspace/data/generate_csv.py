@@ -84,10 +84,25 @@ class ProteinFeatureExtractor:
                     modified_row[idx] = str(int(float(row[idx])))
                 except (ValueError, TypeError):
                     pass
+        
+        if 'protein_families' in csv_headers:
+            idx = csv_headers.index('protein_families')
+            if idx < len(row) and row[idx]:
+                protein_families_value = str(row[idx])
+                
+                if ',' in protein_families_value:
+                    modified_row[idx] = protein_families_value.split(',')[0].strip()
+                elif ';' in protein_families_value:
+                    modified_row[idx] = protein_families_value.split(';')[0].strip()
+                else:
+                    modified_row[idx] = protein_families_value
                     
         return modified_row
     
     def _initialize_features(self, features: List[str]) -> Tuple[List[str], Union[List[str], None]]:
+        """
+        Validates the features and separate them into UniProt and Taxonomy features.
+        """
         
         self._validate_features(features)
 
@@ -113,6 +128,9 @@ class ProteinFeatureExtractor:
         user_features: List[str],
         default_features: List[str] = DEFAULT_FEATURES
     ) -> str:
+        """
+        Checks if the user provided features which are available.
+        """
         for feature in user_features:
             if feature not in default_features:
                 raise ValueError(f"Feature {feature} is not a valid feature. Valid features are: {default_features}")
