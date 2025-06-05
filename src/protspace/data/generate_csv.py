@@ -1,5 +1,6 @@
 import csv
 import pandas as pd
+import numpy as np
 from typing import List, Union, Tuple
 from pathlib import Path
 
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FEATURES = UNIPROT_FEATURES + TAXONOMY_FEATURES
 NEEDED_UNIPROT_FEATURES = ["accession", "organism_id"]
+LENGTH_BINNING_FEATURES = ['length_fixed', 'length_quantile']
 
 class ProteinFeatureExtractor:
     def __init__(
@@ -22,7 +24,8 @@ class ProteinFeatureExtractor:
         csv_output: Path = None
     ):
         self.headers = headers
-        self.uniprot_features, self.taxonomy_features = self._initialize_features(features)
+        self.user_features = self._validate_features(features) if features else None
+        self.uniprot_features, self.taxonomy_features = self._initialize_features(DEFAULT_FEATURES)
         self.csv_output = csv_output
 
     def to_pd(self) -> pd.DataFrame:
@@ -36,17 +39,30 @@ class ProteinFeatureExtractor:
         all_features = self._merge_features(fetched_uniprot, taxonomy_features)
 
         self.save_csv(all_features)
-        return pd.read_csv(self.csv_output)
+        
+        df = pd.read_csv(self.csv_output)
+
+        if self.user_features:
+            columns_to_keep = [df.columns[0]]
+            for feature in self.user_features:
+                if feature in df.columns:
+                    columns_to_keep.append(feature)
+            
+            return df[columns_to_keep]
+        else:
+            return df
     
     def get_uniprot_features(self, headers: List[str], features: List[str]) -> List[ProteinFeatures]:
         uniprot_fetcher = UniProtFetcher(headers, features)
-        return uniprot_fetcher.fetch_features() 
+        return uniprot_fetcher.fetch_features()
     
     def get_taxonomy_features(self, taxons: List[int], features: List[str]) -> str:
         taxonomy_fetcher = TaxonomyFetcher(taxons, features)
         return taxonomy_fetcher.fetch_features()
     
     def save_csv(self, fetched_uniprot: List[ProteinFeatures]):
+        fetched_uniprot = self._compute_length_bins(fetched_uniprot)
+        
         with open(self.csv_output, 'w', newline='') as f:
             writer = csv.writer(f)
             csv_headers = ["identifier"] + list(fetched_uniprot[0].features.keys()) if fetched_uniprot else ["identifier"]
@@ -56,6 +72,108 @@ class ProteinFeatureExtractor:
                 row = [protein.identifier] + [protein.features.get(header, '') for header in csv_headers[1:]]
                 modified_row = self._modify_if_needed(row, csv_headers)
                 writer.writerow(modified_row)
+    
+    def _compute_length_bins(self, fetched_uniprot: List[ProteinFeatures]) -> List[ProteinFeatures]:
+        """Compute length-based binning features for all proteins."""
+        lengths = []
+        for protein in fetched_uniprot:
+            length_str = protein.features.get('length', '')
+            if length_str and length_str.isdigit():
+                lengths.append(int(length_str))
+            else:
+                lengths.append(None)
+        
+        fixed_bins = self._compute_fixed_bins(lengths)
+        quantile_bins = self._compute_quantile_bins(lengths, 10)
+        
+        updated_proteins = []
+        for i, protein in enumerate(fetched_uniprot):
+            updated_features = protein.features.copy()
+            
+            updated_features['length_fixed'] = fixed_bins[i]
+            updated_features['length_quantile'] = quantile_bins[i]
+            
+            del updated_features['length']
+            
+            updated_proteins.append(ProteinFeatures(
+                identifier=protein.identifier,
+                features=updated_features
+            ))
+        
+        return updated_proteins
+    
+    def _compute_fixed_bins(self, lengths: List[Union[int, None]]) -> List[str]:
+        """Compute fixed bins with predefined ranges."""
+        fixed_ranges = [
+            (0, 50, "<50"),
+            (50, 100, "50-100"),
+            (100, 200, "100-200"),
+            (200, 400, "200-400"),
+            (400, 600, "400-600"),
+            (600, 800, "600-800"),
+            (800, 1000, "800-1000"),
+            (1000, 1200, "1000-1200"),
+            (1200, 1400, "1200-1400"),
+            (1400, 1600, "1400-1600"),
+            (1600, 1800, "1600-1800"),
+            (1800, 2000, "1800-2000"),
+            (2000, float('inf'), "2000+")
+        ]
+        
+        bins = []
+        for length in lengths:
+            if length is None:
+                bins.append('unknown')
+            else:
+                assigned = False
+                for min_val, max_val, label in fixed_ranges:
+                    if min_val <= length < max_val:
+                        bins.append(label)
+                        assigned = True
+                        break
+                if not assigned:
+                    bins.append('2000+')
+        
+        return bins
+    
+    def _compute_quantile_bins(self, lengths: List[Union[int, None]], num_bins: int) -> List[str]:
+        """Compute quantile-based bins where each bin has approximately the same number of sequences."""
+        valid_lengths = [l for l in lengths if l is not None]
+        if not valid_lengths:
+            return ['unknown'] * len(lengths)
+        
+        sorted_lengths = sorted(valid_lengths)
+        
+        quantiles = np.linspace(0, 100, num_bins + 1)
+        boundaries = np.percentile(sorted_lengths, quantiles)
+        
+        unique_boundaries = []
+        for i, boundary in enumerate(boundaries):
+            if i == 0 or boundary != unique_boundaries[-1]:
+                unique_boundaries.append(boundary)
+        
+        if len(unique_boundaries) < 2:
+            return [f"{int(valid_lengths[0])}" if l is not None else 'unknown' for l in lengths]
+        
+        bins = []
+        for length in lengths:
+            if length is None:
+                bins.append('unknown')
+            else:
+                bin_index = np.searchsorted(unique_boundaries[1:], length, side='right')
+                bin_index = min(bin_index, len(unique_boundaries) - 2)  # Ensure we don't go out of bounds
+                
+                bin_start = int(unique_boundaries[bin_index])
+                bin_end = int(unique_boundaries[bin_index + 1])
+                
+                if bin_index == len(unique_boundaries) - 2:
+                    # Last bin - include the maximum value
+                    bins.append(f"{bin_start}-{bin_end}")
+                else:
+                    # All other bins are right-exclusive
+                    bins.append(f"{bin_start}-{bin_end - 1}")
+        
+        return bins
     
     def _get_taxon_counts(self, fetched_uniprot: List[ProteinFeatures]) -> dict:
         """Returns a dictionary with organism IDs as keys and their occurrence counts as values."""
@@ -101,11 +219,9 @@ class ProteinFeatureExtractor:
     
     def _initialize_features(self, features: List[str]) -> Tuple[List[str], Union[List[str], None]]:
         """
-        Validates the features and separate them into UniProt and Taxonomy features.
+        Separates features into UniProt and Taxonomy features.
         """
         
-        self._validate_features(features)
-
         uniprot_features = [feature for feature in features if feature in UNIPROT_FEATURES]
         taxonomy_features = [feature for feature in features if feature in TAXONOMY_FEATURES]
 
@@ -126,14 +242,19 @@ class ProteinFeatureExtractor:
     def _validate_features(
         self,
         user_features: List[str],
-        default_features: List[str] = DEFAULT_FEATURES
+        all_features: List[str] = DEFAULT_FEATURES + LENGTH_BINNING_FEATURES
     ) -> str:
         """
         Checks if the user provided features which are available.
         """
+        if user_features is None:
+            return None
+        
         for feature in user_features:
-            if feature not in default_features:
-                raise ValueError(f"Feature {feature} is not a valid feature. Valid features are: {default_features}")
+            if feature not in all_features:
+                raise ValueError(f"Feature {feature} is not a valid feature. Valid features are: {all_features}")
+        
+        return user_features
     
     def _modify_uniprot_features(self, features: List[str]) -> List[str]:
         filtered_features = [f for f in features if f not in NEEDED_UNIPROT_FEATURES]
