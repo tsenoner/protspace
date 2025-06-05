@@ -9,7 +9,11 @@ logger = logging.getLogger(__name__)
 
 # UniProt features
 # TODO: Add more features
-UNIPROT_FEATURES = ['protein_existence', 'annotation_score', 'protein_families']
+UNIPROT_FEATURES = [
+    'protein_existence', 'annotation_score', 'protein_families', 'length',
+    'reviewed', 'fragment', 'ft_signal', 'cc_subcellular_location', 'ft_intramem',
+    'ft_topo_dom', 'ft_transmem'
+]
 
 ProteinFeatures = namedtuple('ProteinFeatures', ['identifier', 'features'])
 

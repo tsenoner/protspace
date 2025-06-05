@@ -120,12 +120,15 @@ class DataProcessor:
 
         try:
             # csv generation logic
-            if metadata.endswith(".csv"):
+            if metadata and metadata.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
                 metadata = pd.read_csv(metadata, delimiter=delimiter).convert_dtypes()
 
             else:
-                features = [feature.strip() for feature in metadata.split(",")]
+                if metadata:
+                    features = [feature.strip() for feature in metadata.split(",")]
+                else:
+                    features = None  # No specific features requested, use all
 
                 input_path = input_path.absolute()
                 if input_path.is_file():
@@ -261,7 +264,8 @@ def main():
         "-m",
         "--metadata",
         type=str,
-        required=True,
+        required=False,
+        default=None,
         help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix). If want to generate CSV from UniProt features, use the following format: feature1,feature2,...",
     )
     parser.add_argument(
