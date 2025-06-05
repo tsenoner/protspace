@@ -10,10 +10,9 @@ from dash import no_update
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
-from .config import NAN_COLOR, MARKER_SHAPES
-from .data_loader import JsonReader
-from .data_processing import prepare_dataframe
-from .plotting import create_2d_plot, create_3d_plot, save_plot
+from ..config import NAN_COLOR, MARKER_SHAPES
+from ..utils import JsonReader, prepare_dataframe
+from ..visualization.plotting import create_2d_plot, create_3d_plot, save_plot
 
 
 def get_reader(json_data):
