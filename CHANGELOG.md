@@ -1,6 +1,46 @@
 # CHANGELOG
 
 
+## v1.3.0 (2025-06-13)
+
+### Features
+
+* feat(app): enhance plot controls and fix UI interactions
+
+This commit introduces significant improvements to the user interface and adds new functionality for plot customization, while also resolving several bugs.
+
+- **Marker Size Control:**
+  - Adds a new input control allowing users to dynamically adjust the size of the scatter plot markers.
+  - The plot now updates automatically when the marker size value is changed, providing immediate visual feedback.
+  - The default marker size is now set to 10, and the previously hardcoded constant has been removed.
+
+- **Plot Downloads:**
+  - Fixes a critical bug that caused plot downloads to fail. The download callback now correctly handles different file formats by using `dcc.send_bytes` for PNGs and `dcc.send_string` for SVGs and HTML.
+
+- **UI and Layout:**
+  - The download format dropdown has been modified to open upwards, preventing it from being obscured by elements below it. This was achieved by removing an invalid property and using a custom CSS class.
+  - The settings panel for marker styling now appears alongside the scatter plot instead of overlaying it. The scatter plot resizes to accommodate the panel, creating a more integrated and responsive layout.
+  - The width of the settings panel has been adjusted to provide a better balance between the controls and the plot visualization.
+
+- **Bug Fixes:**
+  - Resolves a state management issue where applying a style to a feature would incorrectly reset the feature dropdown to its default value. The callback now preserves the user's selection.
+  - Corrects an `AttributeError` that occurred due to a misordered function signature in a callback after a new input was added. ([`9853925`](https://github.com/tsenoner/protspace/commit/985392554a3b2824a235a0cd37b10dc7589fbb4c))
+
+### Refactoring
+
+* refactor(ClickThrough_GenerateEmbeddings): correct max_len handling ([`fdc3e3d`](https://github.com/tsenoner/protspace/commit/fdc3e3d7c4fee785ef882f43948190c991bf04bb))
+
+* refactor(ClickThrough_GenerateEmbeddings): streamline code structure and enhance functionality
+
+- Updated cell metadata and IDs for better organization.
+- Improved installation instructions by adding missing dependencies.
+- Enhanced model setup logic to support additional models, including ProstT5, native ESM3 (open variant), and native ESMC (300m and 600m variants).
+- Refined embedding computation to handle different model types and added length checks.
+- Updated output file naming convention to include model type for clarity.
+- Improved error handling for invalid sequence headers.
+- Added optional Hugging Face login cell for models requiring authentication. ([`7d3673b`](https://github.com/tsenoner/protspace/commit/7d3673b12ecd1f94fd08fbd3999632fe376a1e45))
+
+
 ## v1.2.0 (2025-04-15)
 
 ### Unknown
