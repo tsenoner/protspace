@@ -1,5 +1,4 @@
 import io
-import itertools
 import re
 from typing import Any, Dict, List, Optional
 
@@ -10,12 +9,11 @@ from dash import dcc
 
 from .config import (
     DEFAULT_LINE_WIDTH,
-    DEFAULT_MARKER_SIZE,
     HIGHLIGHT_BORDER_COLOR,
     HIGHLIGHT_COLOR,
     HIGHLIGHT_LINE_WIDTH,
     HIGHLIGHT_MARKER_SIZE,
-    MARKER_SHAPES
+    MARKER_SHAPES,
 )
 
 
@@ -24,19 +22,31 @@ def natural_sort_key(text):
     Create a key function for sorting strings containing numbers in a natural way.
     For example: ['a1', 'a10', 'a2'] will sort as ['a1', 'a2', 'a10']
     """
+
     def convert(text):
         return int(text) if text.isdigit() else text.lower()
 
-    return [convert(c) for c in re.split('([0-9]+)', text)]
+    return [convert(c) for c in re.split("([0-9]+)", text)]
 
 
-def create_styled_plot(df, reader, selected_projection, selected_feature, selected_proteins=None):
+def create_styled_plot(
+    df,
+    reader,
+    selected_projection,
+    selected_feature,
+    selected_proteins=None,
+    marker_size=10,
+):
     """Create a styled plot with visualization state applied."""
     projection_info = reader.get_projection_info(selected_projection)
     is_3d = projection_info["dimensions"] == 3
 
     # Create base plot
-    fig = create_3d_plot(df, selected_feature, selected_proteins or []) if is_3d else create_2d_plot(df, selected_feature, selected_proteins or [])
+    fig = (
+        create_3d_plot(df, selected_feature, selected_proteins or [], marker_size)
+        if is_3d
+        else create_2d_plot(df, selected_feature, selected_proteins or [], marker_size)
+    )
 
     # Apply visualization state
     feature_colors = reader.get_feature_colors(selected_feature)
@@ -61,6 +71,7 @@ def create_2d_plot(
     df: pd.DataFrame,
     selected_feature: str,
     selected_proteins: List[str],
+    marker_size: int,
 ) -> go.Figure:
     """Create a 2D scatter plot."""
     fig = px.scatter(
@@ -74,12 +85,16 @@ def create_2d_plot(
             "x": False,
             "y": False,
         },
-        category_orders={selected_feature: sorted(df[selected_feature].unique(), key=natural_sort_key)},
+        category_orders={
+            selected_feature: sorted(
+                df[selected_feature].unique(), key=natural_sort_key
+            )
+        },
     )
 
     fig.update_traces(
         marker=dict(
-            size=DEFAULT_MARKER_SIZE,
+            size=marker_size,
             line=dict(width=DEFAULT_LINE_WIDTH, color="black"),
         )
     )
@@ -127,6 +142,7 @@ def create_3d_plot(
     df: pd.DataFrame,
     selected_feature: str,
     selected_proteins: List[str],
+    marker_size: int,
 ) -> go.Figure:
     """Create a 3D scatter plot."""
     fig = px.scatter_3d(
@@ -142,12 +158,16 @@ def create_3d_plot(
             "y": False,
             "z": False,
         },
-        category_orders={selected_feature: sorted(df[selected_feature].unique(), key=natural_sort_key)},
+        category_orders={
+            selected_feature: sorted(
+                df[selected_feature].unique(), key=natural_sort_key
+            )
+        },
     )
 
     fig.update_traces(
         marker=dict(
-            size=DEFAULT_MARKER_SIZE//2,
+            size=marker_size / 2,
             line=dict(
                 width=DEFAULT_LINE_WIDTH, color="black"
             ),  # "rgba(0, 0, 0, 0.1)"),
@@ -172,57 +192,73 @@ def create_3d_plot(
             )
         )
 
-    fig.add_trace(create_bounding_box(df))
+    for trace in create_bounding_box(df):
+        fig.add_trace(trace)
+
     fig.update_layout(
         scene=get_3d_scene_layout(df),
         margin=dict(l=0, r=0, t=0, b=0),
         uirevision="constant",
+        scene_camera=dict(eye=dict(x=1.25, y=1.25, z=1.25)),
     )
     return fig
 
 
-def create_bounding_box(df: pd.DataFrame) -> go.Scatter3d:
-    """Create a bounding box for the 3D scatter plot."""
+def create_bounding_box(df: pd.DataFrame) -> List[go.Mesh3d]:
+    """Create a bounding box for the 3D scatter plot using 3D shapes."""
     bounds = {
         dim: [df[dim].min() * 1.05, df[dim].max() * 1.05] for dim in ["x", "y", "z"]
     }
-    vertices = list(itertools.product(*bounds.values()))
+    x_min, x_max = bounds["x"]
+    y_min, y_max = bounds["y"]
+    z_min, z_max = bounds["z"]
+
+    # Define the 8 vertices of the box
+    vertices = [
+        (x_min, y_min, z_min),
+        (x_max, y_min, z_min),
+        (x_max, y_max, z_min),
+        (x_min, y_max, z_min),
+        (x_min, y_min, z_max),
+        (x_max, y_min, z_max),
+        (x_max, y_max, z_max),
+        (x_min, y_max, z_max),
+    ]
+
+    # Define the 12 edges of the box
     edges = [
         (0, 1),
-        (1, 3),
-        (3, 2),
-        (2, 0),
+        (1, 2),
+        (2, 3),
+        (3, 0),
         (4, 5),
-        (5, 7),
-        (7, 6),
-        (6, 4),
+        (5, 6),
+        (6, 7),
+        (7, 4),
         (0, 4),
         (1, 5),
         (2, 6),
         (3, 7),
     ]
 
-    x = []
-    y = []
-    z = []
-    for edge in edges:
-        for vertex in edge:
-            x.append(vertices[vertex][0])
-            y.append(vertices[vertex][1])
-            z.append(vertices[vertex][2])
-        x.append(None)
-        y.append(None)
-        z.append(None)
+    traces = []
+    for start_idx, end_idx in edges:
+        x_coords = [vertices[start_idx][0], vertices[end_idx][0]]
+        y_coords = [vertices[start_idx][1], vertices[end_idx][1]]
+        z_coords = [vertices[start_idx][2], vertices[end_idx][2]]
 
-    return go.Scatter3d(
-        x=x,
-        y=y,
-        z=z,
-        mode="lines",
-        line=dict(color="black", width=1),
-        hoverinfo="none",
-        showlegend=False,
-    )
+        traces.append(
+            go.Scatter3d(
+                x=x_coords,
+                y=y_coords,
+                z=z_coords,
+                mode="lines",
+                line=dict(color="black", width=3),
+                hoverinfo="none",
+                showlegend=False,
+            )
+        )
+    return traces
 
 
 def get_3d_scene_layout(df: pd.DataFrame) -> Dict[str, Any]:
@@ -249,7 +285,8 @@ def get_3d_scene_layout(df: pd.DataFrame) -> Dict[str, Any]:
             **axis_layout,
             "range": [df["z"].min() * 1.05, df["z"].max() * 1.05],
         },
-        "aspectmode": "cube",
+        "aspectratio": {"x": 1, "y": 1, "z": 1},
+        "bgcolor": "rgba(240, 240, 240, 0.95)",
     }
 
 
@@ -270,8 +307,8 @@ def save_plot(
             trace_dict = trace.to_plotly_json()
 
             # Convert WebGL traces to their SVG equivalents
-            if trace.type == 'scattergl':
-                trace_dict['type'] = 'scatter'
+            if trace.type == "scattergl":
+                trace_dict["type"] = "scatter"
 
             new_traces.append(trace_dict)
 

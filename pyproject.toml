@@ -21,7 +21,7 @@ dependencies = [
 frontend = [
     "gunicorn>=23.0.0",
     "python-dotenv>=1.0.1",
-    "dash>=2.18.1",
+    "dash>=3",
     "dash-bootstrap-components>=1.6.0",
     "dash-daq>=0.5.0",
     "dash-iconify>=0.1.2",
@@ -51,6 +51,7 @@ dev-dependencies = [
     "pytest>=8.3.3",
     "polars>=1.26.0",
     "taxopy>=0.14.0",
+    "jupytext>=1.17.1",
 ]
 
 [project.scripts]

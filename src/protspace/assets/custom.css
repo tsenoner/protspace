@@ -1,0 +1,10 @@
+.drop-up .Select-menu-outer {
+    top: auto;
+    bottom: 100%;
+    border-top-right-radius: 4px;
+    border-top-left-radius: 4px;
+    border-bottom-right-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border: 1px solid #ccc;
+    border-bottom: none;
+}
