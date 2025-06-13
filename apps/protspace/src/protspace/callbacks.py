@@ -6,7 +6,7 @@ from pathlib import Path
 
 import dash
 import plotly.graph_objs as go
-from dash import no_update
+from dash import no_update, dcc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
@@ -54,7 +54,7 @@ def setup_callbacks(app):
         if current_style["display"] == "none":
             return {
                 "display": "block",
-                "width": "100%", #"300px",
+                "width": "100%",  # "300px",
                 "padding": "20px",
                 "backgroundColor": "#f0f0f0",
                 "borderRadius": "5px",
@@ -124,40 +124,45 @@ def setup_callbacks(app):
             Output("projection-dropdown", "value"),
             Output("protein-search-dropdown", "options"),
         ],
+        Input("json-data-store", "data"),
         [
-            Input("json-data-store", "data"),
+            State("feature-dropdown", "value"),
+            State("projection-dropdown", "value"),
         ],
     )
-    def update_dropdowns(json_data):
+    def update_dropdowns(json_data, selected_feature, selected_projection):
         if json_data is None:
             return [], None, [], None, []
 
         reader = get_reader(json_data)
-        feature_options = [
-            {"label": feature, "value": feature}
-            for feature in sorted(reader.get_all_features())
-        ]
-        projection_options = [
-            {"label": proj, "value": proj}
-            for proj in sorted(reader.get_projection_names())
-        ]
+        all_features = sorted(reader.get_all_features())
+        all_projections = sorted(reader.get_projection_names())
+
+        feature_options = [{"label": f, "value": f} for f in all_features]
+        projection_options = [{"label": p, "value": p} for p in all_projections]
         protein_options = [
             {"label": pid, "value": pid} for pid in sorted(reader.get_protein_ids())
         ]
 
-        # Select the first feature and projection
-        first_feature = (
-            reader.get_all_features()[0] if reader.get_all_features() else None
+        # Preserve selected feature if it's still valid, otherwise select the first one
+        feature_value = (
+            selected_feature
+            if selected_feature in all_features
+            else (all_features[0] if all_features else None)
         )
-        first_projection = (
-            reader.get_projection_names()[0] if reader.get_projection_names() else None
+
+        # Preserve selected projection if it's still valid, otherwise select the first one
+        projection_value = (
+            selected_projection
+            if selected_projection in all_projections
+            else (all_projections[0] if all_projections else None)
         )
 
         return (
             feature_options,
-            first_feature,
+            feature_value,
             projection_options,
-            first_projection,
+            projection_value,
             protein_options,
         )
 
@@ -171,6 +176,7 @@ def setup_callbacks(app):
             Input("feature-dropdown", "value"),
             Input("protein-search-dropdown", "value"),
             Input("apply-style-button", "n_clicks"),
+            Input("marker-size-input", "value"),
         ],
         [
             State("json-data-store", "data"),
@@ -185,12 +191,19 @@ def setup_callbacks(app):
         selected_feature,
         selected_proteins,
         n_clicks,
+        marker_size,
         json_data,
         selected_value,
         selected_color,
         selected_shape,
     ):
-        if json_data is None or not selected_projection or not selected_feature:
+        ctx = dash.callback_context
+        if (
+            not ctx.triggered
+            or json_data is None
+            or not selected_projection
+            or not selected_feature
+        ):
             # Return a blank figure and no update to json_data
             fig = go.Figure()
             fig.update_layout(
@@ -208,11 +221,15 @@ def setup_callbacks(app):
 
         if n_clicks and selected_value:
             if selected_color:
-                if selected_color['hex'].startswith('rgba'):
-                    selected_color_str = selected_color['hex']
+                if selected_color["hex"].startswith("rgba"):
+                    selected_color_str = selected_color["hex"]
                 else:
-                    selected_color_str = "rgba({r}, {g}, {b}, {a})".format(**selected_color['rgb'])
-                reader.update_feature_color(selected_feature, selected_value, selected_color_str)
+                    selected_color_str = "rgba({r}, {g}, {b}, {a})".format(
+                        **selected_color["rgb"]
+                    )
+                reader.update_feature_color(
+                    selected_feature, selected_value, selected_color_str
+                )
             if selected_shape:
                 reader.update_marker_shape(
                     selected_feature, selected_value, selected_shape
@@ -238,9 +255,13 @@ def setup_callbacks(app):
         # Choose the appropriate plotting function
         is_3d = projection_info["dimensions"] == 3
         if not is_3d:
-            fig = create_2d_plot(df, selected_feature, selected_proteins)
+            fig = create_2d_plot(
+                df, selected_feature, selected_proteins, marker_size=marker_size
+            )
         else:
-            fig = create_3d_plot(df, selected_feature, selected_proteins)
+            fig = create_3d_plot(
+                df, selected_feature, selected_proteins, marker_size=marker_size
+            )
 
         # Apply styles
         for value in df[selected_feature].unique():
@@ -376,23 +397,31 @@ def setup_callbacks(app):
         )
 
     @app.callback(
-        Output("marker-style-controller", "style"),
+        [
+            Output("marker-style-controller", "style"),
+            Output("left-panel", "style"),
+        ],
         Input("settings-button", "n_clicks"),
         State("marker-style-controller", "style"),
     )
     def toggle_marker_style_controller(n_clicks, current_style):
         if n_clicks is None:
-            return {"display": "none"}
+            return {"display": "none"}, {"width": "100%"}
+
         if current_style["display"] == "none":
-            return {
-                "display": "block",
-                "width": "300px",
-                "padding": "20px",
-                "backgroundColor": "#f0f0f0",
-                "borderRadius": "5px",
-            }
+            return (
+                {
+                    "display": "inline-block",
+                    "width": "20%",
+                    "padding": "20px",
+                    "backgroundColor": "#f0f0f0",
+                    "borderRadius": "5px",
+                    "verticalAlign": "top",
+                },
+                {"width": "80%"},
+            )
         else:
-            return {"display": "none"}
+            return {"display": "none"}, {"width": "100%"}
 
     @app.callback(
         Output("feature-value-dropdown", "options"),
@@ -437,15 +466,44 @@ def setup_callbacks(app):
         ],
     )
     def update_marker_shape_dropdown(selected_feature, selected_value, json_data):
-        if selected_feature is None or selected_value is None or json_data is None:
+        if not selected_feature or not selected_value or not json_data:
+            return None
+        reader = get_reader(json_data)
+        return reader.get_marker_shape(selected_feature).get(selected_value, None)
+
+    @app.callback(
+        [
+            Output("download-format-dropdown", "options"),
+            Output("download-format-dropdown", "value"),
+        ],
+        Input("projection-dropdown", "value"),
+        [
+            State("json-data-store", "data"),
+            State("download-format-dropdown", "value"),
+        ],
+    )
+    def update_download_options(selected_projection, json_data, current_format):
+        if not selected_projection or not json_data:
             raise PreventUpdate
 
         reader = get_reader(json_data)
-        marker_shapes = reader.get_marker_shape(selected_feature)
-        if selected_value in marker_shapes:
-            return marker_shapes[selected_value]
-        else:
-            return None  # No shape selected
+        projection_info = reader.get_projection_info(selected_projection)
+        is_3d = projection_info["dimensions"] == 3
+
+        options = [
+            {"label": "SVG", "value": "svg"},
+            {"label": "PNG", "value": "png"},
+            {"label": "HTML", "value": "html"},
+        ]
+
+        if is_3d:
+            options = [opt for opt in options if opt["value"] != "svg"]
+
+        new_value = current_format
+        if is_3d and current_format == "svg":
+            new_value = "png"  # Default to PNG for 3D plots if SVG was selected
+
+        return options, new_value
 
     @app.callback(
         Output("download-plot", "data"),
@@ -453,19 +511,47 @@ def setup_callbacks(app):
         [
             State("scatter-plot", "figure"),
             State("projection-dropdown", "value"),
+            State("feature-dropdown", "value"),
             State("image-width", "value"),
             State("image-height", "value"),
+            State("download-format-dropdown", "value"),
             State("json-data-store", "data"),
         ],
         prevent_initial_call=True,
     )
-    def download_plot(n_clicks, figure, selected_projection, width, height, json_data):
-        if n_clicks == 0 or json_data is None:
+    def download_plot(
+        n_clicks,
+        figure,
+        selected_projection,
+        selected_feature,
+        width,
+        height,
+        download_format,
+        json_data,
+    ):
+        if n_clicks is None or figure is None:
             raise PreventUpdate
 
-        reader = JsonReader(json_data)
-        projection_info = reader.get_projection_info(selected_projection)
-        is_3d = projection_info["dimensions"] == 3
+        reader = get_reader(json_data)
+        if reader is None:
+            raise PreventUpdate
 
         fig = go.Figure(figure)
-        return save_plot(fig, is_3d, width, height)
+
+        if download_format == "html":
+            filename = f"{selected_projection}_{selected_feature}.html"
+            buffer = io.StringIO()
+            fig.write_html(buffer)
+            return dcc.send_string(buffer.getvalue(), filename)
+
+        elif download_format == "svg":
+            filename = f"{selected_projection}_{selected_feature}.svg"
+            img_bytes = fig.to_image(format="svg", width=width, height=height)
+            return dcc.send_string(img_bytes.decode("utf-8"), filename)
+
+        elif download_format == "png":
+            filename = f"{selected_projection}_{selected_feature}.png"
+            img_bytes = fig.to_image(format="png", width=width, height=height)
+            return dcc.send_bytes(img_bytes, filename)
+
+        raise PreventUpdate

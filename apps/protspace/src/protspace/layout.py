@@ -43,57 +43,56 @@ def create_layout(app):
 
     common_layout = [
         html.Div(
-    [
-        # Left: Rostlab logo
-        html.A(
-            html.Img(
-                src="assets/Helix simple flat.png",
-                style={
-                    "height": "60px",  # Maintain consistent height with GitHub icon
-                    "width": "auto",   # Maintain aspect ratio
-                    "cursor": "pointer",
-                }
-            ),
-            href="https://rostlab.org",
-            target="_blank",
-            title="Visit Rostlab",
-        ),
-        # Center: ProtSpace title
-        html.H1(
-            "ProtSpace",
+            [
+                # Left: Rostlab logo
+                html.A(
+                    html.Img(
+                        src="assets/Helix simple flat.png",
+                        style={
+                            "height": "60px",  # Maintain consistent height with GitHub icon
+                            "width": "auto",  # Maintain aspect ratio
+                            "cursor": "pointer",
+                        },
+                    ),
+                    href="https://rostlab.org",
+                    target="_blank",
+                    title="Visit Rostlab",
+                ),
+                # Center: ProtSpace title
+                html.H1(
+                    "ProtSpace",
+                    style={
+                        "margin": "0",
+                        "padding": "10px 0",
+                        "flexGrow": "0",
+                    },
+                ),
+                # Right: GitHub link
+                html.A(
+                    html.Button(
+                        DashIconify(
+                            icon="mdi:github",
+                            width=50,
+                            height=50,
+                        ),
+                        title="GitHub Repository",
+                        style={
+                            "background": "none",
+                            "border": "none",
+                            "cursor": "pointer",
+                            "padding": "0",
+                        },
+                    ),
+                    href="https://github.com/tsenoner/protspace",
+                    target="_blank",
+                ),
+            ],
             style={
-                "margin": "0",
-                "padding": "10px 0",
-                "flexGrow": "0",
+                "display": "flex",
+                "justifyContent": "space-between",
+                "alignItems": "center",
             },
         ),
-        # Right: GitHub link
-        html.A(
-            html.Button(
-                DashIconify(
-                    icon="mdi:github",
-                    width=50,
-                    height=50,
-                ),
-                title="GitHub Repository",
-                style={
-                    "background": "none",
-                    "border": "none",
-                    "cursor": "pointer",
-                    "padding": "0",
-                },
-            ),
-            href="https://github.com/tsenoner/protspace",
-            target="_blank",
-        ),
-    ],
-    style={
-        "display": "flex",
-        "justifyContent": "space-between",
-        "alignItems": "center",
-    }
-),
-
         # html.H1(
         #     "ProtSpace",
         #     style={"textAlign": "center", "margin": "0", "padding": "10px 0"},
@@ -216,151 +215,155 @@ def create_layout(app):
         html.Div(
             [
                 html.Div(
-                    [
-                        dcc.Graph(
-                            id="scatter-plot",
-                            style={"height": "100%"},
-                            responsive=True,
-                        )
-                    ],
-                    id="scatter-plot-div",
-                    style={
-                        "border": "2px solid #dddddd",
-                        "height": "calc(100vh - 200px)",
-                        "width": "100%",
-                        "display": "inline-block",
-                        "verticalAlign": "top",
-                    },
-                ),
-                html.Div(
-                    [
-                        NglMoleculeViewer(
-                            id="ngl-molecule-viewer",
-                            width="100%",
-                            height="calc(100vh - 200px)",
-                            molStyles={
-                                "representations": ["cartoon"],
-                                "chosenAtomsColor": "white",
-                                "chosenAtomsRadius": 0.5,
-                                "molSpacingXaxis": 50,
-                                "sideByside": True,
+                    id="left-panel",
+                    style={"width": "100%", "display": "inline-block"},
+                    children=[
+                        html.Div(
+                            [
+                                dcc.Graph(
+                                    id="scatter-plot",
+                                    style={"height": "100%"},
+                                    responsive=True,
+                                )
+                            ],
+                            id="scatter-plot-div",
+                            style={
+                                "border": "2px solid #dddddd",
+                                "height": "calc(100vh - 200px)",
+                                "width": "100%",
+                                "display": "inline-block",
+                                "verticalAlign": "top",
                             },
-                        ),
-                    ],
-                    id="ngl-viewer-div",
-                    style={
-                        "border": "2px solid #dddddd",
-                        "height": "calc(100vh - 200px)",
-                        "width": "49%",
-                        "display": "none",  # Hidden by default
-                        "verticalAlign": "top",
-                    },
-                ),
-                html.Div(
-                    [
-                        html.H4(
-                            "Marker Style Settings",
-                            style={"marginBottom": "10px"},
                         ),
                         html.Div(
                             [
-                                html.Label("Select Feature Value:"),
+                                NglMoleculeViewer(
+                                    id="ngl-molecule-viewer",
+                                    width="100%",
+                                    height="calc(100vh - 200px)",
+                                    molStyles={
+                                        "representations": ["cartoon"],
+                                        "chosenAtomsColor": "white",
+                                        "chosenAtomsRadius": 0.5,
+                                        "molSpacingXaxis": 50,
+                                        "sideByside": True,
+                                    },
+                                ),
+                            ],
+                            id="ngl-viewer-div",
+                            style={
+                                "border": "2px solid #dddddd",
+                                "height": "calc(100vh - 200px)",
+                                "display": "none",
+                                "verticalAlign": "top",
+                            },
+                        ),
+                    ],
+                ),
+                # Hidden div to contain the marker style controller
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.H3("Marker Style"),
+                                html.Label("Select a value:"),
                                 dcc.Dropdown(
                                     id="feature-value-dropdown",
                                     style={"marginBottom": "10px"},
                                 ),
-                            ]
-                        ),
-                        html.Div(
-                            [
-                                html.Label("Marker Color:"),
+                                html.Label("Select a color:"),
                                 daq.ColorPicker(
                                     id="marker-color-picker",
+                                    size=150,
                                     style={"marginBottom": "10px"},
                                 ),
-                            ]
-                        ),
-                        html.Div(
-                            [
-                                html.Label("Marker Shape:"),
+                                html.Label("Select a shape:"),
                                 dcc.Dropdown(
                                     id="marker-shape-dropdown",
                                     options=[
-                                        {
-                                            "label": shape.replace("-", " ").title(),
-                                            "value": shape,
-                                        }
+                                        {"label": shape, "value": shape}
                                         for shape in marker_shapes
                                     ],
-                                    style={"marginBottom": "10px"},
+                                    style={"marginBottom": "20px"},
                                 ),
-                            ]
+                                html.Button(
+                                    "Apply Style",
+                                    id="apply-style-button",
+                                    style={"marginTop": "10px"},
+                                ),
+                            ],
                         ),
-                        html.Button("Apply", id="apply-style-button"),
                     ],
                     id="marker-style-controller",
                     style={
                         "display": "none",
-                        "width": "300px",
+                        "width": "20%",
                         "padding": "20px",
                         "backgroundColor": "#f0f0f0",
                         "borderRadius": "5px",
+                        "verticalAlign": "top",
                     },
                 ),
-                html.Div(
-                    create_help_menu(),
-                    id="help-menu",
-                    style={
-                        "display": "none",
-                        "width": "300px",
-                        "padding": "20px",
-                        "backgroundColor": "#f0f0f0",
-                        "borderRadius": "5px",
-                    }
-                ),
             ],
-            style={"display": "flex", "justifyContent": "space-between"},
+            style={"display": "flex"},
         ),
-        dcc.Store(id="json-data-store", data=default_json_data),
-        dcc.Store(id="pdb-files-store", data=pdb_files_data),
-    ]
-
-    common_layout.append(
         html.Div(
-            [
-                html.Button("Download", id="download-button", n_clicks=0),
+            id="download-settings",
+            style={
+                "marginTop": "10px",
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "10px",
+            },
+            children=[
+                html.Label("Download Plot:", style={"fontWeight": "bold"}),
+                html.Label("Size:"),
                 dcc.Input(
                     id="image-width",
                     type="number",
                     placeholder="Width",
                     value=1600,
-                    style={"marginLeft": "10px"},
+                    style={"width": "80px"},
                 ),
                 dcc.Input(
                     id="image-height",
                     type="number",
                     placeholder="Height",
                     value=1000,
-                    style={"marginLeft": "10px"},
+                    style={"width": "80px"},
                 ),
+                html.Label("Format:"),
+                dcc.Dropdown(
+                    id="download-format-dropdown",
+                    options=[
+                        {"label": "SVG", "value": "svg"},
+                        {"label": "PNG", "value": "png"},
+                        {"label": "HTML", "value": "html"},
+                    ],
+                    value="svg",
+                    clearable=False,
+                    style={"width": "100px"},
+                    className="drop-up",
+                ),
+                html.Button("Download", id="download-button"),
                 dcc.Download(id="download-plot"),
+                html.Label("Marker Size:"),
+                dcc.Input(
+                    id="marker-size-input",
+                    type="number",
+                    placeholder="Size",
+                    value=10,
+                    min=1,
+                    max=30,
+                    style={"width": "80px"},
+                ),
             ],
-            style={
-                "display": "flex",
-                "justifyContent": "center",
-                "alignItems": "center",
-                "height": "50px",
-            },
-        )
-    )
+        ),
+        dcc.Store(id="json-data-store", data=default_json_data),
+        dcc.Store(id="pdb-files-store", data=pdb_files_data),
+        html.Div(
+            id="help-menu", style={"display": "none"}, children=create_help_menu()
+        ),
+    ]
 
-    return html.Div(
-        common_layout,
-        style={
-            "display": "flex",
-            "flexDirection": "column",
-            "height": "100vh",
-            "padding": "20px",
-            "boxSizing": "border-box",
-        },
-    )
+    return html.Div(common_layout, style={"padding": "20px"})
