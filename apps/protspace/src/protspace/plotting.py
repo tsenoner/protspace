@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
-from dash import dcc
 
 from .config import (
     DEFAULT_LINE_WIDTH,
@@ -13,8 +12,11 @@ from .config import (
     HIGHLIGHT_COLOR,
     HIGHLIGHT_LINE_WIDTH,
     HIGHLIGHT_MARKER_SIZE,
-    MARKER_SHAPES,
+    MARKER_SHAPES_3D,
+    NAN_COLOR,
 )
+from .data_loader import JsonReader
+from .data_processing import prepare_dataframe
 
 
 def natural_sort_key(text):
@@ -29,179 +31,163 @@ def natural_sort_key(text):
     return [convert(c) for c in re.split("([0-9]+)", text)]
 
 
-def create_styled_plot(
-    df,
-    reader,
-    selected_projection,
-    selected_feature,
-    selected_proteins=None,
-    marker_size=10,
+def create_plot(
+    reader: "JsonReader",
+    selected_projection: str,
+    selected_feature: str,
+    selected_proteins: Optional[List[str]] = None,
+    marker_size: int = 10,
+    legend_marker_size: int = 12,
 ):
-    """Create a styled plot with visualization state applied."""
+    df = prepare_dataframe(reader, selected_projection, selected_feature)
+
     projection_info = reader.get_projection_info(selected_projection)
     is_3d = projection_info["dimensions"] == 3
+    scatter_class = go.Scatter3d if is_3d else go.Scatter
 
-    # Create base plot
-    fig = (
-        create_3d_plot(df, selected_feature, selected_proteins or [], marker_size)
-        if is_3d
-        else create_2d_plot(df, selected_feature, selected_proteins or [], marker_size)
+    feature_colors = reader.get_feature_colors(selected_feature).copy()
+    feature_colors["<NaN>"] = NAN_COLOR
+    marker_shapes = reader.get_marker_shape(selected_feature).copy()
+    if "<NaN>" not in marker_shapes:
+        marker_shapes["<NaN>"] = "circle"
+
+    # Always define shapes to avoid plotly's automatic shape cycling
+    all_values = df[selected_feature].unique()
+    final_marker_shapes = {val: marker_shapes.get(val, "circle") for val in all_values}
+
+    plot_args = {
+        "data_frame": df,
+        "color": selected_feature,
+        "color_discrete_map": feature_colors,
+        "hover_data": {
+            "identifier": True,
+            selected_feature: True,
+            "x": False,
+            "y": False,
+        },
+        "symbol": selected_feature,
+        "symbol_map": final_marker_shapes,
+        "category_orders": {
+            selected_feature: sorted(
+                df[selected_feature].unique(), key=natural_sort_key
+            )
+        },
+    }
+
+    if is_3d:
+        plot_args.update(
+            {
+                "x": "x",
+                "y": "y",
+                "z": "z",
+                "hover_data": {**plot_args["hover_data"], "z": False},
+            }
+        )
+        # Map to valid 3D shapes
+        plot_args["symbol_map"] = {
+            key: (shape if shape in MARKER_SHAPES_3D else "circle")
+            for key, shape in final_marker_shapes.items()
+        }
+        fig = px.scatter_3d(**plot_args)
+        fig.update_traces(marker=dict(size=marker_size / 2))
+    else:
+        plot_args.update({"x": "x", "y": "y"})
+        fig = px.scatter(**plot_args)
+        fig.update_traces(marker=dict(size=marker_size))
+
+    fig.update_traces(
+        marker_line=dict(width=DEFAULT_LINE_WIDTH, color="black"), showlegend=False
     )
 
-    # Apply visualization state
-    feature_colors = reader.get_feature_colors(selected_feature)
-    marker_shapes = reader.get_marker_shape(selected_feature)
+    # Add invisible traces for legend with larger markers
+    sorted_unique_values = sorted(df[selected_feature].unique(), key=natural_sort_key)
+    for value in sorted_unique_values:
+        shape = final_marker_shapes.get(value, "circle")
+        if is_3d and shape not in MARKER_SHAPES_3D:
+            shape = "circle"
 
-    for value in df[selected_feature].unique():
-        if str(value) != "<NaN>":
-            marker_style = {}
-            if value in feature_colors:
-                marker_style["color"] = feature_colors[value]
-            if value in marker_shapes:
-                if (not is_3d) or (is_3d and marker_shapes[value] in MARKER_SHAPES):
-                    marker_style["symbol"] = marker_shapes[value]
+        marker_style = {
+            "size": legend_marker_size,
+            "line": dict(width=DEFAULT_LINE_WIDTH, color="black"),
+        }
+        if value in feature_colors:
+            marker_style["color"] = feature_colors[value]
 
-            if marker_style:
-                fig.update_traces(marker=marker_style, selector=dict(name=str(value)))
+        marker_style["symbol"] = shape
+
+        trace_params = dict(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name=str(value),
+            marker=marker_style,
+            legendgroup=str(value),
+        )
+        if is_3d:
+            trace_params["z"] = [None]
+        fig.add_trace(scatter_class(**trace_params))
+
+    # Highlight selected proteins
+    if selected_proteins:
+        selected_df = df[df["identifier"].isin(selected_proteins)]
+        highlight_params = dict(
+            x=selected_df["x"],
+            y=selected_df["y"],
+            mode="markers",
+            marker=dict(
+                size=HIGHLIGHT_MARKER_SIZE,
+                color=HIGHLIGHT_COLOR,
+                line=dict(width=HIGHLIGHT_LINE_WIDTH, color=HIGHLIGHT_BORDER_COLOR),
+            ),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+        if is_3d:
+            highlight_params["z"] = selected_df["z"]
+        fig.add_trace(scatter_class(**highlight_params))
+
+    layout_args = {
+        "plot_bgcolor": "white",
+        "margin": dict(l=0, r=0, t=0, b=0),
+        "uirevision": "constant",
+        "legend": dict(
+            itemsizing="constant",
+            itemwidth=30,
+            title=selected_feature if selected_feature else None,
+        ),
+    }
+
+    if is_3d:
+        fig.add_traces(create_bounding_box(df))
+        layout_args.update(
+            {
+                "scene": get_3d_scene_layout(df),
+                "scene_camera": dict(eye=dict(x=1.25, y=1.25, z=1.25)),
+            }
+        )
+    else:
+        layout_args.update(
+            {
+                "xaxis": dict(
+                    showticklabels=False,
+                    showline=False,
+                    zeroline=False,
+                    showgrid=False,
+                    title=None,
+                ),
+                "yaxis": dict(
+                    showticklabels=False,
+                    showline=False,
+                    zeroline=False,
+                    showgrid=False,
+                    title=None,
+                ),
+            }
+        )
+
+    fig.update_layout(**layout_args)
 
     return fig, is_3d
-
-
-def create_2d_plot(
-    df: pd.DataFrame,
-    selected_feature: str,
-    selected_proteins: List[str],
-    marker_size: int,
-) -> go.Figure:
-    """Create a 2D scatter plot."""
-    fig = px.scatter(
-        df,
-        x="x",
-        y="y",
-        color=selected_feature,
-        hover_data={
-            "identifier": True,
-            selected_feature: True,
-            "x": False,
-            "y": False,
-        },
-        category_orders={
-            selected_feature: sorted(
-                df[selected_feature].unique(), key=natural_sort_key
-            )
-        },
-    )
-
-    fig.update_traces(
-        marker=dict(
-            size=marker_size,
-            line=dict(width=DEFAULT_LINE_WIDTH, color="black"),
-        )
-    )
-
-    if selected_proteins:
-        selected_df = df[df["identifier"].isin(selected_proteins)]
-        fig.add_trace(
-            go.Scatter(
-                x=selected_df["x"],
-                y=selected_df["y"],
-                mode="markers",
-                marker=dict(
-                    size=HIGHLIGHT_MARKER_SIZE,
-                    color=HIGHLIGHT_COLOR,
-                    line=dict(width=HIGHLIGHT_LINE_WIDTH, color=HIGHLIGHT_BORDER_COLOR),
-                ),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    fig.update_layout(
-        xaxis=dict(
-            showticklabels=False,
-            showline=False,
-            zeroline=False,
-            showgrid=False,
-            title=None,
-        ),
-        yaxis=dict(
-            showticklabels=False,
-            showline=False,
-            zeroline=False,
-            showgrid=False,
-            title=None,
-        ),
-        plot_bgcolor="white",
-        margin=dict(l=0, r=0, t=0, b=0),
-        uirevision="constant",
-    )
-    return fig
-
-
-def create_3d_plot(
-    df: pd.DataFrame,
-    selected_feature: str,
-    selected_proteins: List[str],
-    marker_size: int,
-) -> go.Figure:
-    """Create a 3D scatter plot."""
-    fig = px.scatter_3d(
-        df,
-        x="x",
-        y="y",
-        z="z",
-        color=selected_feature,
-        hover_data={
-            "identifier": True,
-            selected_feature: True,
-            "x": False,
-            "y": False,
-            "z": False,
-        },
-        category_orders={
-            selected_feature: sorted(
-                df[selected_feature].unique(), key=natural_sort_key
-            )
-        },
-    )
-
-    fig.update_traces(
-        marker=dict(
-            size=marker_size / 2,
-            line=dict(
-                width=DEFAULT_LINE_WIDTH, color="black"
-            ),  # "rgba(0, 0, 0, 0.1)"),
-        )
-    )
-
-    if selected_proteins:
-        selected_df = df[df["identifier"].isin(selected_proteins)]
-        fig.add_trace(
-            go.Scatter3d(
-                x=selected_df["x"],
-                y=selected_df["y"],
-                z=selected_df["z"],
-                mode="markers",
-                marker=dict(
-                    size=HIGHLIGHT_MARKER_SIZE,
-                    color=HIGHLIGHT_COLOR,
-                    line=dict(width=HIGHLIGHT_LINE_WIDTH, color=HIGHLIGHT_BORDER_COLOR),
-                ),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    for trace in create_bounding_box(df):
-        fig.add_trace(trace)
-
-    fig.update_layout(
-        scene=get_3d_scene_layout(df),
-        margin=dict(l=0, r=0, t=0, b=0),
-        uirevision="constant",
-        scene_camera=dict(eye=dict(x=1.25, y=1.25, z=1.25)),
-    )
-    return fig
 
 
 def create_bounding_box(df: pd.DataFrame) -> List[go.Mesh3d]:
@@ -295,35 +281,10 @@ def save_plot(
     is_3d: bool,
     width: Optional[int] = None,
     height: Optional[int] = None,
-    filename: Optional[str] = None,
-    force_svg: bool = False,
-) -> Optional[Dict]:
-    """Save the plot to a file or return it for download."""
-    # Convert WebGL traces to their SVG equivalents
-    if force_svg and not is_3d:
-        # Create a new figure with converted traces
-        new_traces = []
-        for trace in fig.data:
-            trace_dict = trace.to_plotly_json()
-
-            # Convert WebGL traces to their SVG equivalents
-            if trace.type == "scattergl":
-                trace_dict["type"] = "scatter"
-
-            new_traces.append(trace_dict)
-
-        # Create new figure with converted traces
-        fig = go.Figure(data=new_traces, layout=fig.layout)
-
-    if is_3d:
-        if filename:
-            fig.write_html(filename, include_plotlyjs="cdn")
-        else:
-            buffer = io.StringIO()
-            fig.write_html(buffer, include_plotlyjs="cdn")
-            buffer.seek(0)
-            return dcc.send_bytes(buffer.getvalue().encode(), "protspace_3d_plot.html")
-    else:
+    file_format: str = "svg",
+) -> bytes:
+    """Generate image bytes for the plot."""
+    if not is_3d:
         if width is None or height is None:
             raise ValueError("Width and height must be provided for 2D plots")
 
@@ -339,10 +300,11 @@ def save_plot(
         )
         fig.update_traces(marker=dict(size=marker_size))
 
-        if filename:
-            fig.write_image(filename, format="svg", width=width, height=height)
-        else:
-            buffer = io.BytesIO()
-            fig.write_image(buffer, format="svg", width=width, height=height)
-            buffer.seek(0)
-            return dcc.send_bytes(buffer.getvalue(), "protspace_2d_plot.svg")
+    # For both 2D and 3D, write to an in-memory buffer
+    buffer = io.BytesIO()
+    fig.write_image(buffer, format=file_format, width=width, height=height)
+    return buffer.getvalue()
+
+
+def get_reader(json_data):
+    return JsonReader(json_data)

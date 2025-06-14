@@ -3,7 +3,7 @@ from dash import dcc, html
 from dash_bio import NglMoleculeViewer
 from dash_iconify import DashIconify
 
-from .config import MARKER_SHAPES, MARKER_SHAPES_2D
+from .config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
 from .data_loader import JsonReader
 from .layout_help import create_help_menu
 
@@ -29,14 +29,14 @@ def create_layout(app):
 
         projection_info = reader.get_projection_info(first_projection)
         is_3d = projection_info["dimensions"] == 3
-        marker_shapes = MARKER_SHAPES if is_3d else MARKER_SHAPES_2D
+        marker_shapes = MARKER_SHAPES_3D if is_3d else MARKER_SHAPES_2D
     else:
         feature_options = []
         projection_options = []
         protein_options = []
         first_feature = None
         first_projection = None
-        marker_shapes = MARKER_SHAPES
+        marker_shapes = MARKER_SHAPES_2D
 
     # Get PDB files data if available
     pdb_files_data = app.get_pdb_files_data()
@@ -274,7 +274,7 @@ def create_layout(app):
                                 html.Label("Select a color:"),
                                 daq.ColorPicker(
                                     id="marker-color-picker",
-                                    size=150,
+                                    size=200,
                                     style={"marginBottom": "10px"},
                                 ),
                                 html.Label("Select a shape:"),
@@ -338,7 +338,11 @@ def create_layout(app):
                     options=[
                         {"label": "SVG", "value": "svg"},
                         {"label": "PNG", "value": "png"},
+                        {"label": "JPEG", "value": "jpeg"},
+                        {"label": "WEBP", "value": "webp"},
+                        {"label": "PDF", "value": "pdf"},
                         {"label": "HTML", "value": "html"},
+                        {"label": "JSON", "value": "json"},
                     ],
                     value="svg",
                     clearable=False,

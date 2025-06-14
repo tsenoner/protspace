@@ -1,4 +1,3 @@
-import os
 from plotly.validators.scatter.marker import SymbolValidator
 
 
@@ -11,9 +10,6 @@ def extract_marker_strings(input_list):
 # App settings
 DEFAULT_PORT = 8050
 
-# Output settings
-IMAGE_OUTPUT_DIR = os.getenv("PROTSPACE_IMAGE_OUTPUT_DIR", "out/images")
-
 # Plotting settings
 DEFAULT_LINE_WIDTH = 0.5
 HIGHLIGHT_LINE_WIDTH = 1.5
@@ -25,7 +21,8 @@ HIGHLIGHT_COLOR = "rgba(0,0,0,0)"
 HIGHLIGHT_BORDER_COLOR = "black"
 
 # Marker shapes
-MARKER_SHAPES = [
+MARKER_SHAPES_2D = sorted(extract_marker_strings(SymbolValidator().values))
+MARKER_SHAPES_3D = [
     "circle",
     "circle-open",
     "cross",
@@ -35,5 +32,3 @@ MARKER_SHAPES = [
     "square-open",
     "x",
 ]
-
-MARKER_SHAPES_2D = sorted(extract_marker_strings(SymbolValidator().values))

@@ -9,11 +9,11 @@ import plotly.graph_objs as go
 from dash import no_update, dcc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
+import pandas as pd
 
-from .config import NAN_COLOR, MARKER_SHAPES
 from .data_loader import JsonReader
-from .data_processing import prepare_dataframe
-from .plotting import create_2d_plot, create_3d_plot, save_plot
+from .plotting import create_plot, save_plot
+from .config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
 
 
 def get_reader(json_data):
@@ -219,66 +219,43 @@ def setup_callbacks(app):
         # Initialize json_data_output
         json_data_output = no_update
 
-        if n_clicks and selected_value:
-            if selected_color:
-                if selected_color["hex"].startswith("rgba"):
-                    selected_color_str = selected_color["hex"]
-                else:
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        if trigger_id == "apply-style-button":
+            if selected_value:
+                if selected_color and "rgb" in selected_color:
                     selected_color_str = "rgba({r}, {g}, {b}, {a})".format(
                         **selected_color["rgb"]
                     )
-                reader.update_feature_color(
-                    selected_feature, selected_value, selected_color_str
-                )
-            if selected_shape:
-                reader.update_marker_shape(
-                    selected_feature, selected_value, selected_shape
-                )
+                    reader.update_feature_color(
+                        selected_feature, selected_value, selected_color_str
+                    )
+                elif selected_color:
+                    # Handle cases where color is a string (e.g., from hex)
+                    color_val = (
+                        selected_color["hex"]
+                        if isinstance(selected_color, dict)
+                        else selected_color
+                    )
+                    reader.update_feature_color(
+                        selected_feature, selected_value, color_val
+                    )
 
-        # Update the changed values
-        ctx = dash.callback_context
-        if not ctx.triggered:
-            trigger_id = None
-        else:
-            trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-        if trigger_id == "apply-style-button":
+                if selected_shape:
+                    reader.update_marker_shape(
+                        selected_feature, selected_value, selected_shape
+                    )
             # Update the JSON data in the store
             json_data = reader.get_data()
             json_data_output = json_data
 
-        df = prepare_dataframe(reader, selected_projection, selected_feature)
-        feature_colors = reader.get_feature_colors(selected_feature)
-        marker_shapes = reader.get_marker_shape(selected_feature)
-        projection_info = reader.get_projection_info(selected_projection)
-
-        # Choose the appropriate plotting function
-        is_3d = projection_info["dimensions"] == 3
-        if not is_3d:
-            fig = create_2d_plot(
-                df, selected_feature, selected_proteins, marker_size=marker_size
-            )
-        else:
-            fig = create_3d_plot(
-                df, selected_feature, selected_proteins, marker_size=marker_size
-            )
-
-        # Apply styles
-        for value in df[selected_feature].unique():
-            marker_style = {}
-            if value == "<NaN>":
-                marker_style["color"] = NAN_COLOR
-            else:
-                color = feature_colors.get(value)
-                shape = marker_shapes.get(value)
-                if color:
-                    marker_style["color"] = color
-                if shape:
-                    if (not is_3d) or (is_3d and marker_shapes[value] in MARKER_SHAPES):
-                        marker_style["symbol"] = marker_shapes[value]
-
-            if marker_style:
-                fig.update_traces(marker=marker_style, selector=dict(name=str(value)))
+        fig, _ = create_plot(
+            reader,
+            selected_projection,
+            selected_feature,
+            selected_proteins,
+            marker_size,
+        )
 
         return fig, json_data_output
 
@@ -434,8 +411,21 @@ def setup_callbacks(app):
         if selected_feature is None or json_data is None:
             return []
         reader = get_reader(json_data)
-        unique_values = reader.get_unique_feature_values(selected_feature)
-        return [{"label": str(val), "value": str(val)} for val in sorted(unique_values)]
+
+        # Get unique values and check for NaNs
+        all_values = reader.get_all_feature_values(selected_feature)
+        unique_values = {v for v in all_values if pd.notna(v)}
+        has_nan = any(pd.isna(v) for v in all_values)
+
+        options = [
+            {"label": str(val), "value": str(val)}
+            for val in sorted(list(unique_values))
+        ]
+
+        if has_nan:
+            options.append({"label": "<NaN>", "value": "<NaN>"})
+
+        return options
 
     @app.callback(
         Output("marker-color-picker", "value"),
@@ -493,17 +483,24 @@ def setup_callbacks(app):
         options = [
             {"label": "SVG", "value": "svg"},
             {"label": "PNG", "value": "png"},
+            {"label": "JPEG", "value": "jpeg"},
+            {"label": "WEBP", "value": "webp"},
+            {"label": "PDF", "value": "pdf"},
             {"label": "HTML", "value": "html"},
+            {"label": "JSON", "value": "json"},
         ]
 
         if is_3d:
-            options = [opt for opt in options if opt["value"] != "svg"]
+            options = [
+                opt for opt in options if opt["value"] in ["html", "png", "jpeg"]
+            ]  # Only some formats supported for 3D
 
-        new_value = current_format
-        if is_3d and current_format == "svg":
-            new_value = "png"  # Default to PNG for 3D plots if SVG was selected
-
-        return options, new_value
+        value = (
+            current_format
+            if current_format in [o["value"] for o in options]
+            else options[0]["value"]
+        )
+        return options, value
 
     @app.callback(
         Output("download-plot", "data"),
@@ -516,6 +513,8 @@ def setup_callbacks(app):
             State("image-height", "value"),
             State("download-format-dropdown", "value"),
             State("json-data-store", "data"),
+            State("protein-search-dropdown", "value"),
+            State("marker-size-input", "value"),
         ],
         prevent_initial_call=True,
     )
@@ -528,30 +527,47 @@ def setup_callbacks(app):
         height,
         download_format,
         json_data,
+        selected_proteins,
+        marker_size,
     ):
-        if n_clicks is None or figure is None:
+        if n_clicks is None:
+            raise PreventUpdate
+
+        reader = JsonReader(json_data)
+        is_3d = reader.get_projection_info(selected_projection)["dimensions"] == 3
+        fig_obj = go.Figure(figure)
+
+        # For HTML format, create a self-contained HTML file
+        if download_format == "html":
+            buffer = io.StringIO()
+            fig_obj.write_html(buffer)
+            return dict(
+                content=buffer.getvalue(),
+                filename=f"{selected_projection}_{selected_feature}.html",
+            )
+
+        # For other formats, use the save_plot function
+        return dcc.send_bytes(
+            save_plot(fig_obj, is_3d, width, height, download_format),
+            f"{selected_projection}_{selected_feature}.{download_format}",
+        )
+
+    @app.callback(
+        Output("marker-shape-dropdown", "options"),
+        Input("projection-dropdown", "value"),
+        State("json-data-store", "data"),
+    )
+    def update_marker_shape_dropdown_options(selected_projection, json_data):
+        if not selected_projection or not json_data:
             raise PreventUpdate
 
         reader = get_reader(json_data)
-        if reader is None:
-            raise PreventUpdate
+        projection_info = reader.get_projection_info(selected_projection)
+        is_3d = projection_info["dimensions"] == 3
 
-        fig = go.Figure(figure)
+        if is_3d:
+            shapes = MARKER_SHAPES_3D
+        else:
+            shapes = MARKER_SHAPES_2D
 
-        if download_format == "html":
-            filename = f"{selected_projection}_{selected_feature}.html"
-            buffer = io.StringIO()
-            fig.write_html(buffer)
-            return dcc.send_string(buffer.getvalue(), filename)
-
-        elif download_format == "svg":
-            filename = f"{selected_projection}_{selected_feature}.svg"
-            img_bytes = fig.to_image(format="svg", width=width, height=height)
-            return dcc.send_string(img_bytes.decode("utf-8"), filename)
-
-        elif download_format == "png":
-            filename = f"{selected_projection}_{selected_feature}.png"
-            img_bytes = fig.to_image(format="png", width=width, height=height)
-            return dcc.send_bytes(img_bytes, filename)
-
-        raise PreventUpdate
+        return [{"label": shape, "value": shape} for shape in shapes]
