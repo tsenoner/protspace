@@ -95,6 +95,7 @@ def create_plot(
         fig = px.scatter(**plot_args)
         fig.update_traces(marker=dict(size=marker_size))
 
+    # Hide the original legend entries
     fig.update_traces(
         marker_line=dict(width=DEFAULT_LINE_WIDTH, color="black"), showlegend=False
     )
@@ -122,6 +123,7 @@ def create_plot(
             name=str(value),
             marker=marker_style,
             legendgroup=str(value),
+            showlegend=True,
         )
         if is_3d:
             trace_params["z"] = [None]
@@ -146,14 +148,15 @@ def create_plot(
             highlight_params["z"] = selected_df["z"]
         fig.add_trace(scatter_class(**highlight_params))
 
+    # -- Add layout --
     layout_args = {
         "plot_bgcolor": "white",
         "margin": dict(l=0, r=0, t=0, b=0),
         "uirevision": "constant",
         "legend": dict(
-            itemsizing="constant",
-            itemwidth=30,
+            itemwidth=30 + legend_marker_size * 0.9,
             title=selected_feature if selected_feature else None,
+            font=dict(size=5 + legend_marker_size * 0.9),
         ),
     }
 
@@ -284,21 +287,8 @@ def save_plot(
     file_format: str = "svg",
 ) -> bytes:
     """Generate image bytes for the plot."""
-    if not is_3d:
-        if width is None or height is None:
-            raise ValueError("Width and height must be provided for 2D plots")
-
-        # Adjust font size proportionally
-        scaling_factor = height / 600
-        font_size = max(10, min(12 * scaling_factor, 30))
-
-        # Adjust marker size proportionally
-        marker_size = max(5, min(7 * scaling_factor, 20))
-
-        fig.update_layout(
-            legend=dict(font=dict(size=font_size)),
-        )
-        fig.update_traces(marker=dict(size=marker_size))
+    if not is_3d and (width is None or height is None):
+        raise ValueError("Width and height must be provided for 2D plots")
 
     # For both 2D and 3D, write to an in-memory buffer
     buffer = io.BytesIO()

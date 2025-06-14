@@ -44,23 +44,56 @@ def parse_zip_contents(contents, filename):
 
 def setup_callbacks(app):
     @app.callback(
-        Output("help-menu", "style"),
-        Input("help-button", "n_clicks"),
-        State("help-menu", "style"),
+        [
+            Output("help-menu", "style"),
+            Output("left-panel", "style"),
+            Output("marker-style-controller", "style"),
+        ],
+        [Input("help-button", "n_clicks"), Input("settings-button", "n_clicks")],
+        [
+            State("help-menu", "style"),
+            State("marker-style-controller", "style"),
+            State("left-panel", "style"),
+        ],
     )
-    def toggle_help_menu(n_clicks, current_style):
-        if n_clicks is None:
-            return {"display": "none"}
-        if current_style["display"] == "none":
-            return {
-                "display": "block",
-                "width": "100%",  # "300px",
+    def toggle_side_panels(
+        help_clicks, settings_clicks, help_style, marker_style, left_panel_style
+    ):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        # Default styles
+        new_help_style = {"display": "none"}
+        new_marker_style = {"display": "none"}
+        new_left_panel_style = {"width": "100%", "display": "inline-block"}
+
+        if trigger_id == "help-button" and help_style.get("display") == "none":
+            new_help_style = {
+                "display": "inline-block",
+                "width": "50%",
                 "padding": "20px",
                 "backgroundColor": "#f0f0f0",
                 "borderRadius": "5px",
+                "verticalAlign": "top",
+                "maxHeight": "calc(100vh - 200px)",
+                "overflowY": "auto",
             }
-        else:
-            return {"display": "none"}
+            new_left_panel_style["width"] = "50%"
+        elif trigger_id == "settings-button" and marker_style.get("display") == "none":
+            new_marker_style = {
+                "display": "inline-block",
+                "width": "20%",
+                "padding": "20px",
+                "backgroundColor": "#f0f0f0",
+                "borderRadius": "5px",
+                "verticalAlign": "top",
+            }
+            new_left_panel_style["width"] = "80%"
+
+        return new_help_style, new_left_panel_style, new_marker_style
 
     @app.callback(
         Output("json-data-store", "data", allow_duplicate=True),
@@ -167,18 +200,10 @@ def setup_callbacks(app):
         )
 
     @app.callback(
+        Output("json-data-store", "data", allow_duplicate=True),
+        Input("apply-style-button", "n_clicks"),
         [
-            Output("scatter-plot", "figure"),
-            Output("json-data-store", "data", allow_duplicate=True),
-        ],
-        [
-            Input("projection-dropdown", "value"),
-            Input("feature-dropdown", "value"),
-            Input("protein-search-dropdown", "value"),
-            Input("apply-style-button", "n_clicks"),
-            Input("marker-size-input", "value"),
-        ],
-        [
+            State("feature-dropdown", "value"),
             State("json-data-store", "data"),
             State("feature-value-dropdown", "value"),
             State("marker-color-picker", "value"),
@@ -186,25 +211,62 @@ def setup_callbacks(app):
         ],
         prevent_initial_call=True,
     )
-    def update_graph(
-        selected_projection,
-        selected_feature,
-        selected_proteins,
+    def update_styles(
         n_clicks,
-        marker_size,
+        selected_feature,
         json_data,
         selected_value,
         selected_color,
         selected_shape,
     ):
-        ctx = dash.callback_context
-        if (
-            not ctx.triggered
-            or json_data is None
-            or not selected_projection
-            or not selected_feature
-        ):
-            # Return a blank figure and no update to json_data
+        if n_clicks is None or not selected_value:
+            raise PreventUpdate
+
+        reader = JsonReader(json_data)
+
+        if selected_color and "rgb" in selected_color:
+            selected_color_str = "rgba({r}, {g}, {b}, {a})".format(
+                **selected_color["rgb"]
+            )
+            reader.update_feature_color(
+                selected_feature, selected_value, selected_color_str
+            )
+        elif selected_color:
+            color_val = selected_color.get("hex", selected_color)
+            reader.update_feature_color(selected_feature, selected_value, color_val)
+
+        if selected_shape:
+            reader.update_marker_shape(selected_feature, selected_value, selected_shape)
+
+        return reader.get_data()
+
+    @app.callback(
+        Output("scatter-plot", "figure"),
+        [
+            Input("json-data-store", "data"),
+            Input("projection-dropdown", "value"),
+            Input("feature-dropdown", "value"),
+            Input("protein-search-dropdown", "value"),
+            Input("marker-size-input", "value"),
+            Input("legend-marker-size-input", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def update_graph(
+        json_data,
+        selected_projection,
+        selected_feature,
+        selected_proteins,
+        marker_size,
+        legend_marker_size,
+    ):
+        # Handle temporarily empty size inputs
+        if marker_size is None:
+            marker_size = 10  # Default value
+        if legend_marker_size is None:
+            legend_marker_size = 12  # Default value
+
+        if not json_data or not selected_projection or not selected_feature:
             fig = go.Figure()
             fig.update_layout(
                 xaxis=dict(visible=False),
@@ -212,52 +274,18 @@ def setup_callbacks(app):
                 plot_bgcolor="white",
                 margin=dict(l=0, r=0, t=0, b=0),
             )
-            return fig, no_update
+            return fig
 
         reader = JsonReader(json_data)
-
-        # Initialize json_data_output
-        json_data_output = no_update
-
-        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-        if trigger_id == "apply-style-button":
-            if selected_value:
-                if selected_color and "rgb" in selected_color:
-                    selected_color_str = "rgba({r}, {g}, {b}, {a})".format(
-                        **selected_color["rgb"]
-                    )
-                    reader.update_feature_color(
-                        selected_feature, selected_value, selected_color_str
-                    )
-                elif selected_color:
-                    # Handle cases where color is a string (e.g., from hex)
-                    color_val = (
-                        selected_color["hex"]
-                        if isinstance(selected_color, dict)
-                        else selected_color
-                    )
-                    reader.update_feature_color(
-                        selected_feature, selected_value, color_val
-                    )
-
-                if selected_shape:
-                    reader.update_marker_shape(
-                        selected_feature, selected_value, selected_shape
-                    )
-            # Update the JSON data in the store
-            json_data = reader.get_data()
-            json_data_output = json_data
-
         fig, _ = create_plot(
             reader,
             selected_projection,
             selected_feature,
             selected_proteins,
             marker_size,
+            legend_marker_size,
         )
-
-        return fig, json_data_output
+        return fig
 
     @app.callback(
         [
@@ -372,33 +400,6 @@ def setup_callbacks(app):
             content=json.dumps(json_data, indent=2),
             filename="protspace_data.json",
         )
-
-    @app.callback(
-        [
-            Output("marker-style-controller", "style"),
-            Output("left-panel", "style"),
-        ],
-        Input("settings-button", "n_clicks"),
-        State("marker-style-controller", "style"),
-    )
-    def toggle_marker_style_controller(n_clicks, current_style):
-        if n_clicks is None:
-            return {"display": "none"}, {"width": "100%"}
-
-        if current_style["display"] == "none":
-            return (
-                {
-                    "display": "inline-block",
-                    "width": "20%",
-                    "padding": "20px",
-                    "backgroundColor": "#f0f0f0",
-                    "borderRadius": "5px",
-                    "verticalAlign": "top",
-                },
-                {"width": "80%"},
-            )
-        else:
-            return {"display": "none"}, {"width": "100%"}
 
     @app.callback(
         Output("feature-value-dropdown", "options"),
