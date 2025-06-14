@@ -1,18 +1,20 @@
-import numpy as np
 import pandas as pd
 
 from .data_loader import JsonReader
 
+
 def standardize_missing(series) -> pd.Series:
     """Replaces various forms of missing values with '<NaN>' in a pandas Series."""
     series = series.astype(str)
-    missing_values = ['', 'nan', 'none', 'null', '<NA>']
-    replacements = {value: '<NaN>' for value in missing_values}
+    missing_values = ["", "nan", "none", "null", "<NA>"]
+    replacements = {value: "<NaN>" for value in missing_values}
 
-    return series.replace(replacements).fillna('<NaN>')
+    return series.replace(replacements).fillna("<NaN>")
 
 
-def prepare_dataframe(reader: JsonReader, selected_projection: str, selected_feature: str) -> pd.DataFrame:
+def prepare_dataframe(
+    reader: JsonReader, selected_projection: str, selected_feature: str
+) -> pd.DataFrame:
     """Prepare the dataframe for plotting."""
     projection_data = reader.get_projection_data(selected_projection)
     df = pd.DataFrame(projection_data)
