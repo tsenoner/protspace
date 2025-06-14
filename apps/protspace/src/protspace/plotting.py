@@ -16,7 +16,29 @@ from .config import (
     NAN_COLOR,
 )
 from .data_loader import JsonReader
-from .data_processing import prepare_dataframe
+from .helpers import standardize_missing
+
+
+def prepare_dataframe(
+    reader: JsonReader, selected_projection: str, selected_feature: str
+) -> pd.DataFrame:
+    """Prepare the dataframe for plotting."""
+    projection_data = reader.get_projection_data(selected_projection)
+    df = pd.DataFrame(projection_data)
+    df["x"] = [coord["x"] for coord in df["coordinates"]]
+    df["y"] = [coord["y"] for coord in df["coordinates"]]
+    if reader.get_projection_info(selected_projection)["dimensions"] == 3:
+        df["z"] = [coord["z"] for coord in df["coordinates"]]
+
+    df[selected_feature] = df["identifier"].apply(
+        lambda x: reader.get_protein_features(x).get(selected_feature)
+    )
+    df[selected_feature] = standardize_missing(df[selected_feature])
+
+    if df[selected_feature].dtype in ["float64", "int64"]:
+        df[selected_feature] = df[selected_feature].astype(str)
+
+    return df
 
 
 def natural_sort_key(text):
@@ -31,30 +53,15 @@ def natural_sort_key(text):
     return [convert(c) for c in re.split("([0-9]+)", text)]
 
 
-def create_plot(
-    reader: "JsonReader",
-    selected_projection: str,
+def _create_base_figure(
+    df: pd.DataFrame,
+    is_3d: bool,
     selected_feature: str,
-    selected_proteins: Optional[List[str]] = None,
-    marker_size: int = 10,
-    legend_marker_size: int = 12,
-):
-    df = prepare_dataframe(reader, selected_projection, selected_feature)
-
-    projection_info = reader.get_projection_info(selected_projection)
-    is_3d = projection_info["dimensions"] == 3
-    scatter_class = go.Scatter3d if is_3d else go.Scatter
-
-    feature_colors = reader.get_feature_colors(selected_feature).copy()
-    feature_colors["<NaN>"] = NAN_COLOR
-    marker_shapes = reader.get_marker_shape(selected_feature).copy()
-    if "<NaN>" not in marker_shapes:
-        marker_shapes["<NaN>"] = "circle"
-
-    # Always define shapes to avoid plotly's automatic shape cycling
-    all_values = df[selected_feature].unique()
-    final_marker_shapes = {val: marker_shapes.get(val, "circle") for val in all_values}
-
+    feature_colors: Dict[str, str],
+    final_marker_shapes: Dict[str, str],
+    marker_size: int,
+) -> go.Figure:
+    """Creates the base scatter plot figure."""
     plot_args = {
         "data_frame": df,
         "color": selected_feature,
@@ -99,9 +106,22 @@ def create_plot(
     fig.update_traces(
         marker_line=dict(width=DEFAULT_LINE_WIDTH, color="black"), showlegend=False
     )
+    return fig
 
-    # Add invisible traces for legend with larger markers
+
+def _add_legend_traces(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    is_3d: bool,
+    selected_feature: str,
+    feature_colors: Dict[str, str],
+    final_marker_shapes: Dict[str, str],
+    legend_marker_size: int,
+):
+    """Adds invisible traces to the figure for a custom legend."""
+    scatter_class = go.Scatter3d if is_3d else go.Scatter
     sorted_unique_values = sorted(df[selected_feature].unique(), key=natural_sort_key)
+
     for value in sorted_unique_values:
         shape = final_marker_shapes.get(value, "circle")
         if is_3d and shape not in MARKER_SHAPES_3D:
@@ -110,54 +130,68 @@ def create_plot(
         marker_style = {
             "size": legend_marker_size,
             "line": dict(width=DEFAULT_LINE_WIDTH, color="black"),
+            "symbol": shape,
         }
         if value in feature_colors:
             marker_style["color"] = feature_colors[value]
 
-        marker_style["symbol"] = shape
-
-        trace_params = dict(
-            x=[None],
-            y=[None],
-            mode="markers",
-            name=str(value),
-            marker=marker_style,
-            legendgroup=str(value),
-            showlegend=True,
-        )
+        trace_params = {
+            "x": [None],
+            "y": [None],
+            "mode": "markers",
+            "name": str(value),
+            "marker": marker_style,
+            "legendgroup": str(value),
+            "showlegend": True,
+        }
         if is_3d:
             trace_params["z"] = [None]
         fig.add_trace(scatter_class(**trace_params))
 
-    # Highlight selected proteins
-    if selected_proteins:
-        selected_df = df[df["identifier"].isin(selected_proteins)]
-        highlight_params = dict(
-            x=selected_df["x"],
-            y=selected_df["y"],
-            mode="markers",
-            marker=dict(
-                size=HIGHLIGHT_MARKER_SIZE,
-                color=HIGHLIGHT_COLOR,
-                line=dict(width=HIGHLIGHT_LINE_WIDTH, color=HIGHLIGHT_BORDER_COLOR),
-            ),
-            hoverinfo="skip",
-            showlegend=False,
-        )
-        if is_3d:
-            highlight_params["z"] = selected_df["z"]
-        fig.add_trace(scatter_class(**highlight_params))
 
-    # -- Add layout --
+def _add_highlight_traces(
+    fig: go.Figure, df: pd.DataFrame, is_3d: bool, selected_proteins: List[str]
+):
+    """Adds highlight traces for selected proteins."""
+    if not selected_proteins:
+        return
+
+    scatter_class = go.Scatter3d if is_3d else go.Scatter
+    selected_df = df[df["identifier"].isin(selected_proteins)]
+    highlight_params = {
+        "x": selected_df["x"],
+        "y": selected_df["y"],
+        "mode": "markers",
+        "marker": {
+            "size": HIGHLIGHT_MARKER_SIZE,
+            "color": HIGHLIGHT_COLOR,
+            "line": {"width": HIGHLIGHT_LINE_WIDTH, "color": HIGHLIGHT_BORDER_COLOR},
+        },
+        "hoverinfo": "skip",
+        "showlegend": False,
+    }
+    if is_3d:
+        highlight_params["z"] = selected_df["z"]
+    fig.add_trace(scatter_class(**highlight_params))
+
+
+def _configure_layout(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    is_3d: bool,
+    selected_feature: str,
+    legend_marker_size: int,
+):
+    """Configures the final layout of the figure."""
     layout_args = {
         "plot_bgcolor": "white",
-        "margin": dict(l=0, r=0, t=0, b=0),
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
         "uirevision": "constant",
-        "legend": dict(
-            itemwidth=30 + legend_marker_size * 0.9,
-            title=selected_feature if selected_feature else None,
-            font=dict(size=5 + legend_marker_size * 0.9),
-        ),
+        "legend": {
+            "itemwidth": 30 + legend_marker_size * 0.9,
+            "title": selected_feature or None,
+            "font": {"size": 5 + legend_marker_size * 0.9},
+        },
     }
 
     if is_3d:
@@ -165,30 +199,70 @@ def create_plot(
         layout_args.update(
             {
                 "scene": get_3d_scene_layout(df),
-                "scene_camera": dict(eye=dict(x=1.25, y=1.25, z=1.25)),
+                "scene_camera": {"eye": {"x": 1.25, "y": 1.25, "z": 1.25}},
             }
         )
     else:
         layout_args.update(
             {
-                "xaxis": dict(
-                    showticklabels=False,
-                    showline=False,
-                    zeroline=False,
-                    showgrid=False,
-                    title=None,
-                ),
-                "yaxis": dict(
-                    showticklabels=False,
-                    showline=False,
-                    zeroline=False,
-                    showgrid=False,
-                    title=None,
-                ),
+                "xaxis": {
+                    "showticklabels": False,
+                    "showline": False,
+                    "zeroline": False,
+                    "showgrid": False,
+                    "title": None,
+                },
+                "yaxis": {
+                    "showticklabels": False,
+                    "showline": False,
+                    "zeroline": False,
+                    "showgrid": False,
+                    "title": None,
+                },
             }
         )
-
     fig.update_layout(**layout_args)
+
+
+def create_plot(
+    reader: "JsonReader",
+    selected_projection: str,
+    selected_feature: str,
+    selected_proteins: Optional[List[str]] = None,
+    marker_size: int = 10,
+    legend_marker_size: int = 12,
+):
+    """Creates a 2D or 3D scatter plot of protein data."""
+    df = prepare_dataframe(reader, selected_projection, selected_feature)
+
+    projection_info = reader.get_projection_info(selected_projection)
+    is_3d = projection_info["dimensions"] == 3
+
+    feature_colors = reader.get_feature_colors(selected_feature).copy()
+    feature_colors["<NaN>"] = NAN_COLOR
+    marker_shapes = reader.get_marker_shape(selected_feature).copy()
+    if "<NaN>" not in marker_shapes:
+        marker_shapes["<NaN>"] = "circle"
+
+    all_values = df[selected_feature].unique()
+    final_marker_shapes = {val: marker_shapes.get(val, "circle") for val in all_values}
+
+    fig = _create_base_figure(
+        df, is_3d, selected_feature, feature_colors, final_marker_shapes, marker_size
+    )
+    _add_legend_traces(
+        fig,
+        df,
+        is_3d,
+        selected_feature,
+        feature_colors,
+        final_marker_shapes,
+        legend_marker_size,
+    )
+    if selected_proteins:
+        _add_highlight_traces(fig, df, is_3d, selected_proteins)
+
+    _configure_layout(fig, df, is_3d, selected_feature, legend_marker_size)
 
     return fig, is_3d
 
