@@ -13,7 +13,13 @@ import pandas as pd
 
 from .data_loader import JsonReader
 from .plotting import create_plot, save_plot
-from .config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
+from .config import (
+    MARKER_SHAPES_2D,
+    MARKER_SHAPES_3D,
+    HELP_PANEL_WIDTH_PERCENT,
+    SETTINGS_PANEL_WIDTH_PERCENT,
+)
+from .helpers import is_projection_3d
 
 
 def get_reader(json_data):
@@ -86,8 +92,12 @@ def create_side_panel_callback(app, button_id, panel_id, panel_width_percent):
 
 
 def setup_callbacks(app):
-    create_side_panel_callback(app, "help-button", "help-menu", 50)
-    create_side_panel_callback(app, "settings-button", "marker-style-controller", 20)
+    create_side_panel_callback(
+        app, "help-button", "help-menu", HELP_PANEL_WIDTH_PERCENT
+    )
+    create_side_panel_callback(
+        app, "settings-button", "marker-style-controller", SETTINGS_PANEL_WIDTH_PERCENT
+    )
 
     @app.callback(
         Output("json-data-store", "data", allow_duplicate=True),
@@ -553,16 +563,7 @@ def setup_callbacks(app):
         State("json-data-store", "data"),
     )
     def update_marker_shape_dropdown_options(selected_projection, json_data):
-        if not selected_projection or not json_data:
-            raise PreventUpdate
-
         reader = get_reader(json_data)
-        projection_info = reader.get_projection_info(selected_projection)
-        is_3d = projection_info["dimensions"] == 3
-
-        if is_3d:
-            shapes = MARKER_SHAPES_3D
-        else:
-            shapes = MARKER_SHAPES_2D
-
-        return [{"label": shape, "value": shape} for shape in shapes]
+        is_3d = is_projection_3d(reader, selected_projection)
+        marker_shapes = MARKER_SHAPES_3D if is_3d else MARKER_SHAPES_2D
+        return [{"label": shape, "value": shape} for shape in marker_shapes]

@@ -9,6 +9,8 @@ def extract_marker_strings(input_list):
 
 # App settings
 DEFAULT_PORT = 8050
+HELP_PANEL_WIDTH_PERCENT = 50
+SETTINGS_PANEL_WIDTH_PERCENT = 20
 
 # Plotting settings
 DEFAULT_LINE_WIDTH = 0.5
