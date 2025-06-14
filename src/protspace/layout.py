@@ -1,4 +1,5 @@
 import dash_daq as daq
+import dash_bootstrap_components as dbc
 from dash import dcc, html
 from dash_bio import NglMoleculeViewer
 from dash_iconify import DashIconify
@@ -6,7 +7,6 @@ from dash_iconify import DashIconify
 from . import styles
 from .config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
 from .data_loader import JsonReader
-from .layout_help import create_help_menu
 
 
 def _create_header():
@@ -205,7 +205,7 @@ def _create_main_view(marker_shapes):
             html.Div(
                 id="help-menu",
                 style=styles.HELP_MENU_STYLE,
-                children=create_help_menu(),
+                children=_create_help_menu(),
             ),
         ],
         style=styles.MAIN_VIEW_CONTAINER_STYLE,
@@ -319,3 +319,50 @@ def create_layout(app):
     ]
 
     return html.Div(layout_components, style=styles.BASE_STYLE)
+
+
+def _create_help_menu():
+    """Create the help menu with content loaded from Markdown files."""
+
+    def _load_md(file, with_image=False):
+        try:
+            with open(f"src/protspace/assets/help_content/{file}", "r") as f:
+                content = dcc.Markdown(f.read(), dangerously_allow_html=True)
+                if with_image:
+                    return html.Div(
+                        [
+                            html.Img(
+                                src="assets/annotated_image.png",
+                                style={
+                                    "width": "100%",
+                                    "height": "auto",
+                                    "marginBottom": "20px",
+                                },
+                            ),
+                            content,
+                        ]
+                    )
+                return content
+        except FileNotFoundError:
+            return f"Error: {file} not found."
+
+    return html.Div(
+        [
+            html.H3(
+                "ProtSpace Help Guide",
+                style={"textAlign": "center", "marginBottom": "20px"},
+            ),
+            dbc.Tabs(
+                [
+                    dbc.Tab(
+                        _load_md("help_overview.md", with_image=True),
+                        label="Interface Overview",
+                    ),
+                    dbc.Tab(_load_md("help_json.md"), label="JSON File Structure"),
+                    dbc.Tab(_load_md("help_how_it_works.md"), label="How it works"),
+                    dbc.Tab(_load_md("help_faq.md"), label="FAQ"),
+                ]
+            ),
+        ],
+        className="help-menu-container",
+    )

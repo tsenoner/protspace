@@ -42,38 +42,31 @@ def parse_zip_contents(contents, filename):
         return None, f"Error processing {filename}: {str(e)}"
 
 
-def setup_callbacks(app):
+def create_side_panel_callback(app, button_id, panel_id, panel_width_percent):
+    """Factory to create a callback for a side panel."""
+
     @app.callback(
         [
-            Output("help-menu", "style"),
-            Output("left-panel", "style"),
-            Output("marker-style-controller", "style"),
+            Output(panel_id, "style"),
+            Output("left-panel", "style", allow_duplicate=True),
         ],
-        [Input("help-button", "n_clicks"), Input("settings-button", "n_clicks")],
+        Input(button_id, "n_clicks"),
         [
-            State("help-menu", "style"),
-            State("marker-style-controller", "style"),
+            State(panel_id, "style"),
             State("left-panel", "style"),
         ],
+        prevent_initial_call=True,
     )
-    def toggle_side_panels(
-        help_clicks, settings_clicks, help_style, marker_style, left_panel_style
-    ):
-        ctx = dash.callback_context
-        if not ctx.triggered:
+    def toggle_panel(n_clicks, panel_style, left_panel_style):
+        if n_clicks is None:
             raise PreventUpdate
 
-        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        is_hidden = panel_style.get("display") == "none"
 
-        # Default styles
-        new_help_style = {"display": "none"}
-        new_marker_style = {"display": "none"}
-        new_left_panel_style = {"width": "100%", "display": "inline-block"}
-
-        if trigger_id == "help-button" and help_style.get("display") == "none":
-            new_help_style = {
+        if is_hidden:
+            new_panel_style = {
                 "display": "inline-block",
-                "width": "50%",
+                "width": f"{panel_width_percent}%",
                 "padding": "20px",
                 "backgroundColor": "#f0f0f0",
                 "borderRadius": "5px",
@@ -81,19 +74,20 @@ def setup_callbacks(app):
                 "maxHeight": "calc(100vh - 200px)",
                 "overflowY": "auto",
             }
-            new_left_panel_style["width"] = "50%"
-        elif trigger_id == "settings-button" and marker_style.get("display") == "none":
-            new_marker_style = {
+            new_left_panel_style = {
+                "width": f"{100 - panel_width_percent}%",
                 "display": "inline-block",
-                "width": "20%",
-                "padding": "20px",
-                "backgroundColor": "#f0f0f0",
-                "borderRadius": "5px",
-                "verticalAlign": "top",
             }
-            new_left_panel_style["width"] = "80%"
+        else:
+            new_panel_style = {"display": "none"}
+            new_left_panel_style = {"width": "100%", "display": "inline-block"}
 
-        return new_help_style, new_left_panel_style, new_marker_style
+        return new_panel_style, new_left_panel_style
+
+
+def setup_callbacks(app):
+    create_side_panel_callback(app, "help-button", "help-menu", 50)
+    create_side_panel_callback(app, "settings-button", "marker-style-controller", 20)
 
     @app.callback(
         Output("json-data-store", "data", allow_duplicate=True),

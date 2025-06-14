@@ -8,3 +8,13 @@
     border: 1px solid #ccc;
     border-bottom: none;
 }
+
+/* Custom styles for the ProtSpace application */
+
+.help-menu-container p {
+    margin-bottom: 0.1rem; /* Reduce space below paragraphs */
+}
+
+.help-menu-container ul {
+    margin-bottom: 0.5rem; /* Reduce space below lists */
+}
