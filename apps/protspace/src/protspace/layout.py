@@ -1,7 +1,7 @@
 import dash_daq as daq
 import dash_bootstrap_components as dbc
 from dash import dcc, html
-from dash_bio import NglMoleculeViewer
+import dash_molstar
 from dash_iconify import DashIconify
 
 from . import styles
@@ -148,21 +148,16 @@ def _create_main_view(marker_shapes):
                     ),
                     html.Div(
                         [
-                            NglMoleculeViewer(
-                                id="ngl-molecule-viewer",
-                                width="100%",
-                                height="calc(100vh - 200px)",
-                                molStyles={
-                                    "representations": ["cartoon"],
-                                    "chosenAtomsColor": "white",
-                                    "chosenAtomsRadius": 0.5,
-                                    "molSpacingXaxis": 50,
-                                    "sideByside": True,
+                            dash_molstar.MolstarViewer(
+                                id="molstar-viewer",
+                                style={
+                                    "width": "100%",
+                                    "height": "calc(100vh - 200px)",
                                 },
                             ),
                         ],
-                        id="ngl-viewer-div",
-                        style=styles.NGL_VIEWER_DIV_STYLE,
+                        id="molstar-viewer-div",
+                        style=styles.MOLSTAR_VIEWER_DIV_STYLE,
                     ),
                 ],
             ),

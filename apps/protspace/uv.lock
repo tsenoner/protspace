@@ -448,15 +448,6 @@ wheels = [
 ]
 
 [[package]]
-name = "colour"
-version = "0.1.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a0/d4/5911a7618acddc3f594ddf144ecd8a03c29074a540f4494670ad8f153efe/colour-0.1.5.tar.gz", hash = "sha256:af20120fefd2afede8b001fbef2ea9da70ad7d49fafdb6489025dae8745c3aee", size = 24776, upload-time = "2017-11-19T23:20:08.015Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/46/e81907704ab203206769dee1385dc77e1407576ff8f50a0681d0a6b541be/colour-0.1.5-py2.py3-none-any.whl", hash = "sha256:33f6db9d564fadc16e59921a56999b79571160ce09916303d35346dddc17978c", size = 23772, upload-time = "2017-11-19T23:20:04.56Z" },
-]
-
-[[package]]
 name = "comm"
 version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -640,25 +631,6 @@ testing = [
 ]
 
 [[package]]
-name = "dash-bio"
-version = "1.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "biopython" },
-    { name = "colour" },
-    { name = "dash" },
-    { name = "geoparse" },
-    { name = "jsonschema" },
-    { name = "pandas" },
-    { name = "parmed" },
-    { name = "periodictable" },
-    { name = "requests" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7e/eb/5f12d4b0b91974e2457aaf344230010488453edadffb9e5c241eb9f02d34/dash_bio-1.0.2.tar.gz", hash = "sha256:6de28e412a37aef19429579f3285c27a5d4f21d8f387564d0698d63466259a36", size = 10214690, upload-time = "2022-03-19T01:34:19.559Z" }
-
-[[package]]
 name = "dash-bootstrap-components"
 version = "2.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -701,6 +673,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2c/1e/535c8312f038ea688171435cefd8b5b03452353646e43bade5d92a8d9da0/dash_mantine_components-2.0.0.tar.gz", hash = "sha256:2e09b7f60b41483a06d270c621b5f23a1a9c9321a7f60d2e2b631cde493456cb", size = 850199, upload-time = "2025-06-03T13:24:58.191Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/45/a1acd23b37af85c8b824ccb3e3e4232900725830a652b762ed0c67afec2a/dash_mantine_components-2.0.0-py3-none-any.whl", hash = "sha256:e084ba1fac9a9ad8672852047d0a97dc3cd7372677d1fa55ef8e655a664fa271", size = 1262158, upload-time = "2025-06-03T13:24:56.158Z" },
+]
+
+[[package]]
+name = "dash-molstar"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/69/2c1b7f2cc28290dc830de30492197a814d6977aac672bac3aa3048ea7bf7/dash_molstar-1.3.0.tar.gz", hash = "sha256:a78ff3c26004e92df55f2c727380c97b01bcda8809983e686dcaddcc60117ed6", size = 1828319, upload-time = "2025-06-10T14:33:58.66Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/55/53a1a6646cd3ffa5aa0dc9ffb513229805cc2d512fdcf5e4ff6c9d5933fa/dash_molstar-1.3.0-py3-none-any.whl", hash = "sha256:8ced7ed021a057f6230b0d4a6a480d5d1563ced8b7bc093698a4537fed13f07c", size = 1834563, upload-time = "2025-06-10T14:33:56.806Z" },
 ]
 
 [[package]]
@@ -882,21 +863,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/00/f7/27f15d41f0ed38e8fcc488584b57e902b331da7f7c6dcda53721b15838fc/fsspec-2025.5.1.tar.gz", hash = "sha256:2e55e47a540b91843b755e83ded97c6e897fa0942b11490113f09e9c443c2475", size = 303033, upload-time = "2025-05-24T12:03:23.792Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/61/78c7b3851add1481b048b5fdc29067397a1784e2910592bc81bb3f608635/fsspec-2025.5.1-py3-none-any.whl", hash = "sha256:24d3a2e663d5fc735ab256263c4075f374a174c3410c0b25e5bd1970bceaa462", size = 199052, upload-time = "2025-05-24T12:03:21.66Z" },
-]
-
-[[package]]
-name = "geoparse"
-version = "2.0.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "requests" },
-    { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/a9/0a2621953ddffd6957cd2db0f3553e6ee9ce1401bbd87167800561f8c977/geoparse-2.0.4.tar.gz", hash = "sha256:f2185310e5f7c6bd551c763476ad8a296cf7c355afa3136881e4bad5a5dad81a", size = 277953, upload-time = "2024-04-23T19:02:04.594Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/4a/b6a3e141c21e4d4b72b0c11231c1d88a8bae127f43921c5dea391b299b2a/GEOparse-2.0.4-py3-none-any.whl", hash = "sha256:5982e38d1e66314bd20ad5ad8313a6adef8cf9c29e44583aaca13261e404d622", size = 29043, upload-time = "2024-04-23T19:02:01.807Z" },
 ]
 
 [[package]]
@@ -2484,12 +2450,6 @@ wheels = [
 ]
 
 [[package]]
-name = "parmed"
-version = "4.3.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/15/29/80bc4fa049e166e0b8eda2a7220c5473809f2f96bb15f1f117abfb8dad7c/parmed-4.3.0.tar.gz", hash = "sha256:3d0208f56507649b5af91bbb128f650a6f86de1b5a9af780e6479145e5362ea3", size = 20197299, upload-time = "2024-10-30T21:27:51.114Z" }
-
-[[package]]
 name = "parso"
 version = "0.8.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2517,18 +2477,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6c/e8/1b856488736db9f1bb8578480f9497f7cf1ede96c6e6e17f29ebef4e78bc/percy-2.0.2.tar.gz", hash = "sha256:6238612dc401fa5c221c0ad7738f7ea43e48fe2695f6423e785ee2bc940f021d", size = 67855, upload-time = "2019-03-07T00:28:30.78Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/39/528e689e21baa4d625cecc326c0d56c976d63855f9d114c07ccaed8a73eb/percy-2.0.2-py2.py3-none-any.whl", hash = "sha256:c1647b768810e9453220a7721a5d52cec560dee913d13c1e29b713703f4f223e", size = 12004, upload-time = "2019-03-07T00:28:33.207Z" },
-]
-
-[[package]]
-name = "periodictable"
-version = "2.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "pyparsing" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/e4/f2a338abfb5a6b9e2a48dc4acaa9df0bd94126df336ab403178f6a7a901a/periodictable-2.0.2-py3-none-any.whl", hash = "sha256:7d0680baf758715dd66bdac733de82dcb976aa03981fbd6d75a84213fb3b5f86", size = 811077, upload-time = "2024-12-20T02:26:26.165Z" },
 ]
 
 [[package]]
@@ -2703,14 +2651,15 @@ dependencies = [
 [package.optional-dependencies]
 frontend = [
     { name = "dash" },
-    { name = "dash-bio" },
     { name = "dash-bootstrap-components" },
     { name = "dash-daq" },
     { name = "dash-iconify" },
+    { name = "dash-molstar" },
     { name = "gunicorn" },
     { name = "kaleido" },
     { name = "plotly" },
     { name = "python-dotenv" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -2742,10 +2691,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dash", marker = "extra == 'frontend'", specifier = ">=3" },
-    { name = "dash-bio", marker = "extra == 'frontend'", specifier = ">=1.0.2" },
     { name = "dash-bootstrap-components", marker = "extra == 'frontend'", specifier = ">=1.6.0" },
     { name = "dash-daq", marker = "extra == 'frontend'", specifier = ">=0.5.0" },
     { name = "dash-iconify", marker = "extra == 'frontend'", specifier = ">=0.1.2" },
+    { name = "dash-molstar", marker = "extra == 'frontend'", specifier = ">=1.3.0" },
     { name = "gunicorn", marker = "extra == 'frontend'", specifier = ">=23.0.0" },
     { name = "h5py", specifier = ">=3.12.1" },
     { name = "kaleido", marker = "extra == 'frontend'", specifier = ">=0.2.1,!=0.2.1.post1" },
@@ -2755,6 +2704,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "plotly", marker = "extra == 'frontend'", specifier = ">=5.24.1" },
     { name = "python-dotenv", marker = "extra == 'frontend'", specifier = ">=1.0.1" },
+    { name = "requests", marker = "extra == 'frontend'", specifier = ">=2.32.4" },
     { name = "scikit-learn", specifier = ">=1.5.2" },
     { name = "umap-learn", specifier = ">=0.5.7" },
 ]
