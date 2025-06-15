@@ -1,5 +1,7 @@
 """Centralized styles for the ProtSpace application."""
 
+from .config import HELP_PANEL_WIDTH_PERCENT, SETTINGS_PANEL_WIDTH_PERCENT
+
 # General layout
 BASE_STYLE = {
     "padding": "20px",
@@ -64,23 +66,28 @@ MAIN_VIEW_CONTAINER_STYLE = {"display": "flex"}
 
 LEFT_PANEL_STYLE = {"width": "100%", "display": "inline-block"}
 
-SCATTER_PLOT_DIV_STYLE = {
+BASE_VIEWER_STYLE = {
     "border": "2px solid #dddddd",
     "height": "calc(100vh - 200px)",
+    "verticalAlign": "top",
+}
+
+SCATTER_PLOT_DIV_STYLE = {
+    **BASE_VIEWER_STYLE,
     "width": "100%",
     "display": "inline-block",
     "verticalAlign": "top",
 }
 
-NGL_VIEWER_DIV_STYLE = {
-    "border": "2px solid #dddddd",
-    "height": "calc(100vh - 200px)",
+MOLSTAR_VIEWER_DIV_STYLE = {
+    **BASE_VIEWER_STYLE,
+    "width": "49%",
     "display": "none",
     "verticalAlign": "top",
 }
 
 # Side panels (Settings and Help)
-SIDE_PANEL_STYLE = {
+SIDE_PANEL_BASE_STYLE = {
     "display": "none",
     "padding": "20px",
     "backgroundColor": "#f0f0f0",
@@ -89,13 +96,13 @@ SIDE_PANEL_STYLE = {
 }
 
 MARKER_STYLE_CONTROLLER_STYLE = {
-    **SIDE_PANEL_STYLE,
-    "width": "20%",
+    **SIDE_PANEL_BASE_STYLE,
+    "width": f"{SETTINGS_PANEL_WIDTH_PERCENT}%",
 }
 
 HELP_MENU_STYLE = {
-    **SIDE_PANEL_STYLE,
-    "width": "50%",
+    **SIDE_PANEL_BASE_STYLE,
+    "width": f"{HELP_PANEL_WIDTH_PERCENT}%",
     "maxHeight": "calc(100vh - 200px)",
     "overflowY": "auto",
 }
