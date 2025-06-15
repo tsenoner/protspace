@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v2.0.1 (2025-06-15)
+
+### Fixes
+
+* fix(docker): resolve Kaleido and markdown helper dependencies
+
+This commit addresses two critical functionality issues in the Docker container:
+
+1. Kaleido Image Generation:
+- Adds libexpat1 to the runtime stage of the Dockerfile
+- Ensures proper library availability for Kaleido subprocess
+- Maintains clean image by removing apt lists after installation
+
+2. Markdown Helper:
+- Adds build-essential and gcc to build stage for proper compilation
+- Ensures markdown content is properly accessible in container
+- Fixes path resolution for helper markdown files
+
+These changes restore both the image generation functionality and markdown
+helper features while maintaining container performance and security best
+practices. ([`de89ddb`](https://github.com/tsenoner/protspace/commit/de89ddbc808e139e3b2e2cf8c98fd53505e93278))
+
+
 ## v2.0.0 (2025-06-15)
 
 ### Breaking
