@@ -3,6 +3,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 import dash_molstar
 from dash_iconify import DashIconify
+import importlib.resources
 
 from . import styles
 from .config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
@@ -323,7 +324,11 @@ def _create_help_menu():
 
     def _load_md(file, with_image=False):
         try:
-            with open(f"src/protspace/assets/help_content/{file}", "r") as f:
+            with (
+                importlib.resources.files("protspace.assets.help_content")
+                .joinpath(file)
+                .open("r") as f
+            ):
                 content = dcc.Markdown(f.read(), dangerously_allow_html=True)
                 if with_image:
                     return html.Div(
