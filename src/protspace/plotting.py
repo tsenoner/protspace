@@ -1,6 +1,7 @@
 import io
 import re
 from typing import Any, Dict, List, Optional
+import colorsys
 
 import pandas as pd
 import plotly.express as px
@@ -17,6 +18,13 @@ from .config import (
 )
 from .data_loader import JsonReader
 from .helpers import standardize_missing
+
+
+def generate_default_color(index: int, total: int) -> str:
+    """Generate a default color for a categorical value."""
+    hue = index / total
+    rgb = colorsys.hsv_to_rgb(hue, 0.8, 0.8)
+    return f"rgba({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)}, 0.8)"
 
 
 def prepare_dataframe(
@@ -238,14 +246,25 @@ def create_plot(
     projection_info = reader.get_projection_info(selected_projection)
     is_3d = projection_info["dimensions"] == 3
 
+    # Get existing colors or generate defaults
     feature_colors = reader.get_feature_colors(selected_feature).copy()
-    feature_colors["<NaN>"] = NAN_COLOR
-    marker_shapes = reader.get_marker_shape(selected_feature).copy()
-    if "<NaN>" not in marker_shapes:
-        marker_shapes["<NaN>"] = "circle"
+    unique_values = sorted(df[selected_feature].unique())
 
-    all_values = df[selected_feature].unique()
-    final_marker_shapes = {val: marker_shapes.get(val, "circle") for val in all_values}
+    # Generate default colors for values that don't have one
+    for i, value in enumerate(unique_values):
+        if str(value) not in feature_colors:
+            if value == "<NaN>":
+                feature_colors[str(value)] = NAN_COLOR
+            else:
+                feature_colors[str(value)] = generate_default_color(
+                    i, len(unique_values)
+                )
+
+    # Get existing marker shapes or use defaults
+    marker_shapes = reader.get_marker_shape(selected_feature).copy()
+    final_marker_shapes = {
+        str(val): marker_shapes.get(str(val), "circle") for val in unique_values
+    }
 
     fig = _create_base_figure(
         df, is_3d, selected_feature, feature_colors, final_marker_shapes, marker_size

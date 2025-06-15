@@ -3,6 +3,7 @@ import io
 import json
 import zipfile
 from pathlib import Path
+import re
 
 import dash
 import pandas as pd
@@ -16,6 +17,7 @@ from .config import (
     MARKER_SHAPES_2D,
     MARKER_SHAPES_3D,
     SETTINGS_PANEL_WIDTH_PERCENT,
+    NAN_COLOR,
 )
 from .data_loader import JsonReader
 from .helpers import is_projection_3d
@@ -305,8 +307,43 @@ def setup_callbacks(app):
         if not (selected_feature and selected_value and json_data):
             raise PreventUpdate
         reader = get_reader(json_data)
+
+        # Get all feature values to determine index for default color
+        all_values = sorted(reader.get_unique_feature_values(selected_feature))
+
+        # Get existing colors
         feature_colors = reader.get_feature_colors(selected_feature)
-        return {"hex": feature_colors.get(selected_value, "#000000")}
+
+        # If the value has a color defined, use it
+        if selected_value in feature_colors:
+            color = feature_colors[selected_value]
+            # If it's an rgba color, convert to hex
+            if color.startswith("rgba"):
+                # Extract RGB values
+                rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
+                if rgba:
+                    r, g, b = map(int, rgba.groups())
+                    hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                    return {"hex": hex_color}
+            return {"hex": color}
+
+        # If no color is defined, generate a default one
+        if selected_value == "<NaN>":
+            return {"hex": NAN_COLOR}
+        else:
+            try:
+                idx = all_values.index(selected_value)
+                from .plotting import generate_default_color
+
+                color = generate_default_color(idx, len(all_values))
+                # Convert rgba to hex
+                rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
+                if rgba:
+                    r, g, b = map(int, rgba.groups())
+                    hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                    return {"hex": hex_color}
+            except ValueError:
+                return {"hex": "#000000"}  # Default to black if something goes wrong
 
     @app.callback(
         Output("marker-shape-dropdown", "value"),
