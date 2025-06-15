@@ -1,6 +1,162 @@
 # CHANGELOG
 
 
+## v2.0.0 (2025-06-15)
+
+### Breaking
+
+* fix(ui): dropdown direction and color synchronization
+
+This commit addresses two UI-related issues:
+
+1. Download Format Dropdown:
+- fix: make dropdown menu open upwards by wrapping in div with drop-up class
+- style: prevent dropdown from being obscured by elements below
+
+2. Color Management:
+- fix: synchronize colors between scatter plot, legend and color picker
+- feat: add default color generation for JSON files without styling
+- fix: properly handle color conversion between rgba and hex formats
+- fix: ensure consistent color display for NaN values
+
+BREAKING CHANGE: None ([`bd65fd2`](https://github.com/tsenoner/protspace/commit/bd65fd281cd8b74736b7fdc16992a6855e762563))
+
+### Features
+
+* feat(viewer): replace NGL Viewer with Molstar Viewer
+
+- Replace NglMoleculeViewer with dash-molstar component
+- Add molstar_helper.py for data handling and AlphaFold DB fetching
+- Refactor styles from callbacks into centralized styles.py
+- Remove obsolete NGL viewer code ([`2475c53`](https://github.com/tsenoner/protspace/commit/2475c539680b8f323bcab73ba0d21387442fef45))
+
+* feat(app): Overhaul plotting, styling, and UI interactivity
+
+This commit introduces a comprehensive set of improvements, including major refactoring, new features, and numerous bug fixes to enhance user experience, code maintainability, and performance.
+
+**Refactoring:**
+
+- Separated style application from plot generation into distinct callbacks, improving performance and preventing unintended side-effects.
+- Consolidated duplicated plotting logic into a single, centralized `create_plot` function.
+- Unified the side-panel (Help and Settings) logic into a single, more robust callback.
+- Streamlined marker shape configuration in `config.py` for better consistency and clarity.
+- Refactored the `save_plot` function to write directly to an in-memory buffer, making downloads more efficient.
+- Corrected the data access pattern in `data_loader.py` to prevent crashes and align with the actual data schema.
+
+**Features & Enhancements:**
+
+- **Plot & Legend:**
+  - Decoupled legend size from the main marker size with a new, independent "Legend Size" input field for granular control.
+  - The legend size now updates instantly on input change for a better user experience.
+  - Re-implemented the custom legend trace logic to ensure markers are large, clear, and free of duplicates.
+  - The marker shape dropdown now dynamically updates based on whether the plot is 2D or 3D.
+- **Styling:**
+  - Implemented default styling for `<NaN>` values and made their shape configurable.
+  - Ensured all data points correctly default to a "circle" marker if no specific shape is defined.
+  - The `<NaN>` option now only appears in the styling dropdown if the selected feature actually contains missing values.
+- **Downloads:**
+  - Expanded download options to include PNG, JPEG, WEBP, PDF, and HTML.
+  - Enforced the correct filename format for all downloads: `<dim_reduction>_<feature>.<format>`.
+
+**Bug Fixes:**
+
+- **CRITICAL:** Fixed a style-bleeding bug where style changes for a value in one feature would incorrectly apply to other features.
+- Fixed a `KeyError: 'annotations'` crash on application startup.
+- Resolved multiple crashes and errors related to the download functionality.
+- Fixed a crash when using 2D-only marker shapes in 3D plots.
+- Fixed an `AttributeError` crash caused by scrambled callback parameters.
+- Corrected various minor UI and data handling bugs. ([`f5705eb`](https://github.com/tsenoner/protspace/commit/f5705eb7a6ff1dee3afb6fc74fed4edaccc5251d))
+
+* feat(app): overhaul plotting, styling, and download functionality
+
+This commit introduces a major overhaul of the application's core features, including significant refactoring, new functionality, and numerous bug fixes to improve user experience and code maintainability.
+
+**Refactoring:**
+
+- Consolidated all plotting logic into a single, centralized `create_plot` function in `plotting.py`, removing duplicated code from `callbacks.py`.
+- Refactored the `save_plot` function to write directly to an in-memory buffer, making downloads more efficient and fixing several related bugs.
+- Streamlined marker shape configuration by removing redundant variables in `config.py` and enforcing a consistent `MARKER_SHAPES_2D` and `MARKER_SHAPES_3D` structure across the application.
+- Corrected the data access pattern in `data_loader.py` to prevent crashes and ensure correct feature value retrieval.
+
+**Features & Enhancements:**
+
+- **Legend:**
+  - Resolved marker overlap in the legend for better readability.
+  - Implemented a workaround using dummy traces to allow for larger legend markers.
+  - Ensured the legend is always sorted alphanumerically.
+- **Styling:**
+  - Implemented default styling for `<NaN>` values (semi-transparent gray, circle shape) and made them configurable.
+  - Ensured all data points default to a "circle" marker if no specific shape is defined, preventing inconsistent automatic shape assignment.
+  - The marker shape dropdown now dynamically updates based on whether the plot is 2D or 3D.
+- **Downloads:**
+  - Expanded download options to include PNG, JPEG, WEBP, PDF, and HTML.
+  - Implemented the correct filename format for downloads: `<dim_reduction>_<feature>.<format>`.
+- **UI/UX:**
+  - The `<NaN>` option now only appears in the styling dropdown if the selected feature contains missing values.
+
+**Bug Fixes:**
+
+- Fixed a critical bug where style changes for a value in one feature would incorrectly bleed into other features upon switching.
+- Corrected a `KeyError: 'annotations'` crash on startup.
+- Resolved multiple crashes related to the download functionality (`TypeError`, `ValueError: Invalid format ''`).
+- Fixed an issue where the marker shape dropdown was not updating correctly.
+- Prevented crashes when using 2D-only marker shapes in 3D plots. ([`a0b9299`](https://github.com/tsenoner/protspace/commit/a0b92991382c585d8748de4a70879a4ac1664526))
+
+### Refactoring
+
+* refactor(config): Centralize settings and simplify callbacks
+
+This commit improves maintainability by centralizing configuration and reducing duplicated logic.
+
+- Hardcoded side panel widths are now defined in `config.py`.
+- A new `is_projection_3d` helper function was created to simplify dimension-checking logic in callbacks, removing redundancy. ([`7e70c1b`](https://github.com/tsenoner/protspace/commit/7e70c1b89e2f35c536346c48ec4e4b5b6e300ba4))
+
+* refactor(ui): Overhaul codebase for maintainability and redesign help system
+
+This commit introduces a major architectural refactoring to improve modularity, simplify logic, and enhance long-term maintainability. It also completely redesigns the help menu for better user experience and easier content management.
+
+**Refactoring:**
+
+- **Data Processing & Plotting:**
+  - Eliminated the `data_processing.py` module by moving its data preparation logic directly into `plotting.py`, improving code locality.
+  - The monolithic `create_plot` function was broken down into smaller, focused helper functions (`_create_base_figure`, `_add_legend_traces`, etc.) for significantly improved readability.
+  - A new `helpers.py` module was created for general utility functions, starting with `standardize_missing`.
+
+- **Callbacks:**
+  - Replaced the complex, multi-purpose `toggle_side_panels` callback with a reusable `create_side_panel_callback` factory. This simplifies the logic for managing side panels and makes it easily extensible.
+
+- **Layout:**
+  - The `create_layout` function was streamlined to correctly initialize the application state from the main `ProtSpace` class, resolving multiple bugs.
+
+**Features & Enhancements:**
+
+- **Help Menu Overhaul:**
+  - Re-implemented the help menu to use a robust, tabbed interface (`dbc.Tabs`).
+  - Help content is now managed in separate, easy-to-edit Markdown files located in a dedicated `assets/help_content/` directory.
+  - The "Interface Overview" tab now features interactive jump links that scroll to the relevant sections, created programmatically in the layout to ensure they always work correctly.
+  - The layout for the overview tab is now generated with Dash HTML components to ensure the interface image displays reliably and scales correctly.
+  - Added a main "ProtSpace Help Guide" title and removed redundant subheadings from content files for a cleaner UI. ([`6baef98`](https://github.com/tsenoner/protspace/commit/6baef98de7db3172ed50e91c32d48af167b85c4d))
+
+### Testing
+
+* test(app): stabilize and refactor UI test suite
+
+This commit introduces a comprehensive set of UI tests for the main application and resolves several stability issues.
+
+- **Initial Setup**: Created `tests/test_app.py` to validate core application functionality, including loading, feature selection, and UI interactions.
+
+- **Stabilization**:
+  - Resolved `DuplicateIdError` and race conditions by replacing `time.sleep()` with robust, explicit waits.
+  - Fixed flaky tests by using reliable selectors and waiting for specific UI states before making assertions.
+  - Suppressed the `kaleido` `DeprecationWarning` in the `pytest` configuration to clean up test output.
+
+- **Refactoring**:
+  - Introduced `pytest` fixtures (`protspace_app`, `protspace_app_with_data`) to eliminate redundant app setup code.
+  - Created a reusable `wait_for_element_attribute_to_contain` helper function to reliably handle polling for asynchronous style changes during animations, making the tests cleaner and more maintainable.
+
+The resulting test suite is now stable, robust, and provides solid coverage for key user interactions. ([`b928c01`](https://github.com/tsenoner/protspace/commit/b928c010cb6bdcf7965bd3a64a1312ee4a39695f))
+
+
 ## v1.3.0 (2025-06-13)
 
 ### Features
