@@ -3,9 +3,9 @@ from dash import dcc, html
 from dash_bio import NglMoleculeViewer
 from dash_iconify import DashIconify
 
-from .config import MARKER_SHAPES, MARKER_SHAPES_2D
-from .data_loader import JsonReader
-from .layout_help import create_help_menu
+from ..config import MARKER_SHAPES, MARKER_SHAPES_2D
+from ..utils import JsonReader
+from .help import create_help_menu
 
 
 def create_layout(app):
@@ -47,7 +47,7 @@ def create_layout(app):
         # Left: Rostlab logo
         html.A(
             html.Img(
-                src="assets/Helix simple flat.png",
+                src="/assets/rostlab_logo.png",
                 style={
                     "height": "60px",  # Maintain consistent height with GitHub icon
                     "width": "auto",   # Maintain aspect ratio

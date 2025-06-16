@@ -2,7 +2,7 @@ import argparse
 import warnings
 from typing import Optional
 
-from .app import ProtSpace
+from .server import ProtSpace
 from .config import DEFAULT_PORT
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)
