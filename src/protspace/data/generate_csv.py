@@ -4,8 +4,12 @@ import numpy as np
 from typing import List, Union, Tuple
 from pathlib import Path
 
-from .uniprot_fetcher import UniProtFetcher, UNIPROT_FEATURES, ProteinFeatures
-from .taxonomy_fetcher import TaxonomyFetcher, TAXONOMY_FEATURES
+from protspace.data.uniprot_fetcher import (
+    UniProtFetcher,
+    UNIPROT_FEATURES,
+    ProteinFeatures,
+)
+from protspace.data.taxonomy_fetcher import TaxonomyFetcher, TAXONOMY_FEATURES
 
 import logging
 

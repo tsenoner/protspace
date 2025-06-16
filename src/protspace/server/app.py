@@ -7,10 +7,10 @@ from pathlib import Path
 import dash_bootstrap_components as dbc
 from dash import Dash
 
-from .callbacks import setup_callbacks
-from ..ui.layout import create_layout
-from ..utils import JsonReader
-from ..visualization.plotting import create_plot, save_plot
+from protspace.server.callbacks import setup_callbacks
+from protspace.ui.layout import create_layout
+from protspace.utils import JsonReader
+from protspace.visualization.plotting import create_plot, save_plot
 
 
 class ProtSpace:

@@ -1,5 +1,5 @@
 import pandas as pd
-from .utils import JsonReader
+from protspace.utils import JsonReader
 
 
 def standardize_missing(series: pd.Series) -> pd.Series:

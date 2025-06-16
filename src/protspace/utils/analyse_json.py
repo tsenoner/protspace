@@ -1,6 +1,6 @@
 import json
 import argparse
-from .json_reader import JsonReader
+from protspace.utils.json_reader import JsonReader
 
 
 def print_dimensionality_reduction_info(reader: JsonReader, verbosity: int) -> None:
