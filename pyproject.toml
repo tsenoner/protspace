@@ -10,11 +10,14 @@ requires-python = ">=3.10"
 dependencies = [
     "h5py>=3.12.1",
     "matplotlib>=3.9.2",
-    "scikit-learn>=1.5.2",
+    "scikit-learn>=1.6.1",
     "umap-learn>=0.5.7",
     "pacmap>=0.8.0",
     "numpy>=1.23.0",
     "pandas>=2.0.0",
+    "bioservices>=1.12.1",
+    "tqdm>=4.67.1",
+    "taxopy>=0.14.0",
 ]
 
 [project.optional-dependencies]
@@ -55,7 +58,7 @@ dev-dependencies = [
 
 [project.scripts]
 protspace = "protspace.main:run"
-protspace-json = "protspace.utils.prepare_json:main"
+protspace-json = "protspace.data.prepare_json:main"
 protspace-feature-colors = "protspace.utils.add_feature_style:main"
 
 [build-system]

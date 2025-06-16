@@ -8,6 +8,8 @@
 # --- data ---
 **/pdb/
 **/foldcomp/
+/data/cath
+/data/ec/
 /data/light_attention
 # h_sapiens
 /data/h_sapiens
