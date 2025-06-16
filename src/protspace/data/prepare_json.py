@@ -8,7 +8,22 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from ..utils.reducers import *
+from ..utils.reducers import (
+    PCA_NAME,
+    TSNE_NAME,
+    UMAP_NAME,
+    PACMAP_NAME,
+    MDS_NAME,
+    LOCALMAP_NAME,
+    ALL_METHODS,
+    DimensionReductionConfig,
+    PCAReducer,
+    TSNEReducer,
+    UMAPReducer,
+    PaCMAPReducer,
+    MDSReducer,
+    LocalMAPReducer,
+)
 from .generate_csv import ProteinFeatureExtractor
 
 # Configure logging
@@ -17,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 # Valididation and configuration
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
+
 
 class DataProcessor:
     """Main class for processing and reducing dimensionality of data."""
@@ -45,16 +61,17 @@ class DataProcessor:
             self.config.pop(arg, None)
         self.identifier_col = "identifier"
         self.custom_names = config.get("custom_names", {})
-    
+
     def load_data(
         self,
         input_path: Path,
-        metadata: Union[Path, List], # If list, generates csv from uniprot features
-        delimiter: str
+        metadata: Union[Path, List],  # If list, generates csv from uniprot features
+        delimiter: str,
     ) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
-        
         data, headers = self._load_input_file(input_path)
-        metadata = self._load_or_generate_metadata(headers, metadata, input_path, delimiter)
+        metadata = self._load_or_generate_metadata(
+            headers, metadata, input_path, delimiter
+        )
 
         # Create full metadata with NaN for missing entries
         full_metadata = pd.DataFrame({"identifier": headers})
@@ -67,12 +84,8 @@ class DataProcessor:
             )
 
         return full_metadata, data, headers
-    
-    def _load_input_file(
-        self,
-        input_path: Path
-    ) -> Tuple[np.ndarray, List[str]]:
-        
+
+    def _load_input_file(self, input_path: Path) -> Tuple[np.ndarray, List[str]]:
         if input_path.suffix.lower() in EMBEDDING_EXTENSIONS:
             logger.info("Loading embeddings from HDF file")
             data, headers = [], []
@@ -82,7 +95,7 @@ class DataProcessor:
                     data.append(emb)
                     headers.append(header)
             data = np.array(data)
-            
+
             return data, headers
 
         elif input_path.suffix.lower() == ".csv":
@@ -112,12 +125,8 @@ class DataProcessor:
 
     @staticmethod
     def _load_or_generate_metadata(
-        headers: List[str],
-        metadata: str,
-        input_path: Path,
-        delimiter: str
+        headers: List[str], metadata: str, input_path: Path, delimiter: str
     ) -> pd.DataFrame:
-
         try:
             # csv generation logic
             if metadata and metadata.endswith(".csv"):
@@ -135,11 +144,9 @@ class DataProcessor:
                     csv_output = input_path.parent / "metadata.csv"
                 else:
                     csv_output = input_path / "metadata.csv"
-                
+
                 metadata = ProteinFeatureExtractor(
-                    headers=headers,
-                    features=features,
-                    csv_output=csv_output
+                    headers=headers, features=features, csv_output=csv_output
                 ).to_pd()
 
         except Exception as e:
@@ -288,7 +295,7 @@ def main():
         "--methods",
         type=str,
         default="pca2",
-        help=f"Reduction methods to use (e.g., {','.join([m+'2' for m in ALL_METHODS])}). Format: method_name + dimensions",
+        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in ALL_METHODS])}). Format: method_name + dimensions",
     )
 
     # Custom names
@@ -409,7 +416,7 @@ def main():
         )
 
         # Process each method
-        methods_list = args.methods.split(',')
+        methods_list = args.methods.split(",")
         reductions = []
         for method_spec in methods_list:
             method = "".join(filter(str.isalpha, method_spec))

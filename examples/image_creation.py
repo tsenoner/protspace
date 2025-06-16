@@ -1,4 +1,4 @@
-from protspace.app import ProtSpace
+from protspace.server.app import ProtSpace
 from pathlib import Path
 
 
@@ -17,9 +17,7 @@ def main():
     #     print("Available projection names:", reader.get_projection_names())
 
     # Generate images for specific projections and features
-    projections = [
-        "PCA_2"
-    ]
+    projections = ["PCA_2"]
     features = ["protein_existence", "annotation_score"]
 
     # Create the output directory if it doesn't exist

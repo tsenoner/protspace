@@ -3,7 +3,6 @@ import base64
 import zipfile
 from typing import Any, Dict, Optional, Union
 from pathlib import Path
-import os
 
 import dash_bootstrap_components as dbc
 from dash import Dash
@@ -54,7 +53,7 @@ class ProtSpace:
             __name__,
             assets_folder=assets_path,
             suppress_callback_exceptions=True,
-            external_stylesheets=[dbc.themes.BOOTSTRAP]
+            external_stylesheets=[dbc.themes.BOOTSTRAP],
         )
         app.title = "ProtSpace"
         app.layout = create_layout(self)

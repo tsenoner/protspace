@@ -8,6 +8,7 @@ __all__ = ["prepare_json", "add_feature_style"]
 try:
     from .server import app
     from .main import main
+
     __all__.extend(["main", "app"])
 except ImportError:
     # If the web frontend is needed, please install it, e.g. via `uv sync --all-extras`
