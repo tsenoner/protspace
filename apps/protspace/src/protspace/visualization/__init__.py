@@ -1,1 +1,1 @@
-"""Visualization module for ProtSpace.""" 
+"""Visualization module for ProtSpace."""

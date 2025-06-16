@@ -8,43 +8,22 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from ..utils.reducers import (
-    PCA_NAME,
-    TSNE_NAME,
-    UMAP_NAME,
-    PACMAP_NAME,
-    MDS_NAME,
-    LOCALMAP_NAME,
-    ALL_METHODS,
-    DimensionReductionConfig,
-    PCAReducer,
-    TSNEReducer,
-    UMAPReducer,
-    PaCMAPReducer,
-    MDSReducer,
-    LocalMAPReducer,
-)
-from .generate_csv import ProteinFeatureExtractor
+from protspace.utils import REDUCER_METHODS, DimensionReductionConfig
+from protspace.utils.reducers import MDS_NAME
+from protspace.data.generate_csv import ProteinFeatureExtractor
 
 # Configure logging
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Valididation and configuration
+# Validation and configuration
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
 
 
 class DataProcessor:
     """Main class for processing and reducing dimensionality of data."""
 
-    REDUCERS = {
-        PCA_NAME: PCAReducer,
-        TSNE_NAME: TSNEReducer,
-        UMAP_NAME: UMAPReducer,
-        PACMAP_NAME: PaCMAPReducer,
-        MDS_NAME: MDSReducer,
-        LOCALMAP_NAME: LocalMAPReducer,
-    }
+    REDUCERS = REDUCER_METHODS
 
     def __init__(self, config: Dict[str, Any]):
         # Remove command-line specific arguments that aren't used for dimension reduction
@@ -295,7 +274,7 @@ def main():
         "--methods",
         type=str,
         default="pca2",
-        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in ALL_METHODS])}). Format: method_name + dimensions",
+        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in REDUCER_METHODS])}). Format: method_name + dimensions",
     )
 
     # Custom names

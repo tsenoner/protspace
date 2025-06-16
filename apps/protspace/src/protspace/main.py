@@ -2,8 +2,8 @@ import argparse
 import warnings
 from typing import Optional
 
-from .server import ProtSpace
-from .config import DEFAULT_PORT
+from protspace.server import ProtSpace
+from protspace.config import DEFAULT_PORT
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 

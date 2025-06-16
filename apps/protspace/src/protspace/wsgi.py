@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os
 
-from .server import ProtSpace
+from protspace.server import ProtSpace
 
 load_dotenv(".env.example")
 
