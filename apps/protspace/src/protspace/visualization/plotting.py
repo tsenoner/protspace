@@ -8,7 +8,7 @@ import plotly.express as px
 import plotly.graph_objs as go
 from dash import dcc
 
-from .config import (
+from ..config import (
     DEFAULT_LINE_WIDTH,
     DEFAULT_MARKER_SIZE,
     HIGHLIGHT_BORDER_COLOR,

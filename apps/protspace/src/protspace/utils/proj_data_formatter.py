@@ -1,7 +1,6 @@
-import numpy as np
 import pandas as pd
 
-from .data_loader import JsonReader
+from .json_reader import JsonReader
 
 def standardize_missing(series) -> pd.Series:
     """Replaces various forms of missing values with '<NaN>' in a pandas Series."""

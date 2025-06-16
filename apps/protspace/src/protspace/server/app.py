@@ -8,10 +8,9 @@ import dash_bootstrap_components as dbc
 from dash import Dash
 
 from .callbacks import setup_callbacks
-from .layout import create_layout
-from .data_loader import JsonReader
-from .data_processing import prepare_dataframe
-from .plotting import create_styled_plot, save_plot
+from ..ui.layout import create_layout
+from ..utils import JsonReader, prepare_dataframe
+from ..visualization.plotting import create_styled_plot, save_plot
 
 
 class ProtSpace:
@@ -47,7 +46,15 @@ class ProtSpace:
 
     def create_app(self):
         """Create and configure the Dash app."""
-        app = Dash(__name__, suppress_callback_exceptions=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
+        current_dir = Path(__file__).parent
+        assets_path = str(current_dir.parent / "assets")
+
+        app = Dash(
+            __name__,
+            assets_folder=assets_path,
+            suppress_callback_exceptions=True,
+            external_stylesheets=[dbc.themes.BOOTSTRAP],
+        )
         app.title = "ProtSpace"
         app.layout = create_layout(self)
         setup_callbacks(app)
