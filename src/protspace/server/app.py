@@ -9,8 +9,8 @@ from dash import Dash
 
 from .callbacks import setup_callbacks
 from ..ui.layout import create_layout
-from ..utils import JsonReader, prepare_dataframe
-from ..visualization.plotting import create_styled_plot, save_plot
+from ..utils import JsonReader
+from ..visualization.plotting import create_plot, save_plot
 
 
 class ProtSpace:
@@ -99,7 +99,6 @@ class ProtSpace:
         app = self.create_app()
         app.run(debug=debug, port=port)
 
-    # TODO: avoid duplicated code generalize the plotting logic into the plotting.py script and the callback uses that, so we canuse that too here
     def generate_plot(
         self,
         projection: str,
@@ -113,10 +112,5 @@ class ProtSpace:
             raise ValueError("No JSON data loaded")
 
         reader = JsonReader(self.default_json_data)
-        df = prepare_dataframe(reader, projection, feature)
-        fig, is_3d = create_styled_plot(df, reader, projection, feature)
-        if is_3d:
-            filename = Path(filename).with_suffix(".html")
-        else:
-            filename = Path(filename).with_suffix(".svg")
+        fig, is_3d = create_plot(reader, projection, feature)
         save_plot(fig, is_3d, width, height, str(filename))

@@ -1,0 +1,20 @@
+.drop-up .Select-menu-outer {
+    top: auto;
+    bottom: 100%;
+    border-top-right-radius: 4px;
+    border-top-left-radius: 4px;
+    border-bottom-right-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border: 1px solid #ccc;
+    border-bottom: none;
+}
+
+/* Custom styles for the ProtSpace application */
+
+.help-menu-container p {
+    margin-bottom: 0.1rem; /* Reduce space below paragraphs */
+}
+
+.help-menu-container ul {
+    margin-bottom: 0.5rem; /* Reduce space below lists */
+}

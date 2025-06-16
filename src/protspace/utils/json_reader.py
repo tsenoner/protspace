@@ -38,12 +38,21 @@ class JsonReader:
         return self.data.get("protein_data", {}).get(protein_id, {}).get("features", {})
 
     def get_feature_colors(self, feature: str) -> Dict[str, str]:
-        return self.data.get('visualization_state', {}).get('feature_colors', {}).get(feature, {})
+        return (
+            self.data.get("visualization_state", {})
+            .get("feature_colors", {})
+            .get(feature, {})
+        )
 
     def get_marker_shape(self, feature: str) -> Dict[str, str]:
-        return self.data.get('visualization_state', {}).get('marker_shapes', {}).get(feature, {})
+        return (
+            self.data.get("visualization_state", {})
+            .get("marker_shapes", {})
+            .get(feature, {})
+        )
 
     def get_unique_feature_values(self, feature: str) -> List[Any]:
+        """Get a list of unique values for a given feature."""
         unique_values = set()
         for protein_data in self.data.get("protein_data", {}).values():
             value = protein_data.get("features", {}).get(feature)
@@ -51,25 +60,33 @@ class JsonReader:
                 unique_values.add(value)
         return list(unique_values)
 
-    def update_feature_color(self, feature: str, value: str, color: str):
-        if 'visualization_state' not in self.data:
-            self.data['visualization_state'] = {}
-        if 'feature_colors' not in self.data['visualization_state']:
-            self.data['visualization_state']['feature_colors'] = {}
-        if feature not in self.data['visualization_state']['feature_colors']:
-            self.data['visualization_state']['feature_colors'][feature] = {}
+    def get_all_feature_values(self, feature: str) -> List[Any]:
+        """Get a list of all values for a given feature."""
+        all_values = []
+        protein_ids = self.get_protein_ids()
+        for protein_id in protein_ids:
+            all_values.append(self.get_protein_features(protein_id).get(feature, None))
+        return all_values
 
-        self.data['visualization_state']['feature_colors'][feature][value] = color
+    def update_feature_color(self, feature: str, value: str, color: str):
+        if "visualization_state" not in self.data:
+            self.data["visualization_state"] = {}
+        if "feature_colors" not in self.data["visualization_state"]:
+            self.data["visualization_state"]["feature_colors"] = {}
+        if feature not in self.data["visualization_state"]["feature_colors"]:
+            self.data["visualization_state"]["feature_colors"][feature] = {}
+
+        self.data["visualization_state"]["feature_colors"][feature][value] = color
 
     def update_marker_shape(self, feature: str, value: str, shape: str):
-        if 'visualization_state' not in self.data:
-            self.data['visualization_state'] = {}
-        if 'marker_shapes' not in self.data['visualization_state']:
-            self.data['visualization_state']['marker_shapes'] = {}
-        if feature not in self.data['visualization_state']['marker_shapes']:
-            self.data['visualization_state']['marker_shapes'][feature] = {}
+        if "visualization_state" not in self.data:
+            self.data["visualization_state"] = {}
+        if "marker_shapes" not in self.data["visualization_state"]:
+            self.data["visualization_state"]["marker_shapes"] = {}
+        if feature not in self.data["visualization_state"]["marker_shapes"]:
+            self.data["visualization_state"]["marker_shapes"][feature] = {}
 
-        self.data['visualization_state']['marker_shapes'][feature][value] = shape
+        self.data["visualization_state"]["marker_shapes"][feature][value] = shape
 
     def get_data(self) -> Dict[str, Any]:
         """Return the current JSON data."""
