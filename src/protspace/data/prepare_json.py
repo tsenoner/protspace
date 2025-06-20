@@ -8,7 +8,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from protspace.utils import REDUCER_METHODS, DimensionReductionConfig
+from protspace.utils import REDUCERS, DimensionReductionConfig
 from protspace.utils.reducers import MDS_NAME
 from protspace.data.generate_csv import ProteinFeatureExtractor
 
@@ -23,7 +23,7 @@ EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
 class DataProcessor:
     """Main class for processing and reducing dimensionality of data."""
 
-    REDUCERS = REDUCER_METHODS
+    REDUCERS = REDUCERS
 
     def __init__(self, config: Dict[str, Any]):
         # Remove command-line specific arguments that aren't used for dimension reduction
@@ -274,7 +274,7 @@ def main():
         "--methods",
         type=str,
         default="pca2",
-        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in REDUCER_METHODS])}). Format: method_name + dimensions",
+        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in REDUCERS])}). Format: method_name + dimensions",
     )
 
     # Custom names
