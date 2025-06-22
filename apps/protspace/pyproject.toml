@@ -18,6 +18,7 @@ dependencies = [
     "bioservices>=1.12.1",
     "tqdm>=4.67.1",
     "taxopy>=0.14.0",
+    "pymmseqs>=1.0.4",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,7 @@ dev-dependencies = [
 [project.scripts]
 protspace = "protspace.main:run"
 protspace-json = "protspace.data.prepare_json:main"
+protspace-query = "protspace.cli.uniprot_query:main"
 protspace-feature-colors = "protspace.utils.add_feature_style:main"
 
 [build-system]

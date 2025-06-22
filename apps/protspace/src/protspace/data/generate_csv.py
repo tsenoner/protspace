@@ -4,8 +4,8 @@ import numpy as np
 from typing import List, Union, Tuple
 from pathlib import Path
 
-from protspace.data.uniprot_fetcher import (
-    UniProtFetcher,
+from protspace.data.uniprot_feature_retriever import (
+    UniProtFeatureRetriever,
     UNIPROT_FEATURES,
     ProteinFeatures,
 )
@@ -61,7 +61,7 @@ class ProteinFeatureExtractor:
     def get_uniprot_features(
         self, headers: List[str], features: List[str]
     ) -> List[ProteinFeatures]:
-        uniprot_fetcher = UniProtFetcher(headers, features)
+        uniprot_fetcher = UniProtFeatureRetriever(headers, features)
         return uniprot_fetcher.fetch_features()
 
     def get_taxonomy_features(self, taxons: List[int], features: List[str]) -> str:

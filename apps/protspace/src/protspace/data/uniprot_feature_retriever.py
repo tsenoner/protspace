@@ -26,9 +26,9 @@ UNIPROT_FEATURES = [
 ProteinFeatures = namedtuple("ProteinFeatures", ["identifier", "features"])
 
 
-class UniProtFetcher:
-    def __init__(self, headers: List[str], features: List = None):
-        self.headers = self._manage_headers(headers)
+class UniProtFeatureRetriever:
+    def __init__(self, headers: List[str] = None, features: List = None):
+        self.headers = self._manage_headers(headers) if headers else []
         self.features = features
         self.u = UniProt(verbose=False)
 
