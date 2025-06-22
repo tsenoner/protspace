@@ -106,6 +106,7 @@ class ProtSpace:
         filename: Union[str, Path],
         width: int = 1600,
         height: int = 1000,
+        file_format: str = "png",
     ) -> None:
         """Generate a plot image for a specific projection and feature."""
         if not self.default_json_data:
@@ -113,4 +114,15 @@ class ProtSpace:
 
         reader = JsonReader(self.default_json_data)
         fig, is_3d = create_plot(reader, projection, feature)
-        save_plot(fig, is_3d, width, height, str(filename))
+        
+        # Get image bytes from save_plot
+        image_bytes = save_plot(fig, is_3d, width, height, file_format)
+        
+        # Add file extension if not present
+        filename_path = Path(filename)
+        if not filename_path.suffix:
+            filename_path = filename_path.with_suffix(f".{file_format}")
+        
+        # Write to file
+        with open(filename_path, "wb") as f:
+            f.write(image_bytes)
