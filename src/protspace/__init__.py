@@ -1,9 +1,9 @@
 __version__ = "2.0.1"
 
-from .data import prepare_json
+from .data import local_data_processor
 from .utils import add_feature_style
 
-__all__ = ["prepare_json", "add_feature_style"]
+__all__ = ["local_data_processor", "add_feature_style"]
 
 try:
     from .server import app

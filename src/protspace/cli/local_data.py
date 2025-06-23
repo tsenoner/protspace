@@ -3,11 +3,12 @@ import logging
 from pathlib import Path
 
 from protspace.utils import REDUCERS
-from protspace.data.uniprot_query_processor import UniProtQueryProcessor
+from protspace.data.local_data_processor import LocalDataProcessor
 
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
 
 def parse_custom_names(custom_names_arg: str) -> dict:
     """Parse custom names argument into dictionary."""
@@ -22,26 +23,36 @@ def parse_custom_names(custom_names_arg: str) -> dict:
                 logger.warning(f"Invalid custom name specification: {name_spec}")
     return custom_names
 
+
 def setup_logging(verbosity: int):
     """Set up logging based on verbosity level."""
     logger.setLevel(
         [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
     )
 
+
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
     parser = argparse.ArgumentParser(
-        description="Search and process proteins directly from UniProt",
+        description="Dimensionality reduction for protein embeddings or similarity matrices",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     # Required arguments
     parser.add_argument(
-        "-q",
-        "--query",
-        type=str,
+        "-i",
+        "--input",
+        type=Path,
         required=True,
-        help="UniProt search query (e.g., 'human insulin', 'kinase', etc.)",
+        help="Path to input data: HDF file (.hdf, .hdf5, .h5) for embeddings or CSV file for similarity matrix",
+    )
+    parser.add_argument(
+        "-m",
+        "--metadata",
+        type=str,
+        required=False,
+        default=None,
+        help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix). If want to generate CSV from UniProt features, use the following format: feature1,feature2,...",
     )
     parser.add_argument(
         "-o",
@@ -50,40 +61,31 @@ def create_argument_parser() -> argparse.ArgumentParser:
         required=True,
         help="Path to output JSON file",
     )
-
-    # Optional arguments
+    # Specify delimiter argument with comma as default
     parser.add_argument(
-        "--sp",
-        "--swissprot",
-        action="store_true",
-        help="Flag to only fetch SwissProt (reviewed) entries",
-    )
-    parser.add_argument(
-        "-m",
-        "--metadata",
+        "--delimiter",
         type=str,
-        required=False,
-        default=None,
-        help="Features to extract (format: feature1,feature2,...) or path to CSV file",
-    )
-    parser.add_argument(
-        "--with-fasta",
-        action="store_true",
-        help="Save FASTA file",
-    )
-    parser.add_argument(
-        "--with-csv",
-        action="store_true",
-        help="Save CSV metadata file",
+        default=",",
+        help="Specify delimiter for metadata file (default: comma)",
     )
 
+    # Reduction methods
     parser.add_argument(
         "--methods",
         type=str,
-        default="pca2,pca3,tsne2,tsne3,umap2,umap3",
-        help=f"Reduction methods to use (e.g., {','.join([m + '2,' + m + '3' for m in REDUCERS])}). Format: method_name + dimensions",
+        default="pca2",
+        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in REDUCERS])}). Format: method_name + dimensions",
     )
 
+    # Custom names
+    parser.add_argument(
+        "--custom_names",
+        type=str,
+        metavar="METHOD1=NAME1,METHOD2=NAME2",
+        help="Custom names for projections in format METHOD=NAME separated by commas without spaces (e.g., pca2=PCA_2D,tsne2=t-SNE_2D)",
+    )
+
+    # Verbosity control
     parser.add_argument(
         "-v",
         "--verbose",
@@ -92,6 +94,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Increase output verbosity (-v for INFO, -vv for DEBUG)",
     )
 
+    # General parameters
     general_group = parser.add_argument_group("General Parameters")
     general_group.add_argument(
         "--metric",
@@ -170,33 +173,21 @@ def main():
     parser = create_argument_parser()
     args = parser.parse_args()
 
-    # Set up logging
-    setup_logging(args.verbose)
+    custom_names = parse_custom_names(args.custom_names)
 
-    # Use default empty custom names
-    custom_names = {}
     args_dict = vars(args)
     args_dict["custom_names"] = custom_names
 
+    setup_logging(args.verbose)
+
     try:
-        # Initialize processor
-        processor = UniProtQueryProcessor(args_dict)
-        
-        # Process the query
-        metadata, data, headers, saved_files = processor.process_query(
-            query=args.query,
-            swissprot_only=args.sp,
-            metadata=args.metadata,
-            delimiter=",",
-            output_path=args.output,
-            save_fasta=args.with_fasta,
-            save_csv=args.with_csv,
+        processor = LocalDataProcessor(args_dict)
+        metadata, data, headers = processor.load_data(
+            args.input, args.metadata, delimiter=args.delimiter
         )
 
-        # Process reduction methods
         methods_list = args.methods.split(",")
         reductions = []
-        
         for method_spec in methods_list:
             method = "".join(filter(str.isalpha, method_spec))
             dims = int("".join(filter(str.isdigit, method_spec)))
@@ -205,7 +196,8 @@ def main():
                 logger.warning(
                     f"Unknown reduction method specified: {method}. Skipping."
                 )
-                continue
+                continue  # Use logger.warning and continue instead of raising ValueError
+                # raise ValueError(f"Unknown reduction method: {method}") # Kept for reference
 
             logger.info(f"Applying {method.upper()}{dims} reduction")
             reductions.append(processor.process_reduction(data, method, dims))
@@ -213,15 +205,9 @@ def main():
         # Create and save output
         output = processor.create_output(metadata, reductions, headers)
         processor.save_output(output, args.output)
-        
-        # Log results
-        logger.info(f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods")
-        logger.info(f"Results saved to: {args.output}")
-        
-        if saved_files:
-            logger.info("Additional files saved:")
-            for file_type, file_path in saved_files.items():
-                logger.info(f"  {file_type.upper()}: {file_path}")
+        logger.info(
+            f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
+        )
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")
@@ -229,4 +215,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
