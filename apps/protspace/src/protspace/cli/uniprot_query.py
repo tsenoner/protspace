@@ -64,7 +64,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         type=str,
         required=False,
         default=None,
-        help="Features to extract (format: feature1,feature2,...) or path to CSV file",
+        help="Features to extract (format: feature1,feature2,...)",
     )
     parser.add_argument(
         "--with-fasta",
@@ -172,6 +172,16 @@ def main():
 
     # Set up logging
     setup_logging(args.verbose)
+
+    # Validate metadata argument - CSV files are not supported
+    if args.metadata:
+        if (args.metadata.endswith('.csv') or 
+            args.metadata.endswith('.CSV') or 
+            Path(args.metadata).exists()):
+            raise ValueError(
+                "CSV files are not supported when using protspace-query. "
+                "Please provide a comma-separated list of feature names instead."
+            )
 
     # Use default empty custom names
     custom_names = {}
