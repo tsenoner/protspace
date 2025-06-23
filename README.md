@@ -74,10 +74,27 @@ pip install "protspace[frontend]"
 
 ## Usage
 
-### Data Preparation
+### UniProt Query
+
+Search and analyze proteins directly from UniProt using exact UniProt query syntax:
 
 ```bash
-protspace-json -i embeddings.h5 -m features.csv -o output.json --methods pca3 umap2 tsne2
+# Human insulin (SwissProt only)
+protspace-query -q "insulin AND organism_id:9606 AND reviewed:true" -o output.json --methods pca3,umap2,tsne2
+
+# All kinases from human
+protspace-query -q "kinase AND organism_id:9606" -o kinases.json --methods umap2,tsne3
+
+# Toxins from any organism (SwissProt only)
+protspace-query -q "toxin AND reviewed:true" -o toxins.json --methods pca2,umap3
+```
+
+### Data Preparation
+
+Process local embeddings or similarity matrices:
+
+```bash
+protspace-local -i embeddings.h5 -m features.csv -o output.json --methods pca3,umap2,tsne2
 ```
 
 ### Running protspace
@@ -104,22 +121,45 @@ Access the interface at `http://localhost:8050`
 
 ## Data Preparation
 
-The `protspace-json` command supports:
+ProtSpace supports multiple data preparation methods:
 
-### Required Arguments
+### UniProt Query Processing
+
+The `protspace-query` command searches UniProt and processes results automatically:
+
+#### Required Arguments
+
+- `-q, --query`: UniProt search query with exact UniProt syntax (e.g., 'insulin AND organism_id:9606 AND reviewed:true')
+- `-o, --output`: Output JSON path
+- `--methods`: Comma-separated reduction methods (e.g., pca2,tsne3,umap2,pacmap2,mds2)
+
+#### Optional Arguments
+
+- `-m, --metadata`: Features to extract (comma-separated list, e.g., 'annotation_score,genus,protein_existence')
+- `--with-fasta`: Save FASTA file
+- `--with-csv`: Save CSV metadata file
+- `--verbose`: Increase output verbosity
+
+### Local Data Processing
+
+The `protspace-local` command supports:
+
+#### Required Arguments
 
 - `-i, --input`: HDF file (.h5) or similarity matrix (.csv)
-- `-m, --metadata`: CSV file with features (first column must be named "identifier" and match IDs in HDF5/similarity matrix)
+- `-m, --metadata`: CSV file with features (first column must be named "identifier" and match IDs in HDF5/similarity matrix) or comma-separated features, which will be fetched automatically.
 - `-o, --output`: Output JSON path
-- `--methods`: Reduction methods (e.g., pca2, tsne3, umap2, pacmap2, mds2)
+- `--methods`: Comma-separated reduction methods (e.g., pca2,tsne3,umap2,pacmap2,mds2)
 
-### Optional Arguments
+#### Optional Arguments
 
 - `--delimiter`: Specify delimiter for metadata file (default: comma)
 - `--custom_names`: Custom projection names (e.g., pca2=PCA_2D)
 - `--verbose`: Increase output verbosity
 
 ### Method-Specific Parameters
+
+Both `protspace-query` and `protspace-local` support the following reduction method parameters:
 
 - UMAP:
   - `--n_neighbors`: Number of neighbors (default: 15)
@@ -160,15 +200,21 @@ Available shapes: circle, circle-open, cross, diamond, diamond-open, square, squ
 
 ### Input
 
-1. **Embeddings/Similarity**
+1. **UniProt Query** (for `protspace-query`)
+  - UniProt search query with exact syntax (e.g., 'insulin AND organism_id:9606 AND reviewed:true')
+  - Automatically downloads FASTA sequences
+  - Generates similarity matrix using pymmseqs
+  - Fetches UniProt features automatically
+
+2. **Embeddings/Similarity** (for `protspace-local`)
   - HDF5 (.h5) for embeddings
   - CSV for similarity matrix
 
-2. **Metadata**
+3. **Metadata** (for `protspace-local`)
   - CSV with mandatory 'identifier' column matching IDs in embeddings/similarity data
   - Additional columns for features
 
-3. **Structures**
+4. **Structures** (optional)
   - ZIP containing PDB/CIF files
   - Filenames match identifiers (dots replaced with underscores)
 
