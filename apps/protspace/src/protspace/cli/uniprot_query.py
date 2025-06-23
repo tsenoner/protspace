@@ -53,12 +53,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Optional arguments
     parser.add_argument(
-        "--sp",
-        "--swissprot",
-        action="store_true",
-        help="Flag to only fetch SwissProt (reviewed) entries",
-    )
-    parser.add_argument(
         "-m",
         "--metadata",
         type=str,
@@ -195,7 +189,6 @@ def main():
         # Process the query
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
-            swissprot_only=args.sp,
             metadata=args.metadata,
             delimiter=",",
             output_path=args.output,

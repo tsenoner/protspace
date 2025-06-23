@@ -48,7 +48,6 @@ class UniProtQueryProcessor(BaseDataProcessor):
         self,
         query: str,
         output_path: Path,
-        swissprot_only: bool = False,
         metadata: str = None,
         delimiter: str = ",",
         save_fasta: bool = False,
@@ -58,8 +57,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
         Process a UniProt query and return data for visualization.
         
         Args:
-            query: UniProt search query
-            swissprot_only: Only search SwissProt entries
+            query: UniProt search query (exact query to send to UniProt)
             metadata: Metadata features to fetch
             delimiter: CSV delimiter
             output_path: Path for output JSON file
@@ -69,7 +67,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
         Returns:
             Tuple of (metadata_df, embeddings_array, headers_list, saved_files_dict)
         """
-        logger.info(f"Processing UniProt query: '{query}' (SwissProt only: {swissprot_only})")
+        logger.info(f"Processing UniProt query: '{query}'")
         
         saved_files = {}
 
@@ -77,14 +75,14 @@ class UniProtQueryProcessor(BaseDataProcessor):
         clean_query = self._clean_query_name(query)
         
         # Generate filenames for FASTA and CSV
-        fasta_filename = f"{clean_query}_{'swissprot' if swissprot_only else 'uniprot'}_sequences.fasta"
+        fasta_filename = f"{clean_query}_sequences.fasta"
         fasta_save_path = output_dir / fasta_filename if save_fasta else None
         
-        csv_filename = f"{clean_query}_{'swissprot' if swissprot_only else 'uniprot'}_metadata.csv"
+        csv_filename = f"{clean_query}_metadata.csv"
         csv_save_path = output_dir / csv_filename if save_csv else None
 
         # Download FASTA from UniProt
-        headers, fasta_path = self._search_and_download_fasta(query, swissprot_only, save_to=fasta_save_path)
+        headers, fasta_path = self._search_and_download_fasta(query, save_to=fasta_save_path)
         if not headers:
             raise ValueError(f"No sequences found for query: '{query}'")
         
@@ -116,11 +114,10 @@ class UniProtQueryProcessor(BaseDataProcessor):
     def _search_and_download_fasta(
         self,
         query: str,
-        swissprot_only: bool = False,
         save_to: Path = None,
     ) -> Tuple[List[str], Path]:
         
-        logger.info(f"Searching UniProt for query: '{query}' (SwissProt only: {swissprot_only})")
+        logger.info(f"Searching UniProt for query: '{query}'")
         
         base_url = "https://rest.uniprot.org/uniprotkb/stream"
         params = {
@@ -128,9 +125,6 @@ class UniProtQueryProcessor(BaseDataProcessor):
             "format": "fasta",
             "query": query
         }
-        
-        if swissprot_only:
-            params["query"] = f"({query}) AND (reviewed:true)"
         
         try:
             response = requests.get(base_url, params=params, stream=True)
