@@ -10,6 +10,7 @@ from dash import Dash
 from protspace.server.callbacks import setup_callbacks
 from protspace.ui.layout import create_layout
 from protspace.utils import JsonReader
+from protspace.utils.arrow_reader import ArrowReader
 from protspace.visualization.plotting import create_plot, save_plot
 
 
@@ -17,14 +18,24 @@ class ProtSpace:
     """Main application class for ProtSpace."""
 
     def __init__(
-        self, pdb_zip: Optional[str] = None, default_json_file: Optional[str] = None
+        self, 
+        pdb_zip: Optional[str] = None, 
+        default_json_file: Optional[str] = None,
+        arrow_dir: Optional[str] = None
     ):
         self.pdb_zip = pdb_zip
         self.default_json_data = None
+        self.arrow_reader = None
         self.pdb_files_data = {}
+        
         if default_json_file:
             with open(default_json_file, "r") as f:
                 self.default_json_data = json.load(f)
+        elif arrow_dir:
+            self.arrow_reader = ArrowReader(Path(arrow_dir))
+            # Convert Arrow data to JSON format for compatibility
+            self.default_json_data = self.arrow_reader.get_data()
+            
         if self.pdb_zip:
             self.load_pdb_files_from_zip(self.pdb_zip)
 

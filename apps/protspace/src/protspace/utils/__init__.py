@@ -1,4 +1,5 @@
 from .json_reader import JsonReader
+from .arrow_reader import ArrowReader
 from .reducers import (
     REDUCER_METHODS,
     DimensionReductionConfig,
@@ -28,6 +29,7 @@ REDUCERS = {
 
 __all__ = [
     "JsonReader",
+    "ArrowReader",
     "REDUCER_METHODS",
     "DimensionReductionConfig",
     "REDUCERS",
