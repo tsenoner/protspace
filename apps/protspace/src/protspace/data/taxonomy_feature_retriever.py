@@ -22,7 +22,7 @@ TAXONOMY_FEATURES = [
 ]
 
 
-class TaxonomyFetcher:
+class TaxonomyFeatureRetriever:
     def __init__(self, taxon_ids: List[int], features: List = None):
         self.taxon_ids = self._validate_taxon_ids(taxon_ids)
         self.features = features
