@@ -9,7 +9,10 @@ from protspace.data.uniprot_feature_retriever import (
     UNIPROT_FEATURES,
     ProteinFeatures,
 )
-from protspace.data.taxonomy_fetcher import TaxonomyFetcher, TAXONOMY_FEATURES
+from protspace.data.taxonomy_feature_retriever import (
+    TaxonomyFeatureRetriever,
+    TAXONOMY_FEATURES,
+)
 
 import logging
 
@@ -23,14 +26,19 @@ LENGTH_BINNING_FEATURES = ["length_fixed", "length_quantile"]
 
 class ProteinFeatureExtractor:
     def __init__(
-        self, headers: List[str], features: List = None, csv_output: Path = None
+        self,
+        headers: List[str],
+        features: List = None,
+        output_path: Path = None,
+        non_binary: bool = False,
     ):
         self.headers = headers
         self.user_features = self._validate_features(features) if features else None
         self.uniprot_features, self.taxonomy_features = self._initialize_features(
             DEFAULT_FEATURES
         )
-        self.csv_output = csv_output
+        self.output_path = output_path
+        self.non_binary = non_binary
 
     def to_pd(self) -> pd.DataFrame:
         # We always have at least one uniprot feature, if only taxonomy provided we need the organism_id from uniprot
@@ -44,9 +52,17 @@ class ProteinFeatureExtractor:
 
         all_features = self._merge_features(fetched_uniprot, taxonomy_features)
 
-        self.save_csv(all_features)
-
-        df = pd.read_csv(self.csv_output)
+        if self.output_path:
+            # Save to file and read back
+            if self.non_binary:
+                self.save_csv(all_features)
+                df = pd.read_csv(self.output_path)
+            else:
+                self.save_arrow(all_features)
+                df = pd.read_parquet(self.output_path)
+        else:
+            # Create DataFrame directly without saving to file
+            df = self._create_dataframe_from_features(all_features)
 
         if self.user_features:
             columns_to_keep = [df.columns[0]]
@@ -65,13 +81,34 @@ class ProteinFeatureExtractor:
         return uniprot_fetcher.fetch_features()
 
     def get_taxonomy_features(self, taxons: List[int], features: List[str]) -> str:
-        taxonomy_fetcher = TaxonomyFetcher(taxons, features)
+        taxonomy_fetcher = TaxonomyFeatureRetriever(taxons, features)
         return taxonomy_fetcher.fetch_features()
+
+    def _create_dataframe_from_features(self, fetched_uniprot: List[ProteinFeatures]) -> pd.DataFrame:
+        """Create DataFrame directly from protein features without saving to file."""
+        fetched_uniprot = self._compute_length_bins(fetched_uniprot)
+
+        data_rows = []
+        csv_headers = (
+            ["identifier"] + list(fetched_uniprot[0].features.keys())
+            if fetched_uniprot
+            else ["identifier"]
+        )
+
+        for protein in fetched_uniprot:
+            row = [protein.identifier] + [
+                protein.features.get(header, "") for header in csv_headers[1:]
+            ]
+            modified_row = self._modify_if_needed(row, csv_headers)
+            data_rows.append(modified_row)
+
+        df = pd.DataFrame(data_rows, columns=csv_headers)
+        return df
 
     def save_csv(self, fetched_uniprot: List[ProteinFeatures]):
         fetched_uniprot = self._compute_length_bins(fetched_uniprot)
 
-        with open(self.csv_output, "w", newline="") as f:
+        with open(self.output_path, "w", newline="") as f:
             writer = csv.writer(f)
             csv_headers = (
                 ["identifier"] + list(fetched_uniprot[0].features.keys())
@@ -86,6 +123,27 @@ class ProteinFeatureExtractor:
                 ]
                 modified_row = self._modify_if_needed(row, csv_headers)
                 writer.writerow(modified_row)
+
+    def save_arrow(self, fetched_uniprot: List[ProteinFeatures]):
+        """Save protein features data in binary parquet format."""
+        fetched_uniprot = self._compute_length_bins(fetched_uniprot)
+
+        data_rows = []
+        csv_headers = (
+            ["identifier"] + list(fetched_uniprot[0].features.keys())
+            if fetched_uniprot
+            else ["identifier"]
+        )
+
+        for protein in fetched_uniprot:
+            row = [protein.identifier] + [
+                protein.features.get(header, "") for header in csv_headers[1:]
+            ]
+            modified_row = self._modify_if_needed(row, csv_headers)
+            data_rows.append(modified_row)
+
+        df = pd.DataFrame(data_rows, columns=csv_headers)
+        df.to_parquet(self.output_path, index=False)
 
     def _compute_length_bins(
         self, fetched_uniprot: List[ProteinFeatures]
@@ -242,7 +300,33 @@ class ProteinFeatureExtractor:
         """
         Separates features into UniProt and Taxonomy features.
         """
+        # If user specified features, only use those (plus required ones)
+        if self.user_features:
+            uniprot_features = [
+                feature for feature in features if feature in UNIPROT_FEATURES
+            ]
+            taxonomy_features = [
+                feature for feature in features if feature in TAXONOMY_FEATURES
+            ]
+            
+            # Check if user requested length binning features
+            user_has_length_features = any(
+                feature in self.user_features for feature in LENGTH_BINNING_FEATURES
+            )
+            
+            # If user requested length features, we need the length feature from UniProt
+            if user_has_length_features and "length" not in uniprot_features:
+                uniprot_features.append("length")
 
+            uniprot_features = self._modify_uniprot_features(uniprot_features)
+
+            # We have taxonomy, so we need the organism_ids in uniprot_features
+            if taxonomy_features:
+                return uniprot_features, taxonomy_features
+            else:
+                return uniprot_features, None
+        
+        # No user features specified, use defaults
         uniprot_features = [
             feature for feature in features if feature in UNIPROT_FEATURES
         ]

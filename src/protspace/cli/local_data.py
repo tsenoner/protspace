@@ -59,7 +59,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         required=True,
-        help="Path to output JSON file",
+        help="Path to output directory.",
     )
     # Specify delimiter argument with comma as default
     parser.add_argument(
@@ -67,6 +67,17 @@ def create_argument_parser() -> argparse.ArgumentParser:
         type=str,
         default=",",
         help="Specify delimiter for metadata file (default: comma)",
+    )
+    parser.add_argument(
+        "--non-binary",
+        action="store_true",
+        help="Save output in non binary formats (JSON, CSV, etc.)",
+    )
+
+    parser.add_argument(
+        "--keep-tmp",
+        action="store_true",
+        help="Keep temporary files (All protein features)",
     )
 
     # Reduction methods
@@ -183,7 +194,12 @@ def main():
     try:
         processor = LocalDataProcessor(args_dict)
         metadata, data, headers = processor.load_data(
-            args.input, args.metadata, delimiter=args.delimiter
+            input_path=args.input,
+            metadata=args.metadata,
+            output_path=args.output,
+            delimiter=args.delimiter,
+            non_binary=args.non_binary,
+            keep_tmp=args.keep_tmp,
         )
 
         methods_list = args.methods.split(",")
@@ -203,8 +219,12 @@ def main():
             reductions.append(processor.process_reduction(data, method, dims))
 
         # Create and save output
-        output = processor.create_output(metadata, reductions, headers)
-        processor.save_output(output, args.output)
+        if args.non_binary:
+            output = processor.create_output_legacy(metadata, reductions, headers)
+            processor.save_output_legacy(output, args.output)
+        else:
+            output = processor.create_output(metadata, reductions, headers)
+            processor.save_output(output, args.output)
         logger.info(
             f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
         )

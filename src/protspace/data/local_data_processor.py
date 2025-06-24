@@ -1,4 +1,6 @@
 import logging
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Union, Tuple
 
@@ -8,7 +10,7 @@ import pandas as pd
 
 from protspace.utils import REDUCERS
 from protspace.data.base_data_processor import BaseDataProcessor
-from protspace.data.generate_csv import ProteinFeatureExtractor
+from protspace.data.feature_manager import ProteinFeatureExtractor
 
 # Configure logging
 logging.basicConfig(format="%(levelname)s: %(message)s")
@@ -42,11 +44,19 @@ class LocalDataProcessor(BaseDataProcessor):
         self,
         input_path: Path,
         metadata: Union[Path, List],  # If list, generates csv from uniprot features
+        output_path: Path,
         delimiter: str,
+        non_binary: bool = False,
+        keep_tmp: bool = False,
     ) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
         data, headers = self._load_input_file(input_path)
         metadata = self._load_or_generate_metadata(
-            headers, metadata, input_path, delimiter
+            headers,
+            metadata,
+            output_path,
+            delimiter,
+            non_binary,
+            keep_tmp,
         )
 
         # Create full metadata with NaN for missing entries
@@ -101,13 +111,18 @@ class LocalDataProcessor(BaseDataProcessor):
 
     @staticmethod
     def _load_or_generate_metadata(
-        headers: List[str], metadata: str, input_path: Path, delimiter: str
+        headers: List[str],
+        metadata: str,
+        output_path: Path,
+        delimiter: str,
+        non_binary: bool = False,
+        keep_tmp: bool = False,
     ) -> pd.DataFrame:
         try:
             # csv generation logic
             if metadata and metadata.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                metadata = pd.read_csv(metadata, delimiter=delimiter).convert_dtypes()
+                metadata_df = pd.read_csv(metadata, delimiter=delimiter).convert_dtypes()
 
             else:
                 if metadata:
@@ -115,20 +130,36 @@ class LocalDataProcessor(BaseDataProcessor):
                 else:
                     features = None  # No specific features requested, use all
 
-                input_path = input_path.absolute()
-                if input_path.is_file():
-                    csv_output = input_path.parent / "metadata.csv"
+                # Generate metadata directly in output directory
+                output_base = output_path.with_suffix('')
+                output_base.mkdir(parents=True, exist_ok=True)
+                
+                if non_binary:
+                    metadata_file_path = output_base / "all_features.csv"
                 else:
-                    csv_output = input_path / "metadata.csv"
-
-                metadata = ProteinFeatureExtractor(
-                    headers=headers, features=features, csv_output=csv_output
+                    metadata_file_path = output_base / "all_features.parquet"
+                
+                metadata_df = ProteinFeatureExtractor(
+                    headers=headers, 
+                    features=features, 
+                    output_path=metadata_file_path, 
+                    non_binary=non_binary
                 ).to_pd()
+                
+                if keep_tmp:
+                    logger.info(f"Metadata file saved to: {metadata_file_path}")
+                else:
+                    # Delete the metadata file if keep_tmp is False
+                    if metadata_file_path.exists():
+                        metadata_file_path.unlink()
+                        logger.debug(f"Temporary metadata file deleted: {metadata_file_path}")
+
+                return metadata_df
 
         except Exception as e:
             logger.warning(
                 f"Could not load metadata ({str(e)}) - creating empty metadata"
             )
-            metadata = pd.DataFrame(columns=["identifier"])
+            metadata_df = pd.DataFrame(columns=["identifier"])
 
-        return metadata
+        return metadata_df

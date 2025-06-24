@@ -13,7 +13,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--json",
         required=False,
-        help="Path to the default JSON file",
+        help="Path to the JSON file (legacy format)",
+    )
+    parser.add_argument(
+        "--arrow",
+        required=False,
+        help="Path to the directory containing Arrow/Parquet files",
     )
     parser.add_argument(
         "--pdb_zip",
@@ -33,8 +38,9 @@ def main(
     port: int = DEFAULT_PORT,
     pdb_zip: Optional[str] = None,
     json: Optional[str] = None,
+    arrow: Optional[str] = None,
 ) -> None:
-    protspace = ProtSpace(pdb_zip=pdb_zip, default_json_file=json)
+    protspace = ProtSpace(pdb_zip=pdb_zip, default_json_file=json, arrow_dir=arrow)
     protspace.run_server(debug=True, port=port)
 
 

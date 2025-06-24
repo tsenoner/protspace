@@ -1,5 +1,4 @@
 import logging
-import json
 import tempfile
 import shutil
 from typing import List, Tuple, Any, Dict
@@ -14,7 +13,7 @@ from pymmseqs.commands import easy_search
 
 from protspace.utils import REDUCERS
 from protspace.data.base_data_processor import BaseDataProcessor
-from protspace.data.generate_csv import ProteinFeatureExtractor
+from protspace.data.feature_manager import ProteinFeatureExtractor
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -36,8 +35,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
             "metadata",
             "save_files",
             "no_save_files",
-            "with_fasta",
-            "with_csv",
+            "keep_tmp",
         ]:
             clean_config.pop(arg, None)
         
@@ -50,8 +48,8 @@ class UniProtQueryProcessor(BaseDataProcessor):
         output_path: Path,
         metadata: str = None,
         delimiter: str = ",",
-        save_fasta: bool = False,
-        save_csv: bool = False,
+        keep_tmp: bool = False,
+        non_binary: bool = False,
     ) -> Tuple[pd.DataFrame, np.ndarray, List[str], Dict[str, Path]]:
         """
         Process a UniProt query and return data for visualization.
@@ -61,8 +59,8 @@ class UniProtQueryProcessor(BaseDataProcessor):
             metadata: Metadata features to fetch
             delimiter: CSV delimiter
             output_path: Path for output JSON file
-            save_fasta: Whether to save FASTA file
-            save_csv: Whether to save CSV metadata file
+            keep_tmp: Whether to keep temporary files (FASTA, complete protein features, and similarity matrix)
+            non_binary: Whether to use non-binary formats (CSV instead of parquet)
         
         Returns:
             Tuple of (metadata_df, embeddings_array, headers_list, saved_files_dict)
@@ -70,16 +68,22 @@ class UniProtQueryProcessor(BaseDataProcessor):
         logger.info(f"Processing UniProt query: '{query}'")
         
         saved_files = {}
+        fasta_filename = "sequences.fasta"
+        
+        # Metadata file format depends on non_binary flag
+        if keep_tmp:
+            fasta_save_path = output_path / fasta_filename
 
-        output_dir = output_path.parent
-        clean_query = self._clean_query_name(query)
-        
-        # Generate filenames for FASTA and CSV
-        fasta_filename = f"{clean_query}_sequences.fasta"
-        fasta_save_path = output_dir / fasta_filename if save_fasta else None
-        
-        csv_filename = f"{clean_query}_metadata.csv"
-        csv_save_path = output_dir / csv_filename if save_csv else None
+            if non_binary:
+                metadata_filename = "all_features.csv"
+            else:
+                metadata_filename = "all_features.parquet"
+
+            metadata_save_path = output_path / metadata_filename
+
+        else:
+            fasta_save_path = None
+            metadata_save_path = None
 
         # Download FASTA from UniProt
         headers, fasta_path = self._search_and_download_fasta(query, save_to=fasta_save_path)
@@ -89,27 +93,26 @@ class UniProtQueryProcessor(BaseDataProcessor):
         # Generate similarity matrix
         data, headers = self._get_similarity_matrix(fasta_path, headers)
         if fasta_save_path:
+            # Ensure directory exists when saving FASTA
+            fasta_save_path.parent.mkdir(parents=True, exist_ok=True)
             saved_files['fasta'] = fasta_save_path
         else:
             fasta_path.unlink(missing_ok=True)
         
         # Save similarity matrix
-        if csv_save_path:
-            similarity_matrix_path = csv_save_path.parent / f"{clean_query}_similarity_matrix.csv"
+        if metadata_save_path:
+            similarity_matrix_path = metadata_save_path.parent / "similarity_matrix.csv"
             self._save_similarity_matrix(data, headers, similarity_matrix_path)
             saved_files['similarity_matrix'] = similarity_matrix_path
         
-        # Generate metadata CSV
-        metadata_df = self._generate_metadata(headers, metadata, delimiter, csv_save_path)
-        if csv_save_path:
-            saved_files['csv'] = csv_save_path
+        # Generate metadata file
+        metadata_df = self._generate_metadata(headers, metadata, delimiter, metadata_save_path, non_binary, keep_tmp)
+        if metadata_save_path:
+            # Ensure directory exists when saving metadata
+            metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
+            saved_files['metadata'] = metadata_save_path
         
         return metadata_df, data, headers, saved_files
-
-    def _clean_query_name(self, query: str) -> str:
-        """Clean query string to create valid filename."""
-        clean_query = "".join(c for c in query if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        return clean_query.replace(' ', '_').lower()
 
     def _search_and_download_fasta(
         self,
@@ -262,11 +265,16 @@ class UniProtQueryProcessor(BaseDataProcessor):
         
         return identifiers
 
-    def _generate_metadata(self, headers: List[str], metadata: str, delimiter: str, csv_save_path: Path = None) -> pd.DataFrame:
-        """Generate metadata CSV and return DataFrame."""
-        # Create temporary directory for metadata generation
-        temp_dir = Path(tempfile.mkdtemp(prefix="protspace_query_"))
-        
+    def _generate_metadata(
+        self,
+        headers: List[str],
+        metadata: str,
+        delimiter: str,
+        metadata_save_path: Path = None,
+        non_binary: bool = False,
+        keep_tmp: bool = False,
+    ) -> pd.DataFrame:
+        """Generate metadata CSV and return DataFrame."""        
         try:
             if metadata and metadata.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
@@ -277,25 +285,27 @@ class UniProtQueryProcessor(BaseDataProcessor):
                 else:
                     features = None  # No specific features requested, use all
 
-                # Generate CSV using ProteinFeatureExtractor
-                temp_csv_path = temp_dir / "metadata.csv"
+                # Create directory only if metadata_save_path is provided
+                if metadata_save_path:
+                    metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
+                    
                 metadata_df = ProteinFeatureExtractor(
-                    headers=headers, features=features, csv_output=temp_csv_path
+                    headers=headers,
+                    features=features,
+                    output_path=metadata_save_path,
+                    non_binary=non_binary,
                 ).to_pd()
                 
-                # Save to permanent location if requested
-                if csv_save_path:
-                    # Create directory if it doesn't exist
-                    csv_save_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(temp_csv_path, csv_save_path)
-                    logger.info(f"Metadata CSV saved to: {csv_save_path}")
+                if keep_tmp and metadata_save_path:
+                    logger.info(f"Metadata file saved to: {metadata_save_path}")
+                else:
+                    if metadata_save_path and metadata_save_path.exists():
+                        metadata_save_path.unlink()
+                        logger.debug(f"Temporary metadata file deleted: {metadata_save_path}")
 
         except Exception as e:
             logger.warning(f"Could not generate metadata ({str(e)}) - creating empty metadata")
             metadata_df = pd.DataFrame(columns=["identifier"])
-        finally:
-            # Clean up temporary directory
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
         # Create full metadata with NaN for missing entries
         full_metadata = pd.DataFrame({"identifier": headers})

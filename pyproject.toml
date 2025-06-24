@@ -19,6 +19,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "taxopy>=0.14.0",
     "pymmseqs>=1.0.4",
+    "pyarrow>=20.0.0",
 ]
 
 [project.optional-dependencies]

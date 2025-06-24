@@ -48,7 +48,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         required=True,
-        help="Path to output JSON file",
+        help="Path to output directory (when using --non-binary) or Parquet file (default)",
     )
 
     # Optional arguments
@@ -61,16 +61,15 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Features to extract (format: feature1,feature2,...)",
     )
     parser.add_argument(
-        "--with-fasta",
+        "--non-binary",
         action="store_true",
-        help="Save FASTA file",
+        help="Save output in non binary formats (JSON, CSV, etc.)",
     )
     parser.add_argument(
-        "--with-csv",
+        "--keep-tmp",
         action="store_true",
-        help="Save CSV metadata file",
+        help="Keep temporary files (FASTA, complete protein features, and similarity matrix)",
     )
-
     parser.add_argument(
         "--methods",
         type=str,
@@ -192,8 +191,8 @@ def main():
             metadata=args.metadata,
             delimiter=",",
             output_path=args.output,
-            save_fasta=args.with_fasta,
-            save_csv=args.with_csv,
+            keep_tmp=args.keep_tmp,
+            non_binary=args.non_binary,
         )
 
         # Process reduction methods
@@ -214,8 +213,12 @@ def main():
             reductions.append(processor.process_reduction(data, method, dims))
 
         # Create and save output
-        output = processor.create_output(metadata, reductions, headers)
-        processor.save_output(output, args.output)
+        if args.non_binary:
+            output = processor.create_output_legacy(metadata, reductions, headers)
+            processor.save_output_legacy(output, args.output)
+        else:
+            output = processor.create_output(metadata, reductions, headers)
+            processor.save_output(output, args.output)
         
         # Log results
         logger.info(f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods")
