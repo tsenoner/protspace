@@ -122,11 +122,11 @@ class BaseDataProcessor:
                 row = {
                     'projection_name': reduction['name'],
                     'identifier': header,
-                    'x': float(reduction['data'][i][0]),
-                    'y': float(reduction['data'][i][1])
+                    'x': np.float32(reduction['data'][i][0]),
+                    'y': np.float32(reduction['data'][i][1])
                 }
                 if reduction['dimensions'] == 3:
-                    row['z'] = float(reduction['data'][i][2])
+                    row['z'] = np.float32(reduction['data'][i][2])
                 else:
                     row['z'] = None
                 
@@ -166,11 +166,11 @@ class BaseDataProcessor:
 
             for i, header in enumerate(headers):
                 coordinates = {
-                    "x": float(reduction["data"][i][0]),
-                    "y": float(reduction["data"][i][1]),
+                    "x": np.float32(reduction["data"][i][0]),
+                    "y": np.float32(reduction["data"][i][1]),
                 }
                 if reduction["dimensions"] == 3:
-                    coordinates["z"] = float(reduction["data"][i][2])
+                    coordinates["z"] = np.float32(reduction["data"][i][2])
 
                 projection["data"].append(
                     {"identifier": header, "coordinates": coordinates}
