@@ -1,4 +1,4 @@
-from plotly.validators.scatter.marker import SymbolValidator
+from plotly.validator_cache import ValidatorCache
 
 
 # https://plotly.com/python/marker-style/
@@ -23,7 +23,8 @@ HIGHLIGHT_COLOR = "rgba(0,0,0,0)"
 HIGHLIGHT_BORDER_COLOR = "black"
 
 # Marker shapes
-MARKER_SHAPES_2D = sorted(extract_marker_strings(SymbolValidator().values))
+SymbolValidator = ValidatorCache.get_validator("scatter.marker", "symbol")
+MARKER_SHAPES_2D = sorted(extract_marker_strings(SymbolValidator.values))
 MARKER_SHAPES_3D = [
     "circle",
     "circle-open",
