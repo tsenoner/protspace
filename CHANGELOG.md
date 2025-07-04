@@ -1,6 +1,162 @@
 # CHANGELOG
 
 
+## v2.1.0 (2025-07-04)
+
+### Documentation
+
+* docs: update README and add new CLI scripts for protspace-query and protspace-local ([`5485a6c`](https://github.com/tsenoner/protspace/commit/5485a6c33f5847007b605bebb3432b02ae1de718))
+
+* docs: update README to include detailed usage instructions for protspace-query and local data processing commands
+
+- Added examples for `protspace-query` to search proteins from UniProt.
+- Clarified required and optional arguments for both `protspace-query` and `protspace-local`.
+- Enhanced descriptions for input types and method-specific parameters. ([`957e3b9`](https://github.com/tsenoner/protspace/commit/957e3b9f863d335a7d46d6e7f63edc6fe75d16d5))
+
+### Features
+
+* feat(ci): update release workflow to handle protected branches
+
+- Add support for SEMANTIC_RELEASE_TOKEN to bypass branch protection
+- Improve error handling and output management in release workflow
+- Add fallback to GITHUB_TOKEN if PAT not available
+- Create setup guide for PAT configuration
+- Enable fully automated releases with protected main branch ([`45ccd1c`](https://github.com/tsenoner/protspace/commit/45ccd1ca0b9904f80454b6ab9570b5b84a84df37))
+
+* feat: add support for Apache Arrow data format in ProtSpace
+
+- Introduced ArrowReader class for reading and manipulating Arrow/Parquet files.
+- Added new flags for protspace-query and protspace-local called --non-binary, if using this flag, everything is like before, otherwise using apache arrow format
+- protspace cli has a new argument called --arrow, to pass a arrow files directory ([`ebac3c4`](https://github.com/tsenoner/protspace/commit/ebac3c4d9931f41af058e1c67ace6c3494b455a4))
+
+* feat: enhance metadata validation in protspace-query, not to accept csv files as metadata ([`1a3d680`](https://github.com/tsenoner/protspace/commit/1a3d680c8375b342c2bfb9beae2ce840daffea65))
+
+* feat: add UniProt query CLI tool and related data processing modules
+
+This commit introduces a new CLI for querying UniProt, with several supporting modules for data retrieval and processing. Key additions include:
+- `uniprot_query.py`: CLI for searching and processing proteins from UniProt.
+- `uniprot_feature_retriever.py`: Renamed old `uniprot_fetcher.py` to this
+- `uniprot_query_processor.py`: Handles query processing and data analysis.
+- Updates in `generate_csv.py` to use the new feature retriever. ([`9f2b661`](https://github.com/tsenoner/protspace/commit/9f2b661185339976db0e4c6ac0591991d9bc49c5))
+
+* feat: implement length binning features in ProteinFeatureExtractor
+- Now a csv file is created based on all available features and then we filter them based on user requested features ([`b54f323`](https://github.com/tsenoner/protspace/commit/b54f3234eb9aad7615b20922be3d5f23c6f3cd7e))
+
+* feat: enhance CSV processing by adding protein families handling ([`27cc6d4`](https://github.com/tsenoner/protspace/commit/27cc6d4512ef69d90a4fe9b34095f84c09a9bbc0))
+
+* feat: expand taxonomy features and implement cache refresh logic in TaxonomyFetcher ([`0395d26`](https://github.com/tsenoner/protspace/commit/0395d26651e816d9827eac116c524a552ae43c38))
+
+* feat: refactor DataProcessor with the new automated metadata generation logic ([`cb21caf`](https://github.com/tsenoner/protspace/commit/cb21cafb441b9a6662a84f368fa66171f6134987))
+
+* feat(notebook): enhance ClickThrough_GenerateEmbeddings notebook with new model options and improved embedding generation logic
+
+- Updated installation cell to include additional dependencies for ESM and Hugging Face.
+- Added optional Hugging Face login cell for models requiring authentication.
+- Improved model selection and embedding generation logic, including handling for different model types and sequence lengths.
+- Enhanced error handling for invalid headers in the output dataset.
+- Updated output file naming to include model type for clarity. ([`adc6553`](https://github.com/tsenoner/protspace/commit/adc6553988c345d4181211fab4b6d7853274885b))
+
+### Fixes
+
+* fix(tests): update tests for new architecture and add automatic ChromeDriver management
+
+- Fix import paths: ProtSpace moved to server.app, DataProcessor to LocalDataProcessor
+- Update LocalDataProcessor API usage in tests to match new method signatures
+- Add conftest.py for automatic ChromeDriver version management using webdriver-manager
+- Resolve Chrome/ChromeDriver version mismatch issues
+- All tests now passing: 4/4 app tests, 4/4 sampled data processing tests ([`932734a`](https://github.com/tsenoner/protspace/commit/932734a019bfc1cb5a27a3e08e71a136c4322056))
+
+* fix: correct import and variable names from REDUCER_METHODS to REDUCERS ([`e9f5a29`](https://github.com/tsenoner/protspace/commit/e9f5a2960dbb4290e20332929803b85552411876))
+
+* fix: remove limit on UniProt headers in fetch_features method ([`1acdbcf`](https://github.com/tsenoner/protspace/commit/1acdbcf7146f16b1dade74ae050e41ac079ee2d1))
+
+* fix(config): update marker shape configuration to use ValidatorCache
+
+To work with Plotly update
+This commit modifies the marker shape configuration in `config.py` to utilize `ValidatorCache` for improved performance and maintainability. The `SymbolValidator` is now retrieved from the cache, streamlining the extraction of marker shapes for both 2D and 3D plots. ([`e5931f9`](https://github.com/tsenoner/protspace/commit/e5931f9fecbc551cf3f4e3ee99f271c991a00c2b))
+
+### Refactoring
+
+* refactor: change data type conversion to np.float32 in BaseDataProcessor ([`c9483cb`](https://github.com/tsenoner/protspace/commit/c9483cbd2e8af3e3beddd3b44d1d80092e823b80))
+
+* refactor: remove sp filtering from UniProt query processing, users should provide the exact query themselves ([`f077a23`](https://github.com/tsenoner/protspace/commit/f077a23b3c7641d8853d561b7b557d8ccc78f071))
+
+* refactor: restructure data processors with inheritance-based architecture
+
+- Replace prepare_json.py with modular BaseDataProcessor and LocalDataProcessor classes
+- Extract common data processing logic into BaseDataProcessor base class
+- Refactor UniProtQueryProcessor to inherit from BaseDataProcessor
+- Move local data CLI functionality to dedicated cli/local_data.py module
+- Update entry points and imports to reflect new module structure
+- Improve code organization and reduce duplication across processors
+
+Breaking change: rename protspace-json CLI command to protspace-local ([`9a627e6`](https://github.com/tsenoner/protspace/commit/9a627e6935ba7dad3c9ace3094b049179b0d88fa))
+
+* refactor: update import paths to use absolute imports for consistency and clarity ([`8ee68ac`](https://github.com/tsenoner/protspace/commit/8ee68acd8c94c13d760d3440dc7f3b24618c97d5))
+
+* refactor: update import paths and clean up whitespace in various files; enhance .gitignore to include additional data directories ([`1f1b48b`](https://github.com/tsenoner/protspace/commit/1f1b48b0af21df21f8a3f7ee2f87b35135c0cfbe))
+
+### Unknown
+
+* Merge branch 'stage' ([`5a0030e`](https://github.com/tsenoner/protspace/commit/5a0030eaff34b0ee5c64d56e0b98a1fd1c01f1ac))
+
+* Rename class name ([`38fd3ff`](https://github.com/tsenoner/protspace/commit/38fd3ff81b27efe5f33e9776eae9fd82634347ae))
+
+* Merge branch 'main' into stage ([`852ddde`](https://github.com/tsenoner/protspace/commit/852ddde1f79b6a899a15af18441a9c620941818c))
+
+* Merge branch 'stage' of https://github.com/tsenoner/protspace into stage ([`3ecafc7`](https://github.com/tsenoner/protspace/commit/3ecafc79b25ac6b3e315f78e2c2b88b48dbadf01))
+
+* Merge pull request #6 from heispv:develop
+
+Extract and parse metadata from UniProt automatically ([`bd9fe6d`](https://github.com/tsenoner/protspace/commit/bd9fe6d082cadb6828c971ca6af17955cf6a5ba4))
+
+* Merge branch 'pr/heispv/6' into stage ([`b1cafb5`](https://github.com/tsenoner/protspace/commit/b1cafb5d36015dc5cd71177449520fa9671b28d1))
+
+* Add taxonomy fetcher, move uniprot fetcher to a separate file, update dependencies ([`d568c65`](https://github.com/tsenoner/protspace/commit/d568c6523cfb89775e94b4f7c79acb6f8c18bcfe))
+
+* Enhance CSV generation by modifying 'annotation_score' values before writing rows ([`5e01a61`](https://github.com/tsenoner/protspace/commit/5e01a6191ee2ddee885659e0d210fefcf61a3b60))
+
+* Removing some prefixes ([`78aa3e5`](https://github.com/tsenoner/protspace/commit/78aa3e5f6daacf1c225abf56de30b084e6d141cb))
+
+* Using number of the seqs instead of batches for the progress bar ([`721e7cb`](https://github.com/tsenoner/protspace/commit/721e7cb0739a22ef20c9fa8a76b6a62b4f52dbeb))
+
+* Update a package and sync uv lock ([`0a8e0e9`](https://github.com/tsenoner/protspace/commit/0a8e0e92fd61a5d89b20d35f1a5bc5ff895f9952))
+
+* Minor fix in the custom names arg ([`53fb12f`](https://github.com/tsenoner/protspace/commit/53fb12f8575608d473a0c83b0a69a4797a1ad9fb))
+
+* Resolve the logo issue in ui ([`ac3476d`](https://github.com/tsenoner/protspace/commit/ac3476dec0c38e280a18e9b098239f74547a89b8))
+
+* Managing default uniprot headers to extract accession correctly ([`fbb3f90`](https://github.com/tsenoner/protspace/commit/fbb3f90d6a9d793b00f02a9108e6d8c526c59d15))
+
+* Updating args to use comma separated inputs ([`d4f4a83`](https://github.com/tsenoner/protspace/commit/d4f4a839e30f6ec0dc925811f2022c9e9e52b895))
+
+* Minor import update ([`57f76c3`](https://github.com/tsenoner/protspace/commit/57f76c33bd8ebd9e2804e1778975d2c1613b6403))
+
+* Updates based on new modularization logic ([`3d5aad2`](https://github.com/tsenoner/protspace/commit/3d5aad2db50c5ffb6d62ccb541d2b8be198602bb))
+
+* Adding server module ([`b142c74`](https://github.com/tsenoner/protspace/commit/b142c7460f9071feea91bf914bc5c47416d1f682))
+
+* Adding visualization module ([`e67d4e9`](https://github.com/tsenoner/protspace/commit/e67d4e94ef23683c3f77d90ef44bbc8feabc6190))
+
+* Creating ui module ([`a6f98a8`](https://github.com/tsenoner/protspace/commit/a6f98a80ba9e691a7b13de3f625c5a9473296814))
+
+* Moving data related files to data module ([`141e511`](https://github.com/tsenoner/protspace/commit/141e5114595ab0a7b22f0c3176025a4ddcd549bf))
+
+* Modified examples ([`fb7483f`](https://github.com/tsenoner/protspace/commit/fb7483fa3f21f3c59bdc839197cc2e183a760ebe))
+
+* Adding progress bar during data fetching through uniprot ([`11e98f1`](https://github.com/tsenoner/protspace/commit/11e98f12a9cce6c9ee94c275bc55d55849a8c8b3))
+
+* Adding bioservices ([`534a73a`](https://github.com/tsenoner/protspace/commit/534a73aa6b4a7993b850aba85d96c6cb1f7fe208))
+
+* Improved ProteinFeatureExtractor class, added batch size for request ([`7c7b78d`](https://github.com/tsenoner/protspace/commit/7c7b78dd9b5dee91aaefbbb914e179dbb6c27fbb))
+
+* Moving reducers to another file ([`6f40fb6`](https://github.com/tsenoner/protspace/commit/6f40fb6a3c8d2e7bbab0f5105e5e2b0856dc2816))
+
+* Moving the available FEATURES to this file ([`fea0b40`](https://github.com/tsenoner/protspace/commit/fea0b4082ac9a6f647eb1a44f2361f19efacb2de))
+
+* Adding a class for protein feature extraction from uniprot ([`7493644`](https://github.com/tsenoner/protspace/commit/74936440e60ca9ce8bd85c939490431c7cfb7f69))
+
+
 ## v2.0.1 (2025-06-15)
 
 ### Fixes
