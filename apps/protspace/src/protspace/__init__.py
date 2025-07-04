@@ -1,4 +1,4 @@
-__version__ = "2.0.1"
+__version__ = "2.1.0"
 
 from .data import local_data_processor
 from .utils import add_feature_style
