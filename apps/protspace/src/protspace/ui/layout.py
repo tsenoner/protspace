@@ -5,9 +5,9 @@ import dash_molstar
 from dash_iconify import DashIconify
 import importlib.resources
 
-from . import styles
-from .config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
-from .data_loader import JsonReader
+from protspace import styles
+from protspace.config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
+from protspace.utils import JsonReader
 
 
 def _create_header():
@@ -15,10 +15,8 @@ def _create_header():
     return html.Div(
         [
             html.A(
-                html.Img(
-                    src="assets/Helix simple flat.png", style=styles.HEADER_LOGO_STYLE
-                ),
-                href="https://rostlab.org",
+                html.Img(src="assets/rostlab_logo.png", style=styles.HEADER_LOGO_STYLE),
+                href="https://www.cs.cit.tum.de/bio/home/",
                 target="_blank",
                 title="Visit Rostlab",
             ),
