@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 
-from .config import (
+from protspace.config import (
     DEFAULT_LINE_WIDTH,
     HIGHLIGHT_BORDER_COLOR,
     HIGHLIGHT_COLOR,
@@ -16,15 +16,15 @@ from .config import (
     MARKER_SHAPES_3D,
     NAN_COLOR,
 )
-from .data_loader import JsonReader
-from .helpers import standardize_missing
+from protspace.utils import JsonReader
+from protspace.helpers import standardize_missing
 
 
 def generate_default_color(index: int, total: int) -> str:
     """Generate a default color for a categorical value."""
     hue = index / total
     rgb = colorsys.hsv_to_rgb(hue, 0.8, 0.8)
-    return f"rgba({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)}, 0.8)"
+    return f"rgba({int(rgb[0] * 255)}, {int(rgb[1] * 255)}, {int(rgb[2] * 255)}, 0.8)"
 
 
 def prepare_dataframe(

@@ -2,7 +2,7 @@ import os
 import time
 
 import pytest
-from src.protspace.app import ProtSpace
+from src.protspace.server.app import ProtSpace
 
 
 def wait_for_element_attribute_to_contain(element, attribute, value, timeout=5):

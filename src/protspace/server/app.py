@@ -7,24 +7,35 @@ from pathlib import Path
 import dash_bootstrap_components as dbc
 from dash import Dash
 
-from .callbacks import setup_callbacks
-from .layout import create_layout
-from .data_loader import JsonReader
-from .plotting import create_plot, save_plot
+from protspace.server.callbacks import setup_callbacks
+from protspace.ui.layout import create_layout
+from protspace.utils import JsonReader
+from protspace.utils.arrow_reader import ArrowReader
+from protspace.visualization.plotting import create_plot, save_plot
 
 
 class ProtSpace:
     """Main application class for ProtSpace."""
 
     def __init__(
-        self, pdb_zip: Optional[str] = None, default_json_file: Optional[str] = None
+        self, 
+        pdb_zip: Optional[str] = None, 
+        default_json_file: Optional[str] = None,
+        arrow_dir: Optional[str] = None
     ):
         self.pdb_zip = pdb_zip
         self.default_json_data = None
+        self.arrow_reader = None
         self.pdb_files_data = {}
+        
         if default_json_file:
             with open(default_json_file, "r") as f:
                 self.default_json_data = json.load(f)
+        elif arrow_dir:
+            self.arrow_reader = ArrowReader(Path(arrow_dir))
+            # Convert Arrow data to JSON format for compatibility
+            self.default_json_data = self.arrow_reader.get_data()
+            
         if self.pdb_zip:
             self.load_pdb_files_from_zip(self.pdb_zip)
 
@@ -46,8 +57,12 @@ class ProtSpace:
 
     def create_app(self):
         """Create and configure the Dash app."""
+        current_dir = Path(__file__).parent
+        assets_path = str(current_dir.parent / "assets")
+
         app = Dash(
             __name__,
+            assets_folder=assets_path,
             suppress_callback_exceptions=True,
             external_stylesheets=[dbc.themes.BOOTSTRAP],
         )
@@ -102,6 +117,7 @@ class ProtSpace:
         filename: Union[str, Path],
         width: int = 1600,
         height: int = 1000,
+        file_format: str = "png",
     ) -> None:
         """Generate a plot image for a specific projection and feature."""
         if not self.default_json_data:
@@ -109,4 +125,15 @@ class ProtSpace:
 
         reader = JsonReader(self.default_json_data)
         fig, is_3d = create_plot(reader, projection, feature)
-        save_plot(fig, is_3d, width, height, str(filename))
+        
+        # Get image bytes from save_plot
+        image_bytes = save_plot(fig, is_3d, width, height, file_format)
+        
+        # Add file extension if not present
+        filename_path = Path(filename)
+        if not filename_path.suffix:
+            filename_path = filename_path.with_suffix(f".{file_format}")
+        
+        # Write to file
+        with open(filename_path, "wb") as f:
+            f.write(image_bytes)

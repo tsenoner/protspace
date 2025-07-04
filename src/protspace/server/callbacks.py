@@ -11,18 +11,22 @@ import plotly.graph_objs as go
 from dash import Input, Output, State, dcc, no_update
 from dash.exceptions import PreventUpdate
 
-from . import styles
-from .config import (
+from protspace import styles
+from protspace.config import (
     HELP_PANEL_WIDTH_PERCENT,
     MARKER_SHAPES_2D,
     MARKER_SHAPES_3D,
     SETTINGS_PANEL_WIDTH_PERCENT,
     NAN_COLOR,
 )
-from .data_loader import JsonReader
-from .helpers import is_projection_3d
-from .molstar_helper import get_molstar_data
-from .plotting import create_plot, save_plot
+from protspace.helpers import is_projection_3d
+from protspace.molstar_helper import get_molstar_data
+from protspace.utils import JsonReader
+from protspace.visualization.plotting import (
+    create_plot,
+    generate_default_color,
+    save_plot,
+)
 
 
 def get_reader(json_data):
@@ -333,8 +337,6 @@ def setup_callbacks(app):
         else:
             try:
                 idx = all_values.index(selected_value)
-                from .plotting import generate_default_color
-
                 color = generate_default_color(idx, len(all_values))
                 # Convert rgba to hex
                 rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
