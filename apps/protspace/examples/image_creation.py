@@ -1,13 +1,15 @@
-from protspace.server.app import ProtSpace
+from protspace import ProtSpace
 from pathlib import Path
 
 
 def main():
     # Path to the JSON file
-    json_file = "data/toxins/processed_data/toxins_generated.json"
+    # json_file = "data/toxins/processed_data/toxins_generated.json"
+    arrow_dir = "data/toxins/processed_data/toxins_query_new_zstd"
 
     # Initialize the ProtSpaceApp
-    protspace = ProtSpace(default_json_file=json_file)
+    # protspace = ProtSpace(default_json_file=json_file)
+    protspace = ProtSpace(arrow_dir=arrow_dir)
 
     # --- Print available projection names --- Uncomment if needed
 
