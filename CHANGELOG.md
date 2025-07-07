@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v2.1.2 (2025-07-07)
+
+### Fixes
+
+* fix(examples): update jupyter notebooks to use current CLI commands
+
+Replace deprecated 'protspace-json' command with 'protspace-local' in example notebooks:
+- examples/notebook/PfamExplorer_ProtSpace.ipynb
+- examples/notebook/Run_ProtSpace.ipynb
+
+This ensures the example notebooks work with the current CLI interface and
+improves the user experience for notebook-based workflows. ([`c08d241`](https://github.com/tsenoner/protspace/commit/c08d241aaf5bb0b402b6c409a577220af86a3e11))
+
+
 ## v2.1.1 (2025-07-07)
 
 ### Chores
