@@ -18,16 +18,16 @@ class ProtSpace:
     """Main application class for ProtSpace."""
 
     def __init__(
-        self, 
-        pdb_zip: Optional[str] = None, 
+        self,
+        pdb_zip: Optional[str] = None,
         default_json_file: Optional[str] = None,
-        arrow_dir: Optional[str] = None
+        arrow_dir: Optional[str] = None,
     ):
         self.pdb_zip = pdb_zip
         self.default_json_data = None
         self.arrow_reader = None
         self.pdb_files_data = {}
-        
+
         if default_json_file:
             with open(default_json_file, "r") as f:
                 self.default_json_data = json.load(f)
@@ -35,7 +35,7 @@ class ProtSpace:
             self.arrow_reader = ArrowReader(Path(arrow_dir))
             # Convert Arrow data to JSON format for compatibility
             self.default_json_data = self.arrow_reader.get_data()
-            
+
         if self.pdb_zip:
             self.load_pdb_files_from_zip(self.pdb_zip)
 
@@ -125,15 +125,15 @@ class ProtSpace:
 
         reader = JsonReader(self.default_json_data)
         fig, is_3d = create_plot(reader, projection, feature)
-        
+
         # Get image bytes from save_plot
         image_bytes = save_plot(fig, is_3d, width, height, file_format)
-        
+
         # Add file extension if not present
         filename_path = Path(filename)
         if not filename_path.suffix:
             filename_path = filename_path.with_suffix(f".{file_format}")
-        
+
         # Write to file
         with open(filename_path, "wb") as f:
             f.write(image_bytes)
