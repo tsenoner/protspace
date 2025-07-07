@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
     libssl-dev \
-    libexpat1 && rm -rf /var/lib/apt/lists/*
+    libexpat1 \
+    curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy \
