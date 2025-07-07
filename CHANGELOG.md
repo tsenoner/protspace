@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v2.1.1 (2025-07-07)
+
+### Chores
+
+* chore: update Dockerfile and improve script formatting in protspace_local.py
+
+- Added curl installation to Dockerfile to work for pymmseqs2.
+- Reformatted command arguments in run_prepare_json_script for better readability in protspace_local.py. ([`07ec5aa`](https://github.com/tsenoner/protspace/commit/07ec5aaec244c6b19efba185c0e8361ec611dfc2))
+
+### Fixes
+
+* fix(docker): add curl dependency and fix jupyter notebook imports
+
+1. Docker build fix:
+   - Add curl dependency to resolve pymmseqs build failure
+   - The pymmseqs package requires curl to download the MMseqs2 binary during installation
+   - Without curl, Docker builds fail with 'curl: not found' error
+   - This resolves: scripts/download_mmseqs.sh: 37: curl: not found
+
+2. Jupyter notebook import fix:
+   - Updated import path from 'from protspace.app import ProtSpace' to 'from protspace import ProtSpace'
+   - Modified src/protspace/__init__.py to expose ProtSpace at package level
+   - This simplifies imports for users in notebooks and examples
+
+Fixes the Docker build failure in GitHub Actions and improves the developer experience for notebook users. ([`26d973e`](https://github.com/tsenoner/protspace/commit/26d973e96ab8d7d2a9611af08bb493ec29d3cef7))
+
+### Refactoring
+
+* refactor: enhance data input handling in main.py for ProtSpace
+
+- Consolidated JSON and Arrow directory input into a single argument.
+- Implemented a new function to detect data type and validate input paths.
+- Updated ProtSpace initialization to accommodate the new input structure. ([`6a5a9d6`](https://github.com/tsenoner/protspace/commit/6a5a9d6994d24c62a79ac9bccabed6082c8487b1))
+
+* refactor: update import paths and modify ProtSpace initialization in image_creation.py
+
+- Changed import of ProtSpace to a direct import from protspace.
+- Updated initialization in image_creation.py to use arrow_dir instead of json_file.
+- Cleaned up __init__.py to reflect the new import structure and removed unused imports. ([`9e65502`](https://github.com/tsenoner/protspace/commit/9e655026174dc4f167eafabfe8f24cd314fb789d))
+
+### Unknown
+
+* revert: manual version bump to prepare for semantic release ([`304acfc`](https://github.com/tsenoner/protspace/commit/304acfc638b0504646ff374d8f2c2e84ef7c68da))
+
+* bump: version 2.1.0 → 2.2.0 (includes curl fix for pymmseqs build) ([`08b86f6`](https://github.com/tsenoner/protspace/commit/08b86f600a1c229baee7372dbbd7a74c2f3f35ab))
+
+
 ## v2.1.0 (2025-07-04)
 
 ### Documentation
