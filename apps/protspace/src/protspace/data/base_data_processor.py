@@ -87,7 +87,7 @@ class BaseDataProcessor:
             output_dir = output_path
             output_dir.mkdir(parents=True, exist_ok=True)
             bundle_path = output_dir / 'data.parquetbundle'
-            delimiter = b'---PARQUET_DELIMETER---'
+            delimiter = b'---PARQUET_DELIMITER---'
             
             with open(bundle_path, 'wb') as bundle_file:
                 for i, (table_name, table) in enumerate(data.items()):

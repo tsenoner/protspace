@@ -55,7 +55,7 @@ def _extract_parquet_bundle(bundle_path: Path) -> str:
     Returns:
         str: Path to temporary directory containing extracted parquet files
     """
-    delimiter = b'---PARQUET_DELIMETER---'
+    delimiter = b'---PARQUET_DELIMITER---'
     
     temp_dir = Path(tempfile.mkdtemp(prefix="protspace_bundle_"))
     
