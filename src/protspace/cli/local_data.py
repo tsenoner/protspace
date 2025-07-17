@@ -73,6 +73,13 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Save output in non binary formats (JSON, CSV, etc.)",
     )
+    parser.add_argument(
+        "--bundled",
+        type=str,
+        default="true",
+        choices=["true", "false"],
+        help="Bundle parquet files into a single .parquetbundle file (default: true)",
+    )
 
     parser.add_argument(
         "--keep-tmp",
@@ -224,7 +231,7 @@ def main():
             processor.save_output_legacy(output, args.output)
         else:
             output = processor.create_output(metadata, reductions, headers)
-            processor.save_output(output, args.output)
+            processor.save_output(output, args.output, bundled=args.bundled == "true")
         logger.info(
             f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
         )
