@@ -84,7 +84,9 @@ class ProteinFeatureExtractor:
         taxonomy_fetcher = TaxonomyFeatureRetriever(taxons, features)
         return taxonomy_fetcher.fetch_features()
 
-    def _create_dataframe_from_features(self, fetched_uniprot: List[ProteinFeatures]) -> pd.DataFrame:
+    def _create_dataframe_from_features(
+        self, fetched_uniprot: List[ProteinFeatures]
+    ) -> pd.DataFrame:
         """Create DataFrame directly from protein features without saving to file."""
         fetched_uniprot = self._compute_length_bins(fetched_uniprot)
 
@@ -215,7 +217,7 @@ class ProteinFeatureExtractor:
         self, lengths: List[Union[int, None]], num_bins: int
     ) -> List[str]:
         """Compute quantile-based bins where each bin has approximately the same number of sequences."""
-        valid_lengths = [l for l in lengths if l is not None]
+        valid_lengths = [length for length in lengths if length is not None]
         if not valid_lengths:
             return ["unknown"] * len(lengths)
 
@@ -231,8 +233,8 @@ class ProteinFeatureExtractor:
 
         if len(unique_boundaries) < 2:
             return [
-                f"{int(valid_lengths[0])}" if l is not None else "unknown"
-                for l in lengths
+                f"{int(valid_lengths[0])}" if length is not None else "unknown"
+                for length in lengths
             ]
 
         bins = []
@@ -308,12 +310,12 @@ class ProteinFeatureExtractor:
             taxonomy_features = [
                 feature for feature in features if feature in TAXONOMY_FEATURES
             ]
-            
+
             # Check if user requested length binning features
             user_has_length_features = any(
                 feature in self.user_features for feature in LENGTH_BINNING_FEATURES
             )
-            
+
             # If user requested length features, we need the length feature from UniProt
             if user_has_length_features and "length" not in uniprot_features:
                 uniprot_features.append("length")
@@ -325,7 +327,7 @@ class ProteinFeatureExtractor:
                 return uniprot_features, taxonomy_features
             else:
                 return uniprot_features, None
-        
+
         # No user features specified, use defaults
         uniprot_features = [
             feature for feature in features if feature in UNIPROT_FEATURES

@@ -26,9 +26,7 @@ def parse_custom_names(custom_names_arg: str) -> dict:
 
 def setup_logging(verbosity: int):
     """Set up logging based on verbosity level."""
-    logger.setLevel(
-        [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
-    )
+    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
 
 
 def create_argument_parser() -> argparse.ArgumentParser:

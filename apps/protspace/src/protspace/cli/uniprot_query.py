@@ -9,6 +9,7 @@ from protspace.data.uniprot_query_processor import UniProtQueryProcessor
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
 def parse_custom_names(custom_names_arg: str) -> dict:
     """Parse custom names argument into dictionary."""
     custom_names = {}
@@ -22,11 +23,11 @@ def parse_custom_names(custom_names_arg: str) -> dict:
                 logger.warning(f"Invalid custom name specification: {name_spec}")
     return custom_names
 
+
 def setup_logging(verbosity: int):
     """Set up logging based on verbosity level."""
-    logger.setLevel(
-        [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
-    )
+    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
+
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
@@ -175,9 +176,11 @@ def main():
 
     # Validate metadata argument - CSV files are not supported
     if args.metadata:
-        if (args.metadata.endswith('.csv') or 
-            args.metadata.endswith('.CSV') or 
-            Path(args.metadata).exists()):
+        if (
+            args.metadata.endswith(".csv")
+            or args.metadata.endswith(".CSV")
+            or Path(args.metadata).exists()
+        ):
             raise ValueError(
                 "CSV files are not supported when using protspace-query. "
                 "Please provide a comma-separated list of feature names instead."
@@ -191,7 +194,7 @@ def main():
     try:
         # Initialize processor
         processor = UniProtQueryProcessor(args_dict)
-        
+
         # Process the query
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
@@ -205,7 +208,7 @@ def main():
         # Process reduction methods
         methods_list = args.methods.split(",")
         reductions = []
-        
+
         for method_spec in methods_list:
             method = "".join(filter(str.isalpha, method_spec))
             dims = int("".join(filter(str.isdigit, method_spec)))
@@ -226,11 +229,13 @@ def main():
         else:
             output = processor.create_output(metadata, reductions, headers)
             processor.save_output(output, args.output, bundled=args.bundled == "true")
-        
+
         # Log results
-        logger.info(f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods")
+        logger.info(
+            f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
+        )
         logger.info(f"Results saved to: {args.output}")
-        
+
         if saved_files:
             logger.info("Additional files saved:")
             for file_type, file_path in saved_files.items():
@@ -242,4 +247,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
