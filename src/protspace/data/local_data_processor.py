@@ -1,6 +1,4 @@
 import logging
-import tempfile
-import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Union, Tuple
 
@@ -36,7 +34,7 @@ class LocalDataProcessor(BaseDataProcessor):
             "delimiter",
         ]:
             clean_config.pop(arg, None)
-        
+
         # Initialize base class with cleaned config and reducers
         super().__init__(clean_config, REDUCERS)
 
@@ -122,7 +120,9 @@ class LocalDataProcessor(BaseDataProcessor):
             # csv generation logic
             if metadata and metadata.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                metadata_df = pd.read_csv(metadata, delimiter=delimiter).convert_dtypes()
+                metadata_df = pd.read_csv(
+                    metadata, delimiter=delimiter
+                ).convert_dtypes()
 
             else:
                 if metadata:
@@ -131,28 +131,30 @@ class LocalDataProcessor(BaseDataProcessor):
                     features = None  # No specific features requested, use all
 
                 # Generate metadata directly in output directory
-                output_base = output_path.with_suffix('')
+                output_base = output_path.with_suffix("")
                 output_base.mkdir(parents=True, exist_ok=True)
-                
+
                 if non_binary:
                     metadata_file_path = output_base / "all_features.csv"
                 else:
                     metadata_file_path = output_base / "all_features.parquet"
-                
+
                 metadata_df = ProteinFeatureExtractor(
-                    headers=headers, 
-                    features=features, 
-                    output_path=metadata_file_path, 
-                    non_binary=non_binary
+                    headers=headers,
+                    features=features,
+                    output_path=metadata_file_path,
+                    non_binary=non_binary,
                 ).to_pd()
-                
+
                 if keep_tmp:
                     logger.info(f"Metadata file saved to: {metadata_file_path}")
                 else:
                     # Delete the metadata file if keep_tmp is False
                     if metadata_file_path.exists():
                         metadata_file_path.unlink()
-                        logger.debug(f"Temporary metadata file deleted: {metadata_file_path}")
+                        logger.debug(
+                            f"Temporary metadata file deleted: {metadata_file_path}"
+                        )
 
                 return metadata_df
 
