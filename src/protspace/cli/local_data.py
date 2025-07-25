@@ -211,17 +211,24 @@ def main():
 
         methods_list = args.methods.split(",")
         reductions = []
+        valid_methods = []
         for method_spec in methods_list:
             method = "".join(filter(str.isalpha, method_spec))
-            dims = int("".join(filter(str.isdigit, method_spec)))
+            dims_str = "".join(filter(str.isdigit, method_spec))
+            
+            if not dims_str:
+                logger.warning(f"Invalid method specification (no dimensions): {method_spec}. Skipping.")
+                continue
+                
+            dims = int(dims_str)
 
             if method not in processor.reducers:
                 logger.warning(
                     f"Unknown reduction method specified: {method}. Skipping."
                 )
-                continue  # Use logger.warning and continue instead of raising ValueError
-                # raise ValueError(f"Unknown reduction method: {method}") # Kept for reference
+                continue
 
+            valid_methods.append(method_spec)
             logger.info(f"Applying {method.upper()}{dims} reduction")
             reductions.append(processor.process_reduction(data, method, dims))
 
@@ -232,8 +239,12 @@ def main():
         else:
             output = processor.create_output(metadata, reductions, headers)
             processor.save_output(output, args.output, bundled=args.bundled == "true")
+        if not reductions:
+            logger.error("No valid reduction methods processed. Please check your method specifications.")
+            raise ValueError("No valid reduction methods were processed")
+            
         logger.info(
-            f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
+            f"Successfully processed {len(headers)} items using {len(valid_methods)} reduction methods"
         )
 
     except Exception as e:

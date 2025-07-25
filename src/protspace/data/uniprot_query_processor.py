@@ -168,7 +168,8 @@ class UniProtQueryProcessor(BaseDataProcessor):
                     output_file.write(content)
             
             # Clean up the compressed file since we don't need it anymore
-            temp_gz_file.unlink(missing_ok=True)
+            if temp_gz_file.exists():
+                temp_gz_file.unlink()
             
             logger.info(f"Downloaded and extracted {len(identifiers)} sequences")
             
@@ -180,6 +181,10 @@ class UniProtQueryProcessor(BaseDataProcessor):
         except Exception as e:
             logger.error(f"Error processing FASTA: {e}")
             raise
+        finally:
+            # Ensure temporary compressed file is cleaned up
+            if 'temp_gz_file' in locals() and temp_gz_file.exists():
+                temp_gz_file.unlink(missing_ok=True)
     
     def _get_similarity_matrix(
         self,

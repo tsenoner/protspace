@@ -22,6 +22,10 @@ from protspace.helpers import standardize_missing
 
 def generate_default_color(index: int, total: int) -> str:
     """Generate a default color for a categorical value."""
+    if total == 0:
+        # Return a default color when total is 0
+        return "rgba(128, 128, 128, 0.8)"
+    
     hue = index / total
     rgb = colorsys.hsv_to_rgb(hue, 0.8, 0.8)
     return f"rgba({int(rgb[0] * 255)}, {int(rgb[1] * 255)}, {int(rgb[2] * 255)}, 0.8)"
