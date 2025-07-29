@@ -14,6 +14,18 @@ from protspace.utils.reducers import MDS_NAME
 logger = logging.getLogger(__name__)
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles NumPy data types."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 class BaseDataProcessor:
     """Base class containing common data processing methods."""
 
@@ -222,4 +234,4 @@ class BaseDataProcessor:
             data = existing
 
         with json_file_path.open("w") as f:
-            json.dump(data, f, indent=2) 
+            json.dump(data, f, indent=2, cls=NumpyEncoder) 
