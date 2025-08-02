@@ -157,10 +157,10 @@ class TestInitializeFeatures:
     def test_initialize_features_with_user_features(self):
         """Test feature initialization with user-specified features."""
         headers = SAMPLE_HEADERS
-        user_features = ["length", "genus", "species"]
+        user_features = ["length", "genus", "species", "pfam"]
         
         extractor = ProteinFeatureExtractor(headers=headers, features=user_features)
-        uniprot_features, taxonomy_features = extractor._initialize_features(DEFAULT_FEATURES)
+        uniprot_features, taxonomy_features, interpro_features = extractor._initialize_features(DEFAULT_FEATURES)
         
         # Should include user's UniProt features plus required ones
         assert "accession" in uniprot_features
@@ -171,13 +171,16 @@ class TestInitializeFeatures:
         assert "genus" in taxonomy_features
         assert "species" in taxonomy_features
 
+        # Should include InterPro features that are in user_features
+        assert "pfam" in interpro_features
+
     def test_initialize_features_with_length_binning(self):
         """Test initialization when user requests length binning features."""
         headers = SAMPLE_HEADERS
         user_features = ["length_fixed", "genus"]
         
         extractor = ProteinFeatureExtractor(headers=headers, features=user_features)
-        uniprot_features, taxonomy_features = extractor._initialize_features(DEFAULT_FEATURES)
+        uniprot_features, taxonomy_features, interpro_features = extractor._initialize_features(DEFAULT_FEATURES)
         
         # Should automatically include "length" for binning computation
         assert "length" in uniprot_features
@@ -187,7 +190,7 @@ class TestInitializeFeatures:
         headers = SAMPLE_HEADERS
         
         extractor = ProteinFeatureExtractor(headers=headers)
-        uniprot_features, taxonomy_features = extractor._initialize_features(DEFAULT_FEATURES)
+        uniprot_features, taxonomy_features, interpro_features = extractor._initialize_features(DEFAULT_FEATURES)
         
         # Should include all UniProt features from DEFAULT_FEATURES
         for feature in UNIPROT_FEATURES:
@@ -522,9 +525,11 @@ class TestConstants:
 
     def test_default_features_constant(self):
         """Test that DEFAULT_FEATURES combines UniProt and taxonomy features."""
-        assert len(DEFAULT_FEATURES) == len(UNIPROT_FEATURES) + len(TAXONOMY_FEATURES)
+        from protspace.data.interpro_feature_retriever import INTERPRO_FEATURES
+        assert len(DEFAULT_FEATURES) == len(UNIPROT_FEATURES) + len(TAXONOMY_FEATURES) + len(INTERPRO_FEATURES)
         assert all(feature in DEFAULT_FEATURES for feature in UNIPROT_FEATURES)
         assert all(feature in DEFAULT_FEATURES for feature in TAXONOMY_FEATURES)
+        assert all(feature in DEFAULT_FEATURES for feature in INTERPRO_FEATURES)
 
     def test_needed_uniprot_features_constant(self):
         """Test NEEDED_UNIPROT_FEATURES constant."""

@@ -7,13 +7,15 @@ def run_prepare_json_script():
         "-i",
         "data/toxins/processed_data/toxins.h5",
         "-m",
-        "phylum,protein_existence,length_fixed,length_quantile",  # uncomment to get all the available protein features
+        "phylum,protein_existence,length_fixed,length_quantile,pfam,superfamily,cath-gene3d",  # uncomment to get all the available protein features
         "--methods",
         "pca2,pca3",
         "-o",
         "data/toxins/processed_data/toxins_output",  # output dir for arrow files
         # "--non-binary", # uncomment to get .json output
         # "--keep-tmp",
+        # "--bundled",
+        # "false",
         # "--n_neighbors", "25",
         # "--min_dist", "0.5",
         # "--learning_rate", "1000",
