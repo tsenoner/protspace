@@ -39,8 +39,8 @@ class ProteinFeatureExtractor:
     ):
         self.headers = headers
         self.user_features = self._validate_features(features) if features else None
-        self.uniprot_features, self.taxonomy_features, self.interpro_features = self._initialize_features(
-            DEFAULT_FEATURES
+        self.uniprot_features, self.taxonomy_features, self.interpro_features = (
+            self._initialize_features(DEFAULT_FEATURES)
         )
         self.output_path = output_path
         self.non_binary = non_binary
@@ -64,12 +64,16 @@ class ProteinFeatureExtractor:
             for protein in fetched_uniprot:
                 if "sequence" in protein.features and protein.features["sequence"]:
                     sequences[protein.identifier] = protein.features["sequence"]
-            
+
             # Update self.sequences for InterPro retrieval
             self.sequences = sequences
-            interpro_features = self.get_interpro_features(self.headers, self.interpro_features)
+            interpro_features = self.get_interpro_features(
+                self.headers, self.interpro_features
+            )
 
-        all_features = self._merge_features(fetched_uniprot, taxonomy_features, interpro_features)
+        all_features = self._merge_features(
+            fetched_uniprot, taxonomy_features, interpro_features
+        )
 
         if self.output_path:
             # Save to file and read back
@@ -323,19 +327,19 @@ class ProteinFeatureExtractor:
                     modified_row[idx] = protein_families_value.split(";")[0].strip()
                 else:
                     modified_row[idx] = protein_families_value
-        
+
         if "pfam" in csv_headers:
             idx = csv_headers.index("pfam")
             if idx < len(row) and row[idx]:
                 pfam_value = str(row[idx])
                 modified_row[idx] = pfam_value.split(";")[0].strip()
-        
+
         if "superfamily" in csv_headers:
             idx = csv_headers.index("superfamily")
             if idx < len(row) and row[idx]:
                 superfamily_value = str(row[idx])
                 modified_row[idx] = superfamily_value.split(";")[0].strip()
-        
+
         if "cath-gene3d" in csv_headers:
             idx = csv_headers.index("cath-gene3d")
             if idx < len(row) and row[idx]:
@@ -374,11 +378,17 @@ class ProteinFeatureExtractor:
             if user_has_length_features and "length" not in uniprot_features:
                 uniprot_features.append("length")
 
-            uniprot_features = self._modify_uniprot_features(uniprot_features, interpro_features)
+            uniprot_features = self._modify_uniprot_features(
+                uniprot_features, interpro_features
+            )
 
             # We have taxonomy, so we need the organism_ids in uniprot_features
             if taxonomy_features or interpro_features:
-                return uniprot_features, taxonomy_features if taxonomy_features else None, interpro_features if interpro_features else None
+                return (
+                    uniprot_features,
+                    taxonomy_features if taxonomy_features else None,
+                    interpro_features if interpro_features else None,
+                )
             else:
                 return uniprot_features, None, None
 
@@ -393,11 +403,17 @@ class ProteinFeatureExtractor:
             feature for feature in features if feature in INTERPRO_FEATURES
         ]
 
-        uniprot_features = self._modify_uniprot_features(uniprot_features, interpro_features)
+        uniprot_features = self._modify_uniprot_features(
+            uniprot_features, interpro_features
+        )
 
         # We have taxonomy or interpro features, so we need the organism_ids in uniprot_features
         if taxonomy_features or interpro_features:
-            return uniprot_features, taxonomy_features if taxonomy_features else None, interpro_features if interpro_features else None
+            return (
+                uniprot_features,
+                taxonomy_features if taxonomy_features else None,
+                interpro_features if interpro_features else None,
+            )
 
         # We have other features than the needed ones
         elif len(uniprot_features) > len(NEEDED_UNIPROT_FEATURES):
@@ -426,18 +442,23 @@ class ProteinFeatureExtractor:
 
         return user_features
 
-    def _modify_uniprot_features(self, features: List[str], interpro_features: List[str] = None) -> List[str]:
+    def _modify_uniprot_features(
+        self, features: List[str], interpro_features: List[str] = None
+    ) -> List[str]:
         filtered_features = [f for f in features if f not in NEEDED_UNIPROT_FEATURES]
         result = NEEDED_UNIPROT_FEATURES + filtered_features
-        
+
         # Always include sequence if InterPro features are requested (needed for MD5 calculation)
         if interpro_features and "sequence" not in result:
             result.append("sequence")
-        
+
         return result
 
     def _merge_features(
-        self, fetched_uniprot: List[ProteinFeatures], taxonomy_features: dict, interpro_features: List[ProteinFeatures] = None
+        self,
+        fetched_uniprot: List[ProteinFeatures],
+        taxonomy_features: dict,
+        interpro_features: List[ProteinFeatures] = None,
     ) -> List[ProteinFeatures]:
         merged_features = []
 
