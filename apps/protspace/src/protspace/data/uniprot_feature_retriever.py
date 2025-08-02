@@ -21,6 +21,7 @@ UNIPROT_FEATURES = [
     "ft_intramem",
     "ft_topo_dom",
     "ft_transmem",
+    "sequence",
 ]
 
 ProteinFeatures = namedtuple("ProteinFeatures", ["identifier", "features"])
