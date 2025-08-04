@@ -247,7 +247,8 @@ def test_interpro_features_constant():
     expected_features = [
         "pfam",
         "superfamily", 
-        "cath-gene3d"
+        "cath",
+        "signal_peptide"
     ]
     
     for feature in expected_features:

@@ -4,7 +4,7 @@ def run_prepare_json_script():
     command = [
         "protspace-query",
         "-q", "(organism_id:9606) AND (reviewed:true) AND (ft_transmem_exp:helical)",
-        "-m", "phylum,protein_existence,length_fixed,length_quantile,pfam,cath-gene3d,superfamily", # uncomment to get all the available protein features
+        "-m", "phylum,protein_existence,length_fixed,length_quantile,pfam,cath,superfamily,signal_peptide", # uncomment to get all the available protein features
         "--methods", "pca2,pca3",
         "-o", "examples/cli/query_output", # output dir for arrow files
         # "--non-binary", # uncomment to get .json output
