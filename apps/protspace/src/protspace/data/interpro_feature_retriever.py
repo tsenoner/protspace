@@ -9,7 +9,17 @@ logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # InterPro features - supported databases
-INTERPRO_FEATURES = ["pfam", "superfamily", "cath-gene3d"]
+# Keys are used for CLI naming and dataset creation
+# Values are used when accessing the JSON output from the InterPro API
+INTERPRO_MAPPING = {
+    "pfam": "pfam",
+    "superfamily": "superfamily", 
+    "cath": "cath-gene3d",
+    "signal_peptide": "phobius"
+}
+
+# List of supported InterPro features for easy access
+INTERPRO_FEATURES = list(INTERPRO_MAPPING.keys())
 
 # API Configuration
 BASE_URL = "https://www.ebi.ac.uk/interpro/matches/api"
@@ -23,9 +33,9 @@ class InterProFeatureRetriever:
     Retrieves InterPro domain features for proteins using the InterPro API.
 
     Supports fetching features from:
-    - Pfam
-    - SUPERFAMILY
-    - CATH-Gene3D
+    - Pfam (key: pfam)
+    - SUPERFAMILY (key: superfamily)
+    - CATH-Gene3D (key: cath)
     """
 
     def __init__(
@@ -39,7 +49,7 @@ class InterProFeatureRetriever:
 
         Args:
             headers: List of protein identifiers
-            features: List of InterPro database features to fetch (pfam, superfamily, cath-gene3d)
+            features: List of InterPro database features to fetch (pfam, superfamily, cath)
             sequences: Dictionary mapping protein identifiers to their sequences (needed for MD5 calculation)
         """
         self.headers = self._manage_headers(headers) if headers else []
@@ -167,6 +177,9 @@ class InterProFeatureRetriever:
         Returns:
             List of ProteinFeatures with parsed InterPro data
         """
+        # Create reverse mapping from API database names to our keys
+        api_to_key = {v: k for k, v in INTERPRO_MAPPING.items()}
+        
         # Initialize feature dictionary for each protein
         protein_features = {}
         for identifier in md5_to_identifier.values():
@@ -185,13 +198,15 @@ class InterProFeatureRetriever:
                 sig_lib = signature.get("signatureLibraryRelease", {})
                 source_db = sig_lib.get("library", "").lower()
 
-                # Only include features we're interested in
-                if source_db in self.features:
-                    signature_accession = signature.get("accession", "")
-                    if signature_accession:
-                        protein_features[protein_id][source_db].append(
-                            signature_accession
-                        )
+                # Map API database name to our key and check if we're interested in it
+                if source_db in api_to_key:
+                    feature_key = api_to_key[source_db]
+                    if feature_key in self.features:
+                        signature_accession = signature.get("accession", "")
+                        if signature_accession:
+                            protein_features[protein_id][feature_key].append(
+                                signature_accession
+                            )
 
         # Convert to ProteinFeatures objects
         result = []

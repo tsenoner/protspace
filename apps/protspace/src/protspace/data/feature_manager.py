@@ -340,14 +340,26 @@ class ProteinFeatureExtractor:
                 superfamily_value = str(row[idx])
                 modified_row[idx] = superfamily_value.split(";")[0].strip()
 
-        if "cath-gene3d" in csv_headers:
-            idx = csv_headers.index("cath-gene3d")
+        if "cath" in csv_headers:
+            idx = csv_headers.index("cath")
             if idx < len(row) and row[idx]:
-                cath_gene3d_value = str(row[idx])
-                processed_value = cath_gene3d_value.split(";")[0]
+                cath_value = str(row[idx])
+                processed_value = cath_value.split(";")[0]
                 if ":" in processed_value:
                     processed_value = processed_value.split(":")[1].strip()
                 modified_row[idx] = processed_value
+
+        if "signal_peptide" in csv_headers:
+            idx = csv_headers.index("signal_peptide")
+            if idx < len(row) and row[idx]:
+                signal_peptide_value = str(row[idx])
+                if "SIGNAL_PEPTIDE" in signal_peptide_value:
+                    modified_row[idx] = "True"
+                else:
+                    modified_row[idx] = "False"
+            else:
+                # If the value is empty or doesn't exist, set to False
+                modified_row[idx] = "False"
 
         return modified_row
 
