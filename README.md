@@ -39,15 +39,15 @@ pip install "protspace[frontend]"
 ### 1. Query UniProt directly
 
 ```bash
-# Search and analyze proteins from UniProt
+# Search and analyze proteins from UniProt with available protein features
 protspace-query -q "insulin AND organism_id:9606 AND reviewed:true" -o output_dir --methods pca2,umap3
 ```
 
 ### 2. Process local data
 
 ```bash
-# Process your own embeddings or similarity matrices
-protspace-local -i embeddings.h5 -f features.csv -o output_dir --methods pca2,pca3
+# Process your own embeddings or similarity matrices with the protein features you want
+protspace-local -i embeddings.h5 -f signal_peptide,pfam -o output_dir --methods pca2,pca3
 ```
 
 ### 3. Launch visualization
