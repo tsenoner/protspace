@@ -26,7 +26,7 @@ class LocalDataProcessor(BaseDataProcessor):
         clean_config = config.copy()
         for arg in [
             "input",
-            "metadata",
+            "features",
             "output",
             "methods",
             "verbose",
@@ -41,16 +41,16 @@ class LocalDataProcessor(BaseDataProcessor):
     def load_data(
         self,
         input_path: Path,
-        metadata: Union[Path, List],  # If list, generates csv from uniprot features
+        features: Union[Path, List],  # If list, generates csv from uniprot features
         output_path: Path,
         delimiter: str,
         non_binary: bool = False,
         keep_tmp: bool = False,
     ) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
         data, headers = self._load_input_file(input_path)
-        metadata = self._load_or_generate_metadata(
+        features_df = self._load_or_generate_metadata(
             headers,
-            metadata,
+            features,
             output_path,
             delimiter,
             non_binary,
@@ -59,10 +59,10 @@ class LocalDataProcessor(BaseDataProcessor):
 
         # Create full metadata with NaN for missing entries
         full_metadata = pd.DataFrame({"identifier": headers})
-        if len(metadata.columns) > 1:
-            metadata = metadata.astype(str)
+        if len(features_df.columns) > 1:
+            features_df = features_df.astype(str)
             full_metadata = full_metadata.merge(
-                metadata.drop_duplicates("identifier"),
+                features_df.drop_duplicates("identifier"),
                 on="identifier",
                 how="left",
             )
@@ -110,7 +110,7 @@ class LocalDataProcessor(BaseDataProcessor):
     @staticmethod
     def _load_or_generate_metadata(
         headers: List[str],
-        metadata: str,
+        features: str,
         output_path: Path,
         delimiter: str,
         non_binary: bool = False,
@@ -118,17 +118,17 @@ class LocalDataProcessor(BaseDataProcessor):
     ) -> pd.DataFrame:
         try:
             # csv generation logic
-            if metadata and metadata.endswith(".csv"):
+            if features and features.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                metadata_df = pd.read_csv(
-                    metadata, delimiter=delimiter
+                features_df = pd.read_csv(
+                    features, delimiter=delimiter
                 ).convert_dtypes()
 
             else:
-                if metadata:
-                    features = [feature.strip() for feature in metadata.split(",")]
+                if features:
+                    features_list = [feature.strip() for feature in features.split(",")]
                 else:
-                    features = None  # No specific features requested, use all
+                    features_list = None  # No specific features requested, use all
 
                 # Generate metadata directly in output directory
                 output_base = output_path.with_suffix("")
@@ -139,9 +139,9 @@ class LocalDataProcessor(BaseDataProcessor):
                 else:
                     metadata_file_path = output_base / "all_features.parquet"
 
-                metadata_df = ProteinFeatureExtractor(
+                features_df = ProteinFeatureExtractor(
                     headers=headers,
-                    features=features,
+                    features=features_list,
                     output_path=metadata_file_path,
                     non_binary=non_binary,
                 ).to_pd()
@@ -156,12 +156,12 @@ class LocalDataProcessor(BaseDataProcessor):
                             f"Temporary metadata file deleted: {metadata_file_path}"
                         )
 
-                return metadata_df
+                return features_df
 
         except Exception as e:
             logger.warning(
                 f"Could not load metadata ({str(e)}) - creating empty metadata"
             )
-            metadata_df = pd.DataFrame(columns=["identifier"])
+            features_df = pd.DataFrame(columns=["identifier"])
 
-        return metadata_df
+        return features_df

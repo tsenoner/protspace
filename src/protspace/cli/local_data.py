@@ -45,12 +45,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Path to input data: HDF file (.hdf, .hdf5, .h5) for embeddings or CSV file for similarity matrix",
     )
     parser.add_argument(
-        "-m",
-        "--metadata",
+        "-f",
+        "--features",
         type=str,
         required=False,
         default=None,
-        help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix). If want to generate CSV from UniProt features, use the following format: feature1,feature2,...",
+        help="Protein features to extract (format: feature1,feature2,...) (legacy usage: can be a metadata csv file)",
     )
     parser.add_argument(
         "-o",
@@ -200,7 +200,7 @@ def main():
         processor = LocalDataProcessor(args_dict)
         metadata, data, headers = processor.load_data(
             input_path=args.input,
-            metadata=args.metadata,
+            features=args.features,
             output_path=args.output,
             delimiter=args.delimiter,
             non_binary=args.non_binary,

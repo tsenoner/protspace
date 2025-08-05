@@ -6,7 +6,7 @@ def run_prepare_json_script():
         "protspace-local",
         "-i",
         "data/toxins/processed_data/toxins.h5",
-        "-m",
+        "-f",
         "phylum,protein_existence,length_fixed,length_quantile,pfam,superfamily,cath,signal_peptide",  # uncomment to get all the available protein features
         "--methods",
         "pca2,pca3",

@@ -35,7 +35,7 @@ class TestLocalDataProcessorInit:
         """Test that CLI-specific arguments are removed from config."""
         config_with_cli_args = {
             'input': 'input.h5',
-            'metadata': 'metadata.csv',
+            'features': 'features.csv',
             'output': 'output.json',
             'methods': ['pca'],
             'verbose': True,
@@ -49,7 +49,7 @@ class TestLocalDataProcessorInit:
         
         # Check that CLI args are removed but dimension reduction args remain
         assert 'input' not in processor.config
-        assert 'metadata' not in processor.config
+        assert 'features' not in processor.config
         assert 'output' not in processor.config
         assert 'methods' not in processor.config
         assert 'verbose' not in processor.config
@@ -187,7 +187,7 @@ class TestLoadOrGenerateMetadata:
             
             result = LocalDataProcessor._load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                metadata=str(csv_path),
+                features=str(csv_path),
                 output_path=output_path,
                 delimiter=",",
                 non_binary=False,
@@ -210,7 +210,7 @@ class TestLoadOrGenerateMetadata:
             
             result = LocalDataProcessor._load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                metadata=str(csv_path),
+                features=str(csv_path),
                 output_path=output_path,
                 delimiter=";",
                 non_binary=False,
@@ -234,7 +234,7 @@ class TestLoadOrGenerateMetadata:
             
             result = LocalDataProcessor._load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                metadata="length,organism",
+                features="length,organism",
                 output_path=output_path,
                 delimiter=",",
                 non_binary=True,
@@ -264,7 +264,7 @@ class TestLoadOrGenerateMetadata:
             
             result = LocalDataProcessor._load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                metadata=None,
+                features=None,
                 output_path=output_path,
                 delimiter=",",
                 non_binary=False,
@@ -296,7 +296,7 @@ class TestLoadOrGenerateMetadata:
                 
                 LocalDataProcessor._load_or_generate_metadata(
                     headers=SAMPLE_HEADERS,
-                    metadata="length",
+                    features="length",
                     output_path=output_path,
                     delimiter=",",
                     non_binary=True,
@@ -314,7 +314,7 @@ class TestLoadOrGenerateMetadata:
             # Test with non-existent CSV file
             result = LocalDataProcessor._load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                metadata="nonexistent.csv",
+                features="nonexistent.csv",
                 output_path=output_path,
                 delimiter=",",
                 non_binary=False,
@@ -341,12 +341,12 @@ class TestLoadData:
         
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "input.h5"
-            metadata_path = Path(temp_dir) / "metadata.csv"
+            features_path = Path(temp_dir) / "metadata.csv"
             output_path = Path(temp_dir) / "output.json"
             
             result = processor.load_data(
                 input_path=input_path,
-                metadata=metadata_path,
+                features=features_path,
                 output_path=output_path,
                 delimiter=",",
                 non_binary=False,
@@ -388,7 +388,7 @@ class TestLoadData:
             
             result = processor.load_data(
                 input_path=input_path,
-                metadata="length,organism",
+                features="length,organism",
                 output_path=output_path,
                 delimiter=",",
                 non_binary=False,
@@ -445,7 +445,7 @@ class TestIntegration:
             
             result = processor.load_data(
                 input_path=input_path,
-                metadata="length,organism",
+                features="length,organism",
                 output_path=output_path,
                 delimiter=",",
                 non_binary=True,
@@ -479,14 +479,14 @@ class TestIntegration:
             sim_df.to_csv(sim_csv_path)
             
             # Create metadata CSV file
-            metadata_csv_path = Path(temp_dir) / "metadata.csv"
-            SAMPLE_METADATA_DF.to_csv(metadata_csv_path, index=False)
+            features_csv_path = Path(temp_dir) / "features.csv"
+            SAMPLE_METADATA_DF.to_csv(features_csv_path, index=False)
             
             output_path = Path(temp_dir) / "output.json"
             
             result = processor.load_data(
                 input_path=sim_csv_path,
-                metadata=str(metadata_csv_path),
+                features=str(features_csv_path),
                 output_path=output_path,
                 delimiter=",",
                 non_binary=False,
@@ -522,7 +522,7 @@ class TestIntegration:
                 
                 result = processor.load_data(
                     input_path=input_path,
-                    metadata="length,organism",
+                    features="length,organism",
                     output_path=output_path,
                     delimiter=",",
                     non_binary=False,

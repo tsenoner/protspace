@@ -54,12 +54,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Optional arguments
     parser.add_argument(
-        "-m",
-        "--metadata",
+        "-f",
+        "--features",
         type=str,
         required=False,
         default=None,
-        help="Features to extract (format: feature1,feature2,...)",
+        help="Protein features to extract (format: feature1,feature2,...)",
     )
     parser.add_argument(
         "--non-binary",
@@ -175,11 +175,11 @@ def main():
     setup_logging(args.verbose)
 
     # Validate metadata argument - CSV files are not supported
-    if args.metadata:
+    if args.features:
         if (
-            args.metadata.endswith(".csv")
-            or args.metadata.endswith(".CSV")
-            or Path(args.metadata).exists()
+            args.features.endswith(".csv")
+            or args.features.endswith(".CSV")
+            or Path(args.features).exists()
         ):
             raise ValueError(
                 "CSV files are not supported when using protspace-query. "
@@ -198,7 +198,7 @@ def main():
         # Process the query
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
-            metadata=args.metadata,
+            features=args.features,
             delimiter=",",
             output_path=args.output,
             keep_tmp=args.keep_tmp,

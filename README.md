@@ -47,7 +47,7 @@ protspace-query -q "insulin AND organism_id:9606 AND reviewed:true" -o output_di
 
 ```bash
 # Process your own embeddings or similarity matrices
-protspace-local -i embeddings.h5 -m features.csv -o output_dir --methods pca2,pca3
+protspace-local -i embeddings.h5 -f features.csv -o output_dir --methods pca2,pca3
 ```
 
 ### 3. Launch visualization
@@ -87,7 +87,7 @@ Access at `http://localhost:8050`
 
 - `-q, --query`: UniProt search query (required)
 - `-o, --output`: Output directory (required)
-- `-m, --metadata`: Features to extract (comma-separated)
+- `-f, --features`: Features to extract (comma-separated)
 - `--methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 - `--keep-tmp`: Keep temporary files
@@ -95,8 +95,8 @@ Access at `http://localhost:8050`
 **protspace-local** (Local data):
 
 - `-i, --input`: HDF5 embeddings or CSV similarity matrix (required)
-- `-m, --metadata`: CSV metadata file or feature list (required)
 - `-o, --output`: Output directory (required)
+- `-f, --features`: Features to extract (comma-separated) (legacy usage: csv metadata file path)
 - `--methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 
