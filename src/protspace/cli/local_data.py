@@ -87,6 +87,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Reduction methods
     parser.add_argument(
+        "-m",
         "--methods",
         type=str,
         default="pca2",
