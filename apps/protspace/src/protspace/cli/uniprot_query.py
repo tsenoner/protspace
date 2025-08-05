@@ -79,6 +79,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Keep temporary files (FASTA, complete protein features, and similarity matrix)",
     )
     parser.add_argument(
+        "-m",
         "--methods",
         type=str,
         default="pca2,pca3,tsne2,tsne3,umap2,umap3",
