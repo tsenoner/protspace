@@ -89,7 +89,7 @@ class TestUniProtQueryProcessorInit:
             "verbose": True,
             "custom_names": {"pca2": "Custom_PCA"},
             "delimiter": ",",
-            "metadata": "features.csv",
+            "features": "features.csv",
             "save_files": True,
             "no_save_files": False,
             "keep_tmp": True,
@@ -146,7 +146,7 @@ class TestProcessQuery:
         result = processor.process_query(
             query=SAMPLE_QUERY,
             output_path=output_path,
-            metadata="length,organism",
+            features="length,organism",
             keep_tmp=False,
         )
 
@@ -518,7 +518,7 @@ class TestGenerateMetadata:
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            metadata="length,organism",
+            features="length,organism",
             delimiter=",",
             metadata_save_path=temp_dir / "metadata.csv",
             non_binary=False,
@@ -551,7 +551,7 @@ class TestGenerateMetadata:
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            metadata=str(csv_path),
+            features=str(csv_path),
             delimiter=",",
             metadata_save_path=None,
             non_binary=False,
@@ -572,7 +572,7 @@ class TestGenerateMetadata:
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            metadata="length,organism",
+            features="length,organism",
             delimiter=",",
             metadata_save_path=None,
             non_binary=False,
@@ -595,7 +595,7 @@ class TestGenerateMetadata:
         with patch("pandas.read_csv", return_value=partial_metadata):
             result_df = processor._generate_metadata(
                 headers=SAMPLE_HEADERS,
-                metadata="dummy.csv",
+                features="dummy.csv",
                 delimiter=",",
                 metadata_save_path=None,
                 non_binary=False,
@@ -667,7 +667,7 @@ class TestIntegration:
                     result = processor.process_query(
                         query=SAMPLE_QUERY,
                         output_path=output_path,
-                        metadata="length,organism",
+                        features="length,organism",
                         keep_tmp=True,
                         non_binary=False,
                     )

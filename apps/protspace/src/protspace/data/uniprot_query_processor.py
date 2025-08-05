@@ -33,7 +33,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
             "verbose",
             "custom_names",
             "delimiter",
-            "metadata",
+            "features",
             "save_files",
             "no_save_files",
             "keep_tmp",
@@ -47,7 +47,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
         self,
         query: str,
         output_path: Path,
-        metadata: str = None,
+        features: str = None,
         delimiter: str = ",",
         keep_tmp: bool = False,
         non_binary: bool = False,
@@ -57,14 +57,14 @@ class UniProtQueryProcessor(BaseDataProcessor):
 
         Args:
             query: UniProt search query (exact query to send to UniProt)
-            metadata: Metadata features to fetch
+            features: Features to fetch
             delimiter: CSV delimiter
             output_path: Path for output JSON file
             keep_tmp: Whether to keep temporary files (FASTA, complete protein features, and similarity matrix)
             non_binary: Whether to use non-binary formats (CSV instead of parquet)
 
         Returns:
-            Tuple of (metadata_df, embeddings_array, headers_list, saved_files_dict)
+            Tuple of (features_df, embeddings_array, headers_list, saved_files_dict)
         """
         logger.info(f"Processing UniProt query: '{query}'")
 
@@ -109,15 +109,15 @@ class UniProtQueryProcessor(BaseDataProcessor):
             saved_files["similarity_matrix"] = similarity_matrix_path
 
         # Generate metadata file
-        metadata_df = self._generate_metadata(
-            headers, metadata, delimiter, metadata_save_path, non_binary, keep_tmp
+        features_df = self._generate_metadata(
+            headers, features, delimiter, metadata_save_path, non_binary, keep_tmp
         )
         if metadata_save_path:
             # Ensure directory exists when saving metadata
             metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
             saved_files["metadata"] = metadata_save_path
 
-        return metadata_df, data, headers, saved_files
+        return features_df, data, headers, saved_files
 
     def _search_and_download_fasta(
         self,
@@ -277,7 +277,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
     def _generate_metadata(
         self,
         headers: List[str],
-        metadata: str,
+        features: str,
         delimiter: str,
         metadata_save_path: Path = None,
         non_binary: bool = False,
@@ -285,24 +285,24 @@ class UniProtQueryProcessor(BaseDataProcessor):
     ) -> pd.DataFrame:
         """Generate metadata CSV and return DataFrame."""
         try:
-            if metadata and metadata.endswith(".csv"):
+            if features and features.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                metadata_df = pd.read_csv(
-                    metadata, delimiter=delimiter
+                features_df = pd.read_csv(
+                    features, delimiter=delimiter
                 ).convert_dtypes()
             else:
-                if metadata:
-                    features = [feature.strip() for feature in metadata.split(",")]
+                if features:
+                    features_list = [feature.strip() for feature in features.split(",")]
                 else:
-                    features = None  # No specific features requested, use all
+                    features_list = None  # No specific features requested, use all
 
                 # Create directory only if metadata_save_path is provided
                 if metadata_save_path:
                     metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
 
-                metadata_df = ProteinFeatureExtractor(
+                features_df = ProteinFeatureExtractor(
                     headers=headers,
-                    features=features,
+                    features=features_list,
                     output_path=metadata_save_path,
                     non_binary=non_binary,
                 ).to_pd()
@@ -320,14 +320,14 @@ class UniProtQueryProcessor(BaseDataProcessor):
             logger.warning(
                 f"Could not generate metadata ({str(e)}) - creating empty metadata"
             )
-            metadata_df = pd.DataFrame(columns=["identifier"])
+            features_df = pd.DataFrame(columns=["identifier"])
 
         # Create full metadata with NaN for missing entries
         full_metadata = pd.DataFrame({"identifier": headers})
-        if len(metadata_df.columns) > 1:
-            metadata_df = metadata_df.astype(str)
+        if len(features_df.columns) > 1:
+            features_df = features_df.astype(str)
             full_metadata = full_metadata.merge(
-                metadata_df.drop_duplicates("identifier"),
+                features_df.drop_duplicates("identifier"),
                 on="identifier",
                 how="left",
             )
