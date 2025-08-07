@@ -39,15 +39,15 @@ pip install "protspace[frontend]"
 ### 1. Query UniProt directly
 
 ```bash
-# Search and analyze proteins from UniProt
-protspace-query -q "insulin AND organism_id:9606 AND reviewed:true" -o output_dir --methods pca2,umap3
+# Search and analyze proteins from UniProt with available protein features
+protspace-query -q "insulin AND organism_id:9606 AND reviewed:true" -o output_dir -m pca2,umap3
 ```
 
 ### 2. Process local data
 
 ```bash
-# Process your own embeddings or similarity matrices
-protspace-local -i embeddings.h5 -m features.csv -o output_dir --methods pca2,pca3
+# Process your own embeddings or similarity matrices with the protein features you want
+protspace-local -i embeddings.h5 -f signal_peptide,pfam -o output_dir -m pca2,pca3
 ```
 
 ### 3. Launch visualization
@@ -87,17 +87,17 @@ Access at `http://localhost:8050`
 
 - `-q, --query`: UniProt search query (required)
 - `-o, --output`: Output directory (required)
-- `-m, --metadata`: Features to extract (comma-separated)
-- `--methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
+- `-f, --features`: Features to extract (comma-separated)
+- `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 - `--keep-tmp`: Keep temporary files
 
 **protspace-local** (Local data):
 
 - `-i, --input`: HDF5 embeddings or CSV similarity matrix (required)
-- `-m, --metadata`: CSV metadata file or feature list (required)
 - `-o, --output`: Output directory (required)
-- `--methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
+- `-f, --features`: Features to extract (comma-separated) (legacy usage: csv metadata file path)
+- `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 
 ### Method Parameters

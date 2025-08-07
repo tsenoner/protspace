@@ -49,7 +49,7 @@ class TaxonomyFeatureRetriever:
 
     def _validate_taxon_ids(self, taxon_ids: List[int]) -> List[int]:
         for taxon_id in taxon_ids:
-            if type(taxon_id) != int:
+            if not isinstance(taxon_id, int):
                 raise ValueError(f"Taxon ID {taxon_id} is not an integer")
 
         return taxon_ids

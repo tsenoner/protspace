@@ -26,9 +26,7 @@ def parse_custom_names(custom_names_arg: str) -> dict:
 
 def setup_logging(verbosity: int):
     """Set up logging based on verbosity level."""
-    logger.setLevel(
-        [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
-    )
+    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -47,12 +45,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Path to input data: HDF file (.hdf, .hdf5, .h5) for embeddings or CSV file for similarity matrix",
     )
     parser.add_argument(
-        "-m",
-        "--metadata",
+        "-f",
+        "--features",
         type=str,
         required=False,
         default=None,
-        help="Path to CSV file containing metadata and features (first column must be named 'identifier' and match IDs in HDF5/similarity matrix). If want to generate CSV from UniProt features, use the following format: feature1,feature2,...",
+        help="Protein features to extract (format: feature1,feature2,...) (legacy usage: can be a metadata csv file)",
     )
     parser.add_argument(
         "-o",
@@ -73,6 +71,13 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Save output in non binary formats (JSON, CSV, etc.)",
     )
+    parser.add_argument(
+        "--bundled",
+        type=str,
+        default="true",
+        choices=["true", "false"],
+        help="Bundle parquet files into a single .parquetbundle file (default: true)",
+    )
 
     parser.add_argument(
         "--keep-tmp",
@@ -82,6 +87,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Reduction methods
     parser.add_argument(
+        "-m",
         "--methods",
         type=str,
         default="pca2",
@@ -195,7 +201,7 @@ def main():
         processor = LocalDataProcessor(args_dict)
         metadata, data, headers = processor.load_data(
             input_path=args.input,
-            metadata=args.metadata,
+            features=args.features,
             output_path=args.output,
             delimiter=args.delimiter,
             non_binary=args.non_binary,
@@ -224,7 +230,7 @@ def main():
             processor.save_output_legacy(output, args.output)
         else:
             output = processor.create_output(metadata, reductions, headers)
-            processor.save_output(output, args.output)
+            processor.save_output(output, args.output, bundled=args.bundled == "true")
         logger.info(
             f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
         )
