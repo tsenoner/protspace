@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 from pathlib import Path
@@ -11,6 +12,18 @@ from protspace.utils import DimensionReductionConfig
 from protspace.utils.reducers import MDS_NAME
 
 logger = logging.getLogger(__name__)
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles NumPy data types."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 
 class BaseDataProcessor:
@@ -70,10 +83,9 @@ class BaseDataProcessor:
             'projections_data': self._create_projections_data_table(reductions, headers)
         }
 
-    def save_output(self, data: Dict[str, pa.Table], output_path: Path):
+    def save_output(self, data: Dict[str, pa.Table], output_path: Path, bundled: bool = True):
         """Save output data to Parquet files using Apache Arrow."""
         base_path = output_path.with_suffix('')
-        base_path.mkdir(parents=True, exist_ok=True)
         
         # Custom filename mapping for better naming
         filename_mapping = {
@@ -82,13 +94,32 @@ class BaseDataProcessor:
             'projections_data': 'projections_data.parquet'
         }
         
-        for table_name, table in data.items():
-            filename = filename_mapping.get(table_name, f"{table_name}.parquet")
-            table_path = base_path / filename
+        if bundled:
+            # Bundle all parquet files into a single .parquetbundle file
+            output_dir = output_path
+            output_dir.mkdir(parents=True, exist_ok=True)
+            bundle_path = output_dir / 'data.parquetbundle'
+            delimiter = b'---PARQUET_DELIMITER---'
             
-            # Simply overwrite existing files instead of merging
-            # This ensures clean output when running with different parameters
-            pq.write_table(table, str(table_path))
+            with open(bundle_path, 'wb') as bundle_file:
+                for i, (table_name, table) in enumerate(data.items()):
+                    if i > 0:
+                        bundle_file.write(delimiter)
+                    
+                    buffer = io.BytesIO()
+                    pq.write_table(table, buffer)
+                    buffer.seek(0)
+                    bundle_file.write(buffer.read())
+        else:
+            # Save as separate parquet files (original behavior)
+            base_path.mkdir(parents=True, exist_ok=True)
+            
+            for table_name, table in data.items():
+                filename = filename_mapping.get(table_name, f"{table_name}.parquet")
+                table_path = base_path / filename
+                
+                # Overwrite existing files
+                pq.write_table(table, str(table_path))
 
     def _create_protein_features_table(self, metadata: pd.DataFrame) -> pa.Table:
         """Create Apache Arrow table for protein features in wide format."""
@@ -203,4 +234,4 @@ class BaseDataProcessor:
             data = existing
 
         with json_file_path.open("w") as f:
-            json.dump(data, f, indent=2) 
+            json.dump(data, f, indent=2, cls=NumpyEncoder) 

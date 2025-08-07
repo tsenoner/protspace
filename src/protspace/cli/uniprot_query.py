@@ -9,6 +9,7 @@ from protspace.data.uniprot_query_processor import UniProtQueryProcessor
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
 def parse_custom_names(custom_names_arg: str) -> dict:
     """Parse custom names argument into dictionary."""
     custom_names = {}
@@ -22,11 +23,11 @@ def parse_custom_names(custom_names_arg: str) -> dict:
                 logger.warning(f"Invalid custom name specification: {name_spec}")
     return custom_names
 
+
 def setup_logging(verbosity: int):
     """Set up logging based on verbosity level."""
-    logger.setLevel(
-        [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
-    )
+    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
+
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
@@ -53,12 +54,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Optional arguments
     parser.add_argument(
-        "-m",
-        "--metadata",
+        "-f",
+        "--features",
         type=str,
         required=False,
         default=None,
-        help="Features to extract (format: feature1,feature2,...)",
+        help="Protein features to extract (format: feature1,feature2,...)",
     )
     parser.add_argument(
         "--non-binary",
@@ -66,11 +67,19 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Save output in non binary formats (JSON, CSV, etc.)",
     )
     parser.add_argument(
+        "--bundled",
+        type=str,
+        default="true",
+        choices=["true", "false"],
+        help="Bundle parquet files into a single .parquetbundle file (default: true)",
+    )
+    parser.add_argument(
         "--keep-tmp",
         action="store_true",
         help="Keep temporary files (FASTA, complete protein features, and similarity matrix)",
     )
     parser.add_argument(
+        "-m",
         "--methods",
         type=str,
         default="pca2,pca3,tsne2,tsne3,umap2,umap3",
@@ -167,10 +176,12 @@ def main():
     setup_logging(args.verbose)
 
     # Validate metadata argument - CSV files are not supported
-    if args.metadata:
-        if (args.metadata.endswith('.csv') or 
-            args.metadata.endswith('.CSV') or 
-            Path(args.metadata).exists()):
+    if args.features:
+        if (
+            args.features.endswith(".csv")
+            or args.features.endswith(".CSV")
+            or Path(args.features).exists()
+        ):
             raise ValueError(
                 "CSV files are not supported when using protspace-query. "
                 "Please provide a comma-separated list of feature names instead."
@@ -184,11 +195,11 @@ def main():
     try:
         # Initialize processor
         processor = UniProtQueryProcessor(args_dict)
-        
+
         # Process the query
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
-            metadata=args.metadata,
+            features=args.features,
             delimiter=",",
             output_path=args.output,
             keep_tmp=args.keep_tmp,
@@ -198,7 +209,7 @@ def main():
         # Process reduction methods
         methods_list = args.methods.split(",")
         reductions = []
-        
+
         for method_spec in methods_list:
             method = "".join(filter(str.isalpha, method_spec))
             dims = int("".join(filter(str.isdigit, method_spec)))
@@ -218,12 +229,14 @@ def main():
             processor.save_output_legacy(output, args.output)
         else:
             output = processor.create_output(metadata, reductions, headers)
-            processor.save_output(output, args.output)
-        
+            processor.save_output(output, args.output, bundled=args.bundled == "true")
+
         # Log results
-        logger.info(f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods")
+        logger.info(
+            f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
+        )
         logger.info(f"Results saved to: {args.output}")
-        
+
         if saved_files:
             logger.info("Additional files saved:")
             for file_type, file_path in saved_files.items():
@@ -235,4 +248,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
