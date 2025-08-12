@@ -109,8 +109,16 @@ class ProteinFeatureExtractor:
         return uniprot_fetcher.fetch_features()
 
     def get_taxonomy_features(self, taxons: List[int], features: List[str]) -> str:
-        taxonomy_fetcher = TaxonomyFeatureRetriever(taxons, features)
-        return taxonomy_fetcher.fetch_features()
+        try:
+            taxonomy_fetcher = TaxonomyFeatureRetriever(taxons, features)
+            return taxonomy_fetcher.fetch_features()
+        except Exception as e:
+            logger.warning(
+                "Skipping taxonomy features due to initialization/fetch error: %s",
+                str(e),
+            )
+            # Return an empty mapping so later merge logic treats taxonomy as absent
+            return {}
 
     def get_interpro_features(
         self, headers: List[str], features: List[str]
@@ -334,20 +342,20 @@ class ProteinFeatureExtractor:
                 pfam_value = str(row[idx])
                 modified_row[idx] = pfam_value.split(";")[0].strip()
 
-        if "superfamily" in csv_headers:
-            idx = csv_headers.index("superfamily")
-            if idx < len(row) and row[idx]:
-                superfamily_value = str(row[idx])
-                modified_row[idx] = superfamily_value.split(";")[0].strip()
+        # if "superfamily" in csv_headers:
+        #     idx = csv_headers.index("superfamily")
+        #     if idx < len(row) and row[idx]:
+        #         superfamily_value = str(row[idx])
+        #         modified_row[idx] = superfamily_value.split(";")[0].strip()
 
-        if "cath" in csv_headers:
-            idx = csv_headers.index("cath")
-            if idx < len(row) and row[idx]:
-                cath_value = str(row[idx])
-                processed_value = cath_value.split(";")[0]
-                if ":" in processed_value:
-                    processed_value = processed_value.split(":")[1].strip()
-                modified_row[idx] = processed_value
+        # if "cath" in csv_headers:
+        #     idx = csv_headers.index("cath")
+        #     if idx < len(row) and row[idx]:
+        #         cath_value = str(row[idx])
+        #         processed_value = cath_value.split(";")[0]
+        #         if ":" in processed_value:
+        #             processed_value = processed_value.split(":")[1].strip()
+        #         modified_row[idx] = processed_value
 
         if "signal_peptide" in csv_headers:
             idx = csv_headers.index("signal_peptide")

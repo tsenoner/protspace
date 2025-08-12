@@ -1,4 +1,7 @@
 import logging
+import os
+import tempfile
+import shutil
 from typing import List, Dict, Any
 from pathlib import Path
 from tqdm import tqdm
@@ -90,13 +93,22 @@ class TaxonomyFeatureRetriever:
         return result
 
     def _initialize_taxdb(self):
-        home_dir = Path.home() / ".cache"
-        db_dir = home_dir / "taxopy_db"
+        # Allow overriding cache directory via environment variable
+        # Defaults to ~/.cache/taxopy_db
+        env_override = os.environ.get("PROTSPACE_TAXDB_DIR")
+        db_dir = (
+            Path(env_override).expanduser()
+            if env_override
+            else Path.home() / ".cache" / "taxopy_db"
+        )
         db_dir.mkdir(parents=True, exist_ok=True)
         nodes_file = db_dir / "nodes.dmp"
         names_file = db_dir / "names.dmp"
         merged_file = db_dir / "merged.dmp"
         timestamp_file = db_dir / ".download_timestamp"
+
+        # Determine if this is a first-time setup (missing required files)
+        first_time_setup = not (nodes_file.exists() and names_file.exists())
 
         # Check if cache needs refresh based on timestamp file
         needs_refresh = False
@@ -121,29 +133,81 @@ class TaxonomyFeatureRetriever:
                 print(f"Could not read timestamp file: {e}. Will refresh cache.")
                 needs_refresh = True
         else:
-            # No timestamp file means we should download
-            needs_refresh = True
+            # No timestamp file: if DB files exist, create timestamp; otherwise we need a fresh download
+            if first_time_setup:
+                needs_refresh = True
+            else:
+                try:
+                    with open(timestamp_file, "w") as f:
+                        f.write(datetime.now().isoformat())
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to create timestamp file at first-time detection: {e}"
+                    )
 
-        # Remove old files if refresh is needed
-        if needs_refresh:
-            for file_path in [nodes_file, names_file, merged_file, timestamp_file]:
-                if file_path.exists():
-                    file_path.unlink()
+        existing_db_present = nodes_file.exists() and names_file.exists()
 
-        # Load or download the database
-        if nodes_file.exists() and names_file.exists() and not needs_refresh:
-            logger.info(f"Loading existing taxopy database from {db_dir}")
-            taxdb = taxopy.TaxDb(
-                nodes_dmp=str(nodes_file),
-                names_dmp=str(names_file),
-                merged_dmp=str(merged_file) if merged_file.exists() else None,
-            )
+        # Load or download the database with a safe refresh strategy
+        if existing_db_present:
+            if needs_refresh:
+                logger.info(
+                    "Taxonomy cache is stale. Attempting safe refresh without deleting existing cache."
+                )
+                temp_dir_path = None
+                try:
+                    # Download into a temporary directory first
+                    temp_dir_path = Path(tempfile.mkdtemp(prefix="taxopy_tmp_"))
+                    taxopy.TaxDb(taxdb_dir=str(temp_dir_path), keep_files=True)
+
+                    # Move refreshed files into place atomically
+                    for src_name, dst_path in [
+                        ("nodes.dmp", nodes_file),
+                        ("names.dmp", names_file),
+                        ("merged.dmp", merged_file),
+                    ]:
+                        src_path = temp_dir_path / src_name
+                        if src_path.exists():
+                            # Replace destination with the new file
+                            shutil.move(str(src_path), str(dst_path))
+
+                    # Update timestamp only after a successful refresh
+                    with open(timestamp_file, "w") as f:
+                        f.write(datetime.now().isoformat())
+
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to refresh taxonomy database: {e}. Falling back to existing cached database."
+                    )
+                    # Fall back: keep using the existing DB files
+                finally:
+                    if temp_dir_path and temp_dir_path.exists():
+                        shutil.rmtree(temp_dir_path, ignore_errors=True)
+
+            # Load existing (potentially refreshed) DB files
+            logger.info(f"Loading taxopy database from {db_dir}")
+            try:
+                taxdb = taxopy.TaxDb(
+                    nodes_dmp=str(nodes_file),
+                    names_dmp=str(names_file),
+                    merged_dmp=str(merged_file) if merged_file.exists() else None,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to load existing taxonomy database from cache: {e}"
+                )
+                raise
         else:
+            # First-time setup: must download
             logger.info(f"Downloading taxopy database to {db_dir}")
-            taxdb = taxopy.TaxDb(taxdb_dir=str(db_dir), keep_files=True)
-
-            # Create timestamp file after successful download
-            with open(timestamp_file, "w") as f:
-                f.write(datetime.now().isoformat())
+            try:
+                taxdb = taxopy.TaxDb(taxdb_dir=str(db_dir), keep_files=True)
+                # Create/update timestamp file after successful download
+                with open(timestamp_file, "w") as f:
+                    f.write(datetime.now().isoformat())
+            except Exception as e:
+                logger.error(
+                    f"Failed to initialize taxopy database (first-time setup): {e}"
+                )
+                raise
 
         return taxdb
