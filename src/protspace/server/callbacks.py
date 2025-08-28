@@ -463,8 +463,6 @@ def setup_callbacks(app):
         State("image-height", "value"),
         State("download-format-dropdown", "value"),
         State("json-data-store", "data"),
-        State("protein-search-dropdown", "value"),
-        State("marker-size-input", "value"),
         prevent_initial_call=True,
     )
     def download_plot(
@@ -476,22 +474,24 @@ def setup_callbacks(app):
         height,
         download_format,
         json_data,
-        selected_proteins,
-        marker_size,
     ):
         if n_clicks is None:
             raise PreventUpdate
+
         reader = JsonReader(json_data)
         is_3d = reader.get_projection_info(selected_projection)["dimensions"] == 3
         fig_obj = go.Figure(figure)
+
+        # Use the simplified save_plot function
+        result = save_plot(fig_obj, is_3d, width, height, download_format)
+
         if download_format == "html":
-            buffer = io.StringIO()
-            fig_obj.write_html(buffer)
             return dict(
-                content=buffer.getvalue(),
+                content=result,
                 filename=f"{selected_projection}_{selected_feature}.html",
             )
-        return dcc.send_bytes(
-            save_plot(fig_obj, is_3d, width, height, download_format),
-            f"{selected_projection}_{selected_feature}.{download_format}",
-        )
+        else:
+            return dcc.send_bytes(
+                result,
+                f"{selected_projection}_{selected_feature}.{download_format}",
+            )
