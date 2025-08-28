@@ -1,6 +1,6 @@
 import io
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import colorsys
 
 import pandas as pd
@@ -378,14 +378,21 @@ def save_plot(
     width: Optional[int] = None,
     height: Optional[int] = None,
     file_format: str = "svg",
-) -> bytes:
-    """Generate image bytes for the plot."""
-    if not is_3d and (width is None or height is None):
-        raise ValueError("Width and height must be provided for 2D plots")
+) -> Union[bytes, str]:
+    """Generate image bytes or HTML string for the plot."""
+    # For HTML format, return string content
+    if file_format == "html":
+        buffer = io.StringIO()
+        fig.write_html(buffer)
+        return buffer.getvalue()
 
-    # For both 2D and 3D, write to an in-memory buffer
+    # For other formats, return bytes
     buffer = io.BytesIO()
-    fig.write_image(buffer, format=file_format, width=width, height=height)
+    # Only apply width/height if provided
+    if width and height:
+        fig.write_image(buffer, format=file_format, width=width, height=height)
+    else:
+        fig.write_image(buffer, format=file_format)
     return buffer.getvalue()
 
 
