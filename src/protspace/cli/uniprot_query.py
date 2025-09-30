@@ -59,7 +59,13 @@ def create_argument_parser() -> argparse.ArgumentParser:
         type=str,
         required=False,
         default=None,
-        help="Protein features to extract (format: feature1,feature2,...)",
+        help=(
+            "Protein features to extract (format: feature1,feature2,...). "
+            "Available: UniProt (annotation_score, fragment, length_fixed, length_quantile, "
+            "protein_existence, protein_families, reviewed); "
+            "InterPro (cath, superfamily, signal_peptide); "
+            "Taxonomy (kingdom, phylum, class, order, family, genus, species)"
+        ),
     )
     parser.add_argument(
         "--non-binary",
@@ -99,6 +105,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--metric",
         default="euclidean",
         help="Distance metric to use (applies to UMAP, t-SNE, MDS)",
+    )
+    general_group.add_argument(
+        "--random_state",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
     )
 
     # UMAP parameters

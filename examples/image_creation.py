@@ -19,7 +19,8 @@ def main():
     #     print("Available projection names:", reader.get_projection_names())
 
     # Generate images for specific projections and features
-    projections = ["PCA_2"]
+    # projections = ["PCA_2", "PCA_3"]
+    projections = ["PCA_3"]
     features = ["protein_existence", "annotation_score"]
 
     # Create the output directory if it doesn't exist
@@ -34,6 +35,7 @@ def main():
                 filename=output_dir / f"{projection}_{feature}",
                 width=1600,
                 height=1000,
+                file_format="html",
             )
             print(f"Generated image for {projection} - {feature}")
 
