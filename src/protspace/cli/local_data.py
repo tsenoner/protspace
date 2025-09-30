@@ -125,6 +125,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default="euclidean",
         help="Distance metric to use (applies to UMAP, t-SNE, MDS)",
     )
+    general_group.add_argument(
+        "--random_state",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
 
     # UMAP parameters
     umap_group = parser.add_argument_group("UMAP Parameters")

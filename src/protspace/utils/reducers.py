@@ -45,6 +45,7 @@ class DimensionReductionConfig:
         n_init: Number of initializations for MDS (>0)
         max_iter: Maximum iterations (>0)
         eps: Convergence tolerance (>0)
+        random_state: Random seed for reproducibility (>= 0)
     """
 
     n_components: int = field(default=2, metadata={"allowed": [2, 3]})
@@ -61,6 +62,7 @@ class DimensionReductionConfig:
     n_init: int = field(default=4, metadata={"gt": 0})
     max_iter: int = field(default=300, metadata={"gt": 0})
     eps: float = field(default=1e-3, metadata={"gt": 0})
+    random_state: int = field(default=42, metadata={"gte": 0})
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -282,6 +284,7 @@ class UMAPReducer(DimensionReducer):
             n_neighbors=self.config.n_neighbors,
             min_dist=self.config.min_dist,
             metric=self.config.metric,
+            random_state=self.config.random_state,
         ).fit_transform(data)
 
     def get_params(self) -> Dict[str, Any]:
@@ -290,6 +293,7 @@ class UMAPReducer(DimensionReducer):
             "n_neighbors": self.config.n_neighbors,
             "min_dist": self.config.min_dist,
             "metric": self.config.metric,
+            "random_state": self.config.random_state,
         }
 
 
