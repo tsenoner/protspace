@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v2.3.0 (2025-09-30)
+
+### Documentation
+
+* docs: Update README and CLI help to enhance feature extraction guidance
+
+- Added a new section in README for the JavaScript frontend
+- Revised the "Quick Start" section for clarity and updated usage examples for querying UniProt and processing local data.
+- Expanded help text in CLI for feature extraction to include available UniProt, InterPro, and Taxonomy features. ([`56e17b2`](https://github.com/tsenoner/protspace/commit/56e17b28b60827be2cf4f63f083a52a85f2ac166))
+
+### Features
+
+* feat(umap): add random_state parameter for reproducibility
+
+Add random_state parameter with default value of 42 to ensure
+reproducible UMAP results across runs.
+
+- Add random_state field to DimensionReductionConfig (default: 42)
+- Update UMAPReducer to pass random_state to UMAP constructor
+- Add --random_state CLI argument to protspace-local and protspace-query
+- Update base_data_processor to include random_state in valid config keys
+- All 53 tests passing
+
+Fixes #16 ([`63b7df8`](https://github.com/tsenoner/protspace/commit/63b7df80ea480e661e73052c3f2e395f93976a6c))
+
+* feat: enhance taxonomy feature retrieval with error handling and cache management
+
+- Added error handling in get_taxonomy_features to log and return an empty mapping on fetch errors.
+- Improved _initialize_taxdb to support environment variable for cache directory and implemented a safe refresh strategy for the taxonomy database.
+- Updated logic to handle first-time setup and cache refresh without losing existing data. ([`47826e9`](https://github.com/tsenoner/protspace/commit/47826e9b796e840282d1263d3ae85a31a56c5d18))
+
+### Refactoring
+
+* refactor: simplify download_plot and save_plot functions
+
+- Remove strict width/height requirements for 2D plots
+- Eliminate unused parameters in download_plot callback
+- Add proper HTML file handling in generate_plot
+- Improve code maintainability and compatibility ([`8c3f3e9`](https://github.com/tsenoner/protspace/commit/8c3f3e9df07a98a2ee0a85d91d592f001feb9139))
+
+### Unknown
+
+* Merge branch 'stage' ([`5716992`](https://github.com/tsenoner/protspace/commit/57169922e79968b7c5257f8841185de113982197))
+
+* chor: update image generation to include PCA_3 projection
+
+- Changed the projection list to use only "PCA_3" for image generation.
+- Added support for HTML file format in the image output. ([`36551f3`](https://github.com/tsenoner/protspace/commit/36551f3748ca0e74447c91db98a5c24c9d845dd4))
+
+
 ## v2.2.0 (2025-08-07)
 
 ### Documentation
