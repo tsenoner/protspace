@@ -12,6 +12,8 @@ ProtSpace is a visualization tool for exploring **protein embeddings** or **simi
 
 **Web Interface**: https://protspace.rostlab.org/
 
+**New JavaScript Frontend** _(in development)_: https://tsenoner.github.io/protspace_d3/ -> Drag & drop `.parquetbundle` files
+
 ## 🚀 Quick Start with Google Colab
 
 **Note**: Use Chrome or Firefox for best experience.
@@ -34,40 +36,29 @@ pip install protspace
 pip install "protspace[frontend]"
 ```
 
-## 🎯 Usage
+## 🎯 Quick Start
 
 ### 1. Query UniProt directly
 
 ```bash
-# Search and analyze proteins from UniProt with available protein features
-protspace-query -q "insulin AND organism_id:9606 AND reviewed:true" -o output_dir -m pca2,umap3
+# Retrieve and analyze proteins from UniProt using sequence similarity (mmmseqs2)
+protspace-query -q "(ft_domain:phosphatase) AND (reviewed:true)" -o output_dir -m pca2,pca3,umap2 -f "protein_families,fragment,kingdom,superfamily" --n_neighbors 30 --min_dist 0.4
 ```
 
 ### 2. Process local data
 
 ```bash
-# Process your own embeddings or similarity matrices with the protein features you want
-protspace-local -i embeddings.h5 -f signal_peptide,pfam -o output_dir -m pca2,pca3
+# Analyse and vizualise your locally stored embeddings
+protspace-local -i embeddings.h5 -o output_dir -m pca2,umap2
 ```
 
 ### 3. Launch visualization
 
 ```bash
-# Auto-detects JSON files or Arrow directories
 protspace output_dir
-protspace output.json
 ```
 
 Access at `http://localhost:8050`
-
-## ✨ Features
-
-- **Interactive visualization**: 2D/3D plots with multiple dimensionality reduction methods (PCA, UMAP, t-SNE, MDS, PaCMAP)
-- **Feature-based styling**: Color-code and shape proteins by various features
-- **Structure integration**: View 3D protein structures alongside embeddings
-- **Search & highlight**: Find and highlight specific proteins
-- **Export options**: High-quality SVG (2D) and interactive HTML (3D)
-- **Responsive interface**: Works on desktop and mobile
 
 ## 📊 Example Outputs
 
@@ -78,6 +69,23 @@ Access at `http://localhost:8050`
 ### 3D Interactive Plot
 
 [View 3D Example](https://tsenoner.github.io/protspace/examples/out/3FTx/UMAP3_major_group.html)
+
+## ✨ Features
+
+- **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP in 2D/3D
+- **Automatic feature extraction**: Use `-f` to color-code proteins by UniProt, InterPro, or Taxonomy features
+- **3D structure viewer**: Integrated protein structure visualization
+- **Export**: SVG (2D) and HTML (3D) formats
+
+### Available Features (use with `-f`)
+
+**UniProt**: `annotation_score`, `fragment`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`
+
+**InterPro**: `cath`, `superfamily`, `signal_peptide`
+
+**Taxonomy**: `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
+
+_Note: Some taxonomy parsing may have minor issues. Additional features in development._
 
 ## 🔧 Advanced Usage
 
