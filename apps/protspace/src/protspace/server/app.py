@@ -135,5 +135,9 @@ class ProtSpace:
             filename_path = filename_path.with_suffix(f".{file_format}")
 
         # Write to file
-        with open(filename_path, "wb") as f:
-            f.write(image_bytes)
+        if file_format == "html":
+            with open(filename_path, "w") as f:
+                f.write(image_bytes)
+        else:
+            with open(filename_path, "wb") as f:
+                f.write(image_bytes)
