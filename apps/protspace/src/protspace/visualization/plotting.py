@@ -104,15 +104,15 @@ def _create_base_figure(
             for key, shape in final_marker_shapes.items()
         }
         fig = px.scatter_3d(**plot_args)
-        fig.update_traces(marker=dict(size=marker_size / 2))
+        fig.update_traces(marker={"size": marker_size / 2})
     else:
         plot_args.update({"x": "x", "y": "y"})
         fig = px.scatter(**plot_args)
-        fig.update_traces(marker=dict(size=marker_size))
+        fig.update_traces(marker={"size": marker_size})
 
     # Hide the original legend entries
     fig.update_traces(
-        marker_line=dict(width=DEFAULT_LINE_WIDTH, color="black"), showlegend=False
+        marker_line={"width": DEFAULT_LINE_WIDTH, "color": "black"}, showlegend=False
     )
     return fig
 
@@ -137,7 +137,7 @@ def _add_legend_traces(
 
         marker_style = {
             "size": legend_marker_size,
-            "line": dict(width=DEFAULT_LINE_WIDTH, color="black"),
+            "line": {"width": DEFAULT_LINE_WIDTH, "color": "black"},
             "symbol": shape,
         }
         if value in feature_colors:
@@ -335,7 +335,7 @@ def create_bounding_box(df: pd.DataFrame) -> list[go.Mesh3d]:
                 y=y_coords,
                 z=z_coords,
                 mode="lines",
-                line=dict(color="black", width=3),
+                line={"color": "black", "width": 3},
                 hoverinfo="none",
                 showlegend=False,
             )
@@ -345,15 +345,15 @@ def create_bounding_box(df: pd.DataFrame) -> list[go.Mesh3d]:
 
 def get_3d_scene_layout(df: pd.DataFrame) -> dict[str, Any]:
     """Define the layout for the 3D scene."""
-    axis_layout = dict(
-        showbackground=False,
-        showticklabels=False,
-        showline=False,
-        zeroline=False,
-        showgrid=False,
-        showspikes=False,
-        title="",
-    )
+    axis_layout = {
+        "showbackground": False,
+        "showticklabels": False,
+        "showline": False,
+        "zeroline": False,
+        "showgrid": False,
+        "showspikes": False,
+        "title": "",
+    }
     return {
         "xaxis": {
             **axis_layout,
@@ -374,7 +374,7 @@ def get_3d_scene_layout(df: pd.DataFrame) -> dict[str, Any]:
 
 def save_plot(
     fig: go.Figure,
-    is_3d: bool,
+    _: bool,
     width: int | None = None,
     height: int | None = None,
     file_format: str = "svg",
