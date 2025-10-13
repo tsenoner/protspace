@@ -63,7 +63,9 @@ class ArrowReader:
                 )
 
         except Exception as e:
-            raise ValueError(f"Error loading Arrow data from {self.data_path}: {e}")
+            raise ValueError(
+                f"Error loading Arrow data from {self.data_path}: {e}"
+            ) from e
 
     def _build_data_structure(self):
         """Build the data structure to match JsonReader format."""
