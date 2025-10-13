@@ -16,7 +16,7 @@ INTERPRO_MAPPING = {
     "pfam": "pfam",
     "superfamily": "superfamily",
     "cath": "cath-gene3d",
-    "signal_peptide": "phobius"
+    "signal_peptide": "phobius",
 }
 
 # List of supported InterPro features for easy access
@@ -217,7 +217,7 @@ class InterProFeatureRetriever:
             for feature_name, feature_list in features_dict.items():
                 if feature_list:
                     # Remove duplicates and sort for consistency
-                    unique_features = sorted(list(set(feature_list)))
+                    unique_features = sorted(set(feature_list))
                     processed_features[feature_name] = ";".join(unique_features)
                 else:
                     processed_features[feature_name] = ""
