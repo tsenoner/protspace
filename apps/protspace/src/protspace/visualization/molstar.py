@@ -1,6 +1,7 @@
-from dash_molstar.utils import molstar_helper as msh
 import base64
+
 import requests
+from dash_molstar.utils import molstar_helper as msh
 
 
 def get_molstar_data(protein_id=None, pdb_files_data=None, content=None, ext=None):

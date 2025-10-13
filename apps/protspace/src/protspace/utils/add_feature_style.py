@@ -1,7 +1,6 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Dict
 
 from protspace.utils.arrow_reader import ArrowReader
 from protspace.utils.json_reader import JsonReader
@@ -20,14 +19,14 @@ ALLOWED_SHAPES = [
 
 def load_feature_styles(
     feature_styles_input: str,
-) -> Dict[str, Dict[str, Dict[str, str]]]:
+) -> dict[str, dict[str, dict[str, str]]]:
     try:
         # Try to parse as JSON string
         return json.loads(feature_styles_input)
     except json.JSONDecodeError:
         # If not a valid JSON string, try to load as a file
         try:
-            with open(feature_styles_input, "r") as f:
+            with open(feature_styles_input) as f:
                 return json.load(f)
         except FileNotFoundError:
             raise ValueError(
@@ -58,11 +57,11 @@ def detect_data_format(input_path: str) -> str:
 
 def add_feature_styles_json(
     json_file: str,
-    feature_styles: Dict[str, Dict[str, Dict[str, str]]],
+    feature_styles: dict[str, dict[str, dict[str, str]]],
     output_file: str,
 ) -> None:
     """Add feature styles to JSON format data."""
-    with open(json_file, "r") as f:
+    with open(json_file) as f:
         data = json.load(f)
 
     reader = JsonReader(data)
@@ -109,7 +108,7 @@ def add_feature_styles_json(
 
 def add_feature_styles_parquet(
     parquet_dir: str,
-    feature_styles: Dict[str, Dict[str, Dict[str, str]]],
+    feature_styles: dict[str, dict[str, dict[str, str]]],
     output_dir: str,
 ) -> None:
     """Add feature styles to parquet format data."""
@@ -150,7 +149,7 @@ def add_feature_styles_parquet(
 
 def add_feature_styles(
     input_file: str,
-    feature_styles: Dict[str, Dict[str, Dict[str, str]]],
+    feature_styles: dict[str, dict[str, dict[str, str]]],
     output_file: str,
 ) -> None:
     """Add feature styles to either JSON or parquet format data."""
