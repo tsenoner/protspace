@@ -1,6 +1,230 @@
 # CHANGELOG
 
 
+## v3.0.0 (2025-10-13)
+
+### Breaking
+
+* feat(data)!: add comprehensive feature extraction and output restructuring
+
+BREAKING CHANGE: Restructure output directory organization
+
+- Add enhanced UniProt feature retrieval with batch processing and validation
+- Implement comprehensive taxonomy feature extraction with proper error handling
+- Add InterPro domain feature retrieval with MD5-based sequence matching
+- Restructure output paths with intermediate file management (_tmp, _intermediate)
+- Add support for bundled Parquet files (.parquetbundle) and Apache Arrow format
+- Implement length binning features for protein size classification
+- Add protein family classification with top-9 filtering
+- Enhance error handling and logging throughout data processing modules
+- Add comprehensive type hints and documentation
+- Modernize code with PEP 585/604 type annotations
+
+This represents a major architectural improvement to ProtSpace's data
+processing pipeline, significantly enhancing feature extraction capabilities
+while maintaining backward compatibility for the legacy JSON format. ([`f3ebef8`](https://github.com/tsenoner/protspace/commit/f3ebef8c9dd8f4b9c37941852f3aa9d1996c84f1))
+
+### Build System
+
+* build: migrate to dependency-groups.dev from deprecated tool.uv.dev-dependencies
+
+Replace deprecated [tool.uv] dev-dependencies with the new [dependency-groups]
+syntax to comply with uv latest standards and remove deprecation warnings. ([`a328280`](https://github.com/tsenoner/protspace/commit/a328280a96369cb5db8ca704e20617ec77bcb4cc))
+
+### Chores
+
+* chore: configure ruff to ignore pytest fixture redefinition warnings
+
+- Add F811 to per-file-ignores for tests/* directory
+- Pytest fixtures intentionally redefine module-level fixtures
+- This prevents false positive warnings in test files ([`f85c13d`](https://github.com/tsenoner/protspace/commit/f85c13d3f9bcb93965c353c6457d8bf27315fa39))
+
+* chore: replace pylint with ruff
+
+- Remove pylint from dev dependencies
+- Add comprehensive ruff configuration
+- Configure linting rules for unused variables, imports, and arguments
+- Set up per-file ignores for test files ([`d46cbb5`](https://github.com/tsenoner/protspace/commit/d46cbb591f3c53a4ff56ea23fb0a4032f0e6204e))
+
+### Code Style
+
+* style: apply code formatting to utils module
+
+- Format add_feature_style.py (quotes, line wrapping)
+- Format arrow_reader.py (quotes, line wrapping)
+
+No functional changes. ([`61892c4`](https://github.com/tsenoner/protspace/commit/61892c473a525cfe478c9d4248f7a4642efbd700))
+
+### Documentation
+
+* docs: update README with improved feature documentation
+
+- Fix JavaScript frontend URL from protspace_d3 to protspace_web
+- Add cc_subcellular_location and sequence to UniProt features list
+- Enhance feature documentation with more comprehensive examples
+- Improve command-line usage documentation
+- Update feature extraction examples with better clarity ([`23dd0e3`](https://github.com/tsenoner/protspace/commit/23dd0e39cf63f3a948f1f2ea05efca4e63312c01))
+
+### Features
+
+* feat(cli): add shared argument parsing utilities
+
+- Create common_args.py module with reusable CLI components
+- Add CustomHelpFormatter for preserving newlines and showing defaults
+- Implement modular argument group adders for all parameter types
+- Include comprehensive help text with examples and parameter guidance
+- Support both CSV metadata files and comma-separated feature lists ([`091a742`](https://github.com/tsenoner/protspace/commit/091a742643675c53f045094a75f20094ee6f53f3))
+
+### Refactoring
+
+* refactor: improve CLI examples with better documentation and user-friendliness
+
+- Add comprehensive docstrings and shebang lines
+- Improve error handling and user feedback
+- Fix import sorting issues
+- Add input validation for local data example
+- Enhance comments and parameter explanations
+- Make examples more professional and user-friendly ([`7b0d72d`](https://github.com/tsenoner/protspace/commit/7b0d72d263ec18d7b7dc310374f2bfe221137f27))
+
+* refactor(vis): fix ruff linting issues in visualization module
+
+- Fix C408: Replace dict() calls with dictionary literals (6 instances)
+- Fix ARG001: Replace unused is_3d parameter with underscore
+- Improve code consistency and readability
+- Follow modern Python best practices for function parameters ([`ac3f653`](https://github.com/tsenoner/protspace/commit/ac3f653d4e32da2b944805c5c462377a9321d9a1))
+
+* refactor(utils): fix ruff linting issues in utility modules
+
+- Fix B904: Add proper exception chaining with 'from e' (2 instances)
+- Fix C401: Replace generators with set comprehensions (2 instances)
+- Fix C416: Replace list comprehension with list() call
+- Improve error handling and code efficiency
+- Follow modern Python exception handling practices ([`81969dc`](https://github.com/tsenoner/protspace/commit/81969dcba2db26f4e7edb11a867748322c976a73))
+
+* refactor(ui): fix ruff linting issues in UI callbacks
+
+- Fix C408: Replace dict() calls with dictionary literals (5 instances)
+- Fix C414: Remove unnecessary list() call in sorted()
+- Improve code formatting and consistency
+- Follow modern Python best practices ([`6f205e4`](https://github.com/tsenoner/protspace/commit/6f205e48dabb3f416bded43a7b7af256b80b76d0))
+
+* refactor(data): fix ruff linting issues in data processing modules
+
+- Fix B007: Replace unused table_name with underscore in loop
+- Fix C414: Remove unnecessary list() call in sorted(set())
+- Add missing trailing comma in INTERPRO_MAPPING
+- Improve code quality and follow modern Python practices ([`aee7431`](https://github.com/tsenoner/protspace/commit/aee74315da56c132fcdd07c556b1dd778e310fce))
+
+* refactor(utils,vis): modernize utility and visualization modules with ruff auto-fixes
+
+- Update type annotations to modern syntax
+- Reorganize imports with proper sorting
+- Replace dict() calls with literals
+- Update deprecated imports
+- Improve code formatting and consistency
+- Enhance error handling and logging
+- Optimize set comprehensions and generator expressions ([`06a47bd`](https://github.com/tsenoner/protspace/commit/06a47bd50365d12e0cde34b49b62fb3338c95430))
+
+* refactor(ui): modernize UI and application modules with ruff auto-fixes
+
+- Update type annotations to modern syntax
+- Reorganize imports with proper sorting
+- Replace dict() calls with literals
+- Update deprecated imports
+- Improve code formatting and consistency
+- Enhance error handling and logging ([`d9c21e7`](https://github.com/tsenoner/protspace/commit/d9c21e7352501d730e56c0e27d0940d5e9fd4126))
+
+* refactor(cli): modernize CLI modules with ruff auto-fixes
+
+- Update type annotations to modern syntax
+- Reorganize imports with proper sorting
+- Replace dict() calls with literals
+- Update deprecated imports
+- Improve code formatting and consistency
+- Enhance error handling and logging ([`0f1f0ad`](https://github.com/tsenoner/protspace/commit/0f1f0add73bd9471df94fc1ee02e649121c8fca5))
+
+* refactor(core): modernize core modules with ruff auto-fixes
+
+- Update type annotations to modern PEP 585/604 syntax
+- Reorganize imports with proper sorting
+- Replace dict() calls with literals
+- Update deprecated imports
+- Improve code formatting and consistency ([`8f9d8f2`](https://github.com/tsenoner/protspace/commit/8f9d8f2e97d71cd4c0b2306d7164b7489a33f200))
+
+* refactor(imports): update imports to reflect new module structure
+
+- Update main __init__.py to import from .app instead of .server
+- Update app.py imports for ui.callbacks and core.config
+- Update main.py to use core.config
+- Update ui module imports (callbacks, layout, styles)
+- Update visualization/plotting.py imports
+- Update data/feature_manager.py to import from feature_retrievers
+- Add proper exports in ui/__init__.py
+
+All imports now reference the new directory structure. ([`9ba8ae3`](https://github.com/tsenoner/protspace/commit/9ba8ae32927f9c54ff7665e03f339b15d3bee5bb))
+
+* refactor(structure): reorganize codebase into logical module directories
+
+- Move ProtSpace class from server/app.py to root app.py
+- Create core/ module for configuration and constants
+  - Move config.py to core/config.py
+  - Rename helpers.py to core/constants.py for clarity
+- Create data/feature_retrievers/ subdirectory
+  - Move interpro_feature_retriever.py
+  - Move taxonomy_feature_retriever.py
+  - Move uniprot_feature_retriever.py
+- Reorganize UI components
+  - Move callbacks.py from server/ to ui/
+  - Move styles.py from root to ui/
+- Move molstar_helper.py to visualization/molstar.py
+- Remove server/ directory (now empty)
+
+This improves code organization and follows Python packaging best practices. ([`22d3487`](https://github.com/tsenoner/protspace/commit/22d3487825dca70c482264178aba66b417aeada0))
+
+### Testing
+
+* test: fix ruff linting issues in test files
+
+- Fix C401: Replace generator with set comprehension in test_feature_manager.py
+- Fix F811: Resolve pytest fixture redefinition conflicts in test files
+- Use temp_dir_path instead of temp_dir in local scopes to avoid conflicts
+- Restore proper fixture arguments for test functions
+- All 148 tests continue to pass successfully ([`eebcaeb`](https://github.com/tsenoner/protspace/commit/eebcaebaf7eded67027ea66e77f16ad13bfa08be))
+
+* test: add comprehensive test suite for output formats and directory structures
+
+- Add test_config.py with shared fixtures for all test modules
+- Add test_output_combinations.py with 30+ tests for output scenarios
+- Test bundled vs separate Parquet file generation
+- Test JSON vs Parquet output formats
+- Test keep_tmp flag and intermediate directory behavior
+- Test output path determination logic for both local and query modes
+- Verify proper cleanup of temporary files
+- Test legacy JSON format compatibility ([`d4245e0`](https://github.com/tsenoner/protspace/commit/d4245e030136480573ab6419892c145beab3b683))
+
+* test: clean up unused variables and imports
+
+- Remove unused imports and variables from test files
+- Fix unused function arguments by replacing with underscore
+- Add missing imports that were accidentally removed during cleanup
+- Ensure all test fixtures are properly imported
+- All 148 tests continue to pass ([`6b48923`](https://github.com/tsenoner/protspace/commit/6b48923d3bb7a65dc29686eb1941ad31dd7d9881))
+
+* test: update test imports for feature_retrievers module
+
+Update all test files to import from the new feature_retrievers location:
+- test_feature_manager.py
+- test_interpro_feature_retriever.py
+- test_taxonomy_feature_retriever.py
+- test_uniprot_feature_retriever.py
+
+All 127 tests passing. ([`c04b56f`](https://github.com/tsenoner/protspace/commit/c04b56f7ef9cd0c8ef5affdcb795ab59212e93eb))
+
+### Unknown
+
+* Merge branch 'stage' ([`e787fe8`](https://github.com/tsenoner/protspace/commit/e787fe861888dadcd1c0b196a35187f804411dbe))
+
+
 ## v2.3.0 (2025-09-30)
 
 ### Documentation
