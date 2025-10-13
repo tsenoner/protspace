@@ -1,20 +1,19 @@
 import logging
 import os
-import tempfile
 import shutil
-from typing import List, Dict, Any
-from pathlib import Path
-from tqdm import tqdm
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+
 import taxopy
+from tqdm import tqdm
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Taxonomy features
 TAXONOMY_FEATURES = [
-    "taxon_name",
-    "superkingdom",
     "kingdom",
     "phylum",
     "class",
@@ -26,12 +25,12 @@ TAXONOMY_FEATURES = [
 
 
 class TaxonomyFeatureRetriever:
-    def __init__(self, taxon_ids: List[int], features: List = None):
+    def __init__(self, taxon_ids: list[int], features: list = None):
         self.taxon_ids = self._validate_taxon_ids(taxon_ids)
         self.features = features
         self.taxdb = self._initialize_taxdb()
 
-    def fetch_features(self) -> Dict[int, Dict[str, Any]]:
+    def fetch_features(self) -> dict[int, dict[str, Any]]:
         result = {}
 
         with tqdm(
@@ -44,20 +43,20 @@ class TaxonomyFeatureRetriever:
                     result[taxon_id] = {"features": taxonomies_info[taxon_id]}
                 else:
                     result[taxon_id] = {
-                        "features": {feature: "" for feature in self.features}
+                        "features": dict.fromkeys(self.features, "")
                     }
                 pbar.update(1)
 
         return result
 
-    def _validate_taxon_ids(self, taxon_ids: List[int]) -> List[int]:
+    def _validate_taxon_ids(self, taxon_ids: list[int]) -> list[int]:
         for taxon_id in taxon_ids:
             if not isinstance(taxon_id, int):
                 raise ValueError(f"Taxon ID {taxon_id} is not an integer")
 
         return taxon_ids
 
-    def _get_taxonomy_info(self, taxon_ids: List[int]) -> Dict[int, Dict[str, str]]:
+    def _get_taxonomy_info(self, taxon_ids: list[int]) -> dict[int, dict[str, str]]:
         result = {}
 
         for taxon_id in taxon_ids:
@@ -67,8 +66,6 @@ class TaxonomyFeatureRetriever:
 
                 # Fetch all available taxonomy information
                 full_taxonomy_info = {
-                    "taxon_name": taxon.name,
-                    "superkingdom": ranks.get("superkingdom", ""),
                     "kingdom": ranks.get("kingdom", ""),
                     "phylum": ranks.get("phylum", ""),
                     "class": ranks.get("class", ""),
@@ -88,7 +85,7 @@ class TaxonomyFeatureRetriever:
 
             except Exception as e:
                 logger.error(f"Failed to get taxonomy for {taxon_id}: {e}")
-                result[taxon_id] = {feature: "" for feature in self.features}
+                result[taxon_id] = dict.fromkeys(self.features, "")
 
         return result
 
@@ -114,7 +111,7 @@ class TaxonomyFeatureRetriever:
         needs_refresh = False
         if timestamp_file.exists():
             try:
-                with open(timestamp_file, "r") as f:
+                with open(timestamp_file) as f:
                     download_time = datetime.fromisoformat(f.read().strip())
                 one_week_ago = datetime.now() - timedelta(weeks=1)
 

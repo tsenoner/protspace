@@ -1,24 +1,24 @@
 import csv
-import pandas as pd
-import numpy as np
-from typing import List, Union, Tuple
+import logging
+import re
 from pathlib import Path
 
-from protspace.data.feature_retrievers.uniprot_feature_retriever import (
-    UniProtFeatureRetriever,
-    UNIPROT_FEATURES,
-    ProteinFeatures,
+import numpy as np
+import pandas as pd
+
+from protspace.data.feature_retrievers.interpro_feature_retriever import (
+    INTERPRO_FEATURES,
+    InterProFeatureRetriever,
 )
 from protspace.data.feature_retrievers.taxonomy_feature_retriever import (
-    TaxonomyFeatureRetriever,
     TAXONOMY_FEATURES,
+    TaxonomyFeatureRetriever,
 )
-from protspace.data.feature_retrievers.interpro_feature_retriever import (
-    InterProFeatureRetriever,
-    INTERPRO_FEATURES,
+from protspace.data.feature_retrievers.uniprot_feature_retriever import (
+    UNIPROT_FEATURES,
+    ProteinFeatures,
+    UniProtFeatureRetriever,
 )
-
-import logging
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -31,8 +31,8 @@ LENGTH_BINNING_FEATURES = ["length_fixed", "length_quantile"]
 class ProteinFeatureExtractor:
     def __init__(
         self,
-        headers: List[str],
-        features: List = None,
+        headers: list[str],
+        features: list = None,
         output_path: Path = None,
         non_binary: bool = False,
         sequences: dict = None,
@@ -47,28 +47,58 @@ class ProteinFeatureExtractor:
         self.sequences = sequences  # Needed for InterPro MD5 calculation
 
     def to_pd(self) -> pd.DataFrame:
+        # Track which feature sources failed
+        failed_sources = []
+
         # We always have at least one uniprot feature, if only taxonomy provided we need the organism_id from uniprot
-        fetched_uniprot = self.get_uniprot_features(self.headers, self.uniprot_features)
+        fetched_uniprot = []
+        try:
+            fetched_uniprot = self.get_uniprot_features(
+                self.headers, self.uniprot_features
+            )
+        except Exception as e:
+            failed_sources.append(f"UniProt ({str(e)})")
+            logger.warning(f"Failed to retrieve UniProt features: {e}")
+            # Create minimal feature set with just identifiers
+            fetched_uniprot = [
+                ProteinFeatures(identifier=header, features={"organism_id": ""})
+                for header in self.headers
+            ]
 
         taxon_counts = self._get_taxon_counts(fetched_uniprot)
         unique_taxons = list(taxon_counts.keys())
-        taxonomy_features = self.get_taxonomy_features(
-            unique_taxons, self.taxonomy_features
-        )
+        taxonomy_features = {}
+        if self.taxonomy_features:
+            taxonomy_features = self.get_taxonomy_features(
+                unique_taxons, self.taxonomy_features
+            )
+            # Check if taxonomy retrieval failed (returns empty dict on error)
+            if not taxonomy_features and unique_taxons:
+                failed_sources.append("Taxonomy")
 
         # Fetch InterPro features if requested
         interpro_features = []
         if self.interpro_features:
-            # Extract sequences from UniProt data for InterPro MD5 calculation
-            sequences = {}
-            for protein in fetched_uniprot:
-                if "sequence" in protein.features and protein.features["sequence"]:
-                    sequences[protein.identifier] = protein.features["sequence"]
+            try:
+                # Extract sequences from UniProt data for InterPro MD5 calculation
+                sequences = {}
+                for protein in fetched_uniprot:
+                    if "sequence" in protein.features and protein.features["sequence"]:
+                        sequences[protein.identifier] = protein.features["sequence"]
 
-            # Update self.sequences for InterPro retrieval
-            self.sequences = sequences
-            interpro_features = self.get_interpro_features(
-                self.headers, self.interpro_features
+                # Update self.sequences for InterPro retrieval
+                self.sequences = sequences
+                interpro_features = self.get_interpro_features(
+                    self.headers, self.interpro_features
+                )
+            except Exception as e:
+                failed_sources.append(f"InterPro ({str(e)})")
+                logger.warning(f"Failed to retrieve InterPro features: {e}")
+
+        # Report failed sources
+        if failed_sources:
+            logger.warning(
+                f"Could not retrieve features from the following sources: {', '.join(failed_sources)}"
             )
 
         all_features = self._merge_features(
@@ -87,6 +117,10 @@ class ProteinFeatureExtractor:
             # Create DataFrame directly without saving to file
             df = self._create_dataframe_from_features(all_features)
 
+        # Always remove organism_id from final output (it's only needed internally)
+        if "organism_id" in df.columns:
+            df = df.drop(columns=["organism_id"])
+
         if self.user_features:
             columns_to_keep = [df.columns[0]]
             for feature in self.user_features:
@@ -103,12 +137,12 @@ class ProteinFeatureExtractor:
             return df
 
     def get_uniprot_features(
-        self, headers: List[str], features: List[str]
-    ) -> List[ProteinFeatures]:
+        self, headers: list[str], features: list[str]
+    ) -> list[ProteinFeatures]:
         uniprot_fetcher = UniProtFeatureRetriever(headers, features)
         return uniprot_fetcher.fetch_features()
 
-    def get_taxonomy_features(self, taxons: List[int], features: List[str]) -> str:
+    def get_taxonomy_features(self, taxons: list[int], features: list[str]) -> str:
         try:
             taxonomy_fetcher = TaxonomyFeatureRetriever(taxons, features)
             return taxonomy_fetcher.fetch_features()
@@ -121,13 +155,13 @@ class ProteinFeatureExtractor:
             return {}
 
     def get_interpro_features(
-        self, headers: List[str], features: List[str]
-    ) -> List[ProteinFeatures]:
+        self, headers: list[str], features: list[str]
+    ) -> list[ProteinFeatures]:
         interpro_fetcher = InterProFeatureRetriever(headers, features, self.sequences)
         return interpro_fetcher.fetch_features()
 
     def _create_dataframe_from_features(
-        self, fetched_uniprot: List[ProteinFeatures]
+        self, fetched_uniprot: list[ProteinFeatures]
     ) -> pd.DataFrame:
         """Create DataFrame directly from protein features without saving to file."""
         fetched_uniprot = self._compute_length_bins(fetched_uniprot)
@@ -149,7 +183,7 @@ class ProteinFeatureExtractor:
         df = pd.DataFrame(data_rows, columns=csv_headers)
         return df
 
-    def save_csv(self, fetched_uniprot: List[ProteinFeatures]):
+    def save_csv(self, fetched_uniprot: list[ProteinFeatures]):
         fetched_uniprot = self._compute_length_bins(fetched_uniprot)
 
         with open(self.output_path, "w", newline="") as f:
@@ -168,7 +202,7 @@ class ProteinFeatureExtractor:
                 modified_row = self._modify_if_needed(row, csv_headers)
                 writer.writerow(modified_row)
 
-    def save_arrow(self, fetched_uniprot: List[ProteinFeatures]):
+    def save_arrow(self, fetched_uniprot: list[ProteinFeatures]):
         """Save protein features data in binary parquet format."""
         fetched_uniprot = self._compute_length_bins(fetched_uniprot)
 
@@ -190,8 +224,8 @@ class ProteinFeatureExtractor:
         df.to_parquet(self.output_path, index=False)
 
     def _compute_length_bins(
-        self, fetched_uniprot: List[ProteinFeatures]
-    ) -> List[ProteinFeatures]:
+        self, fetched_uniprot: list[ProteinFeatures]
+    ) -> list[ProteinFeatures]:
         """Compute length-based binning features for all proteins."""
         lengths = []
         for protein in fetched_uniprot:
@@ -221,7 +255,7 @@ class ProteinFeatureExtractor:
 
         return updated_proteins
 
-    def _compute_fixed_bins(self, lengths: List[Union[int, None]]) -> List[str]:
+    def _compute_fixed_bins(self, lengths: list[int | None]) -> list[str]:
         """Compute fixed bins with predefined ranges."""
         fixed_ranges = [
             (0, 50, "<50"),
@@ -256,8 +290,8 @@ class ProteinFeatureExtractor:
         return bins
 
     def _compute_quantile_bins(
-        self, lengths: List[Union[int, None]], num_bins: int
-    ) -> List[str]:
+        self, lengths: list[int | None], num_bins: int
+    ) -> list[str]:
         """Compute quantile-based bins where each bin has approximately the same number of sequences."""
         valid_lengths = [length for length in lengths if length is not None]
         if not valid_lengths:
@@ -301,7 +335,7 @@ class ProteinFeatureExtractor:
 
         return bins
 
-    def _get_taxon_counts(self, fetched_uniprot: List[ProteinFeatures]) -> dict:
+    def _get_taxon_counts(self, fetched_uniprot: list[ProteinFeatures]) -> dict:
         """Returns a dictionary with organism IDs as keys and their occurrence counts as values."""
         id_counts = {}
 
@@ -313,7 +347,7 @@ class ProteinFeatureExtractor:
 
         return id_counts
 
-    def _modify_if_needed(self, row: List, csv_headers: List) -> List:
+    def _modify_if_needed(self, row: list, csv_headers: list) -> list:
         modified_row = row.copy()
 
         if "annotation_score" in csv_headers:
@@ -336,26 +370,80 @@ class ProteinFeatureExtractor:
                 else:
                     modified_row[idx] = protein_families_value
 
-        if "pfam" in csv_headers:
-            idx = csv_headers.index("pfam")
+        # pfam is already handled correctly by InterPro retriever (semicolon-separated, sorted)
+        # No additional processing needed
+
+        if "cath" in csv_headers:
+            idx = csv_headers.index("cath")
             if idx < len(row) and row[idx]:
-                pfam_value = str(row[idx])
-                modified_row[idx] = pfam_value.split(";")[0].strip()
+                cath_value = str(row[idx])
+                # Split by semicolon, strip G3DSA: prefix from each value, sort
+                cath_values = cath_value.split(";")
+                cleaned = [
+                    v.replace("G3DSA:", "").strip() for v in cath_values if v.strip()
+                ]
+                modified_row[idx] = ";".join(sorted(cleaned))
 
-        # if "superfamily" in csv_headers:
-        #     idx = csv_headers.index("superfamily")
-        #     if idx < len(row) and row[idx]:
-        #         superfamily_value = str(row[idx])
-        #         modified_row[idx] = superfamily_value.split(";")[0].strip()
+        if "cc_subcellular_location" in csv_headers:
+            idx = csv_headers.index("cc_subcellular_location")
+            if idx < len(row) and row[idx]:
+                subcell_value = str(row[idx])
 
-        # if "cath" in csv_headers:
-        #     idx = csv_headers.index("cath")
-        #     if idx < len(row) and row[idx]:
-        #         cath_value = str(row[idx])
-        #         processed_value = cath_value.split(";")[0]
-        #         if ":" in processed_value:
-        #             processed_value = processed_value.split(":")[1].strip()
-        #         modified_row[idx] = processed_value
+                # Handle isoform-specific locations
+                # Pattern: [Isoform X]: content (up to next [Isoform or end)
+                isoform_pattern = r"\[Isoform ([^\]]+)\]:\s*(.+?)(?=\[Isoform|$)"
+                isoform_matches = list(
+                    re.finditer(isoform_pattern, subcell_value, re.DOTALL)
+                )
+
+                if isoform_matches:
+                    # Sort isoforms alphabetically and take the first one
+                    sorted_isoforms = sorted(isoform_matches, key=lambda m: m.group(1))
+                    content = sorted_isoforms[0].group(2)
+                    # Remove "SUBCELLULAR LOCATION:" if present in content
+                    content = re.sub(r"SUBCELLULAR LOCATION:\s*", "", content)
+                elif "SUBCELLULAR LOCATION:" in subcell_value:
+                    # Extract content after "SUBCELLULAR LOCATION:"
+                    content = subcell_value.split("SUBCELLULAR LOCATION:", 1)[1]
+                else:
+                    content = subcell_value
+
+                # Remove everything from "Note=" onwards
+                if "Note=" in content:
+                    content = content.split("Note=")[0]
+
+                # Extract locations: split by period, remove ECO references
+                locations = []
+                # Pattern to extract location before {ECO: or period
+                location_pattern = r"([^.{]+?)(?:\s*\{ECO:[^}]*\})?(?:\.|;|$)"
+
+                for match in re.finditer(location_pattern, content):
+                    location = match.group(1).strip()
+                    if location and not location.lower().startswith("note"):
+                        # Split by semicolon for sub-locations
+                        for sub_loc in location.split(";"):
+                            sub_loc = sub_loc.strip()
+                            if sub_loc:
+                                locations.append(sub_loc)
+
+                if locations:
+                    modified_row[idx] = ";".join(locations)
+
+        if "fragment" in csv_headers:
+            idx = csv_headers.index("fragment")
+            if idx < len(row) and row[idx]:
+                fragment_value = str(row[idx]).strip().lower()
+                if fragment_value == "fragment":
+                    modified_row[idx] = "yes"
+
+        if "reviewed" in csv_headers:
+            idx = csv_headers.index("reviewed")
+            if idx < len(row) and row[idx]:
+                reviewed_value = str(row[idx]).strip().lower()
+                if reviewed_value == "reviewed":
+                    modified_row[idx] = "Swiss-Prot"
+                elif reviewed_value == "unreviewed":
+                    modified_row[idx] = "TrEMBL"
 
         if "signal_peptide" in csv_headers:
             idx = csv_headers.index("signal_peptide")
@@ -372,8 +460,8 @@ class ProteinFeatureExtractor:
         return modified_row
 
     def _initialize_features(
-        self, features: List[str]
-    ) -> Tuple[List[str], Union[List[str], None], Union[List[str], None]]:
+        self, features: list[str]
+    ) -> tuple[list[str], list[str] | None, list[str] | None]:
         """
         Separates features into UniProt, Taxonomy, and InterPro features.
         """
@@ -445,8 +533,8 @@ class ProteinFeatureExtractor:
 
     def _validate_features(
         self,
-        user_features: List[str],
-        all_features: List[str] = DEFAULT_FEATURES + LENGTH_BINNING_FEATURES,
+        user_features: list[str],
+        all_features: list[str] = DEFAULT_FEATURES + LENGTH_BINNING_FEATURES,
     ) -> str:
         """
         Checks if the user provided features which are available.
@@ -463,8 +551,8 @@ class ProteinFeatureExtractor:
         return user_features
 
     def _modify_uniprot_features(
-        self, features: List[str], interpro_features: List[str] = None
-    ) -> List[str]:
+        self, features: list[str], interpro_features: list[str] = None
+    ) -> list[str]:
         filtered_features = [f for f in features if f not in NEEDED_UNIPROT_FEATURES]
         result = NEEDED_UNIPROT_FEATURES + filtered_features
 
@@ -476,32 +564,11 @@ class ProteinFeatureExtractor:
 
     def _merge_features(
         self,
-        fetched_uniprot: List[ProteinFeatures],
+        fetched_uniprot: list[ProteinFeatures],
         taxonomy_features: dict,
-        interpro_features: List[ProteinFeatures] = None,
-    ) -> List[ProteinFeatures]:
+        interpro_features: list[ProteinFeatures] = None,
+    ) -> list[ProteinFeatures]:
         merged_features = []
-
-        # First, we'll analyze taxonomy features to find the top 9 most frequent values for each feature
-        feature_value_counts = {}
-
-        # Collect all values for each taxonomy feature
-        for org_id, tax_data in taxonomy_features.items():
-            for feature_name, feature_value in tax_data["features"].items():
-                if feature_name not in feature_value_counts:
-                    feature_value_counts[feature_name] = {}
-
-                if feature_value not in feature_value_counts[feature_name]:
-                    feature_value_counts[feature_name][feature_value] = 0
-
-                feature_value_counts[feature_name][feature_value] += 1
-
-        # Determine top 9 values for each feature
-        top_values = {}
-        for feature_name, counts in feature_value_counts.items():
-            # Sort values by count (descending) and take top 9
-            sorted_values = sorted(counts.items(), key=lambda x: x[1], reverse=True)
-            top_values[feature_name] = {val[0] for val in sorted_values[:9]}
 
         # Create a mapping from identifier to InterPro features for efficient lookup
         interpro_dict = {}
@@ -522,16 +589,9 @@ class ProteinFeatureExtractor:
             if organism_id and int(organism_id) in taxonomy_features:
                 tax_features = taxonomy_features[int(organism_id)]["features"]
 
-                # Add each taxonomy feature to the protein features
+                # Add each taxonomy feature to the protein features directly
                 for feature_name, feature_value in tax_features.items():
-                    # Check if this value is in the top 9 for this feature
-                    if (
-                        feature_name in top_values
-                        and feature_value in top_values[feature_name]
-                    ):
-                        updated_protein.features[feature_name] = feature_value
-                    else:
-                        updated_protein.features[feature_name] = "other"
+                    updated_protein.features[feature_name] = feature_value
 
             # Add InterPro features if available for this protein
             if protein.identifier in interpro_dict:

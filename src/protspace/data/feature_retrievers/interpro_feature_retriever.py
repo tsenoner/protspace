@@ -1,9 +1,10 @@
-import logging
-import requests
 import hashlib
-from typing import List, NamedTuple, Dict
-from tqdm import tqdm
+import logging
 from collections import namedtuple
+from typing import NamedTuple
+
+import requests
+from tqdm import tqdm
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Values are used when accessing the JSON output from the InterPro API
 INTERPRO_MAPPING = {
     "pfam": "pfam",
-    "superfamily": "superfamily", 
+    "superfamily": "superfamily",
     "cath": "cath-gene3d",
     "signal_peptide": "phobius"
 }
@@ -40,9 +41,9 @@ class InterProFeatureRetriever:
 
     def __init__(
         self,
-        headers: List[str] = None,
-        features: List[str] = None,
-        sequences: Dict[str, str] = None,
+        headers: list[str] = None,
+        features: list[str] = None,
+        sequences: dict[str, str] = None,
     ):
         """
         Initialize the InterPro feature retriever.
@@ -64,7 +65,7 @@ class InterProFeatureRetriever:
             )
             self.features = [f for f in self.features if f in INTERPRO_FEATURES]
 
-    def fetch_features(self) -> List[NamedTuple]:
+    def fetch_features(self) -> list[NamedTuple]:
         """
         Fetch InterPro features for all proteins.
 
@@ -113,7 +114,7 @@ class InterProFeatureRetriever:
         # Parse results and create features
         return self._parse_interpro_results(api_results, md5_to_identifier)
 
-    def _get_matches_in_batches(self, md5s: List[str]) -> List[Dict]:
+    def _get_matches_in_batches(self, md5s: list[str]) -> list[dict]:
         """
         Submit MD5 hashes to InterPro API in batches.
 
@@ -165,8 +166,8 @@ class InterProFeatureRetriever:
         return all_results
 
     def _parse_interpro_results(
-        self, api_results: List[Dict], md5_to_identifier: Dict[str, str]
-    ) -> List[NamedTuple]:
+        self, api_results: list[dict], md5_to_identifier: dict[str, str]
+    ) -> list[NamedTuple]:
         """
         Parse InterPro API results and extract relevant features.
 
@@ -179,7 +180,7 @@ class InterProFeatureRetriever:
         """
         # Create reverse mapping from API database names to our keys
         api_to_key = {v: k for k, v in INTERPRO_MAPPING.items()}
-        
+
         # Initialize feature dictionary for each protein
         protein_features = {}
         for identifier in md5_to_identifier.values():
@@ -228,7 +229,7 @@ class InterProFeatureRetriever:
         logger.info(f"Processed InterPro features for {len(result)} proteins")
         return result
 
-    def _manage_headers(self, headers: List[str]) -> List[str]:
+    def _manage_headers(self, headers: list[str]) -> list[str]:
         """
         Extract protein identifiers from FASTA headers.
 
