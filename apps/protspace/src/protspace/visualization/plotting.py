@@ -1,13 +1,13 @@
+import colorsys
 import io
 import re
-from typing import Any, Dict, List, Optional, Union
-import colorsys
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 
-from protspace.config import (
+from protspace.core.config import (
     DEFAULT_LINE_WIDTH,
     HIGHLIGHT_BORDER_COLOR,
     HIGHLIGHT_COLOR,
@@ -16,8 +16,8 @@ from protspace.config import (
     MARKER_SHAPES_3D,
     NAN_COLOR,
 )
+from protspace.core.constants import standardize_missing
 from protspace.utils import JsonReader
-from protspace.helpers import standardize_missing
 
 
 def generate_default_color(index: int, total: int) -> str:
@@ -65,8 +65,8 @@ def _create_base_figure(
     df: pd.DataFrame,
     is_3d: bool,
     selected_feature: str,
-    feature_colors: Dict[str, str],
-    final_marker_shapes: Dict[str, str],
+    feature_colors: dict[str, str],
+    final_marker_shapes: dict[str, str],
     marker_size: int,
 ) -> go.Figure:
     """Creates the base scatter plot figure."""
@@ -104,15 +104,15 @@ def _create_base_figure(
             for key, shape in final_marker_shapes.items()
         }
         fig = px.scatter_3d(**plot_args)
-        fig.update_traces(marker=dict(size=marker_size / 2))
+        fig.update_traces(marker={"size": marker_size / 2})
     else:
         plot_args.update({"x": "x", "y": "y"})
         fig = px.scatter(**plot_args)
-        fig.update_traces(marker=dict(size=marker_size))
+        fig.update_traces(marker={"size": marker_size})
 
     # Hide the original legend entries
     fig.update_traces(
-        marker_line=dict(width=DEFAULT_LINE_WIDTH, color="black"), showlegend=False
+        marker_line={"width": DEFAULT_LINE_WIDTH, "color": "black"}, showlegend=False
     )
     return fig
 
@@ -122,8 +122,8 @@ def _add_legend_traces(
     df: pd.DataFrame,
     is_3d: bool,
     selected_feature: str,
-    feature_colors: Dict[str, str],
-    final_marker_shapes: Dict[str, str],
+    feature_colors: dict[str, str],
+    final_marker_shapes: dict[str, str],
     legend_marker_size: int,
 ):
     """Adds invisible traces to the figure for a custom legend."""
@@ -137,7 +137,7 @@ def _add_legend_traces(
 
         marker_style = {
             "size": legend_marker_size,
-            "line": dict(width=DEFAULT_LINE_WIDTH, color="black"),
+            "line": {"width": DEFAULT_LINE_WIDTH, "color": "black"},
             "symbol": shape,
         }
         if value in feature_colors:
@@ -158,7 +158,7 @@ def _add_legend_traces(
 
 
 def _add_highlight_traces(
-    fig: go.Figure, df: pd.DataFrame, is_3d: bool, selected_proteins: List[str]
+    fig: go.Figure, df: pd.DataFrame, is_3d: bool, selected_proteins: list[str]
 ):
     """Adds highlight traces for selected proteins."""
     if not selected_proteins:
@@ -236,7 +236,7 @@ def create_plot(
     reader: "JsonReader",
     selected_projection: str,
     selected_feature: str,
-    selected_proteins: Optional[List[str]] = None,
+    selected_proteins: list[str] | None = None,
     marker_size: int = 10,
     legend_marker_size: int = 12,
 ):
@@ -286,7 +286,7 @@ def create_plot(
     return fig, is_3d
 
 
-def create_bounding_box(df: pd.DataFrame) -> List[go.Mesh3d]:
+def create_bounding_box(df: pd.DataFrame) -> list[go.Mesh3d]:
     """Create a bounding box for the 3D scatter plot using 3D shapes."""
     bounds = {
         dim: [df[dim].min() * 1.05, df[dim].max() * 1.05] for dim in ["x", "y", "z"]
@@ -335,7 +335,7 @@ def create_bounding_box(df: pd.DataFrame) -> List[go.Mesh3d]:
                 y=y_coords,
                 z=z_coords,
                 mode="lines",
-                line=dict(color="black", width=3),
+                line={"color": "black", "width": 3},
                 hoverinfo="none",
                 showlegend=False,
             )
@@ -343,17 +343,17 @@ def create_bounding_box(df: pd.DataFrame) -> List[go.Mesh3d]:
     return traces
 
 
-def get_3d_scene_layout(df: pd.DataFrame) -> Dict[str, Any]:
+def get_3d_scene_layout(df: pd.DataFrame) -> dict[str, Any]:
     """Define the layout for the 3D scene."""
-    axis_layout = dict(
-        showbackground=False,
-        showticklabels=False,
-        showline=False,
-        zeroline=False,
-        showgrid=False,
-        showspikes=False,
-        title="",
-    )
+    axis_layout = {
+        "showbackground": False,
+        "showticklabels": False,
+        "showline": False,
+        "zeroline": False,
+        "showgrid": False,
+        "showspikes": False,
+        "title": "",
+    }
     return {
         "xaxis": {
             **axis_layout,
@@ -374,11 +374,11 @@ def get_3d_scene_layout(df: pd.DataFrame) -> Dict[str, Any]:
 
 def save_plot(
     fig: go.Figure,
-    is_3d: bool,
-    width: Optional[int] = None,
-    height: Optional[int] = None,
+    _: bool,
+    width: int | None = None,
+    height: int | None = None,
     file_format: str = "svg",
-) -> Union[bytes, str]:
+) -> bytes | str:
     """Generate image bytes or HTML string for the plot."""
     # For HTML format, return string content
     if file_format == "html":

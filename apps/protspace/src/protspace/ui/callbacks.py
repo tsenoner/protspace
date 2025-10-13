@@ -1,9 +1,9 @@
 import base64
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
-import re
 
 import dash
 import pandas as pd
@@ -11,17 +11,17 @@ import plotly.graph_objs as go
 from dash import Input, Output, State, dcc, no_update
 from dash.exceptions import PreventUpdate
 
-from protspace import styles
-from protspace.config import (
+from protspace.core.config import (
     HELP_PANEL_WIDTH_PERCENT,
     MARKER_SHAPES_2D,
     MARKER_SHAPES_3D,
-    SETTINGS_PANEL_WIDTH_PERCENT,
     NAN_COLOR,
+    SETTINGS_PANEL_WIDTH_PERCENT,
 )
-from protspace.helpers import is_projection_3d
-from protspace.molstar_helper import get_molstar_data
+from protspace.core.constants import is_projection_3d
+from protspace.ui import styles
 from protspace.utils import JsonReader
+from protspace.visualization.molstar import get_molstar_data
 from protspace.visualization.plotting import (
     create_plot,
     generate_default_color,
@@ -211,10 +211,10 @@ def setup_callbacks(app):
         if not (json_data and selected_projection and selected_feature):
             fig = go.Figure()
             fig.update_layout(
-                xaxis=dict(visible=False),
-                yaxis=dict(visible=False),
+                xaxis={"visible": False},
+                yaxis={"visible": False},
                 plot_bgcolor="white",
-                margin=dict(l=0, r=0, t=0, b=0),
+                margin={"l": 0, "r": 0, "t": 0, "b": 0},
             )
             return fig
         reader = JsonReader(json_data)
@@ -294,8 +294,7 @@ def setup_callbacks(app):
         unique_values = {v for v in all_values if pd.notna(v)}
         has_nan = any(pd.isna(v) for v in all_values)
         options = [
-            {"label": str(val), "value": str(val)}
-            for val in sorted(list(unique_values))
+            {"label": str(val), "value": str(val)} for val in sorted(unique_values)
         ]
         if has_nan:
             options.append({"label": "<NaN>", "value": "<NaN>"})
@@ -327,7 +326,7 @@ def setup_callbacks(app):
                 rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
                 if rgba:
                     r, g, b = map(int, rgba.groups())
-                    hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                    hex_color = f"#{r:02x}{g:02x}{b:02x}"
                     return {"hex": hex_color}
             return {"hex": color}
 
@@ -342,7 +341,7 @@ def setup_callbacks(app):
                 rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
                 if rgba:
                     r, g, b = map(int, rgba.groups())
-                    hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                    hex_color = f"#{r:02x}{g:02x}{b:02x}"
                     return {"hex": hex_color}
             except ValueError:
                 return {"hex": "#000000"}  # Default to black if something goes wrong
@@ -414,9 +413,10 @@ def setup_callbacks(app):
     def download_json(n_clicks, json_data):
         if n_clicks is None or json_data is None:
             raise PreventUpdate
-        return dict(
-            content=json.dumps(json_data, indent=2), filename="protspace_data.json"
-        )
+        return {
+            "content": json.dumps(json_data, indent=2),
+            "filename": "protspace_data.json",
+        }
 
     @app.callback(
         [
@@ -486,10 +486,10 @@ def setup_callbacks(app):
         result = save_plot(fig_obj, is_3d, width, height, download_format)
 
         if download_format == "html":
-            return dict(
-                content=result,
-                filename=f"{selected_projection}_{selected_feature}.html",
-            )
+            return {
+                "content": result,
+                "filename": f"{selected_projection}_{selected_feature}.html",
+            }
         else:
             return dcc.send_bytes(
                 result,

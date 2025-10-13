@@ -36,8 +36,8 @@ frontend = [
     "requests>=2.32.4",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "dash[testing]>=3",
     "webdriver-manager>=4.0.1",
     "biopython>=1.84",
@@ -77,7 +77,34 @@ filterwarnings = [
     "ignore::DeprecationWarning:parmed.*:",
     "ignore::DeprecationWarning:selenium.*:",
     "ignore::DeprecationWarning:kaleido.*:",
+    "ignore::DeprecationWarning:dash_molstar.*:",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "ARG001", # unused-function-args
+    "F401", # unused-import
+    "F841", # unused-variable
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
 
 [tool.semantic_release]
 assets = [

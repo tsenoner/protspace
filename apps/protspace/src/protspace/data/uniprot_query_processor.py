@@ -1,19 +1,19 @@
-import logging
-import tempfile
-import shutil
-from typing import List, Tuple, Any, Dict
-from pathlib import Path
-from tqdm import tqdm
-import requests
 import gzip
+import logging
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
+import requests
 from pymmseqs.commands import easy_search
+from tqdm import tqdm
 
-from protspace.utils import REDUCERS
 from protspace.data.base_data_processor import BaseDataProcessor
 from protspace.data.feature_manager import ProteinFeatureExtractor
+from protspace.utils import REDUCERS
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class UniProtQueryProcessor(BaseDataProcessor):
     """Processor for UniProt query-based protein data analysis."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         # Remove command-line specific arguments that aren't used for dimension reduction
         clean_config = config.copy()
         for arg in [
@@ -47,75 +47,121 @@ class UniProtQueryProcessor(BaseDataProcessor):
         self,
         query: str,
         output_path: Path,
+        intermediate_dir: Path,
         features: str = None,
         delimiter: str = ",",
         keep_tmp: bool = False,
         non_binary: bool = False,
-    ) -> Tuple[pd.DataFrame, np.ndarray, List[str], Dict[str, Path]]:
+        fasta_path: Path = None,
+        headers: list[str] = None,
+    ) -> tuple[pd.DataFrame, np.ndarray, list[str], dict[str, Path]]:
         """
         Process a UniProt query and return data for visualization.
 
         Args:
             query: UniProt search query (exact query to send to UniProt)
+            output_path: Path for output file
+            intermediate_dir: Directory for intermediate files
             features: Features to fetch
             delimiter: CSV delimiter
-            output_path: Path for output JSON file
             keep_tmp: Whether to keep temporary files (FASTA, complete protein features, and similarity matrix)
             non_binary: Whether to use non-binary formats (CSV instead of parquet)
+            fasta_path: Optional pre-downloaded FASTA file path
+            headers: Optional pre-extracted protein IDs
 
         Returns:
             Tuple of (features_df, embeddings_array, headers_list, saved_files_dict)
         """
-        logger.info(f"Processing UniProt query: '{query}'")
 
         saved_files = {}
         fasta_filename = "sequences.fasta"
 
         # Metadata file format depends on non_binary flag
         if keep_tmp:
-            fasta_save_path = output_path / fasta_filename
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+            fasta_save_path = intermediate_dir / fasta_filename
 
             if non_binary:
                 metadata_filename = "all_features.csv"
             else:
                 metadata_filename = "all_features.parquet"
 
-            metadata_save_path = output_path / metadata_filename
+            metadata_save_path = intermediate_dir / metadata_filename
+            similarity_matrix_path = intermediate_dir / "similarity_matrix.csv"
 
         else:
             fasta_save_path = None
             metadata_save_path = None
+            similarity_matrix_path = None
 
-        # Download FASTA from UniProt
-        headers, fasta_path = self._search_and_download_fasta(
-            query, save_to=fasta_save_path
+        # Check for cached files when keep_tmp is enabled
+        fasta_cached = keep_tmp and fasta_save_path and fasta_save_path.exists()
+        similarity_cached = (
+            keep_tmp and similarity_matrix_path and similarity_matrix_path.exists()
         )
-        if not headers:
-            raise ValueError(f"No sequences found for query: '{query}'")
+        metadata_cached = (
+            keep_tmp and metadata_save_path and metadata_save_path.exists()
+        )
 
-        # Generate similarity matrix
-        data, headers = self._get_similarity_matrix(fasta_path, headers)
-        if fasta_save_path:
-            # Ensure directory exists when saving FASTA
-            fasta_save_path.parent.mkdir(parents=True, exist_ok=True)
+        # Download FASTA from UniProt or use pre-downloaded one
+        if fasta_path and headers:
+            # Use pre-downloaded FASTA and headers
+            if keep_tmp and fasta_save_path:
+                # Copy to permanent location
+                import shutil
+
+                fasta_save_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(fasta_path, fasta_save_path)
+                fasta_path = fasta_save_path
+                saved_files["fasta"] = fasta_save_path
+        elif fasta_cached:
+            logger.info(f"Loading cached FASTA from: {fasta_save_path}")
+            # Extract headers from cached FASTA
+            headers = self._extract_identifiers_from_fasta_file(fasta_save_path)
+            fasta_path = fasta_save_path
             saved_files["fasta"] = fasta_save_path
         else:
-            fasta_path.unlink(missing_ok=True)
+            headers, fasta_path = self._search_and_download_fasta(
+                query, save_to=fasta_save_path
+            )
+            if not headers:
+                raise ValueError(f"No sequences found for query: '{query}'")
+            if fasta_save_path:
+                saved_files["fasta"] = fasta_save_path
 
-        # Save similarity matrix
-        if metadata_save_path:
-            similarity_matrix_path = metadata_save_path.parent / "similarity_matrix.csv"
-            self._save_similarity_matrix(data, headers, similarity_matrix_path)
+        # Generate or load similarity matrix
+        if similarity_cached:
+            logger.info(
+                f"Loading cached similarity matrix from: {similarity_matrix_path}"
+            )
+            sim_df = pd.read_csv(similarity_matrix_path, index_col=0)
+            data = sim_df.values
+            headers = sim_df.index.tolist()
             saved_files["similarity_matrix"] = similarity_matrix_path
+        else:
+            data, headers = self._get_similarity_matrix(fasta_path, headers)
+            if not fasta_save_path:
+                # Clean up temporary FASTA if not keeping it
+                fasta_path.unlink(missing_ok=True)
+            # Save similarity matrix if keep_tmp is enabled
+            if similarity_matrix_path:
+                self._save_similarity_matrix(data, headers, similarity_matrix_path)
+                saved_files["similarity_matrix"] = similarity_matrix_path
 
-        # Generate metadata file
-        features_df = self._generate_metadata(
-            headers, features, delimiter, metadata_save_path, non_binary, keep_tmp
-        )
-        if metadata_save_path:
-            # Ensure directory exists when saving metadata
-            metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
+        # Generate or load metadata file
+        if metadata_cached:
+            logger.info(f"Loading cached metadata from: {metadata_save_path}")
+            if non_binary:
+                features_df = pd.read_csv(metadata_save_path)
+            else:
+                features_df = pd.read_parquet(metadata_save_path)
             saved_files["metadata"] = metadata_save_path
+        else:
+            features_df = self._generate_metadata(
+                headers, features, delimiter, metadata_save_path, non_binary, keep_tmp
+            )
+            if metadata_save_path:
+                saved_files["metadata"] = metadata_save_path
 
         return features_df, data, headers, saved_files
 
@@ -123,8 +169,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
         self,
         query: str,
         save_to: Path = None,
-    ) -> Tuple[List[str], Path]:
-
+    ) -> tuple[list[str], Path]:
         logger.info(f"Searching UniProt for query: '{query}'")
 
         base_url = "https://rest.uniprot.org/uniprotkb/stream"
@@ -189,8 +234,8 @@ class UniProtQueryProcessor(BaseDataProcessor):
             raise
 
     def _get_similarity_matrix(
-        self, fasta_path: Path, headers: List[str]
-    ) -> Tuple[np.ndarray, List[str]]:
+        self, fasta_path: Path, headers: list[str]
+    ) -> tuple[np.ndarray, list[str]]:
         """Generate similarity matrix using pymmseqs from extracted FASTA file."""
         n_seqs = len(headers)
         input_fasta = str(fasta_path.absolute())
@@ -241,7 +286,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
         return similarity_matrix, headers
 
     def _save_similarity_matrix(
-        self, similarity_matrix: np.ndarray, headers: List[str], save_path: Path
+        self, similarity_matrix: np.ndarray, headers: list[str], save_path: Path
     ):
         """Save similarity matrix as CSV with headers as row/column names."""
         # Create directory if it doesn't exist
@@ -252,7 +297,7 @@ class UniProtQueryProcessor(BaseDataProcessor):
         df.to_csv(save_path)
         logger.info(f"Similarity matrix saved to: {save_path}")
 
-    def _extract_identifiers_from_fasta(self, fasta_gz_path: str) -> List[str]:
+    def _extract_identifiers_from_fasta(self, fasta_gz_path: str) -> list[str]:
         """Extract sequence identifiers from compressed FASTA file."""
         identifiers = []
 
@@ -274,9 +319,31 @@ class UniProtQueryProcessor(BaseDataProcessor):
 
         return identifiers
 
+    def _extract_identifiers_from_fasta_file(self, fasta_path: Path) -> list[str]:
+        """Extract sequence identifiers from uncompressed FASTA file."""
+        identifiers = []
+
+        with open(fasta_path) as f:
+            for line in f:
+                if line.startswith(">"):
+                    # Extract UniProt accession from FASTA header
+                    # Format: >sp|P01308|INS_HUMAN or >tr|A0A0A0MRZ7|A0A0A0MRZ7_HUMAN
+                    header = line.strip()
+                    if "|" in header:
+                        parts = header.split("|")
+                        if len(parts) >= 2:
+                            accession = parts[1]
+                            identifiers.append(accession)
+                    else:
+                        # Fallback: use first word after >
+                        accession = header[1:].split()[0]
+                        identifiers.append(accession)
+
+        return identifiers
+
     def _generate_metadata(
         self,
-        headers: List[str],
+        headers: list[str],
         features: str,
         delimiter: str,
         metadata_save_path: Path = None,

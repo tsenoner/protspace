@@ -1,14 +1,14 @@
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union, Tuple
+from typing import Any
 
 import h5py
 import numpy as np
 import pandas as pd
 
-from protspace.utils import REDUCERS
 from protspace.data.base_data_processor import BaseDataProcessor
 from protspace.data.feature_manager import ProteinFeatureExtractor
+from protspace.utils import REDUCERS
 
 # Configure logging
 logging.basicConfig(format="%(levelname)s: %(message)s")
@@ -21,7 +21,7 @@ EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
 class LocalDataProcessor(BaseDataProcessor):
     """Main class for processing and reducing dimensionality of local data files."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         # Remove command-line specific arguments that aren't used for dimension reduction
         clean_config = config.copy()
         for arg in [
@@ -41,17 +41,18 @@ class LocalDataProcessor(BaseDataProcessor):
     def load_data(
         self,
         input_path: Path,
-        features: Union[Path, List],  # If list, generates csv from uniprot features
+        features: Path | list,  # If list, generates csv from uniprot features
         output_path: Path,
+        intermediate_dir: Path,
         delimiter: str,
         non_binary: bool = False,
         keep_tmp: bool = False,
-    ) -> Tuple[pd.DataFrame, np.ndarray, List[str]]:
+    ) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
         data, headers = self._load_input_file(input_path)
         features_df = self._load_or_generate_metadata(
             headers,
             features,
-            output_path,
+            intermediate_dir,
             delimiter,
             non_binary,
             keep_tmp,
@@ -69,7 +70,7 @@ class LocalDataProcessor(BaseDataProcessor):
 
         return full_metadata, data, headers
 
-    def _load_input_file(self, input_path: Path) -> Tuple[np.ndarray, List[str]]:
+    def _load_input_file(self, input_path: Path) -> tuple[np.ndarray, list[str]]:
         if input_path.suffix.lower() in EMBEDDING_EXTENSIONS:
             logger.info("Loading embeddings from HDF file")
             data, headers = [], []
@@ -109,9 +110,9 @@ class LocalDataProcessor(BaseDataProcessor):
 
     @staticmethod
     def _load_or_generate_metadata(
-        headers: List[str],
+        headers: list[str],
         features: str,
-        output_path: Path,
+        intermediate_dir: Path,
         delimiter: str,
         non_binary: bool = False,
         keep_tmp: bool = False,
@@ -130,31 +131,43 @@ class LocalDataProcessor(BaseDataProcessor):
                 else:
                     features_list = None  # No specific features requested, use all
 
-                # Generate metadata directly in output directory
-                output_base = output_path.with_suffix("")
-                output_base.mkdir(parents=True, exist_ok=True)
+                # Generate metadata in intermediate directory (only if keep_tmp is True)
+                if keep_tmp and intermediate_dir:
+                    intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-                if non_binary:
-                    metadata_file_path = output_base / "all_features.csv"
-                else:
-                    metadata_file_path = output_base / "all_features.parquet"
+                if keep_tmp and intermediate_dir:
+                    # Use intermediate directory for caching
+                    if non_binary:
+                        metadata_file_path = intermediate_dir / "all_features.csv"
+                    else:
+                        metadata_file_path = intermediate_dir / "all_features.parquet"
 
-                features_df = ProteinFeatureExtractor(
-                    headers=headers,
-                    features=features_list,
-                    output_path=metadata_file_path,
-                    non_binary=non_binary,
-                ).to_pd()
-
-                if keep_tmp:
-                    logger.info(f"Metadata file saved to: {metadata_file_path}")
-                else:
-                    # Delete the metadata file if keep_tmp is False
+                    # Check if cached metadata exists
                     if metadata_file_path.exists():
-                        metadata_file_path.unlink()
-                        logger.debug(
-                            f"Temporary metadata file deleted: {metadata_file_path}"
+                        logger.info(
+                            f"Loading cached metadata from: {metadata_file_path}"
                         )
+                        if non_binary:
+                            features_df = pd.read_csv(metadata_file_path)
+                        else:
+                            features_df = pd.read_parquet(metadata_file_path)
+                    else:
+                        # Generate new metadata
+                        features_df = ProteinFeatureExtractor(
+                            headers=headers,
+                            features=features_list,
+                            output_path=metadata_file_path,
+                            non_binary=non_binary,
+                        ).to_pd()
+                        logger.info(f"Metadata file saved to: {metadata_file_path}")
+                else:
+                    # No caching - generate metadata directly
+                    features_df = ProteinFeatureExtractor(
+                        headers=headers,
+                        features=features_list,
+                        output_path=None,  # No intermediate file
+                        non_binary=non_binary,
+                    ).to_pd()
 
                 return features_df
 

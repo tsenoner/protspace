@@ -2,7 +2,8 @@ import io
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -30,7 +31,7 @@ class NumpyEncoder(json.JSONEncoder):
 class BaseDataProcessor:
     """Base class containing common data processing methods."""
 
-    def __init__(self, config: Dict[str, Any], reducers: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any], reducers: dict[str, Any]):
         self.config = config
         self.reducers = reducers
         self.identifier_col = "identifier"
@@ -38,7 +39,7 @@ class BaseDataProcessor:
 
     def process_reduction(
         self, data: np.ndarray, method: str, dims: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Process a single reduction method."""
         # Filter config to only include parameters accepted by DimensionReductionConfig
         valid_config_keys = {
@@ -88,9 +89,9 @@ class BaseDataProcessor:
     def create_output(
         self,
         metadata: pd.DataFrame,
-        reductions: List[Dict[str, Any]],
-        headers: List[str],
-    ) -> Dict[str, pa.Table]:
+        reductions: list[dict[str, Any]],
+        headers: list[str],
+    ) -> dict[str, pa.Table]:
         """Create the final output as Apache Arrow tables."""
         return {
             "protein_features": self._create_protein_features_table(metadata),
@@ -101,11 +102,15 @@ class BaseDataProcessor:
         }
 
     def save_output(
-        self, data: Dict[str, pa.Table], output_path: Path, bundled: bool = True
+        self, data: dict[str, pa.Table], output_path: Path, bundled: bool = True
     ):
-        """Save output data to Parquet files using Apache Arrow."""
-        base_path = output_path.with_suffix("")
+        """Save output data to Parquet files using Apache Arrow.
 
+        Args:
+            data: Dictionary of Apache Arrow tables to save
+            output_path: Path for output (file or directory)
+            bundled: Whether to bundle into single .parquetbundle file
+        """
         # Custom filename mapping for better naming
         filename_mapping = {
             "protein_features": "selected_features.parquet",
@@ -114,14 +119,28 @@ class BaseDataProcessor:
         }
 
         if bundled:
-            # Bundle all parquet files into a single .parquetbundle file
-            output_dir = output_path
-            output_dir.mkdir(parents=True, exist_ok=True)
-            bundle_path = output_dir / "data.parquetbundle"
+            # Determine the bundle file path
+            if output_path.suffix == ".parquetbundle":
+                # User provided a file path ending with .parquetbundle
+                bundle_path = output_path
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+            elif output_path.suffix:
+                # User provided a file path with different extension - use it as is but warn
+                bundle_path = output_path.with_suffix(".parquetbundle")
+                logger.warning(
+                    f"Output path has extension '{output_path.suffix}', "
+                    f"using '.parquetbundle' instead: {bundle_path}"
+                )
+                bundle_path.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                # User provided a directory path - create bundle inside with default name
+                output_path.mkdir(parents=True, exist_ok=True)
+                bundle_path = output_path / "data.parquetbundle"
+
             delimiter = b"---PARQUET_DELIMITER---"
 
             with open(bundle_path, "wb") as bundle_file:
-                for i, (table_name, table) in enumerate(data.items()):
+                for i, (_, table) in enumerate(data.items()):
                     if i > 0:
                         bundle_file.write(delimiter)
 
@@ -129,8 +148,12 @@ class BaseDataProcessor:
                     pq.write_table(table, buffer)
                     buffer.seek(0)
                     bundle_file.write(buffer.read())
+
+            logger.info(f"Saved bundled output to: {bundle_path}")
         else:
-            # Save as separate parquet files (original behavior)
+            # Save as separate parquet files
+            # output_path must be a directory
+            base_path = output_path.with_suffix("")  # Remove any extension
             base_path.mkdir(parents=True, exist_ok=True)
 
             for table_name, table in data.items():
@@ -139,6 +162,8 @@ class BaseDataProcessor:
 
                 # Overwrite existing files
                 pq.write_table(table, str(table_path))
+
+            logger.info(f"Saved separate parquet files to: {base_path}")
 
     def _create_protein_features_table(self, metadata: pd.DataFrame) -> pa.Table:
         """Create Apache Arrow table for protein features in wide format."""
@@ -152,7 +177,7 @@ class BaseDataProcessor:
         return pa.Table.from_pandas(df)
 
     def _create_projections_metadata_table(
-        self, reductions: List[Dict[str, Any]]
+        self, reductions: list[dict[str, Any]]
     ) -> pa.Table:
         """Create Apache Arrow table for projection metadata."""
         rows = []
@@ -169,7 +194,7 @@ class BaseDataProcessor:
         return pa.Table.from_pandas(df)
 
     def _create_projections_data_table(
-        self, reductions: List[Dict[str, Any]], headers: List[str]
+        self, reductions: list[dict[str, Any]], headers: list[str]
     ) -> pa.Table:
         """Create Apache Arrow table for projection coordinates."""
         rows = []
@@ -194,9 +219,9 @@ class BaseDataProcessor:
     def create_output_legacy(
         self,
         metadata: pd.DataFrame,
-        reductions: List[Dict[str, Any]],
-        headers: List[str],
-    ) -> Dict[str, Any]:
+        reductions: list[dict[str, Any]],
+        headers: list[str],
+    ) -> dict[str, Any]:
         """Create the final output dictionary (legacy JSON format)."""
         output = {"protein_data": {}, "projections": []}
 
@@ -236,14 +261,11 @@ class BaseDataProcessor:
 
         return output
 
-    def save_output_legacy(self, data: Dict[str, Any], output_path: Path):
+    def save_output_legacy(self, data: dict[str, Any], output_path: Path):
         """Save output data to JSON file (legacy format)."""
-        # Treat output_path as directory, similar to save_output method
-        base_path = output_path.with_suffix("")
-        base_path.mkdir(parents=True, exist_ok=True)
-
-        # Use predefined filename for JSON output
-        json_file_path = base_path / "selected_features_projections.json"
+        # output_path is the final .json file path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        json_file_path = output_path
 
         if json_file_path.exists():
             with json_file_path.open("r") as f:

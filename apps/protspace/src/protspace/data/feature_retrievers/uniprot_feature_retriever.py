@@ -1,8 +1,9 @@
 import logging
-from typing import List, NamedTuple
-from tqdm import tqdm
-from bioservices import UniProt
 from collections import namedtuple
+from typing import NamedTuple
+
+from bioservices import UniProt
+from tqdm import tqdm
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -16,11 +17,7 @@ UNIPROT_FEATURES = [
     "length",
     "reviewed",
     "fragment",
-    "ft_signal",
     "cc_subcellular_location",
-    "ft_intramem",
-    "ft_topo_dom",
-    "ft_transmem",
     "sequence",
 ]
 
@@ -28,12 +25,12 @@ ProteinFeatures = namedtuple("ProteinFeatures", ["identifier", "features"])
 
 
 class UniProtFeatureRetriever:
-    def __init__(self, headers: List[str] = None, features: List = None):
+    def __init__(self, headers: list[str] = None, features: list = None):
         self.headers = self._manage_headers(headers) if headers else []
         self.features = features
         self.u = UniProt(verbose=False)
 
-    def fetch_features(self) -> List[NamedTuple]:
+    def fetch_features(self) -> list[NamedTuple]:
         batch_size = 100
         all_data = []
         first_batch = True
@@ -75,7 +72,7 @@ class UniProtFeatureRetriever:
 
         return result
 
-    def _manage_headers(self, headers: List[str]) -> List[str]:
+    def _manage_headers(self, headers: list[str]) -> list[str]:
         managed_headers = []
         prefixes = ["sp|", "tr|"]
         for header in headers:

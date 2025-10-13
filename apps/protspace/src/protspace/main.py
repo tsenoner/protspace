@@ -1,16 +1,15 @@
 import argparse
-import warnings
 import tempfile
-from typing import Optional
+import warnings
 from pathlib import Path
 
 from protspace import ProtSpace
-from protspace.config import DEFAULT_PORT
+from protspace.core.config import DEFAULT_PORT
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 
-def detect_data_type(data_path: str) -> tuple[Optional[str], Optional[str]]:
+def detect_data_type(data_path: str) -> tuple[str | None, str | None]:
     """
     Detect if the input is a JSON file, Arrow directory, or bundled parquet file.
 
@@ -30,13 +29,13 @@ def detect_data_type(data_path: str) -> tuple[Optional[str], Optional[str]]:
         parquet_files = list(path.glob("*.parquet"))
         if parquet_files:
             return None, str(path)
-        
+
         # Check if directory contains the bundle file
         bundle_file = path / "data.parquetbundle"
         if bundle_file.exists():
             temp_dir = _extract_parquet_bundle(bundle_file)
             return None, temp_dir
-        
+
         raise ValueError(
             f"Directory '{data_path}' does not contain any .parquet files or data.parquetbundle"
         )
@@ -45,44 +44,45 @@ def detect_data_type(data_path: str) -> tuple[Optional[str], Optional[str]]:
             f"Input '{data_path}' must be either a .json file, a .parquetbundle file, or a directory containing .parquet or .parquetbundle files"
         )
 
+
 def _extract_parquet_bundle(bundle_path: Path) -> str:
     """
     Extract a bundled parquet file into separate parquet files in a temporary directory.
-    
+
     Args:
         bundle_path: Path to the .parquetbundle file
-        
+
     Returns:
         str: Path to temporary directory containing extracted parquet files
     """
-    delimiter = b'---PARQUET_DELIMITER---'
-    
+    delimiter = b"---PARQUET_DELIMITER---"
+
     temp_dir = Path(tempfile.mkdtemp(prefix="protspace_bundle_"))
-    
-    with open(bundle_path, 'rb') as bundle_file:
+
+    with open(bundle_path, "rb") as bundle_file:
         content = bundle_file.read()
-    
+
     parts = content.split(delimiter)
-    
+
     expected_files = [
-        'selected_features.parquet',
-        'projections_metadata.parquet', 
-        'projections_data.parquet'
+        "selected_features.parquet",
+        "projections_metadata.parquet",
+        "projections_data.parquet",
     ]
-    
+
     if len(parts) != len(expected_files):
         raise ValueError(
             f"Expected {len(expected_files)} parquet files in bundle, but found {len(parts)} parts"
         )
-    
-    for part, filename in zip(parts, expected_files):
+
+    for part, filename in zip(parts, expected_files, strict=False):
         if not part:
             continue
-            
+
         output_path = temp_dir / filename
-        with open(output_path, 'wb') as output_file:
+        with open(output_path, "wb") as output_file:
             output_file.write(part)
-    
+
     return str(temp_dir)
 
 
@@ -109,7 +109,7 @@ def parse_arguments() -> argparse.Namespace:
 def main(
     data: str,
     port: int = DEFAULT_PORT,
-    pdb_zip: Optional[str] = None,
+    pdb_zip: str | None = None,
 ) -> None:
     json_file, arrow_dir = detect_data_type(data)
     protspace = ProtSpace(

@@ -1,39 +1,35 @@
 import argparse
 import logging
+import shutil
 from pathlib import Path
 
-from protspace.utils import REDUCERS
+from protspace.cli.common_args import (
+    CustomHelpFormatter,
+    add_all_reducer_parameters,
+    add_features_argument,
+    add_methods_argument,
+    add_output_argument,
+    add_output_format_arguments,
+    add_verbosity_argument,
+    determine_output_paths,
+    setup_logging,
+)
 from protspace.data.uniprot_query_processor import UniProtQueryProcessor
 
-
-logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def parse_custom_names(custom_names_arg: str) -> dict:
-    """Parse custom names argument into dictionary."""
-    custom_names = {}
-    if custom_names_arg:
-        custom_names_list = custom_names_arg.split(",")
-        for name_spec in custom_names_list:
-            try:
-                method, name = name_spec.split("=")
-                custom_names[method] = name
-            except ValueError:
-                logger.warning(f"Invalid custom name specification: {name_spec}")
-    return custom_names
-
-
-def setup_logging(verbosity: int):
-    """Set up logging based on verbosity level."""
-    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
-
-
 def create_argument_parser() -> argparse.ArgumentParser:
-    """Create and configure the argument parser."""
+    """Create and configure the argument parser for UniProt queries."""
     parser = argparse.ArgumentParser(
-        description="Search and process proteins directly from UniProt",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description=(
+            "Query and process proteins directly from UniProt.\n"
+            "\n"
+            "This tool searches UniProt, downloads protein sequences, computes embeddings\n"
+            "using ESM2, performs dimensionality reduction, and optionally extracts\n"
+            "protein features from UniProt, InterPro, and taxonomy databases."
+        ),
+        formatter_class=CustomHelpFormatter,
     )
 
     # Required arguments
@@ -42,139 +38,36 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--query",
         type=str,
         required=True,
-        help="UniProt search query (e.g., 'human insulin', 'kinase', etc.)",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        required=True,
-        help="Path to output directory (when using --non-binary) or Parquet file (default)",
-    )
-
-    # Optional arguments
-    parser.add_argument(
-        "-f",
-        "--features",
-        type=str,
-        required=False,
-        default=None,
         help=(
-            "Protein features to extract (format: feature1,feature2,...). "
-            "Available: UniProt (annotation_score, fragment, length_fixed, length_quantile, "
-            "protein_existence, protein_families, reviewed); "
-            "InterPro (cath, superfamily, signal_peptide); "
-            "Taxonomy (kingdom, phylum, class, order, family, genus, species)"
+            "UniProt search query string.\n"
+            "\n"
+            "Examples:\n"
+            "  --query 'organism_name:\"Homo sapiens\" AND reviewed:true'\n"
+            "  --query 'protein_name:kinase AND length:[100 TO 500]'\n"
+            "  --query 'gene:BRCA1'\n"
+            "  --query 'ec:3.4.21.*'\n"
+            "\n"
+            "For query syntax, see: https://www.uniprot.org/help/query-fields"
         ),
     )
-    parser.add_argument(
-        "--non-binary",
-        action="store_true",
-        help="Save output in non binary formats (JSON, CSV, etc.)",
-    )
-    parser.add_argument(
-        "--bundled",
-        type=str,
-        default="true",
-        choices=["true", "false"],
-        help="Bundle parquet files into a single .parquetbundle file (default: true)",
-    )
-    parser.add_argument(
-        "--keep-tmp",
-        action="store_true",
-        help="Keep temporary files (FASTA, complete protein features, and similarity matrix)",
-    )
-    parser.add_argument(
-        "-m",
-        "--methods",
-        type=str,
-        default="pca2,pca3,tsne2,tsne3,umap2,umap3",
-        help=f"Reduction methods to use (e.g., {','.join([m + '2,' + m + '3' for m in REDUCERS])}). Format: method_name + dimensions",
-    )
 
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase output verbosity (-v for INFO, -vv for DEBUG)",
-    )
+    # Add shared output argument (optional, defaults to protspace.parquetbundle)
+    add_output_argument(parser, required=False, default_name="protspace.parquetbundle")
 
-    general_group = parser.add_argument_group("General Parameters")
-    general_group.add_argument(
-        "--metric",
-        default="euclidean",
-        help="Distance metric to use (applies to UMAP, t-SNE, MDS)",
-    )
-    general_group.add_argument(
-        "--random_state",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42)",
-    )
+    # Add shared features argument (does NOT allow CSV files for query mode)
+    add_features_argument(parser, allow_csv=False)
 
-    # UMAP parameters
-    umap_group = parser.add_argument_group("UMAP Parameters")
-    umap_group.add_argument(
-        "--n_neighbors",
-        type=int,
-        default=15,
-        help="Number of neighbors to consider (UMAP, PaCMAP, LocalMAP)",
-    )
-    umap_group.add_argument(
-        "--min_dist",
-        type=float,
-        default=0.1,
-        help="Minimum distance between points in UMAP",
-    )
+    # Add shared output format arguments
+    add_output_format_arguments(parser)
 
-    # t-SNE parameters
-    tsne_group = parser.add_argument_group("t-SNE Parameters")
-    tsne_group.add_argument(
-        "--perplexity",
-        type=int,
-        default=30,
-        help="Perplexity parameter for t-SNE",
-    )
-    tsne_group.add_argument(
-        "--learning_rate", type=int, default=200, help="Learning rate for t-SNE"
-    )
+    # Add shared methods argument with uniprot_query defaults
+    add_methods_argument(parser, default="pca2")
 
-    # PaCMAP parameters
-    pacmap_group = parser.add_argument_group("PaCMAP Parameters")
-    pacmap_group.add_argument(
-        "--mn_ratio",
-        type=float,
-        default=0.5,
-        help="MN ratio (Mid-near pairs ratio) for PaCMAP and LocalMAP",
-    )
-    pacmap_group.add_argument(
-        "--fp_ratio",
-        type=float,
-        default=2.0,
-        help="FP ratio (Further pairs ratio) for PaCMAP and LocalMAP",
-    )
+    # Add shared verbosity argument
+    add_verbosity_argument(parser)
 
-    # MDS parameters
-    mds_group = parser.add_argument_group("MDS Parameters")
-    mds_group.add_argument(
-        "--n_init",
-        type=int,
-        default=4,
-        help="Number of initialization runs for MDS",
-    )
-    mds_group.add_argument(
-        "--max_iter",
-        type=int,
-        default=300,
-        help="Maximum number of iterations for MDS",
-    )
-    mds_group.add_argument(
-        "--eps",
-        type=float,
-        default=1e-3,
-        help="Relative tolerance for MDS convergence",
-    )
+    # Add all shared reducer parameter groups
+    add_all_reducer_parameters(parser)
 
     return parser
 
@@ -184,8 +77,16 @@ def main():
     parser = create_argument_parser()
     args = parser.parse_args()
 
-    # Set up logging
+    # Set up logging first
     setup_logging(args.verbose)
+
+    # Validate bundled flag with output
+    if args.bundled == "false" and not args.non_binary:
+        if args.output and args.output.suffix:
+            raise ValueError(
+                "When --bundled is set to false, --output must be a directory path, not a file path. "
+                f"Remove the extension from '{args.output}' or use --bundled true."
+            )
 
     # Validate metadata argument - CSV files are not supported
     if args.features:
@@ -199,23 +100,58 @@ def main():
                 "Please provide a comma-separated list of feature names instead."
             )
 
-    # Use default empty custom names
-    custom_names = {}
+    # Warn if both --non-binary and --bundled false are used together
+    if args.non_binary and args.bundled == "false":
+        logger.warning(
+            "The --bundled false flag only applies to binary (parquet) output. "
+            "Since --non-binary is set, --bundled will be ignored and output will be saved as JSON."
+        )
+
+    # Custom names not supported in query mode
     args_dict = vars(args)
-    args_dict["custom_names"] = custom_names
+    args_dict["custom_names"] = {}
+
+    # Initialize variables for cleanup
+    intermediate_dir = None
 
     try:
         # Initialize processor
         processor = UniProtQueryProcessor(args_dict)
 
-        # Process the query
+        # Download FASTA first to get headers
+        logger.info(f"Processing UniProt query: '{args.query}'")
+        headers, fasta_path = processor._search_and_download_fasta(
+            query=args.query,
+            save_to=None,  # Temporary file for now
+        )
+        if not headers:
+            raise ValueError(f"No sequences found for query: '{args.query}'")
+
+        # Now determine output paths with headers for hash computation
+        output_path, intermediate_dir = determine_output_paths(
+            output_arg=args.output,
+            input_path=None,  # No input file for query mode
+            non_binary=args.non_binary,
+            bundled=args.bundled == "true",
+            keep_tmp=args.keep_tmp,
+            identifiers=headers if args.keep_tmp else None,
+        )
+
+        logger.info(f"Output will be saved to: {output_path}")
+        if intermediate_dir:
+            logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
+
+        # Process the query with the determined paths
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
             features=args.features,
             delimiter=",",
-            output_path=args.output,
+            output_path=output_path,
+            intermediate_dir=intermediate_dir,
             keep_tmp=args.keep_tmp,
             non_binary=args.non_binary,
+            fasta_path=fasta_path,  # Pass the already downloaded FASTA
+            headers=headers,  # Pass the already extracted headers
         )
 
         # Process reduction methods
@@ -235,26 +171,35 @@ def main():
             logger.info(f"Applying {method.upper()}{dims} reduction")
             reductions.append(processor.process_reduction(data, method, dims))
 
-        # Create and save output
+        # Create and save output (bundled is ignored when non_binary is set)
         if args.non_binary:
             output = processor.create_output_legacy(metadata, reductions, headers)
-            processor.save_output_legacy(output, args.output)
+            processor.save_output_legacy(output, output_path)
         else:
             output = processor.create_output(metadata, reductions, headers)
-            processor.save_output(output, args.output, bundled=args.bundled == "true")
+            processor.save_output(output, output_path, bundled=args.bundled == "true")
 
         # Log results
         logger.info(
             f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
         )
-        logger.info(f"Results saved to: {args.output}")
+        logger.info(f"Output saved to: {output_path}")
 
         if saved_files:
             logger.info("Additional files saved:")
             for file_type, file_path in saved_files.items():
                 logger.info(f"  {file_type.upper()}: {file_path}")
 
+        # Clean up temporary directory if --keep-tmp is not active
+        if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
+            shutil.rmtree(intermediate_dir)
+            logger.info(f"Cleaned up temporary directory: {intermediate_dir}")
+
     except Exception as e:
+        # Clean up temporary directory if --keep-tmp is not active (even on error)
+        if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
+            shutil.rmtree(intermediate_dir)
+            logger.info(f"Cleaned up temporary directory: {intermediate_dir}")
         logger.error(f"Error: {str(e)}")
         raise
 
