@@ -211,10 +211,10 @@ def setup_callbacks(app):
         if not (json_data and selected_projection and selected_feature):
             fig = go.Figure()
             fig.update_layout(
-                xaxis=dict(visible=False),
-                yaxis=dict(visible=False),
+                xaxis={"visible": False},
+                yaxis={"visible": False},
                 plot_bgcolor="white",
-                margin=dict(l=0, r=0, t=0, b=0),
+                margin={"l": 0, "r": 0, "t": 0, "b": 0},
             )
             return fig
         reader = JsonReader(json_data)
@@ -294,8 +294,7 @@ def setup_callbacks(app):
         unique_values = {v for v in all_values if pd.notna(v)}
         has_nan = any(pd.isna(v) for v in all_values)
         options = [
-            {"label": str(val), "value": str(val)}
-            for val in sorted(list(unique_values))
+            {"label": str(val), "value": str(val)} for val in sorted(unique_values)
         ]
         if has_nan:
             options.append({"label": "<NaN>", "value": "<NaN>"})
@@ -414,9 +413,10 @@ def setup_callbacks(app):
     def download_json(n_clicks, json_data):
         if n_clicks is None or json_data is None:
             raise PreventUpdate
-        return dict(
-            content=json.dumps(json_data, indent=2), filename="protspace_data.json"
-        )
+        return {
+            "content": json.dumps(json_data, indent=2),
+            "filename": "protspace_data.json",
+        }
 
     @app.callback(
         [
@@ -486,10 +486,10 @@ def setup_callbacks(app):
         result = save_plot(fig_obj, is_3d, width, height, download_format)
 
         if download_format == "html":
-            return dict(
-                content=result,
-                filename=f"{selected_projection}_{selected_feature}.html",
-            )
+            return {
+                "content": result,
+                "filename": f"{selected_projection}_{selected_feature}.html",
+            }
         else:
             return dcc.send_bytes(
                 result,
