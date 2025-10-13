@@ -28,10 +28,10 @@ def load_feature_styles(
         try:
             with open(feature_styles_input) as f:
                 return json.load(f)
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             raise ValueError(
                 f"Invalid input: '{feature_styles_input}' is neither a valid JSON string nor a path to an existing JSON file."
-            )
+            ) from e
 
 
 def detect_data_format(input_path: str) -> str:
@@ -82,7 +82,7 @@ def add_feature_styles_json(
             )
 
         # Check if all values exist for the feature
-        all_values = set(str(val) for val in reader.get_all_feature_values(feature))
+        all_values = {str(val) for val in reader.get_all_feature_values(feature)}
 
         # Add colors
         if "colors" in styles:
@@ -123,7 +123,7 @@ def add_feature_styles_parquet(
             )
 
         # Check if all values exist for the feature
-        all_values = set(str(val) for val in reader.get_all_feature_values(feature))
+        all_values = {str(val) for val in reader.get_all_feature_values(feature)}
 
         # Add colors
         if "colors" in styles:

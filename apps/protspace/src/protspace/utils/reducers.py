@@ -50,7 +50,7 @@ class DimensionReductionConfig:
     n_components: int = field(default=2, metadata={"allowed": [2, 3]})
     n_neighbors: int = field(default=15, metadata={"gt": 0})
     metric: METRIC_TYPES = field(
-        default="euclidean", metadata={"allowed": [m for m in get_args(METRIC_TYPES)]}
+        default="euclidean", metadata={"allowed": list(get_args(METRIC_TYPES))}
     )
     precomputed: bool = field(default=False)
     min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
