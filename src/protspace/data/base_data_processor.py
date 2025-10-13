@@ -140,7 +140,7 @@ class BaseDataProcessor:
             delimiter = b"---PARQUET_DELIMITER---"
 
             with open(bundle_path, "wb") as bundle_file:
-                for i, (table_name, table) in enumerate(data.items()):
+                for i, (_, table) in enumerate(data.items()):
                     if i > 0:
                         bundle_file.write(delimiter)
 
