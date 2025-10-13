@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -122,7 +123,7 @@ class ArrowReader:
         viz_state_path = self.data_path / "visualization_state.json"
         if viz_state_path.exists():
             try:
-                with open(viz_state_path, "r") as f:
+                with open(viz_state_path) as f:
                     viz_state = json.load(f)
                     self.data["visualization_state"] = viz_state
             except (json.JSONDecodeError, FileNotFoundError):
@@ -158,29 +159,29 @@ class ArrowReader:
         with open(viz_state_path, "w") as f:
             json.dump(self.data.get("visualization_state", {}), f, indent=2)
 
-    def get_projection_names(self) -> List[str]:
+    def get_projection_names(self) -> list[str]:
         """Get list of projection names."""
         return [proj["name"] for proj in self.data.get("projections", [])]
 
-    def get_all_features(self) -> List[str]:
+    def get_all_features(self) -> list[str]:
         """Get list of all feature names."""
         features = set()
         for protein_data in self.data.get("protein_data", {}).values():
             features.update(protein_data.get("features", {}).keys())
         return list(features)
 
-    def get_protein_ids(self) -> List[str]:
+    def get_protein_ids(self) -> list[str]:
         """Get list of all protein IDs."""
         return list(self.data.get("protein_data", {}).keys())
 
-    def get_projection_data(self, projection_name: str) -> List[Dict[str, Any]]:
+    def get_projection_data(self, projection_name: str) -> list[dict[str, Any]]:
         """Get projection data in the same format as JsonReader."""
         for proj in self.data.get("projections", []):
             if proj["name"] == projection_name:
                 return proj.get("data", [])
         raise ValueError(f"Projection {projection_name} not found")
 
-    def get_projection_info(self, projection_name: str) -> Dict[str, Any]:
+    def get_projection_info(self, projection_name: str) -> dict[str, Any]:
         """Get projection info in the same format as JsonReader."""
         for proj in self.data.get("projections", []):
             if proj["name"] == projection_name:
@@ -190,11 +191,11 @@ class ArrowReader:
                 return result
         raise ValueError(f"Projection {projection_name} not found")
 
-    def get_protein_features(self, protein_id: str) -> Dict[str, Any]:
+    def get_protein_features(self, protein_id: str) -> dict[str, Any]:
         """Get protein features in the same format as JsonReader."""
         return self.data.get("protein_data", {}).get(protein_id, {}).get("features", {})
 
-    def get_feature_colors(self, feature: str) -> Dict[str, str]:
+    def get_feature_colors(self, feature: str) -> dict[str, str]:
         """Get feature colors from visualization state."""
         return (
             self.data.get("visualization_state", {})
@@ -202,7 +203,7 @@ class ArrowReader:
             .get(feature, {})
         )
 
-    def get_marker_shape(self, feature: str) -> Dict[str, str]:
+    def get_marker_shape(self, feature: str) -> dict[str, str]:
         """Get marker shapes from visualization state."""
         return (
             self.data.get("visualization_state", {})
@@ -210,7 +211,7 @@ class ArrowReader:
             .get(feature, {})
         )
 
-    def get_unique_feature_values(self, feature: str) -> List[Any]:
+    def get_unique_feature_values(self, feature: str) -> list[Any]:
         """Get a list of unique values for a given feature."""
         unique_values = set()
         for protein_data in self.data.get("protein_data", {}).values():
@@ -219,7 +220,7 @@ class ArrowReader:
                 unique_values.add(value)
         return list(unique_values)
 
-    def get_all_feature_values(self, feature: str) -> List[Any]:
+    def get_all_feature_values(self, feature: str) -> list[Any]:
         """Get a list of all values for a given feature."""
         all_values = []
         protein_ids = self.get_protein_ids()
@@ -249,6 +250,6 @@ class ArrowReader:
 
         self.data["visualization_state"]["marker_shapes"][feature][value] = shape
 
-    def get_data(self) -> Dict[str, Any]:
+    def get_data(self) -> dict[str, Any]:
         """Return the current data."""
         return self.data

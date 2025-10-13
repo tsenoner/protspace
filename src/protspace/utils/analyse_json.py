@@ -1,5 +1,6 @@
-import json
 import argparse
+import json
+
 from protspace.utils.json_reader import JsonReader
 
 
@@ -90,7 +91,7 @@ def main():
 
     try:
         # Read JSON file
-        with open(args.json_file, "r") as f:
+        with open(args.json_file) as f:
             data = json.load(f)
 
     except FileNotFoundError:

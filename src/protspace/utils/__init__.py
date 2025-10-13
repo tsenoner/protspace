@@ -1,20 +1,20 @@
-from .json_reader import JsonReader
 from .arrow_reader import ArrowReader
+from .json_reader import JsonReader
 from .reducers import (
+    LOCALMAP_NAME,
+    MDS_NAME,
+    PACMAP_NAME,
+    PCA_NAME,
     REDUCER_METHODS,
+    TSNE_NAME,
+    UMAP_NAME,
     DimensionReductionConfig,
+    LocalMAPReducer,
+    MDSReducer,
+    PaCMAPReducer,
     PCAReducer,
     TSNEReducer,
     UMAPReducer,
-    PaCMAPReducer,
-    MDSReducer,
-    LocalMAPReducer,
-    PCA_NAME,
-    TSNE_NAME,
-    UMAP_NAME,
-    PACMAP_NAME,
-    MDS_NAME,
-    LOCALMAP_NAME,
 )
 
 # Create a mapping of method names to reducer classes
