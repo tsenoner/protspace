@@ -1,15 +1,14 @@
 import inspect
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Any, Dict, List, get_args, get_type_hints, Literal
+from typing import Any, Literal, get_args, get_type_hints
 
-import logging
 import numpy as np
+from pacmap import LocalMAP, PaCMAP
 from sklearn.decomposition import PCA
 from sklearn.manifold import MDS, TSNE
 from umap import UMAP
-from pacmap import PaCMAP, LocalMAP
-
 
 # Method names constants
 PCA_NAME = "pca"
@@ -51,7 +50,7 @@ class DimensionReductionConfig:
     n_components: int = field(default=2, metadata={"allowed": [2, 3]})
     n_neighbors: int = field(default=15, metadata={"gt": 0})
     metric: METRIC_TYPES = field(
-        default="euclidean", metadata={"allowed": [m for m in get_args(METRIC_TYPES)]}
+        default="euclidean", metadata={"allowed": list(get_args(METRIC_TYPES))}
     )
     precomputed: bool = field(default=False)
     min_dist: float = field(default=0.1, metadata={"gte": 0, "lte": 1})
@@ -100,7 +99,7 @@ class DimensionReductionConfig:
                         f"{data_field.name} must be less than or equal to {metadata['lte']}"
                     )
 
-    def parameters_by_method(self, method: str) -> List[Dict[str, Any]]:
+    def parameters_by_method(self, method: str) -> list[dict[str, Any]]:
         method_map = {
             TSNE_NAME: TSNE,
             PCA_NAME: PCA,
@@ -212,7 +211,7 @@ class DimensionReducer(ABC):
         pass
 
     @abstractmethod
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         """Get parameters used for the reduction."""
         pass
 
@@ -243,7 +242,7 @@ class PCAReducer(DimensionReducer):
             logger.error(f"PCA failed using '{solver}' solver: {e}")
             raise
 
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         """Get parameters used for the reduction."""
         params = {
             "n_components": self.config.n_components,
@@ -266,7 +265,7 @@ class TSNEReducer(DimensionReducer):
             metric=self.config.metric,
         ).fit_transform(data)
 
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         return {
             "n_components": self.config.n_components,
             "perplexity": self.config.perplexity,
@@ -287,7 +286,7 @@ class UMAPReducer(DimensionReducer):
             random_state=self.config.random_state,
         ).fit_transform(data)
 
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         return {
             "n_components": self.config.n_components,
             "n_neighbors": self.config.n_neighbors,
@@ -308,7 +307,7 @@ class PaCMAPReducer(DimensionReducer):
             FP_ratio=self.config.fp_ratio,
         ).fit_transform(data)
 
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         return {
             "n_components": self.config.n_components,
             "n_neighbors": self.config.n_neighbors,
@@ -328,7 +327,7 @@ class LocalMAPReducer(DimensionReducer):
             FP_ratio=self.config.fp_ratio,
         ).fit_transform(data, init="pca")
 
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         return {
             "n_components": self.config.n_components,
             "n_neighbors": self.config.n_neighbors,
@@ -350,7 +349,7 @@ class MDSReducer(DimensionReducer):
             dissimilarity=("precomputed" if self.config.precomputed else "euclidean"),
         ).fit_transform(data)
 
-    def get_params(self) -> Dict[str, Any]:
+    def get_params(self) -> dict[str, Any]:
         return {
             "n_components": self.config.n_components,
             "n_init": self.config.n_init,

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -12,7 +13,7 @@ class ArrowReader:
     def __init__(self, arrow_data_path: Path):
         """
         Initialize with path to directory containing Arrow/Parquet files.
-        
+
         Args:
             arrow_data_path: Path to directory containing the .parquet files
         """
@@ -21,7 +22,11 @@ class ArrowReader:
         self._projections_metadata_df = None
         self._projections_data_df = None
         # Initialize data structure to match JsonReader format
-        self.data = {"protein_data": {}, "projections": [], "visualization_state": {"feature_colors": {}, "marker_shapes": {}}}
+        self.data = {
+            "protein_data": {},
+            "projections": [],
+            "visualization_state": {"feature_colors": {}, "marker_shapes": {}},
+        }
         self._load_data()
         self._build_data_structure()
 
@@ -31,74 +36,87 @@ class ArrowReader:
             protein_features_path = self.data_path / "selected_features.parquet"
             projections_metadata_path = self.data_path / "projections_metadata.parquet"
             projections_data_path = self.data_path / "projections_data.parquet"
-            
+
             if protein_features_path.exists():
-                self._protein_features_df = pq.read_table(str(protein_features_path)).to_pandas()
+                self._protein_features_df = pq.read_table(
+                    str(protein_features_path)
+                ).to_pandas()
             else:
-                self._protein_features_df = pd.DataFrame(columns=['protein_id'])
-            
+                self._protein_features_df = pd.DataFrame(columns=["protein_id"])
+
             if projections_metadata_path.exists():
-                self._projections_metadata_df = pq.read_table(str(projections_metadata_path)).to_pandas()
+                self._projections_metadata_df = pq.read_table(
+                    str(projections_metadata_path)
+                ).to_pandas()
             else:
-                self._projections_metadata_df = pd.DataFrame(columns=['projection_name', 'dimensions', 'info_json'])
-            
+                self._projections_metadata_df = pd.DataFrame(
+                    columns=["projection_name", "dimensions", "info_json"]
+                )
+
             if projections_data_path.exists():
-                self._projections_data_df = pq.read_table(str(projections_data_path)).to_pandas()
+                self._projections_data_df = pq.read_table(
+                    str(projections_data_path)
+                ).to_pandas()
             else:
-                self._projections_data_df = pd.DataFrame(columns=['projection_name', 'identifier', 'x', 'y', 'z'])
-                
+                self._projections_data_df = pd.DataFrame(
+                    columns=["projection_name", "identifier", "x", "y", "z"]
+                )
+
         except Exception as e:
-            raise ValueError(f"Error loading Arrow data from {self.data_path}: {e}")
+            raise ValueError(
+                f"Error loading Arrow data from {self.data_path}: {e}"
+            ) from e
 
     def _build_data_structure(self):
         """Build the data structure to match JsonReader format."""
         # Build protein_data
         for _, row in self._protein_features_df.iterrows():
-            protein_id = row['protein_id']
+            protein_id = row["protein_id"]
             features = {}
             for col in self._protein_features_df.columns:
-                if col != 'protein_id':
+                if col != "protein_id":
                     features[col] = row[col]
             self.data["protein_data"][protein_id] = {"features": features}
-        
+
         # Build projections
         self.data["projections"] = []
-        for projection_name in self._projections_metadata_df['projection_name'].unique():
+        for projection_name in self._projections_metadata_df[
+            "projection_name"
+        ].unique():
             proj_meta = self._projections_metadata_df[
-                self._projections_metadata_df['projection_name'] == projection_name
+                self._projections_metadata_df["projection_name"] == projection_name
             ].iloc[0]
-            
+
             proj_data = self._projections_data_df[
-                self._projections_data_df['projection_name'] == projection_name
+                self._projections_data_df["projection_name"] == projection_name
             ]
-            
+
             projection = {
                 "name": projection_name,
-                "dimensions": proj_meta['dimensions'],
+                "dimensions": proj_meta["dimensions"],
                 "info": {},
-                "data": []
+                "data": [],
             }
-            
+
             # Add info if available
-            if pd.notna(proj_meta['info_json']):
+            if pd.notna(proj_meta["info_json"]):
                 try:
-                    projection["info"] = json.loads(proj_meta['info_json'])
+                    projection["info"] = json.loads(proj_meta["info_json"])
                 except json.JSONDecodeError:
                     pass
-            
+
             # Add projection data
             for _, row in proj_data.iterrows():
-                coordinates = {"x": row['x'], "y": row['y']}
-                if pd.notna(row['z']):
-                    coordinates["z"] = row['z']
-                
-                projection["data"].append({
-                    "identifier": row['identifier'],
-                    "coordinates": coordinates
-                })
-            
+                coordinates = {"x": row["x"], "y": row["y"]}
+                if pd.notna(row["z"]):
+                    coordinates["z"] = row["z"]
+
+                projection["data"].append(
+                    {"identifier": row["identifier"], "coordinates": coordinates}
+                )
+
             self.data["projections"].append(projection)
-        
+
         # Load visualization state from separate JSON file if it exists
         self._load_visualization_state()
 
@@ -107,7 +125,7 @@ class ArrowReader:
         viz_state_path = self.data_path / "visualization_state.json"
         if viz_state_path.exists():
             try:
-                with open(viz_state_path, 'r') as f:
+                with open(viz_state_path) as f:
                     viz_state = json.load(f)
                     self.data["visualization_state"] = viz_state
             except (json.JSONDecodeError, FileNotFoundError):
@@ -120,52 +138,52 @@ class ArrowReader:
             output_path = self.data_path
         else:
             output_path = Path(output_path)
-        
+
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Save protein features
         protein_features_path = output_path / "protein_features.parquet"
         protein_features_table = pa.Table.from_pandas(self._protein_features_df)
         pq.write_table(protein_features_table, str(protein_features_path))
-        
+
         # Save projections metadata
         projections_metadata_path = output_path / "projections_metadata.parquet"
         projections_metadata_table = pa.Table.from_pandas(self._projections_metadata_df)
         pq.write_table(projections_metadata_table, str(projections_metadata_path))
-        
+
         # Save projections data
         projections_data_path = output_path / "projections_data.parquet"
         projections_data_table = pa.Table.from_pandas(self._projections_data_df)
         pq.write_table(projections_data_table, str(projections_data_path))
-        
+
         # Save visualization state as a separate JSON file
         viz_state_path = output_path / "visualization_state.json"
-        with open(viz_state_path, 'w') as f:
+        with open(viz_state_path, "w") as f:
             json.dump(self.data.get("visualization_state", {}), f, indent=2)
 
-    def get_projection_names(self) -> List[str]:
+    def get_projection_names(self) -> list[str]:
         """Get list of projection names."""
         return [proj["name"] for proj in self.data.get("projections", [])]
 
-    def get_all_features(self) -> List[str]:
+    def get_all_features(self) -> list[str]:
         """Get list of all feature names."""
         features = set()
         for protein_data in self.data.get("protein_data", {}).values():
             features.update(protein_data.get("features", {}).keys())
         return list(features)
 
-    def get_protein_ids(self) -> List[str]:
+    def get_protein_ids(self) -> list[str]:
         """Get list of all protein IDs."""
         return list(self.data.get("protein_data", {}).keys())
 
-    def get_projection_data(self, projection_name: str) -> List[Dict[str, Any]]:
+    def get_projection_data(self, projection_name: str) -> list[dict[str, Any]]:
         """Get projection data in the same format as JsonReader."""
         for proj in self.data.get("projections", []):
             if proj["name"] == projection_name:
                 return proj.get("data", [])
         raise ValueError(f"Projection {projection_name} not found")
 
-    def get_projection_info(self, projection_name: str) -> Dict[str, Any]:
+    def get_projection_info(self, projection_name: str) -> dict[str, Any]:
         """Get projection info in the same format as JsonReader."""
         for proj in self.data.get("projections", []):
             if proj["name"] == projection_name:
@@ -175,11 +193,11 @@ class ArrowReader:
                 return result
         raise ValueError(f"Projection {projection_name} not found")
 
-    def get_protein_features(self, protein_id: str) -> Dict[str, Any]:
+    def get_protein_features(self, protein_id: str) -> dict[str, Any]:
         """Get protein features in the same format as JsonReader."""
         return self.data.get("protein_data", {}).get(protein_id, {}).get("features", {})
 
-    def get_feature_colors(self, feature: str) -> Dict[str, str]:
+    def get_feature_colors(self, feature: str) -> dict[str, str]:
         """Get feature colors from visualization state."""
         return (
             self.data.get("visualization_state", {})
@@ -187,7 +205,7 @@ class ArrowReader:
             .get(feature, {})
         )
 
-    def get_marker_shape(self, feature: str) -> Dict[str, str]:
+    def get_marker_shape(self, feature: str) -> dict[str, str]:
         """Get marker shapes from visualization state."""
         return (
             self.data.get("visualization_state", {})
@@ -195,7 +213,7 @@ class ArrowReader:
             .get(feature, {})
         )
 
-    def get_unique_feature_values(self, feature: str) -> List[Any]:
+    def get_unique_feature_values(self, feature: str) -> list[Any]:
         """Get a list of unique values for a given feature."""
         unique_values = set()
         for protein_data in self.data.get("protein_data", {}).values():
@@ -204,7 +222,7 @@ class ArrowReader:
                 unique_values.add(value)
         return list(unique_values)
 
-    def get_all_feature_values(self, feature: str) -> List[Any]:
+    def get_all_feature_values(self, feature: str) -> list[Any]:
         """Get a list of all values for a given feature."""
         all_values = []
         protein_ids = self.get_protein_ids()
@@ -234,6 +252,6 @@ class ArrowReader:
 
         self.data["visualization_state"]["marker_shapes"][feature][value] = shape
 
-    def get_data(self) -> Dict[str, Any]:
+    def get_data(self) -> dict[str, Any]:
         """Return the current data."""
-        return self.data 
+        return self.data

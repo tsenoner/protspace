@@ -1,39 +1,38 @@
 import argparse
 import logging
+import shutil
 from pathlib import Path
 
-from protspace.utils import REDUCERS
+import pandas as pd
+
+from protspace.cli.common_args import (
+    CustomHelpFormatter,
+    add_all_reducer_parameters,
+    add_features_argument,
+    add_methods_argument,
+    add_output_argument,
+    add_output_format_arguments,
+    add_verbosity_argument,
+    determine_output_paths,
+    parse_custom_names,
+    setup_logging,
+)
 from protspace.data.local_data_processor import LocalDataProcessor
 
-
-logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def parse_custom_names(custom_names_arg: str) -> dict:
-    """Parse custom names argument into dictionary."""
-    custom_names = {}
-    if custom_names_arg:
-        custom_names_list = custom_names_arg.split(",")
-        for name_spec in custom_names_list:
-            try:
-                method, name = name_spec.split("=")
-                custom_names[method] = name
-            except ValueError:
-                logger.warning(f"Invalid custom name specification: {name_spec}")
-    return custom_names
-
-
-def setup_logging(verbosity: int):
-    """Set up logging based on verbosity level."""
-    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
-
-
 def create_argument_parser() -> argparse.ArgumentParser:
-    """Create and configure the argument parser."""
+    """Create and configure the argument parser for local data processing."""
     parser = argparse.ArgumentParser(
-        description="Dimensionality reduction for protein embeddings or similarity matrices",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description=(
+            "Process local protein data with dimensionality reduction.\n"
+            "\n"
+            "This tool performs dimensionality reduction on protein embeddings or\n"
+            "similarity matrices, and optionally extracts protein features from\n"
+            "UniProt, InterPro, and taxonomy databases."
+        ),
+        formatter_class=CustomHelpFormatter,
     )
 
     # Required arguments
@@ -42,158 +41,59 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--input",
         type=Path,
         required=True,
-        help="Path to input data: HDF file (.hdf, .hdf5, .h5) for embeddings or CSV file for similarity matrix",
-    )
-    parser.add_argument(
-        "-f",
-        "--features",
-        type=str,
-        required=False,
-        default=None,
         help=(
-            "Protein features to extract (format: feature1,feature2,...). "
-            "Available: UniProt (annotation_score, fragment, length_fixed, length_quantile, "
-            "protein_existence, protein_families, reviewed); "
-            "InterPro (cath, superfamily, signal_peptide); "
-            "Taxonomy (kingdom, phylum, class, order, family, genus, species). "
-            "Legacy usage: can be a metadata csv file"
+            "Path to input data file.\n"
+            "Supported formats:\n"
+            "  - HDF5 files (.h5, .hdf5, .hdf) containing protein embeddings\n"
+            "  - CSV files containing precomputed similarity matrices\n"
+            "\n"
+            "The file must contain protein IDs (e.g., UniProt accessions)."
         ),
     )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        required=True,
-        help="Path to output directory.",
+
+    # Add shared features argument (allows CSV metadata files)
+    add_features_argument(parser, allow_csv=True)
+
+    # Add shared output argument (optional, derives from input filename)
+    add_output_argument(
+        parser, required=False, default_name="protspace_<input_filename>.parquetbundle"
     )
-    # Specify delimiter argument with comma as default
+
     parser.add_argument(
         "--delimiter",
         type=str,
         default=",",
-        help="Specify delimiter for metadata file (default: comma)",
-    )
-    parser.add_argument(
-        "--non-binary",
-        action="store_true",
-        help="Save output in non binary formats (JSON, CSV, etc.)",
-    )
-    parser.add_argument(
-        "--bundled",
-        type=str,
-        default="true",
-        choices=["true", "false"],
-        help="Bundle parquet files into a single .parquetbundle file (default: true)",
+        help=(
+            "Delimiter for parsing metadata CSV files.\n"
+            "Common options: ',' (comma), '\\t' (tab), ';' (semicolon)"
+        ),
     )
 
-    parser.add_argument(
-        "--keep-tmp",
-        action="store_true",
-        help="Keep temporary files (All protein features)",
-    )
+    # Add shared output format arguments
+    add_output_format_arguments(parser)
 
-    # Reduction methods
-    parser.add_argument(
-        "-m",
-        "--methods",
-        type=str,
-        default="pca2",
-        help=f"Reduction methods to use (e.g., {','.join([m + '2' for m in REDUCERS])}). Format: method_name + dimensions",
-    )
+    # Add shared methods argument with local_data default
+    add_methods_argument(parser, default="pca2")
 
-    # Custom names
+    # Custom names for projections
     parser.add_argument(
         "--custom_names",
         type=str,
         metavar="METHOD1=NAME1,METHOD2=NAME2",
-        help="Custom names for projections in format METHOD=NAME separated by commas without spaces (e.g., pca2=PCA_2D,tsne2=t-SNE_2D)",
+        help=(
+            "Custom display names for reduction projections.\n"
+            "Format: METHOD=NAME pairs separated by commas (no spaces)\n"
+            "\n"
+            "Example:\n"
+            "  --custom_names pca2=PCA_2D,tsne2=t-SNE_2D,umap3=UMAP_3D"
+        ),
     )
 
-    # Verbosity control
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase output verbosity (-v for INFO, -vv for DEBUG)",
-    )
+    # Add shared verbosity argument
+    add_verbosity_argument(parser)
 
-    # General parameters
-    general_group = parser.add_argument_group("General Parameters")
-    general_group.add_argument(
-        "--metric",
-        default="euclidean",
-        help="Distance metric to use (applies to UMAP, t-SNE, MDS)",
-    )
-    general_group.add_argument(
-        "--random_state",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42)",
-    )
-
-    # UMAP parameters
-    umap_group = parser.add_argument_group("UMAP Parameters")
-    umap_group.add_argument(
-        "--n_neighbors",
-        type=int,
-        default=15,
-        help="Number of neighbors to consider (UMAP, PaCMAP, LocalMAP)",
-    )
-    umap_group.add_argument(
-        "--min_dist",
-        type=float,
-        default=0.1,
-        help="Minimum distance between points in UMAP",
-    )
-
-    # t-SNE parameters
-    tsne_group = parser.add_argument_group("t-SNE Parameters")
-    tsne_group.add_argument(
-        "--perplexity",
-        type=int,
-        default=30,
-        help="Perplexity parameter for t-SNE",
-    )
-    tsne_group.add_argument(
-        "--learning_rate", type=int, default=200, help="Learning rate for t-SNE"
-    )
-
-    # PaCMAP parameters
-    pacmap_group = parser.add_argument_group("PaCMAP Parameters")
-    pacmap_group.add_argument(
-        "--mn_ratio",
-        type=float,
-        default=0.5,
-        help="MN ratio (Mid-near pairs ratio) for PaCMAP and LocalMAP",
-    )
-    pacmap_group.add_argument(
-        "--fp_ratio",
-        type=float,
-        default=2.0,
-        help="FP ratio (Further pairs ratio) for PaCMAP and LocalMAP",
-    )
-
-    # MDS parameters
-    mds_group = parser.add_argument_group("MDS Parameters")
-    mds_group.add_argument(
-        "--n_init",
-        type=int,
-        default=4,
-        help="Number of initialization runs for MDS",
-    )
-    mds_group.add_argument(
-        "--max_iter",
-        type=int,
-        default=300,
-        help="Maximum number of iterations for MDS",
-    )
-    mds_group.add_argument(
-        "--eps",
-        type=float,
-        default=1e-3,
-        help="Relative tolerance for MDS convergence",
-    )
+    # Add all shared reducer parameter groups
+    add_all_reducer_parameters(parser)
 
     return parser
 
@@ -203,23 +103,72 @@ def main():
     parser = create_argument_parser()
     args = parser.parse_args()
 
-    custom_names = parse_custom_names(args.custom_names)
+    # Set up logging first
+    setup_logging(args.verbose)
 
+    # Validate bundled flag with output
+    if args.bundled == "false" and not args.non_binary:
+        if args.output and args.output.suffix:
+            raise ValueError(
+                "When --bundled is set to false, --output must be a directory path, not a file path. "
+                f"Remove the extension from '{args.output}' or use --bundled true."
+            )
+
+    # Warn if both --non-binary and --bundled false are used together
+    if args.non_binary and args.bundled == "false":
+        logger.warning(
+            "The --bundled false flag only applies to binary (parquet) output. "
+            "Since --non-binary is set, --bundled will be ignored and output will be saved as JSON."
+        )
+
+    custom_names = parse_custom_names(args.custom_names)
     args_dict = vars(args)
     args_dict["custom_names"] = custom_names
 
-    setup_logging(args.verbose)
+    # Initialize variables for cleanup
+    intermediate_dir = None
 
     try:
         processor = LocalDataProcessor(args_dict)
-        metadata, data, headers = processor.load_data(
+
+        # Load data first to get headers
+        data, headers = processor._load_input_file(args.input)
+
+        # Now determine output paths with headers for hash computation
+        output_path, intermediate_dir = determine_output_paths(
+            output_arg=args.output,
             input_path=args.input,
+            non_binary=args.non_binary,
+            bundled=args.bundled == "true",
+            keep_tmp=args.keep_tmp,
+            identifiers=headers if args.keep_tmp else None,
+        )
+
+        logger.info(f"Output will be saved to: {output_path}")
+        if intermediate_dir:
+            logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
+
+        # Load metadata
+        metadata = processor._load_or_generate_metadata(
+            headers=headers,
             features=args.features,
-            output_path=args.output,
+            intermediate_dir=intermediate_dir,
             delimiter=args.delimiter,
             non_binary=args.non_binary,
             keep_tmp=args.keep_tmp,
         )
+
+        # Create full metadata
+        full_metadata = pd.DataFrame({"identifier": headers})
+        if len(metadata.columns) > 1:
+            metadata = metadata.astype(str)
+            full_metadata = full_metadata.merge(
+                metadata.drop_duplicates("identifier"),
+                on="identifier",
+                how="left",
+            )
+
+        metadata = full_metadata
 
         methods_list = args.methods.split(",")
         reductions = []
@@ -237,18 +186,29 @@ def main():
             logger.info(f"Applying {method.upper()}{dims} reduction")
             reductions.append(processor.process_reduction(data, method, dims))
 
-        # Create and save output
+        # Create and save output (bundled is ignored when non_binary is set)
         if args.non_binary:
             output = processor.create_output_legacy(metadata, reductions, headers)
-            processor.save_output_legacy(output, args.output)
+            processor.save_output_legacy(output, output_path)
         else:
             output = processor.create_output(metadata, reductions, headers)
-            processor.save_output(output, args.output, bundled=args.bundled == "true")
+            processor.save_output(output, output_path, bundled=args.bundled == "true")
+
         logger.info(
             f"Successfully processed {len(headers)} items using {len(methods_list)} reduction methods"
         )
+        logger.info(f"Output saved to: {output_path}")
+
+        # Clean up temporary directory if --keep-tmp is not active
+        if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
+            shutil.rmtree(intermediate_dir)
+            logger.info(f"Cleaned up temporary directory: {intermediate_dir}")
 
     except Exception as e:
+        # Clean up temporary directory if --keep-tmp is not active (even on error)
+        if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
+            shutil.rmtree(intermediate_dir)
+            logger.info(f"Cleaned up temporary directory: {intermediate_dir}")
         logger.error(f"Error: {str(e)}")
         raise
 
