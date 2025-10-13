@@ -185,8 +185,8 @@ class TestOutputFileGeneration:
         """Test bundled parquet output generation."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create mock processor
             processor = LocalDataProcessor({})
@@ -217,8 +217,8 @@ class TestOutputFileGeneration:
         """Test separate parquet files output generation."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create mock processor
             processor = LocalDataProcessor({})
@@ -249,8 +249,8 @@ class TestOutputFileGeneration:
         """Test JSON output generation."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create mock processor
             processor = LocalDataProcessor({})
@@ -371,8 +371,8 @@ class TestUniProtQueryProcessor:
         """Test bundled parquet output generation for query processor."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create mock processor
             processor = UniProtQueryProcessor({})
@@ -403,8 +403,8 @@ class TestUniProtQueryProcessor:
         """Test separate parquet files output generation for query processor."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create mock processor
             processor = UniProtQueryProcessor({})
@@ -435,8 +435,8 @@ class TestUniProtQueryProcessor:
         """Test JSON output generation for query processor."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create mock processor
             processor = UniProtQueryProcessor({})
@@ -464,8 +464,8 @@ class TestUniProtQueryProcessor:
         """Test query processor with keep_tmp=True."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create a mock FASTA file
             fasta_path = temp_path / "sequences.fasta"
@@ -518,8 +518,8 @@ class TestUniProtQueryProcessor:
         self, mock_similarity, mock_metadata, mock_fasta
     ):
         """Test query processor with keep_tmp=False."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Mock the processor methods
             mock_fasta.return_value = (
@@ -555,8 +555,8 @@ class TestUniProtQueryProcessor:
         """Test query processor with pre-downloaded FASTA file."""
         import tempfile
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir_path:
+            temp_path = Path(temp_dir_path)
 
             # Create a mock FASTA file
             fasta_path = temp_path / "sequences.fasta"

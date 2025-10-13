@@ -493,7 +493,7 @@ class TestGenerateMetadata:
         assert call_kwargs["headers"] == SAMPLE_HEADERS
         assert call_kwargs["features"] == ["length", "organism"]
         assert call_kwargs["output_path"] == temp_dir / "metadata.csv"
-        assert call_kwargs["non_binary"] == False
+        assert not call_kwargs["non_binary"]
 
     def test_generate_metadata_from_csv(self, processor, temp_dir):
         """Test metadata generation from existing CSV file."""
