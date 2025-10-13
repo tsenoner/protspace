@@ -12,7 +12,7 @@ ProtSpace is a visualization tool for exploring **protein embeddings** or **simi
 
 **Web Interface**: https://protspace.rostlab.org/
 
-**New JavaScript Frontend** _(in development)_: https://tsenoner.github.io/protspace_d3/ -> Drag & drop `.parquetbundle` files
+**New JavaScript Frontend** _(in development)_: https://tsenoner.github.io/protspace_web -> Drag & drop `.parquetbundle` files
 
 ## 🚀 Quick Start with Google Colab
 
@@ -79,34 +79,45 @@ Access at `http://localhost:8050`
 
 ### Available Features (use with `-f`)
 
-**UniProt**: `annotation_score`, `fragment`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`
+**UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `sequence`
 
-**InterPro**: `cath`, `superfamily`, `signal_peptide`
+**InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily`
 
 **Taxonomy**: `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
 
-_Note: Some taxonomy parsing may have minor issues. Additional features in development._
+Examples:
+
+```bash
+# Extract Pfam domains and subcellular location
+protspace-local -i data.h5 -f pfam,cath,cc_subcellular_location
+
+# Extract reviewed status, length, and taxonomy
+protspace-query -q "..." -f reviewed,length_quantile,kingdom
+```
 
 ## 🔧 Advanced Usage
 
 ### Command Options
 
-**protspace-query** (UniProt search):
-
-- `-q, --query`: UniProt search query (required)
-- `-o, --output`: Output directory (required)
-- `-f, --features`: Features to extract (comma-separated)
-- `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
-- `--non-binary`: Use legacy JSON format
-- `--keep-tmp`: Keep temporary files
-
 **protspace-local** (Local data):
 
 - `-i, --input`: HDF5 embeddings or CSV similarity matrix (required)
-- `-o, --output`: Output directory (required)
-- `-f, --features`: Features to extract (comma-separated) (legacy usage: csv metadata file path)
+- `-o, --output`: Output file or directory (optional, default: derived from input filename)
+- `-f, --features`: Features to extract (comma-separated) or CSV metadata file path
 - `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
+- `--keep-tmp`: Cache intermediate files for reuse
+- `--bundled`: Bundle output files (true/false, default: true)
+
+**protspace-query** (UniProt search):
+
+- `-q, --query`: UniProt search query (required)
+- `-o, --output`: Output file or directory (optional, default: `protspace.parquetbundle`)
+- `-f, --features`: Features to extract (comma-separated)
+- `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
+- `--non-binary`: Use legacy JSON format
+- `--keep-tmp`: Cache intermediate files for reuse
+- `--bundled`: Bundle output files (true/false, default: true)
 
 ### Method Parameters
 
