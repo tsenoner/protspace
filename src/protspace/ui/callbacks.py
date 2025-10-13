@@ -1,9 +1,9 @@
 import base64
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
-import re
 
 import dash
 import pandas as pd
@@ -11,17 +11,17 @@ import plotly.graph_objs as go
 from dash import Input, Output, State, dcc, no_update
 from dash.exceptions import PreventUpdate
 
-from protspace.ui import styles
 from protspace.core.config import (
     HELP_PANEL_WIDTH_PERCENT,
     MARKER_SHAPES_2D,
     MARKER_SHAPES_3D,
-    SETTINGS_PANEL_WIDTH_PERCENT,
     NAN_COLOR,
+    SETTINGS_PANEL_WIDTH_PERCENT,
 )
 from protspace.core.constants import is_projection_3d
-from protspace.visualization.molstar import get_molstar_data
+from protspace.ui import styles
 from protspace.utils import JsonReader
+from protspace.visualization.molstar import get_molstar_data
 from protspace.visualization.plotting import (
     create_plot,
     generate_default_color,
@@ -327,7 +327,7 @@ def setup_callbacks(app):
                 rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
                 if rgba:
                     r, g, b = map(int, rgba.groups())
-                    hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                    hex_color = f"#{r:02x}{g:02x}{b:02x}"
                     return {"hex": hex_color}
             return {"hex": color}
 
@@ -342,7 +342,7 @@ def setup_callbacks(app):
                 rgba = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+)", color)
                 if rgba:
                     r, g, b = map(int, rgba.groups())
-                    hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                    hex_color = f"#{r:02x}{g:02x}{b:02x}"
                     return {"hex": hex_color}
             except ValueError:
                 return {"hex": "#000000"}  # Default to black if something goes wrong
