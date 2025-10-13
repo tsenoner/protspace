@@ -302,7 +302,7 @@ class TestMergeFeatures:
         result = extractor._merge_features(uniprot_features, taxonomy_features)
 
         # Should have applied "other" for less frequent values
-        genus_values = set(protein.features.get("genus", "") for protein in result)
+        genus_values = {protein.features.get("genus", "") for protein in result}
         assert len(genus_values) <= 10  # Max 9 + "other"
 
     def test_merge_features_missing_taxonomy(self):
