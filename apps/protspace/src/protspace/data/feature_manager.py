@@ -4,16 +4,16 @@ import numpy as np
 from typing import List, Union, Tuple
 from pathlib import Path
 
-from protspace.data.uniprot_feature_retriever import (
+from protspace.data.feature_retrievers.uniprot_feature_retriever import (
     UniProtFeatureRetriever,
     UNIPROT_FEATURES,
     ProteinFeatures,
 )
-from protspace.data.taxonomy_feature_retriever import (
+from protspace.data.feature_retrievers.taxonomy_feature_retriever import (
     TaxonomyFeatureRetriever,
     TAXONOMY_FEATURES,
 )
-from protspace.data.interpro_feature_retriever import (
+from protspace.data.feature_retrievers.interpro_feature_retriever import (
     InterProFeatureRetriever,
     INTERPRO_FEATURES,
 )
