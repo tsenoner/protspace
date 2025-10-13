@@ -1,8 +1,8 @@
-import json
 import base64
+import json
 import zipfile
-from typing import Any, Dict, Optional, Union
 from pathlib import Path
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import Dash
@@ -19,9 +19,9 @@ class ProtSpace:
 
     def __init__(
         self,
-        pdb_zip: Optional[str] = None,
-        default_json_file: Optional[str] = None,
-        arrow_dir: Optional[str] = None,
+        pdb_zip: str | None = None,
+        default_json_file: str | None = None,
+        arrow_dir: str | None = None,
     ):
         self.pdb_zip = pdb_zip
         self.default_json_data = None
@@ -29,7 +29,7 @@ class ProtSpace:
         self.pdb_files_data = {}
 
         if default_json_file:
-            with open(default_json_file, "r") as f:
+            with open(default_json_file) as f:
                 self.default_json_data = json.load(f)
         elif arrow_dir:
             self.arrow_reader = ArrowReader(Path(arrow_dir))
@@ -71,11 +71,11 @@ class ProtSpace:
         setup_callbacks(app)
         return app
 
-    def get_default_json_data(self) -> Optional[Dict[str, Any]]:
+    def get_default_json_data(self) -> dict[str, Any] | None:
         """Return the default JSON data if available."""
         return self.default_json_data
 
-    def get_pdb_files_data(self) -> Dict[str, str]:
+    def get_pdb_files_data(self) -> dict[str, str]:
         """Return the PDB files data."""
         return self.pdb_files_data
 
@@ -89,9 +89,10 @@ class ProtSpace:
     def run_server(
         self, port: int = 8050, debug: bool = False, quiet: bool = False
     ) -> None:
-        import __main__
-        import sys
         import os
+        import sys
+
+        import __main__
 
         def is_interactive():
             return not hasattr(__main__, "__file__")
@@ -114,7 +115,7 @@ class ProtSpace:
         self,
         projection: str,
         feature: str,
-        filename: Union[str, Path],
+        filename: str | Path,
         width: int = 1600,
         height: int = 1000,
         file_format: str = "png",

@@ -1,7 +1,6 @@
 import argparse
-import warnings
 import tempfile
-from typing import Optional
+import warnings
 from pathlib import Path
 
 from protspace import ProtSpace
@@ -10,7 +9,7 @@ from protspace.core.config import DEFAULT_PORT
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 
-def detect_data_type(data_path: str) -> tuple[Optional[str], Optional[str]]:
+def detect_data_type(data_path: str) -> tuple[str | None, str | None]:
     """
     Detect if the input is a JSON file, Arrow directory, or bundled parquet file.
 
@@ -76,7 +75,7 @@ def _extract_parquet_bundle(bundle_path: Path) -> str:
             f"Expected {len(expected_files)} parquet files in bundle, but found {len(parts)} parts"
         )
 
-    for part, filename in zip(parts, expected_files):
+    for part, filename in zip(parts, expected_files, strict=False):
         if not part:
             continue
 
@@ -110,7 +109,7 @@ def parse_arguments() -> argparse.Namespace:
 def main(
     data: str,
     port: int = DEFAULT_PORT,
-    pdb_zip: Optional[str] = None,
+    pdb_zip: str | None = None,
 ) -> None:
     json_file, arrow_dir = detect_data_type(data)
     protspace = ProtSpace(

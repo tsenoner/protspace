@@ -1,12 +1,13 @@
-import dash_daq as daq
-import dash_bootstrap_components as dbc
-from dash import dcc, html
-import dash_molstar
-from dash_iconify import DashIconify
 import importlib.resources
 
-from protspace.ui import styles
+import dash_bootstrap_components as dbc
+import dash_daq as daq
+import dash_molstar
+from dash import dcc, html
+from dash_iconify import DashIconify
+
 from protspace.core.config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
+from protspace.ui import styles
 from protspace.utils import JsonReader
 
 
