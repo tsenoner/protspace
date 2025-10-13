@@ -2,38 +2,33 @@ import argparse
 import logging
 from pathlib import Path
 
-from protspace.utils import REDUCERS
 from protspace.data.uniprot_query_processor import UniProtQueryProcessor
+from protspace.cli.common_args import (
+    CustomHelpFormatter,
+    setup_logging,
+    add_features_argument,
+    add_output_format_arguments,
+    add_methods_argument,
+    add_verbosity_argument,
+    add_all_reducer_parameters,
+)
 
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def parse_custom_names(custom_names_arg: str) -> dict:
-    """Parse custom names argument into dictionary."""
-    custom_names = {}
-    if custom_names_arg:
-        custom_names_list = custom_names_arg.split(",")
-        for name_spec in custom_names_list:
-            try:
-                method, name = name_spec.split("=")
-                custom_names[method] = name
-            except ValueError:
-                logger.warning(f"Invalid custom name specification: {name_spec}")
-    return custom_names
-
-
-def setup_logging(verbosity: int):
-    """Set up logging based on verbosity level."""
-    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
-
-
 def create_argument_parser() -> argparse.ArgumentParser:
-    """Create and configure the argument parser."""
+    """Create and configure the argument parser for UniProt queries."""
     parser = argparse.ArgumentParser(
-        description="Search and process proteins directly from UniProt",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description=(
+            "Query and process proteins directly from UniProt.\n"
+            "\n"
+            "This tool searches UniProt, downloads protein sequences, computes embeddings\n"
+            "using ESM2, performs dimensionality reduction, and optionally extracts\n"
+            "protein features from UniProt, InterPro, and taxonomy databases."
+        ),
+        formatter_class=CustomHelpFormatter,
     )
 
     # Required arguments
@@ -42,139 +37,43 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--query",
         type=str,
         required=True,
-        help="UniProt search query (e.g., 'human insulin', 'kinase', etc.)",
+        help=(
+            "UniProt search query string.\n"
+            "\n"
+            "Examples:\n"
+            "  --query 'organism_name:\"Homo sapiens\" AND reviewed:true'\n"
+            "  --query 'protein_name:kinase AND length:[100 TO 500]'\n"
+            "  --query 'gene:BRCA1'\n"
+            "  --query 'ec:3.4.21.*'\n"
+            "\n"
+            "For query syntax, see: https://www.uniprot.org/help/query-fields"
+        ),
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
         required=True,
-        help="Path to output directory (when using --non-binary) or Parquet file (default)",
-    )
-
-    # Optional arguments
-    parser.add_argument(
-        "-f",
-        "--features",
-        type=str,
-        required=False,
-        default=None,
         help=(
-            "Protein features to extract (format: feature1,feature2,...). "
-            "Available: UniProt (annotation_score, fragment, length_fixed, length_quantile, "
-            "protein_existence, protein_families, reviewed); "
-            "InterPro (cath, superfamily, signal_peptide); "
-            "Taxonomy (kingdom, phylum, class, order, family, genus, species)"
+            "Path to output directory where results will be saved.\n"
+            "Directory will be created if it doesn't exist."
         ),
     )
-    parser.add_argument(
-        "--non-binary",
-        action="store_true",
-        help="Save output in non binary formats (JSON, CSV, etc.)",
-    )
-    parser.add_argument(
-        "--bundled",
-        type=str,
-        default="true",
-        choices=["true", "false"],
-        help="Bundle parquet files into a single .parquetbundle file (default: true)",
-    )
-    parser.add_argument(
-        "--keep-tmp",
-        action="store_true",
-        help="Keep temporary files (FASTA, complete protein features, and similarity matrix)",
-    )
-    parser.add_argument(
-        "-m",
-        "--methods",
-        type=str,
-        default="pca2,pca3,tsne2,tsne3,umap2,umap3",
-        help=f"Reduction methods to use (e.g., {','.join([m + '2,' + m + '3' for m in REDUCERS])}). Format: method_name + dimensions",
-    )
 
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase output verbosity (-v for INFO, -vv for DEBUG)",
-    )
+    # Add shared features argument (does NOT allow CSV files for query mode)
+    add_features_argument(parser, allow_csv=False)
 
-    general_group = parser.add_argument_group("General Parameters")
-    general_group.add_argument(
-        "--metric",
-        default="euclidean",
-        help="Distance metric to use (applies to UMAP, t-SNE, MDS)",
-    )
-    general_group.add_argument(
-        "--random_state",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42)",
-    )
+    # Add shared output format arguments
+    add_output_format_arguments(parser)
 
-    # UMAP parameters
-    umap_group = parser.add_argument_group("UMAP Parameters")
-    umap_group.add_argument(
-        "--n_neighbors",
-        type=int,
-        default=15,
-        help="Number of neighbors to consider (UMAP, PaCMAP, LocalMAP)",
-    )
-    umap_group.add_argument(
-        "--min_dist",
-        type=float,
-        default=0.1,
-        help="Minimum distance between points in UMAP",
-    )
+    # Add shared methods argument with uniprot_query defaults
+    add_methods_argument(parser, default="pca2,pca3,tsne2,tsne3,umap2,umap3")
 
-    # t-SNE parameters
-    tsne_group = parser.add_argument_group("t-SNE Parameters")
-    tsne_group.add_argument(
-        "--perplexity",
-        type=int,
-        default=30,
-        help="Perplexity parameter for t-SNE",
-    )
-    tsne_group.add_argument(
-        "--learning_rate", type=int, default=200, help="Learning rate for t-SNE"
-    )
+    # Add shared verbosity argument
+    add_verbosity_argument(parser)
 
-    # PaCMAP parameters
-    pacmap_group = parser.add_argument_group("PaCMAP Parameters")
-    pacmap_group.add_argument(
-        "--mn_ratio",
-        type=float,
-        default=0.5,
-        help="MN ratio (Mid-near pairs ratio) for PaCMAP and LocalMAP",
-    )
-    pacmap_group.add_argument(
-        "--fp_ratio",
-        type=float,
-        default=2.0,
-        help="FP ratio (Further pairs ratio) for PaCMAP and LocalMAP",
-    )
-
-    # MDS parameters
-    mds_group = parser.add_argument_group("MDS Parameters")
-    mds_group.add_argument(
-        "--n_init",
-        type=int,
-        default=4,
-        help="Number of initialization runs for MDS",
-    )
-    mds_group.add_argument(
-        "--max_iter",
-        type=int,
-        default=300,
-        help="Maximum number of iterations for MDS",
-    )
-    mds_group.add_argument(
-        "--eps",
-        type=float,
-        default=1e-3,
-        help="Relative tolerance for MDS convergence",
-    )
+    # Add all shared reducer parameter groups
+    add_all_reducer_parameters(parser)
 
     return parser
 
@@ -199,10 +98,9 @@ def main():
                 "Please provide a comma-separated list of feature names instead."
             )
 
-    # Use default empty custom names
-    custom_names = {}
+    # Custom names not supported in query mode
     args_dict = vars(args)
-    args_dict["custom_names"] = custom_names
+    args_dict["custom_names"] = {}
 
     try:
         # Initialize processor
