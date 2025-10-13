@@ -1,9 +1,10 @@
+from unittest.mock import Mock, mock_open, patch
+
 import pytest
-from unittest.mock import Mock, patch, mock_open
 
 from src.protspace.data.feature_retrievers.taxonomy_feature_retriever import (
-    TaxonomyFeatureRetriever,
     TAXONOMY_FEATURES,
+    TaxonomyFeatureRetriever,
 )
 
 
@@ -131,7 +132,7 @@ class TestFetchFeatures:
         }
 
         # Setup side effect for taxon creation
-        def taxon_side_effect(taxon_id, taxdb):
+        def taxon_side_effect(taxon_id, _):
             if taxon_id == 9606:
                 return mock_human_taxon
             elif taxon_id == 10090:
@@ -242,7 +243,7 @@ class TestGetTaxonomyInfo:
         mock_taxon = Mock()
         mock_taxon.name = "Escherichia coli"
         mock_taxon.rank_name_dictionary = {
-            "superkingdom": "Bacteria",
+            "kingdom": "Bacteria",
             "phylum": "Proteobacteria",
             "class": "Gammaproteobacteria",
             "order": "Enterobacterales",
@@ -255,7 +256,7 @@ class TestGetTaxonomyInfo:
 
         # Test
         taxon_ids = [511145]  # E. coli
-        features = ["superkingdom", "genus", "species"]
+        features = ["kingdom", "genus", "species"]
         retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
 
         result = retriever._get_taxonomy_info(taxon_ids)
@@ -264,7 +265,7 @@ class TestGetTaxonomyInfo:
         assert len(result) == 1
         assert 511145 in result
         tax_info = result[511145]
-        assert tax_info["superkingdom"] == "Bacteria"
+        assert tax_info["kingdom"] == "Bacteria"
         assert tax_info["genus"] == "Escherichia"
         assert tax_info["species"] == "Escherichia coli"
 
@@ -305,7 +306,7 @@ class TestInitializeTaxdb:
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.mkdir")
     def test_initialize_taxdb_fresh_download(
-        self, mock_mkdir, mock_exists, mock_file, mock_taxdb
+        self, mock_mkdir, mock_exists, _, mock_taxdb
     ):
         """Test database initialization with fresh download."""
         # Setup mocks - no existing files
@@ -351,8 +352,6 @@ class TestConstants:
     def test_taxonomy_features_constant(self):
         """Test that TAXONOMY_FEATURES contains expected features."""
         expected_features = [
-            "taxon_name",
-            "superkingdom",
             "kingdom",
             "phylum",
             "class",
@@ -363,7 +362,7 @@ class TestConstants:
         ]
 
         assert TAXONOMY_FEATURES == expected_features
-        assert len(TAXONOMY_FEATURES) == 9
+        assert len(TAXONOMY_FEATURES) == 7
 
 
 class TestIntegration:
@@ -418,7 +417,7 @@ class TestIntegration:
         """Test workflow with mixed successful and failed taxon lookups."""
         mock_taxdb.return_value = Mock()
 
-        def taxon_side_effect(taxon_id, taxdb):
+        def taxon_side_effect(taxon_id, _):
             if taxon_id == 9606:
                 mock_taxon = Mock()
                 mock_taxon.name = "Homo sapiens"

@@ -1,7 +1,8 @@
 from unittest.mock import Mock, patch
+
 from src.protspace.data.feature_retrievers.interpro_feature_retriever import (
-    InterProFeatureRetriever,
     INTERPRO_FEATURES,
+    InterProFeatureRetriever,
 )
 
 
