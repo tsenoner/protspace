@@ -104,7 +104,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ARG001", "F401", "F841"]
+"tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
 
 [tool.semantic_release]
 assets = [
