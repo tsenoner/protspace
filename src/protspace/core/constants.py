@@ -1,4 +1,5 @@
 import pandas as pd
+
 from protspace.utils import JsonReader
 
 
@@ -6,7 +7,7 @@ def standardize_missing(series: pd.Series) -> pd.Series:
     """Replaces various forms of missing values with '<NaN>' in a pandas Series."""
     series = series.astype(str)
     missing_values = ["", "nan", "none", "null", "<NA>"]
-    replacements = {value: "<NaN>" for value in missing_values}
+    replacements = dict.fromkeys(missing_values, "<NaN>")
 
     return series.replace(replacements).fillna("<NaN>")
 
