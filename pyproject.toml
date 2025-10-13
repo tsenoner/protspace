@@ -36,8 +36,8 @@ frontend = [
     "requests>=2.32.4",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "dash[testing]>=3",
     "webdriver-manager>=4.0.1",
     "biopython>=1.84",
