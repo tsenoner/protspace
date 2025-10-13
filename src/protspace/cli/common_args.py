@@ -1,7 +1,9 @@
 """Common argument parsing utilities for ProtSpace CLI tools."""
 
 import argparse
+import hashlib
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +47,103 @@ def setup_logging(verbosity: int):
     Args:
         verbosity: 0=WARNING, 1=INFO, 2+=DEBUG
     """
-    logger.setLevel([logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)])
+    level = [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
+
+    # Configure root logger
+    logging.basicConfig(
+        level=level,
+        format="%(levelname)s: %(message)s",
+        force=True,  # Override any existing configuration
+    )
+
+
+def compute_cache_hash(identifiers: list[str]) -> str:
+    """Compute MD5 hash of sorted identifiers for cache naming.
+
+    Args:
+        identifiers: List of protein identifiers
+
+    Returns:
+        MD5 hash string (first 16 characters)
+    """
+    sorted_ids = sorted(identifiers)
+    hash_input = "".join(sorted_ids).encode("utf-8")
+    return hashlib.md5(hash_input).hexdigest()[:16]
+
+
+def determine_output_paths(
+    output_arg: Path | None,
+    input_path: Path | None,
+    non_binary: bool,
+    bundled: bool,
+    keep_tmp: bool,
+    identifiers: list[str] | None = None,
+) -> tuple[Path, Path | None]:
+    """Determine output file path and intermediate directory.
+
+    Args:
+        output_arg: User-provided output argument (or None)
+        input_path: Input file path (None for query mode)
+        non_binary: Whether using JSON output
+        bundled: Whether to bundle parquet files
+        keep_tmp: Whether to keep temporary files
+        identifiers: List of protein IDs (for hash computation, needed if keep_tmp=True)
+
+    Returns:
+        Tuple of (output_path, intermediate_dir)
+        - output_path: Where to save the final output file
+        - intermediate_dir: Where to save cached files (None if keep_tmp=False)
+    """
+    # Determine base directory (parent of input file, or current dir for query mode)
+    if input_path:
+        base_dir = input_path.parent
+        input_stem = input_path.stem
+    else:
+        base_dir = Path(".")
+        input_stem = "protspace"
+
+    # Determine file extension based on mode
+    if non_binary:
+        ext = ".json"
+    else:
+        ext = ".parquetbundle" if bundled else ""
+
+    # Determine output path
+    if output_arg is None:
+        # No output specified - use defaults
+        if bundled or non_binary:
+            # Single file output
+            output_path = base_dir / f"{input_stem}{ext}"
+        else:
+            # Directory output (bundled=false)
+            output_path = base_dir / "protspace"
+    else:
+        # Output specified by user
+        if output_arg.suffix:
+            # User provided a file path - force correct extension
+            if non_binary:
+                output_path = output_arg.with_suffix(".json")
+            elif bundled:
+                output_path = output_arg.with_suffix(".parquetbundle")
+            else:
+                # bundled=false, but user gave file path - treat as directory name
+                output_path = output_arg.with_suffix("")
+        else:
+            # User provided directory/stem without extension
+            if bundled or non_binary:
+                output_path = output_arg.with_suffix(ext)
+            else:
+                # bundled=false - it's a directory
+                output_path = output_arg
+
+    # Determine intermediate directory for cached files
+    if keep_tmp and identifiers:
+        cache_hash = compute_cache_hash(identifiers)
+        intermediate_dir = base_dir / "tmp" / cache_hash
+    else:
+        intermediate_dir = None
+
+    return output_path, intermediate_dir
 
 
 def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = True):
@@ -68,14 +166,50 @@ def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = Tru
             f"Protein features to extract as comma-separated values{csv_note}.\n"
             "\n"
             "Available features:\n"
-            "  UniProt:    annotation_score, fragment, length_fixed, length_quantile,\n"
-            "              protein_existence, protein_families, reviewed\n"
-            "  InterPro:   cath, superfamily, signal_peptide\n"
+            "  UniProt:    annotation_score, cc_subcellular_location, fragment,\n"
+            "              length_fixed, length_quantile, protein_existence,\n"
+            "              protein_families, reviewed, sequence\n"
+            "  InterPro:   cath, pfam, signal_peptide, superfamily\n"
             "  Taxonomy:   kingdom, phylum, class, order, family, genus, species\n"
             "\n"
             "Examples:\n"
-            f"  --features reviewed,length_quantile,kingdom{csv_example}"
+            f"  --features reviewed,length_quantile,kingdom{csv_example}\n"
+            f"  --features pfam,cath,cc_subcellular_location"
         ),
+    )
+
+
+def add_output_argument(
+    parser: argparse.ArgumentParser, required: bool = False, default_name: str = None
+):
+    """Add the --output argument.
+
+    Args:
+        parser: ArgumentParser instance to add the argument to
+        required: Whether the output argument is required
+        default_name: Default output name if not provided (None means derive from input)
+    """
+    help_text = (
+        "Path to output file or directory.\n"
+        "\n"
+        "Behavior:\n"
+        "  - With --bundled true (default): Accepts file or directory path.\n"
+        "    If directory, creates protspace_<name>.parquetbundle inside.\n"
+        "    If file, uses that exact path.\n"
+        "  - With --bundled false: Must be a directory path.\n"
+        "  - With --non-binary: Creates directory with JSON and CSV files."
+    )
+
+    if default_name:
+        help_text += f"\n\nDefault: {default_name}"
+
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=required,
+        default=None,
+        help=help_text,
     )
 
 
@@ -89,8 +223,8 @@ def add_output_format_arguments(parser: argparse.ArgumentParser):
         "--non-binary",
         action="store_true",
         help=(
-            "Save output in non-binary formats (JSON, CSV, etc.) instead of Parquet.\n"
-            "Use this for human-readable output or compatibility with other tools."
+            "Save output in non-binary formats (JSON + CSV) instead of Parquet.\n"
+            "Use this for human-readable output."
         ),
     )
     parser.add_argument(
@@ -100,20 +234,23 @@ def add_output_format_arguments(parser: argparse.ArgumentParser):
         choices=["true", "false"],
         help=(
             "Bundle multiple Parquet files into a single .parquetbundle file.\n"
-            "Recommended for easier file management and distribution."
+            "Recommended for easier file management and distribution.\n"
+            "Note: Ignored when --non-binary is set (warning will be shown)."
         ),
     )
     parser.add_argument(
         "--keep-tmp",
         action="store_true",
         help=(
-            "Keep temporary intermediate files after processing.\n"
-            "Useful for debugging or reusing computed features."
+            "Cache intermediate files for reuse in subsequent runs.\n"
+            "When enabled, downloaded features are saved and reused\n"
+            "if you run the command again with different reduction methods or parameters.\n"
+            "This avoids re-downloading data from UniProt, InterPro, and taxonomy databases."
         ),
     )
 
 
-def add_methods_argument(parser: argparse.ArgumentParser, default: str):
+def add_methods_argument(parser: argparse.ArgumentParser, default: str = "pca2"):
     """Add the --methods argument.
 
     Args:
