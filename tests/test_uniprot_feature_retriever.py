@@ -1,9 +1,9 @@
 from unittest.mock import Mock, patch
 
 from src.protspace.data.feature_retrievers.uniprot_feature_retriever import (
-    UniProtFeatureRetriever,
     UNIPROT_FEATURES,
     ProteinFeatures,
+    UniProtFeatureRetriever,
 )
 
 

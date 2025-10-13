@@ -1,21 +1,21 @@
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
+
 import pandas as pd
+import pytest
 
 from src.protspace.data.feature_manager import (
-    ProteinFeatureExtractor,
     DEFAULT_FEATURES,
-    NEEDED_UNIPROT_FEATURES,
     LENGTH_BINNING_FEATURES,
-    UNIPROT_FEATURES,
+    NEEDED_UNIPROT_FEATURES,
     TAXONOMY_FEATURES,
+    UNIPROT_FEATURES,
+    ProteinFeatureExtractor,
 )
 from src.protspace.data.feature_retrievers.uniprot_feature_retriever import (
     ProteinFeatures,
 )
-
 
 # Test data
 SAMPLE_HEADERS = ["P01308", "P01315", "P01316"]
@@ -182,9 +182,7 @@ class TestInitializeFeatures:
         user_features = ["length_fixed", "genus"]
 
         extractor = ProteinFeatureExtractor(headers=headers, features=user_features)
-        uniprot_features, taxonomy_features, interpro_features = (
-            extractor._initialize_features(DEFAULT_FEATURES)
-        )
+        uniprot_features, _, _ = extractor._initialize_features(DEFAULT_FEATURES)
 
         # Should automatically include "length" for binning computation
         assert "length" in uniprot_features
@@ -194,8 +192,8 @@ class TestInitializeFeatures:
         headers = SAMPLE_HEADERS
 
         extractor = ProteinFeatureExtractor(headers=headers)
-        uniprot_features, taxonomy_features, interpro_features = (
-            extractor._initialize_features(DEFAULT_FEATURES)
+        uniprot_features, taxonomy_features, _ = extractor._initialize_features(
+            DEFAULT_FEATURES
         )
 
         # Should include all UniProt features from DEFAULT_FEATURES

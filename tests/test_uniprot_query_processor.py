@@ -1,79 +1,33 @@
-import tempfile
-import pytest
 import gzip
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, mock_open, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 import requests
 
 from src.protspace.data.uniprot_query_processor import UniProtQueryProcessor
 from src.protspace.utils import REDUCERS
-
-
-# Test constants
-SAMPLE_QUERY = "organism_id:9606 AND keyword:insulin"
-SAMPLE_HEADERS = ["P01308", "P01315", "P01316"]
-SAMPLE_FASTA_CONTENT = """>sp|P01308|INS_HUMAN Insulin OS=Homo sapiens OX=9606 GN=INS PE=1 SV=1
-MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAEDLQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN
->sp|P01315|INSL3_HUMAN Insulin-like 3 OS=Homo sapiens OX=9606 GN=INSL3 PE=1 SV=1
-MDSLLSASLVLLALSLALTCSGQPAAPEMVKLCGRELVRAQIAICGMSTWKRQAAGNKLRRLMYAKRCCESFIRALEDGCFWK
->sp|P01316|INSL4_HUMAN Insulin-like 4 OS=Homo sapiens OX=9606 GN=INSL4 PE=1 SV=1
-MDSLLSASLVLLALSLALTCSGQPAAPEMVKLCGRELVRAQIAICGMSTWKRQAAGNKLRRLMYAKRCCESFIRALEDGCFWK
-"""
-
-SAMPLE_SIMILARITY_MATRIX = np.array([[1.0, 0.8, 0.7], [0.8, 1.0, 0.9], [0.7, 0.9, 1.0]])
-
-SAMPLE_METADATA_DF = pd.DataFrame(
-    {
-        "identifier": SAMPLE_HEADERS,
-        "length": [110, 142, 142],
-        "organism": ["Homo sapiens", "Homo sapiens", "Homo sapiens"],
-    }
+from tests.test_config import (
+    EXPECTED_IDENTIFIERS,
+    FASTA_CONTENT,
+    SAMPLE_FASTA_CONTENT,
+    SAMPLE_HEADERS,
+    SAMPLE_METADATA_DF,
+    SAMPLE_QUERY,
+    SAMPLE_SIMILARITY_MATRIX,
+    mock_pymmseqs_df,
+    mock_response,
+    temp_dir,
 )
 
 
 @pytest.fixture
-def mock_config():
-    """Provide a basic configuration for UniProtQueryProcessor."""
-    return {"n_components": 2, "random_state": 42, "n_neighbors": 15, "min_dist": 0.1}
-
-
-@pytest.fixture
-def processor(mock_config):
+def processor():
     """Create a UniProtQueryProcessor instance with mocked config."""
-    return UniProtQueryProcessor(mock_config)
-
-
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for test files."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        yield Path(tmp_dir)
-
-
-@pytest.fixture
-def mock_response():
-    """Create a mock HTTP response for UniProt API calls."""
-    response = Mock()
-    compressed_content = gzip.compress(SAMPLE_FASTA_CONTENT.encode())
-    response.headers = {"content-length": str(len(compressed_content))}
-    response.iter_content.return_value = [compressed_content]
-    response.raise_for_status.return_value = None
-    return response
-
-
-@pytest.fixture
-def mock_pymmseqs_df():
-    """Create a mock DataFrame for pymmseqs results."""
-    return pd.DataFrame(
-        {
-            "query": ["P01308", "P01308", "P01315", "P01315", "P01316", "P01316"],
-            "target": ["P01308", "P01315", "P01315", "P01316", "P01316", "P01308"],
-            "fident": [1.0, 0.8, 1.0, 0.9, 1.0, 0.7],
-        }
-    )
+    return UniProtQueryProcessor({})
 
 
 class TestUniProtQueryProcessorInit:
@@ -119,8 +73,12 @@ class TestProcessQuery:
     """Test the main process_query method."""
 
     @patch("src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor")
-    @patch("src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix")
-    @patch("src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta")
+    @patch(
+        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+    )
+    @patch(
+        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
+    )
     def test_process_query_success(
         self,
         mock_search_fasta,
@@ -146,6 +104,7 @@ class TestProcessQuery:
         result = processor.process_query(
             query=SAMPLE_QUERY,
             output_path=output_path,
+            intermediate_dir=temp_dir / "intermediate",
             features="length,organism",
             keep_tmp=False,
         )
@@ -196,21 +155,29 @@ class TestProcessQuery:
         # Execute
         output_path = temp_dir / "output"
         result = processor.process_query(
-            query=SAMPLE_QUERY, output_path=output_path, keep_tmp=True, non_binary=True
+            query=SAMPLE_QUERY,
+            output_path=output_path,
+            intermediate_dir=temp_dir / "intermediate",
+            keep_tmp=True,
+            non_binary=True,
         )
 
         # Verify
-        metadata_df, similarity_matrix, headers, saved_files = result
+        _, _, _, saved_files = result
 
-        expected_fasta_path = output_path / "sequences.fasta"
-        expected_metadata_path = output_path / "all_features.csv"
-        expected_similarity_path = output_path / "similarity_matrix.csv"
+        expected_fasta_path = temp_dir / "intermediate" / "sequences.fasta"
+        expected_metadata_path = temp_dir / "intermediate" / "all_features.csv"
+        expected_similarity_path = temp_dir / "intermediate" / "similarity_matrix.csv"
 
         assert "fasta" in saved_files
         assert "metadata" in saved_files
         assert "similarity_matrix" in saved_files
 
         # Verify save paths
+        assert saved_files["fasta"] == expected_fasta_path
+        assert saved_files["metadata"] == expected_metadata_path
+        assert saved_files["similarity_matrix"] == expected_similarity_path
+
         mock_search_fasta.assert_called_once_with(
             SAMPLE_QUERY, save_to=expected_fasta_path
         )
@@ -227,7 +194,11 @@ class TestProcessQuery:
         output_path = temp_dir / "output.json"
 
         with pytest.raises(ValueError, match="No sequences found for query"):
-            processor.process_query(query="invalid_query", output_path=output_path)
+            processor.process_query(
+                query="invalid_query",
+                output_path=output_path,
+                intermediate_dir=temp_dir / "intermediate",
+            )
 
 
 class TestSearchAndDownloadFasta:
@@ -263,7 +234,7 @@ class TestSearchAndDownloadFasta:
         )
 
         # Mock file operations
-        with patch("builtins.open", mock_open()) as mock_file:
+        with patch("builtins.open", mock_open()):
             with patch.object(
                 processor,
                 "_extract_identifiers_from_fasta",
@@ -321,7 +292,7 @@ class TestSearchAndDownloadFasta:
             SAMPLE_FASTA_CONTENT
         )
 
-        with patch("builtins.open", mock_open()) as mock_file:
+        with patch("builtins.open", mock_open()):
             with patch.object(
                 processor,
                 "_extract_identifiers_from_fasta",
@@ -342,52 +313,34 @@ class TestExtractIdentifiersFromFasta:
 
     def test_extract_identifiers_swissprot_format(self, processor, temp_dir):
         """Test identifier extraction from SwissProt format headers."""
-        fasta_content = """>sp|P01308|INS_HUMAN Insulin
-SEQUENCE1
->sp|P01315|INSL3_HUMAN Insulin-like 3
-SEQUENCE2
-"""
-
         # Create compressed file
         gz_path = temp_dir / "test.fasta.gz"
         with gzip.open(gz_path, "wt") as f:
-            f.write(fasta_content)
+            f.write(FASTA_CONTENT["swissprot"])
 
         identifiers = processor._extract_identifiers_from_fasta(str(gz_path))
 
-        assert identifiers == ["P01308", "P01315"]
+        assert identifiers == EXPECTED_IDENTIFIERS["swissprot"]
 
     def test_extract_identifiers_trembl_format(self, processor, temp_dir):
         """Test identifier extraction from TrEMBL format headers."""
-        fasta_content = """>tr|A0A0A0MRZ7|A0A0A0MRZ7_HUMAN Description
-SEQUENCE1
->tr|Q8N2C7|Q8N2C7_HUMAN Description
-SEQUENCE2
-"""
-
         gz_path = temp_dir / "test.fasta.gz"
         with gzip.open(gz_path, "wt") as f:
-            f.write(fasta_content)
+            f.write(FASTA_CONTENT["trembl"])
 
         identifiers = processor._extract_identifiers_from_fasta(str(gz_path))
 
-        assert identifiers == ["A0A0A0MRZ7", "Q8N2C7"]
+        assert identifiers == EXPECTED_IDENTIFIERS["trembl"]
 
     def test_extract_identifiers_simple_format(self, processor, temp_dir):
         """Test identifier extraction from simple format headers."""
-        fasta_content = """>P01308 Insulin
-SEQUENCE1
->P01315 Insulin-like
-SEQUENCE2
-"""
-
         gz_path = temp_dir / "test.fasta.gz"
         with gzip.open(gz_path, "wt") as f:
-            f.write(fasta_content)
+            f.write(FASTA_CONTENT["simple"])
 
         identifiers = processor._extract_identifiers_from_fasta(str(gz_path))
 
-        assert identifiers == ["P01308", "P01315"]
+        assert identifiers == EXPECTED_IDENTIFIERS["simple"]
 
 
 class TestGetSimilarityMatrix:
@@ -438,7 +391,7 @@ class TestGetSimilarityMatrix:
     @patch("src.protspace.data.uniprot_query_processor.easy_search")
     @patch("src.protspace.data.uniprot_query_processor.shutil.rmtree")
     def test_get_similarity_matrix_with_missing_pairs(
-        self, mock_rmtree, mock_easy_search, processor, temp_dir
+        self, _, mock_easy_search, processor, temp_dir
     ):
         """Test similarity matrix with missing sequence pairs."""
         # Create DataFrame with only some pairs
@@ -458,7 +411,7 @@ class TestGetSimilarityMatrix:
         fasta_path.write_text(SAMPLE_FASTA_CONTENT)
 
         # Execute
-        similarity_matrix, headers = processor._get_similarity_matrix(
+        similarity_matrix, _ = processor._get_similarity_matrix(
             fasta_path, SAMPLE_HEADERS
         )
 
@@ -667,6 +620,7 @@ class TestIntegration:
                     result = processor.process_query(
                         query=SAMPLE_QUERY,
                         output_path=output_path,
+                        intermediate_dir=temp_dir / "intermediate",
                         features="length,organism",
                         keep_tmp=True,
                         non_binary=False,
@@ -693,7 +647,6 @@ def test_metadata_file_extension(non_binary, expected_extension, processor, temp
     ) as mock_fe:
         with patch.object(processor, "_search_and_download_fasta") as mock_search:
             with patch.object(processor, "_get_similarity_matrix") as mock_sim:
-
                 # Setup mocks
                 fasta_path = temp_dir / "temp.fasta"
                 mock_search.return_value = (SAMPLE_HEADERS, fasta_path)
@@ -708,6 +661,7 @@ def test_metadata_file_extension(non_binary, expected_extension, processor, temp
                 processor.process_query(
                     query=SAMPLE_QUERY,
                     output_path=output_path,
+                    intermediate_dir=temp_dir / "intermediate",
                     keep_tmp=True,
                     non_binary=non_binary,
                 )
@@ -715,7 +669,9 @@ def test_metadata_file_extension(non_binary, expected_extension, processor, temp
                 # Verify correct file extension was used
                 call_kwargs = mock_fe.call_args[1]
                 assert call_kwargs["non_binary"] == non_binary
-                expected_path = output_path / f"all_features.{expected_extension}"
+                expected_path = (
+                    temp_dir / "intermediate" / f"all_features.{expected_extension}"
+                )
                 assert call_kwargs["output_path"] == expected_path
 
 
@@ -730,7 +686,11 @@ class TestErrorScenarios:
             output_path = temp_dir / "output.json"
 
             with pytest.raises(ValueError, match="No sequences found for query"):
-                processor.process_query(query="", output_path=output_path)
+                processor.process_query(
+                    query="",
+                    output_path=output_path,
+                    intermediate_dir=temp_dir / "intermediate",
+                )
 
     @patch("src.protspace.data.uniprot_query_processor.easy_search")
     def test_pymmseqs_failure(self, mock_easy_search, processor, temp_dir):
@@ -745,18 +705,12 @@ class TestErrorScenarios:
 
     def test_malformed_fasta_headers(self, processor, temp_dir):
         """Test handling of malformed FASTA headers."""
-        malformed_fasta = """>malformed_header_without_pipes
-SEQUENCE1
->another|incomplete
-SEQUENCE2
-"""
-
         gz_path = temp_dir / "malformed.fasta.gz"
         with gzip.open(gz_path, "wt") as f:
-            f.write(malformed_fasta)
+            f.write(FASTA_CONTENT["malformed"])
 
         identifiers = processor._extract_identifiers_from_fasta(str(gz_path))
 
         # First header has no pipes, so uses first word after >
         # Second header has pipes, so uses second part (parts[1])
-        assert identifiers == ["malformed_header_without_pipes", "incomplete"]
+        assert identifiers == EXPECTED_IDENTIFIERS["malformed"]
