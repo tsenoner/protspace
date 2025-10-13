@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 
-from protspace.config import (
+from protspace.core.config import (
     DEFAULT_LINE_WIDTH,
     HIGHLIGHT_BORDER_COLOR,
     HIGHLIGHT_COLOR,
@@ -17,7 +17,7 @@ from protspace.config import (
     NAN_COLOR,
 )
 from protspace.utils import JsonReader
-from protspace.helpers import standardize_missing
+from protspace.core.constants import standardize_missing
 
 
 def generate_default_color(index: int, total: int) -> str:

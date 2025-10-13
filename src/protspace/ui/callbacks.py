@@ -11,16 +11,16 @@ import plotly.graph_objs as go
 from dash import Input, Output, State, dcc, no_update
 from dash.exceptions import PreventUpdate
 
-from protspace import styles
-from protspace.config import (
+from protspace.ui import styles
+from protspace.core.config import (
     HELP_PANEL_WIDTH_PERCENT,
     MARKER_SHAPES_2D,
     MARKER_SHAPES_3D,
     SETTINGS_PANEL_WIDTH_PERCENT,
     NAN_COLOR,
 )
-from protspace.helpers import is_projection_3d
-from protspace.molstar_helper import get_molstar_data
+from protspace.core.constants import is_projection_3d
+from protspace.visualization.molstar import get_molstar_data
 from protspace.utils import JsonReader
 from protspace.visualization.plotting import (
     create_plot,

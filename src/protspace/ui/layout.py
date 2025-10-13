@@ -5,8 +5,8 @@ import dash_molstar
 from dash_iconify import DashIconify
 import importlib.resources
 
-from protspace import styles
-from protspace.config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
+from protspace.ui import styles
+from protspace.core.config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
 from protspace.utils import JsonReader
 
 

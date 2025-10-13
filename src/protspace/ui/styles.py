@@ -1,6 +1,6 @@
 """Centralized styles for the ProtSpace application."""
 
-from protspace.config import HELP_PANEL_WIDTH_PERCENT, SETTINGS_PANEL_WIDTH_PERCENT
+from protspace.core.config import HELP_PANEL_WIDTH_PERCENT, SETTINGS_PANEL_WIDTH_PERCENT
 
 # General layout
 BASE_STYLE = {

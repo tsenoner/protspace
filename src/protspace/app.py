@@ -7,7 +7,7 @@ from pathlib import Path
 import dash_bootstrap_components as dbc
 from dash import Dash
 
-from protspace.server.callbacks import setup_callbacks
+from protspace.ui.callbacks import setup_callbacks
 from protspace.ui.layout import create_layout
 from protspace.utils import JsonReader
 from protspace.utils.arrow_reader import ArrowReader
@@ -58,7 +58,7 @@ class ProtSpace:
     def create_app(self):
         """Create and configure the Dash app."""
         current_dir = Path(__file__).parent
-        assets_path = str(current_dir.parent / "assets")
+        assets_path = str(current_dir / "assets")
 
         app = Dash(
             __name__,

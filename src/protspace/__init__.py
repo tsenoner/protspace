@@ -5,7 +5,7 @@ from .utils import add_feature_style  # noqa: F401
 __all__ = ["add_feature_style"]
 
 try:
-    from .server import ProtSpace  # noqa: F401
+    from .app import ProtSpace  # noqa: F401
 
     __all__.extend(["ProtSpace"])
 except ImportError:
