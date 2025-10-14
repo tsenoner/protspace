@@ -4,12 +4,12 @@ from protspace.utils import JsonReader
 
 
 def standardize_missing(series: pd.Series) -> pd.Series:
-    """Replaces various forms of missing values with '<NaN>' in a pandas Series."""
+    """Replaces various forms of missing values with '<N/A>' in a pandas Series."""
     series = series.astype(str)
-    missing_values = ["", "nan", "none", "null", "<NA>"]
-    replacements = dict.fromkeys(missing_values, "<NaN>")
+    missing_values = ["", "nan", "none", "null", "NA", "NaN"]
+    replacements = dict.fromkeys(missing_values, "<N/A>")
 
-    return series.replace(replacements).fillna("<NaN>")
+    return series.replace(replacements).fillna("<N/A>")
 
 
 def is_projection_3d(reader: JsonReader, projection_name: str) -> bool:
