@@ -253,7 +253,7 @@ def create_plot(
     # Generate default colors for values that don't have one
     for i, value in enumerate(unique_values):
         if str(value) not in feature_colors:
-            if value == "<NaN>":
+            if value == "<N/A>":
                 feature_colors[str(value)] = NAN_COLOR
             else:
                 feature_colors[str(value)] = generate_default_color(
