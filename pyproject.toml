@@ -22,10 +22,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-scripts = [
-    "matplotlib>=3.9.2",
-]
-
 frontend = [
     "gunicorn>=23.0.0",
     "python-dotenv>=1.0.1",
