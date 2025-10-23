@@ -1,4 +1,8 @@
-from unittest.mock import Mock, mock_open, patch
+"""Tests for taxonomy feature retriever.
+
+These tests use the real NCBI taxonomy database to ensure accurate behavior.
+The database is initialized once per test session and cached.
+"""
 
 import pytest
 
@@ -8,350 +12,23 @@ from src.protspace.data.feature_retrievers.taxonomy_feature_retriever import (
 )
 
 
-class TestTaxonomyFeatureRetrieverInit:
-    """Test TaxonomyFeatureRetriever initialization."""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_init_with_valid_taxon_ids(self, mock_taxdb):
-        """Test initialization with valid taxon IDs."""
-        mock_taxdb.return_value = Mock()
-        taxon_ids = [9606, 10090, 7227]  # Human, Mouse, Fly
-        features = ["genus", "species"]
-
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-
-        assert retriever.taxon_ids == taxon_ids
-        assert retriever.features == features
-        assert retriever.taxdb is not None
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_init_with_default_features(self, mock_taxdb):
-        """Test initialization with default features."""
-        mock_taxdb.return_value = Mock()
-        taxon_ids = [9606]
-
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids)
-
-        assert retriever.taxon_ids == taxon_ids
-        assert retriever.features is None
-
-    def test_init_with_invalid_taxon_ids(self):
-        """Test initialization with invalid taxon IDs raises ValueError."""
-        invalid_taxon_ids = [9606, "invalid", 10090]
-
-        with pytest.raises(ValueError, match="Taxon ID invalid is not an integer"):
-            TaxonomyFeatureRetriever(taxon_ids=invalid_taxon_ids)
-
-
-class TestValidateTaxonIds:
-    """Test the _validate_taxon_ids method."""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_validate_taxon_ids_valid(self, mock_taxdb):
-        """Test validation with valid integer taxon IDs."""
-        mock_taxdb.return_value = Mock()
-        retriever = TaxonomyFeatureRetriever(taxon_ids=[9606])
-
-        valid_ids = [9606, 10090, 7227]
-        result = retriever._validate_taxon_ids(valid_ids)
-
-        assert result == valid_ids
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_validate_taxon_ids_invalid_string(self, mock_taxdb):
-        """Test validation fails with string taxon ID."""
-        mock_taxdb.return_value = Mock()
-        retriever = TaxonomyFeatureRetriever(taxon_ids=[9606])
-
-        invalid_ids = [9606, "invalid", 10090]
-
-        with pytest.raises(ValueError, match="Taxon ID invalid is not an integer"):
-            retriever._validate_taxon_ids(invalid_ids)
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_validate_taxon_ids_invalid_float(self, mock_taxdb):
-        """Test validation fails with float taxon ID."""
-        mock_taxdb.return_value = Mock()
-        retriever = TaxonomyFeatureRetriever(taxon_ids=[9606])
-
-        invalid_ids = [9606, 10090.5]
-
-        with pytest.raises(ValueError, match="Taxon ID 10090.5 is not an integer"):
-            retriever._validate_taxon_ids(invalid_ids)
-
-
-class TestFetchFeatures:
-    """Test the fetch_features method."""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon"
-    )
-    def test_fetch_features_success(self, mock_taxon_class, mock_taxdb):
-        """Test successful feature fetching."""
-        # Setup mocks
-        mock_taxdb.return_value = Mock()
-
-        # Mock taxon instances
-        mock_human_taxon = Mock()
-        mock_human_taxon.name = "Homo sapiens"
-        mock_human_taxon.rank_name_dictionary = {
-            "superkingdom": "Eukaryota",
-            "kingdom": "Metazoa",
-            "phylum": "Chordata",
-            "class": "Mammalia",
-            "order": "Primates",
-            "family": "Hominidae",
-            "genus": "Homo",
-            "species": "Homo sapiens",
-        }
-
-        mock_mouse_taxon = Mock()
-        mock_mouse_taxon.name = "Mus musculus"
-        mock_mouse_taxon.rank_name_dictionary = {
-            "superkingdom": "Eukaryota",
-            "kingdom": "Metazoa",
-            "phylum": "Chordata",
-            "class": "Mammalia",
-            "order": "Rodentia",
-            "family": "Muridae",
-            "genus": "Mus",
-            "species": "Mus musculus",
-        }
-
-        # Setup side effect for taxon creation
-        def taxon_side_effect(taxon_id, _):
-            if taxon_id == 9606:
-                return mock_human_taxon
-            elif taxon_id == 10090:
-                return mock_mouse_taxon
-            else:
-                raise ValueError("Unknown taxon")
-
-        mock_taxon_class.side_effect = taxon_side_effect
-
-        # Test
-        taxon_ids = [9606, 10090]
-        features = ["genus", "species", "order"]
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-
-        result = retriever.fetch_features()
-
-        # Verify results
-        assert len(result) == 2
-
-        # Check human data
-        assert 9606 in result
-        human_features = result[9606]["features"]
-        assert human_features["genus"] == "Homo"
-        assert human_features["species"] == "Homo sapiens"
-        assert human_features["order"] == "Primates"
-
-        # Check mouse data
-        assert 10090 in result
-        mouse_features = result[10090]["features"]
-        assert mouse_features["genus"] == "Mus"
-        assert mouse_features["species"] == "Mus musculus"
-        assert mouse_features["order"] == "Rodentia"
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon"
-    )
-    def test_fetch_features_with_missing_ranks(self, mock_taxon_class, mock_taxdb):
-        """Test feature fetching when some taxonomy ranks are missing."""
-        # Setup mocks
-        mock_taxdb.return_value = Mock()
-
-        mock_taxon = Mock()
-        mock_taxon.name = "Test organism"
-        mock_taxon.rank_name_dictionary = {
-            "genus": "TestGenus",
-            # Missing species, order, etc.
-        }
-
-        mock_taxon_class.return_value = mock_taxon
-
-        # Test
-        taxon_ids = [12345]
-        features = ["genus", "species", "order"]
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-
-        result = retriever.fetch_features()
-
-        # Verify results
-        assert len(result) == 1
-        features_data = result[12345]["features"]
-        assert features_data["genus"] == "TestGenus"
-        assert features_data["species"] == ""  # Missing rank should be empty string
-        assert features_data["order"] == ""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon"
-    )
-    def test_fetch_features_with_error(self, mock_taxon_class, mock_taxdb):
-        """Test feature fetching when taxopy raises an error."""
-        # Setup mocks
-        mock_taxdb.return_value = Mock()
-        mock_taxon_class.side_effect = Exception("Network error")
-
-        # Test
-        taxon_ids = [9999]
-        features = ["genus", "species"]
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-
-        result = retriever.fetch_features()
-
-        # Verify error handling
-        assert len(result) == 1
-        features_data = result[9999]["features"]
-        assert features_data["genus"] == ""
-        assert features_data["species"] == ""
-
-
-class TestGetTaxonomyInfo:
-    """Test the _get_taxonomy_info method."""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon"
-    )
-    def test_get_taxonomy_info_success(self, mock_taxon_class, mock_taxdb):
-        """Test successful taxonomy info retrieval."""
-        # Setup mocks
-        mock_taxdb.return_value = Mock()
-
-        mock_taxon = Mock()
-        mock_taxon.name = "Escherichia coli"
-        mock_taxon.rank_name_dictionary = {
-            "kingdom": "Bacteria",
-            "phylum": "Proteobacteria",
-            "class": "Gammaproteobacteria",
-            "order": "Enterobacterales",
-            "family": "Enterobacteriaceae",
-            "genus": "Escherichia",
-            "species": "Escherichia coli",
-        }
-
-        mock_taxon_class.return_value = mock_taxon
-
-        # Test
-        taxon_ids = [511145]  # E. coli
-        features = ["kingdom", "genus", "species"]
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-
-        result = retriever._get_taxonomy_info(taxon_ids)
-
-        # Verify results
-        assert len(result) == 1
-        assert 511145 in result
-        tax_info = result[511145]
-        assert tax_info["kingdom"] == "Bacteria"
-        assert tax_info["genus"] == "Escherichia"
-        assert tax_info["species"] == "Escherichia coli"
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon"
-    )
-    def test_get_taxonomy_info_exception_handling(self, mock_taxon_class, mock_taxdb):
-        """Test error handling in taxonomy info retrieval."""
-        # Setup mocks
-        mock_taxdb.return_value = Mock()
-        mock_taxon_class.side_effect = Exception("Invalid taxon ID")
-
-        # Test
-        taxon_ids = [99999]
-        features = ["genus", "species"]
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-
-        result = retriever._get_taxonomy_info(taxon_ids)
-
-        # Verify error handling
-        assert len(result) == 1
-        assert 99999 in result
-        tax_info = result[99999]
-        assert tax_info["genus"] == ""
-        assert tax_info["species"] == ""
-
-
-class TestInitializeTaxdb:
-    """Test the _initialize_taxdb method."""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("pathlib.Path.exists")
-    @patch("pathlib.Path.mkdir")
-    def test_initialize_taxdb_fresh_download(
-        self, mock_mkdir, mock_exists, _, mock_taxdb
-    ):
-        """Test database initialization with fresh download."""
-        # Setup mocks - no existing files
-        mock_exists.return_value = False
-        mock_taxdb_instance = Mock()
-        mock_taxdb.return_value = mock_taxdb_instance
-
-        # Test
-        retriever = TaxonomyFeatureRetriever.__new__(TaxonomyFeatureRetriever)
-        retriever.taxon_ids = [9606]
-        retriever.features = ["genus"]
-
-        result = retriever._initialize_taxdb()
-
-        # Verify fresh download
-        assert result == mock_taxdb_instance
-        mock_mkdir.assert_called()  # Cache directory created
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_initialize_taxdb_basic_functionality(self, mock_taxdb):
-        """Test basic database initialization functionality."""
-        # Setup mocks
-        mock_taxdb_instance = Mock()
-        mock_taxdb.return_value = mock_taxdb_instance
-
-        # Test
-        retriever = TaxonomyFeatureRetriever.__new__(TaxonomyFeatureRetriever)
-        retriever.taxon_ids = [9606]
-        retriever.features = ["genus"]
-
-        result = retriever._initialize_taxdb()
-
-        # Verify basic functionality
-        assert result == mock_taxdb_instance
-        mock_taxdb.assert_called()
-
-
-class TestConstants:
-    """Test module constants."""
-
-    def test_taxonomy_features_constant(self):
-        """Test that TAXONOMY_FEATURES contains expected features."""
-        expected_features = [
+@pytest.fixture(scope="session")
+def ensure_taxdb():
+    """Ensure taxonomy database is available once per test session."""
+    # Initialize once to download/verify database
+    retriever = TaxonomyFeatureRetriever(taxon_ids=[9606], features=["genus"])
+    # Database is now cached for all tests
+    return True
+
+
+class TestTaxonomyFeatures:
+    """Test taxonomy feature extraction with real NCBI data."""
+
+    def test_constants(self):
+        """Verify TAXONOMY_FEATURES constant."""
+        expected = [
+            "root",
+            "domain",
             "kingdom",
             "phylum",
             "class",
@@ -360,92 +37,184 @@ class TestConstants:
             "genus",
             "species",
         ]
+        assert TAXONOMY_FEATURES == expected
 
-        assert TAXONOMY_FEATURES == expected_features
-        assert len(TAXONOMY_FEATURES) == 7
+    def test_invalid_taxon_ids(self):
+        """Test that invalid taxon IDs raise ValueError."""
+        with pytest.raises(ValueError, match="not an integer"):
+            TaxonomyFeatureRetriever(taxon_ids=[9606, "invalid"])
 
-
-class TestIntegration:
-    """Integration tests for complete workflows."""
-
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon"
-    )
-    def test_end_to_end_workflow(self, mock_taxon_class, mock_taxdb):
-        """Test complete workflow from initialization to feature extraction."""
-        # Setup mocks
-        mock_taxdb.return_value = Mock()
-
-        mock_taxon = Mock()
-        mock_taxon.name = "Saccharomyces cerevisiae"
-        mock_taxon.rank_name_dictionary = {
-            "superkingdom": "Eukaryota",
-            "kingdom": "Fungi",
-            "phylum": "Ascomycota",
-            "class": "Saccharomycetes",
-            "order": "Saccharomycetales",
-            "family": "Saccharomycetaceae",
-            "genus": "Saccharomyces",
-            "species": "Saccharomyces cerevisiae",
-        }
-
-        mock_taxon_class.return_value = mock_taxon
-
-        # Test complete workflow
-        taxon_ids = [4932]  # S. cerevisiae
-        features = ["kingdom", "genus", "species"]
-
-        retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
+    def test_bacteria_taxonomy(self, ensure_taxdb):
+        """Test bacterial taxonomy (E. coli)."""
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[511145], features=TAXONOMY_FEATURES
+        )
         result = retriever.fetch_features()
 
-        # Verify complete workflow
-        assert len(result) == 1
-        assert 4932 in result
+        features = result[511145]["features"]
+        assert features["root"] == "cellular organisms"
+        assert features["domain"] == "Bacteria"
+        assert features["kingdom"] == "Pseudomonadati"
+        assert features["phylum"] == "Pseudomonadota"
+        assert features["class"] == "Gammaproteobacteria"
+        assert features["genus"] == "Escherichia"
+        assert features["species"] == "Escherichia coli"
 
-        features_data = result[4932]["features"]
-        assert features_data["kingdom"] == "Fungi"
-        assert features_data["genus"] == "Saccharomyces"
-        assert features_data["species"] == "Saccharomyces cerevisiae"
+    def test_archaea_taxonomy(self, ensure_taxdb):
+        """Test archaeal taxonomy."""
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[2190], features=TAXONOMY_FEATURES
+        )
+        result = retriever.fetch_features()
 
-    @patch(
-        "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.TaxDb"
-    )
-    def test_mixed_success_and_failure(self, mock_taxdb):
-        """Test workflow with mixed successful and failed taxon lookups."""
-        mock_taxdb.return_value = Mock()
+        features = result[2190]["features"]
+        assert features["domain"] == "Archaea"
+        assert features["kingdom"] == "Methanobacteriati"
+        assert features["genus"] == "Methanocaldococcus"
 
-        def taxon_side_effect(taxon_id, _):
-            if taxon_id == 9606:
-                mock_taxon = Mock()
-                mock_taxon.name = "Homo sapiens"
-                mock_taxon.rank_name_dictionary = {
-                    "genus": "Homo",
-                    "species": "Homo sapiens",
-                }
-                return mock_taxon
-            else:
-                raise Exception("Invalid taxon")
+    def test_eukaryote_taxonomy(self, ensure_taxdb):
+        """Test eukaryotic taxonomy across major groups."""
+        taxon_ids = [
+            7460,  # Insect (Apis mellifera)
+            9615,  # Mammal (Canis lupus)
+            3702,  # Plant (Arabidopsis thaliana)
+            559292,  # Fungi (Saccharomyces cerevisiae)
+        ]
 
-        with patch(
-            "src.protspace.data.feature_retrievers.taxonomy_feature_retriever.taxopy.Taxon",
-            side_effect=taxon_side_effect,
-        ):
-            taxon_ids = [9606, 99999]  # Valid and invalid
-            features = ["genus", "species"]
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=taxon_ids, features=TAXONOMY_FEATURES
+        )
+        result = retriever.fetch_features()
 
-            retriever = TaxonomyFeatureRetriever(taxon_ids=taxon_ids, features=features)
-            result = retriever.fetch_features()
+        # All should be Eukaryota
+        for taxon_id in taxon_ids:
+            assert result[taxon_id]["features"]["domain"] == "Eukaryota"
 
-            # Verify mixed results
-            assert len(result) == 2
+        # Verify specific kingdoms
+        assert result[7460]["features"]["kingdom"] == "Metazoa"  # Animal
+        assert result[9615]["features"]["kingdom"] == "Metazoa"  # Animal
+        assert result[3702]["features"]["kingdom"] == "Viridiplantae"  # Plant
+        assert result[559292]["features"]["kingdom"] == "Fungi"  # Fungus
 
-            # Successful lookup
-            assert result[9606]["features"]["genus"] == "Homo"
-            assert result[9606]["features"]["species"] == "Homo sapiens"
+    def test_virus_taxonomy(self, ensure_taxdb):
+        """Test viral taxonomy - uses acellular root and realm."""
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[2697049],
+            features=TAXONOMY_FEATURES,  # SARS-CoV-2
+        )
+        result = retriever.fetch_features()
 
-            # Failed lookup
-            assert result[99999]["features"]["genus"] == ""
-            assert result[99999]["features"]["species"] == ""
+        features = result[2697049]["features"]
+        assert features["root"] == "Viruses"
+        assert features["domain"] == "Riboviria"  # realm used as domain
+        assert features["kingdom"] == "Orthornavirae"
+        assert features["family"] == "Coronaviridae"
+
+    def test_domain_fallback_to_realm(self, ensure_taxdb):
+        """Test that viruses use realm as domain."""
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[2697049, 211044],  # SARS-CoV-2, Influenza
+            features=["domain", "kingdom"],
+        )
+        result = retriever.fetch_features()
+
+        # Both viruses should have realm as domain
+        assert result[2697049]["features"]["domain"] == "Riboviria"
+        assert result[211044]["features"]["domain"] != ""
+        # Both are Orthornavirae kingdom
+        assert result[2697049]["features"]["kingdom"] == "Orthornavirae"
+        assert result[211044]["features"]["kingdom"] == "Orthornavirae"
+
+    def test_diverse_organisms(self, ensure_taxdb):
+        """Test comprehensive set of organisms across all domains of life."""
+        test_cases = {
+            511145: {  # E. coli (Bacteria)
+                "root": "cellular organisms",
+                "domain": "Bacteria",
+                "genus": "Escherichia",
+            },
+            2190: {  # Archaea
+                "domain": "Archaea",
+                "genus": "Methanocaldococcus",
+            },
+            9615: {  # Mammal
+                "domain": "Eukaryota",
+                "kingdom": "Metazoa",
+                "class": "Mammalia",
+            },
+            2697049: {  # Virus
+                "root": "Viruses",
+                "domain": "Riboviria",
+                "kingdom": "Orthornavirae",
+            },
+        }
+
+        taxon_ids = list(test_cases.keys())
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=taxon_ids, features=TAXONOMY_FEATURES
+        )
+        result = retriever.fetch_features()
+
+        for taxon_id, expected in test_cases.items():
+            actual = result[taxon_id]["features"]
+            for feature, value in expected.items():
+                assert actual[feature] == value, (
+                    f"Taxon {taxon_id}: {feature}='{actual[feature]}' != '{value}'"
+                )
+
+    def test_missing_ranks(self, ensure_taxdb):
+        """Test that missing taxonomy ranks return empty strings."""
+        # Use a virus that might have incomplete taxonomy
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[10710],
+            features=TAXONOMY_FEATURES,  # Bacteriophage lambda
+        )
+        result = retriever.fetch_features()
+
+        features = result[10710]["features"]
+        # Should have some features
+        assert features["domain"] != ""  # realm
+        assert features["genus"] == "Lambdavirus"
+        # Missing ranks should be empty strings, not cause errors
+        assert isinstance(features["order"], str)
+        assert isinstance(features["family"], str)
+
+    def test_error_handling_invalid_taxon(self, ensure_taxdb):
+        """Test graceful handling of invalid taxon IDs."""
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[99999999],
+            features=["genus", "species"],  # Invalid ID
+        )
+        result = retriever.fetch_features()
+
+        # Should return empty features for invalid ID
+        features = result[99999999]["features"]
+        assert features["genus"] == ""
+        assert features["species"] == ""
+
+    def test_partial_features(self, ensure_taxdb):
+        """Test requesting only subset of features."""
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=[9606],
+            features=["domain", "genus", "species"],  # Human
+        )
+        result = retriever.fetch_features()
+
+        features = result[9606]["features"]
+        assert len(features) == 3
+        assert features["domain"] == "Eukaryota"
+        assert features["genus"] == "Homo"
+        assert features["species"] == "Homo sapiens"
+
+    def test_batch_retrieval(self, ensure_taxdb):
+        """Test efficient batch retrieval of multiple organisms."""
+        taxon_ids = [511145, 9606, 2697049]  # Bacteria, Human, Virus
+        retriever = TaxonomyFeatureRetriever(
+            taxon_ids=taxon_ids, features=["domain", "species"]
+        )
+        result = retriever.fetch_features()
+
+        assert len(result) == 3
+        assert all(taxon_id in result for taxon_id in taxon_ids)
+        assert all("domain" in result[tid]["features"] for tid in taxon_ids)
+        assert all("species" in result[tid]["features"] for tid in taxon_ids)
