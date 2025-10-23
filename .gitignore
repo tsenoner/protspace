@@ -6,39 +6,15 @@
 /docs
 /notebook
 # --- data ---
+# Ignore all data directories except 3FTx, Pla2g2, and toxins
+/data/*
+!/data/3FTx
+!/data/Pla2g2
+!/data/toxins
+# But always ignore pdb subdirectories, tmp subdirectories, and .h5 files everywhere
 **/pdb/
-**/foldcomp/
-/data/cath
-/data/ec/
-/data/light_attention
-/data/cath/
-/data/ec/
-/data/sizes
-/data/toxins
-# h_sapiens
-/data/h_sapiens
-/data/h_sapiens/embs/
-/data/h_sapiens/h_sapiens_uniprot20240909.json
-# gfp
-/data/gfp/foldseek_pdb_subset_1000
-/data/gfp/mmseqs_subset_1000
-/data/gfp/raw_data/*
-/data/gfp/processed_data/prott5.h5
-# toxins
-/data/toxins/mmseqs_toxins
-/data/toxins/raw_data
-/data/toxins/seline
-/data/toxins/processed_data/bits.csv
-/data/toxins/processed_data/evalue.csv
-/data/toxins/processed_data/similarity_matrix.csv
-# phages
-/data/phages/embs
-# sub_loc
-/data/sub_loc
-#nuclease
-/data/nuclease
-# 3ftx_extended
-/data/3ftx_extended
+**/tmp/
+**/*.h5
 # --- examples ---
 examples/data/
 examples/out/h_sapiens
