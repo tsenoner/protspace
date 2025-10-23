@@ -13,6 +13,8 @@
 /data/light_attention
 /data/cath/
 /data/ec/
+/data/sizes
+/data/toxins
 # h_sapiens
 /data/h_sapiens
 /data/h_sapiens/embs/
