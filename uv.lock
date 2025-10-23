@@ -2820,12 +2820,11 @@ wheels = [
 
 [[package]]
 name = "protspace"
-version = "2.1.0"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "bioservices" },
     { name = "h5py" },
-    { name = "matplotlib" },
     { name = "numpy" },
     { name = "pacmap" },
     { name = "pandas" },
@@ -2888,7 +2887,6 @@ requires-dist = [
     { name = "gunicorn", marker = "extra == 'frontend'", specifier = ">=23.0.0" },
     { name = "h5py", specifier = ">=3.12.1" },
     { name = "kaleido", marker = "extra == 'frontend'", specifier = ">=0.2.1,!=0.2.1.post1" },
-    { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "numpy", specifier = ">=1.23.0" },
     { name = "pacmap", specifier = ">=0.8.0" },
     { name = "pandas", specifier = ">=2.0.0" },
