@@ -21,6 +21,8 @@ def ensure_taxdb():
     return True
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 class TestTaxonomyFeatures:
     """Test taxonomy feature extraction with real NCBI data."""
 
