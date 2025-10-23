@@ -170,7 +170,7 @@ def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = Tru
             "              length_fixed, length_quantile, protein_existence,\n"
             "              protein_families, reviewed, sequence\n"
             "  InterPro:   cath, pfam, signal_peptide, superfamily\n"
-            "  Taxonomy:   kingdom, phylum, class, order, family, genus, species\n"
+            "  Taxonomy:   root, domain, kingdom, phylum, class, order, family, genus, species\n"
             "\n"
             "Examples:\n"
             f"  --features reviewed,length_quantile,kingdom{csv_example}\n"

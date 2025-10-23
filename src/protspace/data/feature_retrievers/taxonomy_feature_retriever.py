@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Taxonomy features
 TAXONOMY_FEATURES = [
+    "root",
+    "domain",
     "kingdom",
     "phylum",
     "class",
@@ -42,9 +44,7 @@ class TaxonomyFeatureRetriever:
                 if taxon_id in taxonomies_info:
                     result[taxon_id] = {"features": taxonomies_info[taxon_id]}
                 else:
-                    result[taxon_id] = {
-                        "features": dict.fromkeys(self.features, "")
-                    }
+                    result[taxon_id] = {"features": dict.fromkeys(self.features, "")}
                 pbar.update(1)
 
         return result
@@ -64,8 +64,17 @@ class TaxonomyFeatureRetriever:
                 taxon = taxopy.Taxon(taxon_id, self.taxdb)
                 ranks = taxon.rank_name_dictionary
 
+                # Determine root ('cellular root' or 'acellular root' rank)
+                root_value = ranks.get("cellular root", "") or ranks.get(
+                    "acellular root", ""
+                )
+                # Determine domain ('domain'  or 'realm' rank)
+                domain_value = ranks.get("domain", "") or ranks.get("realm", "")
+
                 # Fetch all available taxonomy information
                 full_taxonomy_info = {
+                    "root": root_value,
+                    "domain": domain_value,
                     "kingdom": ranks.get("kingdom", ""),
                     "phylum": ranks.get("phylum", ""),
                     "class": ranks.get("class", ""),
