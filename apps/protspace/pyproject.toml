@@ -1,6 +1,6 @@
 [project]
 name = "protspace"
-version = "2.1.0"
+version = "3.0.0"
 description = "A visualisation tool for protein embeddings from pLMs"
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
@@ -9,7 +9,6 @@ requires-python = ">=3.10"
 
 dependencies = [
     "h5py>=3.12.1",
-    "matplotlib>=3.9.2",
     "scikit-learn>=1.6.1",
     "umap-learn>=0.5.7",
     "pacmap>=0.8.0",
@@ -86,11 +85,11 @@ line-length = 88
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    "B", # flake8-bugbear
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
     "ARG001", # unused-function-args
@@ -98,9 +97,9 @@ select = [
     "F841", # unused-variable
 ]
 ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
+    "E501", # line too long, handled by black
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
 ]
 
 [tool.ruff.lint.per-file-ignores]
