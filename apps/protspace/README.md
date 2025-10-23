@@ -83,7 +83,7 @@ Access at `http://localhost:8050`
 
 **InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily`
 
-**Taxonomy**: `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
+**Taxonomy**: `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
 
 Examples:
 
