@@ -6,10 +6,13 @@ The database is initialized once per test session and cached.
 
 import pytest
 
-from src.protspace.data.feature_retrievers.taxonomy_feature_retriever import (
+from src.protspace.data.features.retrievers.taxonomy_retriever import (
     TAXONOMY_FEATURES,
-    TaxonomyFeatureRetriever,
+    TaxonomyRetriever,
 )
+
+# Alias for test compatibility
+TaxonomyFeatureRetriever = TaxonomyRetriever
 
 
 @pytest.fixture(scope="session")

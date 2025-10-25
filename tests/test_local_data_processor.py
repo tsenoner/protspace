@@ -6,11 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.protspace.data.local_data_processor import (
+from src.protspace.data.processors.local_processor import (
     EMBEDDING_EXTENSIONS,
-    LocalDataProcessor,
+    LocalProcessor,
 )
 from src.protspace.utils import REDUCERS
+
+# Use new name
+LocalDataProcessor = LocalProcessor  # For test compatibility
 
 # Test data
 SAMPLE_HEADERS = ["P01308", "P01315", "P01316"]
@@ -71,7 +74,7 @@ class TestLocalDataProcessorInit:
 class TestLoadInputFile:
     """Test the _load_input_file method."""
 
-    @patch("src.protspace.data.local_data_processor.h5py.File")
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
     def test_load_input_file_hdf5(self, mock_h5py_file):
         """Test loading embeddings from HDF5 file."""
         # Setup mock HDF5 file
@@ -217,7 +220,7 @@ class TestLoadOrGenerateMetadata:
             assert isinstance(result, pd.DataFrame)
             assert len(result) == 3
 
-    @patch("src.protspace.data.local_data_processor.ProteinFeatureExtractor")
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
     def test_generate_metadata_with_features(self, mock_feature_extractor):
         """Test metadata generation with specified features."""
         # Setup mock
@@ -245,7 +248,7 @@ class TestLoadOrGenerateMetadata:
             # Verify result
             pd.testing.assert_frame_equal(result, SAMPLE_METADATA_DF)
 
-    @patch("src.protspace.data.local_data_processor.ProteinFeatureExtractor")
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
     def test_generate_metadata_no_features(self, mock_feature_extractor):
         """Test metadata generation without specifying features."""
         # Setup mock
@@ -267,7 +270,7 @@ class TestLoadOrGenerateMetadata:
             call_kwargs = mock_feature_extractor.call_args[1]
             assert call_kwargs["features"] is None
 
-    @patch("src.protspace.data.local_data_processor.ProteinFeatureExtractor")
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
     def test_generate_metadata_file_cleanup(self, mock_feature_extractor):
         """Test metadata generation when keep_tmp=False (no intermediate files created)."""
         # Setup mock
@@ -312,10 +315,10 @@ class TestLoadData:
     """Test the main load_data method."""
 
     @patch(
-        "src.protspace.data.local_data_processor.LocalDataProcessor._load_or_generate_metadata"
+        "src.protspace.data.processors.local_processor.LocalProcessor._load_or_generate_metadata"
     )
     @patch(
-        "src.protspace.data.local_data_processor.LocalDataProcessor._load_input_file"
+        "src.protspace.data.processors.local_processor.LocalProcessor._load_input_file"
     )
     def test_load_data_success(self, mock_load_input, mock_load_metadata):
         """Test successful data loading."""
@@ -354,10 +357,10 @@ class TestLoadData:
             mock_load_metadata.assert_called_once()
 
     @patch(
-        "src.protspace.data.local_data_processor.LocalDataProcessor._load_or_generate_metadata"
+        "src.protspace.data.processors.local_processor.LocalProcessor._load_or_generate_metadata"
     )
     @patch(
-        "src.protspace.data.local_data_processor.LocalDataProcessor._load_input_file"
+        "src.protspace.data.processors.local_processor.LocalProcessor._load_input_file"
     )
     def test_load_data_with_partial_metadata(self, mock_load_input, mock_load_metadata):
         """Test data loading with partial metadata (missing entries)."""
@@ -413,8 +416,8 @@ class TestConstants:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
-    @patch("src.protspace.data.local_data_processor.ProteinFeatureExtractor")
-    @patch("src.protspace.data.local_data_processor.h5py.File")
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
     def test_end_to_end_hdf5_workflow(self, mock_h5py_file, mock_feature_extractor):
         """Test complete workflow from HDF5 input to final data."""
         # Setup HDF5 mock
@@ -496,7 +499,7 @@ class TestIntegration:
             assert headers == SAMPLE_HEADERS
             assert processor.config.get("precomputed") is True
 
-    @patch("src.protspace.data.local_data_processor.ProteinFeatureExtractor")
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
     def test_error_recovery_workflow(self, mock_feature_extractor):
         """Test workflow with metadata generation errors."""
         # Setup ProteinFeatureExtractor to raise an error
@@ -505,7 +508,9 @@ class TestIntegration:
         processor = LocalDataProcessor({})
 
         # Create mock HDF5 data
-        with patch("src.protspace.data.local_data_processor.h5py.File") as mock_h5py:
+        with patch(
+            "src.protspace.data.processors.local_processor.h5py.File"
+        ) as mock_h5py:
             mock_file = MagicMock()
             mock_h5py.return_value.__enter__.return_value = mock_file
             mock_file.items.return_value = [("P01308", np.array([0.1, 0.2]))]

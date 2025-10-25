@@ -8,7 +8,9 @@ import pandas as pd
 import pytest
 import requests
 
-from src.protspace.data.uniprot_query_processor import UniProtQueryProcessor
+from src.protspace.data.processors.uniprot_query_processor import (
+    UniProtQueryProcessor,
+)
 from src.protspace.utils import REDUCERS
 from tests.test_config import (
     EXPECTED_IDENTIFIERS,
@@ -72,12 +74,14 @@ class TestUniProtQueryProcessorInit:
 class TestProcessQuery:
     """Test the main process_query method."""
 
-    @patch("src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor")
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
     )
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+    )
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
     )
     def test_process_query_success(
         self,
@@ -125,12 +129,14 @@ class TestProcessQuery:
         mock_similarity.assert_called_once_with(fasta_path, SAMPLE_HEADERS)
         mock_feature_extractor.assert_called_once()
 
-    @patch("src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor")
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
     )
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+    )
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
     )
     def test_process_query_with_keep_tmp(
         self,
@@ -183,7 +189,7 @@ class TestProcessQuery:
         )
 
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
     )
     def test_process_query_no_sequences_found(
         self, mock_search_fasta, processor, temp_dir
@@ -204,9 +210,11 @@ class TestProcessQuery:
 class TestSearchAndDownloadFasta:
     """Test _search_and_download_fasta method."""
 
-    @patch("src.protspace.data.uniprot_query_processor.requests.get")
-    @patch("src.protspace.data.uniprot_query_processor.gzip.open")
-    @patch("src.protspace.data.uniprot_query_processor.tempfile.NamedTemporaryFile")
+    @patch("src.protspace.data.processors.uniprot_query_processor.requests.get")
+    @patch("src.protspace.data.processors.uniprot_query_processor.gzip.open")
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.tempfile.NamedTemporaryFile"
+    )
     def test_search_and_download_success(
         self,
         mock_tempfile,
@@ -255,7 +263,7 @@ class TestSearchAndDownloadFasta:
                 assert call_args[1]["params"]["format"] == "fasta"
                 assert call_args[1]["params"]["compressed"] == "true"
 
-    @patch("src.protspace.data.uniprot_query_processor.requests.get")
+    @patch("src.protspace.data.processors.uniprot_query_processor.requests.get")
     def test_search_and_download_request_error(self, mock_requests_get, processor):
         """Test handling of HTTP request errors."""
         mock_requests_get.side_effect = requests.RequestException("Network error")
@@ -263,9 +271,11 @@ class TestSearchAndDownloadFasta:
         with pytest.raises(requests.RequestException):
             processor._search_and_download_fasta(SAMPLE_QUERY)
 
-    @patch("src.protspace.data.uniprot_query_processor.requests.get")
-    @patch("src.protspace.data.uniprot_query_processor.gzip.open")
-    @patch("src.protspace.data.uniprot_query_processor.tempfile.NamedTemporaryFile")
+    @patch("src.protspace.data.processors.uniprot_query_processor.requests.get")
+    @patch("src.protspace.data.processors.uniprot_query_processor.gzip.open")
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.tempfile.NamedTemporaryFile"
+    )
     def test_search_and_download_with_save_path(
         self,
         mock_tempfile,
@@ -346,8 +356,8 @@ class TestExtractIdentifiersFromFasta:
 class TestGetSimilarityMatrix:
     """Test _get_similarity_matrix method."""
 
-    @patch("src.protspace.data.uniprot_query_processor.easy_search")
-    @patch("src.protspace.data.uniprot_query_processor.shutil.rmtree")
+    @patch("src.protspace.data.processors.uniprot_query_processor.easy_search")
+    @patch("src.protspace.data.processors.uniprot_query_processor.shutil.rmtree")
     def test_get_similarity_matrix_success(
         self, mock_rmtree, mock_easy_search, processor, temp_dir, mock_pymmseqs_df
     ):
@@ -388,8 +398,8 @@ class TestGetSimilarityMatrix:
         # Verify cleanup
         mock_rmtree.assert_called_once()
 
-    @patch("src.protspace.data.uniprot_query_processor.easy_search")
-    @patch("src.protspace.data.uniprot_query_processor.shutil.rmtree")
+    @patch("src.protspace.data.processors.uniprot_query_processor.easy_search")
+    @patch("src.protspace.data.processors.uniprot_query_processor.shutil.rmtree")
     def test_get_similarity_matrix_with_missing_pairs(
         self, _, mock_easy_search, processor, temp_dir
     ):
@@ -458,7 +468,9 @@ class TestSaveSimilarityMatrix:
 class TestGenerateMetadata:
     """Test _generate_metadata method."""
 
-    @patch("src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor")
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+    )
     def test_generate_metadata_with_feature_extractor(
         self, mock_feature_extractor, processor, temp_dir
     ):
@@ -516,7 +528,9 @@ class TestGenerateMetadata:
         assert len(result_df) == 3
         assert list(result_df["identifier"]) == SAMPLE_HEADERS
 
-    @patch("src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor")
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+    )
     def test_generate_metadata_error_handling(self, mock_feature_extractor, processor):
         """Test error handling in metadata generation."""
         # Setup mock to raise exception
@@ -568,11 +582,15 @@ class TestGenerateMetadata:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
-    @patch("src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor")
-    @patch("src.protspace.data.uniprot_query_processor.easy_search")
-    @patch("src.protspace.data.uniprot_query_processor.requests.get")
-    @patch("src.protspace.data.uniprot_query_processor.gzip.open")
-    @patch("src.protspace.data.uniprot_query_processor.tempfile.NamedTemporaryFile")
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+    )
+    @patch("src.protspace.data.processors.uniprot_query_processor.easy_search")
+    @patch("src.protspace.data.processors.uniprot_query_processor.requests.get")
+    @patch("src.protspace.data.processors.uniprot_query_processor.gzip.open")
+    @patch(
+        "src.protspace.data.processors.uniprot_query_processor.tempfile.NamedTemporaryFile"
+    )
     def test_full_workflow_integration(
         self,
         mock_tempfile,
@@ -610,7 +628,9 @@ class TestIntegration:
 
         # Execute full workflow
         with patch("builtins.open", mock_open()):
-            with patch("src.protspace.data.uniprot_query_processor.shutil.rmtree"):
+            with patch(
+                "src.protspace.data.processors.uniprot_query_processor.shutil.rmtree"
+            ):
                 with patch.object(
                     processor,
                     "_extract_identifiers_from_fasta",
@@ -643,7 +663,7 @@ class TestIntegration:
 def test_metadata_file_extension(non_binary, expected_extension, processor, temp_dir):
     """Test that metadata file extension depends on non_binary flag."""
     with patch(
-        "src.protspace.data.uniprot_query_processor.ProteinFeatureExtractor"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
     ) as mock_fe:
         with patch.object(processor, "_search_and_download_fasta") as mock_search:
             with patch.object(processor, "_get_similarity_matrix") as mock_sim:
@@ -692,7 +712,7 @@ class TestErrorScenarios:
                     intermediate_dir=temp_dir / "intermediate",
                 )
 
-    @patch("src.protspace.data.uniprot_query_processor.easy_search")
+    @patch("src.protspace.data.processors.uniprot_query_processor.easy_search")
     def test_pymmseqs_failure(self, mock_easy_search, processor, temp_dir):
         """Test handling of pymmseqs failures."""
         mock_easy_search.side_effect = Exception("MMseqs2 failed")

@@ -1,9 +1,12 @@
 from unittest.mock import Mock, patch
 
-from src.protspace.data.feature_retrievers.interpro_feature_retriever import (
+from src.protspace.data.features.retrievers.interpro_retriever import (
     INTERPRO_FEATURES,
-    InterProFeatureRetriever,
+    InterProRetriever,
 )
+
+# Alias for test compatibility
+InterProFeatureRetriever = InterProRetriever
 
 
 class TestInterProFeatureRetrieverInit:
@@ -69,9 +72,7 @@ class TestInterProFeatureRetrieverInit:
 class TestInterProFeatureRetrieverFetch:
     """Test InterProFeatureRetriever fetch_features method."""
 
-    @patch(
-        "src.protspace.data.feature_retrievers.interpro_feature_retriever.requests.post"
-    )
+    @patch("src.protspace.data.features.retrievers.interpro_retriever.requests.post")
     def test_fetch_features_success(self, mock_post):
         """Test successful feature fetching."""
         headers = ["P12345"]
@@ -105,7 +106,7 @@ class TestInterProFeatureRetrieverFetch:
 
         # Override MD5 calculation for predictable test
         with patch(
-            "src.protspace.data.feature_retrievers.interpro_feature_retriever.hashlib.md5"
+            "src.protspace.data.features.retrievers.interpro_retriever.hashlib.md5"
         ) as mock_md5:
             mock_md5.return_value.hexdigest.return_value = (
                 "5D41402ABC4B2A76B9719D911017C592"
