@@ -1,6 +1,5 @@
 import csv
 import logging
-import re
 from pathlib import Path
 
 import numpy as np
@@ -387,47 +386,9 @@ class ProteinFeatureExtractor:
         if "cc_subcellular_location" in csv_headers:
             idx = csv_headers.index("cc_subcellular_location")
             if idx < len(row) and row[idx]:
-                subcell_value = str(row[idx])
-
-                # Handle isoform-specific locations
-                # Pattern: [Isoform X]: content (up to next [Isoform or end)
-                isoform_pattern = r"\[Isoform ([^\]]+)\]:\s*(.+?)(?=\[Isoform|$)"
-                isoform_matches = list(
-                    re.finditer(isoform_pattern, subcell_value, re.DOTALL)
-                )
-
-                if isoform_matches:
-                    # Sort isoforms alphabetically and take the first one
-                    sorted_isoforms = sorted(isoform_matches, key=lambda m: m.group(1))
-                    content = sorted_isoforms[0].group(2)
-                    # Remove "SUBCELLULAR LOCATION:" if present in content
-                    content = re.sub(r"SUBCELLULAR LOCATION:\s*", "", content)
-                elif "SUBCELLULAR LOCATION:" in subcell_value:
-                    # Extract content after "SUBCELLULAR LOCATION:"
-                    content = subcell_value.split("SUBCELLULAR LOCATION:", 1)[1]
-                else:
-                    content = subcell_value
-
-                # Remove everything from "Note=" onwards
-                if "Note=" in content:
-                    content = content.split("Note=")[0]
-
-                # Extract locations: split by period, remove ECO references
-                locations = []
-                # Pattern to extract location before {ECO: or period
-                location_pattern = r"([^.{]+?)(?:\s*\{ECO:[^}]*\})?(?:\.|;|$)"
-
-                for match in re.finditer(location_pattern, content):
-                    location = match.group(1).strip()
-                    if location and not location.lower().startswith("note"):
-                        # Split by semicolon for sub-locations
-                        for sub_loc in location.split(";"):
-                            sub_loc = sub_loc.strip()
-                            if sub_loc:
-                                locations.append(sub_loc)
-
-                if locations:
-                    modified_row[idx] = ";".join(locations)
+                # Already in clean semicolon-separated format from new parser
+                # No processing needed, keep as is
+                modified_row[idx] = str(row[idx])
 
         if "fragment" in csv_headers:
             idx = csv_headers.index("fragment")
