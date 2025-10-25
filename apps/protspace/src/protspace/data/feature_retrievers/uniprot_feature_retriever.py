@@ -1,24 +1,26 @@
 import logging
 from collections import namedtuple
-from typing import NamedTuple
 
-from bioservices import UniProt
 from tqdm import tqdm
+from unipressed import UniprotkbClient
+
+from protspace.data.parsers.uniprot_parser import UniProtEntry
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# UniProt features
-# TODO: Add more features
+# UniProt features - these are the current protspace features
 UNIPROT_FEATURES = [
-    "protein_existence",
     "annotation_score",
-    "protein_families",
-    "length",
-    "reviewed",
-    "fragment",
     "cc_subcellular_location",
+    "fragment",
+    "length",
+    "organism_id",
+    "protein_existence",
+    "protein_families",
+    "reviewed",
     "sequence",
+    "xref_pdb",
 ]
 
 ProteinFeatures = namedtuple("ProteinFeatures", ["identifier", "features"])
@@ -28,12 +30,14 @@ class UniProtFeatureRetriever:
     def __init__(self, headers: list[str] = None, features: list = None):
         self.headers = self._manage_headers(headers) if headers else []
         self.features = features
-        self.u = UniProt(verbose=False)
 
-    def fetch_features(self) -> list[NamedTuple]:
+    def fetch_features(self) -> list[ProteinFeatures]:
+        """
+        Fetch raw UniProt properties and store in tmp files.
+        Stores UNIPROT_FEATURES with minimal processing.
+        Processing/transformation happens later in feature_manager.
+        """
         batch_size = 100
-        all_data = []
-        first_batch = True
         result = []
 
         with tqdm(
@@ -41,34 +45,56 @@ class UniProtFeatureRetriever:
         ) as pbar:
             for i in range(0, len(self.headers), batch_size):
                 batch = self.headers[i : i + batch_size]
-                query = "+OR+".join([f"accession:{accession}" for accession in batch])
-                columns = ",".join(self.features)
 
-                data = self.u.search(query=query, columns=columns)
+                try:
+                    # Fetch records using unipressed
+                    records = UniprotkbClient.fetch_many(batch)
 
-                if data:
-                    if first_batch:
-                        all_data.append(data)
-                        first_batch = False
-                    else:
-                        all_data.append("\n".join(data.strip().split("\n")[1:]))
+                    # Parse each record and extract raw properties for tmp storage
+                    for record in records:
+                        entry = UniProtEntry(record)
+                        identifier = entry.entry
+
+                        # Extract UNIPROT_FEATURES with minimal processing
+                        features_dict = {}
+                        for prop in UNIPROT_FEATURES:
+                            try:
+                                value = getattr(entry, prop)
+                                # Store raw values, convert to strings for CSV/Parquet compatibility
+                                if isinstance(value, list):
+                                    # Join list values with semicolon (raw format)
+                                    features_dict[prop] = (
+                                        ";".join(str(v) for v in value) if value else ""
+                                    )
+                                elif isinstance(value, bool):
+                                    # Store bool as string
+                                    features_dict[prop] = str(value)
+                                elif value is None or value == "":
+                                    features_dict[prop] = ""
+                                else:
+                                    # Store as string
+                                    features_dict[prop] = str(value)
+                            except (KeyError, AttributeError, IndexError):
+                                features_dict[prop] = ""
+
+                        result.append(
+                            ProteinFeatures(
+                                identifier=identifier, features=features_dict
+                            )
+                        )
+
+                except Exception as e:
+                    logger.warning(f"Failed to fetch batch {i}-{i + batch_size}: {e}")
+                    # Add empty features for failed proteins
+                    for accession in batch:
+                        result.append(
+                            ProteinFeatures(
+                                identifier=accession,
+                                features=dict.fromkeys(UNIPROT_FEATURES, ""),
+                            )
+                        )
 
                 pbar.update(len(batch))
-
-        fetched_data = "\n".join(all_data) if all_data else ""
-
-        lines = fetched_data.strip().split("\n")
-        csv_headers = ["identifier"] + self.features[1:]
-        data_rows = [line.split("\t") for line in lines[1:]]
-
-        for row in data_rows:
-            identifier = row[0]
-            features = {
-                csv_headers[i]: row[i]
-                for i in range(1, len(csv_headers))
-                if i < len(row)
-            }
-            result.append(ProteinFeatures(identifier=identifier, features=features))
 
         return result
 
