@@ -1,7 +1,207 @@
 # CHANGELOG
 
 
+## v3.1.0 (2025-10-25)
+
+### Chores
+
+* chore(data): update toxins dataset
+
+- Update toxins.json with latest data
+- Add toxins.parquetbundle for testing ([`9a6e9f2`](https://github.com/tsenoner/protspace/commit/9a6e9f227a08c0ffa17b6a9618dfcfbfb43a7dca))
+
+* chore(data): untrack files now ignored by .gitignore
+
+Remove from git tracking (files remain locally):
+- All .h5 embedding files (large files)
+- gfp, phages, sub_loc, nuclease, ec, cath, sizes directories
+- Keep only 3FTx, Pla2g2, and toxins in version control ([`b4ca074`](https://github.com/tsenoner/protspace/commit/b4ca074e1b9085a87f0ef67e2dba9f8fcaaf77cd))
+
+* chore(data): clean up obsolete toxins data files
+
+Remove old processed data, protspace outputs, and scripts that are no
+longer needed or should be regenerated ([`a626c31`](https://github.com/tsenoner/protspace/commit/a626c319c078cda986a02e17a6924155f4d65f1b))
+
+* chore(data): simplify .gitignore data rules
+
+- Ignore all /data/* except 3FTx, Pla2g2, and toxins directories
+- Always ignore pdb/, tmp/ subdirectories and .h5 files everywhere
+- Reduces gitignore complexity from 30+ lines to 7 lines ([`a451818`](https://github.com/tsenoner/protspace/commit/a4518182c48dab635e914bd452a663427f080ce7))
+
+* chore: remove matplotlib dependency ([`e78245c`](https://github.com/tsenoner/protspace/commit/e78245cf8c3a2f0c4b7ee32c117cf47fa0126914))
+
+* chore: Making matplotlib an optional dependency
+
+Creating a new optional dependency category "scripts"
+
+Signed-off-by: Sebastian <sebastian.franz@tum.de> ([`dc25a42`](https://github.com/tsenoner/protspace/commit/dc25a42439365ae863543871997cd86d86d1bd91))
+
+### Documentation
+
+* docs(cli): update features help text with new UniProt properties
+
+- Update --features help to show annotation_score (not annotation)
+- Add xref_pdb to list of available UniProt features
+- Reflect changes from new unipressed-based retriever ([`8258d3d`](https://github.com/tsenoner/protspace/commit/8258d3d6b26da6fab67a11888492619f8b7f31d4))
+
+### Features
+
+* feat(notebook): add regex-based UniProt ID extraction
+
+- Extract UniProt IDs from FASTA headers using pattern recognition
+- Remove old 2024_ClickThrough notebook version
+- Improves ID parsing robustness ([`cc73f76`](https://github.com/tsenoner/protspace/commit/cc73f76e46cd48caffa6cf1f4d89b79569bba063))
+
+* feat(data): replace bioservices with unipressed in UniProt retriever
+
+- Replace bioservices.UniProt with unipressed.UniprotkbClient
+- Use new UniProtEntry parser for data extraction
+- Update UNIPROT_FEATURES to include organism_id and sequence
+- Store raw UniProt data in tmp files with minimal processing
+- Extract 10 features: annotation_score, cc_subcellular_location, fragment,
+  length, organism_id, protein_existence, protein_families, reviewed,
+  sequence, xref_pdb ([`4b27eaf`](https://github.com/tsenoner/protspace/commit/4b27eaf2d94240efae960488dfeb8dfe03bddc42))
+
+* feat(parser): add manual UniProt parser, to be independent of 'bioservices'
+
+- Create new parsers module in src/protspace/data/parsers/
+- Add UniProtEntry class for parsing UniProt REST API JSON responses
+- Implement cc_subcellular_location property to extract location values
+- Add fetch_uniprot_data() utility function for batch fetching
+- Support 45 UniProt properties with comprehensive docstrings ([`dd86bd9`](https://github.com/tsenoner/protspace/commit/dd86bd93ef74e3052c489f4915be7e087577f64d))
+
+* feat(taxonomy): add root and domain features
+
+Extended taxonomy features with root and domain to better support both
+cellular and acellular organisms (viruses).
+
+- Add 'root' feature: uses 'cellular root' or 'acellular root' rank values
+- Add 'domain' feature: uses 'domain' rank (Bacteria, Archaea, Eukaryota)
+  or falls back to 'realm' rank for viruses (e.g., Riboviria)
+- Update documentation in README.md and CLI help text (common_args.py) ([`b9ff5d0`](https://github.com/tsenoner/protspace/commit/b9ff5d017dce10f02480b1999f9fe5b66b783455))
+
+### Fixes
+
+* fix(cli): update imports to new module paths
+
+- Update local_data.py to import LocalProcessor from processors
+- Update uniprot_query.py to import from new locations
+- Ensures CLI commands work with refactored architecture ([`68b273c`](https://github.com/tsenoner/protspace/commit/68b273c589ef4725af73e0adba490577fd0a7a50))
+
+### Refactoring
+
+* refactor(data): remove backward compatibility code
+
+- Delete old base_data_processor, local_data_processor, uniprot_query_processor
+- Delete old feature_manager and feature_retrievers/ directory
+- Update __init__.py to export only new module paths
+
+Breaking change: removes all backward compatibility aliases ([`5231144`](https://github.com/tsenoner/protspace/commit/5231144f1e80f9fcb236c65c9a7e5b0c1940fbbd))
+
+* refactor(data): restructure into modular architecture
+
+- Create features/ module with configuration, manager, and merging
+- Add retrievers/ subdirectory with uniprot, taxonomy, interpro
+- Add transformers/ subdirectory with feature transformations
+- Create io/ module with readers, writers, and formatters
+- Create processors/ module with base, local, and query processors
+
+This modular structure improves maintainability and testability ([`b9d61ef`](https://github.com/tsenoner/protspace/commit/b9d61ef354e6334746b3e70b6b7c01804d161bd8))
+
+* refactor(data): simplify feature processing and remove backward compatibility
+
+- Remove backward compatibility for old cc_subcellular_location format
+- Consolidate annotation_score handling (remove annotation alias)
+- Process cc_subcellular_location as semicolon-separated values
+- Update UNIPROT_FEATURES constant to match new parser properties
+- Assume clean data format from unipressed/UniProtEntry parser ([`47def3a`](https://github.com/tsenoner/protspace/commit/47def3a95aa10bff7fc91712f14122a6291af895))
+
+### Testing
+
+* test: update tests for refactored architecture
+
+- Update all test imports to new module paths
+- Rewrite 21 tests to test new modular components directly
+- Add tests for FeatureConfiguration, LengthBinner, FeatureMerger
+- Add tests for FeatureWriter, DataFormatter, UniProtTransformer
+- Fix mock patches to point to new module locations
+- All 131 tests passing with 0 skipped ([`b5be61d`](https://github.com/tsenoner/protspace/commit/b5be61ddd593bf9b63ef43fff90bf08c3739ebd6))
+
+* test(data): update UniProt feature retriever tests for unipressed
+
+- Replace bioservices.UniProt mock with unipressed.UniprotkbClient mock
+- Update test assertions to match UNIPROT_FEATURES (10 properties)
+- Add test for organism_id and sequence in feature extraction
+- Verify raw data storage format (bools as strings, etc.)
+- Remove PROPERTIES_TO_STORE tests (consolidated into UNIPROT_FEATURES) ([`a17b695`](https://github.com/tsenoner/protspace/commit/a17b6953a4cd06304565c413824934c659840860))
+
+* test(pytest): mark slow taxonomy tests for optional execution
+
+- Add slow and integration pytest markers
+- Mark taxonomy tests as slow (~13x faster test runs when skipped)
+- Add tests/README.md with marker usage documentation ([`c9b385d`](https://github.com/tsenoner/protspace/commit/c9b385d65a210729f4e0d9cf3d8f94247bbcd2cb))
+
+* test(taxonomy): replace mock tests with real NCBI data tests
+
+Replace 21 mock-based unit tests (858 lines) with 12 real taxonomy
+database tests (221 lines). Tests now verify actual NCBI taxonomy
+integration for bacteria, archaea, eukaryotes, and viruses.
+
+- 77% code reduction with better test quality
+- Session-scoped fixture initializes database once
+- Real data tests catch taxonomy structure changes ([`eefd2fc`](https://github.com/tsenoner/protspace/commit/eefd2fc914e5a0fe59ee62ce05d246221d6c33eb))
+
+### Unknown
+
+* Merge remote-tracking branch 'origin/main' into stage ([`68ab956`](https://github.com/tsenoner/protspace/commit/68ab95647df74e9d68a624e5172cd1caebdef59b))
+
+
 ## v3.0.0 (2025-10-13)
+
+### Unknown
+
+* Merge branch 'stage' ([`e787fe8`](https://github.com/tsenoner/protspace/commit/e787fe861888dadcd1c0b196a35187f804411dbe))
+
+
+## v2.3.0 (2025-09-30)
+
+### Unknown
+
+* Merge branch 'stage' ([`5716992`](https://github.com/tsenoner/protspace/commit/57169922e79968b7c5257f8841185de113982197))
+
+
+## v2.2.0 (2025-08-07)
+
+### Unknown
+
+* Merge branch 'stage' ([`236a05c`](https://github.com/tsenoner/protspace/commit/236a05c20c6b37c35bdb19656017b002e8a73550))
+
+* Update jekyll-gh-pages.yml ([`248ec54`](https://github.com/tsenoner/protspace/commit/248ec54791408a73da113e50ec4c3dc9655426be))
+
+* Update jekyll-gh-pages.yml ([`5b36dc5`](https://github.com/tsenoner/protspace/commit/5b36dc5ca5d79b32c745bb4e11124da925531e82))
+
+* Merge pull request #8 from tsenoner/improvement/ismb-landing
+
+improvement: add ISMB poster landingpage ([`e8cc651`](https://github.com/tsenoner/protspace/commit/e8cc65118344d56956804a03b0c67279f530777a))
+
+* improvement: add ISMB poster landingpage ([`2250fe2`](https://github.com/tsenoner/protspace/commit/2250fe2d83474ef85a306c8591a24dc2410b6cac))
+
+
+## v2.1.2 (2025-07-07)
+
+### Fixes
+
+* fix(examples): update jupyter notebooks to use current CLI commands
+
+Replace deprecated 'protspace-json' command with 'protspace-local' in example notebooks:
+- examples/notebook/PfamExplorer_ProtSpace.ipynb
+- examples/notebook/Run_ProtSpace.ipynb
+
+This ensures the example notebooks work with the current CLI interface and
+improves the user experience for notebook-based workflows. ([`c08d241`](https://github.com/tsenoner/protspace/commit/c08d241aaf5bb0b402b6c409a577220af86a3e11))
+
+
+## v2.1.1 (2025-07-07)
 
 ### Breaking
 
@@ -46,6 +246,11 @@ syntax to comply with uv latest standards and remove deprecation warnings. ([`a3
 - Configure linting rules for unused variables, imports, and arguments
 - Set up per-file ignores for test files ([`d46cbb5`](https://github.com/tsenoner/protspace/commit/d46cbb591f3c53a4ff56ea23fb0a4032f0e6204e))
 
+* chore: update Dockerfile and improve script formatting in protspace_local.py
+
+- Added curl installation to Dockerfile to work for pymmseqs2.
+- Reformatted command arguments in run_prepare_json_script for better readability in protspace_local.py. ([`07ec5aa`](https://github.com/tsenoner/protspace/commit/07ec5aaec244c6b19efba185c0e8361ec611dfc2))
+
 ### Code Style
 
 * style: apply code formatting to utils module
@@ -65,6 +270,14 @@ No functional changes. ([`61892c4`](https://github.com/tsenoner/protspace/commit
 - Improve command-line usage documentation
 - Update feature extraction examples with better clarity ([`23dd0e3`](https://github.com/tsenoner/protspace/commit/23dd0e39cf63f3a948f1f2ea05efca4e63312c01))
 
+* docs: Update README and CLI help to enhance feature extraction guidance
+
+- Added a new section in README for the JavaScript frontend
+- Revised the "Quick Start" section for clarity and updated usage examples for querying UniProt and processing local data.
+- Expanded help text in CLI for feature extraction to include available UniProt, InterPro, and Taxonomy features. ([`56e17b2`](https://github.com/tsenoner/protspace/commit/56e17b28b60827be2cf4f63f083a52a85f2ac166))
+
+* docs: Update README examples to clarify usage of protein features ([`3ee0ddf`](https://github.com/tsenoner/protspace/commit/3ee0ddf7a734e666c7e036b03b82e42695cd644d))
+
 ### Features
 
 * feat(cli): add shared argument parsing utilities
@@ -75,7 +288,87 @@ No functional changes. ([`61892c4`](https://github.com/tsenoner/protspace/commit
 - Include comprehensive help text with examples and parameter guidance
 - Support both CSV metadata files and comma-separated feature lists ([`091a742`](https://github.com/tsenoner/protspace/commit/091a742643675c53f045094a75f20094ee6f53f3))
 
+* feat(umap): add random_state parameter for reproducibility
+
+Add random_state parameter with default value of 42 to ensure
+reproducible UMAP results across runs.
+
+- Add random_state field to DimensionReductionConfig (default: 42)
+- Update UMAPReducer to pass random_state to UMAP constructor
+- Add --random_state CLI argument to protspace-local and protspace-query
+- Update base_data_processor to include random_state in valid config keys
+- All 53 tests passing
+
+Fixes #16 ([`63b7df8`](https://github.com/tsenoner/protspace/commit/63b7df80ea480e661e73052c3f2e395f93976a6c))
+
+* feat: enhance taxonomy feature retrieval with error handling and cache management
+
+- Added error handling in get_taxonomy_features to log and return an empty mapping on fetch errors.
+- Improved _initialize_taxdb to support environment variable for cache directory and implemented a safe refresh strategy for the taxonomy database.
+- Updated logic to handle first-time setup and cache refresh without losing existing data. ([`47826e9`](https://github.com/tsenoner/protspace/commit/47826e9b796e840282d1263d3ae85a31a56c5d18))
+
+* feat: update all Jupyter notebooks for new protspace-local CLI interface
+
+- Update protspace-local command to use -f (features) instead of -m (metadata)
+- Update PfamExplorer, Explore_ProtSpace, and Run_ProtSpace notebooks
+- Adapt notebook workflows to work with new JSON file generation method
+- Update installation commands to use specific git commit for consistency
+- Maintain backward compatibility with existing data processing pipeline ([`95f5e78`](https://github.com/tsenoner/protspace/commit/95f5e781f640661f4737ada4c3661ae511e95f30))
+
+* feat: add -m as alias for --methods flag ([`b54e0b3`](https://github.com/tsenoner/protspace/commit/b54e0b3b248d360729c5434977fb36715765039d))
+
+* feat: Update interpro feature retriever to include boolean signal peptide
+
+- Update interpro_feature_retriever to accept `cath` instead of `cath-gene3d` making it easier for users to call it
+- Modified example CLI scripts to include 'signal_peptide' in feature extraction (as well as modified `cath`)
+- Adjusted tests to reflect changes in expected features. ([`baa4983`](https://github.com/tsenoner/protspace/commit/baa49830eb25b3c06049d4824dec957b76cdef5f))
+
+* feat: Add InterPro feature retrieval support
+
+- Add InterProFeatureRetriever class for fetching domain annotations
+- Support Pfam, SUPERFAMILY, and CATH-Gene3D features from InterPro6 API
+- Integrate InterPro features into ProteinFeatureExtractor workflow
+- Update CLI examples to include InterPro features
+- Add comprehensive tests for InterPro functionality ([`59644bf`](https://github.com/tsenoner/protspace/commit/59644bf27435823ce42e0d7fc92b018f2cc5c139))
+
+* feat: add support for bundled parquet files in ProtSpace
+
+- Enhanced data input handling in main.py to support .parquetbundle files.
+- Introduced a new function to extract parquet files from bundled format.
+- Updated CLI argument parser to include a flag for bundling parquet files.
+- Modified save_output method in BaseDataProcessor to handle bundling logic. ([`b7312b9`](https://github.com/tsenoner/protspace/commit/b7312b977a84f42246277d0a19c3fe72f113a638))
+
+### Fixes
+
+* fix(docker): add curl dependency and fix jupyter notebook imports
+
+1. Docker build fix:
+   - Add curl dependency to resolve pymmseqs build failure
+   - The pymmseqs package requires curl to download the MMseqs2 binary during installation
+   - Without curl, Docker builds fail with 'curl: not found' error
+   - This resolves: scripts/download_mmseqs.sh: 37: curl: not found
+
+2. Jupyter notebook import fix:
+   - Updated import path from 'from protspace.app import ProtSpace' to 'from protspace import ProtSpace'
+   - Modified src/protspace/__init__.py to expose ProtSpace at package level
+   - This simplifies imports for users in notebooks and examples
+
+Fixes the Docker build failure in GitHub Actions and improves the developer experience for notebook users. ([`26d973e`](https://github.com/tsenoner/protspace/commit/26d973e96ab8d7d2a9611af08bb493ec29d3cef7))
+
+* fix: JSON encoder for NumPy data types in BaseDataProcessor
+
+- Introduced NumpyEncoder class to handle serialization of NumPy integers, floats, and arrays.
+- Updated json.dump call in save_output method to use NumpyEncoder for improved data handling. ([`e03a353`](https://github.com/tsenoner/protspace/commit/e03a353b16a9b5657258a470c2e45a6396b6dab4))
+
+* fix: correct validation logic for taxon IDs in TaxonomyFeatureRetriever ([`3000370`](https://github.com/tsenoner/protspace/commit/300037024ac0867621ec0ab480095a393f7dfc4e))
+
+* fix: correct spelling of delimiter in parquet handling ([`931e03c`](https://github.com/tsenoner/protspace/commit/931e03c9d34afa4206f7ffc1b3e43213115ff93a))
+
 ### Refactoring
+
+* refactor(ui): rename missing value label from <NaN> to <N/A>
+
+- Standardize missing value display to '<N/A>' across UI and processing ([`7d6160a`](https://github.com/tsenoner/protspace/commit/7d6160a116e8f14a88873ee39c553180f3d0a7da))
 
 * refactor: improve CLI examples with better documentation and user-friendliness
 
@@ -181,6 +474,34 @@ All imports now reference the new directory structure. ([`9ba8ae3`](https://gith
 
 This improves code organization and follows Python packaging best practices. ([`22d3487`](https://github.com/tsenoner/protspace/commit/22d3487825dca70c482264178aba66b417aeada0))
 
+* refactor: simplify download_plot and save_plot functions
+
+- Remove strict width/height requirements for 2D plots
+- Eliminate unused parameters in download_plot callback
+- Add proper HTML file handling in generate_plot
+- Improve code maintainability and compatibility ([`8c3f3e9`](https://github.com/tsenoner/protspace/commit/8c3f3e9df07a98a2ee0a85d91d592f001feb9139))
+
+* refactor: renamed --metadata to --features
+
+- Renamed -m, --metadata to -f, --features, making it more descriptive
+- Updated the test
+- Updated the examples
+- Updated the README ([`9ae5f80`](https://github.com/tsenoner/protspace/commit/9ae5f801e622ce3f64a6abf3c5697307c115eb3c))
+
+* refactor: remove old test files and add tests for the data module ([`19d4901`](https://github.com/tsenoner/protspace/commit/19d49018f94f6257c338b9df9f17a5774913b857))
+
+* refactor: enhance data input handling in main.py for ProtSpace
+
+- Consolidated JSON and Arrow directory input into a single argument.
+- Implemented a new function to detect data type and validate input paths.
+- Updated ProtSpace initialization to accommodate the new input structure. ([`6a5a9d6`](https://github.com/tsenoner/protspace/commit/6a5a9d6994d24c62a79ac9bccabed6082c8487b1))
+
+* refactor: update import paths and modify ProtSpace initialization in image_creation.py
+
+- Changed import of ProtSpace to a direct import from protspace.
+- Updated initialization in image_creation.py to use arrow_dir instead of json_file.
+- Cleaned up __init__.py to reflect the new import structure and removed unused imports. ([`9e65502`](https://github.com/tsenoner/protspace/commit/9e655026174dc4f167eafabfe8f24cd314fb789d))
+
 ### Testing
 
 * test: fix ruff linting issues in test files
@@ -222,198 +543,20 @@ All 127 tests passing. ([`c04b56f`](https://github.com/tsenoner/protspace/commit
 
 ### Unknown
 
-* Merge branch 'stage' ([`e787fe8`](https://github.com/tsenoner/protspace/commit/e787fe861888dadcd1c0b196a35187f804411dbe))
+* revert: manual version bump to prepare for semantic release ([`304acfc`](https://github.com/tsenoner/protspace/commit/304acfc638b0504646ff374d8f2c2e84ef7c68da))
 
+* bump: version 2.1.0 → 2.2.0 (includes curl fix for pymmseqs build) ([`08b86f6`](https://github.com/tsenoner/protspace/commit/08b86f600a1c229baee7372dbbd7a74c2f3f35ab))
 
-## v2.3.0 (2025-09-30)
-
-### Documentation
-
-* docs: Update README and CLI help to enhance feature extraction guidance
-
-- Added a new section in README for the JavaScript frontend
-- Revised the "Quick Start" section for clarity and updated usage examples for querying UniProt and processing local data.
-- Expanded help text in CLI for feature extraction to include available UniProt, InterPro, and Taxonomy features. ([`56e17b2`](https://github.com/tsenoner/protspace/commit/56e17b28b60827be2cf4f63f083a52a85f2ac166))
-
-### Features
-
-* feat(umap): add random_state parameter for reproducibility
-
-Add random_state parameter with default value of 42 to ensure
-reproducible UMAP results across runs.
-
-- Add random_state field to DimensionReductionConfig (default: 42)
-- Update UMAPReducer to pass random_state to UMAP constructor
-- Add --random_state CLI argument to protspace-local and protspace-query
-- Update base_data_processor to include random_state in valid config keys
-- All 53 tests passing
-
-Fixes #16 ([`63b7df8`](https://github.com/tsenoner/protspace/commit/63b7df80ea480e661e73052c3f2e395f93976a6c))
-
-* feat: enhance taxonomy feature retrieval with error handling and cache management
-
-- Added error handling in get_taxonomy_features to log and return an empty mapping on fetch errors.
-- Improved _initialize_taxdb to support environment variable for cache directory and implemented a safe refresh strategy for the taxonomy database.
-- Updated logic to handle first-time setup and cache refresh without losing existing data. ([`47826e9`](https://github.com/tsenoner/protspace/commit/47826e9b796e840282d1263d3ae85a31a56c5d18))
-
-### Refactoring
-
-* refactor: simplify download_plot and save_plot functions
-
-- Remove strict width/height requirements for 2D plots
-- Eliminate unused parameters in download_plot callback
-- Add proper HTML file handling in generate_plot
-- Improve code maintainability and compatibility ([`8c3f3e9`](https://github.com/tsenoner/protspace/commit/8c3f3e9df07a98a2ee0a85d91d592f001feb9139))
-
-### Unknown
-
-* Merge branch 'stage' ([`5716992`](https://github.com/tsenoner/protspace/commit/57169922e79968b7c5257f8841185de113982197))
+* Update .gitignore and remove analysis.ipynb ([`80d7dbb`](https://github.com/tsenoner/protspace/commit/80d7dbb86f0a548fc41f889122ba1204e66f9f43))
 
 * chor: update image generation to include PCA_3 projection
 
 - Changed the projection list to use only "PCA_3" for image generation.
 - Added support for HTML file format in the image output. ([`36551f3`](https://github.com/tsenoner/protspace/commit/36551f3748ca0e74447c91db98a5c24c9d845dd4))
 
-
-## v2.2.0 (2025-08-07)
-
-### Documentation
-
-* docs: Update README examples to clarify usage of protein features ([`3ee0ddf`](https://github.com/tsenoner/protspace/commit/3ee0ddf7a734e666c7e036b03b82e42695cd644d))
-
-### Features
-
-* feat: update all Jupyter notebooks for new protspace-local CLI interface
-
-- Update protspace-local command to use -f (features) instead of -m (metadata)
-- Update PfamExplorer, Explore_ProtSpace, and Run_ProtSpace notebooks
-- Adapt notebook workflows to work with new JSON file generation method
-- Update installation commands to use specific git commit for consistency
-- Maintain backward compatibility with existing data processing pipeline ([`95f5e78`](https://github.com/tsenoner/protspace/commit/95f5e781f640661f4737ada4c3661ae511e95f30))
-
-* feat: add -m as alias for --methods flag ([`b54e0b3`](https://github.com/tsenoner/protspace/commit/b54e0b3b248d360729c5434977fb36715765039d))
-
-* feat: Update interpro feature retriever to include boolean signal peptide
-
-- Update interpro_feature_retriever to accept `cath` instead of `cath-gene3d` making it easier for users to call it
-- Modified example CLI scripts to include 'signal_peptide' in feature extraction (as well as modified `cath`)
-- Adjusted tests to reflect changes in expected features. ([`baa4983`](https://github.com/tsenoner/protspace/commit/baa49830eb25b3c06049d4824dec957b76cdef5f))
-
-* feat: Add InterPro feature retrieval support
-
-- Add InterProFeatureRetriever class for fetching domain annotations
-- Support Pfam, SUPERFAMILY, and CATH-Gene3D features from InterPro6 API
-- Integrate InterPro features into ProteinFeatureExtractor workflow
-- Update CLI examples to include InterPro features
-- Add comprehensive tests for InterPro functionality ([`59644bf`](https://github.com/tsenoner/protspace/commit/59644bf27435823ce42e0d7fc92b018f2cc5c139))
-
-* feat: add support for bundled parquet files in ProtSpace
-
-- Enhanced data input handling in main.py to support .parquetbundle files.
-- Introduced a new function to extract parquet files from bundled format.
-- Updated CLI argument parser to include a flag for bundling parquet files.
-- Modified save_output method in BaseDataProcessor to handle bundling logic. ([`b7312b9`](https://github.com/tsenoner/protspace/commit/b7312b977a84f42246277d0a19c3fe72f113a638))
-
-### Fixes
-
-* fix: JSON encoder for NumPy data types in BaseDataProcessor
-
-- Introduced NumpyEncoder class to handle serialization of NumPy integers, floats, and arrays.
-- Updated json.dump call in save_output method to use NumpyEncoder for improved data handling. ([`e03a353`](https://github.com/tsenoner/protspace/commit/e03a353b16a9b5657258a470c2e45a6396b6dab4))
-
-* fix: correct validation logic for taxon IDs in TaxonomyFeatureRetriever ([`3000370`](https://github.com/tsenoner/protspace/commit/300037024ac0867621ec0ab480095a393f7dfc4e))
-
-* fix: correct spelling of delimiter in parquet handling ([`931e03c`](https://github.com/tsenoner/protspace/commit/931e03c9d34afa4206f7ffc1b3e43213115ff93a))
-
-### Refactoring
-
-* refactor: renamed --metadata to --features
-
-- Renamed -m, --metadata to -f, --features, making it more descriptive
-- Updated the test
-- Updated the examples
-- Updated the README ([`9ae5f80`](https://github.com/tsenoner/protspace/commit/9ae5f801e622ce3f64a6abf3c5697307c115eb3c))
-
-* refactor: remove old test files and add tests for the data module ([`19d4901`](https://github.com/tsenoner/protspace/commit/19d49018f94f6257c338b9df9f17a5774913b857))
-
-### Unknown
-
-* Merge branch 'stage' ([`236a05c`](https://github.com/tsenoner/protspace/commit/236a05c20c6b37c35bdb19656017b002e8a73550))
-
 * improve code formatting with black and ruff ([`59a36d2`](https://github.com/tsenoner/protspace/commit/59a36d28e41b75c1068b655307d3866444c5d9a5))
 
 * Chore: Run Black and Ruff to improve code formatting and quality ([`683578f`](https://github.com/tsenoner/protspace/commit/683578f60cf8689968ae93ffeffe77f25d5ebd82))
-
-* Update jekyll-gh-pages.yml ([`248ec54`](https://github.com/tsenoner/protspace/commit/248ec54791408a73da113e50ec4c3dc9655426be))
-
-* Update jekyll-gh-pages.yml ([`5b36dc5`](https://github.com/tsenoner/protspace/commit/5b36dc5ca5d79b32c745bb4e11124da925531e82))
-
-* Merge pull request #8 from tsenoner/improvement/ismb-landing
-
-improvement: add ISMB poster landingpage ([`e8cc651`](https://github.com/tsenoner/protspace/commit/e8cc65118344d56956804a03b0c67279f530777a))
-
-* improvement: add ISMB poster landingpage ([`2250fe2`](https://github.com/tsenoner/protspace/commit/2250fe2d83474ef85a306c8591a24dc2410b6cac))
-
-
-## v2.1.2 (2025-07-07)
-
-### Fixes
-
-* fix(examples): update jupyter notebooks to use current CLI commands
-
-Replace deprecated 'protspace-json' command with 'protspace-local' in example notebooks:
-- examples/notebook/PfamExplorer_ProtSpace.ipynb
-- examples/notebook/Run_ProtSpace.ipynb
-
-This ensures the example notebooks work with the current CLI interface and
-improves the user experience for notebook-based workflows. ([`c08d241`](https://github.com/tsenoner/protspace/commit/c08d241aaf5bb0b402b6c409a577220af86a3e11))
-
-
-## v2.1.1 (2025-07-07)
-
-### Chores
-
-* chore: update Dockerfile and improve script formatting in protspace_local.py
-
-- Added curl installation to Dockerfile to work for pymmseqs2.
-- Reformatted command arguments in run_prepare_json_script for better readability in protspace_local.py. ([`07ec5aa`](https://github.com/tsenoner/protspace/commit/07ec5aaec244c6b19efba185c0e8361ec611dfc2))
-
-### Fixes
-
-* fix(docker): add curl dependency and fix jupyter notebook imports
-
-1. Docker build fix:
-   - Add curl dependency to resolve pymmseqs build failure
-   - The pymmseqs package requires curl to download the MMseqs2 binary during installation
-   - Without curl, Docker builds fail with 'curl: not found' error
-   - This resolves: scripts/download_mmseqs.sh: 37: curl: not found
-
-2. Jupyter notebook import fix:
-   - Updated import path from 'from protspace.app import ProtSpace' to 'from protspace import ProtSpace'
-   - Modified src/protspace/__init__.py to expose ProtSpace at package level
-   - This simplifies imports for users in notebooks and examples
-
-Fixes the Docker build failure in GitHub Actions and improves the developer experience for notebook users. ([`26d973e`](https://github.com/tsenoner/protspace/commit/26d973e96ab8d7d2a9611af08bb493ec29d3cef7))
-
-### Refactoring
-
-* refactor: enhance data input handling in main.py for ProtSpace
-
-- Consolidated JSON and Arrow directory input into a single argument.
-- Implemented a new function to detect data type and validate input paths.
-- Updated ProtSpace initialization to accommodate the new input structure. ([`6a5a9d6`](https://github.com/tsenoner/protspace/commit/6a5a9d6994d24c62a79ac9bccabed6082c8487b1))
-
-* refactor: update import paths and modify ProtSpace initialization in image_creation.py
-
-- Changed import of ProtSpace to a direct import from protspace.
-- Updated initialization in image_creation.py to use arrow_dir instead of json_file.
-- Cleaned up __init__.py to reflect the new import structure and removed unused imports. ([`9e65502`](https://github.com/tsenoner/protspace/commit/9e655026174dc4f167eafabfe8f24cd314fb789d))
-
-### Unknown
-
-* revert: manual version bump to prepare for semantic release ([`304acfc`](https://github.com/tsenoner/protspace/commit/304acfc638b0504646ff374d8f2c2e84ef7c68da))
-
-* bump: version 2.1.0 → 2.2.0 (includes curl fix for pymmseqs build) ([`08b86f6`](https://github.com/tsenoner/protspace/commit/08b86f600a1c229baee7372dbbd7a74c2f3f35ab))
 
 
 ## v2.1.0 (2025-07-04)
