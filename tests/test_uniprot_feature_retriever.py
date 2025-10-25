@@ -19,7 +19,6 @@ class TestUniProtFeatureRetrieverInit:
 
         assert retriever.headers == headers
         assert retriever.features == features
-        assert retriever.u is not None  # UniProt instance created
 
     def test_init_with_pipe_headers(self):
         """Test initialization with headers containing pipe notation."""
@@ -92,23 +91,56 @@ class TestManageHeaders:
 class TestFetchFeatures:
     """Test the fetch_features method."""
 
-    @patch("src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniProt")
-    def test_fetch_features_success(self, mock_uniprot_class):
-        """Test successful feature fetching."""
-        # Setup mock UniProt instance
-        mock_uniprot_instance = Mock()
-        mock_uniprot_class.return_value = mock_uniprot_instance
+    @patch(
+        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
+    )
+    def test_fetch_features_success(self, mock_client_class):
+        """Test successful feature fetching with new unipressed implementation."""
+        # Mock API response with minimal required fields
+        mock_records = [
+            {
+                "primaryAccession": "P01308",
+                "uniProtkbId": "INS_HUMAN",
+                "sequence": {"value": "MALWMRLLPL", "length": 110, "molWeight": 11500},
+                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+                "proteinDescription": {
+                    "recommendedName": {"fullName": {"value": "Insulin"}}
+                },
+                "genes": [{"geneName": {"value": "INS"}}],
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "annotationScore": 5.0,
+                "proteinExistence": "1: Evidence at protein level",
+                "comments": [],
+                "uniProtKBCrossReferences": [],
+                "features": [],
+                "keywords": [],
+                "entryAudit": {},
+            },
+            {
+                "primaryAccession": "P01315",
+                "uniProtkbId": "INSL3_HUMAN",
+                "sequence": {"value": "MAPRLCLLLL", "length": 142, "molWeight": 15000},
+                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+                "proteinDescription": {
+                    "recommendedName": {"fullName": {"value": "Insulin-like 3"}}
+                },
+                "genes": [{"geneName": {"value": "INSL3"}}],
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "annotationScore": 4.0,
+                "proteinExistence": "1: Evidence at protein level",
+                "comments": [],
+                "uniProtKBCrossReferences": [],
+                "features": [],
+                "keywords": [],
+                "entryAudit": {},
+            },
+        ]
 
-        # Mock successful API response
-        mock_response = """Entry\tLength\tOrganism (ID)
-P01308\t110\t9606
-P01315\t142\t9606"""
-
-        mock_uniprot_instance.search.return_value = mock_response
+        mock_client_class.fetch_many.return_value = mock_records
 
         # Create retriever and test
         headers = ["P01308", "P01315"]
-        features = ["accession", "length", "organism_id"]
+        features = ["entry", "length", "organism_id"]
         retriever = UniProtFeatureRetriever(headers=headers, features=features)
 
         result = retriever.fetch_features()
@@ -118,106 +150,140 @@ P01315\t142\t9606"""
         assert isinstance(result[0], ProteinFeatures)
         assert result[0].identifier == "P01308"
         assert result[0].features["length"] == "110"
-        assert result[0].features["organism_id"] == "9606"
+        assert result[0].features["annotation_score"] == "5.0"
+        assert result[0].features["reviewed"] == "True"
 
         assert result[1].identifier == "P01315"
         assert result[1].features["length"] == "142"
-        assert result[1].features["organism_id"] == "9606"
+        assert result[1].features["annotation_score"] == "4.0"
 
         # Verify API call
-        mock_uniprot_instance.search.assert_called_once()
-        call_args = mock_uniprot_instance.search.call_args[1]
-        assert "accession:P01308+OR+accession:P01315" in call_args["query"]
-        assert call_args["columns"] == "accession,length,organism_id"
+        mock_client_class.fetch_many.assert_called_once_with(["P01308", "P01315"])
 
-    @patch("src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniProt")
-    def test_fetch_features_batching_logic(self, mock_uniprot_class):
+    @patch(
+        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
+    )
+    def test_fetch_features_batching_logic(self, mock_client_class):
         """Test feature fetching with batching behavior."""
-        # Setup mock UniProt instance
-        mock_uniprot_instance = Mock()
-        mock_uniprot_class.return_value = mock_uniprot_instance
+        # Create mock records for batching test
+        headers = [f"P{i:05d}" for i in range(150)]  # More than batch size (100)
 
-        # Test with small number to verify basic batching works
-        headers = [f"P{i:05d}" for i in range(5)]
+        def mock_fetch_many(batch):
+            """Mock fetch_many to return appropriate records for batch."""
+            return [
+                {
+                    "primaryAccession": acc,
+                    "uniProtkbId": f"{acc}_HUMAN",
+                    "sequence": {"value": "MAL", "length": 100 + i, "molWeight": 10000},
+                    "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+                    "proteinDescription": {
+                        "recommendedName": {"fullName": {"value": f"Protein {i}"}}
+                    },
+                    "genes": [{"geneName": {"value": f"GENE{i}"}}],
+                    "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                    "annotationScore": 5.0,
+                    "proteinExistence": "1: Evidence at protein level",
+                    "comments": [],
+                    "uniProtKBCrossReferences": [],
+                    "features": [],
+                    "keywords": [],
+                    "entryAudit": {},
+                }
+                for i, acc in enumerate(batch)
+            ]
 
-        # Mock response for small batch
-        mock_response = "Entry\tLength\n" + "\n".join(
-            [f"P{i:05d}\t{100 + i}" for i in range(5)]
-        )
-
-        mock_uniprot_instance.search.return_value = mock_response
+        mock_client_class.fetch_many.side_effect = mock_fetch_many
 
         # Create retriever and test
-        features = ["accession", "length"]
+        features = ["entry", "length"]
         retriever = UniProtFeatureRetriever(headers=headers, features=features)
 
         result = retriever.fetch_features()
 
         # Verify results
-        assert len(result) == 5
-        # Verify each result has correct structure
-        for i, protein in enumerate(result):
-            assert protein.identifier == f"P{i:05d}"
-            assert protein.features["length"] == str(100 + i)
+        assert len(result) == 150
+        # Verify API was called multiple times for batching
+        assert mock_client_class.fetch_many.call_count == 2  # 100 + 50
 
-    @patch("src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniProt")
-    def test_fetch_features_empty_response(self, mock_uniprot_class):
-        """Test handling of empty API response."""
-        # Setup mock UniProt instance
-        mock_uniprot_instance = Mock()
-        mock_uniprot_class.return_value = mock_uniprot_instance
-
-        # Mock empty response
-        mock_uniprot_instance.search.return_value = None
+    @patch(
+        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
+    )
+    def test_fetch_features_handles_errors(self, mock_client_class):
+        """Test handling of API errors."""
+        # Mock API to raise an exception
+        mock_client_class.fetch_many.side_effect = Exception("API Error")
 
         # Create retriever and test
-        headers = ["INVALID123"]
-        features = ["accession", "length"]
+        headers = ["P01308"]
+        features = ["entry", "length"]
         retriever = UniProtFeatureRetriever(headers=headers, features=features)
 
         result = retriever.fetch_features()
 
-        # Should return empty list
-        assert result == []
-
-    @patch("src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniProt")
-    def test_fetch_features_incomplete_data(self, mock_uniprot_class):
-        """Test handling of incomplete data in API response."""
-        # Setup mock UniProt instance
-        mock_uniprot_instance = Mock()
-        mock_uniprot_class.return_value = mock_uniprot_instance
-
-        # Mock response with incomplete data (missing some columns)
-        mock_response = """Entry\tLength\tOrganism (ID)
-P01308\t110
-P01315\t142\t9606"""
-
-        mock_uniprot_instance.search.return_value = mock_response
-
-        # Create retriever and test
-        headers = ["P01308", "P01315"]
-        features = ["accession", "length", "organism_id"]
-        retriever = UniProtFeatureRetriever(headers=headers, features=features)
-
-        result = retriever.fetch_features()
-
-        # Verify results handle missing data gracefully
-        assert len(result) == 2
+        # Should return result with empty features due to error handling
+        assert len(result) == 1
         assert result[0].identifier == "P01308"
-        assert result[0].features["length"] == "110"
-        # organism_id should not be in features for P01308 due to missing data
-        assert "organism_id" not in result[0].features
+        # All features should be empty strings due to error
+        assert all(v == "" for v in result[0].features.values())
 
-        assert result[1].identifier == "P01315"
-        assert result[1].features["length"] == "142"
-        assert result[1].features["organism_id"] == "9606"
+    @patch(
+        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
+    )
+    def test_fetch_features_stores_uniprot_features(self, mock_client_class):
+        """Test that fetch_features stores UNIPROT_FEATURES including organism_id."""
+        mock_records = [
+            {
+                "primaryAccession": "P01308",
+                "uniProtkbId": "INS_HUMAN",
+                "sequence": {"value": "MALWMRLLPL", "length": 110, "molWeight": 11500},
+                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+                "proteinDescription": {
+                    "recommendedName": {"fullName": {"value": "Insulin"}}
+                },
+                "genes": [{"geneName": {"value": "INS"}}],
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "annotationScore": 5.0,
+                "proteinExistence": "1: Evidence at protein level",
+                "comments": [],
+                "uniProtKBCrossReferences": [],
+                "features": [],
+                "keywords": [{"name": "Diabetes mellitus", "id": "KW-0001"}],
+                "entryAudit": {
+                    "firstPublicDate": "2020-01-01",
+                    "lastAnnotationUpdateDate": "2023-01-01",
+                },
+            }
+        ]
+
+        mock_client_class.fetch_many.return_value = mock_records
+
+        # Request features (actual storage is UNIPROT_FEATURES)
+        headers = ["P01308"]
+        features = ["entry", "length"]
+        retriever = UniProtFeatureRetriever(headers=headers, features=features)
+
+        result = retriever.fetch_features()
+
+        # Should return exactly UNIPROT_FEATURES
+        assert len(result) == 1
+        assert len(result[0].features) == len(UNIPROT_FEATURES)
+
+        # Check all UNIPROT_FEATURES are present
+        for feature in UNIPROT_FEATURES:
+            assert feature in result[0].features
+
+        # Verify specific raw values
+        assert result[0].features["length"] == "110"
+        assert result[0].features["annotation_score"] == "5.0"
+        assert result[0].features["organism_id"] == "9606"
+        assert result[0].features["reviewed"] == "True"  # Bool stored as string
 
 
 class TestConstants:
     """Test module constants."""
 
     def test_uniprot_features_constant(self):
-        """Test that UNIPROT_FEATURES contains expected features."""
+        """Test that UNIPROT_FEATURES contains expected features including organism_id."""
         expected_features = [
             "protein_existence",
             "annotation_score",
@@ -225,10 +291,17 @@ class TestConstants:
             "length",
             "reviewed",
             "fragment",
+            "cc_subcellular_location",
+            "sequence",
+            "xref_pdb",
+            "organism_id",
         ]
 
         for feature in expected_features:
             assert feature in UNIPROT_FEATURES
+
+        # Should have exactly 9 features
+        assert len(UNIPROT_FEATURES) == 10
 
     def test_protein_features_namedtuple(self):
         """Test ProteinFeatures namedtuple structure."""
@@ -237,40 +310,5 @@ class TestConstants:
 
         assert protein_features.identifier == "P01308"
         assert protein_features.features == features_dict
-        assert hasattr(protein_features, "identifier")
-        assert hasattr(protein_features, "features")
-
-
-class TestIntegration:
-    """Integration tests for complete workflows."""
-
-    @patch("src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniProt")
-    def test_end_to_end_workflow(self, mock_uniprot_class):
-        """Test complete workflow from initialization to feature extraction."""
-        # Setup mock
-        mock_uniprot_instance = Mock()
-        mock_uniprot_class.return_value = mock_uniprot_instance
-
-        mock_response = """Entry\tLength\tOrganism (ID)\tProtein existence
-P01308\t110\t9606\t1
-P01315\t142\t9606\t1"""
-
-        mock_uniprot_instance.search.return_value = mock_response
-
-        # Test with pipe notation headers (should be cleaned)
-        headers = ["sp|P01308|INS_HUMAN", "tr|P01315|INSL3_HUMAN"]
-        features = ["accession", "length", "organism_id", "protein_existence"]
-
-        retriever = UniProtFeatureRetriever(headers=headers, features=features)
-        result = retriever.fetch_features()
-
-        # Verify complete workflow
-        assert len(result) == 2
-        assert retriever.headers == ["P01308", "P01315"]  # Headers cleaned
-
-        # Verify features extracted correctly
-        for protein in result:
-            assert protein.identifier in ["P01308", "P01315"]
-            assert "length" in protein.features
-            assert "organism_id" in protein.features
-            assert "protein_existence" in protein.features
+        assert protein_features.features["length"] == "110"
+        assert protein_features.features["organism_id"] == "9606"
