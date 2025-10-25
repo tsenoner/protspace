@@ -17,7 +17,7 @@ from protspace.cli.common_args import (
     parse_custom_names,
     setup_logging,
 )
-from protspace.data.local_data_processor import LocalDataProcessor
+from protspace.data.processors.local_processor import LocalProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ def main():
     intermediate_dir = None
 
     try:
-        processor = LocalDataProcessor(args_dict)
+        processor = LocalProcessor(args_dict)
 
         # Load data first to get headers
         data, headers = processor._load_input_file(args.input)

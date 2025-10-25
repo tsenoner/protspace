@@ -14,7 +14,7 @@ from protspace.cli.common_args import (
     determine_output_paths,
     setup_logging,
 )
-from protspace.data.uniprot_query_processor import UniProtQueryProcessor
+from protspace.data.processors.uniprot_query_processor import UniProtQueryProcessor
 
 logger = logging.getLogger(__name__)
 
