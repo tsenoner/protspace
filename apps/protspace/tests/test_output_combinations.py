@@ -17,8 +17,10 @@ import numpy as np
 import pandas as pd
 
 from src.protspace.cli.common_args import determine_output_paths
-from src.protspace.data.local_data_processor import LocalDataProcessor
-from src.protspace.data.uniprot_query_processor import UniProtQueryProcessor
+from src.protspace.data.processors.local_processor import LocalProcessor
+from src.protspace.data.processors.uniprot_query_processor import (
+    UniProtQueryProcessor,
+)
 from tests.test_config import (
     FASTA_CONTENT,
     LEGACY_OUTPUT_DATA,
@@ -27,6 +29,9 @@ from tests.test_config import (
     sample_query_data,
     temp_dir,
 )
+
+# Alias for test compatibility
+LocalDataProcessor = LocalProcessor
 
 
 class TestOutputPathCombinations:
@@ -450,13 +455,13 @@ class TestUniProtQueryProcessor:
             assert output_path.suffix == ".json"
 
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
     )
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._generate_metadata"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._generate_metadata"
     )
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
     )
     def test_query_processor_with_keep_tmp(
         self, mock_similarity, mock_metadata, mock_fasta
@@ -506,13 +511,13 @@ class TestUniProtQueryProcessor:
             assert saved_files["similarity_matrix"].parent == temp_path / "intermediate"
 
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
     )
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._generate_metadata"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._generate_metadata"
     )
     @patch(
-        "src.protspace.data.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
+        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
     )
     def test_query_processor_without_keep_tmp(
         self, mock_similarity, mock_metadata, mock_fasta

@@ -5,17 +5,34 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from src.protspace.data.feature_manager import (
+from src.protspace.data.features.configuration import (
     DEFAULT_FEATURES,
     LENGTH_BINNING_FEATURES,
     NEEDED_UNIPROT_FEATURES,
-    TAXONOMY_FEATURES,
-    UNIPROT_FEATURES,
-    ProteinFeatureExtractor,
+    FeatureConfiguration,
 )
-from src.protspace.data.feature_retrievers.uniprot_feature_retriever import (
+from src.protspace.data.features.manager import ProteinFeatureManager
+from src.protspace.data.features.merging import FeatureMerger
+from src.protspace.data.features.retrievers.interpro_retriever import (
+    INTERPRO_FEATURES,
+)
+from src.protspace.data.features.retrievers.taxonomy_retriever import (
+    TAXONOMY_FEATURES,
+)
+from src.protspace.data.features.retrievers.uniprot_retriever import (
+    UNIPROT_FEATURES,
     ProteinFeatures,
 )
+from src.protspace.data.features.transformers.length_binning import LengthBinner
+from src.protspace.data.features.transformers.transformer import FeatureTransformer
+from src.protspace.data.features.transformers.uniprot_transforms import (
+    UniProtTransformer,
+)
+from src.protspace.data.io.formatters import DataFormatter
+from src.protspace.data.io.writers import FeatureWriter
+
+# Use new name throughout tests
+ProteinFeatureExtractor = ProteinFeatureManager  # For test compatibility
 
 # Test data
 SAMPLE_HEADERS = ["P01308", "P01315", "P01316"]
@@ -105,140 +122,126 @@ class TestProteinFeatureExtractorInit:
 
         extractor = ProteinFeatureExtractor(headers=headers)
 
+        # When no features specified, user_features should be None
         assert extractor.user_features is None
-        assert extractor.uniprot_features is not None
-        # taxonomy_features will be populated from DEFAULT_FEATURES
-        assert extractor.taxonomy_features is not None
+
+        # Configuration should be initialized with default features
+        assert extractor.config is not None
+        assert hasattr(extractor.config, "user_features")
+        assert hasattr(extractor.config, "uniprot_features")
+        assert hasattr(extractor.config, "taxonomy_features")
+
+        # Config should have default features split by source
+        assert extractor.config.uniprot_features is not None
+        assert len(extractor.config.uniprot_features) > 0
+        assert extractor.config.taxonomy_features is not None
+        assert len(extractor.config.taxonomy_features) > 0
 
 
-class TestValidateFeatures:
-    """Test the _validate_features method."""
+class TestFeatureConfiguration:
+    """Test the FeatureConfiguration module."""
 
-    def test_validate_features_valid_features(self):
+    def test_validate_valid_features(self):
         """Test validation with valid features."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
         valid_features = ["length", "genus", "species", "protein_families"]
+        config = FeatureConfiguration(user_features=valid_features)
 
-        result = extractor._validate_features(valid_features)
+        assert config.user_features == valid_features
 
-        assert result == valid_features
-
-    def test_validate_features_with_none(self):
+    def test_validate_with_none(self):
         """Test validation with None returns None."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        config = FeatureConfiguration(user_features=None)
 
-        result = extractor._validate_features(None)
+        assert config.user_features is None
 
-        assert result is None
-
-    def test_validate_features_invalid_feature(self):
+    def test_validate_invalid_feature(self):
         """Test validation with invalid feature raises ValueError."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
         invalid_features = ["length", "nonexistent_feature"]
 
         with pytest.raises(
             ValueError, match="Feature nonexistent_feature is not a valid feature"
         ):
-            extractor._validate_features(invalid_features)
+            FeatureConfiguration(user_features=invalid_features)
 
-    def test_validate_features_with_length_binning(self):
+    def test_validate_with_length_binning(self):
         """Test validation includes length binning features."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
         features_with_binning = ["length_fixed", "length_quantile", "genus"]
+        config = FeatureConfiguration(user_features=features_with_binning)
 
-        result = extractor._validate_features(features_with_binning)
+        assert config.user_features == features_with_binning
 
-        assert result == features_with_binning
-
-
-class TestInitializeFeatures:
-    """Test the _initialize_features method."""
-
-    def test_initialize_features_with_user_features(self):
-        """Test feature initialization with user-specified features."""
-        headers = SAMPLE_HEADERS
+    def test_split_by_source_with_user_features(self):
+        """Test feature splitting by source with user-specified features."""
         user_features = ["length", "genus", "species", "pfam"]
-
-        extractor = ProteinFeatureExtractor(headers=headers, features=user_features)
-        uniprot_features, taxonomy_features, interpro_features = (
-            extractor._initialize_features(DEFAULT_FEATURES)
-        )
+        config = FeatureConfiguration(user_features=user_features)
 
         # Should include user's UniProt features plus required ones
-        assert "accession" in uniprot_features
-        assert "organism_id" in uniprot_features
-        assert "length" in uniprot_features
+        assert "accession" in config.uniprot_features
+        assert "organism_id" in config.uniprot_features
+        assert "length" in config.uniprot_features
 
-        # Should include taxonomy features that are in both user_features and DEFAULT_FEATURES
-        assert "genus" in taxonomy_features
-        assert "species" in taxonomy_features
+        # Should include taxonomy features that are in user_features
+        assert "genus" in config.taxonomy_features
+        assert "species" in config.taxonomy_features
 
         # Should include InterPro features that are in user_features
-        assert "pfam" in interpro_features
+        assert "pfam" in config.interpro_features
 
-    def test_initialize_features_with_length_binning(self):
-        """Test initialization when user requests length binning features."""
-        headers = SAMPLE_HEADERS
+    def test_split_by_source_adds_length_for_binning(self):
+        """Test splitting adds 'length' when length binning features requested."""
         user_features = ["length_fixed", "genus"]
-
-        extractor = ProteinFeatureExtractor(headers=headers, features=user_features)
-        uniprot_features, _, _ = extractor._initialize_features(DEFAULT_FEATURES)
+        config = FeatureConfiguration(user_features=user_features)
 
         # Should automatically include "length" for binning computation
-        assert "length" in uniprot_features
+        assert "length" in config.uniprot_features
 
-    def test_initialize_features_default_behavior(self):
-        """Test initialization with default features."""
-        headers = SAMPLE_HEADERS
-
-        extractor = ProteinFeatureExtractor(headers=headers)
-        uniprot_features, taxonomy_features, _ = extractor._initialize_features(
-            DEFAULT_FEATURES
-        )
+    def test_split_by_source_default_features(self):
+        """Test splitting with default features (None)."""
+        config = FeatureConfiguration(user_features=None)
 
         # Should include all UniProt features from DEFAULT_FEATURES
         for feature in UNIPROT_FEATURES:
-            assert feature in uniprot_features
+            assert feature in config.uniprot_features
 
         # Should include taxonomy features since they're in DEFAULT_FEATURES
-        assert taxonomy_features is not None
-        assert len(taxonomy_features) > 0
+        assert config.taxonomy_features is not None
+        assert len(config.taxonomy_features) > 0
 
 
-class TestComputeLengthBins:
-    """Test length binning functionality."""
+class TestLengthBinner:
+    """Test the LengthBinner module."""
 
     def test_compute_fixed_bins(self):
         """Test fixed length binning."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        binner = LengthBinner()
         lengths = [25, 75, 150, 350, 1500, None]
 
-        result = extractor._compute_fixed_bins(lengths)
+        result = binner.compute_fixed_bins(lengths)
 
         expected = ["<50", "50-100", "100-200", "200-400", "1400-1600", "unknown"]
         assert result == expected
 
     def test_compute_quantile_bins(self):
         """Test quantile-based length binning."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        binner = LengthBinner()
         lengths = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
-        result = extractor._compute_quantile_bins(lengths, 5)  # 5 bins
+        result = binner.compute_quantile_bins(lengths, num_bins=5)
 
         # Should create 5 bins with roughly equal numbers of sequences
         assert len(set(result)) <= 5
         assert all(isinstance(bin_label, str) for bin_label in result)
 
-    def test_compute_length_bins_integration(self):
+    def test_add_bins_integration(self):
         """Test complete length binning computation."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        binner = LengthBinner()
         protein_features = [
             ProteinFeatures(identifier="P1", features={"length": "110"}),
             ProteinFeatures(identifier="P2", features={"length": "250"}),
             ProteinFeatures(identifier="P3", features={"length": "invalid"}),
         ]
 
-        result = extractor._compute_length_bins(protein_features)
+        result = binner.add_bins(protein_features)
 
         # Verify structure
         assert len(result) == 3
@@ -253,12 +256,12 @@ class TestComputeLengthBins:
         assert result[2].features["length_fixed"] == "unknown"
 
 
-class TestMergeFeatures:
-    """Test feature merging functionality."""
+class TestFeatureMerger:
+    """Test the FeatureMerger module."""
 
-    def test_merge_features_basic(self):
+    def test_merge_basic(self):
         """Test basic feature merging between UniProt and taxonomy."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        merger = FeatureMerger()
 
         uniprot_features = [
             ProteinFeatures(
@@ -274,7 +277,7 @@ class TestMergeFeatures:
             10090: {"features": {"genus": "Mus", "species": "Mus musculus"}},
         }
 
-        result = extractor._merge_features(uniprot_features, taxonomy_features)
+        result = merger.merge(uniprot_features, taxonomy_features)
 
         # Verify merging
         assert len(result) == 2
@@ -283,9 +286,9 @@ class TestMergeFeatures:
         assert result[1].features["genus"] == "Mus"
         assert result[1].features["species"] == "Mus musculus"
 
-    def test_merge_features_with_top_9_filtering(self):
+    def test_merge_with_top_9_filtering(self):
         """Test that feature merging keeps only top 9 values."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        merger = FeatureMerger()
 
         uniprot_features = [
             ProteinFeatures(identifier=f"P{i}", features={"organism_id": str(i % 2)})
@@ -299,15 +302,15 @@ class TestMergeFeatures:
                 "features": {"genus": f"Genus{i % 12}"}  # 12 different genera
             }
 
-        result = extractor._merge_features(uniprot_features, taxonomy_features)
+        result = merger.merge(uniprot_features, taxonomy_features)
 
         # Should have applied "other" for less frequent values
         genus_values = {protein.features.get("genus", "") for protein in result}
         assert len(genus_values) <= 10  # Max 9 + "other"
 
-    def test_merge_features_missing_taxonomy(self):
+    def test_merge_missing_taxonomy(self):
         """Test merging when taxonomy data is missing for some organisms."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        merger = FeatureMerger()
 
         uniprot_features = [
             ProteinFeatures(identifier="P01308", features={"organism_id": "9606"}),
@@ -321,7 +324,7 @@ class TestMergeFeatures:
             # 99999 missing
         }
 
-        result = extractor._merge_features(uniprot_features, taxonomy_features)
+        result = merger.merge(uniprot_features, taxonomy_features)
 
         # Should handle missing taxonomy gracefully
         assert len(result) == 2
@@ -329,16 +332,14 @@ class TestMergeFeatures:
         assert "genus" not in result[1].features  # No taxonomy data available
 
 
-class TestFileOperations:
-    """Test file saving operations."""
+class TestFeatureWriter:
+    """Test the FeatureWriter module."""
 
-    def test_save_csv(self):
+    def test_write_csv(self):
         """Test saving features to CSV file."""
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "test_output.csv"
-            extractor = ProteinFeatureExtractor(
-                headers=SAMPLE_HEADERS, output_path=output_path
-            )
+            writer = FeatureWriter()
 
             protein_features = [
                 ProteinFeatures(
@@ -349,7 +350,7 @@ class TestFileOperations:
                 ),
             ]
 
-            extractor.save_csv(protein_features)
+            writer.write_csv(protein_features, output_path, apply_transforms=False)
 
             # Verify file was created and has correct content
             assert output_path.exists()
@@ -357,13 +358,11 @@ class TestFileOperations:
             assert len(df) == 2
             assert list(df["identifier"]) == ["P1", "P2"]
 
-    def test_save_arrow(self):
+    def test_write_parquet(self):
         """Test saving features to Parquet file."""
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "test_output.parquet"
-            extractor = ProteinFeatureExtractor(
-                headers=SAMPLE_HEADERS, output_path=output_path
-            )
+            writer = FeatureWriter()
 
             protein_features = [
                 ProteinFeatures(
@@ -374,7 +373,7 @@ class TestFileOperations:
                 ),
             ]
 
-            extractor.save_arrow(protein_features)
+            writer.write_parquet(protein_features, output_path, apply_transforms=False)
 
             # Verify file was created and has correct content
             assert output_path.exists()
@@ -383,13 +382,11 @@ class TestFileOperations:
             assert list(df["identifier"]) == ["P1", "P2"]
 
 
-class TestCreateDataframeFromFeatures:
-    """Test DataFrame creation from features."""
+class TestDataFormatter:
+    """Test the DataFormatter module."""
 
-    def test_create_dataframe_from_features(self):
-        """Test creating DataFrame directly from features."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
-
+    def test_to_dataframe(self):
+        """Test creating DataFrame from features."""
         protein_features = [
             ProteinFeatures(
                 identifier="P1", features={"length": "110", "genus": "Homo"}
@@ -399,7 +396,7 @@ class TestCreateDataframeFromFeatures:
             ),
         ]
 
-        result = extractor._create_dataframe_from_features(protein_features)
+        result = DataFormatter.to_dataframe(protein_features)
 
         # Verify DataFrame structure
         assert isinstance(result, pd.DataFrame)
@@ -407,11 +404,9 @@ class TestCreateDataframeFromFeatures:
         assert "identifier" in result.columns
         assert list(result["identifier"]) == ["P1", "P2"]
 
-    def test_create_dataframe_empty_features(self):
+    def test_to_dataframe_empty_features(self):
         """Test creating DataFrame with empty features list."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
-
-        result = extractor._create_dataframe_from_features([])
+        result = DataFormatter.to_dataframe([])
 
         # Should create DataFrame with just identifier column
         assert isinstance(result, pd.DataFrame)
@@ -419,51 +414,46 @@ class TestCreateDataframeFromFeatures:
         assert list(result.columns) == ["identifier"]
 
 
-class TestModifyIfNeeded:
-    """Test the _modify_if_needed method."""
+class TestUniProtTransformer:
+    """Test the UniProtTransformer module."""
 
-    def test_modify_annotation_score(self):
+    def test_transform_annotation_score(self):
         """Test modification of annotation score values."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        transformer = UniProtTransformer()
 
-        row = ["P01308", "5.0", "Insulin family"]
-        headers = ["identifier", "annotation_score", "protein_families"]
-
-        result = extractor._modify_if_needed(row, headers)
+        result = transformer.transform_annotation_score("5.0")
 
         # Should convert float annotation score to integer string
-        assert result[1] == "5"
+        assert result == "5"
 
-    def test_modify_protein_families(self):
+    def test_transform_protein_families(self):
         """Test modification of protein families values."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        transformer = UniProtTransformer()
 
-        row = ["P01308", "Insulin family, Growth factor family"]
-        headers = ["identifier", "protein_families"]
-
-        result = extractor._modify_if_needed(row, headers)
+        result = transformer.transform_protein_families(
+            "Insulin family, Growth factor family"
+        )
 
         # Should take only first family
-        assert result[1] == "Insulin family"
+        assert result == "Insulin family"
 
-    def test_modify_protein_families_with_semicolon(self):
+    def test_transform_protein_families_with_semicolon(self):
         """Test modification of protein families with semicolon separator."""
-        extractor = ProteinFeatureExtractor(headers=SAMPLE_HEADERS)
+        transformer = UniProtTransformer()
 
-        row = ["P01308", "Insulin family; Growth factor family"]
-        headers = ["identifier", "protein_families"]
-
-        result = extractor._modify_if_needed(row, headers)
+        result = transformer.transform_protein_families(
+            "Insulin family; Growth factor family"
+        )
 
         # Should take only first family
-        assert result[1] == "Insulin family"
+        assert result == "Insulin family"
 
 
 class TestIntegration:
     """Integration tests for complete workflows."""
 
-    @patch("src.protspace.data.feature_manager.TaxonomyFeatureRetriever")
-    @patch("src.protspace.data.feature_manager.UniProtFeatureRetriever")
+    @patch("src.protspace.data.features.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.features.manager.UniProtRetriever")
     def test_to_pd_complete_workflow(
         self, mock_uniprot_retriever, mock_taxonomy_retriever
     ):
@@ -491,8 +481,8 @@ class TestIntegration:
         assert "genus" in result.columns
         assert "species" in result.columns
 
-    @patch("src.protspace.data.feature_manager.TaxonomyFeatureRetriever")
-    @patch("src.protspace.data.feature_manager.UniProtFeatureRetriever")
+    @patch("src.protspace.data.features.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.features.manager.UniProtRetriever")
     def test_to_pd_with_file_output(
         self, mock_uniprot_retriever, mock_taxonomy_retriever
     ):
@@ -525,8 +515,8 @@ class TestIntegration:
             assert isinstance(result, pd.DataFrame)
             assert len(result) == 3
 
-    @patch("src.protspace.data.feature_manager.TaxonomyFeatureRetriever")
-    @patch("src.protspace.data.feature_manager.UniProtFeatureRetriever")
+    @patch("src.protspace.data.features.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.features.manager.UniProtRetriever")
     def test_to_pd_feature_filtering(
         self, mock_uniprot_retriever, mock_taxonomy_retriever
     ):
@@ -559,7 +549,7 @@ class TestConstants:
 
     def test_default_features_constant(self):
         """Test that DEFAULT_FEATURES combines UniProt and taxonomy features."""
-        from protspace.data.feature_retrievers.interpro_feature_retriever import (
+        from protspace.data.features.retrievers.interpro_retriever import (
             INTERPRO_FEATURES,
         )
 

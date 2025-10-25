@@ -1,10 +1,13 @@
 from unittest.mock import Mock, patch
 
-from src.protspace.data.feature_retrievers.uniprot_feature_retriever import (
+from src.protspace.data.features.retrievers.uniprot_retriever import (
     UNIPROT_FEATURES,
     ProteinFeatures,
-    UniProtFeatureRetriever,
+    UniProtRetriever,
 )
+
+# Alias for test compatibility
+UniProtFeatureRetriever = UniProtRetriever
 
 
 class TestUniProtFeatureRetrieverInit:
@@ -91,9 +94,7 @@ class TestManageHeaders:
 class TestFetchFeatures:
     """Test the fetch_features method."""
 
-    @patch(
-        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
-    )
+    @patch("src.protspace.data.features.retrievers.uniprot_retriever.UniprotkbClient")
     def test_fetch_features_success(self, mock_client_class):
         """Test successful feature fetching with new unipressed implementation."""
         # Mock API response with minimal required fields
@@ -160,9 +161,7 @@ class TestFetchFeatures:
         # Verify API call
         mock_client_class.fetch_many.assert_called_once_with(["P01308", "P01315"])
 
-    @patch(
-        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
-    )
+    @patch("src.protspace.data.features.retrievers.uniprot_retriever.UniprotkbClient")
     def test_fetch_features_batching_logic(self, mock_client_class):
         """Test feature fetching with batching behavior."""
         # Create mock records for batching test
@@ -205,9 +204,7 @@ class TestFetchFeatures:
         # Verify API was called multiple times for batching
         assert mock_client_class.fetch_many.call_count == 2  # 100 + 50
 
-    @patch(
-        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
-    )
+    @patch("src.protspace.data.features.retrievers.uniprot_retriever.UniprotkbClient")
     def test_fetch_features_handles_errors(self, mock_client_class):
         """Test handling of API errors."""
         # Mock API to raise an exception
@@ -226,9 +223,7 @@ class TestFetchFeatures:
         # All features should be empty strings due to error
         assert all(v == "" for v in result[0].features.values())
 
-    @patch(
-        "src.protspace.data.feature_retrievers.uniprot_feature_retriever.UniprotkbClient"
-    )
+    @patch("src.protspace.data.features.retrievers.uniprot_retriever.UniprotkbClient")
     def test_fetch_features_stores_uniprot_features(self, mock_client_class):
         """Test that fetch_features stores UNIPROT_FEATURES including organism_id."""
         mock_records = [

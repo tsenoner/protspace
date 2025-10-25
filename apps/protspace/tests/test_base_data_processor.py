@@ -6,7 +6,10 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from src.protspace.data.base_data_processor import BaseDataProcessor
+from src.protspace.data.processors.base_processor import BaseProcessor
+
+# Use new name
+BaseDataProcessor = BaseProcessor  # For test compatibility
 
 # Sample data for tests
 SAMPLE_CONFIG = {"n_neighbors": 5, "custom_names": {"pca2": "CustomPCA"}}
@@ -108,7 +111,7 @@ class TestCreateOutput:
 
 
 class TestSaveOutput:
-    @patch("src.protspace.data.base_data_processor.pq.write_table")
+    @patch("src.protspace.data.processors.base_processor.pq.write_table")
     def test_save_output_separate_files(self, mock_write_table):
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
         tables = processor.create_output(
@@ -119,7 +122,7 @@ class TestSaveOutput:
             assert mock_write_table.call_count == 3
             mock_mkdir.assert_called()
 
-    @patch("src.protspace.data.base_data_processor.pq.write_table")
+    @patch("src.protspace.data.processors.base_processor.pq.write_table")
     def test_save_output_bundled(self, _):
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
         tables = processor.create_output(
