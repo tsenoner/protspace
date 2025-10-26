@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v3.1.1 (2025-10-26)
+
+### Documentation
+
+* docs(features): add 'xref_pdb' and remove 'sequence' from feature list
+
+- Add 'xref_pdb' and remove 'sequence' from README.md UniProt features
+- Remove 'sequence' from CLI help text in common_args.py
+- Sequence is used internally but not exposed to users ([`d62ee4e`](https://github.com/tsenoner/protspace/commit/d62ee4e1bb18926004632dfe4d0a39f11f03a25b))
+
+### Fixes
+
+* fix(parser): truncate protein family descriptions at first dot
+
+- Update protein_families property to remove trailing text after period
+- Clean up family description formatting in UniProt parser
+- Update toxins dataset with improved family annotations ([`3f1323f`](https://github.com/tsenoner/protspace/commit/3f1323f222fac35ac7526021a81dd1b762e51e6e))
+
+### Unknown
+
+* Merge branch 'stage' ([`92872a8`](https://github.com/tsenoner/protspace/commit/92872a855af90643508bf8cbbf0164f7de8647c8))
+
+
 ## v3.1.0 (2025-10-25)
 
 ### Chores
