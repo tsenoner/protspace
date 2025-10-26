@@ -263,7 +263,10 @@ class UniProtEntry:
                 value = text.get("value", "")
                 prefix = "Belongs to the "
                 if value.startswith(prefix):
-                    return value[len(prefix) :]
+                    value = value[len(prefix) :]
+                # Stop at the first dot, if any
+                if "." in value:
+                    return value.split(".", 1)[0]
                 return value
         return ""
 

@@ -168,7 +168,7 @@ def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = Tru
             "Available features:\n"
             "  UniProt:    annotation_score, cc_subcellular_location, fragment,\n"
             "              length_fixed, length_quantile, protein_existence,\n"
-            "              protein_families, reviewed, sequence, xref_pdb\n"
+            "              protein_families, reviewed, xref_pdb\n"
             "  InterPro:   cath, pfam, signal_peptide, superfamily\n"
             "  Taxonomy:   root, domain, kingdom, phylum, class, order, family, genus, species\n"
             "\n"
