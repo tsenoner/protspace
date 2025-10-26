@@ -119,9 +119,9 @@ protspace-query -q "..." -f reviewed,length_quantile,kingdom
 - `--keep-tmp`: Cache intermediate files for reuse
 - `--bundled`: Bundle output files (true/false, default: true)
 
-### Method Parameters
+### Method Default Parameters
 
-Fine-tune dimensionality reduction:
+Followng the default parameters for each method. Override these to fine-tune dimensionality reduction:
 
 - **UMAP**: `--n_neighbors 15 --min_dist 0.1`
 - **t-SNE**: `--perplexity 30 --learning_rate 200`
