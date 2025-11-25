@@ -17,14 +17,15 @@ def run_protspace_query():
     command = [
         "protspace-query",
         "-q",
-        "(organism_id:9606) AND (reviewed:true) AND (ft_transmem_exp:helical)",
+        "insulin AND (existence:1) AND (reviewed:true)",
         "--features",
-        "phylum,protein_existence,length_fixed,length_quantile,pfam,cath,superfamily,signal_peptide",
+        "annotation_score,phylum,protein_existence,length_fixed,length_quantile,pfam,cath,class,superfamily,signal_peptide",
         "--methods",
-        "pca2,pca3",
+        "pca2,umap2",
         "-o",
         "examples/cli/query_output",
         # Uncomment any of these options as needed:
+        # "--projection-data-source", "msa",  # Use MSA similarity instead of embeddings
         # "--non-binary",  # Use JSON output instead of Parquet
         # "--keep-tmp",    # Cache intermediate files for reuse
         # "--n_neighbors", "25",  # UMAP parameter
