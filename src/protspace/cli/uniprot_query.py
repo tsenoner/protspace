@@ -25,9 +25,10 @@ def create_argument_parser() -> argparse.ArgumentParser:
         description=(
             "Query and process proteins directly from UniProt.\n"
             "\n"
-            "This tool searches UniProt, downloads protein sequences, computes embeddings\n"
-            "using ESM2, performs dimensionality reduction, and optionally extracts\n"
-            "protein features from UniProt, InterPro, and taxonomy databases."
+            "This tool searches UniProt, downloads either pre-computed embeddings or\n"
+            "protein sequences (for MSA-based similarity), performs dimensionality\n"
+            "reduction, and optionally extracts protein features from UniProt, InterPro,\n"
+            "and taxonomy databases."
         ),
         formatter_class=CustomHelpFormatter,
     )
@@ -65,6 +66,25 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Add shared verbosity argument
     add_verbosity_argument(parser)
+
+    # Add projection data source argument
+    parser.add_argument(
+        "--projection-data-source",
+        type=str,
+        choices=["embeddings", "msa"],
+        default="embeddings",
+        help=(
+            "Data source for dimensionality reduction projections.\n"
+            "\n"
+            "Options:\n"
+            "  embeddings  Download pre-computed embeddings from UniProt (default)\n"
+            "  msa         Generate similarity matrix using MSA with pymmseqs\n"
+            "\n"
+            "The 'embeddings' option uses Selenium to download embeddings directly\n"
+            "from UniProt, while 'msa' downloads FASTA sequences and computes\n"
+            "sequence similarity using pymmseqs."
+        ),
+    )
 
     # Add all shared reducer parameter groups
     add_all_reducer_parameters(parser)
@@ -118,41 +138,73 @@ def main():
         # Initialize processor
         processor = UniProtQueryProcessor(args_dict)
 
-        # Download FASTA first to get headers
         logger.info(f"Processing UniProt query: '{args.query}'")
-        headers, fasta_path = processor._search_and_download_fasta(
-            query=args.query,
-            save_to=None,  # Temporary file for now
-        )
-        if not headers:
-            raise ValueError(f"No sequences found for query: '{args.query}'")
+        logger.info(f"Using projection data source: {args.projection_data_source}")
 
-        # Now determine output paths with headers for hash computation
-        output_path, intermediate_dir = determine_output_paths(
-            output_arg=args.output,
-            input_path=None,  # No input file for query mode
-            non_binary=args.non_binary,
-            bundled=args.bundled == "true",
-            keep_tmp=args.keep_tmp,
-            identifiers=headers if args.keep_tmp else None,
-        )
+        # Handle different data sources
+        if args.projection_data_source == "msa":
+            # MSA mode: Download FASTA first to get headers for hash computation
+            headers, fasta_path = processor._search_and_download_fasta(
+                query=args.query,
+                save_to=None,  # Temporary file for now
+            )
+            if not headers:
+                raise ValueError(f"No sequences found for query: '{args.query}'")
 
-        logger.info(f"Output will be saved to: {output_path}")
-        if intermediate_dir:
-            logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
+            # Determine output paths with headers for hash computation
+            output_path, intermediate_dir = determine_output_paths(
+                output_arg=args.output,
+                input_path=None,  # No input file for query mode
+                non_binary=args.non_binary,
+                bundled=args.bundled == "true",
+                keep_tmp=args.keep_tmp,
+                identifiers=headers if args.keep_tmp else None,
+            )
 
-        # Process the query with the determined paths
-        metadata, data, headers, saved_files = processor.process_query(
-            query=args.query,
-            features=args.features,
-            delimiter=",",
-            output_path=output_path,
-            intermediate_dir=intermediate_dir,
-            keep_tmp=args.keep_tmp,
-            non_binary=args.non_binary,
-            fasta_path=fasta_path,  # Pass the already downloaded FASTA
-            headers=headers,  # Pass the already extracted headers
-        )
+            logger.info(f"Output will be saved to: {output_path}")
+            if intermediate_dir:
+                logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
+
+            # Process the query with MSA
+            metadata, data, headers, saved_files = processor.process_query(
+                query=args.query,
+                features=args.features,
+                delimiter=",",
+                output_path=output_path,
+                intermediate_dir=intermediate_dir,
+                keep_tmp=args.keep_tmp,
+                non_binary=args.non_binary,
+                fasta_path=fasta_path,  # Pass the already downloaded FASTA
+                headers=headers,  # Pass the already extracted headers
+                projection_data_source="msa",
+            )
+        else:
+            # Embeddings mode: No need to download FASTA first
+            # Determine output paths without headers (embeddings will provide them)
+            output_path, intermediate_dir = determine_output_paths(
+                output_arg=args.output,
+                input_path=None,  # No input file for query mode
+                non_binary=args.non_binary,
+                bundled=args.bundled == "true",
+                keep_tmp=args.keep_tmp,
+                identifiers=None,  # Headers not available yet
+            )
+
+            logger.info(f"Output will be saved to: {output_path}")
+            if intermediate_dir:
+                logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
+
+            # Process the query with embeddings
+            metadata, data, headers, saved_files = processor.process_query(
+                query=args.query,
+                features=args.features,
+                delimiter=",",
+                output_path=output_path,
+                intermediate_dir=intermediate_dir,
+                keep_tmp=args.keep_tmp,
+                non_binary=args.non_binary,
+                projection_data_source="embeddings",
+            )
 
         # Process reduction methods
         methods_list = args.methods.split(",")

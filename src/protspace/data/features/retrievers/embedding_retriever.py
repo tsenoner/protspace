@@ -421,7 +421,8 @@ def _extract_gzip_file(
 
 if __name__ == "__main__":
     driver = open_uniprot_website(
-        query="insulin AND (existence:2) AND (reviewed:true)",
+        headless=False,
+        query="insulin AND (existence:1) AND (reviewed:true)",
         download_dir="/Users/heispv/Documents/protspace-python/protspace",
         extract_download=True,
         extract_dir="/Users/heispv/Documents/protspace-python/protspace",
