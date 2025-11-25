@@ -3,7 +3,7 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,9 @@ from pymmseqs.commands import easy_search
 from tqdm import tqdm
 
 from protspace.data.features.manager import ProteinFeatureManager
+from protspace.data.features.retrievers.embedding_retriever import open_uniprot_website
 from protspace.data.processors.base_processor import BaseProcessor
+from protspace.data.processors.local_processor import LocalProcessor
 from protspace.utils import REDUCERS
 
 logging.basicConfig(format="%(levelname)s: %(message)s")
@@ -54,6 +56,7 @@ class UniProtQueryProcessor(BaseProcessor):
         non_binary: bool = False,
         fasta_path: Path = None,
         headers: list[str] = None,
+        projection_data_source: Literal["msa", "embeddings"] = "embeddings",
     ) -> tuple[pd.DataFrame, np.ndarray, list[str], dict[str, Path]]:
         """
         Process a UniProt query and return data for visualization.
@@ -68,11 +71,157 @@ class UniProtQueryProcessor(BaseProcessor):
             non_binary: Whether to use non-binary formats (CSV instead of parquet)
             fasta_path: Optional pre-downloaded FASTA file path
             headers: Optional pre-extracted protein IDs
+            projection_data_source: Data source for projections - "embeddings" downloads
+                embeddings from UniProt, "msa" generates similarity matrix using pymmseqs
 
         Returns:
             Tuple of (features_df, embeddings_array, headers_list, saved_files_dict)
         """
 
+        if projection_data_source == "embeddings":
+            return self._process_with_embeddings(
+                query=query,
+                output_path=output_path,
+                intermediate_dir=intermediate_dir,
+                features=features,
+                delimiter=delimiter,
+                keep_tmp=keep_tmp,
+                non_binary=non_binary,
+            )
+        else:
+            return self._process_with_msa(
+                query=query,
+                output_path=output_path,
+                intermediate_dir=intermediate_dir,
+                features=features,
+                delimiter=delimiter,
+                keep_tmp=keep_tmp,
+                non_binary=non_binary,
+                fasta_path=fasta_path,
+                headers=headers,
+            )
+
+    def _process_with_embeddings(
+        self,
+        query: str,
+        output_path: Path,
+        intermediate_dir: Path,
+        features: str = None,
+        delimiter: str = ",",
+        keep_tmp: bool = False,
+        non_binary: bool = False,
+    ) -> tuple[pd.DataFrame, np.ndarray, list[str], dict[str, Path]]:
+        """
+        Process a UniProt query using embeddings downloaded from UniProt.
+
+        Downloads embeddings via Selenium browser automation, then uses LocalProcessor
+        to load the .h5 file and generate metadata.
+        """
+        saved_files = {}
+
+        # Determine embedding file path
+        if keep_tmp:
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+            embedding_path = intermediate_dir / "embeddings.h5"
+            embedding_gz_path = intermediate_dir / "embeddings.gz"
+        else:
+            # Use temporary directory
+            temp_dir = Path(tempfile.mkdtemp(prefix="protspace_embeddings_"))
+            embedding_path = temp_dir / "embeddings.h5"
+            embedding_gz_path = temp_dir / "embeddings.gz"
+
+        # Check for cached embedding file
+        embedding_cached = keep_tmp and embedding_path.exists()
+
+        if embedding_cached:
+            logger.info(f"Loading cached embeddings from: {embedding_path}")
+            saved_files["embeddings"] = embedding_path
+        else:
+            # Download embeddings from UniProt using Selenium
+            logger.info(f"Downloading embeddings from UniProt for query: '{query}'")
+            driver = open_uniprot_website(
+                headless=True,
+                query=query,
+                download_dir=str(embedding_gz_path.parent),
+                extract_download=True,
+                extract_dir=str(embedding_path.parent),
+            )
+
+            # Get the downloaded file paths from driver attributes
+            downloaded_gz = getattr(driver, "uniprot_download_path", None)
+            extracted_h5 = getattr(driver, "uniprot_extracted_path", None)
+            driver.quit()
+
+            if extracted_h5 is None:
+                raise RuntimeError(
+                    f"Failed to download embeddings for query: '{query}'"
+                )
+
+            # Rename/move to expected path if different
+            if Path(extracted_h5) != embedding_path:
+                shutil.move(str(extracted_h5), str(embedding_path))
+
+            # Clean up the .gz file if we have the extracted version
+            if downloaded_gz and Path(downloaded_gz).exists():
+                if keep_tmp:
+                    # Move to expected location
+                    if Path(downloaded_gz) != embedding_gz_path:
+                        shutil.move(str(downloaded_gz), str(embedding_gz_path))
+                    saved_files["embeddings_gz"] = embedding_gz_path
+                else:
+                    Path(downloaded_gz).unlink(missing_ok=True)
+
+            if keep_tmp:
+                saved_files["embeddings"] = embedding_path
+
+            logger.info(f"Embeddings downloaded and extracted to: {embedding_path}")
+
+        # Use LocalProcessor to load embeddings and generate metadata
+        local_processor = LocalProcessor(self.config.copy())
+        features_df, data, headers = local_processor.load_data(
+            input_path=embedding_path,
+            features=features,
+            output_path=output_path,
+            intermediate_dir=intermediate_dir,
+            delimiter=delimiter,
+            non_binary=non_binary,
+            keep_tmp=keep_tmp,
+        )
+
+        # Track metadata file if saved
+        if keep_tmp:
+            if non_binary:
+                metadata_path = intermediate_dir / "all_features.csv"
+            else:
+                metadata_path = intermediate_dir / "all_features.parquet"
+            if metadata_path.exists():
+                saved_files["metadata"] = metadata_path
+
+        # Clean up temporary directory if not keeping files
+        if not keep_tmp:
+            temp_dir = embedding_path.parent
+            if temp_dir.name.startswith("protspace_embeddings_"):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+        return features_df, data, headers, saved_files
+
+    def _process_with_msa(
+        self,
+        query: str,
+        output_path: Path,
+        intermediate_dir: Path,
+        features: str = None,
+        delimiter: str = ",",
+        keep_tmp: bool = False,
+        non_binary: bool = False,
+        fasta_path: Path = None,
+        headers: list[str] = None,
+    ) -> tuple[pd.DataFrame, np.ndarray, list[str], dict[str, Path]]:
+        """
+        Process a UniProt query using MSA-based similarity matrix (original behavior).
+
+        Downloads FASTA sequences and generates similarity matrix using pymmseqs.
+        """
         saved_files = {}
         fasta_filename = "sequences.fasta"
 
@@ -108,8 +257,6 @@ class UniProtQueryProcessor(BaseProcessor):
             # Use pre-downloaded FASTA and headers
             if keep_tmp and fasta_save_path:
                 # Copy to permanent location
-                import shutil
-
                 fasta_save_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(fasta_path, fasta_save_path)
                 fasta_path = fasta_save_path
