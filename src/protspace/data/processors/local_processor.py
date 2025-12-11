@@ -104,6 +104,7 @@ class LocalProcessor(BaseProcessor):
         delimiter: str,
         non_binary: bool = False,
         keep_tmp: bool = False,
+        force_refetch: bool = False,
     ) -> pd.DataFrame:
         try:
             # csv generation logic
@@ -119,11 +120,9 @@ class LocalProcessor(BaseProcessor):
                 else:
                     features_list = None  # No specific features requested, use all
 
-                # Generate metadata in intermediate directory (only if keep_tmp is True)
                 if keep_tmp and intermediate_dir:
+                    # Generate metadata in intermediate directory for caching
                     intermediate_dir.mkdir(parents=True, exist_ok=True)
-
-                if keep_tmp and intermediate_dir:
                     # Use intermediate directory for caching
                     if non_binary:
                         metadata_file_path = intermediate_dir / "all_features.csv"
@@ -132,13 +131,78 @@ class LocalProcessor(BaseProcessor):
 
                     # Check if cached metadata exists
                     if metadata_file_path.exists():
-                        logger.info(
-                            f"Loading cached metadata from: {metadata_file_path}"
+                        cached_df = (
+                            pd.read_parquet(metadata_file_path)
+                            if not non_binary
+                            else pd.read_csv(metadata_file_path)
                         )
-                        if non_binary:
-                            features_df = pd.read_csv(metadata_file_path)
+                        cached_features = set(cached_df.columns) - {"identifier"}
+
+                        # Determine required features
+                        if features_list is None:
+                            from protspace.data.features.configuration import (
+                                DEFAULT_FEATURES,
+                            )
+
+                            required_features = set(DEFAULT_FEATURES)
                         else:
-                            features_df = pd.read_parquet(metadata_file_path)
+                            required_features = set(features_list)
+
+                        # Check if we need to fetch anything
+                        missing = required_features - cached_features
+
+                        if not missing and not force_refetch:
+                            logger.info(
+                                f"All required features found in cache: {metadata_file_path}"
+                            )
+                            # Return filtered columns
+                            if features_list:
+                                cols = ["identifier"] + [
+                                    f for f in features_list if f in cached_df.columns
+                                ]
+                                features_df = cached_df[cols]
+                            else:
+                                features_df = cached_df
+                        else:
+                            # Determine which sources to fetch
+                            from protspace.data.features.configuration import (
+                                FeatureConfiguration,
+                            )
+
+                            sources_to_fetch = (
+                                FeatureConfiguration.determine_sources_to_fetch(
+                                    cached_features, required_features
+                                )
+                            )
+
+                            if force_refetch:
+                                logger.info(
+                                    "--force-refetch flag set, re-fetching all features"
+                                )
+                                sources_to_fetch = {
+                                    "uniprot": True,
+                                    "taxonomy": True,
+                                    "interpro": True,
+                                }
+                                cached_df = None
+                            else:
+                                logger.info(f"Missing features: {missing}")
+                                logger.info(
+                                    f"Will fetch from sources: {[k for k, v in sources_to_fetch.items() if v]}"
+                                )
+
+                            # Fetch missing features incrementally
+                            features_df = ProteinFeatureManager(
+                                headers=headers,
+                                features=features_list,
+                                output_path=metadata_file_path,
+                                non_binary=non_binary,
+                                cached_data=cached_df,
+                                sources_to_fetch=sources_to_fetch,
+                            ).to_pd()
+                            logger.info(
+                                f"Updated metadata saved to: {metadata_file_path}"
+                            )
                     else:
                         # Generate new metadata
                         features_df = ProteinFeatureManager(
