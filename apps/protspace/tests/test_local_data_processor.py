@@ -72,7 +72,7 @@ class TestLocalDataProcessorInit:
 
 
 class TestLoadInputFile:
-    """Test the _load_input_file method."""
+    """Test the load_input_file method."""
 
     @patch("src.protspace.data.processors.local_processor.h5py.File")
     def test_load_input_file_hdf5(self, mock_h5py_file):
@@ -91,7 +91,7 @@ class TestLoadInputFile:
         processor = LocalDataProcessor({})
         input_path = Path("test_embeddings.h5")
 
-        data, headers = processor._load_input_file(input_path)
+        data, headers = processor.load_input_file(input_path)
 
         # Verify results
         assert len(headers) == 3
@@ -114,7 +114,7 @@ class TestLoadInputFile:
         with patch("pandas.read_csv", return_value=csv_data):
             input_path = Path("test_similarity.csv")
 
-            data, headers = processor._load_input_file(input_path)
+            data, headers = processor.load_input_file(input_path)
 
             # Verify results
             assert headers == SAMPLE_HEADERS
@@ -141,7 +141,7 @@ class TestLoadInputFile:
         with patch("pandas.read_csv", return_value=csv_data):
             input_path = Path("test_asymmetric.csv")
 
-            data, headers = processor._load_input_file(input_path)
+            data, headers = processor.load_input_file(input_path)
 
             # Verify matrix was symmetrized
             np.testing.assert_array_equal(data, data.T)
@@ -165,7 +165,7 @@ class TestLoadInputFile:
                 ValueError,
                 match="Similarity matrix must have matching row and column labels",
             ):
-                processor._load_input_file(input_path)
+                processor.load_input_file(input_path)
 
     def test_load_input_file_unsupported_format(self):
         """Test error handling for unsupported file format."""
@@ -173,11 +173,11 @@ class TestLoadInputFile:
         input_path = Path("test_file.txt")
 
         with pytest.raises(ValueError, match="Input file must be either HDF"):
-            processor._load_input_file(input_path)
+            processor.load_input_file(input_path)
 
 
 class TestLoadOrGenerateMetadata:
-    """Test the _load_or_generate_metadata static method."""
+    """Test the load_or_generate_metadata static method."""
 
     def test_load_metadata_from_csv(self):
         """Test loading metadata from existing CSV file."""
@@ -186,7 +186,7 @@ class TestLoadOrGenerateMetadata:
             csv_path = Path(temp_dir) / "metadata.csv"
             SAMPLE_METADATA_DF.to_csv(csv_path, index=False)
 
-            result = LocalDataProcessor._load_or_generate_metadata(
+            result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
                 features=str(csv_path),
                 intermediate_dir=Path(temp_dir) / "intermediate",
@@ -207,7 +207,7 @@ class TestLoadOrGenerateMetadata:
             csv_path = Path(temp_dir) / "metadata.csv"
             SAMPLE_METADATA_DF.to_csv(csv_path, index=False, sep=";")
 
-            result = LocalDataProcessor._load_or_generate_metadata(
+            result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
                 features=str(csv_path),
                 intermediate_dir=Path(temp_dir) / "intermediate",
@@ -229,7 +229,7 @@ class TestLoadOrGenerateMetadata:
         mock_feature_extractor.return_value = mock_extractor_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = LocalDataProcessor._load_or_generate_metadata(
+            result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
                 features="length,organism",
                 intermediate_dir=Path(temp_dir) / "intermediate",
@@ -257,7 +257,7 @@ class TestLoadOrGenerateMetadata:
         mock_feature_extractor.return_value = mock_extractor_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            LocalDataProcessor._load_or_generate_metadata(
+            LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
                 features=None,
                 intermediate_dir=Path(temp_dir) / "intermediate",
@@ -279,7 +279,7 @@ class TestLoadOrGenerateMetadata:
         mock_feature_extractor.return_value = mock_extractor_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = LocalDataProcessor._load_or_generate_metadata(
+            result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
                 features="length",
                 intermediate_dir=Path(temp_dir) / "intermediate",
@@ -297,7 +297,7 @@ class TestLoadOrGenerateMetadata:
         """Test error handling in metadata loading."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Test with non-existent CSV file
-            result = LocalDataProcessor._load_or_generate_metadata(
+            result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
                 features="nonexistent.csv",
                 intermediate_dir=Path(temp_dir) / "intermediate",
@@ -311,17 +311,17 @@ class TestLoadOrGenerateMetadata:
             assert list(result.columns) == ["identifier"]
 
 
-class TestLoadData:
-    """Test the main load_data method."""
+class TestPublicMethods:
+    """Test the main public methods (load_input_file and load_or_generate_metadata)."""
 
     @patch(
-        "src.protspace.data.processors.local_processor.LocalProcessor._load_or_generate_metadata"
+        "src.protspace.data.processors.local_processor.LocalProcessor.load_or_generate_metadata"
     )
     @patch(
-        "src.protspace.data.processors.local_processor.LocalProcessor._load_input_file"
+        "src.protspace.data.processors.local_processor.LocalProcessor.load_input_file"
     )
-    def test_load_data_success(self, mock_load_input, mock_load_metadata):
-        """Test successful data loading."""
+    def test_load_methods_success(self, mock_load_input, mock_load_metadata):
+        """Test successful data loading using public methods."""
         # Setup mocks
         mock_load_input.return_value = (SAMPLE_EMBEDDINGS, SAMPLE_HEADERS)
         mock_load_metadata.return_value = SAMPLE_METADATA_DF
@@ -331,24 +331,32 @@ class TestLoadData:
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "input.h5"
             features_path = Path(temp_dir) / "metadata.csv"
-            output_path = Path(temp_dir) / "output.json"
 
-            result = processor.load_data(
-                input_path=input_path,
+            # Call public methods separately (like CLI does)
+            data, headers = processor.load_input_file(input_path)
+            metadata = processor.load_or_generate_metadata(
+                headers=headers,
                 features=features_path,
-                output_path=output_path,
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
                 keep_tmp=False,
             )
 
-            # Verify results
-            metadata_df, data, headers = result
+            # Create full metadata (like CLI does)
+            full_metadata = pd.DataFrame({"identifier": headers})
+            if len(metadata.columns) > 1:
+                metadata = metadata.astype(str)
+                full_metadata = full_metadata.merge(
+                    metadata.drop_duplicates("identifier"),
+                    on="identifier",
+                    how="left",
+                )
 
-            assert isinstance(metadata_df, pd.DataFrame)
-            assert len(metadata_df) == 3
-            assert list(metadata_df["identifier"]) == SAMPLE_HEADERS
+            # Verify results
+            assert isinstance(full_metadata, pd.DataFrame)
+            assert len(full_metadata) == 3
+            assert list(full_metadata["identifier"]) == SAMPLE_HEADERS
             np.testing.assert_array_equal(data, SAMPLE_EMBEDDINGS)
             assert headers == SAMPLE_HEADERS
 
@@ -357,12 +365,14 @@ class TestLoadData:
             mock_load_metadata.assert_called_once()
 
     @patch(
-        "src.protspace.data.processors.local_processor.LocalProcessor._load_or_generate_metadata"
+        "src.protspace.data.processors.local_processor.LocalProcessor.load_or_generate_metadata"
     )
     @patch(
-        "src.protspace.data.processors.local_processor.LocalProcessor._load_input_file"
+        "src.protspace.data.processors.local_processor.LocalProcessor.load_input_file"
     )
-    def test_load_data_with_partial_metadata(self, mock_load_input, mock_load_metadata):
+    def test_load_methods_with_partial_metadata(
+        self, mock_load_input, mock_load_metadata
+    ):
         """Test data loading with partial metadata (missing entries)."""
         # Setup mocks
         mock_load_input.return_value = (SAMPLE_EMBEDDINGS, SAMPLE_HEADERS)
@@ -380,26 +390,34 @@ class TestLoadData:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "input.h5"
-            output_path = Path(temp_dir) / "output.json"
 
-            result = processor.load_data(
-                input_path=input_path,
+            # Call public methods separately (like CLI does)
+            data, headers = processor.load_input_file(input_path)
+            metadata = processor.load_or_generate_metadata(
+                headers=headers,
                 features="length,organism",
-                output_path=output_path,
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
                 keep_tmp=False,
             )
 
-            metadata_df, _, _ = result
+            # Create full metadata (like CLI does)
+            full_metadata = pd.DataFrame({"identifier": headers})
+            if len(metadata.columns) > 1:
+                metadata = metadata.astype(str)
+                full_metadata = full_metadata.merge(
+                    metadata.drop_duplicates("identifier"),
+                    on="identifier",
+                    how="left",
+                )
 
             # Verify all headers are present in metadata with NaN for missing entries
-            assert len(metadata_df) == 3
-            assert list(metadata_df["identifier"]) == SAMPLE_HEADERS
+            assert len(full_metadata) == 3
+            assert list(full_metadata["identifier"]) == SAMPLE_HEADERS
 
             # Check that missing entries are filled with NaN
-            p01315_row = metadata_df[metadata_df["identifier"] == "P01315"]
+            p01315_row = full_metadata[full_metadata["identifier"] == "P01315"]
             assert len(p01315_row) == 1
             assert pd.isna(p01315_row["length"].iloc[0])
 
@@ -438,23 +456,31 @@ class TestIntegration:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "embeddings.h5"
-            output_path = Path(temp_dir) / "output.json"
 
-            result = processor.load_data(
-                input_path=input_path,
+            # Call public methods separately (like CLI does)
+            data, headers = processor.load_input_file(input_path)
+            metadata = processor.load_or_generate_metadata(
+                headers=headers,
                 features="length,organism",
-                output_path=output_path,
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
                 keep_tmp=True,
             )
 
-            metadata_df, data, headers = result
+            # Create full metadata (like CLI does)
+            full_metadata = pd.DataFrame({"identifier": headers})
+            if len(metadata.columns) > 1:
+                metadata = metadata.astype(str)
+                full_metadata = full_metadata.merge(
+                    metadata.drop_duplicates("identifier"),
+                    on="identifier",
+                    how="left",
+                )
 
             # Verify complete workflow
-            assert isinstance(metadata_df, pd.DataFrame)
-            assert len(metadata_df) == 3
+            assert isinstance(full_metadata, pd.DataFrame)
+            assert len(full_metadata) == 3
             assert data.shape == (3, 4)
             assert headers == SAMPLE_HEADERS
 
@@ -478,23 +504,30 @@ class TestIntegration:
             features_csv_path = Path(temp_dir) / "features.csv"
             SAMPLE_METADATA_DF.to_csv(features_csv_path, index=False)
 
-            output_path = Path(temp_dir) / "output.json"
-
-            result = processor.load_data(
-                input_path=sim_csv_path,
+            # Call public methods separately (like CLI does)
+            data, headers = processor.load_input_file(sim_csv_path)
+            metadata = processor.load_or_generate_metadata(
+                headers=headers,
                 features=str(features_csv_path),
-                output_path=output_path,
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
                 keep_tmp=False,
             )
 
-            metadata_df, data, headers = result
+            # Create full metadata (like CLI does)
+            full_metadata = pd.DataFrame({"identifier": headers})
+            if len(metadata.columns) > 1:
+                metadata = metadata.astype(str)
+                full_metadata = full_metadata.merge(
+                    metadata.drop_duplicates("identifier"),
+                    on="identifier",
+                    how="left",
+                )
 
             # Verify complete workflow
-            assert isinstance(metadata_df, pd.DataFrame)
-            assert len(metadata_df) == 3
+            assert isinstance(full_metadata, pd.DataFrame)
+            assert len(full_metadata) == 3
             assert data.shape == (3, 3)
             assert headers == SAMPLE_HEADERS
             assert processor.config.get("precomputed") is True
@@ -517,22 +550,30 @@ class TestIntegration:
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 input_path = Path(temp_dir) / "embeddings.h5"
-                output_path = Path(temp_dir) / "output.json"
 
-                result = processor.load_data(
-                    input_path=input_path,
+                # Call public methods separately (like CLI does)
+                data, headers = processor.load_input_file(input_path)
+                metadata = processor.load_or_generate_metadata(
+                    headers=headers,
                     features="length,organism",
-                    output_path=output_path,
                     intermediate_dir=Path(temp_dir) / "intermediate",
                     delimiter=",",
                     non_binary=False,
                     keep_tmp=False,
                 )
 
-                metadata_df, _, headers = result
+                # Create full metadata (like CLI does)
+                full_metadata = pd.DataFrame({"identifier": headers})
+                if len(metadata.columns) > 1:
+                    metadata = metadata.astype(str)
+                    full_metadata = full_metadata.merge(
+                        metadata.drop_duplicates("identifier"),
+                        on="identifier",
+                        how="left",
+                    )
 
                 # Should recover gracefully with empty metadata
-                assert isinstance(metadata_df, pd.DataFrame)
-                assert len(metadata_df) == 1
-                assert "identifier" in metadata_df.columns
+                assert isinstance(full_metadata, pd.DataFrame)
+                assert len(full_metadata) == 1
+                assert "identifier" in full_metadata.columns
                 assert headers == ["P01308"]
