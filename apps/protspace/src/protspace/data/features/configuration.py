@@ -77,13 +77,13 @@ class FeatureConfiguration:
         """Split user-requested features by source."""
         # Extract features by source
         uniprot_features = [
-            feature for feature in DEFAULT_FEATURES if feature in UNIPROT_FEATURES
+            feature for feature in self.user_features if feature in UNIPROT_FEATURES
         ]
         taxonomy_features = [
-            feature for feature in DEFAULT_FEATURES if feature in TAXONOMY_FEATURES
+            feature for feature in self.user_features if feature in TAXONOMY_FEATURES
         ]
         interpro_features = [
-            feature for feature in DEFAULT_FEATURES if feature in INTERPRO_FEATURES
+            feature for feature in self.user_features if feature in INTERPRO_FEATURES
         ]
 
         # Check if user requested length binning features
