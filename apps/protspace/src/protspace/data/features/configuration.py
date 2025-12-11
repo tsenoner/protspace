@@ -33,6 +33,56 @@ class FeatureConfiguration:
             self._split_by_source()
         )
 
+    @staticmethod
+    def categorize_features_by_source(features: set[str]) -> dict[str, set[str]]:
+        """
+        Categorize features by their API source.
+
+        Args:
+            features: Set of feature names
+
+        Returns:
+            Dictionary mapping source names to sets of features from that source
+        """
+        return {
+            "uniprot": features & set(UNIPROT_FEATURES),
+            "taxonomy": features & set(TAXONOMY_FEATURES),
+            "interpro": features & set(INTERPRO_FEATURES),
+        }
+
+    @staticmethod
+    def determine_sources_to_fetch(
+        cached_features: set[str], required_features: set[str]
+    ) -> dict[str, bool]:
+        """
+        Determine which API sources need querying based on cache.
+
+        Args:
+            cached_features: Set of features already in cache
+            required_features: Set of features needed for current request
+
+        Returns:
+            Dictionary mapping source names to boolean indicating if fetch is needed
+        """
+        missing = required_features - cached_features
+        categorized = FeatureConfiguration.categorize_features_by_source(missing)
+
+        sources_needed = {
+            "uniprot": len(categorized["uniprot"]) > 0,
+            "taxonomy": len(categorized["taxonomy"]) > 0,
+            "interpro": len(categorized["interpro"]) > 0,
+        }
+
+        # Handle dependencies: taxonomy needs organism_id from UniProt
+        if sources_needed["taxonomy"] and "organism_id" not in cached_features:
+            sources_needed["uniprot"] = True
+
+        # Handle dependencies: interpro needs sequence from UniProt
+        if sources_needed["interpro"] and "sequence" not in cached_features:
+            sources_needed["uniprot"] = True
+
+        return sources_needed
+
     def _validate(self, user_features: list[str]) -> list[str] | None:
         """
         Validate requested features against available features.
