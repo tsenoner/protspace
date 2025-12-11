@@ -11,9 +11,16 @@ import pandas as pd
 
 from protspace.data.features.configuration import FeatureConfiguration
 from protspace.data.features.merging import FeatureMerger
-from protspace.data.features.retrievers.interpro_retriever import InterProRetriever
-from protspace.data.features.retrievers.taxonomy_retriever import TaxonomyRetriever
+from protspace.data.features.retrievers.interpro_retriever import (
+    INTERPRO_FEATURES,
+    InterProRetriever,
+)
+from protspace.data.features.retrievers.taxonomy_retriever import (
+    TAXONOMY_FEATURES,
+    TaxonomyRetriever,
+)
 from protspace.data.features.retrievers.uniprot_retriever import (
+    UNIPROT_FEATURES,
     ProteinFeatures,
     UniProtRetriever,
 )
@@ -35,6 +42,8 @@ class ProteinFeatureManager:
         output_path: Path = None,
         non_binary: bool = False,
         sequences: dict = None,
+        cached_data: pd.DataFrame = None,
+        sources_to_fetch: dict = None,
     ):
         """
         Initialize feature manager.
@@ -45,11 +54,19 @@ class ProteinFeatureManager:
             output_path: Path to save output file (None = return DataFrame only)
             non_binary: If True, save as CSV; if False, save as Parquet
             sequences: Dictionary mapping identifiers to sequences (for InterPro)
+            cached_data: Previously cached DataFrame with features
+            sources_to_fetch: Dict indicating which sources to fetch (uniprot, taxonomy, interpro)
         """
         self.headers = headers
         self.output_path = output_path
         self.non_binary = non_binary
         self.sequences = sequences
+        self.cached_data = cached_data
+        self.sources_to_fetch = sources_to_fetch or {
+            "uniprot": True,
+            "taxonomy": True,
+            "interpro": True,
+        }
 
         # Initialize configuration
         self.config = FeatureConfiguration(features)
@@ -70,10 +87,39 @@ class ProteinFeatureManager:
         # Track which feature sources failed
         failed_sources = []
 
-        # 1. Fetch features from all sources
-        uniprot_features = self._fetch_uniprot(failed_sources)
-        taxonomy_features = self._fetch_taxonomy(uniprot_features, failed_sources)
-        interpro_features = self._fetch_interpro(uniprot_features, failed_sources)
+        # Extract cached features by source if available
+        cached_uniprot = (
+            self._extract_cached_source(UNIPROT_FEATURES)
+            if self.cached_data is not None and not self.sources_to_fetch["uniprot"]
+            else None
+        )
+        cached_taxonomy = (
+            self._extract_cached_taxonomy(TAXONOMY_FEATURES)
+            if self.cached_data is not None and not self.sources_to_fetch["taxonomy"]
+            else None
+        )
+        cached_interpro = (
+            self._extract_cached_source(INTERPRO_FEATURES)
+            if self.cached_data is not None and not self.sources_to_fetch["interpro"]
+            else None
+        )
+
+        # 1. Conditionally fetch based on sources_to_fetch
+        uniprot_features = (
+            self._fetch_uniprot(failed_sources)
+            if self.sources_to_fetch["uniprot"]
+            else cached_uniprot
+        )
+        taxonomy_features = (
+            self._fetch_taxonomy(uniprot_features, failed_sources)
+            if self.sources_to_fetch["taxonomy"]
+            else cached_taxonomy
+        )
+        interpro_features = (
+            self._fetch_interpro(uniprot_features, failed_sources)
+            if self.sources_to_fetch["interpro"]
+            else cached_interpro
+        )
 
         # Report failed sources
         if failed_sources:
@@ -81,7 +127,7 @@ class ProteinFeatureManager:
                 f"Could not retrieve features from the following sources: {', '.join(failed_sources)}"
             )
 
-        # 2. Merge features from all sources
+        # 2. Merge features from all sources (including cached)
         merged_features = self.merger.merge(
             uniprot_features, taxonomy_features, interpro_features
         )
@@ -220,3 +266,77 @@ class ProteinFeatureManager:
                     pass
 
         return id_counts
+
+    def _extract_cached_source(
+        self, source_features: list[str]
+    ) -> list[ProteinFeatures]:
+        """
+        Extract cached features for a specific source (UniProt or InterPro).
+
+        Args:
+            source_features: List of feature names from this source
+
+        Returns:
+            List of ProteinFeatures with cached data for this source
+        """
+        if self.cached_data is None:
+            return []
+
+        # Find available features from this source in cache
+        available = [f for f in source_features if f in self.cached_data.columns]
+        if not available:
+            return []
+
+        # Convert DataFrame to ProteinFeatures format
+        result = []
+        identifier_col = self.cached_data.columns[0]  # First column is identifier
+
+        for _, row in self.cached_data.iterrows():
+            features_dict = {}
+            for feature in available:
+                features_dict[feature] = row[feature]
+
+            result.append(
+                ProteinFeatures(identifier=row[identifier_col], features=features_dict)
+            )
+
+        return result
+
+    def _extract_cached_taxonomy(self, taxonomy_features: list[str]) -> dict:
+        """
+        Extract cached taxonomy features.
+
+        Args:
+            taxonomy_features: List of taxonomy feature names
+
+        Returns:
+            Dict mapping organism_id to taxonomy features (same format as TaxonomyRetriever)
+        """
+        if self.cached_data is None or "organism_id" not in self.cached_data.columns:
+            return {}
+
+        # Find available taxonomy features in cache
+        available = [f for f in taxonomy_features if f in self.cached_data.columns]
+        if not available:
+            return {}
+
+        # Convert to taxonomy format: {organism_id: {"features": {feature: value}}}
+        taxonomy_dict = {}
+
+        # Group by organism_id
+        for _, row in self.cached_data.iterrows():
+            organism_id = row["organism_id"]
+            if pd.isna(organism_id) or organism_id == "":
+                continue
+
+            try:
+                org_id = int(organism_id)
+                if org_id not in taxonomy_dict:
+                    features_dict = {}
+                    for feature in available:
+                        features_dict[feature] = row[feature]
+                    taxonomy_dict[org_id] = {"features": features_dict}
+            except (ValueError, TypeError):
+                pass
+
+        return taxonomy_dict

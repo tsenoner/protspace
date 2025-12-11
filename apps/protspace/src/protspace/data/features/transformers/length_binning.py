@@ -46,17 +46,13 @@ class LengthBinner:
     def _update_proteins_with_bins(
         proteins: list[ProteinFeatures], fixed_bins: list[str], quantile_bins: list[str]
     ) -> list[ProteinFeatures]:
-        """Update proteins with bin values and remove length field."""
+        """Update proteins with bin values (keeping original length field)."""
         updated_proteins = []
         for i, protein in enumerate(proteins):
             updated_features = protein.features.copy()
 
             updated_features["length_fixed"] = fixed_bins[i]
             updated_features["length_quantile"] = quantile_bins[i]
-
-            # Remove original length field
-            if "length" in updated_features:
-                del updated_features["length"]
 
             updated_proteins.append(
                 ProteinFeatures(

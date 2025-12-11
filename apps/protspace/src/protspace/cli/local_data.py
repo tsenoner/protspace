@@ -92,6 +92,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Add shared verbosity argument
     add_verbosity_argument(parser)
 
+    # Add force-refetch flag
+    parser.add_argument(
+        "--force-refetch",
+        action="store_true",
+        help=(
+            "Force re-fetching all features even if cached data exists.\n"
+            "Use this when you want to update features with fresh data from APIs."
+        ),
+    )
+
     # Add all shared reducer parameter groups
     add_all_reducer_parameters(parser)
 
@@ -156,6 +166,7 @@ def main():
             delimiter=args.delimiter,
             non_binary=args.non_binary,
             keep_tmp=args.keep_tmp,
+            force_refetch=args.force_refetch,
         )
 
         # Create full metadata
