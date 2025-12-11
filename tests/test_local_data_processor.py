@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.protspace.data.features.configuration import FeatureConfiguration
 from src.protspace.data.processors.local_processor import (
     EMBEDDING_EXTENSIONS,
     LocalProcessor,
@@ -577,3 +578,265 @@ class TestIntegration:
                 assert len(full_metadata) == 1
                 assert "identifier" in full_metadata.columns
                 assert headers == ["P01308"]
+
+
+class TestIncrementalCaching:
+    """Test incremental feature caching functionality."""
+
+    def test_categorize_features_by_source(self):
+        """Test feature categorization by API source."""
+        features = {"reviewed", "length", "kingdom", "pfam"}
+        categorized = FeatureConfiguration.categorize_features_by_source(features)
+
+        assert "reviewed" in categorized["uniprot"]
+        assert "length" in categorized["uniprot"]
+        assert "kingdom" in categorized["taxonomy"]
+        assert "pfam" in categorized["interpro"]
+
+    def test_determine_sources_to_fetch_all_missing(self):
+        """Test source determination when all features are missing."""
+        cached = set()
+        required = {"reviewed", "kingdom", "pfam"}
+
+        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+
+        assert sources["uniprot"] is True
+        assert sources["taxonomy"] is True
+        assert sources["interpro"] is True
+
+    def test_determine_sources_to_fetch_partial_cached(self):
+        """Test source determination with partial cache."""
+        cached = {"identifier", "reviewed", "length", "organism_id"}
+        required = {"reviewed", "length", "kingdom"}
+
+        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+
+        assert sources["uniprot"] is False  # Already cached
+        assert sources["taxonomy"] is True  # Need kingdom
+        assert sources["interpro"] is False  # Not requested
+
+    def test_determine_sources_to_fetch_taxonomy_dependency(self):
+        """Test that taxonomy fetch triggers UniProt if organism_id is missing."""
+        cached = {"identifier"}
+        required = {"kingdom"}
+
+        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+
+        # Should fetch UniProt to get organism_id (dependency for taxonomy)
+        assert sources["uniprot"] is True
+        assert sources["taxonomy"] is True
+
+    def test_determine_sources_to_fetch_interpro_dependency(self):
+        """Test that InterPro fetch triggers UniProt if sequence is missing."""
+        cached = {"identifier", "organism_id"}
+        required = {"pfam"}
+
+        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+
+        # Should fetch UniProt to get sequence (dependency for InterPro)
+        assert sources["uniprot"] is True
+        assert sources["interpro"] is True
+
+    def test_determine_sources_to_fetch_all_cached(self):
+        """Test source determination when all features are cached."""
+        cached = {
+            "identifier",
+            "reviewed",
+            "length",
+            "kingdom",
+            "pfam",
+            "organism_id",
+            "sequence",
+        }
+        required = {"reviewed", "length", "kingdom", "pfam"}
+
+        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+
+        assert sources["uniprot"] is False
+        assert sources["taxonomy"] is False
+        assert sources["interpro"] is False
+
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    def test_cache_hit_returns_cached_data(self, mock_feature_manager):
+        """Test that cached metadata is returned without API calls when all features present."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            intermediate_dir = Path(temp_dir) / "intermediate"
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create cached metadata file
+            cached_metadata = pd.DataFrame(
+                {
+                    "identifier": SAMPLE_HEADERS,
+                    "reviewed": ["True", "True", "False"],
+                    "length": ["110", "142", "85"],
+                }
+            )
+            cache_file = intermediate_dir / "all_features.parquet"
+            cached_metadata.to_parquet(cache_file)
+
+            # Request subset of cached features
+            result = LocalDataProcessor.load_or_generate_metadata(
+                headers=SAMPLE_HEADERS,
+                features="reviewed,length",
+                intermediate_dir=intermediate_dir,
+                delimiter=",",
+                non_binary=False,
+                keep_tmp=True,
+                force_refetch=False,
+            )
+
+            # Should return cached data without calling ProteinFeatureManager
+            mock_feature_manager.assert_not_called()
+            assert isinstance(result, pd.DataFrame)
+            assert set(result.columns) == {"identifier", "reviewed", "length"}
+
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    def test_cache_miss_triggers_fetch(self, mock_feature_manager):
+        """Test that missing features trigger API fetch."""
+        mock_instance = Mock()
+        mock_instance.to_pd.return_value = pd.DataFrame(
+            {
+                "identifier": SAMPLE_HEADERS,
+                "reviewed": ["True", "True", "False"],
+                "length": ["110", "142", "85"],
+                "kingdom": ["Animalia", "Animalia", "Animalia"],
+            }
+        )
+        mock_feature_manager.return_value = mock_instance
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            intermediate_dir = Path(temp_dir) / "intermediate"
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create cached metadata file with only UniProt features
+            cached_metadata = pd.DataFrame(
+                {
+                    "identifier": SAMPLE_HEADERS,
+                    "reviewed": ["True", "True", "False"],
+                    "length": ["110", "142", "85"],
+                    "organism_id": ["9606", "9606", "10090"],
+                }
+            )
+            cache_file = intermediate_dir / "all_features.parquet"
+            cached_metadata.to_parquet(cache_file)
+
+            # Request features including taxonomy (not in cache)
+            result = LocalDataProcessor.load_or_generate_metadata(
+                headers=SAMPLE_HEADERS,
+                features="reviewed,length,kingdom",
+                intermediate_dir=intermediate_dir,
+                delimiter=",",
+                non_binary=False,
+                keep_tmp=True,
+                force_refetch=False,
+            )
+
+            # Should call ProteinFeatureManager with incremental fetch
+            mock_feature_manager.assert_called_once()
+            call_kwargs = mock_feature_manager.call_args[1]
+            assert call_kwargs["cached_data"] is not None
+            assert call_kwargs["sources_to_fetch"]["uniprot"] is False
+            assert call_kwargs["sources_to_fetch"]["taxonomy"] is True
+
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    def test_force_refetch_ignores_cache(self, mock_feature_manager):
+        """Test that force_refetch flag causes cache to be ignored."""
+        mock_instance = Mock()
+        mock_instance.to_pd.return_value = SAMPLE_METADATA_DF
+        mock_feature_manager.return_value = mock_instance
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            intermediate_dir = Path(temp_dir) / "intermediate"
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create cached metadata file
+            cached_metadata = pd.DataFrame(
+                {
+                    "identifier": SAMPLE_HEADERS,
+                    "reviewed": ["True", "True", "False"],
+                }
+            )
+            cache_file = intermediate_dir / "all_features.parquet"
+            cached_metadata.to_parquet(cache_file)
+
+            # Request with force_refetch=True
+            result = LocalDataProcessor.load_or_generate_metadata(
+                headers=SAMPLE_HEADERS,
+                features="reviewed",
+                intermediate_dir=intermediate_dir,
+                delimiter=",",
+                non_binary=False,
+                keep_tmp=True,
+                force_refetch=True,
+            )
+
+            # Should call ProteinFeatureManager with all sources and no cached data
+            mock_feature_manager.assert_called_once()
+            call_kwargs = mock_feature_manager.call_args[1]
+            assert call_kwargs["cached_data"] is None
+            assert call_kwargs["sources_to_fetch"]["uniprot"] is True
+            assert call_kwargs["sources_to_fetch"]["taxonomy"] is True
+            assert call_kwargs["sources_to_fetch"]["interpro"] is True
+
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    def test_cache_with_csv_format(self, mock_feature_manager):
+        """Test caching works with CSV format (non_binary=True)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            intermediate_dir = Path(temp_dir) / "intermediate"
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create cached metadata CSV file
+            cached_metadata = pd.DataFrame(
+                {
+                    "identifier": SAMPLE_HEADERS,
+                    "reviewed": ["True", "True", "False"],
+                }
+            )
+            cache_file = intermediate_dir / "all_features.csv"
+            cached_metadata.to_csv(cache_file, index=False)
+
+            # Request cached features with non_binary=True
+            result = LocalDataProcessor.load_or_generate_metadata(
+                headers=SAMPLE_HEADERS,
+                features="reviewed",
+                intermediate_dir=intermediate_dir,
+                delimiter=",",
+                non_binary=True,
+                keep_tmp=True,
+                force_refetch=False,
+            )
+
+            # Should return cached CSV data
+            mock_feature_manager.assert_not_called()
+            assert isinstance(result, pd.DataFrame)
+            assert "reviewed" in result.columns
+
+    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    def test_no_cache_without_keep_tmp(self, mock_feature_manager):
+        """Test that caching doesn't occur when keep_tmp=False."""
+        mock_instance = Mock()
+        mock_instance.to_pd.return_value = SAMPLE_METADATA_DF
+        mock_feature_manager.return_value = mock_instance
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Note: intermediate_dir exists but keep_tmp=False
+            intermediate_dir = Path(temp_dir) / "intermediate"
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+            result = LocalDataProcessor.load_or_generate_metadata(
+                headers=SAMPLE_HEADERS,
+                features="reviewed,length",
+                intermediate_dir=intermediate_dir,
+                delimiter=",",
+                non_binary=False,
+                keep_tmp=False,  # No caching
+                force_refetch=False,
+            )
+
+            # Should call ProteinFeatureManager without cache support
+            mock_feature_manager.assert_called_once()
+            call_kwargs = mock_feature_manager.call_args[1]
+            assert (
+                "cached_data" not in call_kwargs
+                or call_kwargs.get("cached_data") is None
+            )
