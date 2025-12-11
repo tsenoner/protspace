@@ -131,10 +131,10 @@ def main():
     try:
         processor = LocalProcessor(args_dict)
 
-        # Load data first to get headers
-        data, headers = processor._load_input_file(args.input)
+        # Load input file first to get headers (needed for path computation)
+        data, headers = processor.load_input_file(args.input)
 
-        # Now determine output paths with headers for hash computation
+        # Determine output paths with headers for hash computation
         output_path, intermediate_dir = determine_output_paths(
             output_arg=args.output,
             input_path=args.input,
@@ -148,8 +148,8 @@ def main():
         if intermediate_dir:
             logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
 
-        # Load metadata
-        metadata = processor._load_or_generate_metadata(
+        # Load/generate metadata
+        metadata = processor.load_or_generate_metadata(
             headers=headers,
             features=args.features,
             intermediate_dir=intermediate_dir,
