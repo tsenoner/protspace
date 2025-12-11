@@ -38,39 +38,7 @@ class LocalProcessor(BaseProcessor):
         # Initialize base class with cleaned config and reducers
         super().__init__(clean_config, REDUCERS)
 
-    def load_data(
-        self,
-        input_path: Path,
-        features: Path | list,  # If list, generates csv from uniprot features
-        output_path: Path,
-        intermediate_dir: Path,
-        delimiter: str,
-        non_binary: bool = False,
-        keep_tmp: bool = False,
-    ) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
-        data, headers = self._load_input_file(input_path)
-        features_df = self._load_or_generate_metadata(
-            headers,
-            features,
-            intermediate_dir,
-            delimiter,
-            non_binary,
-            keep_tmp,
-        )
-
-        # Create full metadata with NaN for missing entries
-        full_metadata = pd.DataFrame({"identifier": headers})
-        if len(features_df.columns) > 1:
-            features_df = features_df.astype(str)
-            full_metadata = full_metadata.merge(
-                features_df.drop_duplicates("identifier"),
-                on="identifier",
-                how="left",
-            )
-
-        return full_metadata, data, headers
-
-    def _load_input_file(self, input_path: Path) -> tuple[np.ndarray, list[str]]:
+    def load_input_file(self, input_path: Path) -> tuple[np.ndarray, list[str]]:
         if input_path.suffix.lower() in EMBEDDING_EXTENSIONS:
             logger.info("Loading embeddings from HDF file")
             data, headers = [], []
@@ -80,6 +48,26 @@ class LocalProcessor(BaseProcessor):
                     data.append(emb)
                     headers.append(header)
             data = np.array(data)
+
+            # Check for NaN values and filter them out
+            nan_mask = np.isnan(data).any(axis=1)
+            if nan_mask.any():
+                num_nan = nan_mask.sum()
+                total = len(data)
+                logger.warning(
+                    f"Found {num_nan} embeddings with NaN values out of {total} total. "
+                    f"Removing these entries ({num_nan / total * 100:.2f}%)."
+                )
+                # Keep only rows without NaN
+                data = data[~nan_mask]
+                headers = [
+                    h for h, is_nan in zip(headers, nan_mask, strict=True) if not is_nan
+                ]
+
+                if len(data) == 0:
+                    raise ValueError(
+                        "All embeddings contain NaN values. Please check your input file."
+                    )
 
             return data, headers
 
@@ -109,7 +97,7 @@ class LocalProcessor(BaseProcessor):
             )
 
     @staticmethod
-    def _load_or_generate_metadata(
+    def load_or_generate_metadata(
         headers: list[str],
         features: str,
         intermediate_dir: Path,

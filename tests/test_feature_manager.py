@@ -180,12 +180,22 @@ class TestFeatureConfiguration:
         assert "organism_id" in config.uniprot_features
         assert "length" in config.uniprot_features
 
+        # Should NOT include unrequested UniProt features
+        assert "reviewed" not in config.uniprot_features
+        assert "protein_existence" not in config.uniprot_features
+
         # Should include taxonomy features that are in user_features
         assert "genus" in config.taxonomy_features
         assert "species" in config.taxonomy_features
 
+        # Should NOT include unrequested Taxonomy features
+        assert "kingdom" not in config.taxonomy_features
+
         # Should include InterPro features that are in user_features
         assert "pfam" in config.interpro_features
+
+        # Should NOT include unrequested InterPro features
+        assert "cath" not in config.interpro_features
 
     def test_split_by_source_adds_length_for_binning(self):
         """Test splitting adds 'length' when length binning features requested."""
