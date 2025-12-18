@@ -21,6 +21,7 @@ UNIPROT_FEATURES = [
     "annotation_score",
     "cc_subcellular_location",
     "fragment",
+    "gene_symbol",
     "length",
     "organism_id",
     "protein_existence",

@@ -6,6 +6,7 @@ AVAILABLE PROPERTIES:
 entry                    - Primary UniProt accession number
 entry_name               - UniProtKB entry name (e.g., 'P53_HUMAN')
 gene_primary             - Primary gene name
+gene_symbol              - Gene symbol (alias for gene_primary)
 organism_name            - Organism scientific name
 organism_id              - NCBI Taxonomy ID
 protein_name             - Recommended protein name
@@ -55,6 +56,7 @@ AVAILABLE_PROPERTIES = [
     "entry",
     "entry_name",
     "gene_primary",
+    "gene_symbol",
     "organism_name",
     "organism_id",
     "protein_name",
@@ -121,6 +123,11 @@ class UniProtEntry:
         if genes and "geneName" in genes[0]:
             return genes[0]["geneName"].get("value", "")
         return ""
+
+    @property
+    def gene_symbol(self) -> str:
+        """Gene symbol (alias for gene_primary)."""
+        return self.gene_primary
 
     @property
     def organism_name(self) -> str:

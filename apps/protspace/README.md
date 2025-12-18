@@ -79,7 +79,7 @@ Access at `http://localhost:8050`
 
 ### Available Features (use with `-f`)
 
-**UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
+**UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_symbol`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
 
 **InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily`
 
