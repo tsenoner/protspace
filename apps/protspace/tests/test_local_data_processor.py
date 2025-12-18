@@ -533,6 +533,63 @@ class TestIntegration:
             assert headers == SAMPLE_HEADERS
             assert processor.config.get("precomputed") is True
 
+    def test_csv_with_custom_identifier_column_name(self):
+        """Test that CSV files with non-'identifier' first column work correctly."""
+        processor = LocalDataProcessor({"n_components": 2})
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create CSV similarity matrix file
+            sim_csv_path = Path(temp_dir) / "similarity.csv"
+            sim_df = pd.DataFrame(
+                SAMPLE_SIMILARITY_MATRIX, index=SAMPLE_HEADERS, columns=SAMPLE_HEADERS
+            )
+            sim_df.to_csv(sim_csv_path)
+
+            # Create metadata CSV file with "protein_id" as first column (not "identifier")
+            custom_metadata = pd.DataFrame(
+                {
+                    "protein_id": SAMPLE_HEADERS,  # Custom column name
+                    "length": ["110", "142", "85"],
+                    "organism": ["Homo sapiens", "Homo sapiens", "Mus musculus"],
+                }
+            )
+            features_csv_path = Path(temp_dir) / "features.csv"
+            custom_metadata.to_csv(features_csv_path, index=False)
+
+            # Call public methods separately (like CLI does)
+            data, headers = processor.load_input_file(sim_csv_path)
+            metadata = processor.load_or_generate_metadata(
+                headers=headers,
+                features=str(features_csv_path),
+                intermediate_dir=Path(temp_dir) / "intermediate",
+                delimiter=",",
+                non_binary=False,
+                keep_tmp=False,
+            )
+
+            # Create full metadata using updated merge logic (like CLI does)
+            full_metadata = pd.DataFrame({"identifier": headers})
+            if len(metadata.columns) > 1:
+                metadata = metadata.astype(str)
+                # Use first column as identifier regardless of its name
+                id_col = metadata.columns[0]
+                if id_col != "identifier":
+                    metadata = metadata.rename(columns={id_col: "identifier"})
+                full_metadata = full_metadata.merge(
+                    metadata.drop_duplicates("identifier"),
+                    on="identifier",
+                    how="left",
+                )
+
+            # Verify complete workflow
+            assert isinstance(full_metadata, pd.DataFrame)
+            assert len(full_metadata) == 3
+            assert "identifier" in full_metadata.columns
+            assert "protein_id" not in full_metadata.columns  # Should be dropped
+            assert "length" in full_metadata.columns
+            assert "organism" in full_metadata.columns
+            assert list(full_metadata["identifier"]) == SAMPLE_HEADERS
+
     @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
     def test_error_recovery_workflow(self, mock_feature_extractor):
         """Test workflow with metadata generation errors."""

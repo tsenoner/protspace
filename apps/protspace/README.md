@@ -148,7 +148,7 @@ Available shapes: `circle`, `circle-open`, `cross`, `diamond`, `diamond-open`, `
 - **UniProt queries**: Text queries using UniProt syntax
 - **Embeddings**: HDF5 files (.h5, .hdf5)
 - **Similarity matrices**: CSV files with symmetric matrices
-- **Metadata**: CSV with 'identifier' column + feature columns
+- **Metadata**: CSV with protein identifiers in the first column + feature columns
 - **Structures**: ZIP files containing PDB/CIF files
 
 ### Output

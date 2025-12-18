@@ -173,6 +173,10 @@ def main():
         full_metadata = pd.DataFrame({"identifier": headers})
         if len(metadata.columns) > 1:
             metadata = metadata.astype(str)
+            # Use first column as identifier regardless of its name
+            id_col = metadata.columns[0]
+            if id_col != "identifier":
+                metadata = metadata.rename(columns={id_col: "identifier"})
             full_metadata = full_metadata.merge(
                 metadata.drop_duplicates("identifier"),
                 on="identifier",

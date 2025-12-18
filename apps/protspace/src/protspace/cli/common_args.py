@@ -153,7 +153,11 @@ def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = Tru
         parser: ArgumentParser instance to add the argument to
         allow_csv: Whether to allow CSV file paths (True for local_data, False for uniprot_query)
     """
-    csv_note = " or path to metadata CSV file" if allow_csv else ""
+    csv_note = (
+        " or path to metadata CSV file (first column = protein identifiers)"
+        if allow_csv
+        else ""
+    )
     csv_example = "\n  --features /path/to/metadata.csv" if allow_csv else ""
 
     parser.add_argument(
