@@ -272,6 +272,7 @@ class TestFetchFeatures:
         assert result[0].features["annotation_score"] == "5.0"
         assert result[0].features["organism_id"] == "9606"
         assert result[0].features["reviewed"] == "True"  # Bool stored as string
+        assert result[0].features["gene_symbol"] == "INS"  # Gene symbol from genes[0].geneName
 
 
 class TestConstants:
@@ -283,6 +284,7 @@ class TestConstants:
             "protein_existence",
             "annotation_score",
             "protein_families",
+            "gene_symbol",
             "length",
             "reviewed",
             "fragment",
@@ -295,8 +297,7 @@ class TestConstants:
         for feature in expected_features:
             assert feature in UNIPROT_FEATURES
 
-        # Should have exactly 9 features
-        assert len(UNIPROT_FEATURES) == 10
+        assert len(UNIPROT_FEATURES) == 11
 
     def test_protein_features_namedtuple(self):
         """Test ProteinFeatures namedtuple structure."""
