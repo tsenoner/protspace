@@ -114,18 +114,18 @@ class ProtSpace:
     def generate_plot(
         self,
         projection: str,
-        feature: str,
+        annotation: str,
         filename: str | Path,
         width: int = 1600,
         height: int = 1000,
         file_format: str = "png",
     ) -> None:
-        """Generate a plot image for a specific projection and feature."""
+        """Generate a plot image for a specific projection and annotation."""
         if not self.default_json_data:
             raise ValueError("No JSON data loaded")
 
         reader = JsonReader(self.default_json_data)
-        fig, is_3d = create_plot(reader, projection, feature)
+        fig, is_3d = create_plot(reader, projection, annotation)
 
         # Get image bytes from save_plot
         image_bytes = save_plot(fig, is_3d, width, height, file_format)

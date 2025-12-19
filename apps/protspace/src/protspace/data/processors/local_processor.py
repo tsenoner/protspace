@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from protspace.data.features.manager import ProteinFeatureManager
+from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
@@ -26,7 +26,7 @@ class LocalProcessor(BaseProcessor):
         clean_config = config.copy()
         for arg in [
             "input",
-            "features",
+            "annotations",
             "output",
             "methods",
             "verbose",
@@ -99,7 +99,7 @@ class LocalProcessor(BaseProcessor):
     @staticmethod
     def load_or_generate_metadata(
         headers: list[str],
-        features: str,
+        annotations: str,
         intermediate_dir: Path,
         delimiter: str,
         non_binary: bool = False,
@@ -108,26 +108,32 @@ class LocalProcessor(BaseProcessor):
     ) -> pd.DataFrame:
         try:
             # csv generation logic
-            if features and features.endswith(".csv"):
+            if annotations and annotations.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                features_df = pd.read_csv(
-                    features, delimiter=delimiter
+                annotations_df = pd.read_csv(
+                    annotations, delimiter=delimiter
                 ).convert_dtypes()
 
             else:
-                if features:
-                    features_list = [feature.strip() for feature in features.split(",")]
+                if annotations:
+                    annotations_list = [
+                        annotation.strip() for annotation in annotations.split(",")
+                    ]
                 else:
-                    features_list = None  # No specific features requested, use all
+                    annotations_list = (
+                        None  # No specific annotations requested, use all
+                    )
 
                 if keep_tmp and intermediate_dir:
                     # Generate metadata in intermediate directory for caching
                     intermediate_dir.mkdir(parents=True, exist_ok=True)
                     # Use intermediate directory for caching
                     if non_binary:
-                        metadata_file_path = intermediate_dir / "all_features.csv"
+                        metadata_file_path = intermediate_dir / "all_annotations.csv"
                     else:
-                        metadata_file_path = intermediate_dir / "all_features.parquet"
+                        metadata_file_path = (
+                            intermediate_dir / "all_annotations.parquet"
+                        )
 
                     # Check if cached metadata exists
                     if metadata_file_path.exists():
@@ -136,48 +142,50 @@ class LocalProcessor(BaseProcessor):
                             if not non_binary
                             else pd.read_csv(metadata_file_path)
                         )
-                        cached_features = set(cached_df.columns) - {"identifier"}
+                        cached_annotations = set(cached_df.columns) - {"identifier"}
 
-                        # Determine required features
-                        if features_list is None:
-                            from protspace.data.features.configuration import (
-                                DEFAULT_FEATURES,
+                        # Determine required annotations
+                        if annotations_list is None:
+                            from protspace.data.annotations.configuration import (
+                                DEFAULT_ANNOTATIONS,
                             )
 
-                            required_features = set(DEFAULT_FEATURES)
+                            required_annotations = set(DEFAULT_ANNOTATIONS)
                         else:
-                            required_features = set(features_list)
+                            required_annotations = set(annotations_list)
 
                         # Check if we need to fetch anything
-                        missing = required_features - cached_features
+                        missing = required_annotations - cached_annotations
 
                         if not missing and not force_refetch:
                             logger.info(
-                                f"All required features found in cache: {metadata_file_path}"
+                                f"All required annotations found in cache: {metadata_file_path}"
                             )
                             # Return filtered columns
-                            if features_list:
+                            if annotations_list:
                                 cols = ["identifier"] + [
-                                    f for f in features_list if f in cached_df.columns
+                                    f
+                                    for f in annotations_list
+                                    if f in cached_df.columns
                                 ]
-                                features_df = cached_df[cols]
+                                annotations_df = cached_df[cols]
                             else:
-                                features_df = cached_df
+                                annotations_df = cached_df
                         else:
                             # Determine which sources to fetch
-                            from protspace.data.features.configuration import (
-                                FeatureConfiguration,
+                            from protspace.data.annotations.configuration import (
+                                AnnotationConfiguration,
                             )
 
                             sources_to_fetch = (
-                                FeatureConfiguration.determine_sources_to_fetch(
-                                    cached_features, required_features
+                                AnnotationConfiguration.determine_sources_to_fetch(
+                                    cached_annotations, required_annotations
                                 )
                             )
 
                             if force_refetch:
                                 logger.info(
-                                    "--force-refetch flag set, re-fetching all features"
+                                    "--force-refetch flag set, re-fetching all annotations"
                                 )
                                 sources_to_fetch = {
                                     "uniprot": True,
@@ -186,15 +194,15 @@ class LocalProcessor(BaseProcessor):
                                 }
                                 cached_df = None
                             else:
-                                logger.info(f"Missing features: {missing}")
+                                logger.info(f"Missing annotations: {missing}")
                                 logger.info(
                                     f"Will fetch from sources: {[k for k, v in sources_to_fetch.items() if v]}"
                                 )
 
-                            # Fetch missing features incrementally
-                            features_df = ProteinFeatureManager(
+                            # Fetch missing annotations incrementally
+                            annotations_df = ProteinAnnotationManager(
                                 headers=headers,
-                                features=features_list,
+                                annotations=annotations_list,
                                 output_path=metadata_file_path,
                                 non_binary=non_binary,
                                 cached_data=cached_df,
@@ -205,28 +213,28 @@ class LocalProcessor(BaseProcessor):
                             )
                     else:
                         # Generate new metadata
-                        features_df = ProteinFeatureManager(
+                        annotations_df = ProteinAnnotationManager(
                             headers=headers,
-                            features=features_list,
+                            annotations=annotations_list,
                             output_path=metadata_file_path,
                             non_binary=non_binary,
                         ).to_pd()
                         logger.info(f"Metadata file saved to: {metadata_file_path}")
                 else:
                     # No caching - generate metadata directly
-                    features_df = ProteinFeatureManager(
+                    annotations_df = ProteinAnnotationManager(
                         headers=headers,
-                        features=features_list,
+                        annotations=annotations_list,
                         output_path=None,  # No intermediate file
                         non_binary=non_binary,
                     ).to_pd()
 
-                return features_df
+                return annotations_df
 
         except Exception as e:
             logger.warning(
                 f"Could not load metadata ({str(e)}) - creating empty metadata"
             )
-            features_df = pd.DataFrame(columns=["identifier"])
+            annotations_df = pd.DataFrame(columns=["identifier"])
 
-        return features_df
+        return annotations_df

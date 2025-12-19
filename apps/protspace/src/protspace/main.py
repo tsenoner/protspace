@@ -65,7 +65,7 @@ def _extract_parquet_bundle(bundle_path: Path) -> str:
     parts = content.split(delimiter)
 
     expected_files = [
-        "selected_features.parquet",
+        "selected_annotations.parquet",
         "projections_metadata.parquet",
         "projections_data.parquet",
     ]

@@ -1,0 +1,164 @@
+"""
+Length binning operations for protein sequences.
+
+This module provides functionality to bin protein lengths into fixed and quantile-based categories.
+"""
+
+from collections import namedtuple
+
+import numpy as np
+
+ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
+
+
+class LengthBinner:
+    """Handles protein length binning operations."""
+
+    def add_bins(self, proteins: list[ProteinAnnotations]) -> list[ProteinAnnotations]:
+        """
+        Add length_fixed and length_quantile bins.
+
+        Args:
+            proteins: List of ProteinAnnotations with 'length' field
+
+        Returns:
+            Updated list of ProteinAnnotations with length bins added (original length kept)
+        """
+        lengths = self._extract_lengths(proteins)
+        fixed_bins = self.compute_fixed_bins(lengths)
+        quantile_bins = self.compute_quantile_bins(lengths, num_bins=10)
+
+        return self._update_proteins_with_bins(proteins, fixed_bins, quantile_bins)
+
+    @staticmethod
+    def _extract_lengths(proteins: list[ProteinAnnotations]) -> list[int | None]:
+        """Extract length values from protein annotations."""
+        lengths = []
+        for protein in proteins:
+            length_str = protein.annotations.get("length", "")
+            if length_str and str(length_str).isdigit():
+                lengths.append(int(length_str))
+            else:
+                lengths.append(None)
+        return lengths
+
+    @staticmethod
+    def _update_proteins_with_bins(
+        proteins: list[ProteinAnnotations], fixed_bins: list[str], quantile_bins: list[str]
+    ) -> list[ProteinAnnotations]:
+        """Update proteins with bin values (keeping original length field)."""
+        updated_proteins = []
+        for i, protein in enumerate(proteins):
+            updated_annotations = protein.annotations.copy()
+
+            updated_annotations["length_fixed"] = fixed_bins[i]
+            updated_annotations["length_quantile"] = quantile_bins[i]
+
+            updated_proteins.append(
+                ProteinAnnotations(
+                    identifier=protein.identifier, annotations=updated_annotations
+                )
+            )
+
+        return updated_proteins
+
+    @staticmethod
+    def compute_fixed_bins(lengths: list[int | None]) -> list[str]:
+        """
+        Compute fixed bins with predefined ranges.
+
+        Args:
+            lengths: List of protein lengths (None for unknown)
+
+        Returns:
+            List of bin labels for each length
+        """
+        fixed_ranges = [
+            (0, 50, "<50"),
+            (50, 100, "50-100"),
+            (100, 200, "100-200"),
+            (200, 400, "200-400"),
+            (400, 600, "400-600"),
+            (600, 800, "600-800"),
+            (800, 1000, "800-1000"),
+            (1000, 1200, "1000-1200"),
+            (1200, 1400, "1200-1400"),
+            (1400, 1600, "1400-1600"),
+            (1600, 1800, "1600-1800"),
+            (1800, 2000, "1800-2000"),
+            (2000, float("inf"), "2000+"),
+        ]
+
+        bins = []
+        for length in lengths:
+            if length is None:
+                bins.append("unknown")
+            else:
+                assigned = False
+                for min_val, max_val, label in fixed_ranges:
+                    if min_val <= length < max_val:
+                        bins.append(label)
+                        assigned = True
+                        break
+                if not assigned:
+                    bins.append("2000+")
+
+        return bins
+
+    @staticmethod
+    def compute_quantile_bins(
+        lengths: list[int | None], num_bins: int = 10
+    ) -> list[str]:
+        """
+        Compute quantile-based bins where each bin has approximately the same number of sequences.
+
+        Args:
+            lengths: List of protein lengths (None for unknown)
+            num_bins: Number of quantile bins to create
+
+        Returns:
+            List of bin labels for each length (e.g., "100-199")
+        """
+        valid_lengths = [length for length in lengths if length is not None]
+        if not valid_lengths:
+            return ["unknown"] * len(lengths)
+
+        sorted_lengths = sorted(valid_lengths)
+
+        quantiles = np.linspace(0, 100, num_bins + 1)
+        boundaries = np.percentile(sorted_lengths, quantiles)
+
+        # Remove duplicate boundaries
+        unique_boundaries = []
+        for i, boundary in enumerate(boundaries):
+            if i == 0 or boundary != unique_boundaries[-1]:
+                unique_boundaries.append(boundary)
+
+        # Handle case where all lengths are the same
+        if len(unique_boundaries) < 2:
+            return [
+                f"{int(valid_lengths[0])}" if length is not None else "unknown"
+                for length in lengths
+            ]
+
+        bins = []
+        for length in lengths:
+            if length is None:
+                bins.append("unknown")
+            else:
+                bin_index = np.searchsorted(unique_boundaries[1:], length, side="right")
+                bin_index = min(
+                    bin_index, len(unique_boundaries) - 2
+                )  # Ensure we don't go out of bounds
+
+                bin_start = int(unique_boundaries[bin_index])
+                bin_end = int(unique_boundaries[bin_index + 1])
+
+                if bin_index == len(unique_boundaries) - 2:
+                    # Last bin - include the maximum value
+                    bins.append(f"{bin_start}-{bin_end}")
+                else:
+                    # All other bins are right-exclusive
+                    bins.append(f"{bin_start}-{bin_end - 1}")
+
+        return bins

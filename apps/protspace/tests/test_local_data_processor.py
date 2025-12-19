@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.protspace.data.features.configuration import FeatureConfiguration
+from src.protspace.data.annotations.configuration import AnnotationConfiguration
 from src.protspace.data.processors.local_processor import (
     EMBEDDING_EXTENSIONS,
     LocalProcessor,
@@ -38,7 +38,7 @@ class TestLocalDataProcessorInit:
         """Test that CLI-specific arguments are removed from config."""
         config_with_cli_args = {
             "input": "input.h5",
-            "features": "features.csv",
+            "annotations": "annotations.csv",
             "output": "output.json",
             "methods": ["pca"],
             "verbose": True,
@@ -52,7 +52,7 @@ class TestLocalDataProcessorInit:
 
         # Check that CLI args are removed but dimension reduction args remain
         assert "input" not in processor.config
-        assert "features" not in processor.config
+        assert "annotations" not in processor.config
         assert "output" not in processor.config
         assert "methods" not in processor.config
         assert "verbose" not in processor.config
@@ -189,7 +189,7 @@ class TestLoadOrGenerateMetadata:
 
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features=str(csv_path),
+                annotations=str(csv_path),
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -210,7 +210,7 @@ class TestLoadOrGenerateMetadata:
 
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features=str(csv_path),
+                annotations=str(csv_path),
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=";",
                 non_binary=False,
@@ -221,68 +221,68 @@ class TestLoadOrGenerateMetadata:
             assert isinstance(result, pd.DataFrame)
             assert len(result) == 3
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_generate_metadata_with_features(self, mock_feature_extractor):
-        """Test metadata generation with specified features."""
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_generate_metadata_with_annotations(self, mock_annotation_extractor):
+        """Test metadata generation with specified annotations."""
         # Setup mock
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="length,organism",
+                annotations="length,organism",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
                 keep_tmp=True,
             )
 
-            # Verify ProteinFeatureExtractor was called correctly
-            mock_feature_extractor.assert_called_once()
-            call_kwargs = mock_feature_extractor.call_args[1]
+            # Verify ProteinAnnotationManager was called correctly
+            mock_annotation_extractor.assert_called_once()
+            call_kwargs = mock_annotation_extractor.call_args[1]
             assert call_kwargs["headers"] == SAMPLE_HEADERS
-            assert call_kwargs["features"] == ["length", "organism"]
+            assert call_kwargs["annotations"] == ["length", "organism"]
             assert call_kwargs["non_binary"] is True
 
             # Verify result
             pd.testing.assert_frame_equal(result, SAMPLE_METADATA_DF)
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_generate_metadata_no_features(self, mock_feature_extractor):
-        """Test metadata generation without specifying features."""
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_generate_metadata_no_annotations(self, mock_annotation_extractor):
+        """Test metadata generation without specifying annotations."""
         # Setup mock
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
             LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features=None,
+                annotations=None,
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
                 keep_tmp=False,
             )
 
-            # Verify ProteinFeatureExtractor was called with None features
-            call_kwargs = mock_feature_extractor.call_args[1]
-            assert call_kwargs["features"] is None
+            # Verify ProteinAnnotationManager was called with None annotations
+            call_kwargs = mock_annotation_extractor.call_args[1]
+            assert call_kwargs["annotations"] is None
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_generate_metadata_file_cleanup(self, mock_feature_extractor):
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_generate_metadata_file_cleanup(self, mock_annotation_extractor):
         """Test metadata generation when keep_tmp=False (no intermediate files created)."""
         # Setup mock
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="length",
+                annotations="length",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -300,7 +300,7 @@ class TestLoadOrGenerateMetadata:
             # Test with non-existent CSV file
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="nonexistent.csv",
+                annotations="nonexistent.csv",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -331,13 +331,13 @@ class TestPublicMethods:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "input.h5"
-            features_path = Path(temp_dir) / "metadata.csv"
+            annotations_path = Path(temp_dir) / "metadata.csv"
 
             # Call public methods separately (like CLI does)
             data, headers = processor.load_input_file(input_path)
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                features=features_path,
+                annotations=annotations_path,
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -396,7 +396,7 @@ class TestPublicMethods:
             data, headers = processor.load_input_file(input_path)
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                features="length,organism",
+                annotations="length,organism",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -435,9 +435,9 @@ class TestConstants:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
     @patch("src.protspace.data.processors.local_processor.h5py.File")
-    def test_end_to_end_hdf5_workflow(self, mock_h5py_file, mock_feature_extractor):
+    def test_end_to_end_hdf5_workflow(self, mock_h5py_file, mock_annotation_extractor):
         """Test complete workflow from HDF5 input to final data."""
         # Setup HDF5 mock
         mock_file = MagicMock()
@@ -448,10 +448,10 @@ class TestIntegration:
             ("P01316", np.array([0.9, 1.0, 1.1, 1.2])),
         ]
 
-        # Setup ProteinFeatureExtractor mock
+        # Setup ProteinAnnotationManager mock
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         processor = LocalDataProcessor({"random_state": 42})
 
@@ -462,7 +462,7 @@ class TestIntegration:
             data, headers = processor.load_input_file(input_path)
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                features="length,organism",
+                annotations="length,organism",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -487,7 +487,7 @@ class TestIntegration:
 
             # Verify all components were called
             mock_h5py_file.assert_called_once()
-            mock_feature_extractor.assert_called_once()
+            mock_annotation_extractor.assert_called_once()
 
     def test_end_to_end_csv_workflow(self):
         """Test complete workflow from CSV input to final data."""
@@ -502,14 +502,14 @@ class TestIntegration:
             sim_df.to_csv(sim_csv_path)
 
             # Create metadata CSV file
-            features_csv_path = Path(temp_dir) / "features.csv"
-            SAMPLE_METADATA_DF.to_csv(features_csv_path, index=False)
+            annotations_csv_path = Path(temp_dir) / "annotations.csv"
+            SAMPLE_METADATA_DF.to_csv(annotations_csv_path, index=False)
 
             # Call public methods separately (like CLI does)
             data, headers = processor.load_input_file(sim_csv_path)
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                features=str(features_csv_path),
+                annotations=str(annotations_csv_path),
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -553,14 +553,14 @@ class TestIntegration:
                     "organism": ["Homo sapiens", "Homo sapiens", "Mus musculus"],
                 }
             )
-            features_csv_path = Path(temp_dir) / "features.csv"
-            custom_metadata.to_csv(features_csv_path, index=False)
+            annotations_csv_path = Path(temp_dir) / "annotations.csv"
+            custom_metadata.to_csv(annotations_csv_path, index=False)
 
             # Call public methods separately (like CLI does)
             data, headers = processor.load_input_file(sim_csv_path)
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                features=str(features_csv_path),
+                annotations=str(annotations_csv_path),
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -590,11 +590,11 @@ class TestIntegration:
             assert "organism" in full_metadata.columns
             assert list(full_metadata["identifier"]) == SAMPLE_HEADERS
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_error_recovery_workflow(self, mock_feature_extractor):
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_error_recovery_workflow(self, mock_annotation_extractor):
         """Test workflow with metadata generation errors."""
-        # Setup ProteinFeatureExtractor to raise an error
-        mock_feature_extractor.side_effect = Exception("Network error")
+        # Setup ProteinAnnotationManager to raise an error
+        mock_annotation_extractor.side_effect = Exception("Network error")
 
         processor = LocalDataProcessor({})
 
@@ -613,7 +613,7 @@ class TestIntegration:
                 data, headers = processor.load_input_file(input_path)
                 metadata = processor.load_or_generate_metadata(
                     headers=headers,
-                    features="length,organism",
+                    annotations="length,organism",
                     intermediate_dir=Path(temp_dir) / "intermediate",
                     delimiter=",",
                     non_binary=False,
@@ -638,12 +638,14 @@ class TestIntegration:
 
 
 class TestIncrementalCaching:
-    """Test incremental feature caching functionality."""
+    """Test incremental annotation caching functionality."""
 
-    def test_categorize_features_by_source(self):
-        """Test feature categorization by API source."""
-        features = {"reviewed", "length", "kingdom", "pfam"}
-        categorized = FeatureConfiguration.categorize_features_by_source(features)
+    def test_categorize_annotations_by_source(self):
+        """Test annotation categorization by API source."""
+        annotations = {"reviewed", "length", "kingdom", "pfam"}
+        categorized = AnnotationConfiguration.categorize_annotations_by_source(
+            annotations
+        )
 
         assert "reviewed" in categorized["uniprot"]
         assert "length" in categorized["uniprot"]
@@ -651,11 +653,11 @@ class TestIncrementalCaching:
         assert "pfam" in categorized["interpro"]
 
     def test_determine_sources_to_fetch_all_missing(self):
-        """Test source determination when all features are missing."""
+        """Test source determination when all annotations are missing."""
         cached = set()
         required = {"reviewed", "kingdom", "pfam"}
 
-        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+        sources = AnnotationConfiguration.determine_sources_to_fetch(cached, required)
 
         assert sources["uniprot"] is True
         assert sources["taxonomy"] is True
@@ -666,7 +668,7 @@ class TestIncrementalCaching:
         cached = {"identifier", "reviewed", "length", "organism_id"}
         required = {"reviewed", "length", "kingdom"}
 
-        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+        sources = AnnotationConfiguration.determine_sources_to_fetch(cached, required)
 
         assert sources["uniprot"] is False  # Already cached
         assert sources["taxonomy"] is True  # Need kingdom
@@ -677,7 +679,7 @@ class TestIncrementalCaching:
         cached = {"identifier"}
         required = {"kingdom"}
 
-        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+        sources = AnnotationConfiguration.determine_sources_to_fetch(cached, required)
 
         # Should fetch UniProt to get organism_id (dependency for taxonomy)
         assert sources["uniprot"] is True
@@ -688,14 +690,14 @@ class TestIncrementalCaching:
         cached = {"identifier", "organism_id"}
         required = {"pfam"}
 
-        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+        sources = AnnotationConfiguration.determine_sources_to_fetch(cached, required)
 
         # Should fetch UniProt to get sequence (dependency for InterPro)
         assert sources["uniprot"] is True
         assert sources["interpro"] is True
 
     def test_determine_sources_to_fetch_all_cached(self):
-        """Test source determination when all features are cached."""
+        """Test source determination when all annotations are cached."""
         cached = {
             "identifier",
             "reviewed",
@@ -707,15 +709,15 @@ class TestIncrementalCaching:
         }
         required = {"reviewed", "length", "kingdom", "pfam"}
 
-        sources = FeatureConfiguration.determine_sources_to_fetch(cached, required)
+        sources = AnnotationConfiguration.determine_sources_to_fetch(cached, required)
 
         assert sources["uniprot"] is False
         assert sources["taxonomy"] is False
         assert sources["interpro"] is False
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_cache_hit_returns_cached_data(self, mock_feature_manager):
-        """Test that cached metadata is returned without API calls when all features present."""
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_cache_hit_returns_cached_data(self, mock_annotation_manager):
+        """Test that cached metadata is returned without API calls when all annotations present."""
         with tempfile.TemporaryDirectory() as temp_dir:
             intermediate_dir = Path(temp_dir) / "intermediate"
             intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -728,13 +730,13 @@ class TestIncrementalCaching:
                     "length": ["110", "142", "85"],
                 }
             )
-            cache_file = intermediate_dir / "all_features.parquet"
+            cache_file = intermediate_dir / "all_annotations.parquet"
             cached_metadata.to_parquet(cache_file)
 
-            # Request subset of cached features
+            # Request subset of cached annotations
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="reviewed,length",
+                annotations="reviewed,length",
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -742,14 +744,14 @@ class TestIncrementalCaching:
                 force_refetch=False,
             )
 
-            # Should return cached data without calling ProteinFeatureManager
-            mock_feature_manager.assert_not_called()
+            # Should return cached data without calling ProteinAnnotationManager
+            mock_annotation_manager.assert_not_called()
             assert isinstance(result, pd.DataFrame)
             assert set(result.columns) == {"identifier", "reviewed", "length"}
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_cache_miss_triggers_fetch(self, mock_feature_manager):
-        """Test that missing features trigger API fetch."""
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_cache_miss_triggers_fetch(self, mock_annotation_manager):
+        """Test that missing annotations trigger API fetch."""
         mock_instance = Mock()
         mock_instance.to_pd.return_value = pd.DataFrame(
             {
@@ -759,13 +761,13 @@ class TestIncrementalCaching:
                 "kingdom": ["Animalia", "Animalia", "Animalia"],
             }
         )
-        mock_feature_manager.return_value = mock_instance
+        mock_annotation_manager.return_value = mock_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
             intermediate_dir = Path(temp_dir) / "intermediate"
             intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create cached metadata file with only UniProt features
+            # Create cached metadata file with only UniProt annotations
             cached_metadata = pd.DataFrame(
                 {
                     "identifier": SAMPLE_HEADERS,
@@ -774,13 +776,13 @@ class TestIncrementalCaching:
                     "organism_id": ["9606", "9606", "10090"],
                 }
             )
-            cache_file = intermediate_dir / "all_features.parquet"
+            cache_file = intermediate_dir / "all_annotations.parquet"
             cached_metadata.to_parquet(cache_file)
 
-            # Request features including taxonomy (not in cache)
+            # Request annotations including taxonomy (not in cache)
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="reviewed,length,kingdom",
+                annotations="reviewed,length,kingdom",
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -788,19 +790,19 @@ class TestIncrementalCaching:
                 force_refetch=False,
             )
 
-            # Should call ProteinFeatureManager with incremental fetch
-            mock_feature_manager.assert_called_once()
-            call_kwargs = mock_feature_manager.call_args[1]
+            # Should call ProteinAnnotationManager with incremental fetch
+            mock_annotation_manager.assert_called_once()
+            call_kwargs = mock_annotation_manager.call_args[1]
             assert call_kwargs["cached_data"] is not None
             assert call_kwargs["sources_to_fetch"]["uniprot"] is False
             assert call_kwargs["sources_to_fetch"]["taxonomy"] is True
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_force_refetch_ignores_cache(self, mock_feature_manager):
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_force_refetch_ignores_cache(self, mock_annotation_manager):
         """Test that force_refetch flag causes cache to be ignored."""
         mock_instance = Mock()
         mock_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_manager.return_value = mock_instance
+        mock_annotation_manager.return_value = mock_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
             intermediate_dir = Path(temp_dir) / "intermediate"
@@ -813,13 +815,13 @@ class TestIncrementalCaching:
                     "reviewed": ["True", "True", "False"],
                 }
             )
-            cache_file = intermediate_dir / "all_features.parquet"
+            cache_file = intermediate_dir / "all_annotations.parquet"
             cached_metadata.to_parquet(cache_file)
 
             # Request with force_refetch=True
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="reviewed",
+                annotations="reviewed",
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -827,16 +829,16 @@ class TestIncrementalCaching:
                 force_refetch=True,
             )
 
-            # Should call ProteinFeatureManager with all sources and no cached data
-            mock_feature_manager.assert_called_once()
-            call_kwargs = mock_feature_manager.call_args[1]
+            # Should call ProteinAnnotationManager with all sources and no cached data
+            mock_annotation_manager.assert_called_once()
+            call_kwargs = mock_annotation_manager.call_args[1]
             assert call_kwargs["cached_data"] is None
             assert call_kwargs["sources_to_fetch"]["uniprot"] is True
             assert call_kwargs["sources_to_fetch"]["taxonomy"] is True
             assert call_kwargs["sources_to_fetch"]["interpro"] is True
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_cache_with_csv_format(self, mock_feature_manager):
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_cache_with_csv_format(self, mock_annotation_manager):
         """Test caching works with CSV format (non_binary=True)."""
         with tempfile.TemporaryDirectory() as temp_dir:
             intermediate_dir = Path(temp_dir) / "intermediate"
@@ -849,13 +851,13 @@ class TestIncrementalCaching:
                     "reviewed": ["True", "True", "False"],
                 }
             )
-            cache_file = intermediate_dir / "all_features.csv"
+            cache_file = intermediate_dir / "all_annotations.csv"
             cached_metadata.to_csv(cache_file, index=False)
 
-            # Request cached features with non_binary=True
+            # Request cached annotations with non_binary=True
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="reviewed",
+                annotations="reviewed",
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=True,
@@ -864,16 +866,16 @@ class TestIncrementalCaching:
             )
 
             # Should return cached CSV data
-            mock_feature_manager.assert_not_called()
+            mock_annotation_manager.assert_not_called()
             assert isinstance(result, pd.DataFrame)
             assert "reviewed" in result.columns
 
-    @patch("src.protspace.data.processors.local_processor.ProteinFeatureManager")
-    def test_no_cache_without_keep_tmp(self, mock_feature_manager):
+    @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
+    def test_no_cache_without_keep_tmp(self, mock_annotation_manager):
         """Test that caching doesn't occur when keep_tmp=False."""
         mock_instance = Mock()
         mock_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_manager.return_value = mock_instance
+        mock_annotation_manager.return_value = mock_instance
 
         with tempfile.TemporaryDirectory() as temp_dir:
             # Note: intermediate_dir exists but keep_tmp=False
@@ -882,7 +884,7 @@ class TestIncrementalCaching:
 
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="reviewed,length",
+                annotations="reviewed,length",
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -890,9 +892,9 @@ class TestIncrementalCaching:
                 force_refetch=False,
             )
 
-            # Should call ProteinFeatureManager without cache support
-            mock_feature_manager.assert_called_once()
-            call_kwargs = mock_feature_manager.call_args[1]
+            # Should call ProteinAnnotationManager without cache support
+            mock_annotation_manager.assert_called_once()
+            call_kwargs = mock_annotation_manager.call_args[1]
             assert (
                 "cached_data" not in call_kwargs
                 or call_kwargs.get("cached_data") is None

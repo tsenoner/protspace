@@ -45,7 +45,7 @@ class TestUniProtQueryProcessorInit:
             "verbose": True,
             "custom_names": {"pca2": "Custom_PCA"},
             "delimiter": ",",
-            "features": "features.csv",
+            "annotations": "annotations.csv",
             "save_files": True,
             "no_save_files": False,
             "keep_tmp": True,
@@ -75,7 +75,7 @@ class TestProcessQuery:
     """Test the main process_query method."""
 
     @patch(
-        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
     )
     @patch(
         "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
@@ -87,7 +87,7 @@ class TestProcessQuery:
         self,
         mock_search_fasta,
         mock_similarity,
-        mock_feature_extractor,
+        mock_annotation_extractor,
         processor,
         temp_dir,
     ):
@@ -101,7 +101,7 @@ class TestProcessQuery:
 
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         # Execute
         output_path = temp_dir / "output.json"
@@ -109,7 +109,7 @@ class TestProcessQuery:
             query=SAMPLE_QUERY,
             output_path=output_path,
             intermediate_dir=temp_dir / "intermediate",
-            features="length,organism",
+            annotations="length,organism",
             keep_tmp=False,
         )
 
@@ -127,10 +127,10 @@ class TestProcessQuery:
         # Verify method calls
         mock_search_fasta.assert_called_once_with(SAMPLE_QUERY, save_to=None)
         mock_similarity.assert_called_once_with(fasta_path, SAMPLE_HEADERS)
-        mock_feature_extractor.assert_called_once()
+        mock_annotation_extractor.assert_called_once()
 
     @patch(
-        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
     )
     @patch(
         "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
@@ -142,7 +142,7 @@ class TestProcessQuery:
         self,
         mock_search_fasta,
         mock_similarity,
-        mock_feature_extractor,
+        mock_annotation_extractor,
         processor,
         temp_dir,
     ):
@@ -156,7 +156,7 @@ class TestProcessQuery:
 
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         # Execute
         output_path = temp_dir / "output"
@@ -172,7 +172,7 @@ class TestProcessQuery:
         _, _, _, saved_files = result
 
         expected_fasta_path = temp_dir / "intermediate" / "sequences.fasta"
-        expected_metadata_path = temp_dir / "intermediate" / "all_features.csv"
+        expected_metadata_path = temp_dir / "intermediate" / "all_annotations.csv"
         expected_similarity_path = temp_dir / "intermediate" / "similarity_matrix.csv"
 
         assert "fasta" in saved_files
@@ -469,21 +469,21 @@ class TestGenerateMetadata:
     """Test _generate_metadata method."""
 
     @patch(
-        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
     )
-    def test_generate_metadata_with_feature_extractor(
-        self, mock_feature_extractor, processor, temp_dir
+    def test_generate_metadata_with_annotation_extractor(
+        self, mock_annotation_extractor, processor, temp_dir
     ):
-        """Test metadata generation using ProteinFeatureExtractor."""
+        """Test metadata generation using ProteinAnnotationExtractor."""
         # Setup mock
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            features="length,organism",
+            annotations="length,organism",
             delimiter=",",
             metadata_save_path=temp_dir / "metadata.csv",
             non_binary=False,
@@ -499,11 +499,11 @@ class TestGenerateMetadata:
                 expected_df[col] = expected_df[col].astype(str)
         pd.testing.assert_frame_equal(result_df, expected_df)
 
-        # Verify ProteinFeatureExtractor call
-        mock_feature_extractor.assert_called_once()
-        call_kwargs = mock_feature_extractor.call_args[1]
+        # Verify ProteinAnnotationExtractor call
+        mock_annotation_extractor.assert_called_once()
+        call_kwargs = mock_annotation_extractor.call_args[1]
         assert call_kwargs["headers"] == SAMPLE_HEADERS
-        assert call_kwargs["features"] == ["length", "organism"]
+        assert call_kwargs["annotations"] == ["length", "organism"]
         assert call_kwargs["output_path"] == temp_dir / "metadata.csv"
         assert not call_kwargs["non_binary"]
 
@@ -516,7 +516,7 @@ class TestGenerateMetadata:
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            features=str(csv_path),
+            annotations=str(csv_path),
             delimiter=",",
             metadata_save_path=None,
             non_binary=False,
@@ -529,17 +529,21 @@ class TestGenerateMetadata:
         assert list(result_df["identifier"]) == SAMPLE_HEADERS
 
     @patch(
-        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
     )
-    def test_generate_metadata_error_handling(self, mock_feature_extractor, processor):
+    def test_generate_metadata_error_handling(
+        self, mock_annotation_extractor, processor
+    ):
         """Test error handling in metadata generation."""
         # Setup mock to raise exception
-        mock_feature_extractor.side_effect = Exception("Feature extraction failed")
+        mock_annotation_extractor.side_effect = Exception(
+            "Annotation extraction failed"
+        )
 
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            features="length,organism",
+            annotations="length,organism",
             delimiter=",",
             metadata_save_path=None,
             non_binary=False,
@@ -562,7 +566,7 @@ class TestGenerateMetadata:
         with patch("pandas.read_csv", return_value=partial_metadata):
             result_df = processor._generate_metadata(
                 headers=SAMPLE_HEADERS,
-                features="dummy.csv",
+                annotations="dummy.csv",
                 delimiter=",",
                 metadata_save_path=None,
                 non_binary=False,
@@ -583,7 +587,7 @@ class TestIntegration:
     """Integration tests for complete workflows."""
 
     @patch(
-        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
+        "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
     )
     @patch("src.protspace.data.processors.uniprot_query_processor.easy_search")
     @patch("src.protspace.data.processors.uniprot_query_processor.requests.get")
@@ -597,7 +601,7 @@ class TestIntegration:
         mock_gzip_open,
         mock_requests_get,
         mock_easy_search,
-        mock_feature_extractor,
+        mock_annotation_extractor,
         processor,
         temp_dir,
         mock_response,
@@ -624,7 +628,7 @@ class TestIntegration:
 
         mock_extractor_instance = Mock()
         mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-        mock_feature_extractor.return_value = mock_extractor_instance
+        mock_annotation_extractor.return_value = mock_extractor_instance
 
         # Execute full workflow
         with patch("builtins.open", mock_open()):
@@ -641,7 +645,7 @@ class TestIntegration:
                         query=SAMPLE_QUERY,
                         output_path=output_path,
                         intermediate_dir=temp_dir / "intermediate",
-                        features="length,organism",
+                        annotations="length,organism",
                         keep_tmp=True,
                         non_binary=False,
                     )
@@ -663,8 +667,8 @@ class TestIntegration:
 def test_metadata_file_extension(non_binary, expected_extension, processor, temp_dir):
     """Test that metadata file extension depends on non_binary flag."""
     with patch(
-        "src.protspace.data.processors.uniprot_query_processor.ProteinFeatureManager"
-    ) as mock_fe:
+        "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
+    ) as mock_annotation_extractor:
         with patch.object(processor, "_search_and_download_fasta") as mock_search:
             with patch.object(processor, "_get_similarity_matrix") as mock_sim:
                 # Setup mocks
@@ -674,7 +678,7 @@ def test_metadata_file_extension(non_binary, expected_extension, processor, temp
 
                 mock_extractor_instance = Mock()
                 mock_extractor_instance.to_pd.return_value = SAMPLE_METADATA_DF
-                mock_fe.return_value = mock_extractor_instance
+                mock_annotation_extractor.return_value = mock_extractor_instance
 
                 # Execute
                 output_path = temp_dir / "output"
@@ -687,10 +691,10 @@ def test_metadata_file_extension(non_binary, expected_extension, processor, temp
                 )
 
                 # Verify correct file extension was used
-                call_kwargs = mock_fe.call_args[1]
+                call_kwargs = mock_annotation_extractor.call_args[1]
                 assert call_kwargs["non_binary"] == non_binary
                 expected_path = (
-                    temp_dir / "intermediate" / f"all_features.{expected_extension}"
+                    temp_dir / "intermediate" / f"all_annotations.{expected_extension}"
                 )
                 assert call_kwargs["output_path"] == expected_path
 

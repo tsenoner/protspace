@@ -6,7 +6,7 @@ from pathlib import Path
 from protspace.cli.common_args import (
     CustomHelpFormatter,
     add_all_reducer_parameters,
-    add_features_argument,
+    add_annotations_argument,
     add_methods_argument,
     add_output_argument,
     add_output_format_arguments,
@@ -27,7 +27,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
             "\n"
             "This tool searches UniProt, downloads protein sequences, computes embeddings\n"
             "using ESM2, performs dimensionality reduction, and optionally extracts\n"
-            "protein features from UniProt, InterPro, and taxonomy databases."
+            "protein annotations from UniProt, InterPro, and taxonomy databases."
         ),
         formatter_class=CustomHelpFormatter,
     )
@@ -54,8 +54,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Add shared output argument (optional, defaults to protspace.parquetbundle)
     add_output_argument(parser, required=False, default_name="protspace.parquetbundle")
 
-    # Add shared features argument (does NOT allow CSV files for query mode)
-    add_features_argument(parser, allow_csv=False)
+    # Add shared annotations argument (does NOT allow CSV files for query mode)
+    add_annotations_argument(parser, allow_csv=False)
 
     # Add shared output format arguments
     add_output_format_arguments(parser)
@@ -89,15 +89,15 @@ def main():
             )
 
     # Validate metadata argument - CSV files are not supported
-    if args.features:
+    if args.annotations:
         if (
-            args.features.endswith(".csv")
-            or args.features.endswith(".CSV")
-            or Path(args.features).exists()
+            args.annotations.endswith(".csv")
+            or args.annotations.endswith(".CSV")
+            or Path(args.annotations).exists()
         ):
             raise ValueError(
                 "CSV files are not supported when using protspace-query. "
-                "Please provide a comma-separated list of feature names instead."
+                "Please provide a comma-separated list of annotation names instead."
             )
 
     # Warn if both --non-binary and --bundled false are used together
@@ -144,7 +144,7 @@ def main():
         # Process the query with the determined paths
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
-            features=args.features,
+            annotations=args.annotations,
             delimiter=",",
             output_path=output_path,
             intermediate_dir=intermediate_dir,

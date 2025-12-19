@@ -146,8 +146,8 @@ def determine_output_paths(
     return output_path, intermediate_dir
 
 
-def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = True):
-    """Add the --features argument with improved help text.
+def add_annotations_argument(parser: argparse.ArgumentParser, allow_csv: bool = True):
+    """Add the --annotations argument with improved help text.
 
     Args:
         parser: ArgumentParser instance to add the argument to
@@ -158,18 +158,19 @@ def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = Tru
         if allow_csv
         else ""
     )
-    csv_example = "\n  --features /path/to/metadata.csv" if allow_csv else ""
+    csv_example = "\n  --annotations /path/to/metadata.csv" if allow_csv else ""
 
     parser.add_argument(
-        "-f",
-        "--features",
+        "-a",
+        "--annotations",
         type=str,
         required=False,
         default=None,
         help=(
-            f"Protein features to extract as comma-separated values{csv_note}.\n"
+            f"Protein annotations to extract as comma-separated values{csv_note}.\n"
+            "If not specified, all available annotations are retrieved.\n"
             "\n"
-            "Available features:\n"
+            "Available annotations:\n"
             "  UniProt:    annotation_score, cc_subcellular_location, fragment,\n"
             "              gene_symbol, length_fixed, length_quantile,\n"
             "              protein_existence, protein_families, reviewed, xref_pdb\n"
@@ -177,8 +178,8 @@ def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = Tru
             "  Taxonomy:   root, domain, kingdom, phylum, class, order, family, genus, species\n"
             "\n"
             "Examples:\n"
-            f"  --features reviewed,length_quantile,kingdom{csv_example}\n"
-            f"  --features pfam,cath,cc_subcellular_location"
+            f"  --annotations reviewed,length_quantile,kingdom{csv_example}\n"
+            f"  --annotations pfam,cath,cc_subcellular_location"
         ),
     )
 
@@ -247,7 +248,7 @@ def add_output_format_arguments(parser: argparse.ArgumentParser):
         action="store_true",
         help=(
             "Cache intermediate files for reuse in subsequent runs.\n"
-            "When enabled, downloaded features are saved and reused\n"
+            "When enabled, downloaded annotations are saved and reused\n"
             "if you run the command again with different reduction methods or parameters.\n"
             "This avoids re-downloading data from UniProt, InterPro, and taxonomy databases."
         ),

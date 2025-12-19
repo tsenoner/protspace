@@ -221,13 +221,13 @@ class PCAReducer(DimensionReducer):
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
         solver = "arpack"
-        n_samples, n_features = data.shape
+        n_samples, n_annotations = data.shape
         k = self.config.n_components
 
         # ARPACK requires n_components < min(shape), fallback to full SVD otherwise
-        if k >= min(n_samples, n_features):
+        if k >= min(n_samples, n_annotations):
             logger.warning(
-                f"PCA: n_components ({k}) >= min(shape) ({min(n_samples, n_features)}). "
+                f"PCA: n_components ({k}) >= min(shape) ({min(n_samples, n_annotations)}). "
                 f"'arpack' solver unavailable, falling back to 'full' solver."
             )
             solver = "full"

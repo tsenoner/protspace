@@ -8,7 +8,7 @@ import pandas as pd
 from protspace.cli.common_args import (
     CustomHelpFormatter,
     add_all_reducer_parameters,
-    add_features_argument,
+    add_annotations_argument,
     add_methods_argument,
     add_output_argument,
     add_output_format_arguments,
@@ -29,7 +29,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
             "Process local protein data with dimensionality reduction.\n"
             "\n"
             "This tool performs dimensionality reduction on protein embeddings or\n"
-            "similarity matrices, and optionally extracts protein features from\n"
+            "similarity matrices, and optionally extracts protein annotations from\n"
             "UniProt, InterPro, and taxonomy databases."
         ),
         formatter_class=CustomHelpFormatter,
@@ -51,8 +51,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # Add shared features argument (allows CSV metadata files)
-    add_features_argument(parser, allow_csv=True)
+    # Add shared annotations argument (allows CSV metadata files)
+    add_annotations_argument(parser, allow_csv=True)
 
     # Add shared output argument (optional, derives from input filename)
     add_output_argument(
@@ -97,8 +97,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--force-refetch",
         action="store_true",
         help=(
-            "Force re-fetching all features even if cached data exists.\n"
-            "Use this when you want to update features with fresh data from APIs."
+            "Force re-fetching all annotations even if cached data exists.\n"
+            "Use this when you want to update annotations with fresh data from APIs."
         ),
     )
 
@@ -161,7 +161,7 @@ def main():
         # Load/generate metadata
         metadata = processor.load_or_generate_metadata(
             headers=headers,
-            features=args.features,
+            annotations=args.annotations,
             intermediate_dir=intermediate_dir,
             delimiter=args.delimiter,
             non_binary=args.non_binary,

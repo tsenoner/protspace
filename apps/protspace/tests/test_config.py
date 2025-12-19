@@ -78,7 +78,7 @@ CLI_CONFIG = {
     "verbose": True,
     "custom_names": {"pca2": "Custom_PCA"},
     "delimiter": ",",
-    "features": "features.csv",
+    "annotations": "annotations.csv",
     "save_files": True,
     "no_save_files": False,
     "keep_tmp": True,
@@ -214,8 +214,8 @@ EXPECTED_IDENTIFIERS = {
 # Legacy output data for JSON tests
 LEGACY_OUTPUT_DATA = {
     "protein_data": {
-        "P12345": {"features": {"length": "100"}},
-        "P67890": {"features": {"length": "150"}},
+        "P12345": {"annotations": {"length": "100"}},
+        "P67890": {"annotations": {"length": "150"}},
     },
     "projections": [{"name": "PCA_2", "data": []}],
 }

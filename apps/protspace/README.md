@@ -6,7 +6,7 @@
 [![Downloads](https://pepy.tech/badge/protspace)](https://pepy.tech/project/protspace)
 [![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.jmb.2025.168940-blue)](https://doi.org/10.1016/j.jmb.2025.168940)
 
-ProtSpace is a visualization tool for exploring **protein embeddings** or **similarity matrices** along their 3D protein structures. It allows users to interactively visualize high-dimensional protein language model data in 2D or 3D space, color-code proteins based on various features, and view protein structures when available.
+ProtSpace is a visualization tool for exploring **protein embeddings** or **similarity matrices** along their 3D protein structures. It allows users to interactively visualize high-dimensional protein language model data in 2D or 3D space, color-code proteins based on various annotations, and view protein structures when available.
 
 ## 🌐 Try Online
 
@@ -42,7 +42,7 @@ pip install "protspace[frontend]"
 
 ```bash
 # Retrieve and analyze proteins from UniProt using sequence similarity (mmmseqs2)
-protspace-query -q "(ft_domain:phosphatase) AND (reviewed:true)" -o output_dir -m pca2,pca3,umap2 -f "protein_families,fragment,kingdom,superfamily" --n_neighbors 30 --min_dist 0.4
+protspace-query -q "(ft_domain:phosphatase) AND (reviewed:true)" -o output_dir -m pca2,pca3,umap2 --annotations "protein_families,fragment,kingdom,superfamily" --n_neighbors 30 --min_dist 0.4
 ```
 
 ### 2. Process local data
@@ -70,14 +70,16 @@ Access at `http://localhost:8050`
 
 [View 3D Example](https://tsenoner.github.io/protspace/examples/out/3FTx/UMAP3_major_group.html)
 
-## ✨ Features
+## ✨ Annotations
 
 - **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP in 2D/3D
-- **Automatic feature extraction**: Use `-f` to color-code proteins by UniProt, InterPro, or Taxonomy features
+- **Automatic annotation extraction**: Use `-a` to color-code proteins by UniProt, InterPro, or Taxonomy annotations
 - **3D structure viewer**: Integrated protein structure visualization
 - **Export**: SVG (2D) and HTML (3D) formats
 
-### Available Features (use with `-f`)
+### Available Annotations (use with `-a`)
+
+If `-a` is not specified, all available annotations are retrieved.
 
 **UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_symbol`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
 
@@ -89,10 +91,10 @@ Examples:
 
 ```bash
 # Extract Pfam domains and subcellular location
-protspace-local -i data.h5 -f pfam,cath,cc_subcellular_location
+protspace-local -i data.h5 --annotations pfam,cath,cc_subcellular_location
 
 # Extract reviewed status, length, and taxonomy
-protspace-query -q "..." -f reviewed,length_quantile,kingdom
+protspace-query -q "..." --annotations reviewed,length_quantile,kingdom
 ```
 
 ## 🔧 Advanced Usage
@@ -103,7 +105,7 @@ protspace-query -q "..." -f reviewed,length_quantile,kingdom
 
 - `-i, --input`: HDF5 embeddings or CSV similarity matrix (required)
 - `-o, --output`: Output file or directory (optional, default: derived from input filename)
-- `-f, --features`: Features to extract (comma-separated) or CSV metadata file path
+- `-a, --annotations`: Annotations to extract (comma-separated) or CSV metadata file path
 - `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 - `--keep-tmp`: Cache intermediate files for reuse
@@ -113,7 +115,7 @@ protspace-query -q "..." -f reviewed,length_quantile,kingdom
 
 - `-q, --query`: UniProt search query (required)
 - `-o, --output`: Output file or directory (optional, default: `protspace.parquetbundle`)
-- `-f, --features`: Features to extract (comma-separated)
+- `-a, --annotations`: Annotations to extract (comma-separated)
 - `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 - `--keep-tmp`: Cache intermediate files for reuse
@@ -131,8 +133,8 @@ Followng the default parameters for each method. Override these to fine-tune dim
 ### Custom Styling
 
 ```bash
-protspace-feature-colors input.json output.json --feature_styles '{
-  "feature_name": {
+protspace-annotation-colors input.json output.json --annotation_styles '{
+  "annotation_name": {
     "colors": {"value1": "#FF0000", "value2": "#00FF00"},
     "shapes": {"value1": "circle", "value2": "square"}
   }
@@ -148,14 +150,14 @@ Available shapes: `circle`, `circle-open`, `cross`, `diamond`, `diamond-open`, `
 - **UniProt queries**: Text queries using UniProt syntax
 - **Embeddings**: HDF5 files (.h5, .hdf5)
 - **Similarity matrices**: CSV files with symmetric matrices
-- **Metadata**: CSV with protein identifiers in the first column + feature columns
+- **Metadata**: CSV with protein identifiers in the first column + annotation columns
 - **Structures**: ZIP files containing PDB/CIF files
 
 ### Output
 
-- **Default**: Parquet files (projections_data.parquet, projections_metadata.parquet, selected_features.parquet)
+- **Default**: Parquet files (projections_data.parquet, projections_metadata.parquet, selected_annotations.parquet)
 - **Legacy**: JSON format with `--non-binary` flag
-- **Temporary files**: FASTA sequences, similarity matrices, all features (with `--keep-tmp`)
+- **Temporary files**: FASTA sequences, similarity matrices, all annotations (with `--keep-tmp`)
 
 ## 📝 Citation
 

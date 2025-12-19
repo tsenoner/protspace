@@ -1,8 +1,8 @@
 __version__ = "3.1.1"
 
-from .utils import add_feature_style  # noqa: F401
+from .utils import add_annotation_style  # noqa: F401
 
-__all__ = ["add_feature_style"]
+__all__ = ["add_annotation_style"]
 
 try:
     from .app import ProtSpace  # noqa: F401

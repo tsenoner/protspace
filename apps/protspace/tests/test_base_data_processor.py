@@ -86,11 +86,11 @@ class TestCreateOutput:
         reductions = SAMPLE_REDUCTIONS
         tables = processor.create_output(SAMPLE_METADATA, reductions, SAMPLE_HEADERS)
         assert set(tables.keys()) == {
-            "protein_features",
+            "protein_annotations",
             "projections_metadata",
             "projections_data",
         }
-        assert isinstance(tables["protein_features"], pa.Table)
+        assert isinstance(tables["protein_annotations"], pa.Table)
         assert isinstance(tables["projections_metadata"], pa.Table)
         assert isinstance(tables["projections_data"], pa.Table)
 

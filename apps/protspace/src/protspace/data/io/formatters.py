@@ -9,46 +9,46 @@ from collections import namedtuple
 import pandas as pd
 import pyarrow as pa
 
-ProteinFeatures = namedtuple("ProteinFeatures", ["identifier", "features"])
+ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
 
 class DataFormatter:
     """Format data for different outputs."""
 
     @staticmethod
-    def to_dataframe(proteins: list[ProteinFeatures]) -> pd.DataFrame:
+    def to_dataframe(proteins: list[ProteinAnnotations]) -> pd.DataFrame:
         """
-        Convert ProteinFeatures to DataFrame.
+        Convert ProteinAnnotations to DataFrame.
 
         Args:
-            proteins: List of ProteinFeatures
+            proteins: List of ProteinAnnotations
 
         Returns:
-            DataFrame with identifier column and feature columns
+            DataFrame with identifier column and annotation columns
         """
         if not proteins:
             return pd.DataFrame(columns=["identifier"])
 
         # Extract headers
-        headers = ["identifier"] + list(proteins[0].features.keys())
+        headers = ["identifier"] + list(proteins[0].annotations.keys())
 
         # Convert to rows
         data_rows = []
         for protein in proteins:
             row = [protein.identifier] + [
-                protein.features.get(header, "") for header in headers[1:]
+                protein.annotations.get(header, "") for header in headers[1:]
             ]
             data_rows.append(row)
 
         return pd.DataFrame(data_rows, columns=headers)
 
     @staticmethod
-    def to_arrow_table(proteins: list[ProteinFeatures]) -> pa.Table:
+    def to_arrow_table(proteins: list[ProteinAnnotations]) -> pa.Table:
         """
-        Convert ProteinFeatures to Arrow Table.
+        Convert ProteinAnnotations to Arrow Table.
 
         Args:
-            proteins: List of ProteinFeatures
+            proteins: List of ProteinAnnotations
 
         Returns:
             PyArrow Table
@@ -58,19 +58,19 @@ class DataFormatter:
         return pa.Table.from_pandas(df)
 
     @staticmethod
-    def to_dict_list(proteins: list[ProteinFeatures]) -> list[dict]:
+    def to_dict_list(proteins: list[ProteinAnnotations]) -> list[dict]:
         """
-        Convert ProteinFeatures to list of dictionaries.
+        Convert ProteinAnnotations to list of dictionaries.
 
         Args:
-            proteins: List of ProteinFeatures
+            proteins: List of ProteinAnnotations
 
         Returns:
-            List of dicts with identifier and features
+            List of dicts with identifier and annotations
         """
         result = []
         for protein in proteins:
             entry = {"identifier": protein.identifier}
-            entry.update(protein.features)
+            entry.update(protein.annotations)
             result.append(entry)
         return result
