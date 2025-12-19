@@ -1,5 +1,6 @@
-from protspace import ProtSpace
 from pathlib import Path
+
+from protspace import ProtSpace
 
 
 def main():
@@ -18,26 +19,26 @@ def main():
     #     reader = JsonReader(protspace.default_json_data)
     #     print("Available projection names:", reader.get_projection_names())
 
-    # Generate images for specific projections and features
+    # Generate images for specific projections and annotations
     # projections = ["PCA_2", "PCA_3"]
     projections = ["PCA_3"]
-    features = ["protein_existence", "annotation_score"]
+    annotations = ["protein_existence", "annotation_score"]
 
     # Create the output directory if it doesn't exist
     output_dir = Path("examples/out/automatic_projections")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for projection in projections:
-        for feature in features:
+        for annotation in annotations:
             protspace.generate_plot(
                 projection=projection,
-                feature=feature,
-                filename=output_dir / f"{projection}_{feature}",
+                annotation=annotation,
+                filename=output_dir / f"{projection}_{annotation}",
                 width=1600,
                 height=1000,
                 file_format="html",
             )
-            print(f"Generated image for {projection} - {feature}")
+            print(f"Generated image for {projection} - {annotation}")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import requests
 from pymmseqs.commands import easy_search
 from tqdm import tqdm
 
-from protspace.data.features.manager import ProteinFeatureManager
+from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
@@ -33,7 +33,7 @@ class UniProtQueryProcessor(BaseProcessor):
             "verbose",
             "custom_names",
             "delimiter",
-            "features",
+            "annotations",
             "save_files",
             "no_save_files",
             "keep_tmp",
@@ -48,7 +48,7 @@ class UniProtQueryProcessor(BaseProcessor):
         query: str,
         output_path: Path,
         intermediate_dir: Path,
-        features: str = None,
+        annotations: str = None,
         delimiter: str = ",",
         keep_tmp: bool = False,
         non_binary: bool = False,
@@ -62,15 +62,15 @@ class UniProtQueryProcessor(BaseProcessor):
             query: UniProt search query (exact query to send to UniProt)
             output_path: Path for output file
             intermediate_dir: Directory for intermediate files
-            features: Features to fetch
+            annotations: Annotations to fetch
             delimiter: CSV delimiter
-            keep_tmp: Whether to keep temporary files (FASTA, complete protein features, and similarity matrix)
+            keep_tmp: Whether to keep temporary files (FASTA, complete protein annotations, and similarity matrix)
             non_binary: Whether to use non-binary formats (CSV instead of parquet)
             fasta_path: Optional pre-downloaded FASTA file path
             headers: Optional pre-extracted protein IDs
 
         Returns:
-            Tuple of (features_df, embeddings_array, headers_list, saved_files_dict)
+            Tuple of (annotations_df, embeddings_array, headers_list, saved_files_dict)
         """
 
         saved_files = {}
@@ -82,9 +82,9 @@ class UniProtQueryProcessor(BaseProcessor):
             fasta_save_path = intermediate_dir / fasta_filename
 
             if non_binary:
-                metadata_filename = "all_features.csv"
+                metadata_filename = "all_annotations.csv"
             else:
-                metadata_filename = "all_features.parquet"
+                metadata_filename = "all_annotations.parquet"
 
             metadata_save_path = intermediate_dir / metadata_filename
             similarity_matrix_path = intermediate_dir / "similarity_matrix.csv"
@@ -152,18 +152,23 @@ class UniProtQueryProcessor(BaseProcessor):
         if metadata_cached:
             logger.info(f"Loading cached metadata from: {metadata_save_path}")
             if non_binary:
-                features_df = pd.read_csv(metadata_save_path)
+                annotations_df = pd.read_csv(metadata_save_path)
             else:
-                features_df = pd.read_parquet(metadata_save_path)
+                annotations_df = pd.read_parquet(metadata_save_path)
             saved_files["metadata"] = metadata_save_path
         else:
-            features_df = self._generate_metadata(
-                headers, features, delimiter, metadata_save_path, non_binary, keep_tmp
+            annotations_df = self._generate_metadata(
+                headers,
+                annotations,
+                delimiter,
+                metadata_save_path,
+                non_binary,
+                keep_tmp,
             )
             if metadata_save_path:
                 saved_files["metadata"] = metadata_save_path
 
-        return features_df, data, headers, saved_files
+        return annotations_df, data, headers, saved_files
 
     def _search_and_download_fasta(
         self,
@@ -344,7 +349,7 @@ class UniProtQueryProcessor(BaseProcessor):
     def _generate_metadata(
         self,
         headers: list[str],
-        features: str,
+        annotations: str,
         delimiter: str,
         metadata_save_path: Path = None,
         non_binary: bool = False,
@@ -352,24 +357,28 @@ class UniProtQueryProcessor(BaseProcessor):
     ) -> pd.DataFrame:
         """Generate metadata CSV and return DataFrame."""
         try:
-            if features and features.endswith(".csv"):
+            if annotations and annotations.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                features_df = pd.read_csv(
-                    features, delimiter=delimiter
+                annotations_df = pd.read_csv(
+                    annotations, delimiter=delimiter
                 ).convert_dtypes()
             else:
-                if features:
-                    features_list = [feature.strip() for feature in features.split(",")]
+                if annotations:
+                    annotations_list = [
+                        annotation.strip() for annotation in annotations.split(",")
+                    ]
                 else:
-                    features_list = None  # No specific features requested, use all
+                    annotations_list = (
+                        None  # No specific annotations requested, use all
+                    )
 
                 # Create directory only if metadata_save_path is provided
                 if metadata_save_path:
                     metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
 
-                features_df = ProteinFeatureManager(
+                annotations_df = ProteinAnnotationManager(
                     headers=headers,
-                    features=features_list,
+                    annotations=annotations_list,
                     output_path=metadata_save_path,
                     non_binary=non_binary,
                 ).to_pd()
@@ -387,14 +396,14 @@ class UniProtQueryProcessor(BaseProcessor):
             logger.warning(
                 f"Could not generate metadata ({str(e)}) - creating empty metadata"
             )
-            features_df = pd.DataFrame(columns=["identifier"])
+            annotations_df = pd.DataFrame(columns=["identifier"])
 
         # Create full metadata with NaN for missing entries
         full_metadata = pd.DataFrame({"identifier": headers})
-        if len(features_df.columns) > 1:
-            features_df = features_df.astype(str)
+        if len(annotations_df.columns) > 1:
+            annotations_df = annotations_df.astype(str)
             full_metadata = full_metadata.merge(
-                features_df.drop_duplicates("identifier"),
+                annotations_df.drop_duplicates("identifier"),
                 on="identifier",
                 how="left",
             )

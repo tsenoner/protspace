@@ -18,14 +18,14 @@ class ArrowReader:
             arrow_data_path: Path to directory containing the .parquet files
         """
         self.data_path = Path(arrow_data_path)
-        self._protein_features_df = None
+        self._protein_annotations_df = None
         self._projections_metadata_df = None
         self._projections_data_df = None
         # Initialize data structure to match JsonReader format
         self.data = {
             "protein_data": {},
             "projections": [],
-            "visualization_state": {"feature_colors": {}, "marker_shapes": {}},
+            "visualization_state": {"annotation_colors": {}, "marker_shapes": {}},
         }
         self._load_data()
         self._build_data_structure()
@@ -33,16 +33,16 @@ class ArrowReader:
     def _load_data(self):
         """Load data from Parquet files."""
         try:
-            protein_features_path = self.data_path / "selected_features.parquet"
+            protein_annotations_path = self.data_path / "selected_annotations.parquet"
             projections_metadata_path = self.data_path / "projections_metadata.parquet"
             projections_data_path = self.data_path / "projections_data.parquet"
 
-            if protein_features_path.exists():
-                self._protein_features_df = pq.read_table(
-                    str(protein_features_path)
+            if protein_annotations_path.exists():
+                self._protein_annotations_df = pq.read_table(
+                    str(protein_annotations_path)
                 ).to_pandas()
             else:
-                self._protein_features_df = pd.DataFrame(columns=["protein_id"])
+                self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
 
             if projections_metadata_path.exists():
                 self._projections_metadata_df = pq.read_table(
@@ -70,13 +70,13 @@ class ArrowReader:
     def _build_data_structure(self):
         """Build the data structure to match JsonReader format."""
         # Build protein_data
-        for _, row in self._protein_features_df.iterrows():
+        for _, row in self._protein_annotations_df.iterrows():
             protein_id = row["protein_id"]
-            features = {}
-            for col in self._protein_features_df.columns:
+            annotations = {}
+            for col in self._protein_annotations_df.columns:
                 if col != "protein_id":
-                    features[col] = row[col]
-            self.data["protein_data"][protein_id] = {"features": features}
+                    annotations[col] = row[col]
+            self.data["protein_data"][protein_id] = {"annotations": annotations}
 
         # Build projections
         self.data["projections"] = []
@@ -141,10 +141,10 @@ class ArrowReader:
 
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Save protein features
-        protein_features_path = output_path / "protein_features.parquet"
-        protein_features_table = pa.Table.from_pandas(self._protein_features_df)
-        pq.write_table(protein_features_table, str(protein_features_path))
+        # Save protein annotations
+        protein_annotations_path = output_path / "protein_annotations.parquet"
+        protein_annotations_table = pa.Table.from_pandas(self._protein_annotations_df)
+        pq.write_table(protein_annotations_table, str(protein_annotations_path))
 
         # Save projections metadata
         projections_metadata_path = output_path / "projections_metadata.parquet"
@@ -165,12 +165,12 @@ class ArrowReader:
         """Get list of projection names."""
         return [proj["name"] for proj in self.data.get("projections", [])]
 
-    def get_all_features(self) -> list[str]:
-        """Get list of all feature names."""
-        features = set()
+    def get_all_annotations(self) -> list[str]:
+        """Get list of all annotation names."""
+        annotations = set()
         for protein_data in self.data.get("protein_data", {}).values():
-            features.update(protein_data.get("features", {}).keys())
-        return list(features)
+            annotations.update(protein_data.get("annotations", {}).keys())
+        return list(annotations)
 
     def get_protein_ids(self) -> list[str]:
         """Get list of all protein IDs."""
@@ -193,64 +193,68 @@ class ArrowReader:
                 return result
         raise ValueError(f"Projection {projection_name} not found")
 
-    def get_protein_features(self, protein_id: str) -> dict[str, Any]:
-        """Get protein features in the same format as JsonReader."""
-        return self.data.get("protein_data", {}).get(protein_id, {}).get("features", {})
-
-    def get_feature_colors(self, feature: str) -> dict[str, str]:
-        """Get feature colors from visualization state."""
+    def get_protein_annotations(self, protein_id: str) -> dict[str, Any]:
+        """Get protein annotations in the same format as JsonReader."""
         return (
-            self.data.get("visualization_state", {})
-            .get("feature_colors", {})
-            .get(feature, {})
+            self.data.get("protein_data", {}).get(protein_id, {}).get("annotations", {})
         )
 
-    def get_marker_shape(self, feature: str) -> dict[str, str]:
+    def get_annotation_colors(self, annotation: str) -> dict[str, str]:
+        """Get annotation colors from visualization state."""
+        return (
+            self.data.get("visualization_state", {})
+            .get("annotation_colors", {})
+            .get(annotation, {})
+        )
+
+    def get_marker_shape(self, annotation: str) -> dict[str, str]:
         """Get marker shapes from visualization state."""
         return (
             self.data.get("visualization_state", {})
             .get("marker_shapes", {})
-            .get(feature, {})
+            .get(annotation, {})
         )
 
-    def get_unique_feature_values(self, feature: str) -> list[Any]:
-        """Get a list of unique values for a given feature."""
+    def get_unique_annotation_values(self, annotation: str) -> list[Any]:
+        """Get a list of unique values for a given annotation."""
         unique_values = set()
         for protein_data in self.data.get("protein_data", {}).values():
-            value = protein_data.get("features", {}).get(feature)
+            value = protein_data.get("annotations", {}).get(annotation)
             if value is not None:
                 unique_values.add(value)
         return list(unique_values)
 
-    def get_all_feature_values(self, feature: str) -> list[Any]:
-        """Get a list of all values for a given feature."""
+    def get_all_annotation_values(self, annotation: str) -> list[Any]:
+        """Get a list of all values for a given annotation."""
         all_values = []
         protein_ids = self.get_protein_ids()
         for protein_id in protein_ids:
-            all_values.append(self.get_protein_features(protein_id).get(feature, None))
+            all_values.append(
+                self.get_protein_annotations(protein_id).get(annotation, None)
+            )
         return all_values
 
-    def update_feature_color(self, feature: str, value: str, color: str):
-        """Update feature color in visualization state."""
+    def update_annotation_color(self, annotation: str, value: str, color: str):
+        """Update annotation color in visualization state."""
         if "visualization_state" not in self.data:
             self.data["visualization_state"] = {}
-        if "feature_colors" not in self.data["visualization_state"]:
-            self.data["visualization_state"]["feature_colors"] = {}
-        if feature not in self.data["visualization_state"]["feature_colors"]:
-            self.data["visualization_state"]["feature_colors"][feature] = {}
+        if "annotation_colors" not in self.data["visualization_state"]:
+            self.data["visualization_state"]["annotation_colors"] = {}
+        if annotation not in self.data["visualization_state"]["annotation_colors"]:
+            self.data["visualization_state"]["annotation_colors"][annotation] = {}
 
-        self.data["visualization_state"]["feature_colors"][feature][value] = color
+        self.data["visualization_state"]["annotation_colors"][annotation][value] = color
 
-    def update_marker_shape(self, feature: str, value: str, shape: str):
+    def update_marker_shape(self, annotation: str, value: str, shape: str):
         """Update marker shape in visualization state."""
         if "visualization_state" not in self.data:
             self.data["visualization_state"] = {}
         if "marker_shapes" not in self.data["visualization_state"]:
             self.data["visualization_state"]["marker_shapes"] = {}
-        if feature not in self.data["visualization_state"]["marker_shapes"]:
-            self.data["visualization_state"]["marker_shapes"][feature] = {}
+        if annotation not in self.data["visualization_state"]["marker_shapes"]:
+            self.data["visualization_state"]["marker_shapes"][annotation] = {}
 
-        self.data["visualization_state"]["marker_shapes"][feature][value] = shape
+        self.data["visualization_state"]["marker_shapes"][annotation][value] = shape
 
     def get_data(self) -> dict[str, Any]:
         """Return the current data."""

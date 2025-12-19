@@ -94,7 +94,7 @@ class BaseProcessor:
     ) -> dict[str, pa.Table]:
         """Create the final output as Apache Arrow tables."""
         return {
-            "protein_features": self._create_protein_features_table(metadata),
+            "protein_annotations": self._create_protein_annotations_table(metadata),
             "projections_metadata": self._create_projections_metadata_table(reductions),
             "projections_data": self._create_projections_data_table(
                 reductions, headers
@@ -113,7 +113,7 @@ class BaseProcessor:
         """
         # Custom filename mapping for better naming
         filename_mapping = {
-            "protein_features": "selected_features.parquet",
+            "protein_annotations": "selected_annotations.parquet",
             "projections_metadata": "projections_metadata.parquet",
             "projections_data": "projections_data.parquet",
         }
@@ -165,8 +165,8 @@ class BaseProcessor:
 
             logger.info(f"Saved separate parquet files to: {base_path}")
 
-    def _create_protein_features_table(self, metadata: pd.DataFrame) -> pa.Table:
-        """Create Apache Arrow table for protein features in wide format."""
+    def _create_protein_annotations_table(self, metadata: pd.DataFrame) -> pa.Table:
+        """Create Apache Arrow table for protein annotations in wide format."""
         df = metadata.copy()
 
         if self.identifier_col != "protein_id":
@@ -225,16 +225,16 @@ class BaseProcessor:
         """Create the final output dictionary (legacy JSON format)."""
         output = {"protein_data": {}, "projections": []}
 
-        # Process features
+        # Process annotations
         for _, row in metadata.iterrows():
             protein_id = row[self.identifier_col]
-            features = (
+            annotations = (
                 row.drop(self.identifier_col)
                 .infer_objects(copy=False)
                 .fillna("")
                 .to_dict()
             )
-            output["protein_data"][protein_id] = {"features": features}
+            output["protein_data"][protein_id] = {"annotations": annotations}
 
         # Process projections
         for reduction in reductions:

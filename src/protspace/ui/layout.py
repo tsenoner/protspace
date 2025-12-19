@@ -37,8 +37,8 @@ def _create_header():
 
 
 def _create_control_bar(
-    feature_options,
-    first_feature,
+    annotation_options,
+    first_annotation,
     projection_options,
     first_projection,
     protein_options,
@@ -49,10 +49,10 @@ def _create_control_bar(
             html.Div(
                 [
                     dcc.Dropdown(
-                        id="feature-dropdown",
-                        options=feature_options,
-                        value=first_feature,
-                        placeholder="Select a feature",
+                        id="annotation-dropdown",
+                        options=annotation_options,
+                        value=first_annotation,
+                        placeholder="Select an annotation",
                         style=styles.DROPDOWN_STYLE,
                     ),
                     dcc.Dropdown(
@@ -168,7 +168,7 @@ def _create_main_view(marker_shapes):
                             html.H3("Marker Style"),
                             html.Label("Select a value:"),
                             dcc.Dropdown(
-                                id="feature-value-dropdown",
+                                id="annotation-value-dropdown",
                                 style={"marginBottom": "10px"},
                             ),
                             html.Label("Select a color:"),
@@ -281,30 +281,32 @@ def create_layout(app):
 
     if default_json_data:
         reader = JsonReader(default_json_data)
-        features = sorted(reader.get_all_features())
+        annotations = sorted(reader.get_all_annotations())
         projections = sorted(reader.get_projection_names())
         protein_ids = sorted(reader.get_protein_ids())
 
-        feature_options = [{"label": feature, "value": feature} for feature in features]
+        annotation_options = [
+            {"label": annotation, "value": annotation} for annotation in annotations
+        ]
         projection_options = [{"label": proj, "value": proj} for proj in projections]
         protein_options = [{"label": pid, "value": pid} for pid in protein_ids]
 
-        first_feature = features[0] if features else None
+        first_annotation = annotations[0] if annotations else None
         first_projection = projections[0] if projections else None
 
         projection_info = reader.get_projection_info(first_projection)
         is_3d = projection_info["dimensions"] == 3
         marker_shapes = MARKER_SHAPES_3D if is_3d else MARKER_SHAPES_2D
     else:
-        feature_options, projection_options, protein_options = [], [], []
-        first_feature, first_projection = None, None
+        annotation_options, projection_options, protein_options = [], [], []
+        first_annotation, first_projection = None, None
         marker_shapes = MARKER_SHAPES_2D
 
     layout_components = [
         _create_header(),
         _create_control_bar(
-            feature_options,
-            first_feature,
+            annotation_options,
+            first_annotation,
             projection_options,
             first_projection,
             protein_options,

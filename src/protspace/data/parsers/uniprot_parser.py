@@ -38,11 +38,11 @@ date_created             - Entry creation date
 date_modified            - Last modification date
 date_sequence_modified   - Last sequence modification date
 version                  - Entry version number
-ft_disulfid              - Disulfide bond features (list)
-ft_glycosylation         - Glycosylation features (list)
-ft_lipidation            - Lipidation features (list)
-ft_mod_res               - Modified residue features (list)
-ft_signal                - Signal peptide features
+ft_disulfid              - Disulfide bond (list)
+ft_glycosylation         - Glycosylation (list)
+ft_lipidation            - Lipidation (list)
+ft_mod_res               - Modified residue (list)
+ft_signal                - Signal peptide
 xref_pdb                 - PDB cross-references (list)
 """
 
@@ -189,24 +189,24 @@ class UniProtEntry:
     @property
     def ft_non_adj(self) -> list[str]:
         """Non-adjacent residues."""
-        features = self.get_features("Non-adjacent residues")
+        annotations = self.get_annotations("Non-adjacent residues")
         return [
-            f"{f['location']['start']['value']}-{f['location']['end']['value']}"
-            for f in features
+            f"{ann['location']['start']['value']}-{ann['location']['end']['value']}"
+            for ann in annotations
         ]
 
     @property
     def ft_non_std(self) -> list[int]:
         """Non-standard residues."""
-        features = self.get_features("Non-standard residue")
-        return [f["location"]["start"]["value"] for f in features]
+        annotations = self.get_annotations("Non-standard residue")
+        return [ann["location"]["start"]["value"] for ann in annotations]
 
     @property
     def ft_non_ter(self) -> int | None:
         """Non-terminal residues."""
-        features = self.get_features("Non-terminal residue")
-        if features:
-            return features[0]["location"]["start"]["value"]
+        annotations = self.get_annotations("Non-terminal residue")
+        if annotations:
+            return annotations[0]["location"]["start"]["value"]
         return None
 
     # --- Miscellaneous ---
@@ -341,46 +341,46 @@ class UniProtEntry:
 
     @property
     def ft_disulfid(self) -> list[str]:
-        """Disulfide bond features."""
-        bonds = self.get_features("Disulfide bond")
+        """Disulfide bond annotations."""
+        annotations = self.get_annotations("Disulfide bond")
         return [
-            f"{b['location']['start']['value']}-{b['location']['end']['value']}"
-            for b in bonds
+            f"{ann['location']['start']['value']}-{ann['location']['end']['value']}"
+            for ann in annotations
         ]
 
     @property
     def ft_glycosylation(self) -> list[dict[int, str]]:
-        """Glycosylation features."""
-        features = self.get_features("Glycosylation")
+        """Glycosylation annotations."""
+        annotations = self.get_annotations("Glycosylation")
         return [
-            {int(f["location"]["start"]["value"]): f.get("description", "")}
-            for f in features
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
         ]
 
     @property
     def ft_lipidation(self) -> list[dict[int, str]]:
-        """Lipidation features."""
-        features = self.get_features("Lipidation")
+        """Lipidation annotations."""
+        annotations = self.get_annotations("Lipidation")
         return [
-            {int(f["location"]["start"]["value"]): f.get("description", "")}
-            for f in features
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
         ]
 
     @property
     def ft_mod_res(self) -> list[dict[int, str]]:
-        """Modified residue features."""
-        features = self.get_features("Modified residue")
+        """Modified residue annotations."""
+        annotations = self.get_annotations("Modified residue")
         return [
-            {int(f["location"]["start"]["value"]): f.get("description", "")}
-            for f in features
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
         ]
 
     @property
     def ft_signal(self) -> str:
-        """Signal peptide features."""
-        features = self.get_features("Signal")
-        if features:
-            loc = features[0]["location"]
+        """Signal peptide annotations."""
+        annotations = self.get_annotations("Signal")
+        if annotations:
+            loc = annotations[0]["location"]
             return f"{loc['start']['value']}-{loc['end']['value']}"
         return ""
 
@@ -393,12 +393,14 @@ class UniProtEntry:
 
     # --- Core Methods ---
 
-    def get_features(self, feature_type: str | None = None) -> list[dict[str, Any]]:
-        """Get features, optionally filtered by type."""
-        features = self.data.get("features", [])
-        if feature_type:
-            return [f for f in features if f.get("type") == feature_type]
-        return features
+    def get_annotations(
+        self, annotation_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Get annotations, optionally filtered by type."""
+        annotations = self.data.get("annotations", [])
+        if annotation_type:
+            return [f for f in annotations if f.get("type") == annotation_type]
+        return annotations
 
     def get_comments(self, comment_type: str | None = None) -> list[dict[str, Any]]:
         """Get comments, optionally filtered by type."""
