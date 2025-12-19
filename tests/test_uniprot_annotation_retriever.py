@@ -281,8 +281,8 @@ class TestFetchAnnotations:
         assert result[0].annotations["organism_id"] == "9606"
         assert result[0].annotations["reviewed"] == "True"  # Bool stored as string
         assert (
-            result[0].annotations["gene_symbol"] == "INS"
-        )  # Gene symbol from genes[0].geneName
+            result[0].annotations["gene_name"] == "INS"
+        )  # Gene name from genes[0].geneName
 
 
 class TestConstants:
@@ -294,7 +294,7 @@ class TestConstants:
             "protein_existence",
             "annotation_score",
             "protein_families",
-            "gene_symbol",
+            "gene_name",
             "length",
             "reviewed",
             "fragment",
