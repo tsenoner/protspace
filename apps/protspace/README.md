@@ -81,7 +81,7 @@ Access at `http://localhost:8050`
 
 If `-a` is not specified, all available annotations are retrieved.
 
-**UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_symbol`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
+**UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_name`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
 
 **InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily`
 

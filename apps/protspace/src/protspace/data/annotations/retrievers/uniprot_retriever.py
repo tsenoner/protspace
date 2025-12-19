@@ -21,7 +21,7 @@ UNIPROT_ANNOTATIONS = [
     "annotation_score",
     "cc_subcellular_location",
     "fragment",
-    "gene_symbol",
+    "gene_name",
     "length",
     "organism_id",
     "protein_existence",

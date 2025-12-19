@@ -172,7 +172,7 @@ def add_annotations_argument(parser: argparse.ArgumentParser, allow_csv: bool = 
             "\n"
             "Available annotations:\n"
             "  UniProt:    annotation_score, cc_subcellular_location, fragment,\n"
-            "              gene_symbol, length_fixed, length_quantile,\n"
+            "              gene_name, length_fixed, length_quantile,\n"
             "              protein_existence, protein_families, reviewed, xref_pdb\n"
             "  InterPro:   cath, pfam, signal_peptide, superfamily\n"
             "  Taxonomy:   root, domain, kingdom, phylum, class, order, family, genus, species\n"
