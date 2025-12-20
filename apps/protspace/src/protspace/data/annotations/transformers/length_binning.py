@@ -22,7 +22,7 @@ class LengthBinner:
             proteins: List of ProteinAnnotations with 'length' field
 
         Returns:
-            Updated list of ProteinAnnotations with length bins added (original length kept)
+            Updated list of ProteinAnnotations with length bins added (original length removed)
         """
         lengths = self._extract_lengths(proteins)
         fixed_bins = self.compute_fixed_bins(lengths)
@@ -46,10 +46,13 @@ class LengthBinner:
     def _update_proteins_with_bins(
         proteins: list[ProteinAnnotations], fixed_bins: list[str], quantile_bins: list[str]
     ) -> list[ProteinAnnotations]:
-        """Update proteins with bin values (keeping original length field)."""
+        """Update proteins with bin values (removing original length field)."""
         updated_proteins = []
         for i, protein in enumerate(proteins):
             updated_annotations = protein.annotations.copy()
+
+            # Remove the raw length field - only keep the derived bins
+            updated_annotations.pop("length", None)
 
             updated_annotations["length_fixed"] = fixed_bins[i]
             updated_annotations["length_quantile"] = quantile_bins[i]
