@@ -262,7 +262,7 @@ class TestLengthBinner:
         for protein in result:
             assert "length_fixed" in protein.annotations
             assert "length_quantile" in protein.annotations
-            assert "length" in protein.annotations  # Original length is kept
+            assert "length" not in protein.annotations  # Original length is removed
 
         # Verify binning
         assert result[0].annotations["length_fixed"] == "100-200"

@@ -92,7 +92,7 @@ class TestAnnotationTransformerTransform:
         assert len(result) == 2
         assert "length_fixed" in result[0].annotations
         assert "length_quantile" in result[0].annotations
-        assert "length" in result[0].annotations  # Original length preserved
+        assert "length" not in result[0].annotations  # Original length removed
 
         # Should have transformed annotations
         assert result[0].annotations["annotation_score"] == "5"
