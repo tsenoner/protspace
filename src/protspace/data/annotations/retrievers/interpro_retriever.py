@@ -42,13 +42,14 @@ class InterProRetriever(BaseAnnotationRetriever):
     - Phobius signal peptides (key: signal_peptide)
 
     Annotations are stored with confidence scores in a pipe-separated format:
-    - Format: accession|score1,score2,score3;accession2|score1
+    - Format: accession(name)|score1,score2,score3;accession2|score1
+    - Name (if available) is included in parentheses after the accession
     - | separates accession from scores
     - , separates multiple scores for the same accession (when it appears multiple times)
     - ; separates different accessions
     - Count is inferred from the number of comma-separated scores
 
-    Example: 'pfam': 'PF00001|50.2,52.1,51.0;PF00002|60.5'
+    Example: 'pfam': 'PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5'
     """
 
     def __init__(
@@ -196,20 +197,21 @@ class InterProRetriever(BaseAnnotationRetriever):
 
         Returns:
             List of ProteinAnnotations with parsed InterPro data in pipe-separated format:
-            - Format: accession|score1,score2,score3;accession2|score1
-            - Example: 'pfam': 'PF00001|50.2,52.1,51.0;PF00002|60.5'
+            - Format: accession(name)|score1,score2,score3;accession2|score1
+            - Example: 'pfam': 'PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5'
 
             All scores for each accession are collected and stored together.
+            Names (if available) are included in parentheses after the accession.
         """
         # Create reverse mapping from API database names to our keys
         api_to_key = {v: k for k, v in INTERPRO_MAPPING.items()}
 
         # Initialize annotation dictionary for each protein
-        # Store accessions and scores separately to maintain correspondence
+        # Store accessions, names, and scores separately to maintain correspondence
         protein_annotations = {}
         for identifier in md5_to_identifier.values():
             protein_annotations[identifier] = {
-                annotation: {"accessions": [], "scores": []}
+                annotation: {"accessions": [], "names": [], "scores": []}
                 for annotation in self.annotations
             }
 
@@ -232,12 +234,17 @@ class InterProRetriever(BaseAnnotationRetriever):
                     if annotation_key in self.annotations:
                         signature_accession = signature.get("accession", "")
                         if signature_accession:
-                            # Extract confidence score from match
+                            # Extract name and confidence score from match
+                            signature_name = signature.get("name", "")
                             score = match.get("score")
 
                             protein_annotations[protein_id][annotation_key][
                                 "accessions"
                             ].append(signature_accession)
+                            # Store name, using empty string if not available
+                            protein_annotations[protein_id][annotation_key][
+                                "names"
+                            ].append(signature_name)
                             # Store score, using empty string if not available
                             protein_annotations[protein_id][annotation_key][
                                 "scores"
@@ -250,31 +257,48 @@ class InterProRetriever(BaseAnnotationRetriever):
             processed_annotations = {}
             for annotation_name, annotation_data in annotations_dict.items():
                 accessions = annotation_data["accessions"]
+                names = annotation_data["names"]
                 scores = annotation_data["scores"]
 
                 if accessions:
                     # Group all scores by accession (collect all occurrences)
+                    # Also track the name for each accession (use first non-empty name if multiple)
                     accession_to_scores = {}
-                    for acc, sc in zip(accessions, scores, strict=True):
+                    accession_to_name = {}
+                    for acc, name, sc in zip(accessions, names, scores, strict=True):
                         if acc not in accession_to_scores:
                             accession_to_scores[acc] = []
+                            accession_to_name[acc] = name
                         # Only add non-empty scores
                         if sc:
                             accession_to_scores[acc].append(sc)
+                        # Update name if current one is empty but we have a name
+                        if not accession_to_name[acc] and name:
+                            accession_to_name[acc] = name
 
                     # Sort by accession for consistency
                     sorted_accessions = sorted(accession_to_scores.keys())
 
-                    # Format as: accession|score1,score2,score3;accession2|score1
+                    # Format as: accession(name)|score1,score2,score3;accession2|score1
                     formatted_parts = []
                     for acc in sorted_accessions:
                         score_list = accession_to_scores[acc]
-                        if score_list:
-                            # Format: accession|score1,score2,score3
-                            formatted_parts.append(f"{acc}|{','.join(score_list)}")
+                        name = accession_to_name[acc]
+
+                        # Format accession with name if available
+                        if name:
+                            acc_with_name = f"{acc} ({name})"
                         else:
-                            # If no scores, just include accession
-                            formatted_parts.append(acc)
+                            acc_with_name = acc
+
+                        if score_list:
+                            # Format: accession(name)|score1,score2,score3
+                            formatted_parts.append(
+                                f"{acc_with_name}|{','.join(score_list)}"
+                            )
+                        else:
+                            # If no scores, just include accession (with name if available)
+                            formatted_parts.append(acc_with_name)
 
                     processed_annotations[annotation_name] = ";".join(formatted_parts)
                 else:
