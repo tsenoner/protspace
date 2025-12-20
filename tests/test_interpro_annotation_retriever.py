@@ -92,7 +92,8 @@ class TestInterProAnnotationRetrieverFetch:
                             "signature": {
                                 "accession": "PF00001",
                                 "signatureLibraryRelease": {"library": "Pfam"},
-                            }
+                            },
+                            "score": 50.2,
                         }
                     ],
                 }
@@ -117,7 +118,8 @@ class TestInterProAnnotationRetrieverFetch:
         assert len(result) == 1
         assert result[0].identifier == "P12345"
         assert "pfam" in result[0].annotations
-        assert result[0].annotations["pfam"] == "PF00001"
+        assert result[0].annotations["pfam"] == "PF00001|50.2"
+        assert "pfam_score" not in result[0].annotations
 
     def test_fetch_annotations_no_headers(self):
         """Test fetch_annotations with no headers."""
@@ -176,13 +178,17 @@ class TestInterProAnnotationRetrieverParsing:
                         "signature": {
                             "accession": "PF00001",
                             "signatureLibraryRelease": {"library": "Pfam"},
-                        }
+                        },
+                        "evalue": "1e-10",
+                        "score": 50.2,
                     },
                     {
                         "signature": {
                             "accession": "SSF12345",
                             "signatureLibraryRelease": {"library": "SUPERFAMILY"},
-                        }
+                        },
+                        "evalue": "1e-15",
+                        "score": 60.5,
                     },
                 ],
             }
@@ -193,8 +199,10 @@ class TestInterProAnnotationRetrieverParsing:
 
         assert len(result) == 1
         assert result[0].identifier == "P12345"
-        assert result[0].annotations["pfam"] == "PF00001"
-        assert result[0].annotations["superfamily"] == "SSF12345"
+        assert result[0].annotations["pfam"] == "PF00001|50.2"
+        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations["superfamily"] == "SSF12345|60.5"
+        assert "superfamily_score" not in result[0].annotations
 
     def test_parse_interpro_results_not_found(self):
         """Test parsing when protein not found in UniParc."""
@@ -209,6 +217,7 @@ class TestInterProAnnotationRetrieverParsing:
         assert len(result) == 1
         assert result[0].identifier == "P12345"
         assert result[0].annotations["pfam"] == ""  # Empty when not found
+        assert "pfam_score" not in result[0].annotations
 
     def test_parse_interpro_results_filter_databases(self):
         """Test that only requested databases are included."""
@@ -224,13 +233,17 @@ class TestInterProAnnotationRetrieverParsing:
                         "signature": {
                             "accession": "PF00001",
                             "signatureLibraryRelease": {"library": "Pfam"},
-                        }
+                        },
+                        "evalue": "1e-10",
+                        "score": 50.2,
                     },
                     {
                         "signature": {
                             "accession": "SSF12345",
                             "signatureLibraryRelease": {"library": "SUPERFAMILY"},
-                        }
+                        },
+                        "evalue": "1e-15",
+                        "score": 60.5,
                     },
                 ],
             }
@@ -241,9 +254,174 @@ class TestInterProAnnotationRetrieverParsing:
 
         assert len(result) == 1
         assert result[0].identifier == "P12345"
-        assert result[0].annotations["pfam"] == "PF00001"
+        assert result[0].annotations["pfam"] == "PF00001|50.2"
+        assert "pfam_score" not in result[0].annotations
         # SUPERFAMILY should not be included since not requested
         assert "superfamily" not in result[0].annotations
+        assert "superfamily_score" not in result[0].annotations
+
+    def test_parse_interpro_results_missing_confidence_scores(self):
+        """Test parsing when confidence scores are missing (None)."""
+        md5_to_identifier = {"ABC123": "P12345"}
+        annotations = ["pfam"]
+
+        api_results = [
+            {
+                "md5": "ABC123",
+                "found": True,
+                "matches": [
+                    {
+                        "signature": {
+                            "accession": "PF00001",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        # Missing score field
+                    }
+                ],
+            }
+        ]
+
+        retriever = InterProAnnotationRetriever(annotations=annotations)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+
+        assert len(result) == 1
+        assert result[0].identifier == "P12345"
+        # Should handle missing confidence scores gracefully (no scores, just accession)
+        assert result[0].annotations["pfam"] == "PF00001"
+        assert "pfam_score" not in result[0].annotations
+
+    def test_parse_interpro_results_duplicate_accessions(self):
+        """Test that duplicate accessions collect all scores."""
+        md5_to_identifier = {"ABC123": "P12345"}
+        annotations = ["pfam"]
+
+        api_results = [
+            {
+                "md5": "ABC123",
+                "found": True,
+                "matches": [
+                    {
+                        "signature": {
+                            "accession": "PF00001",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 50.2,
+                    },
+                    {
+                        "signature": {
+                            "accession": "PF00001",  # Duplicate
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 60.5,  # Different score
+                    },
+                ],
+            }
+        ]
+
+        retriever = InterProAnnotationRetriever(annotations=annotations)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+
+        assert len(result) == 1
+        assert result[0].identifier == "P12345"
+        # Should collect all scores for the same accession
+        assert result[0].annotations["pfam"] == "PF00001|50.2,60.5"
+        assert "pfam_score" not in result[0].annotations
+
+    def test_parse_interpro_results_multidomain(self):
+        """Test parsing of multidomain proteins (multiple different accessions)."""
+        md5_to_identifier = {"ABC123": "P12345"}
+        annotations = ["pfam"]
+
+        api_results = [
+            {
+                "md5": "ABC123",
+                "found": True,
+                "matches": [
+                    {
+                        "signature": {
+                            "accession": "PF00001",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 50.2,
+                    },
+                    {
+                        "signature": {
+                            "accession": "PF00002",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 60.5,
+                    },
+                    {
+                        "signature": {
+                            "accession": "PF00003",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 45.8,
+                    },
+                ],
+            }
+        ]
+
+        retriever = InterProAnnotationRetriever(annotations=annotations)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+
+        assert len(result) == 1
+        assert result[0].identifier == "P12345"
+        # Should format multiple domains with semicolons, sorted by accession
+        assert result[0].annotations["pfam"] == "PF00001|50.2;PF00002|60.5;PF00003|45.8"
+        assert "pfam_score" not in result[0].annotations
+
+    def test_parse_interpro_results_multidomain_with_duplicates(self):
+        """Test multidomain proteins with some domains appearing multiple times."""
+        md5_to_identifier = {"ABC123": "P12345"}
+        annotations = ["pfam"]
+
+        api_results = [
+            {
+                "md5": "ABC123",
+                "found": True,
+                "matches": [
+                    {
+                        "signature": {
+                            "accession": "PF00001",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 50.2,
+                    },
+                    {
+                        "signature": {
+                            "accession": "PF00001",  # Duplicate
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 52.1,
+                    },
+                    {
+                        "signature": {
+                            "accession": "PF00002",
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 60.5,
+                    },
+                    {
+                        "signature": {
+                            "accession": "PF00001",  # Another duplicate
+                            "signatureLibraryRelease": {"library": "Pfam"},
+                        },
+                        "score": 51.0,
+                    },
+                ],
+            }
+        ]
+
+        retriever = InterProAnnotationRetriever(annotations=annotations)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+
+        assert len(result) == 1
+        assert result[0].identifier == "P12345"
+        # Should collect all scores for PF00001, and include PF00002
+        # Sorted by accession, so PF00001 comes first
+        assert result[0].annotations["pfam"] == "PF00001|50.2,52.1,51.0;PF00002|60.5"
+        assert "pfam_score" not in result[0].annotations
 
 
 def test_interpro_annotations_constant():

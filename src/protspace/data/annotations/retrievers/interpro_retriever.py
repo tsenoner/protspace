@@ -40,6 +40,15 @@ class InterProRetriever(BaseAnnotationRetriever):
     - SUPERFAMILY (key: superfamily)
     - CATH-Gene3D (key: cath)
     - Phobius signal peptides (key: signal_peptide)
+
+    Annotations are stored with confidence scores in a pipe-separated format:
+    - Format: accession|score1,score2,score3;accession2|score1
+    - | separates accession from scores
+    - , separates multiple scores for the same accession (when it appears multiple times)
+    - ; separates different accessions
+    - Count is inferred from the number of comma-separated scores
+
+    Example: 'pfam': 'PF00001|50.2,52.1,51.0;PF00002|60.5'
     """
 
     def __init__(
@@ -179,23 +188,29 @@ class InterProRetriever(BaseAnnotationRetriever):
         self, api_results: list[dict], md5_to_identifier: dict[str, str]
     ) -> list[NamedTuple]:
         """
-        Parse InterPro API results and extract relevant annotations.
+        Parse InterPro API results and extract relevant annotations with confidence scores.
 
         Args:
             api_results: Raw API results from InterPro
             md5_to_identifier: Mapping from MD5 hash to protein identifier
 
         Returns:
-            List of ProteinAnnotations with parsed InterPro data
+            List of ProteinAnnotations with parsed InterPro data in pipe-separated format:
+            - Format: accession|score1,score2,score3;accession2|score1
+            - Example: 'pfam': 'PF00001|50.2,52.1,51.0;PF00002|60.5'
+
+            All scores for each accession are collected and stored together.
         """
         # Create reverse mapping from API database names to our keys
         api_to_key = {v: k for k, v in INTERPRO_MAPPING.items()}
 
         # Initialize annotation dictionary for each protein
+        # Store accessions and scores separately to maintain correspondence
         protein_annotations = {}
         for identifier in md5_to_identifier.values():
             protein_annotations[identifier] = {
-                annotation: [] for annotation in self.annotations
+                annotation: {"accessions": [], "scores": []}
+                for annotation in self.annotations
             }
 
         # Parse API results
@@ -217,22 +232,51 @@ class InterProRetriever(BaseAnnotationRetriever):
                     if annotation_key in self.annotations:
                         signature_accession = signature.get("accession", "")
                         if signature_accession:
-                            protein_annotations[protein_id][annotation_key].append(
-                                signature_accession
-                            )
+                            # Extract confidence score from match
+                            score = match.get("score")
+
+                            protein_annotations[protein_id][annotation_key][
+                                "accessions"
+                            ].append(signature_accession)
+                            # Store score, using empty string if not available
+                            protein_annotations[protein_id][annotation_key][
+                                "scores"
+                            ].append(str(score) if score is not None else "")
 
         # Convert to ProteinAnnotations objects
         result = []
         for identifier, annotations_dict in protein_annotations.items():
-            # Convert lists to comma-separated strings (similar to UniProt format)
+            # Convert to pipe-separated format: accession|score1,score2;accession2|score1
             processed_annotations = {}
-            for annotation_name, annotation_list in annotations_dict.items():
-                if annotation_list:
-                    # Remove duplicates and sort for consistency
-                    unique_annotations = sorted(set(annotation_list))
-                    processed_annotations[annotation_name] = ";".join(
-                        unique_annotations
-                    )
+            for annotation_name, annotation_data in annotations_dict.items():
+                accessions = annotation_data["accessions"]
+                scores = annotation_data["scores"]
+
+                if accessions:
+                    # Group all scores by accession (collect all occurrences)
+                    accession_to_scores = {}
+                    for acc, sc in zip(accessions, scores, strict=True):
+                        if acc not in accession_to_scores:
+                            accession_to_scores[acc] = []
+                        # Only add non-empty scores
+                        if sc:
+                            accession_to_scores[acc].append(sc)
+
+                    # Sort by accession for consistency
+                    sorted_accessions = sorted(accession_to_scores.keys())
+
+                    # Format as: accession|score1,score2,score3;accession2|score1
+                    formatted_parts = []
+                    for acc in sorted_accessions:
+                        score_list = accession_to_scores[acc]
+                        if score_list:
+                            # Format: accession|score1,score2,score3
+                            formatted_parts.append(f"{acc}|{','.join(score_list)}")
+                        else:
+                            # If no scores, just include accession
+                            formatted_parts.append(acc)
+
+                    processed_annotations[annotation_name] = ";".join(formatted_parts)
                 else:
                     processed_annotations[annotation_name] = ""
 

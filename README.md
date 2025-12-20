@@ -83,7 +83,7 @@ If `-a` is not specified, all available annotations are retrieved.
 
 **UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_name`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
 
-**InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily`
+**InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily` (includes confidence scores in pipe-separated format: `accession|score1,score2;accession2|score1`)
 
 **Taxonomy**: `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
 
