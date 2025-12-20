@@ -262,7 +262,7 @@ class TestLengthBinner:
         for protein in result:
             assert "length_fixed" in protein.annotations
             assert "length_quantile" in protein.annotations
-            assert "length" not in protein.annotations  # Original length is removed
+            assert "length" in protein.annotations  # Original length is kept for caching
 
         # Verify binning
         assert result[0].annotations["length_fixed"] == "100-200"
@@ -574,6 +574,78 @@ class TestIntegration:
         # Should only have identifier + requested annotations
         expected_columns = {"identifier", "length_fixed", "genus"}
         assert set(result.columns) == expected_columns
+
+    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_internal_columns_removed_from_output(
+        self, mock_uniprot_retriever, mock_taxonomy_retriever
+    ):
+        """Test that internal columns (organism_id, length) are removed from final output."""
+        # Setup mocks
+        mock_uniprot_instance = Mock()
+        mock_uniprot_instance.fetch_annotations.return_value = (
+            SAMPLE_PROTEIN_ANNOTATIONS
+        )
+        mock_uniprot_retriever.return_value = mock_uniprot_instance
+
+        mock_taxonomy_instance = Mock()
+        mock_taxonomy_instance.fetch_annotations.return_value = (
+            SAMPLE_TAXONOMY_ANNOTATIONS
+        )
+        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
+
+        # Test with default annotations (no specific annotations requested)
+        headers = SAMPLE_HEADERS
+        extractor = ProteinAnnotationExtractor(headers=headers)
+
+        result = extractor.to_pd()
+
+        # Internal columns should never appear in final output
+        assert "organism_id" not in result.columns
+        assert "length" not in result.columns
+        assert "sequence" not in result.columns
+
+        # But derived annotations should be present
+        assert "length_fixed" in result.columns
+        assert "length_quantile" in result.columns
+
+    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_internal_columns_kept_in_cache_file(
+        self, mock_uniprot_retriever, mock_taxonomy_retriever
+    ):
+        """Test that internal columns are kept in cache file but removed from returned DataFrame."""
+        # Setup mocks
+        mock_uniprot_instance = Mock()
+        mock_uniprot_instance.fetch_annotations.return_value = (
+            SAMPLE_PROTEIN_ANNOTATIONS
+        )
+        mock_uniprot_retriever.return_value = mock_uniprot_instance
+
+        mock_taxonomy_instance = Mock()
+        mock_taxonomy_instance.fetch_annotations.return_value = (
+            SAMPLE_TAXONOMY_ANNOTATIONS
+        )
+        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "cache.parquet"
+            headers = SAMPLE_HEADERS
+            extractor = ProteinAnnotationExtractor(
+                headers=headers, output_path=cache_path
+            )
+
+            result = extractor.to_pd()
+
+            # Cache file should contain internal columns for future cache hits
+            cached_df = pd.read_parquet(cache_path)
+            assert "organism_id" in cached_df.columns
+            assert "length" in cached_df.columns
+
+            # But returned DataFrame should not have them
+            assert "organism_id" not in result.columns
+            assert "length" not in result.columns
+            assert "sequence" not in result.columns
 
 
 class TestConstants:

@@ -148,9 +148,12 @@ class ProteinAnnotationManager:
         else:
             df = DataFormatter.to_dataframe(transformed_annotations)
 
-        # 5. Always remove organism_id from final output (it's only needed internally)
-        if "organism_id" in df.columns:
-            df = df.drop(columns=["organism_id"])
+        # 5. Always remove internal-only columns from final output
+        # (organism_id for taxonomy, length for binning, sequence for InterPro)
+        internal_columns = ["organism_id", "length", "sequence"]
+        columns_to_drop = [col for col in internal_columns if col in df.columns]
+        if columns_to_drop:
+            df = df.drop(columns=columns_to_drop)
 
         # 6. Filter columns if user requested specific annotations
         if self.user_annotations:
@@ -159,17 +162,8 @@ class ProteinAnnotationManager:
             ]
             columns_to_keep = [df.columns[0]] + annotations_to_keep
             return df[columns_to_keep]
-        else:
-            # Filter out sequence if it was auto-added for InterPro but not explicitly requested
-            if (
-                self.config.interpro_annotations
-                and "sequence" in df.columns
-                and (
-                    not self.user_annotations or "sequence" not in self.user_annotations
-                )
-            ):
-                df = df.drop(columns=["sequence"])
-            return df
+
+        return df
 
     def _fetch_uniprot(self, failed_sources: list) -> list[ProteinAnnotations]:
         """Fetch UniProt annotations."""

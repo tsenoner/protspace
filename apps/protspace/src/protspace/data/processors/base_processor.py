@@ -172,6 +172,12 @@ class BaseProcessor:
         if self.identifier_col != "protein_id":
             df = df.rename(columns={self.identifier_col: "protein_id"})
 
+        # Remove internal columns that are only needed for processing/caching
+        internal_columns = ["organism_id", "length", "sequence"]
+        cols_to_drop = [c for c in internal_columns if c in df.columns]
+        if cols_to_drop:
+            df = df.drop(columns=cols_to_drop)
+
         df = df.fillna("").astype(str)
 
         return pa.Table.from_pandas(df)
