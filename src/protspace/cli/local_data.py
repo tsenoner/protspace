@@ -40,14 +40,25 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "-i",
         "--input",
         type=Path,
+        nargs="+",
         required=True,
         help=(
-            "Path to input data file.\n"
+            "Path(s) to input data file(s) or directory.\n"
             "Supported formats:\n"
-            "  - HDF5 files (.h5, .hdf5, .hdf) containing protein embeddings\n"
-            "  - CSV files containing precomputed similarity matrices\n"
+            "  - Single HDF5 file (.h5, .hdf5, .hdf) containing protein embeddings\n"
+            "  - Multiple HDF5 files (automatically merged)\n"
+            "  - Directory containing multiple HDF5 files (automatically merged)\n"
+            "  - CSV file containing precomputed similarity matrix\n"
             "\n"
-            "The file must contain protein IDs (e.g., UniProt accessions)."
+            "Examples:\n"
+            "  --input data/embeddings.h5\n"
+            "  --input data/batch1.h5 data/batch2.h5 data/batch3.h5\n"
+            "  --input data/embs/\n"
+            "\n"
+            "When multiple files or a directory are provided, all .h5 files will be\n"
+            "loaded and merged. Duplicate protein IDs will be handled (first occurrence kept).\n"
+            "\n"
+            "Files must contain protein IDs (e.g., UniProt accessions)."
         ),
     )
 
@@ -141,13 +152,18 @@ def main():
     try:
         processor = LocalProcessor(args_dict)
 
-        # Load input file first to get headers (needed for path computation)
-        data, headers = processor.load_input_file(args.input)
+        # Load input file(s) first to get headers (needed for path computation)
+        # Handle both single and multiple inputs
+        input_paths = args.input if isinstance(args.input, list) else [args.input]
+        data, headers = processor.load_input_files(input_paths)
+
+        # Use first input path for output path determination
+        primary_input = input_paths[0]
 
         # Determine output paths with headers for hash computation
         output_path, intermediate_dir = determine_output_paths(
             output_arg=args.output,
-            input_path=args.input,
+            input_path=primary_input,
             non_binary=args.non_binary,
             bundled=args.bundled == "true",
             keep_tmp=args.keep_tmp,

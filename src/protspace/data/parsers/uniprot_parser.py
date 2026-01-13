@@ -183,8 +183,15 @@ class UniProtEntry:
 
     @property
     def fragment(self) -> str:
-        """Fragment type (if sequence is partial)."""
-        return self.data.get("sequence", {}).get("fragment", "")
+        """Fragment type (if sequence is partial).
+
+        Returns 'fragment' if the protein is a fragment, empty string otherwise.
+        The flag field may contain 'Fragment', 'Precursor', or 'Fragment,Precursor'.
+        """
+        flag = self.data.get("proteinDescription", {}).get("flag", "")
+        if "Fragment" in flag:
+            return "fragment"
+        return ""
 
     @property
     def ft_non_adj(self) -> list[str]:

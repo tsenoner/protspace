@@ -38,43 +38,106 @@ class LocalProcessor(BaseProcessor):
         # Initialize base class with cleaned config and reducers
         super().__init__(clean_config, REDUCERS)
 
-    def load_input_file(self, input_path: Path) -> tuple[np.ndarray, list[str]]:
-        if input_path.suffix.lower() in EMBEDDING_EXTENSIONS:
-            logger.info("Loading embeddings from HDF file")
-            data, headers = [], []
-            with h5py.File(input_path, "r") as hdf_handle:
+    def _load_h5_files(self, h5_files: list[Path]) -> tuple[np.ndarray, list[str]]:
+        """
+        Load and merge H5 files.
+
+        Args:
+            h5_files: List of paths to H5 files
+
+        Returns:
+            Tuple of (data array, list of headers)
+        """
+        data, headers = [], []
+        seen_ids = set()
+        duplicates_count = 0
+
+        for h5_file in h5_files:
+            with h5py.File(h5_file, "r") as hdf_handle:
                 for header, emb in hdf_handle.items():
+                    if header in seen_ids:
+                        duplicates_count += 1
+                        continue  # Skip duplicates, keep first occurrence
+
                     emb = np.array(emb).flatten()
                     data.append(emb)
                     headers.append(header)
-            data = np.array(data)
+                    seen_ids.add(header)
 
-            # Check for NaN values and filter them out
-            nan_mask = np.isnan(data).any(axis=1)
-            if nan_mask.any():
-                num_nan = nan_mask.sum()
-                total = len(data)
-                logger.warning(
-                    f"Found {num_nan} embeddings with NaN values out of {total} total. "
-                    f"Removing these entries ({num_nan / total * 100:.2f}%)."
+        if duplicates_count > 0:
+            logger.warning(
+                f"Found {duplicates_count} duplicate protein IDs across files. "
+                f"Kept first occurrence of each."
+            )
+
+        data = np.array(data)
+
+        # Check for NaN values and filter them out
+        nan_mask = np.isnan(data).any(axis=1)
+        if nan_mask.any():
+            num_nan = nan_mask.sum()
+            total = len(data)
+            logger.warning(
+                f"Found {num_nan} embeddings with NaN values out of {total} total. "
+                f"Removing these entries ({num_nan / total * 100:.2f}%)."
+            )
+            data = data[~nan_mask]
+            headers = [
+                h for h, is_nan in zip(headers, nan_mask, strict=True) if not is_nan
+            ]
+
+            if len(data) == 0:
+                raise ValueError(
+                    "All embeddings contain NaN values. Please check your input file."
                 )
-                # Keep only rows without NaN
-                data = data[~nan_mask]
-                headers = [
-                    h for h, is_nan in zip(headers, nan_mask, strict=True) if not is_nan
-                ]
 
-                if len(data) == 0:
-                    raise ValueError(
-                        "All embeddings contain NaN values. Please check your input file."
-                    )
+        return data, headers
 
-            return data, headers
+    def load_input_files(self, input_paths: list[Path]) -> tuple[np.ndarray, list[str]]:
+        """
+        Load input from one or more paths (files or directories).
 
-        elif input_path.suffix.lower() == ".csv":
+        Args:
+            input_paths: List of paths to files or directories
+
+        Returns:
+            Tuple of (data array, list of headers)
+        """
+        # Collect all files to process
+        embedding_files = []
+        csv_file = None
+
+        for path in input_paths:
+            if path.is_dir():
+                # Collect all embedding files from directory (all extensions)
+                dir_files = []
+                for ext in EMBEDDING_EXTENSIONS:
+                    dir_files.extend(path.glob(f"*{ext}"))
+
+                if not dir_files:
+                    logger.warning(f"No embedding files found in directory: {path}")
+                embedding_files.extend(sorted(dir_files))
+            elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
+                # Add embedding file directly
+                embedding_files.append(path)
+            elif path.suffix.lower() == ".csv":
+                if csv_file is not None:
+                    raise ValueError("Only one CSV file can be provided")
+                csv_file = path
+            else:
+                raise ValueError(
+                    f"Unsupported file type: {path}. "
+                    f"Must be HDF5 files (.h5, .hdf5, .hdf), directories, or CSV file."
+                )
+
+        # Handle CSV (similarity matrix)
+        if csv_file is not None:
+            if embedding_files:
+                raise ValueError("Cannot mix CSV and HDF5 inputs")
+
             logger.info("Loading similarity matrix from CSV file")
             self.config["precomputed"] = True
-            sim_matrix = pd.read_csv(input_path, index_col=0)
+            sim_matrix = pd.read_csv(csv_file, index_col=0)
             if not sim_matrix.index.equals(sim_matrix.columns):
                 raise ValueError(
                     "Similarity matrix must have matching row and column labels"
@@ -91,10 +154,12 @@ class LocalProcessor(BaseProcessor):
 
             return data, headers
 
-        else:
-            raise ValueError(
-                "Input file must be either HDF (.hdf, .hdf5, .h5) or CSV (.csv)"
-            )
+        # Handle HDF5 files
+        if not embedding_files:
+            raise FileNotFoundError("No embedding files found in provided paths")
+
+        logger.info(f"Loading embeddings from {len(embedding_files)} HDF file(s)")
+        return self._load_h5_files(embedding_files)
 
     @staticmethod
     def load_or_generate_metadata(

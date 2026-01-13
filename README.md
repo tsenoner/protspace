@@ -83,7 +83,7 @@ If `-a` is not specified, all available annotations are retrieved.
 
 **UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_name`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
 
-**InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily` (includes confidence scores in pipe-separated format: `accession|score1,score2;accession2|score1`)
+**InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily` (includes signature names and confidence scores in pipe-separated format: `accession (name)|score1,score2;accession2 (name2)|score1`)
 
 **Taxonomy**: `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
 
@@ -103,7 +103,7 @@ protspace-query -q "..." --annotations reviewed,length_quantile,kingdom
 
 **protspace-local** (Local data):
 
-- `-i, --input`: HDF5 embeddings or CSV similarity matrix (required)
+- `-i, --input`: HDF5 file(s)/directory or CSV similarity matrix (required, supports multiple inputs)
 - `-o, --output`: Output file or directory (optional, default: derived from input filename)
 - `-a, --annotations`: Annotations to extract (comma-separated) or CSV metadata file path
 - `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
@@ -123,7 +123,7 @@ protspace-query -q "..." --annotations reviewed,length_quantile,kingdom
 
 ### Method Default Parameters
 
-Followng the default parameters for each method. Override these to fine-tune dimensionality reduction:
+Following the default parameters for each method. Override these to fine-tune dimensionality reduction:
 
 - **UMAP**: `--n_neighbors 15 --min_dist 0.1`
 - **t-SNE**: `--perplexity 30 --learning_rate 200`
@@ -148,7 +148,7 @@ Available shapes: `circle`, `circle-open`, `cross`, `diamond`, `diamond-open`, `
 ### Input
 
 - **UniProt queries**: Text queries using UniProt syntax
-- **Embeddings**: HDF5 files (.h5, .hdf5)
+- **Embeddings**: HDF5 files (.h5, .hdf5, .hdf) - supports single/multiple files and directories
 - **Similarity matrices**: CSV files with symmetric matrices
 - **Metadata**: CSV with protein identifiers in the first column + annotation columns
 - **Structures**: ZIP files containing PDB/CIF files
