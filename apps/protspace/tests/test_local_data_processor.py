@@ -31,6 +31,32 @@ SAMPLE_METADATA_DF = pd.DataFrame(
 )
 
 
+# Helper functions for test setup
+def create_mock_h5_file(data_dict: dict[str, np.ndarray]) -> MagicMock:
+    """Create a mock HDF5 file with the given data.
+
+    Args:
+        data_dict: Dictionary mapping protein IDs to embeddings
+
+    Returns:
+        Mock HDF5 file object
+    """
+    mock_file = MagicMock()
+    mock_file.items.return_value = list(data_dict.items())
+    return mock_file
+
+
+def setup_mock_h5_files(mock_h5py_file, *file_data: dict[str, np.ndarray]) -> None:
+    """Setup multiple mock HDF5 files for testing.
+
+    Args:
+        mock_h5py_file: The mocked h5py.File object
+        *file_data: Variable number of dictionaries, each mapping protein IDs to embeddings
+    """
+    mock_files = [create_mock_h5_file(data) for data in file_data]
+    mock_h5py_file.return_value.__enter__.side_effect = mock_files
+
+
 class TestLocalDataProcessorInit:
     """Test LocalDataProcessor initialization."""
 
@@ -72,27 +98,26 @@ class TestLocalDataProcessorInit:
         assert set(processor.reducers.keys()) == set(REDUCERS.keys())
 
 
-class TestLoadInputFile:
-    """Test the load_input_file method."""
+class TestLoadInputFiles:
+    """Test the load_input_files method."""
 
     @patch("src.protspace.data.processors.local_processor.h5py.File")
-    def test_load_input_file_hdf5(self, mock_h5py_file):
-        """Test loading embeddings from HDF5 file."""
-        # Setup mock HDF5 file
-        mock_file = MagicMock()
-        mock_h5py_file.return_value.__enter__.return_value = mock_file
-
-        # Mock HDF5 file structure
-        mock_file.items.return_value = [
-            ("P01308", np.array([0.1, 0.2, 0.3, 0.4])),
-            ("P01315", np.array([0.5, 0.6, 0.7, 0.8])),
-            ("P01316", np.array([0.9, 1.0, 1.1, 1.2])),
-        ]
+    def test_load_single_hdf5_file(self, mock_h5py_file):
+        """Test loading embeddings from single HDF5 file."""
+        # Setup mock using helper
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {
+                "P01308": np.array([0.1, 0.2, 0.3, 0.4]),
+                "P01315": np.array([0.5, 0.6, 0.7, 0.8]),
+                "P01316": np.array([0.9, 1.0, 1.1, 1.2]),
+            },
+        )
 
         processor = LocalDataProcessor({})
         input_path = Path("test_embeddings.h5")
 
-        data, headers = processor.load_input_file(input_path)
+        data, headers = processor.load_input_files([input_path])
 
         # Verify results
         assert len(headers) == 3
@@ -103,7 +128,7 @@ class TestLoadInputFile:
         # Verify HDF5 file was opened
         mock_h5py_file.assert_called_once_with(input_path, "r")
 
-    def test_load_input_file_csv(self):
+    def test_load_single_csv_file(self):
         """Test loading similarity matrix from CSV file."""
         processor = LocalDataProcessor({})
 
@@ -115,14 +140,14 @@ class TestLoadInputFile:
         with patch("pandas.read_csv", return_value=csv_data):
             input_path = Path("test_similarity.csv")
 
-            data, headers = processor.load_input_file(input_path)
+            data, headers = processor.load_input_files([input_path])
 
             # Verify results
             assert headers == SAMPLE_HEADERS
             np.testing.assert_array_almost_equal(data, SAMPLE_SIMILARITY_MATRIX)
             assert processor.config.get("precomputed") is True
 
-    def test_load_input_file_csv_asymmetric_matrix(self):
+    def test_load_csv_asymmetric_matrix(self):
         """Test loading asymmetric similarity matrix gets symmetrized."""
         processor = LocalDataProcessor({})
 
@@ -142,13 +167,13 @@ class TestLoadInputFile:
         with patch("pandas.read_csv", return_value=csv_data):
             input_path = Path("test_asymmetric.csv")
 
-            data, headers = processor.load_input_file(input_path)
+            data, headers = processor.load_input_files([input_path])
 
             # Verify matrix was symmetrized
             np.testing.assert_array_equal(data, data.T)
             assert headers == SAMPLE_HEADERS
 
-    def test_load_input_file_csv_mismatched_labels(self):
+    def test_load_csv_mismatched_labels(self):
         """Test error handling for CSV with mismatched row/column labels."""
         processor = LocalDataProcessor({})
 
@@ -166,15 +191,199 @@ class TestLoadInputFile:
                 ValueError,
                 match="Similarity matrix must have matching row and column labels",
             ):
-                processor.load_input_file(input_path)
+                processor.load_input_files([input_path])
 
-    def test_load_input_file_unsupported_format(self):
+    def test_load_unsupported_format(self):
         """Test error handling for unsupported file format."""
         processor = LocalDataProcessor({})
         input_path = Path("test_file.txt")
 
-        with pytest.raises(ValueError, match="Input file must be either HDF"):
-            processor.load_input_file(input_path)
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            processor.load_input_files([input_path])
+
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_multiple_hdf5_files(self, mock_h5py_file):
+        """Test loading and merging multiple HDF5 files."""
+        # Setup mock using helper
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {
+                "P01308": np.array([0.1, 0.2, 0.3, 0.4]),
+                "P01315": np.array([0.5, 0.6, 0.7, 0.8]),
+            },
+            {"P01316": np.array([0.9, 1.0, 1.1, 1.2])},
+        )
+
+        processor = LocalDataProcessor({})
+        input_paths = [Path("batch1.h5"), Path("batch2.h5")]
+
+        data, headers = processor.load_input_files(input_paths)
+
+        # Verify results
+        assert len(headers) == 3
+        assert headers == SAMPLE_HEADERS
+        assert data.shape == (3, 4)
+        np.testing.assert_array_almost_equal(data, SAMPLE_EMBEDDINGS)
+
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_multiple_hdf5_with_duplicates(self, mock_h5py_file):
+        """Test that duplicate protein IDs are handled correctly."""
+        # Setup mock with duplicate P01308 in second file
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {
+                "P01308": np.array([0.1, 0.2, 0.3, 0.4]),
+                "P01315": np.array([0.5, 0.6, 0.7, 0.8]),
+            },
+            {
+                "P01308": np.array(
+                    [9.9, 9.9, 9.9, 9.9]
+                ),  # Duplicate, should be skipped
+                "P01316": np.array([0.9, 1.0, 1.1, 1.2]),
+            },
+        )
+
+        processor = LocalDataProcessor({})
+        input_paths = [Path("batch1.h5"), Path("batch2.h5")]
+
+        data, headers = processor.load_input_files(input_paths)
+
+        # Verify P01308 appears once with first occurrence values
+        assert len(headers) == 3
+        assert headers == SAMPLE_HEADERS
+        assert data.shape == (3, 4)
+        # First row should be from first file, not second
+        np.testing.assert_array_almost_equal(data[0], [0.1, 0.2, 0.3, 0.4])
+
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_directory_with_hdf5_files(self, mock_h5py_file):
+        """Test loading all HDF5 files from a directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create mock H5 files in directory
+            dir_path = Path(temp_dir)
+            h5_file1 = dir_path / "batch1.h5"
+            h5_file2 = dir_path / "batch2.hdf5"
+            h5_file1.touch()
+            h5_file2.touch()
+
+            # Setup mocks using helper
+            setup_mock_h5_files(
+                mock_h5py_file,
+                {"P01308": np.array([0.1, 0.2, 0.3, 0.4])},
+                {"P01315": np.array([0.5, 0.6, 0.7, 0.8])},
+            )
+
+            processor = LocalDataProcessor({})
+            data, headers = processor.load_input_files([dir_path])
+
+            # Verify both files were loaded
+            assert len(headers) == 2
+            assert "P01308" in headers
+            assert "P01315" in headers
+
+    def test_load_mixed_csv_and_hdf5_raises_error(self):
+        """Test that mixing CSV and HDF5 files raises an error."""
+        processor = LocalDataProcessor({})
+        input_paths = [Path("data.h5"), Path("similarity.csv")]
+
+        with pytest.raises(ValueError, match="Cannot mix CSV and HDF5 inputs"):
+            processor.load_input_files(input_paths)
+
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_multiple_hdf5_with_nan_filtering(self, mock_h5py_file):
+        """Test that NaN values are filtered when merging multiple HDF5 files."""
+        # Setup mock files with some NaN embeddings
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {
+                "P01308": np.array([0.1, 0.2, 0.3, 0.4]),  # Valid
+                "P01309": np.array([0.5, np.nan, 0.7, 0.8]),  # Contains NaN
+            },
+            {"P01315": np.array([0.5, 0.6, 0.7, 0.8])},  # Valid
+            {
+                "P01316": np.array([0.9, 1.0, 1.1, 1.2]),  # Valid
+                "P01317": np.array([np.nan, np.nan, np.nan, np.nan]),  # All NaN
+            },
+        )
+
+        processor = LocalDataProcessor({})
+        input_paths = [Path("batch1.h5"), Path("batch2.h5"), Path("batch3.h5")]
+
+        data, headers = processor.load_input_files(input_paths)
+
+        # Verify NaN entries were filtered out
+        assert len(headers) == 3  # Only valid proteins
+        assert "P01308" in headers
+        assert "P01315" in headers
+        assert "P01316" in headers
+        assert "P01309" not in headers  # Filtered due to NaN
+        assert "P01317" not in headers  # Filtered due to all NaN
+
+        # Verify data has no NaN values
+        assert not np.isnan(data).any()
+        assert data.shape == (3, 4)
+
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_directory_with_mixed_extensions(self, mock_h5py_file):
+        """Test loading HDF5 files with different extensions from a directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create mock H5 files with different extensions
+            dir_path = Path(temp_dir)
+            h5_file = dir_path / "batch1.h5"
+            hdf5_file = dir_path / "batch2.hdf5"
+            hdf_file = dir_path / "batch3.hdf"
+            h5_file.touch()
+            hdf5_file.touch()
+            hdf_file.touch()
+
+            # Setup mocks using helper
+            setup_mock_h5_files(
+                mock_h5py_file,
+                {"P01308": np.array([0.1, 0.2, 0.3, 0.4])},
+                {"P01315": np.array([0.5, 0.6, 0.7, 0.8])},
+                {"P01316": np.array([0.9, 1.0, 1.1, 1.2])},
+            )
+
+            processor = LocalDataProcessor({})
+            data, headers = processor.load_input_files([dir_path])
+
+            # Verify all three files were loaded (all extensions)
+            assert len(headers) == 3
+            assert set(headers) == {"P01308", "P01315", "P01316"}
+            assert data.shape == (3, 4)
+
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_mixed_files_and_directory(self, mock_h5py_file):
+        """Test loading from both individual files and a directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create directory with H5 files
+            dir_path = Path(temp_dir) / "embs"
+            dir_path.mkdir()
+            dir_file1 = dir_path / "batch1.h5"
+            dir_file2 = dir_path / "batch2.h5"
+            dir_file1.touch()
+            dir_file2.touch()
+
+            # Create standalone file
+            standalone_file = Path(temp_dir) / "standalone.h5"
+            standalone_file.touch()
+
+            # Setup mocks using helper
+            setup_mock_h5_files(
+                mock_h5py_file,
+                {"P01308": np.array([0.1, 0.2, 0.3, 0.4])},
+                {"P01315": np.array([0.5, 0.6, 0.7, 0.8])},
+                {"P01316": np.array([0.9, 1.0, 1.1, 1.2])},
+            )
+
+            processor = LocalDataProcessor({})
+            # Mix directory and individual file
+            data, headers = processor.load_input_files([dir_path, standalone_file])
+
+            # Verify all files were loaded
+            assert len(headers) == 3
+            assert set(headers) == {"P01308", "P01315", "P01316"}
+            assert data.shape == (3, 4)
 
 
 class TestLoadOrGenerateMetadata:
@@ -313,13 +522,13 @@ class TestLoadOrGenerateMetadata:
 
 
 class TestPublicMethods:
-    """Test the main public methods (load_input_file and load_or_generate_metadata)."""
+    """Test the main public methods (load_input_files and load_or_generate_metadata)."""
 
     @patch(
         "src.protspace.data.processors.local_processor.LocalProcessor.load_or_generate_metadata"
     )
     @patch(
-        "src.protspace.data.processors.local_processor.LocalProcessor.load_input_file"
+        "src.protspace.data.processors.local_processor.LocalProcessor.load_input_files"
     )
     def test_load_methods_success(self, mock_load_input, mock_load_metadata):
         """Test successful data loading using public methods."""
@@ -334,7 +543,7 @@ class TestPublicMethods:
             annotations_path = Path(temp_dir) / "metadata.csv"
 
             # Call public methods separately (like CLI does)
-            data, headers = processor.load_input_file(input_path)
+            data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
                 annotations=annotations_path,
@@ -362,14 +571,14 @@ class TestPublicMethods:
             assert headers == SAMPLE_HEADERS
 
             # Verify method calls
-            mock_load_input.assert_called_once_with(input_path)
+            mock_load_input.assert_called_once_with([input_path])
             mock_load_metadata.assert_called_once()
 
     @patch(
         "src.protspace.data.processors.local_processor.LocalProcessor.load_or_generate_metadata"
     )
     @patch(
-        "src.protspace.data.processors.local_processor.LocalProcessor.load_input_file"
+        "src.protspace.data.processors.local_processor.LocalProcessor.load_input_files"
     )
     def test_load_methods_with_partial_metadata(
         self, mock_load_input, mock_load_metadata
@@ -393,7 +602,7 @@ class TestPublicMethods:
             input_path = Path(temp_dir) / "input.h5"
 
             # Call public methods separately (like CLI does)
-            data, headers = processor.load_input_file(input_path)
+            data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
                 annotations="length,organism",
@@ -439,14 +648,15 @@ class TestIntegration:
     @patch("src.protspace.data.processors.local_processor.h5py.File")
     def test_end_to_end_hdf5_workflow(self, mock_h5py_file, mock_annotation_extractor):
         """Test complete workflow from HDF5 input to final data."""
-        # Setup HDF5 mock
-        mock_file = MagicMock()
-        mock_h5py_file.return_value.__enter__.return_value = mock_file
-        mock_file.items.return_value = [
-            ("P01308", np.array([0.1, 0.2, 0.3, 0.4])),
-            ("P01315", np.array([0.5, 0.6, 0.7, 0.8])),
-            ("P01316", np.array([0.9, 1.0, 1.1, 1.2])),
-        ]
+        # Setup HDF5 mock using helper
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {
+                "P01308": np.array([0.1, 0.2, 0.3, 0.4]),
+                "P01315": np.array([0.5, 0.6, 0.7, 0.8]),
+                "P01316": np.array([0.9, 1.0, 1.1, 1.2]),
+            },
+        )
 
         # Setup ProteinAnnotationManager mock
         mock_extractor_instance = Mock()
@@ -459,7 +669,7 @@ class TestIntegration:
             input_path = Path(temp_dir) / "embeddings.h5"
 
             # Call public methods separately (like CLI does)
-            data, headers = processor.load_input_file(input_path)
+            data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
                 annotations="length,organism",
@@ -506,7 +716,7 @@ class TestIntegration:
             SAMPLE_METADATA_DF.to_csv(annotations_csv_path, index=False)
 
             # Call public methods separately (like CLI does)
-            data, headers = processor.load_input_file(sim_csv_path)
+            data, headers = processor.load_input_files([sim_csv_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
                 annotations=str(annotations_csv_path),
@@ -557,7 +767,7 @@ class TestIntegration:
             custom_metadata.to_csv(annotations_csv_path, index=False)
 
             # Call public methods separately (like CLI does)
-            data, headers = processor.load_input_file(sim_csv_path)
+            data, headers = processor.load_input_files([sim_csv_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
                 annotations=str(annotations_csv_path),
@@ -602,15 +812,13 @@ class TestIntegration:
         with patch(
             "src.protspace.data.processors.local_processor.h5py.File"
         ) as mock_h5py:
-            mock_file = MagicMock()
-            mock_h5py.return_value.__enter__.return_value = mock_file
-            mock_file.items.return_value = [("P01308", np.array([0.1, 0.2]))]
+            setup_mock_h5_files(mock_h5py, {"P01308": np.array([0.1, 0.2])})
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 input_path = Path(temp_dir) / "embeddings.h5"
 
                 # Call public methods separately (like CLI does)
-                data, headers = processor.load_input_file(input_path)
+                data, headers = processor.load_input_files([input_path])
                 metadata = processor.load_or_generate_metadata(
                     headers=headers,
                     annotations="length,organism",

@@ -42,7 +42,7 @@ class InterProRetriever(BaseAnnotationRetriever):
     - Phobius signal peptides (key: signal_peptide)
 
     Annotations are stored with confidence scores in a pipe-separated format:
-    - Format: accession(name)|score1,score2,score3;accession2|score1
+    - Format: accession (name)|score1,score2,score3;accession2 (name2)|score1
     - Name (if available) is included in parentheses after the accession
     - | separates accession from scores
     - , separates multiple scores for the same accession (when it appears multiple times)
@@ -197,7 +197,7 @@ class InterProRetriever(BaseAnnotationRetriever):
 
         Returns:
             List of ProteinAnnotations with parsed InterPro data in pipe-separated format:
-            - Format: accession(name)|score1,score2,score3;accession2|score1
+            - Format: accession (name)|score1,score2,score3;accession2 (name2)|score1
             - Example: 'pfam': 'PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5'
 
             All scores for each accession are collected and stored together.
