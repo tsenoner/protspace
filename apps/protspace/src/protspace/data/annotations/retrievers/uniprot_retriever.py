@@ -24,10 +24,12 @@ UNIPROT_ANNOTATIONS = [
     "gene_name",
     "length",
     "organism_id",
+    "protein_name",
     "protein_existence",
     "protein_families",
     "reviewed",
     "sequence",
+    "uniprot_kb_id",
     "xref_pdb",
 ]
 

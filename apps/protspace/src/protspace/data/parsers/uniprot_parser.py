@@ -5,6 +5,7 @@ AVAILABLE PROPERTIES:
 =====================
 entry                    - Primary UniProt accession number
 entry_name               - UniProtKB entry name (e.g., 'P53_HUMAN')
+uniprot_kb_id            - UniProtKB ID (e.g., 'CCR9_HUMAN')
 gene_primary             - Primary gene name
 gene_name                - Gene name (alias for gene_primary)
 organism_name            - Organism scientific name
@@ -55,6 +56,7 @@ from unipressed import UniprotkbClient
 AVAILABLE_PROPERTIES = [
     "entry",
     "entry_name",
+    "uniprot_kb_id",
     "gene_primary",
     "gene_name",
     "organism_name",
@@ -117,6 +119,11 @@ class UniProtEntry:
         return self.data.get("uniProtkbId", "")
 
     @property
+    def uniprot_kb_id(self) -> str:
+        """UniProtKB ID (e.g., 'CCR9_HUMAN')."""
+        return self.data.get("uniProtkbId", "")
+
+    @property
     def gene_primary(self) -> str:
         """Primary gene name."""
         genes = self.data.get("genes", [])
@@ -144,8 +151,8 @@ class UniProtEntry:
         """Recommended protein name."""
         desc = self.data.get("proteinDescription", {})
         rec_name = desc.get("recommendedName", {})
-        full_name = rec_name.get("fullName", {})
-        return full_name.get("value", "")
+        full_name = rec_name.get("fullName", "")
+        return self._extract_name_value(full_name)
 
     @property
     def xref_proteomes(self) -> list[str]:
@@ -440,6 +447,15 @@ class UniProtEntry:
             else:
                 result.append(term)
         return result
+
+    @staticmethod
+    def _extract_name_value(name: Any) -> str:
+        """Extract a displayable name from UniProt name fields."""
+        if isinstance(name, dict):
+            return name.get("value", "")
+        if isinstance(name, str):
+            return name
+        return ""
 
     def __repr__(self) -> str:
         """String representation."""
