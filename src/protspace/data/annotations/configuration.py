@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_ANNOTATIONS = UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS
+ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
 NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
 LENGTH_BINNING_ANNOTATIONS = ["length_fixed", "length_quantile"]
 
@@ -108,14 +109,17 @@ class AnnotationConfiguration:
             return None
 
         all_annotations = DEFAULT_ANNOTATIONS + LENGTH_BINNING_ANNOTATIONS
+        normalized_annotations = []
 
-        for annotation in user_annotations:
+        for annotation in user_annotations + ALWAYS_INCLUDED_ANNOTATIONS:
             if annotation not in all_annotations:
                 raise ValueError(
                     f"Annotation {annotation} is not a valid annotation. Valid annotations are: {all_annotations}"
                 )
+            if annotation not in normalized_annotations:
+                normalized_annotations.append(annotation)
 
-        return user_annotations
+        return normalized_annotations
 
     def _split_by_source(self) -> tuple[list[str], list[str] | None, list[str] | None]:
         """
