@@ -503,7 +503,13 @@ class TestGenerateMetadata:
         mock_annotation_extractor.assert_called_once()
         call_kwargs = mock_annotation_extractor.call_args[1]
         assert call_kwargs["headers"] == SAMPLE_HEADERS
-        assert call_kwargs["annotations"] == ["length", "organism"]
+        assert call_kwargs["annotations"] == [
+            "length",
+            "organism",
+            "gene_name",
+            "protein_name",
+            "uniprot_kb_id",
+        ]
         assert call_kwargs["output_path"] == temp_dir / "metadata.csv"
         assert not call_kwargs["non_binary"]
 

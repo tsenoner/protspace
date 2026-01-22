@@ -367,6 +367,13 @@ class UniProtQueryProcessor(BaseProcessor):
                     annotations_list = [
                         annotation.strip() for annotation in annotations.split(",")
                     ]
+                    from protspace.data.annotations.configuration import (
+                        AnnotationConfiguration,
+                    )
+
+                    annotations_list = AnnotationConfiguration(
+                        annotations_list
+                    ).user_annotations
                 else:
                     annotations_list = (
                         None  # No specific annotations requested, use all
