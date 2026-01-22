@@ -441,7 +441,7 @@ class TestLoadOrGenerateMetadata:
         with tempfile.TemporaryDirectory() as temp_dir:
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="length,organism",
+                annotations="length,genus",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -454,7 +454,7 @@ class TestLoadOrGenerateMetadata:
             assert call_kwargs["headers"] == SAMPLE_HEADERS
             assert call_kwargs["annotations"] == [
                 "length",
-                "organism",
+                "genus",
                 "gene_name",
                 "protein_name",
                 "uniprot_kb_id",
@@ -678,7 +678,7 @@ class TestIntegration:
             data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                annotations="length,organism",
+                annotations="length,genus",
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -936,12 +936,15 @@ class TestIncrementalCaching:
             intermediate_dir = Path(temp_dir) / "intermediate"
             intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create cached metadata file
+            # Create cached metadata file - include always-included annotations
             cached_metadata = pd.DataFrame(
                 {
                     "identifier": SAMPLE_HEADERS,
                     "reviewed": ["True", "True", "False"],
                     "length": ["110", "142", "85"],
+                    "gene_name": ["INS", "IGF1", "IGF2"],
+                    "protein_name": ["Insulin", "IGF1", "IGF2"],
+                    "uniprot_kb_id": ["P01308", "P01315", "P01316"],
                 }
             )
             cache_file = intermediate_dir / "all_annotations.parquet"
@@ -961,7 +964,8 @@ class TestIncrementalCaching:
             # Should return cached data without calling ProteinAnnotationManager
             mock_annotation_manager.assert_not_called()
             assert isinstance(result, pd.DataFrame)
-            assert set(result.columns) == {"identifier", "reviewed", "length"}
+            # Always-included annotations are automatically added
+            assert set(result.columns) == {"identifier", "reviewed", "length", "gene_name", "protein_name", "uniprot_kb_id"}
 
     @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
     def test_cache_miss_triggers_fetch(self, mock_annotation_manager):
@@ -973,6 +977,9 @@ class TestIncrementalCaching:
                 "reviewed": ["True", "True", "False"],
                 "length": ["110", "142", "85"],
                 "kingdom": ["Animalia", "Animalia", "Animalia"],
+                "gene_name": ["INS", "IGF1", "IGF2"],
+                "protein_name": ["Insulin", "IGF1", "IGF2"],
+                "uniprot_kb_id": ["P01308", "P01315", "P01316"],
             }
         )
         mock_annotation_manager.return_value = mock_instance
@@ -981,13 +988,16 @@ class TestIncrementalCaching:
             intermediate_dir = Path(temp_dir) / "intermediate"
             intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create cached metadata file with only UniProt annotations
+            # Create cached metadata file with UniProt annotations including always-included ones
             cached_metadata = pd.DataFrame(
                 {
                     "identifier": SAMPLE_HEADERS,
                     "reviewed": ["True", "True", "False"],
                     "length": ["110", "142", "85"],
                     "organism_id": ["9606", "9606", "10090"],
+                    "gene_name": ["INS", "IGF1", "IGF2"],
+                    "protein_name": ["Insulin", "IGF1", "IGF2"],
+                    "uniprot_kb_id": ["P01308", "P01315", "P01316"],
                 }
             )
             cache_file = intermediate_dir / "all_annotations.parquet"
@@ -1058,11 +1068,14 @@ class TestIncrementalCaching:
             intermediate_dir = Path(temp_dir) / "intermediate"
             intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create cached metadata CSV file
+            # Create cached metadata CSV file - include always-included annotations
             cached_metadata = pd.DataFrame(
                 {
                     "identifier": SAMPLE_HEADERS,
                     "reviewed": ["True", "True", "False"],
+                    "gene_name": ["INS", "IGF1", "IGF2"],
+                    "protein_name": ["Insulin", "IGF1", "IGF2"],
+                    "uniprot_kb_id": ["P01308", "P01315", "P01316"],
                 }
             )
             cache_file = intermediate_dir / "all_annotations.csv"
@@ -1083,6 +1096,10 @@ class TestIncrementalCaching:
             mock_annotation_manager.assert_not_called()
             assert isinstance(result, pd.DataFrame)
             assert "reviewed" in result.columns
+            # Always-included annotations are automatically added
+            assert "gene_name" in result.columns
+            assert "protein_name" in result.columns
+            assert "uniprot_kb_id" in result.columns
 
     @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
     def test_no_cache_without_keep_tmp(self, mock_annotation_manager):

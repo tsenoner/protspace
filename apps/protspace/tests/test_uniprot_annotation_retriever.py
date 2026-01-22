@@ -302,12 +302,14 @@ class TestConstants:
             "sequence",
             "xref_pdb",
             "organism_id",
+            "protein_name",
+            "uniprot_kb_id",
         ]
 
         for annotation in expected_annotations:
             assert annotation in UNIPROT_ANNOTATIONS
 
-        assert len(UNIPROT_ANNOTATIONS) == 11
+        assert len(UNIPROT_ANNOTATIONS) == 13
 
     def test_protein_annotations_namedtuple(self):
         """Test ProteinAnnotations namedtuple structure."""
