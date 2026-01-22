@@ -109,7 +109,7 @@ class TestProcessQuery:
             query=SAMPLE_QUERY,
             output_path=output_path,
             intermediate_dir=temp_dir / "intermediate",
-            annotations="length,organism",
+            annotations="length,genus",
             keep_tmp=False,
         )
 
@@ -483,7 +483,7 @@ class TestGenerateMetadata:
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            annotations="length,organism",
+            annotations="length,genus",
             delimiter=",",
             metadata_save_path=temp_dir / "metadata.csv",
             non_binary=False,
@@ -505,7 +505,7 @@ class TestGenerateMetadata:
         assert call_kwargs["headers"] == SAMPLE_HEADERS
         assert call_kwargs["annotations"] == [
             "length",
-            "organism",
+            "genus",
             "gene_name",
             "protein_name",
             "uniprot_kb_id",
@@ -549,7 +549,7 @@ class TestGenerateMetadata:
         # Execute
         result_df = processor._generate_metadata(
             headers=SAMPLE_HEADERS,
-            annotations="length,organism",
+            annotations="length,genus",
             delimiter=",",
             metadata_save_path=None,
             non_binary=False,
@@ -651,7 +651,7 @@ class TestIntegration:
                         query=SAMPLE_QUERY,
                         output_path=output_path,
                         intermediate_dir=temp_dir / "intermediate",
-                        annotations="length,organism",
+                        annotations="length,genus",
                         keep_tmp=True,
                         non_binary=False,
                     )

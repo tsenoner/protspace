@@ -93,7 +93,9 @@ class TestProteinAnnotationExtractorInit:
         extractor = ProteinAnnotationExtractor(headers=headers, annotations=annotations)
 
         assert extractor.headers == headers
-        assert extractor.user_annotations == annotations
+        # Always-included annotations are added automatically
+        expected_annotations = ["length", "genus", "gene_name", "protein_name", "uniprot_kb_id"]
+        assert extractor.user_annotations == expected_annotations
         assert extractor.output_path is None
         assert extractor.non_binary is False
 
@@ -149,7 +151,9 @@ class TestAnnotationConfiguration:
         valid_annotations = ["length", "genus", "species", "protein_families"]
         config = AnnotationConfiguration(user_annotations=valid_annotations)
 
-        assert config.user_annotations == valid_annotations
+        # Always-included annotations are added automatically
+        expected_annotations = ["length", "genus", "species", "protein_families", "gene_name", "protein_name", "uniprot_kb_id"]
+        assert config.user_annotations == expected_annotations
 
     def test_validate_with_none(self):
         """Test validation with None returns None."""
@@ -172,7 +176,9 @@ class TestAnnotationConfiguration:
         annotations_with_binning = ["length_fixed", "length_quantile", "genus"]
         config = AnnotationConfiguration(user_annotations=annotations_with_binning)
 
-        assert config.user_annotations == annotations_with_binning
+        # Always-included annotations are added automatically
+        expected_annotations = ["length_fixed", "length_quantile", "genus", "gene_name", "protein_name", "uniprot_kb_id"]
+        assert config.user_annotations == expected_annotations
 
     def test_split_by_source_with_user_annotations(self):
         """Test annotation splitting by source with user-specified annotations."""
