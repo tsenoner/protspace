@@ -52,29 +52,6 @@ class UniProtTransformer:
             return protein_families_value
 
     @staticmethod
-    def transform_reviewed(value: str) -> str:
-        """
-        Convert boolean to Swiss-Prot/TrEMBL.
-
-        Args:
-            value: Boolean as string ("true"/"false") or old format ("reviewed"/"unreviewed")
-
-        Returns:
-            "Swiss-Prot" for reviewed, "TrEMBL" for unreviewed
-        """
-        if not value:
-            return value
-
-        value_lower = str(value).strip().lower()
-
-        if value_lower in ["reviewed", "true"]:
-            return "Swiss-Prot"
-        elif value_lower in ["unreviewed", "false"]:
-            return "TrEMBL"
-
-        return value
-
-    @staticmethod
     def transform_xref_pdb(value: str) -> str:
         """
         Convert PDB IDs to True/False.

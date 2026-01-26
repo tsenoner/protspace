@@ -154,7 +154,7 @@ class TestFetchAnnotations:
         assert result[0].identifier == "P01308"
         assert result[0].annotations["length"] == "110"
         assert result[0].annotations["annotation_score"] == "5.0"
-        assert result[0].annotations["reviewed"] == "True"
+        assert result[0].annotations["reviewed"] == "Swiss-Prot"
 
         assert result[1].identifier == "P01315"
         assert result[1].annotations["length"] == "142"
@@ -279,10 +279,74 @@ class TestFetchAnnotations:
         assert result[0].annotations["length"] == "110"
         assert result[0].annotations["annotation_score"] == "5.0"
         assert result[0].annotations["organism_id"] == "9606"
-        assert result[0].annotations["reviewed"] == "True"  # Bool stored as string
+        assert result[0].annotations["reviewed"] == "Swiss-Prot"
         assert (
             result[0].annotations["gene_name"] == "INS"
         )  # Gene name from genes[0].geneName
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_reviewed_field_parsing_swiss_prot_and_trembl(self, mock_client_class):
+        """End-to-end test: reviewed field correctly parsed for both Swiss-Prot and TrEMBL entries."""
+        # Mock API responses with both reviewed (Swiss-Prot) and unreviewed (TrEMBL) entries
+        mock_records = [
+            {
+                "primaryAccession": "P01308",
+                "uniProtkbId": "INS_HUMAN",
+                "sequence": {"value": "MALWMRLLPL", "length": 110, "molWeight": 11500},
+                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+                "proteinDescription": {
+                    "recommendedName": {"fullName": {"value": "Insulin"}}
+                },
+                "genes": [{"geneName": {"value": "INS"}}],
+                "entryType": "UniProtKB reviewed (Swiss-Prot)",
+                "annotationScore": 5.0,
+                "proteinExistence": "1: Evidence at protein level",
+                "comments": [],
+                "uniProtKBCrossReferences": [],
+                "annotations": [],
+                "keywords": [],
+                "entryAudit": {},
+            },
+            {
+                "primaryAccession": "Q12345",
+                "uniProtkbId": "TEST_HUMAN",
+                "sequence": {"value": "MAPRLCLLLL", "length": 142, "molWeight": 15000},
+                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+                "proteinDescription": {
+                    "recommendedName": {"fullName": {"value": "Test protein"}}
+                },
+                "genes": [{"geneName": {"value": "TEST"}}],
+                "entryType": "UniProtKB unreviewed (TrEMBL)",
+                "annotationScore": 3.0,
+                "proteinExistence": "2: Evidence at transcript level",
+                "comments": [],
+                "uniProtKBCrossReferences": [],
+                "annotations": [],
+                "keywords": [],
+                "entryAudit": {},
+            },
+        ]
+
+        mock_client_class.fetch_many.return_value = mock_records
+
+        # Create retriever and fetch
+        headers = ["P01308", "Q12345"]
+        annotations = ["entry", "reviewed", "annotation_score"]
+        retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
+        result = retriever.fetch_annotations()
+
+        # Verify we have both entries
+        assert len(result) == 2
+
+        # Verify Swiss-Prot entry (reviewed) returns "Swiss-Prot"
+        assert result[0].identifier == "P01308"
+        assert result[0].annotations["reviewed"] == "Swiss-Prot"
+
+        # Verify TrEMBL entry (unreviewed) returns "TrEMBL"
+        assert result[1].identifier == "Q12345"
+        assert result[1].annotations["reviewed"] == "TrEMBL"
 
 
 class TestConstants:

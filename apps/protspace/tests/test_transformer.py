@@ -20,7 +20,7 @@ SAMPLE_PROTEINS_WITH_LENGTH = [
             "length": "110",
             "annotation_score": "5.0",
             "protein_families": "Insulin family, Growth factor family",
-            "reviewed": "true",
+            "reviewed": "Swiss-Prot",
             "xref_pdb": "1INS;2INS",
             "fragment": "fragment",
             "cc_subcellular_location": "Secreted;Extracellular",
@@ -32,7 +32,7 @@ SAMPLE_PROTEINS_WITH_LENGTH = [
             "length": "142",
             "annotation_score": "4.5",
             "protein_families": "Insulin family",
-            "reviewed": "false",
+            "reviewed": "TrEMBL",
             "xref_pdb": "",
             "fragment": "",
             "cc_subcellular_location": "Membrane",
@@ -177,7 +177,7 @@ class TestAnnotationTransformerTransform:
                     "length": "200",
                     "annotation_score": "5.0",
                     "protein_families": "Insulin family",
-                    "reviewed": "true",
+                    "reviewed": "Swiss-Prot",
                     "xref_pdb": "1ABC",
                     "fragment": "",
                     "cc_subcellular_location": "Nucleus",
@@ -229,7 +229,7 @@ class TestAnnotationTransformerTransformRow:
     def test_transform_row_basic(self):
         """Test basic row transformation."""
         transformer = AnnotationTransformer()
-        row = ["P01308", "5.0", "Insulin family", "true"]
+        row = ["P01308", "5.0", "Insulin family", "Swiss-Prot"]
         headers = ["identifier", "annotation_score", "protein_families", "reviewed"]
 
         result = transformer.transform_row(row, headers)
@@ -239,7 +239,7 @@ class TestAnnotationTransformerTransformRow:
         assert (
             result[2] == "Insulin family"
         )  # protein_families preserved (single value)
-        assert result[3] == "Swiss-Prot"  # reviewed transformed
+        assert result[3] == "Swiss-Prot"  # reviewed preserved
 
     def test_transform_row_with_all_uniprot_annotations(self):
         """Test row transformation with all UniProt annotations."""
@@ -248,7 +248,7 @@ class TestAnnotationTransformerTransformRow:
             "P01308",
             "5.0",  # annotation_score
             "Insulin family, Growth factor",  # protein_families
-            "false",  # reviewed
+            "TrEMBL",  # reviewed
             "1INS;2INS",  # xref_pdb
             "fragment",  # fragment
             "Secreted;Extracellular",  # cc_subcellular_location
@@ -296,7 +296,7 @@ class TestAnnotationTransformerTransformRow:
     def test_transform_row_with_missing_values(self):
         """Test row transformation with missing/empty values."""
         transformer = AnnotationTransformer()
-        row = ["P01308", "", "", "false"]
+        row = ["P01308", "", "", "TrEMBL"]
         headers = ["identifier", "annotation_score", "xref_pdb", "reviewed"]
 
         result = transformer.transform_row(row, headers)
@@ -304,7 +304,7 @@ class TestAnnotationTransformerTransformRow:
         assert result[0] == "P01308"
         assert result[1] == ""  # Empty annotation_score preserved
         assert result[2] == "False"  # Empty xref_pdb becomes "False"
-        assert result[3] == "TrEMBL"  # false reviewed becomes "TrEMBL"
+        assert result[3] == "TrEMBL"  # TrEMBL preserved
 
     def test_transform_row_with_unknown_columns(self):
         """Test row transformation with unknown annotation columns."""
@@ -351,7 +351,7 @@ class TestAnnotationTransformerTransformAnnotations:
         annotations = {
             "annotation_score": "5.0",
             "protein_families": "Family1, Family2",
-            "reviewed": "true",
+            "reviewed": "Swiss-Prot",
             "xref_pdb": "1ABC;2DEF",
             "fragment": "fragment",
             "cc_subcellular_location": "Nucleus;Membrane",
@@ -481,22 +481,3 @@ class TestAnnotationTransformerEdgeCases:
         result = transformer.transform_row(row, headers)
 
         assert result == ["P01308"]
-
-    def test_transform_with_mixed_case_reviewed(self):
-        """Test transformation handles mixed case for reviewed field."""
-        transformer = AnnotationTransformer()
-        proteins = [
-            ProteinAnnotations(
-                identifier="P1",
-                annotations={"reviewed": "TRUE"},
-            ),
-            ProteinAnnotations(
-                identifier="P2",
-                annotations={"reviewed": "False"},
-            ),
-        ]
-
-        result = transformer.transform(proteins, apply_length_binning=False)
-
-        assert result[0].annotations["reviewed"] == "Swiss-Prot"
-        assert result[1].annotations["reviewed"] == "TrEMBL"
