@@ -25,7 +25,7 @@ annotation_score         - Annotation quality score (1-5)
 keyword                  - Keyword names (list)
 keyword_id               - Keyword IDs (list)
 protein_existence        - Protein existence level
-reviewed                 - True if Swiss-Prot (reviewed), False if TrEMBL
+reviewed                 - 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed
 uniparc_id               - UniParc identifier
 cc_subcellular_location  - Subcellular location values (list)
 protein_families         - Protein family description
@@ -248,10 +248,14 @@ class UniProtEntry:
         return self.data.get("proteinExistence", "")
 
     @property
-    def reviewed(self) -> bool:
-        """True if Swiss-Prot (reviewed), False if TrEMBL."""
+    def reviewed(self) -> str:
+        """Returns 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed."""
         entry_type = self.data.get("entryType", "").lower()
-        return "reviewed" in entry_type or "swiss-prot" in entry_type
+        # Check for "UniProtKB reviewed" or "swiss-prot", but not "unreviewed"
+        is_reviewed = "swiss-prot" in entry_type or (
+            "reviewed" in entry_type and "unreviewed" not in entry_type
+        )
+        return "Swiss-Prot" if is_reviewed else "TrEMBL"
 
     @property
     def uniparc_id(self) -> str:

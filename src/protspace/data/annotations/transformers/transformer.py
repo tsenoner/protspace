@@ -81,11 +81,6 @@ class AnnotationTransformer:
                 )
             )
 
-        if "reviewed" in transformed:
-            transformed["reviewed"] = self.uniprot_transformer.transform_reviewed(
-                transformed["reviewed"]
-            )
-
         if "xref_pdb" in transformed:
             transformed["xref_pdb"] = self.uniprot_transformer.transform_xref_pdb(
                 transformed["xref_pdb"]
