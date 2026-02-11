@@ -1,3 +1,5 @@
+import io
+import json
 from unittest.mock import Mock, patch
 
 from src.protspace.data.annotations.retrievers.uniprot_retriever import (
@@ -386,3 +388,223 @@ class TestConstants:
         assert protein_annotations.annotations == annotations_dict
         assert protein_annotations.annotations["length"] == "110"
         assert protein_annotations.annotations["organism_id"] == "9606"
+
+
+def _make_mock_record(accession, entry_name="TEST_HUMAN", length=110, organism_id=9606,
+                      protein_name="Test protein", entry_type="UniProtKB reviewed (Swiss-Prot)",
+                      annotation_score=5.0):
+    """Helper to build a minimal mock UniProt JSON record."""
+    return {
+        "primaryAccession": accession,
+        "uniProtkbId": entry_name,
+        "sequence": {"value": "MALWMRLLPL", "length": length, "molWeight": 11500},
+        "organism": {"scientificName": "Homo sapiens", "taxonId": organism_id},
+        "proteinDescription": {
+            "recommendedName": {"fullName": {"value": protein_name}}
+        },
+        "genes": [{"geneName": {"value": "TEST"}}],
+        "entryType": entry_type,
+        "annotationScore": annotation_score,
+        "proteinExistence": "1: Evidence at protein level",
+        "comments": [],
+        "uniProtKBCrossReferences": [],
+        "annotations": [],
+        "keywords": [],
+        "entryAudit": {},
+    }
+
+
+def _make_search_page(records):
+    """Build a TextIOWrapper mimicking unipressed search().each_page() output."""
+    content = json.dumps({"results": records})
+    return io.TextIOWrapper(io.BytesIO(content.encode("utf-8")), encoding="utf-8")
+
+
+class TestExtractAnnotations:
+    """Test the _extract_annotations static method."""
+
+    def test_extract_annotations_returns_all_keys(self):
+        """All UNIPROT_ANNOTATIONS keys are present in the result."""
+        from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+
+        record = _make_mock_record("P99999")
+        entry = UniProtEntry(record)
+        result = UniProtRetriever._extract_annotations(entry)
+
+        assert set(result.keys()) == set(UNIPROT_ANNOTATIONS)
+
+    def test_extract_annotations_values_are_strings(self):
+        """All values should be strings (for CSV/Parquet compatibility)."""
+        from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+
+        record = _make_mock_record("P99999")
+        entry = UniProtEntry(record)
+        result = UniProtRetriever._extract_annotations(entry)
+
+        for key, value in result.items():
+            assert isinstance(value, str), f"{key} should be a string, got {type(value)}"
+
+    def test_extract_annotations_specific_values(self):
+        """Spot-check specific annotation values."""
+        from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+
+        record = _make_mock_record("P99999", length=200, organism_id=9606,
+                                   annotation_score=3.0)
+        entry = UniProtEntry(record)
+        result = UniProtRetriever._extract_annotations(entry)
+
+        assert result["length"] == "200"
+        assert result["organism_id"] == "9606"
+        assert result["annotation_score"] == "3.0"
+        assert result["reviewed"] == "Swiss-Prot"
+
+
+class TestResolveInactiveEntries:
+    """Test the _resolve_inactive_entries method."""
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_resolve_merged_entry(self, mock_client_class):
+        """A merged accession should resolve to its replacement, keeping the original ID."""
+        replacement_record = _make_mock_record("Q076D1", protein_name="Crotastatin")
+        page = _make_search_page([replacement_record])
+
+        mock_search_result = Mock()
+        mock_search_result.each_page.return_value = iter([page])
+        mock_client_class.search.return_value = mock_search_result
+
+        retriever = UniProtRetriever(headers=[])
+        result = retriever._resolve_inactive_entries(["C5H5D1"])
+
+        assert len(result) == 1
+        assert result[0].identifier == "C5H5D1"  # original accession preserved
+        assert result[0].annotations["protein_name"] == "Crotastatin"
+        assert result[0].annotations["length"] == "110"
+        mock_client_class.search.assert_called_once_with(
+            query="sec_acc:C5H5D1", format="json"
+        )
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_resolve_demerged_entry_takes_first(self, mock_client_class):
+        """A demerged accession returns multiple results; we take the first."""
+        records = [
+            _make_mock_record("P0DRL2", protein_name="Protein A"),
+            _make_mock_record("P0DRL1", protein_name="Protein B"),
+        ]
+        page = _make_search_page(records)
+
+        mock_search_result = Mock()
+        mock_search_result.each_page.return_value = iter([page])
+        mock_client_class.search.return_value = mock_search_result
+
+        retriever = UniProtRetriever(headers=[])
+        result = retriever._resolve_inactive_entries(["D5KR58"])
+
+        assert len(result) == 1
+        assert result[0].identifier == "D5KR58"
+        assert result[0].annotations["protein_name"] == "Protein A"
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_resolve_no_results_returns_empty_annotations(self, mock_client_class):
+        """When search returns no results, empty annotations are created."""
+        page = _make_search_page([])
+
+        mock_search_result = Mock()
+        mock_search_result.each_page.return_value = iter([page])
+        mock_client_class.search.return_value = mock_search_result
+
+        retriever = UniProtRetriever(headers=[])
+        result = retriever._resolve_inactive_entries(["XXXXXX"])
+
+        assert len(result) == 1
+        assert result[0].identifier == "XXXXXX"
+        assert all(v == "" for v in result[0].annotations.values())
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_resolve_api_error_returns_empty_annotations(self, mock_client_class):
+        """When the search API raises an exception, empty annotations are created."""
+        mock_client_class.search.side_effect = Exception("Network error")
+
+        retriever = UniProtRetriever(headers=[])
+        result = retriever._resolve_inactive_entries(["BROKEN"])
+
+        assert len(result) == 1
+        assert result[0].identifier == "BROKEN"
+        assert all(v == "" for v in result[0].annotations.values())
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_resolve_multiple_missing(self, mock_client_class):
+        """Multiple missing accessions are each resolved independently."""
+        def fake_search(query, format):
+            acc = query.split(":")[1]
+            record = _make_mock_record(f"NEW_{acc}", protein_name=f"Resolved {acc}")
+            page = _make_search_page([record])
+            mock_result = Mock()
+            mock_result.each_page.return_value = iter([page])
+            return mock_result
+
+        mock_client_class.search.side_effect = fake_search
+
+        retriever = UniProtRetriever(headers=[])
+        result = retriever._resolve_inactive_entries(["AAA", "BBB", "CCC"])
+
+        assert len(result) == 3
+        assert [r.identifier for r in result] == ["AAA", "BBB", "CCC"]
+        assert result[0].annotations["protein_name"] == "Resolved AAA"
+        assert result[2].annotations["protein_name"] == "Resolved CCC"
+
+
+class TestFetchAnnotationsWithMissingEntries:
+    """Test that fetch_annotations detects and resolves missing entries."""
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_missing_entries_are_resolved(self, mock_client_class):
+        """When fetch_many drops an entry, it gets resolved via secondary accession."""
+        # fetch_many returns only P01308, dropping C5H5D1
+        mock_client_class.fetch_many.return_value = [
+            _make_mock_record("P01308", protein_name="Insulin"),
+        ]
+
+        # search resolves C5H5D1 → Q076D1
+        replacement = _make_mock_record("Q076D1", protein_name="Crotastatin")
+        page = _make_search_page([replacement])
+        mock_search_result = Mock()
+        mock_search_result.each_page.return_value = iter([page])
+        mock_client_class.search.return_value = mock_search_result
+
+        retriever = UniProtRetriever(headers=["P01308", "C5H5D1"])
+        result = retriever.fetch_annotations()
+
+        assert len(result) == 2
+        identifiers = {r.identifier for r in result}
+        assert identifiers == {"P01308", "C5H5D1"}
+
+        resolved = [r for r in result if r.identifier == "C5H5D1"][0]
+        assert resolved.annotations["protein_name"] == "Crotastatin"
+
+    @patch(
+        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+    )
+    def test_no_missing_entries_skips_resolution(self, mock_client_class):
+        """When all entries are returned, _resolve_inactive_entries is not called."""
+        mock_client_class.fetch_many.return_value = [
+            _make_mock_record("P01308"),
+            _make_mock_record("P01315"),
+        ]
+
+        retriever = UniProtRetriever(headers=["P01308", "P01315"])
+        result = retriever.fetch_annotations()
+
+        assert len(result) == 2
+        mock_client_class.search.assert_not_called()
