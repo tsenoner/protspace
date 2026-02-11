@@ -4,6 +4,7 @@ UniProt annotation retriever.
 This module fetches protein annotations from the UniProt API.
 """
 
+import json
 import logging
 from collections import namedtuple
 
@@ -50,6 +51,75 @@ class UniProtRetriever(BaseAnnotationRetriever):
         super().__init__(headers, annotations)
         self.headers = self._manage_headers(self.headers)
 
+    @staticmethod
+    def _extract_annotations(entry: UniProtEntry) -> dict:
+        """Extract UNIPROT_ANNOTATIONS from a UniProtEntry as a string dict."""
+        annotations_dict = {}
+        for prop in UNIPROT_ANNOTATIONS:
+            try:
+                value = getattr(entry, prop)
+                if isinstance(value, list):
+                    annotations_dict[prop] = (
+                        ";".join(str(v) for v in value) if value else ""
+                    )
+                elif isinstance(value, bool):
+                    annotations_dict[prop] = str(value)
+                elif value is None or value == "":
+                    annotations_dict[prop] = ""
+                else:
+                    annotations_dict[prop] = str(value)
+            except (KeyError, AttributeError, IndexError):
+                annotations_dict[prop] = ""
+        return annotations_dict
+
+    def _resolve_inactive_entries(
+        self, missing_accessions: list[str]
+    ) -> list[ProteinAnnotations]:
+        """Resolve inactive/obsolete UniProt entries via secondary accession search."""
+        resolved = []
+        for accession in missing_accessions:
+            try:
+                records = []
+                for page in UniprotkbClient.search(
+                    query=f"sec_acc:{accession}", format="json"
+                ).each_page():
+                    content = page.read() if hasattr(page, "read") else page
+                    parsed = json.loads(content) if isinstance(content, str) else content
+                    records.extend(parsed.get("results", []))
+                if records:
+                    entry = UniProtEntry(records[0])
+                    annotations_dict = self._extract_annotations(entry)
+                    resolved.append(
+                        ProteinAnnotations(
+                            identifier=accession, annotations=annotations_dict
+                        )
+                    )
+                    logger.info(
+                        f"Resolved inactive entry {accession} → {entry.entry}"
+                    )
+                else:
+                    resolved.append(
+                        ProteinAnnotations(
+                            identifier=accession,
+                            annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                        )
+                    )
+                    logger.warning(
+                        f"Could not resolve inactive entry {accession}: "
+                        "no results from secondary accession search"
+                    )
+            except Exception as e:
+                resolved.append(
+                    ProteinAnnotations(
+                        identifier=accession,
+                        annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                    )
+                )
+                logger.warning(
+                    f"Failed to resolve inactive entry {accession}: {e}"
+                )
+        return resolved
+
     def fetch_annotations(self) -> list[ProteinAnnotations]:
         """
         Fetch raw UniProt annotations and store in tmp files.
@@ -72,38 +142,23 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     # Fetch records using unipressed
                     records = UniprotkbClient.fetch_many(batch)
 
-                    # Parse each record and extract raw properties for tmp storage
+                    # Parse each record and track returned identifiers
+                    returned_ids = set()
                     for record in records:
                         entry = UniProtEntry(record)
-                        identifier = entry.entry
-
-                        # Extract UNIPROT_ANNOTATIONS
-                        annotations_dict = {}
-                        for prop in UNIPROT_ANNOTATIONS:
-                            try:
-                                value = getattr(entry, prop)
-                                # Store raw values, convert to strings for CSV/Parquet compatibility
-                                if isinstance(value, list):
-                                    # Join list values with semicolon (raw format)
-                                    annotations_dict[prop] = (
-                                        ";".join(str(v) for v in value) if value else ""
-                                    )
-                                elif isinstance(value, bool):
-                                    # Store bool as string
-                                    annotations_dict[prop] = str(value)
-                                elif value is None or value == "":
-                                    annotations_dict[prop] = ""
-                                else:
-                                    # Store as string
-                                    annotations_dict[prop] = str(value)
-                            except (KeyError, AttributeError, IndexError):
-                                annotations_dict[prop] = ""
-
+                        returned_ids.add(entry.entry)
+                        annotations_dict = self._extract_annotations(entry)
                         result.append(
                             ProteinAnnotations(
-                                identifier=identifier, annotations=annotations_dict
+                                identifier=entry.entry, annotations=annotations_dict
                             )
                         )
+
+                    # Resolve any missing (inactive/obsolete) entries
+                    missing = [acc for acc in batch if acc not in returned_ids]
+                    if missing:
+                        resolved = self._resolve_inactive_entries(missing)
+                        result.extend(resolved)
 
                 except Exception as e:
                     logger.warning(f"Failed to fetch batch {i}-{i + batch_size}: {e}")
