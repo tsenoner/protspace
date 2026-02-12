@@ -24,6 +24,7 @@ class AnnotationTransformer:
         self.uniprot_transformer = UniProtTransformer()
         self.interpro_transformer = InterProTransformer()
         self.length_binner = LengthBinner()
+        self._ec_name_map = None
 
     def transform(
         self, proteins: list[ProteinAnnotations], apply_length_binning: bool = True
@@ -96,6 +97,19 @@ class AnnotationTransformer:
                 self.uniprot_transformer.transform_cc_subcellular_location(
                     transformed["cc_subcellular_location"]
                 )
+            )
+
+        for go_key in ("go_mf", "go_bp", "go_cc"):
+            if go_key in transformed:
+                transformed[go_key] = self.uniprot_transformer.transform_go_terms(
+                    transformed[go_key]
+                )
+
+        if "ec" in transformed:
+            if self._ec_name_map is None:
+                self._ec_name_map = UniProtTransformer._get_ec_name_map()
+            transformed["ec"] = self.uniprot_transformer.transform_ec(
+                transformed["ec"], self._ec_name_map
             )
 
         # InterPro transformations

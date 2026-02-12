@@ -365,6 +365,11 @@ class TestConstants:
             "reviewed",
             "fragment",
             "cc_subcellular_location",
+            "ec",
+            "go_bp",
+            "go_cc",
+            "go_mf",
+            "keyword",
             "sequence",
             "xref_pdb",
             "organism_id",
@@ -375,7 +380,7 @@ class TestConstants:
         for annotation in expected_annotations:
             assert annotation in UNIPROT_ANNOTATIONS
 
-        assert len(UNIPROT_ANNOTATIONS) == 13
+        assert len(UNIPROT_ANNOTATIONS) == 18
 
     def test_protein_annotations_namedtuple(self):
         """Test ProteinAnnotations namedtuple structure."""

@@ -5,11 +5,16 @@ This module tests the main annotation transformer orchestrator that coordinates
 all annotation transformations.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from src.protspace.data.annotations.transformers.transformer import (
     AnnotationTransformer,
     ProteinAnnotations,
+)
+from src.protspace.data.annotations.transformers.uniprot_transforms import (
+    UniProtTransformer,
 )
 
 # Test data
@@ -521,5 +526,171 @@ class TestNewDatabasesPassThrough:
         result = transformer._transform_annotations(annotations)
 
         assert result["prints"] == "PR00276 (INSULIN)"
+
+
+class TestGoTermTransformations:
+    """Test GO term prefix stripping transformations."""
+
+    def test_go_f_prefix_stripped(self):
+        """Test that F: prefix is stripped from GO Molecular Function terms."""
+        result = UniProtTransformer.transform_go_terms(
+            "F:kinase activity;F:ATP binding"
+        )
+        assert result == "kinase activity;ATP binding"
+
+    def test_go_p_prefix_stripped(self):
+        """Test that P: prefix is stripped from GO Biological Process terms."""
+        result = UniProtTransformer.transform_go_terms(
+            "P:phosphorylation;P:signal transduction"
+        )
+        assert result == "phosphorylation;signal transduction"
+
+    def test_go_c_prefix_stripped(self):
+        """Test that C: prefix is stripped from GO Cellular Component terms."""
+        result = UniProtTransformer.transform_go_terms("C:cytoplasm;C:nucleus")
+        assert result == "cytoplasm;nucleus"
+
+    def test_go_terms_without_prefix_unchanged(self):
+        """Test that terms without prefix are left unchanged."""
+        result = UniProtTransformer.transform_go_terms("kinase activity;ATP binding")
+        assert result == "kinase activity;ATP binding"
+
+    def test_go_terms_empty_string(self):
+        """Test that empty string returns empty string."""
+        result = UniProtTransformer.transform_go_terms("")
+        assert result == ""
+
+    def test_go_terms_single_term(self):
+        """Test single term with prefix."""
+        result = UniProtTransformer.transform_go_terms("F:kinase activity")
+        assert result == "kinase activity"
+
+    def test_go_terms_integrated_in_transformer(self):
+        """Test that GO terms are transformed through the main transformer."""
+        transformer = AnnotationTransformer()
+        annotations = {
+            "go_mf": "F:kinase activity;F:ATP binding",
+            "go_bp": "P:phosphorylation",
+            "go_cc": "C:cytoplasm;C:nucleus",
+        }
+
+        result = transformer._transform_annotations(annotations)
+
+        assert result["go_mf"] == "kinase activity;ATP binding"
+        assert result["go_bp"] == "phosphorylation"
+        assert result["go_cc"] == "cytoplasm;nucleus"
+
+
+class TestEcTransformation:
+    """Test EC number name resolution transformations."""
+
+    def test_ec_with_known_names(self):
+        """Test EC numbers are annotated with enzyme names."""
+        ec_map = {
+            "2.7.11.1": "Non-specific serine/threonine protein kinase",
+            "2.7.11.24": "Mitogen-activated protein kinase",
+        }
+        result = UniProtTransformer.transform_ec("2.7.11.1;2.7.11.24", ec_map)
+        assert result == (
+            "2.7.11.1 (Non-specific serine/threonine protein kinase);"
+            "2.7.11.24 (Mitogen-activated protein kinase)"
+        )
+
+    def test_ec_with_unknown_number(self):
+        """Test EC number not in map is left as-is."""
+        ec_map = {"2.7.11.1": "Non-specific serine/threonine protein kinase"}
+        result = UniProtTransformer.transform_ec("2.7.11.1;9.9.9.9", ec_map)
+        assert result == (
+            "2.7.11.1 (Non-specific serine/threonine protein kinase);9.9.9.9"
+        )
+
+    def test_ec_empty_string(self):
+        """Test empty EC value returns empty string."""
+        result = UniProtTransformer.transform_ec("", {})
+        assert result == ""
+
+    def test_ec_single_number(self):
+        """Test single EC number."""
+        ec_map = {"1.1.1.1": "Alcohol dehydrogenase"}
+        result = UniProtTransformer.transform_ec("1.1.1.1", ec_map)
+        assert result == "1.1.1.1 (Alcohol dehydrogenase)"
+
+    def test_ec_empty_map(self):
+        """Test EC number with empty map leaves numbers unchanged."""
+        result = UniProtTransformer.transform_ec("2.7.11.1;2.7.11.24", {})
+        assert result == "2.7.11.1;2.7.11.24"
+
+    def test_ec_integrated_in_transformer(self):
+        """Test that EC transform is wired through the main transformer."""
+        transformer = AnnotationTransformer()
+        # Inject a known EC name map directly to avoid network calls
+        transformer._ec_name_map = {
+            "1.1.1.1": "Alcohol dehydrogenase",
+        }
+        annotations = {"ec": "1.1.1.1"}
+
+        result = transformer._transform_annotations(annotations)
+
+        assert result["ec"] == "1.1.1.1 (Alcohol dehydrogenase)"
+
+
+class TestEcNameMapParsing:
+    """Test parsing of ExPASy enzyme.dat format."""
+
+    def test_parse_enzyme_dat_basic(self):
+        """Test basic enzyme.dat parsing."""
+        text = (
+            "ID   1.1.1.1\n"
+            "DE   Alcohol dehydrogenase.\n"
+            "//\n"
+            "ID   2.7.11.1\n"
+            "DE   Non-specific serine/threonine protein kinase.\n"
+            "//\n"
+        )
+        result = UniProtTransformer._parse_enzyme_dat(text)
+        assert result == {
+            "1.1.1.1": "Alcohol dehydrogenase",
+            "2.7.11.1": "Non-specific serine/threonine protein kinase",
+        }
+
+    def test_parse_enzyme_dat_multiline_de(self):
+        """Test that multi-line DE fields are joined."""
+        text = (
+            "ID   1.1.1.1\n"
+            "DE   Alcohol dehydrogenase\n"
+            "DE   (NAD(+)).\n"
+            "//\n"
+        )
+        result = UniProtTransformer._parse_enzyme_dat(text)
+        assert result == {"1.1.1.1": "Alcohol dehydrogenase (NAD(+))"}
+
+    def test_parse_enzyme_dat_skips_entries_without_de(self):
+        """Test that entries without DE lines are skipped."""
+        text = "ID   1.1.1.-\n" "//\n" "ID   1.1.1.1\n" "DE   Alcohol dehydrogenase.\n" "//\n"
+        result = UniProtTransformer._parse_enzyme_dat(text)
+        assert "1.1.1.-" not in result
+        assert result == {"1.1.1.1": "Alcohol dehydrogenase"}
+
+    def test_parse_enzyme_dat_empty(self):
+        """Test parsing empty input."""
+        result = UniProtTransformer._parse_enzyme_dat("")
+        assert result == {}
+
+
+class TestKeywordCombinedFormat:
+    """Test that keyword annotations come through in combined id (name) format."""
+
+    @patch.object(UniProtTransformer, "_get_ec_name_map", return_value={})
+    def test_keyword_combined_format_in_annotations(self, _mock):
+        """Test keyword values are in 'id (name)' format after extraction."""
+        transformer = AnnotationTransformer()
+        annotations = {
+            "keyword": "KW-0418 (Kinase);KW-0808 (Transferase)",
+        }
+
+        result = transformer._transform_annotations(annotations)
+
+        # keyword is a pass-through in the transformer, format comes from parser
+        assert result["keyword"] == "KW-0418 (Kinase);KW-0808 (Transferase)"
 
 
