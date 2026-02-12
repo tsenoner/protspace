@@ -1,6 +1,13 @@
+import gzip
 import hashlib
+import json
 import logging
+import os
+import tempfile
+import time
+import xml.etree.ElementTree as ET
 from collections import namedtuple
+from pathlib import Path
 from typing import NamedTuple
 
 import requests
@@ -19,6 +26,11 @@ INTERPRO_MAPPING = {
     "superfamily": "superfamily",
     "cath": "cath-gene3d",
     "signal_peptide": "phobius",
+    "smart": "smart",
+    "cdd": "cdd",
+    "panther": "panther",
+    "prosite": "prosite patterns",
+    "prints": "prints",
 }
 
 # List of supported InterPro annotations for easy access
@@ -26,7 +38,32 @@ INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys())
 
 # API Configuration
 BASE_URL = "https://www.ebi.ac.uk/interpro/matches/api"
+INTERPRO_ENTRY_URL = "https://www.ebi.ac.uk/interpro/api/entry"
 CHUNK_SIZE = 100  # As per API documentation for batch requests
+
+# Mapping from annotation key to InterPro entry API database path
+# Used to resolve human-readable names for databases where the matches API
+# does not return meaningful names
+ENTRY_API_DB_MAPPING = {
+    "cath": "cathgene3d",
+    "superfamily": "ssf",
+    "panther": "panther",
+}
+
+# FTP XML-based name resolution
+INTERPRO_XML_URL = "https://ftp.ebi.ac.uk/pub/databases/interpro/current_release/interpro.xml.gz"
+INTERPRO_CACHE_DIR = Path.home() / ".cache" / "protspace" / "interpro"
+CACHE_MAX_AGE_DAYS = 7
+
+# Mapping from annotation key to the db attribute used in the XML <db_xref> elements
+_ANNOTATION_KEY_TO_XML_DB = {
+    "cath": "CATHGENE3D",
+    "superfamily": "SSF",
+    "panther": "PANTHER",
+}
+
+# The set of db attribute values we extract from the XML
+_XML_DBS_OF_INTEREST = set(_ANNOTATION_KEY_TO_XML_DB.values())
 
 ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
@@ -40,6 +77,11 @@ class InterProRetriever(BaseAnnotationRetriever):
     - SUPERFAMILY (key: superfamily)
     - CATH-Gene3D (key: cath)
     - Phobius signal peptides (key: signal_peptide)
+    - SMART (key: smart)
+    - CDD (key: cdd)
+    - PANTHER (key: panther)
+    - PROSITE (key: prosite)
+    - PRINTS (key: prints)
 
     Annotations are stored with confidence scores in a pipe-separated format:
     - Format: accession (name)|score1,score2,score3;accession2 (name2)|score1
@@ -63,7 +105,7 @@ class InterProRetriever(BaseAnnotationRetriever):
 
         Args:
             headers: List of protein identifiers
-            annotations: List of InterPro database annotations to fetch (pfam, superfamily, cath, signal_peptide)
+            annotations: List of InterPro database annotations to fetch (e.g., pfam, superfamily, cath, smart, ...)
             sequences: Dictionary mapping protein identifiers to their sequences (needed for MD5 calculation)
         """
         super().__init__(headers, annotations)
@@ -250,6 +292,21 @@ class InterProRetriever(BaseAnnotationRetriever):
                                 "scores"
                             ].append(str(score) if score is not None else "")
 
+        # Resolve names via InterPro entry API for databases that don't
+        # provide meaningful names in the matches API response
+        resolved_names = {}
+        for annotation_key in self.annotations:
+            if annotation_key in ENTRY_API_DB_MAPPING:
+                all_accessions = set()
+                for annotations_data in protein_annotations.values():
+                    if annotation_key in annotations_data:
+                        all_accessions.update(
+                            annotations_data[annotation_key]["accessions"]
+                        )
+                resolved_names[annotation_key] = self._resolve_entry_names(
+                    all_accessions, annotation_key
+                )
+
         # Convert to ProteinAnnotations objects
         result = []
         for identifier, annotations_dict in protein_annotations.items():
@@ -275,6 +332,13 @@ class InterProRetriever(BaseAnnotationRetriever):
                         # Update name if current one is empty but we have a name
                         if not accession_to_name[acc] and name:
                             accession_to_name[acc] = name
+
+                    # Inject names resolved from InterPro entry API
+                    if annotation_name in resolved_names:
+                        name_map = resolved_names[annotation_name]
+                        for acc in accession_to_name:
+                            if not accession_to_name[acc] and acc in name_map:
+                                accession_to_name[acc] = name_map[acc]
 
                     # Sort by accession for consistency
                     sorted_accessions = sorted(accession_to_scores.keys())
@@ -312,6 +376,143 @@ class InterProRetriever(BaseAnnotationRetriever):
 
         logger.info(f"Processed InterPro annotations for {len(result)} proteins")
         return result
+
+    def _resolve_entry_names(
+        self, accessions: set[str], annotation_key: str
+    ) -> dict[str, str]:
+        """
+        Resolve accessions to human-readable names via the InterPro FTP XML.
+
+        Downloads ``interpro.xml.gz`` once (cached locally for 7 days) and
+        extracts the parent InterPro entry name for each member-database
+        accession.
+
+        Args:
+            accessions: Set of accessions (e.g., {"G3DSA:1.10.10.10"} or {"SSF53098"})
+            annotation_key: The annotation key (e.g., "cath", "superfamily")
+
+        Returns:
+            Dictionary mapping accession to name (only for the requested
+            accessions).
+        """
+        if not accessions or annotation_key not in ENTRY_API_DB_MAPPING:
+            return {}
+
+        xml_db = _ANNOTATION_KEY_TO_XML_DB.get(annotation_key)
+        if not xml_db:
+            return {}
+
+        all_names = self._get_member_db_name_map()
+        db_names = all_names.get(xml_db, {})
+
+        name_map = {acc: db_names[acc] for acc in accessions if acc in db_names}
+
+        label = annotation_key.upper()
+        logger.info(f"Resolved {len(name_map)}/{len(accessions)} {label} names")
+        return name_map
+
+    @classmethod
+    def _get_member_db_name_map(cls) -> dict[str, dict[str, str]]:
+        """
+        Return ``{db: {accession: name}}`` for SSF, CATHGENE3D and PANTHER.
+
+        The data is extracted from ``interpro.xml.gz`` on the EBI FTP server
+        and cached locally as JSON for up to :data:`CACHE_MAX_AGE_DAYS` days.
+        """
+        cache_dir = INTERPRO_CACHE_DIR
+        cache_file = cache_dir / "member_db_names.json"
+        timestamp_file = cache_dir / "member_db_names.timestamp"
+
+        # Check cache freshness
+        if cache_file.exists() and timestamp_file.exists():
+            try:
+                ts = float(timestamp_file.read_text().strip())
+                age_days = (time.time() - ts) / 86400
+                if age_days < CACHE_MAX_AGE_DAYS:
+                    logger.info("Loading InterPro member-DB name map from cache")
+                    return json.loads(cache_file.read_text())
+            except (ValueError, OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Cache read failed ({e}), will re-download")
+
+        # Download and parse
+        logger.info(f"Downloading {INTERPRO_XML_URL} ...")
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            resp = requests.get(INTERPRO_XML_URL, timeout=120, stream=True)
+            resp.raise_for_status()
+
+            # Write to temp file first, then move atomically
+            tmp_gz = None
+            try:
+                fd, tmp_gz = tempfile.mkstemp(suffix=".xml.gz", dir=str(cache_dir))
+                os.close(fd)
+                with open(tmp_gz, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=1 << 20):
+                        f.write(chunk)
+
+                name_maps = cls._parse_interpro_xml(tmp_gz)
+            finally:
+                if tmp_gz and os.path.exists(tmp_gz):
+                    os.remove(tmp_gz)
+
+            # Persist cache
+            cache_file.write_text(json.dumps(name_maps))
+            timestamp_file.write_text(str(time.time()))
+
+            logger.info("InterPro member-DB name map cached successfully")
+            return name_maps
+
+        except Exception as e:
+            logger.warning(f"Failed to download/parse InterPro XML: {e}")
+            # If a stale cache exists, use it as fallback
+            if cache_file.exists():
+                try:
+                    logger.info("Falling back to stale cache")
+                    return json.loads(cache_file.read_text())
+                except (json.JSONDecodeError, OSError):
+                    pass
+            return {}
+
+    @staticmethod
+    def _parse_interpro_xml(gz_path: str) -> dict[str, dict[str, str]]:
+        """
+        Stream-parse a gzipped InterPro XML file and extract member-DB names.
+
+        For each ``<interpro>`` element the parser captures the child
+        ``<name>`` text (the InterPro entry name).  For every ``<db_xref>``
+        whose ``db`` attribute is in :data:`_XML_DBS_OF_INTEREST`, the
+        ``name`` attribute of the xref is used if non-empty; otherwise the
+        parent InterPro entry name is used.
+
+        Returns:
+            ``{db: {accession: name}}`` for the databases of interest.
+        """
+        name_maps: dict[str, dict[str, str]] = {db: {} for db in _XML_DBS_OF_INTEREST}
+
+        with gzip.open(gz_path, "rb") as f:
+            context = ET.iterparse(f, events=("end",))
+            for _event, elem in context:
+                if elem.tag == "interpro":
+                    # Get the InterPro entry name
+                    name_elem = elem.find("name")
+                    ipr_name = name_elem.text.strip() if name_elem is not None and name_elem.text else ""
+
+                    for db_xref in elem.iter("db_xref"):
+                        db = db_xref.get("db", "")
+                        if db in _XML_DBS_OF_INTEREST:
+                            dbkey = db_xref.get("dbkey", "")
+                            xref_name = db_xref.get("name", "").strip()
+                            resolved_name = xref_name if xref_name else ipr_name
+                            if dbkey and resolved_name:
+                                name_maps[db][dbkey] = resolved_name
+
+                    # Free memory for processed elements
+                    elem.clear()
+
+        total = sum(len(v) for v in name_maps.values())
+        logger.info(f"Parsed InterPro XML: {total} member-DB name mappings extracted")
+        return name_maps
 
     def _manage_headers(self, headers: list[str]) -> list[str]:
         """

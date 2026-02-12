@@ -42,7 +42,7 @@ pip install "protspace[frontend]"
 
 ```bash
 # Retrieve and analyze proteins from UniProt using sequence similarity (mmmseqs2)
-protspace-query -q "(ft_domain:phosphatase) AND (reviewed:true)" -o output_dir -m pca2,pca3,umap2 --annotations "protein_families,fragment,kingdom,superfamily" --n_neighbors 30 --min_dist 0.4
+protspace-query -q "(ft_domain:phosphatase) AND (reviewed:true)" -o output_dir -m pca2,pca3,umap2 --annotations "protein_families,fragment,kingdom,superfamily,panther,cath" --n_neighbors 30 --min_dist 0.4
 ```
 
 ### 2. Process local data
@@ -83,15 +83,15 @@ If `-a` is not specified, all available annotations are retrieved.
 
 **UniProt**: `annotation_score`, `cc_subcellular_location`, `fragment`, `gene_name`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb`
 
-**InterPro**: `cath`, `pfam`, `signal_peptide`, `superfamily` (includes signature names and confidence scores in pipe-separated format: `accession (name)|score1,score2;accession2 (name2)|score1`)
+**InterPro**: `cath`, `cdd`, `panther`, `pfam`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily` (includes signature names and confidence scores in pipe-separated format: `accession (name)|score1,score2;accession2 (name2)|score1`)
 
 **Taxonomy**: `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
 
 Examples:
 
 ```bash
-# Extract Pfam domains and subcellular location
-protspace-local -i data.h5 --annotations pfam,cath,cc_subcellular_location
+# Extract Pfam, CATH, PANTHER domains and subcellular location
+protspace-local -i data.h5 --annotations pfam,cath,panther,cc_subcellular_location
 
 # Extract reviewed status, length, and taxonomy
 protspace-query -q "..." --annotations reviewed,length_quantile,kingdom

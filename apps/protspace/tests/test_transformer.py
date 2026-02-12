@@ -481,3 +481,45 @@ class TestAnnotationTransformerEdgeCases:
         result = transformer.transform_row(row, headers)
 
         assert result == ["P01308"]
+
+
+class TestNewDatabasesPassThrough:
+    """Test that new pass-through databases are preserved unchanged by the transformer."""
+
+    def test_smart_preserved(self):
+        """Test that SMART annotations pass through unchanged."""
+        transformer = AnnotationTransformer()
+        annotations = {"smart": "SM00220 (InsulinA)|35.7"}
+
+        result = transformer._transform_annotations(annotations)
+
+        assert result["smart"] == "SM00220 (InsulinA)|35.7"
+
+    def test_cdd_preserved(self):
+        """Test that CDD annotations pass through unchanged."""
+        transformer = AnnotationTransformer()
+        annotations = {"cdd": "cd00205 (IGc2)"}
+
+        result = transformer._transform_annotations(annotations)
+
+        assert result["cdd"] == "cd00205 (IGc2)"
+
+    def test_prosite_preserved(self):
+        """Test that PROSITE annotations pass through unchanged."""
+        transformer = AnnotationTransformer()
+        annotations = {"prosite": "PS00009 (INSULIN)"}
+
+        result = transformer._transform_annotations(annotations)
+
+        assert result["prosite"] == "PS00009 (INSULIN)"
+
+    def test_prints_preserved(self):
+        """Test that PRINTS annotations pass through unchanged."""
+        transformer = AnnotationTransformer()
+        annotations = {"prints": "PR00276 (INSULIN)"}
+
+        result = transformer._transform_annotations(annotations)
+
+        assert result["prints"] == "PR00276 (INSULIN)"
+
+
