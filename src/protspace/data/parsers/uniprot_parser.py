@@ -31,9 +31,9 @@ cc_subcellular_location  - Subcellular location values (list)
 protein_families         - Protein family description
 ec                       - EC numbers (list)
 go                       - All Gene Ontology terms (list of dicts)
-go_p                     - GO Biological Process terms (list)
-go_f                     - GO Molecular Function terms (list)
-go_c                     - GO Cellular Component terms (list)
+go_bp                    - GO Biological Process terms (list)
+go_mf                    - GO Molecular Function terms (list)
+go_cc                    - GO Cellular Component terms (list)
 go_id                    - GO term IDs only (list)
 date_created             - Entry creation date
 date_modified            - Last modification date
@@ -82,9 +82,9 @@ AVAILABLE_PROPERTIES = [
     "protein_families",
     "ec",
     "go",
-    "go_p",
-    "go_f",
-    "go_c",
+    "go_bp",
+    "go_mf",
+    "go_cc",
     "go_id",
     "date_created",
     "date_modified",
@@ -232,9 +232,9 @@ class UniProtEntry:
 
     @property
     def keyword(self) -> list[str]:
-        """Keyword names."""
+        """Keyword IDs with names."""
         keywords = self.data.get("keywords", [])
-        return [kw.get("name", "") for kw in keywords]
+        return [f"{kw.get('id', '')} ({kw.get('name', '')})" for kw in keywords]
 
     @property
     def keyword_id(self) -> list[str]:
@@ -314,17 +314,17 @@ class UniProtEntry:
         return self.get_go_terms()
 
     @property
-    def go_p(self) -> list[str]:
+    def go_bp(self) -> list[str]:
         """GO Biological Process terms."""
         return [term["term"] for term in self.get_go_terms(aspect="P")]
 
     @property
-    def go_f(self) -> list[str]:
+    def go_mf(self) -> list[str]:
         """GO Molecular Function terms."""
         return [term["term"] for term in self.get_go_terms(aspect="F")]
 
     @property
-    def go_c(self) -> list[str]:
+    def go_cc(self) -> list[str]:
         """GO Cellular Component terms."""
         return [term["term"] for term in self.get_go_terms(aspect="C")]
 

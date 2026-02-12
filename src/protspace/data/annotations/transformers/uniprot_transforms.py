@@ -5,6 +5,20 @@ This module contains transformations for UniProt annotations to convert
 raw values into user-friendly formats.
 """
 
+import json
+import logging
+import time
+from pathlib import Path
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+# ExPASy ENZYME database for EC name resolution
+ENZYME_DAT_URL = "https://ftp.expasy.org/databases/enzyme/enzyme.dat"
+ENZYME_CACHE_DIR = Path.home() / ".cache" / "protspace" / "enzyme"
+CACHE_MAX_AGE_DAYS = 7
+
 
 class UniProtTransformer:
     """Transformations for UniProt-specific annotations."""
@@ -99,3 +113,143 @@ class UniProtTransformer:
             Original value (already in correct format)
         """
         return str(value) if value else ""
+
+    @staticmethod
+    def transform_go_terms(value: str) -> str:
+        """
+        Strip GO aspect prefixes (F:, P:, C:) from semicolon-separated GO terms.
+
+        Args:
+            value: Semicolon-separated GO terms (e.g., "F:kinase activity;F:ATP binding")
+
+        Returns:
+            Terms with prefixes stripped (e.g., "kinase activity;ATP binding")
+        """
+        if not value:
+            return value
+
+        terms = value.split(";")
+        cleaned = []
+        for term in terms:
+            term = term.strip()
+            if len(term) > 2 and term[1] == ":":
+                cleaned.append(term[2:])
+            else:
+                cleaned.append(term)
+        return ";".join(cleaned)
+
+    @staticmethod
+    def transform_ec(value: str, ec_name_map: dict[str, str]) -> str:
+        """
+        Append enzyme names to EC numbers using ExPASy ENZYME database.
+
+        Args:
+            value: Semicolon-separated EC numbers (e.g., "2.7.11.1;2.7.11.24")
+            ec_name_map: Mapping from EC number to enzyme name
+
+        Returns:
+            EC numbers with names (e.g., "2.7.11.1 (Non-specific serine/threonine protein kinase);2.7.11.24 (Mitogen-activated protein kinase)")
+        """
+        if not value:
+            return value
+
+        ec_numbers = value.split(";")
+        result = []
+        for ec in ec_numbers:
+            ec = ec.strip()
+            if not ec:
+                continue
+            name = ec_name_map.get(ec, "")
+            if name:
+                result.append(f"{ec} ({name})")
+            else:
+                result.append(ec)
+        return ";".join(result)
+
+    @classmethod
+    def _get_ec_name_map(cls) -> dict[str, str]:
+        """
+        Download and cache the ExPASy ENZYME database, returning {ec_number: name}.
+
+        The data is downloaded from the ExPASy FTP server and cached locally
+        as JSON for up to CACHE_MAX_AGE_DAYS days.
+        """
+        cache_dir = ENZYME_CACHE_DIR
+        cache_file = cache_dir / "ec_names.json"
+        timestamp_file = cache_dir / "ec_names.timestamp"
+
+        # Check cache freshness
+        if cache_file.exists() and timestamp_file.exists():
+            try:
+                ts = float(timestamp_file.read_text().strip())
+                age_days = (time.time() - ts) / 86400
+                if age_days < CACHE_MAX_AGE_DAYS:
+                    logger.info("Loading EC name map from cache")
+                    return json.loads(cache_file.read_text())
+            except (ValueError, OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Cache read failed ({e}), will re-download")
+
+        # Download and parse
+        logger.info(f"Downloading {ENZYME_DAT_URL} ...")
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            resp = requests.get(ENZYME_DAT_URL, timeout=120)
+            resp.raise_for_status()
+
+            ec_map = cls._parse_enzyme_dat(resp.text)
+
+            # Persist cache
+            cache_file.write_text(json.dumps(ec_map))
+            timestamp_file.write_text(str(time.time()))
+
+            logger.info(f"EC name map cached successfully ({len(ec_map)} entries)")
+            return ec_map
+
+        except Exception as e:
+            logger.warning(f"Failed to download/parse enzyme.dat: {e}")
+            # If a stale cache exists, use it as fallback
+            if cache_file.exists():
+                try:
+                    logger.info("Falling back to stale EC name cache")
+                    return json.loads(cache_file.read_text())
+                except (json.JSONDecodeError, OSError):
+                    pass
+            return {}
+
+    @staticmethod
+    def _parse_enzyme_dat(text: str) -> dict[str, str]:
+        """
+        Parse ExPASy enzyme.dat text to extract {ec_number: description}.
+
+        Each entry is delimited by '//' and contains:
+        - ID   <ec_number>
+        - DE   <description>
+
+        Args:
+            text: Raw text content of enzyme.dat
+
+        Returns:
+            Dictionary mapping EC numbers to enzyme names
+        """
+        ec_map = {}
+        current_id = None
+        current_de_parts = []
+
+        for line in text.splitlines():
+            if line.startswith("ID   "):
+                current_id = line[5:].strip()
+                current_de_parts = []
+            elif line.startswith("DE   "):
+                current_de_parts.append(line[5:].strip())
+            elif line.startswith("//"):
+                if current_id and current_de_parts:
+                    de = " ".join(current_de_parts)
+                    # Remove trailing period
+                    if de.endswith("."):
+                        de = de[:-1]
+                    ec_map[current_id] = de
+                current_id = None
+                current_de_parts = []
+
+        return ec_map

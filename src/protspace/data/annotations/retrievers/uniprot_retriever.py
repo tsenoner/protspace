@@ -21,8 +21,13 @@ logger = logging.getLogger(__name__)
 UNIPROT_ANNOTATIONS = [
     "annotation_score",
     "cc_subcellular_location",
+    "ec",
     "fragment",
     "gene_name",
+    "go_bp",
+    "go_cc",
+    "go_mf",
+    "keyword",
     "length",
     "organism_id",
     "protein_name",
