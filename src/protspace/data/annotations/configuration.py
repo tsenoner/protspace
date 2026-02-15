@@ -19,10 +19,67 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
 logger = logging.getLogger(__name__)
 
 # Constants
-DEFAULT_ANNOTATIONS = UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS
+ALL_ANNOTATIONS = UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
 NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
 LENGTH_BINNING_ANNOTATIONS = ["length_fixed", "length_quantile"]
+
+# User-facing UniProt annotations (excludes internal: sequence, organism_id, length)
+_UNIPROT_USER_ANNOTATIONS = [
+    "annotation_score",
+    "cc_subcellular_location",
+    "ec",
+    "fragment",
+    "go_bp",
+    "go_cc",
+    "go_mf",
+    "keyword",
+    "protein_existence",
+    "protein_families",
+    "reviewed",
+    "xref_pdb",
+    "length_fixed",
+    "length_quantile",
+    # gene_name, protein_name, uniprot_kb_id added via ALWAYS_INCLUDED
+]
+
+ANNOTATION_GROUPS = {
+    "default": [
+        "ec",
+        "keyword",
+        "length_quantile",
+        "protein_families",
+        "reviewed",
+    ],
+    "uniprot": _UNIPROT_USER_ANNOTATIONS,
+    "interpro": INTERPRO_ANNOTATIONS,
+    "taxonomy": TAXONOMY_ANNOTATIONS,
+    "all": _UNIPROT_USER_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS,
+}
+
+
+def expand_annotation_groups(annotations: list[str]) -> list[str]:
+    """Replace group names with their member annotations.
+
+    Expands group preset names (default, all, uniprot, interpro, taxonomy)
+    into their individual annotation names. Individual annotation names are
+    passed through unchanged. Deduplicates while preserving order.
+
+    Args:
+        annotations: List of annotation names and/or group names
+
+    Returns:
+        List of individual annotation names with groups expanded and duplicates removed
+    """
+    expanded = []
+    seen = set()
+    for name in annotations:
+        members = ANNOTATION_GROUPS.get(name, [name])
+        for member in members:
+            if member not in seen:
+                seen.add(member)
+                expanded.append(member)
+    return expanded
 
 
 class AnnotationConfiguration:
@@ -92,23 +149,25 @@ class AnnotationConfiguration:
 
         return sources_needed
 
-    def _validate(self, user_annotations: list[str]) -> list[str] | None:
+    def _validate(self, user_annotations: list[str] | None) -> list[str]:
         """
         Validate requested annotations against available annotations.
 
         Args:
-            user_annotations: List of requested annotation names
+            user_annotations: List of requested annotation names (None = use default group)
 
         Returns:
-            Validated list of annotations or None
+            Validated list of annotations
 
         Raises:
             ValueError: If any requested annotation is not available
         """
         if user_annotations is None:
-            return None
+            user_annotations = ["default"]
 
-        all_annotations = DEFAULT_ANNOTATIONS + LENGTH_BINNING_ANNOTATIONS
+        user_annotations = expand_annotation_groups(user_annotations)
+
+        all_annotations = ALL_ANNOTATIONS + LENGTH_BINNING_ANNOTATIONS
         normalized_annotations = []
 
         for annotation in user_annotations + ALWAYS_INCLUDED_ANNOTATIONS:
@@ -128,10 +187,7 @@ class AnnotationConfiguration:
         Returns:
             Tuple of (uniprot_annotations, taxonomy_annotations, interpro_annotations)
         """
-        if self.user_annotations:
-            return self._split_user_annotations()
-        else:
-            return self._get_default_annotations()
+        return self._split_user_annotations()
 
     def _split_user_annotations(
         self,
@@ -178,46 +234,6 @@ class AnnotationConfiguration:
             )
         else:
             return uniprot_annotations, None, None
-
-    def _get_default_annotations(
-        self,
-    ) -> tuple[list[str], list[str] | None, list[str] | None]:
-        """Get default annotation configuration."""
-        uniprot_annotations = [
-            annotation
-            for annotation in DEFAULT_ANNOTATIONS
-            if annotation in UNIPROT_ANNOTATIONS
-        ]
-        taxonomy_annotations = [
-            annotation
-            for annotation in DEFAULT_ANNOTATIONS
-            if annotation in TAXONOMY_ANNOTATIONS
-        ]
-        interpro_annotations = [
-            annotation
-            for annotation in DEFAULT_ANNOTATIONS
-            if annotation in INTERPRO_ANNOTATIONS
-        ]
-
-        uniprot_annotations = self._add_required_annotations(
-            uniprot_annotations, interpro_annotations
-        )
-
-        # We have taxonomy or interpro annotations
-        if taxonomy_annotations or interpro_annotations:
-            return (
-                uniprot_annotations,
-                taxonomy_annotations if taxonomy_annotations else None,
-                interpro_annotations if interpro_annotations else None,
-            )
-
-        # We have other annotations than the needed ones
-        elif len(uniprot_annotations) > len(NEEDED_UNIPROT_ANNOTATIONS):
-            return uniprot_annotations, None, None
-
-        else:
-            logger.info("No annotations provided, using default UniProt annotations")
-            return UNIPROT_ANNOTATIONS, None, None
 
     def _add_required_annotations(
         self, annotations: list[str], interpro_annotations: list[str] = None

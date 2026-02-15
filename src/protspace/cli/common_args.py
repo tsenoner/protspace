@@ -168,20 +168,27 @@ def add_annotations_argument(parser: argparse.ArgumentParser, allow_csv: bool = 
         default=None,
         help=(
             f"Protein annotations to extract as comma-separated values{csv_note}.\n"
-            "If not specified, all available annotations are retrieved.\n"
+            "If not specified, the 'default' group is used (curated UniProt subset).\n"
             "\n"
-            "Available annotations:\n"
+            "Groups: default, all, uniprot, interpro, taxonomy\n"
+            "  (mixable with individual names, e.g. -a default,interpro)\n"
+            "\n"
+            "Default group: ec, keyword, length_quantile, protein_families, reviewed\n"
+            "\n"
+            "All available annotations:\n"
             "  UniProt:    annotation_score, cc_subcellular_location, ec, fragment,\n"
             "              gene_name, go_bp, go_cc, go_mf, keyword, length_fixed,\n"
             "              length_quantile, protein_existence, protein_families,\n"
             "              reviewed, xref_pdb\n"
             "  InterPro:   cath, cdd, panther, pfam, prints,\n"
             "              prosite, signal_peptide, smart, superfamily\n"
-            "  Taxonomy:   root, domain, kingdom, phylum, class, order, family, genus, species\n"
+            "  Taxonomy:   root, domain, kingdom, phylum, class, order, family,\n"
+            "              genus, species\n"
             "\n"
             "Examples:\n"
-            f"  --annotations reviewed,length_quantile,kingdom{csv_example}\n"
-            f"  --annotations pfam,cath,cc_subcellular_location"
+            f"  -a all                               (everything)\n"
+            f"  -a default,interpro,kingdom           (mix groups + individual)\n"
+            f"  -a pfam,cath,reviewed{csv_example}"
         ),
     )
 

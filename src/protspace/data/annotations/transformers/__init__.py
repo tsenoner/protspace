@@ -12,8 +12,12 @@ from protspace.data.annotations.transformers.interpro_transforms import (
     InterProTransformer,
 )
 from protspace.data.annotations.transformers.length_binning import LengthBinner
-from protspace.data.annotations.transformers.transformer import AnnotationTransformer
-from protspace.data.annotations.transformers.uniprot_transforms import UniProtTransformer
+from protspace.data.annotations.transformers.transformer import (
+    AnnotationTransformer,
+)
+from protspace.data.annotations.transformers.uniprot_transforms import (
+    UniProtTransformer,
+)
 
 __all__ = [
     "AnnotationTransformer",
