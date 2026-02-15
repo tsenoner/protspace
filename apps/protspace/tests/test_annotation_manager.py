@@ -6,10 +6,12 @@ import pandas as pd
 import pytest
 
 from src.protspace.data.annotations.configuration import (
-    DEFAULT_ANNOTATIONS,
+    ALL_ANNOTATIONS,
+    ANNOTATION_GROUPS,
     LENGTH_BINNING_ANNOTATIONS,
     NEEDED_UNIPROT_ANNOTATIONS,
     AnnotationConfiguration,
+    expand_annotation_groups,
 )
 from src.protspace.data.annotations.manager import ProteinAnnotationManager
 from src.protspace.data.annotations.merging import AnnotationMerger
@@ -122,25 +124,23 @@ class TestProteinAnnotationExtractorInit:
             ProteinAnnotationExtractor(headers=headers, annotations=invalid_annotations)
 
     def test_init_with_no_annotations(self):
-        """Test initialization without specifying annotations."""
+        """Test initialization without specifying annotations uses default group."""
         headers = SAMPLE_HEADERS
 
         extractor = ProteinAnnotationExtractor(headers=headers)
 
-        # When no annotations specified, user_annotations should be None
-        assert extractor.user_annotations is None
+        # When no annotations specified, should use the 'default' group
+        assert extractor.user_annotations is not None
+        for ann in ANNOTATION_GROUPS["default"]:
+            assert ann in extractor.user_annotations
 
-        # Configuration should be initialized with default annotations
+        # Configuration should be initialized with default group annotations
         assert extractor.config is not None
-        assert hasattr(extractor.config, "user_annotations")
-        assert hasattr(extractor.config, "uniprot_annotations")
-        assert hasattr(extractor.config, "taxonomy_annotations")
-
-        # Config should have default annotations split by source
         assert extractor.config.uniprot_annotations is not None
         assert len(extractor.config.uniprot_annotations) > 0
-        assert extractor.config.taxonomy_annotations is not None
-        assert len(extractor.config.taxonomy_annotations) > 0
+        # Default group is UniProt-only, so no taxonomy/interpro
+        assert extractor.config.taxonomy_annotations is None
+        assert extractor.config.interpro_annotations is None
 
 
 class TestAnnotationConfiguration:
@@ -156,10 +156,12 @@ class TestAnnotationConfiguration:
         assert config.user_annotations == expected_annotations
 
     def test_validate_with_none(self):
-        """Test validation with None returns None."""
+        """Test validation with None uses default group."""
         config = AnnotationConfiguration(user_annotations=None)
 
-        assert config.user_annotations is None
+        assert config.user_annotations is not None
+        for ann in ANNOTATION_GROUPS["default"]:
+            assert ann in config.user_annotations
 
     def test_validate_invalid_annotation(self):
         """Test validation with invalid annotation raises ValueError."""
@@ -216,16 +218,16 @@ class TestAnnotationConfiguration:
         assert "length" in config.uniprot_annotations
 
     def test_split_by_source_default_annotations(self):
-        """Test splitting with default annotations (None)."""
+        """Test splitting with default annotations (None) uses default group."""
         config = AnnotationConfiguration(user_annotations=None)
 
-        # Should include all UniProt annotations from DEFAULT_ANNOTATIONS
-        for annotation in UNIPROT_ANNOTATIONS:
-            assert annotation in config.uniprot_annotations
+        # Default group is UniProt-only
+        assert config.uniprot_annotations is not None
+        assert len(config.uniprot_annotations) > 0
 
-        # Should include taxonomy annotations since they're in DEFAULT_ANNOTATIONS
-        assert config.taxonomy_annotations is not None
-        assert len(config.taxonomy_annotations) > 0
+        # Default group has no taxonomy or interpro annotations
+        assert config.taxonomy_annotations is None
+        assert config.interpro_annotations is None
 
 
 class TestLengthBinner:
@@ -611,9 +613,9 @@ class TestIntegration:
         assert "length" not in result.columns
         assert "sequence" not in result.columns
 
-        # But derived annotations should be present
-        assert "length_fixed" in result.columns
+        # Default group annotations should be present
         assert "length_quantile" in result.columns
+        assert "protein_families" in result.columns
 
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
@@ -654,26 +656,119 @@ class TestIntegration:
             assert "sequence" not in result.columns
 
 
+class TestExpandAnnotationGroups:
+    """Test the expand_annotation_groups() function."""
+
+    def test_group_expansion_uniprot(self):
+        """Test that 'uniprot' expands to all user-facing UniProt annotations."""
+        result = expand_annotation_groups(["uniprot"])
+        assert result == ANNOTATION_GROUPS["uniprot"]
+
+    def test_group_expansion_interpro(self):
+        """Test that 'interpro' expands to all InterPro annotations."""
+        result = expand_annotation_groups(["interpro"])
+        assert result == INTERPRO_ANNOTATIONS
+
+    def test_group_expansion_taxonomy(self):
+        """Test that 'taxonomy' expands to all taxonomy annotations."""
+        result = expand_annotation_groups(["taxonomy"])
+        assert result == TAXONOMY_ANNOTATIONS
+
+    def test_group_expansion_default(self):
+        """Test that 'default' expands to the curated subset."""
+        result = expand_annotation_groups(["default"])
+        assert result == ANNOTATION_GROUPS["default"]
+        assert "reviewed" in result
+        assert "protein_families" in result
+
+    def test_group_expansion_all(self):
+        """Test that 'all' expands to all annotations from all sources."""
+        result = expand_annotation_groups(["all"])
+        assert result == ANNOTATION_GROUPS["all"]
+        # Should contain annotations from all three sources
+        assert "reviewed" in result  # UniProt
+        assert "kingdom" in result  # Taxonomy
+        assert "pfam" in result  # InterPro
+
+    def test_mixed_group_and_individuals(self):
+        """Test mixing group names with individual annotation names."""
+        result = expand_annotation_groups(["interpro", "kingdom"])
+        assert "pfam" in result  # From interpro group
+        assert "kingdom" in result  # Individual
+        assert "cath" in result  # From interpro group
+
+    def test_deduplication(self):
+        """Test that duplicates are removed when group overlaps with individual."""
+        result = expand_annotation_groups(["uniprot", "ec"])
+        # ec is in uniprot group, should not appear twice
+        assert result.count("ec") == 1
+
+    def test_unknown_names_pass_through(self):
+        """Test that unknown names pass through unchanged (caught later by _validate)."""
+        result = expand_annotation_groups(["unknown_annotation", "reviewed"])
+        assert "unknown_annotation" in result
+        assert "reviewed" in result
+
+    def test_no_groups_returns_input_unchanged(self):
+        """Test that input without group names passes through unchanged."""
+        input_annotations = ["reviewed", "pfam", "kingdom"]
+        result = expand_annotation_groups(input_annotations)
+        assert result == input_annotations
+
+    def test_preserves_order(self):
+        """Test that order is preserved (group members first, then individuals)."""
+        result = expand_annotation_groups(["default", "kingdom"])
+        # default members come first, then kingdom
+        default_members = ANNOTATION_GROUPS["default"]
+        for i, member in enumerate(default_members):
+            assert result[i] == member
+        assert result[-1] == "kingdom"
+
+    def test_multiple_groups_combined(self):
+        """Test combining multiple groups."""
+        result = expand_annotation_groups(["default", "interpro"])
+        # Should contain all default + all interpro, deduplicated
+        for ann in ANNOTATION_GROUPS["default"]:
+            assert ann in result
+        for ann in INTERPRO_ANNOTATIONS:
+            assert ann in result
+
+    def test_empty_list(self):
+        """Test that empty list returns empty list."""
+        result = expand_annotation_groups([])
+        assert result == []
+
+    def test_integration_with_validate(self):
+        """Test that group expansion works through AnnotationConfiguration."""
+        config = AnnotationConfiguration(user_annotations=["default"])
+        # Should have expanded "default" and added always-included
+        for ann in ANNOTATION_GROUPS["default"]:
+            assert ann in config.user_annotations
+        # Always-included should be present
+        assert "gene_name" in config.user_annotations
+        assert "protein_name" in config.user_annotations
+
+
 class TestConstants:
     """Test module constants."""
 
-    def test_default_annotations_constant(self):
-        """Test that DEFAULT_ANNOTATIONS combines UniProt and taxonomy annotations."""
+    def test_all_annotations_constant(self):
+        """Test that ALL_ANNOTATIONS combines UniProt, taxonomy, and InterPro annotations."""
         from protspace.data.annotations.retrievers.interpro_retriever import (
             INTERPRO_ANNOTATIONS,
         )
 
-        assert len(DEFAULT_ANNOTATIONS) == len(UNIPROT_ANNOTATIONS) + len(
+        assert len(ALL_ANNOTATIONS) == len(UNIPROT_ANNOTATIONS) + len(
             TAXONOMY_ANNOTATIONS
         ) + len(INTERPRO_ANNOTATIONS)
         assert all(
-            annotation in DEFAULT_ANNOTATIONS for annotation in UNIPROT_ANNOTATIONS
+            annotation in ALL_ANNOTATIONS for annotation in UNIPROT_ANNOTATIONS
         )
         assert all(
-            annotation in DEFAULT_ANNOTATIONS for annotation in TAXONOMY_ANNOTATIONS
+            annotation in ALL_ANNOTATIONS for annotation in TAXONOMY_ANNOTATIONS
         )
         assert all(
-            annotation in DEFAULT_ANNOTATIONS for annotation in INTERPRO_ANNOTATIONS
+            annotation in ALL_ANNOTATIONS for annotation in INTERPRO_ANNOTATIONS
         )
 
     def test_needed_uniprot_annotations_constant(self):

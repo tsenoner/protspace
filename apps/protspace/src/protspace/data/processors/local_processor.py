@@ -219,10 +219,10 @@ class LocalProcessor(BaseProcessor):
                         # Determine required annotations
                         if annotations_list is None:
                             from protspace.data.annotations.configuration import (
-                                DEFAULT_ANNOTATIONS,
+                                ANNOTATION_GROUPS,
                             )
 
-                            required_annotations = set(DEFAULT_ANNOTATIONS)
+                            required_annotations = set(ANNOTATION_GROUPS["default"])
                         else:
                             required_annotations = set(annotations_list)
 

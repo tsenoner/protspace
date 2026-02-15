@@ -134,8 +134,7 @@ class ProteinAnnotationManager:
 
         # 3. Apply transformations
         apply_binning = (
-            self.user_annotations is None
-            or "length_fixed" in self.user_annotations
+            "length_fixed" in self.user_annotations
             or "length_quantile" in self.user_annotations
         )
         transformed_annotations = self.transformer.transform(
