@@ -10,19 +10,19 @@ ProtSpace retrieves annotations from three data sources: **UniProt**, **InterPro
 
 **Taxonomy** (9): `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`
 
-*Always included*: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardless of selection)
+_Always included_: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardless of selection)
 
 ## Group Presets
 
 Use group names instead of listing individual annotations:
 
-| Group      | Contents / Description                                                          |
-| ---------- | ------------------------------------------------------------------------------- |
-| `default`  | `ec`, `keyword`, `length_quantile`, `protein_families`, `reviewed`              |
-| `all`      | All annotations from all sources                                                |
-| `uniprot`  | All user-facing UniProt annotations                                             |
-| `interpro` | All InterPro annotations                                                        |
-| `taxonomy` | All taxonomy annotations                                                        |
+| Group      | Contents / Description                                             |
+| ---------- | ------------------------------------------------------------------ |
+| `default`  | `ec`, `keyword`, `length_quantile`, `protein_families`, `reviewed` |
+| `all`      | All annotations from all sources                                   |
+| `uniprot`  | All user-facing UniProt annotations                                |
+| `interpro` | All InterPro annotations                                           |
+| `taxonomy` | All taxonomy annotations                                           |
 
 Groups are mixable with individual names, e.g. `-a default,interpro` or `-a uniprot,kingdom`.
 
@@ -51,23 +51,23 @@ protspace-query -q "..." -a interpro,kingdom
 
 15 user-facing annotations retrieved from the [UniProt REST API](https://rest.uniprot.org/) via the `unipressed` library (batch size: 100 proteins/request):
 
-| Name                      | Description                                  | Example output                                            |
-| ------------------------- | -------------------------------------------- | --------------------------------------------------------- |
-| `annotation_score`        | UniProt annotation quality score (1-5)       | `5`                                                       |
-| `cc_subcellular_location` | Subcellular location(s)                      | `Cytoplasm;Nucleus`                                       |
-| `ec`                      | Enzyme Commission numbers with names         | `2.7.11.1 (Non-specific serine/threonine protein kinase)` |
-| `fragment`                | Whether the entry is a fragment              | `yes` or original value                                   |
-| `gene_name`               | Primary gene name                            | `TP53`                                                    |
-| `go_bp`                   | Gene Ontology — Biological Process           | `apoptotic process;signal transduction`                   |
-| `go_cc`                   | Gene Ontology — Cellular Component           | `nucleus;cytoplasm`                                       |
-| `go_mf`                   | Gene Ontology — Molecular Function           | `DNA binding;protein binding`                             |
-| `keyword`                 | UniProt keywords                             | `KW-0002 (3D-structure);KW-0025 (Alternative splicing)`   |
-| `length_fixed`            | Sequence length in predefined bins           | `200-400`                                                 |
-| `length_quantile`         | Sequence length in decile bins               | `100-199`                                                 |
-| `protein_existence`       | Evidence level for protein existence         | `Evidence at protein level`                               |
-| `protein_families`        | First protein family                         | `Protein kinase superfamily`                              |
-| `reviewed`                | Swiss-Prot (reviewed) or TrEMBL (unreviewed) | `true` / `false`                                          |
-| `xref_pdb`                | Has experimental 3D structure                | `True` / `False`                                          |
+| Name                      | Description                                  | Example output                                                 |
+| ------------------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| `annotation_score`        | UniProt annotation quality score (1-5)       | `5`                                                            |
+| `cc_subcellular_location` | Subcellular location(s)                      | `Cytoplasm\|EXP;Nucleus\|IEA`                                  |
+| `ec`                      | Enzyme Commission numbers with names         | `2.7.11.1 (Non-specific serine/threonine protein kinase)\|EXP` |
+| `fragment`                | Whether the entry is a fragment              | `yes` or original value                                        |
+| `gene_name`               | Primary gene name                            | `TP53`                                                         |
+| `go_bp`                   | Gene Ontology — Biological Process           | `apoptotic process\|IDA;signal transduction\|IEA`              |
+| `go_cc`                   | Gene Ontology — Cellular Component           | `nucleus\|IDA;cytoplasm\|IEA`                                  |
+| `go_mf`                   | Gene Ontology — Molecular Function           | `DNA binding\|IDA;protein binding\|IEA`                        |
+| `keyword`                 | UniProt keywords                             | `KW-0002 (3D-structure);KW-0025 (Alternative splicing)`        |
+| `length_fixed`            | Sequence length in predefined bins           | `200-400`                                                      |
+| `length_quantile`         | Sequence length in decile bins               | `100-199`                                                      |
+| `protein_existence`       | Evidence level for protein existence         | `Evidence at protein level`                                    |
+| `protein_families`        | First protein family                         | `Protein kinase superfamily\|ISS`                              |
+| `reviewed`                | Swiss-Prot (reviewed) or TrEMBL (unreviewed) | `true` / `false`                                               |
+| `xref_pdb`                | Has experimental 3D structure                | `True` / `False`                                               |
 
 **Always-included fields**: `gene_name`, `protein_name`, and `uniprot_kb_id` are always fetched regardless of which annotations are selected.
 
@@ -91,6 +91,30 @@ protspace-query -q "..." -a interpro,kingdom
 **Fixed length bins**: `<50`, `50-100`, `100-200`, `200-400`, `400-600`, `600-800`, `800-1000`, `1000-1200`, `1200-1400`, `1400-1600`, `1600-1800`, `1800-2000`, `2000+`
 
 **Quantile bins**: 10 equal-frequency bins computed from the dataset's length distribution.
+
+### Evidence Codes
+
+Four UniProt annotations (plus the three GO fields) carry inline evidence codes indicating the basis for each value. Evidence is appended after a `|` separator: `value|CODE`. Values without evidence have no `|` suffix.
+
+**Fields with evidence**: `cc_subcellular_location`, `ec`, `go_bp` / `go_cc` / `go_mf`, `protein_families`
+
+When multiple evidence sources exist for a single value, the most reliable code is chosen according to this priority order:
+
+| Code   | Meaning                             |
+| ------ | ----------------------------------- |
+| `EXP`  | Experimental evidence               |
+| `HDA`  | High throughput direct assay        |
+| `IDA`  | Inferred from direct assay          |
+| `TAS`  | Traceable author statement          |
+| `NAS`  | Non-traceable author statement      |
+| `IC`   | Curator inference                   |
+| `ISS`  | Inferred from sequence similarity   |
+| `SAM`  | Sequence analysis method            |
+| `COMB` | Combinatorial evidence              |
+| `IMP`  | Imported                            |
+| `IEA`  | Inferred from electronic annotation |
+
+Codes are derived from [ECO (Evidence & Conclusion Ontology)](https://www.evidenceontology.org/) identifiers returned by the UniProt API. GO terms use native short codes from the `GoEvidenceType` field; other annotations map ECO IDs (e.g., `ECO:0000269` → `EXP`).
 
 ## InterPro Annotations
 
