@@ -3,7 +3,7 @@
 /.vscode
 /backup
 /bin
-/docs
+/docs/publication
 /notebook
 # --- data ---
 # Ignore all data directories except 3FTx, Pla2g2, and toxins
