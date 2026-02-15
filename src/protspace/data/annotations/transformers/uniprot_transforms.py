@@ -47,23 +47,37 @@ class UniProtTransformer:
         """
         Extract first family (before comma/semicolon).
 
+        Preserves inline evidence codes: "Insulin family, Subfamily 1|ISS"
+        → "Insulin family|ISS".
+
         Args:
-            value: Protein families string (may contain multiple families)
+            value: Protein families string (may contain multiple families),
+                   optionally with evidence code suffix
 
         Returns:
-            First family only
+            First family only, with evidence preserved if present
         """
         if not value:
             return value
 
         protein_families_value = str(value)
 
-        if "," in protein_families_value:
-            return protein_families_value.split(",")[0].strip()
-        elif ";" in protein_families_value:
-            return protein_families_value.split(";")[0].strip()
+        # Split off evidence code if present
+        if "|" in protein_families_value:
+            main, evidence = protein_families_value.rsplit("|", 1)
         else:
-            return protein_families_value
+            main, evidence = protein_families_value, ""
+
+        if "," in main:
+            first = main.split(",")[0].strip()
+        elif ";" in main:
+            first = main.split(";")[0].strip()
+        else:
+            first = main
+
+        if evidence:
+            return f"{first}|{evidence}"
+        return first
 
     @staticmethod
     def transform_xref_pdb(value: str) -> str:
@@ -143,12 +157,15 @@ class UniProtTransformer:
         """
         Append enzyme names to EC numbers using ExPASy ENZYME database.
 
+        Preserves inline evidence codes: "2.7.11.1|EXP" → "2.7.11.1 (Name)|EXP".
+
         Args:
-            value: Semicolon-separated EC numbers (e.g., "2.7.11.1;2.7.11.24")
+            value: Semicolon-separated EC numbers, optionally with evidence
+                   (e.g., "2.7.11.1|EXP;2.7.11.24")
             ec_name_map: Mapping from EC number to enzyme name
 
         Returns:
-            EC numbers with names (e.g., "2.7.11.1 (Non-specific serine/threonine protein kinase);2.7.11.24 (Mitogen-activated protein kinase)")
+            EC numbers with names and evidence preserved
         """
         if not value:
             return value
@@ -159,11 +176,19 @@ class UniProtTransformer:
             ec = ec.strip()
             if not ec:
                 continue
-            name = ec_name_map.get(ec, "")
-            if name:
-                result.append(f"{ec} ({name})")
+            # Split off evidence code if present
+            if "|" in ec:
+                ec_num, evidence = ec.rsplit("|", 1)
             else:
-                result.append(ec)
+                ec_num, evidence = ec, ""
+            name = ec_name_map.get(ec_num, "")
+            if name:
+                entry = f"{ec_num} ({name})"
+            else:
+                entry = ec_num
+            if evidence:
+                entry = f"{entry}|{evidence}"
+            result.append(entry)
         return ";".join(result)
 
     @classmethod

@@ -52,6 +52,26 @@ from typing import Any
 import pandas as pd
 from unipressed import UniprotkbClient
 
+# ECO evidence code mapping (ECO ID → short human-readable code)
+ECO_TO_SHORT: dict[str, str] = {
+    "ECO:0000269": "EXP",   # Experimental evidence
+    "ECO:0000303": "TAS",   # Traceable author statement
+    "ECO:0000305": "IC",    # Curator inference
+    "ECO:0000250": "ISS",   # Sequence similarity
+    "ECO:0000255": "SAM",   # Sequence analysis method
+    "ECO:0000256": "SAM",   # Sequence analysis method (variant)
+    "ECO:0000259": "SAM",   # Sequence analysis method (variant)
+    "ECO:0000312": "IMP",   # Imported
+    "ECO:0000313": "IEA",   # Electronic annotation
+    "ECO:0007669": "IEA",   # Electronic annotation (variant)
+    "ECO:0007744": "HDA",   # High throughput direct assay
+    "ECO:0000244": "COMB",  # Combinatorial evidence
+}
+
+EVIDENCE_PRIORITY: list[str] = [
+    "EXP", "HDA", "IDA", "TAS", "NAS", "IC", "ISS", "SAM", "COMB", "IMP", "IEA",
+]
+
 # List of all available properties for validation
 AVAILABLE_PROPERTIES = [
     "entry",
@@ -266,7 +286,7 @@ class UniProtEntry:
 
     @property
     def cc_subcellular_location(self) -> list[str]:
-        """Subcellular location values."""
+        """Subcellular location values, with evidence codes appended when available."""
         comments = self.get_comments("SUBCELLULAR LOCATION")
         locations = []
         for comment in comments:
@@ -274,6 +294,9 @@ class UniProtEntry:
                 loc = subloc.get("location", {})
                 value = loc.get("value", "")
                 if value:
+                    ev = self._best_evidence(loc.get("evidences", []))
+                    if ev:
+                        value = f"{value}|{ev}"
                     locations.append(value)
         return locations
 
@@ -281,30 +304,42 @@ class UniProtEntry:
 
     @property
     def protein_families(self) -> str:
-        """Protein family description."""
+        """Protein family description, with evidence code appended when available."""
         comments = self.get_comments("SIMILARITY")
         for comment in comments:
             for text in comment.get("texts", []):
                 value = text.get("value", "")
+                ev = self._best_evidence(text.get("evidences", []))
                 prefix = "Belongs to the "
                 if value.startswith(prefix):
                     value = value[len(prefix) :]
                 # Stop at the first dot, if any
                 if "." in value:
-                    return value.split(".", 1)[0]
-                return value
+                    result = value.split(".", 1)[0]
+                else:
+                    result = value
+                if ev:
+                    result = f"{result}|{ev}"
+                return result
         return ""
 
     # --- Function ---
 
     @property
     def ec(self) -> list[str]:
-        """EC numbers."""
+        """EC numbers, with evidence codes appended when available."""
         desc = self.data.get("proteinDescription", {})
         ec_numbers = desc.get("recommendedName", {}).get("ecNumbers", [])
         for alt in desc.get("alternativeNames", []):
             ec_numbers.extend(alt.get("ecNumbers", []))
-        return [ec.get("value", "") for ec in ec_numbers]
+        result = []
+        for ec in ec_numbers:
+            value = ec.get("value", "")
+            ev = self._best_evidence(ec.get("evidences", []))
+            if ev:
+                value = f"{value}|{ev}"
+            result.append(value)
+        return result
 
     # --- Gene Ontology ---
 
@@ -315,18 +350,39 @@ class UniProtEntry:
 
     @property
     def go_bp(self) -> list[str]:
-        """GO Biological Process terms."""
-        return [term["term"] for term in self.get_go_terms(aspect="P")]
+        """GO Biological Process terms, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect="P"):
+            value = term["term"]
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
 
     @property
     def go_mf(self) -> list[str]:
-        """GO Molecular Function terms."""
-        return [term["term"] for term in self.get_go_terms(aspect="F")]
+        """GO Molecular Function terms, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect="F"):
+            value = term["term"]
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
 
     @property
     def go_cc(self) -> list[str]:
-        """GO Cellular Component terms."""
-        return [term["term"] for term in self.get_go_terms(aspect="C")]
+        """GO Cellular Component terms, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect="C"):
+            value = term["term"]
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
 
     @property
     def go_id(self) -> list[str]:
@@ -460,6 +516,23 @@ class UniProtEntry:
         if isinstance(name, str):
             return name
         return ""
+
+    @staticmethod
+    def _best_evidence(evidences: list[dict]) -> str:
+        """Return the highest-priority short evidence code from a list of evidence objects.
+
+        Each evidence object has an 'evidenceCode' key with an ECO ID.
+        Returns empty string if the list is empty.
+        """
+        if not evidences:
+            return ""
+        codes = [ECO_TO_SHORT.get(e.get("evidenceCode", ""), e.get("evidenceCode", ""))
+                 for e in evidences]
+        for priority in EVIDENCE_PRIORITY:
+            if priority in codes:
+                return priority
+        # Unknown code — return the first one
+        return codes[0] if codes else ""
 
     def __repr__(self) -> str:
         """String representation."""

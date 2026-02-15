@@ -29,6 +29,7 @@ from src.protspace.data.annotations.transformers.length_binning import LengthBin
 from src.protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
+from src.protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
 from src.protspace.data.io.formatters import DataFormatter
 from src.protspace.data.io.writers import AnnotationWriter
 
@@ -778,3 +779,335 @@ class TestConstants:
     def test_length_binning_annotations_constant(self):
         """Test LENGTH_BINNING_ANNOTATIONS constant."""
         assert LENGTH_BINNING_ANNOTATIONS == ["length_fixed", "length_quantile"]
+
+
+# --- Mock UniProt JSON data with evidence ---
+
+MOCK_UNIPROT_JSON_WITH_EVIDENCE = {
+    "primaryAccession": "P00001",
+    "keywords": [
+        {
+            "id": "KW-0181",
+            "name": "Complete proteome",
+            "evidences": [{"evidenceCode": "ECO:0007669"}],
+        },
+        {
+            "id": "KW-0002",
+            "name": "3D-structure",
+            # No evidences key
+        },
+    ],
+    "proteinDescription": {
+        "recommendedName": {
+            "ecNumbers": [
+                {
+                    "value": "2.7.11.1",
+                    "evidences": [
+                        {"evidenceCode": "ECO:0000269"},  # EXP
+                        {"evidenceCode": "ECO:0007669"},  # IEA
+                    ],
+                },
+            ],
+        },
+    },
+    "comments": [
+        {
+            "commentType": "SUBCELLULAR LOCATION",
+            "subcellularLocations": [
+                {
+                    "location": {
+                        "value": "Cytoplasm",
+                        "evidences": [{"evidenceCode": "ECO:0000269"}],
+                    }
+                },
+                {
+                    "location": {
+                        "value": "Nucleus",
+                        # No evidences
+                    }
+                },
+            ],
+        },
+        {
+            "commentType": "SIMILARITY",
+            "texts": [
+                {
+                    "value": "Belongs to the Insulin family.",
+                    "evidences": [{"evidenceCode": "ECO:0000250"}],
+                }
+            ],
+        },
+    ],
+    "uniProtKBCrossReferences": [
+        {
+            "database": "GO",
+            "id": "GO:0005737",
+            "properties": [
+                {"key": "GoTerm", "value": "C:cytoplasm"},
+                {"key": "GoEvidenceType", "value": "IDA:UniProtKB"},
+            ],
+        },
+        {
+            "database": "GO",
+            "id": "GO:0005634",
+            "properties": [
+                {"key": "GoTerm", "value": "C:nucleus"},
+                {"key": "GoEvidenceType", "value": ""},
+            ],
+        },
+    ],
+}
+
+
+class TestUniProtEntryEvidence:
+    """Test evidence code extraction in UniProtEntry properties."""
+
+    def test_keyword_never_has_evidence(self):
+        """Keywords never carry evidence (API doesn't provide it)."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        keywords = entry.keyword
+        assert keywords[0] == "KW-0181 (Complete proteome)"
+        assert keywords[1] == "KW-0002 (3D-structure)"
+        assert all("|" not in kw for kw in keywords)
+
+    def test_ec_with_multiple_evidences_picks_best(self):
+        """EC with multiple evidences picks the highest-priority code."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        ec = entry.ec
+        # EXP (ECO:0000269) beats IEA (ECO:0007669)
+        assert ec[0] == "2.7.11.1|EXP"
+
+    def test_cc_subcellular_location_with_evidence(self):
+        """Subcellular location with evidence gets |CODE."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        locs = entry.cc_subcellular_location
+        assert locs[0] == "Cytoplasm|EXP"
+
+    def test_cc_subcellular_location_without_evidence(self):
+        """Subcellular location without evidence has no | suffix."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        locs = entry.cc_subcellular_location
+        assert locs[1] == "Nucleus"
+
+    def test_protein_families_with_evidence(self):
+        """Protein families with evidence gets |CODE."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        assert entry.protein_families == "Insulin family|ISS"
+
+    def test_go_cc_with_evidence(self):
+        """GO CC terms with evidence get |CODE."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        terms = entry.go_cc
+        assert terms[0] == "C:cytoplasm|IDA"
+
+    def test_go_cc_without_evidence(self):
+        """GO CC terms with empty evidence have no | suffix."""
+        entry = UniProtEntry(MOCK_UNIPROT_JSON_WITH_EVIDENCE)
+        terms = entry.go_cc
+        assert terms[1] == "C:nucleus"
+
+    def test_best_evidence_priority_ordering(self):
+        """_best_evidence returns highest-priority code."""
+        evidences = [
+            {"evidenceCode": "ECO:0007669"},  # IEA
+            {"evidenceCode": "ECO:0000269"},  # EXP
+            {"evidenceCode": "ECO:0000250"},  # ISS
+        ]
+        assert UniProtEntry._best_evidence(evidences) == "EXP"
+
+    def test_best_evidence_empty_list(self):
+        """_best_evidence returns empty string for empty list."""
+        assert UniProtEntry._best_evidence([]) == ""
+
+    def test_best_evidence_unknown_eco_code(self):
+        """_best_evidence falls back to raw ECO ID for unknown codes."""
+        evidences = [{"evidenceCode": "ECO:9999999"}]
+        assert UniProtEntry._best_evidence(evidences) == "ECO:9999999"
+
+    def test_eco_to_short_mapping(self):
+        """ECO_TO_SHORT maps known ECO IDs to short codes."""
+        assert ECO_TO_SHORT["ECO:0000269"] == "EXP"
+        assert ECO_TO_SHORT["ECO:0007669"] == "IEA"
+        assert "ECO:9999999" not in ECO_TO_SHORT
+
+    def test_best_evidence_single_known_code(self):
+        """_best_evidence with a single known code returns that code."""
+        evidences = [{"evidenceCode": "ECO:0000303"}]  # TAS
+        assert UniProtEntry._best_evidence(evidences) == "TAS"
+
+    def test_go_bp_with_evidence(self):
+        """GO BP terms with evidence get |CODE appended, source suffix stripped."""
+        data = {
+            "uniProtKBCrossReferences": [
+                {
+                    "database": "GO",
+                    "id": "GO:0006915",
+                    "properties": [
+                        {"key": "GoTerm", "value": "P:apoptotic process"},
+                        {"key": "GoEvidenceType", "value": "TAS:Reactome"},
+                    ],
+                },
+            ],
+        }
+        entry = UniProtEntry(data)
+        assert entry.go_bp == ["P:apoptotic process|TAS"]
+
+    def test_go_mf_with_evidence(self):
+        """GO MF terms with evidence get |CODE appended, source suffix stripped."""
+        data = {
+            "uniProtKBCrossReferences": [
+                {
+                    "database": "GO",
+                    "id": "GO:0005524",
+                    "properties": [
+                        {"key": "GoTerm", "value": "F:ATP binding"},
+                        {"key": "GoEvidenceType", "value": "IEA:UniProtKB-EC"},
+                    ],
+                },
+            ],
+        }
+        entry = UniProtEntry(data)
+        assert entry.go_mf == ["F:ATP binding|IEA"]
+
+    def test_go_evidence_without_source_suffix(self):
+        """GO evidence codes without a source suffix still work."""
+        data = {
+            "uniProtKBCrossReferences": [
+                {
+                    "database": "GO",
+                    "id": "GO:0005524",
+                    "properties": [
+                        {"key": "GoTerm", "value": "F:ATP binding"},
+                        {"key": "GoEvidenceType", "value": "IEA"},
+                    ],
+                },
+            ],
+        }
+        entry = UniProtEntry(data)
+        assert entry.go_mf == ["F:ATP binding|IEA"]
+
+    def test_ec_from_alternative_names_with_evidence(self):
+        """EC numbers from alternativeNames carry evidence."""
+        data = {
+            "proteinDescription": {
+                "recommendedName": {},
+                "alternativeNames": [
+                    {
+                        "ecNumbers": [
+                            {
+                                "value": "3.1.3.16",
+                                "evidences": [{"evidenceCode": "ECO:0000305"}],  # IC
+                            }
+                        ]
+                    }
+                ],
+            },
+        }
+        entry = UniProtEntry(data)
+        assert entry.ec == ["3.1.3.16|IC"]
+
+    def test_protein_families_without_belongs_prefix_with_evidence(self):
+        """Protein families without 'Belongs to the' prefix still gets evidence."""
+        data = {
+            "comments": [
+                {
+                    "commentType": "SIMILARITY",
+                    "texts": [
+                        {
+                            "value": "Kinase family",
+                            "evidences": [{"evidenceCode": "ECO:0000250"}],  # ISS
+                        }
+                    ],
+                }
+            ],
+        }
+        entry = UniProtEntry(data)
+        assert entry.protein_families == "Kinase family|ISS"
+
+    def test_protein_families_empty_when_no_similarity_comment(self):
+        """Protein families returns empty string when no SIMILARITY comment."""
+        data = {"comments": []}
+        entry = UniProtEntry(data)
+        assert entry.protein_families == ""
+
+
+class TestUniProtTransformerEvidence:
+    """Test evidence-aware transformations."""
+
+    def test_transform_ec_with_evidence(self):
+        """EC transform preserves evidence code after name lookup."""
+        ec_map = {"2.7.11.1": "Non-specific serine/threonine protein kinase"}
+        result = UniProtTransformer.transform_ec("2.7.11.1|EXP", ec_map)
+        assert result == "2.7.11.1 (Non-specific serine/threonine protein kinase)|EXP"
+
+    def test_transform_ec_without_evidence(self):
+        """EC transform still works without evidence (backward compat)."""
+        ec_map = {"2.7.11.1": "Non-specific serine/threonine protein kinase"}
+        result = UniProtTransformer.transform_ec("2.7.11.1", ec_map)
+        assert result == "2.7.11.1 (Non-specific serine/threonine protein kinase)"
+
+    def test_transform_ec_mixed_evidence(self):
+        """EC transform handles mix of entries with and without evidence."""
+        ec_map = {
+            "2.7.11.1": "Non-specific serine/threonine protein kinase",
+            "2.7.11.24": "Mitogen-activated protein kinase",
+        }
+        result = UniProtTransformer.transform_ec("2.7.11.1|EXP;2.7.11.24", ec_map)
+        assert result == (
+            "2.7.11.1 (Non-specific serine/threonine protein kinase)|EXP;"
+            "2.7.11.24 (Mitogen-activated protein kinase)"
+        )
+
+    def test_transform_protein_families_with_evidence(self):
+        """Protein families transform preserves evidence."""
+        result = UniProtTransformer.transform_protein_families(
+            "Insulin family, Subfamily 1|ISS"
+        )
+        assert result == "Insulin family|ISS"
+
+    def test_transform_protein_families_without_evidence(self):
+        """Protein families transform works without evidence (backward compat)."""
+        result = UniProtTransformer.transform_protein_families(
+            "Insulin family, Subfamily 1"
+        )
+        assert result == "Insulin family"
+
+    def test_transform_protein_families_semicolon_with_evidence(self):
+        """Protein families with semicolon separator and evidence."""
+        result = UniProtTransformer.transform_protein_families(
+            "Insulin family; Growth factor family|ISS"
+        )
+        assert result == "Insulin family|ISS"
+
+    def test_transform_go_terms_preserves_evidence(self):
+        """GO prefix stripping preserves |CODE suffix."""
+        result = UniProtTransformer.transform_go_terms(
+            "P:apoptotic process|TAS;P:signal transduction|IEA"
+        )
+        assert result == "apoptotic process|TAS;signal transduction|IEA"
+
+    def test_transform_go_terms_mixed_evidence(self):
+        """GO prefix stripping handles mix of terms with and without evidence."""
+        result = UniProtTransformer.transform_go_terms(
+            "F:kinase activity|IDA;F:ATP binding"
+        )
+        assert result == "kinase activity|IDA;ATP binding"
+
+    def test_transform_cc_subcellular_location_preserves_evidence(self):
+        """Subcellular location pass-through preserves evidence codes."""
+        result = UniProtTransformer.transform_cc_subcellular_location(
+            "Cytoplasm|EXP;Nucleus|IEA"
+        )
+        assert result == "Cytoplasm|EXP;Nucleus|IEA"
+
+    def test_transform_cc_subcellular_location_mixed_evidence(self):
+        """Subcellular location pass-through with mix of evidence and no evidence."""
+        result = UniProtTransformer.transform_cc_subcellular_location(
+            "Cytoplasm|EXP;Nucleus"
+        )
+        assert result == "Cytoplasm|EXP;Nucleus"
+
+    def test_transform_ec_no_name_with_evidence(self):
+        """EC transform keeps evidence even when no name found in map."""
+        result = UniProtTransformer.transform_ec("9.9.9.9|EXP", {})
+        assert result == "9.9.9.9|EXP"
