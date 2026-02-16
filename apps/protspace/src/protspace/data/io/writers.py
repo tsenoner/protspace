@@ -26,7 +26,10 @@ class AnnotationWriter:
         self.transformer = transformer
 
     def write_csv(
-        self, proteins: list[ProteinAnnotations], path: Path, apply_transforms: bool = True
+        self,
+        proteins: list[ProteinAnnotations],
+        path: Path,
+        apply_transforms: bool = True,
     ):
         """
         Write annotations to CSV file.

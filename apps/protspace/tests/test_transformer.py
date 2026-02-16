@@ -655,18 +655,13 @@ class TestEcNameMapParsing:
 
     def test_parse_enzyme_dat_multiline_de(self):
         """Test that multi-line DE fields are joined."""
-        text = (
-            "ID   1.1.1.1\n"
-            "DE   Alcohol dehydrogenase\n"
-            "DE   (NAD(+)).\n"
-            "//\n"
-        )
+        text = "ID   1.1.1.1\nDE   Alcohol dehydrogenase\nDE   (NAD(+)).\n//\n"
         result = UniProtTransformer._parse_enzyme_dat(text)
         assert result == {"1.1.1.1": "Alcohol dehydrogenase (NAD(+))"}
 
     def test_parse_enzyme_dat_skips_entries_without_de(self):
         """Test that entries without DE lines are skipped."""
-        text = "ID   1.1.1.-\n" "//\n" "ID   1.1.1.1\n" "DE   Alcohol dehydrogenase.\n" "//\n"
+        text = "ID   1.1.1.-\n//\nID   1.1.1.1\nDE   Alcohol dehydrogenase.\n//\n"
         result = UniProtTransformer._parse_enzyme_dat(text)
         assert "1.1.1.-" not in result
         assert result == {"1.1.1.1": "Alcohol dehydrogenase"}
@@ -692,5 +687,3 @@ class TestKeywordCombinedFormat:
 
         # keyword is a pass-through in the transformer, format comes from parser
         assert result["keyword"] == "KW-0418 (Kinase);KW-0808 (Transferase)"
-
-

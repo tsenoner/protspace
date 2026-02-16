@@ -425,7 +425,9 @@ class TestEntryNameResolution:
     def test_resolve_cath_names_success(self, mock_name_map):
         """Test successful CATH name resolution."""
         mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={"G3DSA:1.10.10.10": "Winged helix-like DNA-binding domain superfamily"}
+            CATHGENE3D={
+                "G3DSA:1.10.10.10": "Winged helix-like DNA-binding domain superfamily"
+            }
         )
 
         retriever = InterProAnnotationRetriever(annotations=["cath"])
@@ -512,9 +514,7 @@ class TestEntryNameResolution:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_resolve_panther_names(self, mock_name_map):
         """Test PANTHER name resolution."""
-        mock_name_map.return_value = _make_name_map(
-            PANTHER={"PTHR11454": "Insulin"}
-        )
+        mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=["panther"])
         result = retriever._resolve_entry_names({"PTHR11454"}, "panther")
@@ -531,9 +531,7 @@ class TestParsingWithNameResolution:
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["cath"]
 
-        match1 = create_signature(
-            "G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2
-        )
+        match1 = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
         match2 = create_signature(
             "G3DSA:2.40.50.140", library="CATH-Gene3D", score=60.5
         )
@@ -561,12 +559,8 @@ class TestParsingWithNameResolution:
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["superfamily"]
 
-        match1 = create_signature(
-            "SSF53098", library="SUPERFAMILY", score=1.5e-20
-        )
-        match2 = create_signature(
-            "SSF50978", library="SUPERFAMILY", score=3.2e-15
-        )
+        match1 = create_signature("SSF53098", library="SUPERFAMILY", score=1.5e-20)
+        match2 = create_signature("SSF50978", library="SUPERFAMILY", score=3.2e-15)
         api_result = create_api_result(TEST_MD5, found=True, matches=[match1, match2])
         api_results = [api_result]
 
@@ -610,10 +604,14 @@ class TestParsingWithNameResolution:
         result = retriever._parse_interpro_results(api_results, md5_to_identifier)
 
         # The matches API name should take precedence
-        assert result[0].annotations["cath"] == "G3DSA:1.10.10.10 (API-provided name)|50.2"
+        assert (
+            result[0].annotations["cath"] == "G3DSA:1.10.10.10 (API-provided name)|50.2"
+        )
 
     @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_parse_superfamily_with_api_provided_name_takes_precedence(self, mock_name_map):
+    def test_parse_superfamily_with_api_provided_name_takes_precedence(
+        self, mock_name_map
+    ):
         """Test that SUPERFAMILY names from matches API take precedence."""
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["superfamily"]
@@ -627,14 +625,15 @@ class TestParsingWithNameResolution:
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
         api_results = [api_result]
 
-        mock_name_map.return_value = _make_name_map(
-            SSF={"SSF53098": "XML name"}
-        )
+        mock_name_map.return_value = _make_name_map(SSF={"SSF53098": "XML name"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
         result = retriever._parse_interpro_results(api_results, md5_to_identifier)
 
-        assert result[0].annotations["superfamily"] == "SSF53098 (Matches API name)|1.5e-20"
+        assert (
+            result[0].annotations["superfamily"]
+            == "SSF53098 (Matches API name)|1.5e-20"
+        )
 
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_cath_partial_name_resolution(self, mock_name_map):
@@ -642,12 +641,8 @@ class TestParsingWithNameResolution:
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["cath"]
 
-        match1 = create_signature(
-            "G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2
-        )
-        match2 = create_signature(
-            "G3DSA:9.99.99.99", library="CATH-Gene3D", score=60.5
-        )
+        match1 = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
+        match2 = create_signature("G3DSA:9.99.99.99", library="CATH-Gene3D", score=60.5)
         api_result = create_api_result(TEST_MD5, found=True, matches=[match1, match2])
         api_results = [api_result]
 
@@ -687,9 +682,7 @@ class TestParsingWithNameResolution:
         cath_match = create_signature(
             "G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2
         )
-        sf_match = create_signature(
-            "SSF53098", library="SUPERFAMILY", score=1.5e-20
-        )
+        sf_match = create_signature("SSF53098", library="SUPERFAMILY", score=1.5e-20)
         api_result = create_api_result(
             TEST_MD5, found=True, matches=[cath_match, sf_match]
         )
@@ -739,7 +732,9 @@ class TestNewInterProDatabases:
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["smart"]
 
-        match = create_signature("SM00220", name="InsulinA", library="SMART", score=35.7)
+        match = create_signature(
+            "SM00220", name="InsulinA", library="SMART", score=35.7
+        )
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
@@ -771,9 +766,7 @@ class TestNewInterProDatabases:
         match = create_signature("PTHR11454", library="PANTHER", score=0.0)
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
-        mock_name_map.return_value = _make_name_map(
-            PANTHER={"PTHR11454": "Insulin"}
-        )
+        mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
         result = retriever._parse_interpro_results([api_result], md5_to_identifier)
@@ -786,9 +779,7 @@ class TestNewInterProDatabases:
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["prosite"]
 
-        match = create_signature(
-            "PS00009", name="INSULIN", library="PROSITE patterns"
-        )
+        match = create_signature("PS00009", name="INSULIN", library="PROSITE patterns")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
@@ -827,9 +818,7 @@ class TestNewInterProDatabases:
         api_result = create_api_result(TEST_MD5, found=True, matches=matches)
 
         # Mock XML name map (only panther is in ENTRY_API_DB_MAPPING)
-        mock_name_map.return_value = _make_name_map(
-            PANTHER={"PTHR11454": "Insulin"}
-        )
+        mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
         result = retriever._parse_interpro_results([api_result], md5_to_identifier)
@@ -855,7 +844,9 @@ class TestMemberDbNameMapCaching:
         ts = time.time() - (age_days * 86400)
         timestamp_file.write_text(str(ts))
 
-    @patch("src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR")
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR"
+    )
     def test_cache_hit_returns_cached_data(self, mock_cache_dir):
         """Test that fresh cache is used without downloading."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -889,6 +880,7 @@ class TestMemberDbNameMapCaching:
   </interpro>
 </interprodb>"""
             import gzip as _gzip
+
             gz_data = _gzip.compress(xml_content)
 
             mock_resp = Mock()
@@ -950,6 +942,7 @@ class TestXmlParsing:
     def _create_gz_xml(self, xml_bytes, tmp_dir):
         """Write XML content to a gzipped temp file."""
         import gzip as _gzip
+
         gz_path = os.path.join(tmp_dir, "interpro.xml.gz")
         with _gzip.open(gz_path, "wb") as f:
             f.write(xml_bytes)
