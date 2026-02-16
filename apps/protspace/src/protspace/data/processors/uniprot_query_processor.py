@@ -76,19 +76,12 @@ class UniProtQueryProcessor(BaseProcessor):
         saved_files = {}
         fasta_filename = "sequences.fasta"
 
-        # Metadata file format depends on non_binary flag
+        # Always use parquet for internal metadata cache
         if keep_tmp:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
             fasta_save_path = intermediate_dir / fasta_filename
-
-            if non_binary:
-                metadata_filename = "all_annotations.csv"
-            else:
-                metadata_filename = "all_annotations.parquet"
-
-            metadata_save_path = intermediate_dir / metadata_filename
+            metadata_save_path = intermediate_dir / "all_annotations.parquet"
             similarity_matrix_path = intermediate_dir / "similarity_matrix.csv"
-
         else:
             fasta_save_path = None
             metadata_save_path = None
@@ -148,13 +141,72 @@ class UniProtQueryProcessor(BaseProcessor):
                 self._save_similarity_matrix(data, headers, similarity_matrix_path)
                 saved_files["similarity_matrix"] = similarity_matrix_path
 
-        # Generate or load metadata file
+        # Generate or load metadata file (with incremental fetching support)
         if metadata_cached:
             logger.info(f"Loading cached metadata from: {metadata_save_path}")
-            if non_binary:
-                annotations_df = pd.read_csv(metadata_save_path)
+            cached_df = pd.read_parquet(metadata_save_path)
+
+            # Determine required annotations for incremental check
+            if annotations and not annotations.endswith(".csv"):
+                annotations_list = [
+                    annotation.strip() for annotation in annotations.split(",")
+                ]
+                from protspace.data.annotations.configuration import (
+                    AnnotationConfiguration,
+                )
+
+                annotations_list = AnnotationConfiguration(
+                    annotations_list
+                ).user_annotations
             else:
-                annotations_df = pd.read_parquet(metadata_save_path)
+                annotations_list = None
+
+            if annotations_list is None:
+                from protspace.data.annotations.configuration import (
+                    ANNOTATION_GROUPS,
+                )
+
+                required_annotations = set(ANNOTATION_GROUPS["default"])
+            else:
+                required_annotations = set(annotations_list)
+
+            cached_annotations = set(cached_df.columns) - {"identifier"}
+            missing = required_annotations - cached_annotations
+
+            if not missing:
+                # Cache has everything we need
+                if annotations_list:
+                    cols = ["identifier"] + [
+                        f for f in annotations_list if f in cached_df.columns
+                    ]
+                    annotations_df = cached_df[cols]
+                else:
+                    annotations_df = cached_df
+            else:
+                # Incremental fetch of missing annotations
+                from protspace.data.annotations.configuration import (
+                    AnnotationConfiguration,
+                )
+
+                sources_to_fetch = AnnotationConfiguration.determine_sources_to_fetch(
+                    cached_annotations, required_annotations
+                )
+                logger.info(f"Missing annotations: {missing}")
+                logger.info(
+                    f"Will fetch from sources: {[k for k, v in sources_to_fetch.items() if v]}"
+                )
+
+                annotations_df = self._generate_metadata(
+                    headers,
+                    annotations,
+                    delimiter,
+                    metadata_save_path,
+                    non_binary,
+                    keep_tmp,
+                    cached_data=cached_df,
+                    sources_to_fetch=sources_to_fetch,
+                )
+
             saved_files["metadata"] = metadata_save_path
         else:
             annotations_df = self._generate_metadata(
@@ -354,8 +406,21 @@ class UniProtQueryProcessor(BaseProcessor):
         metadata_save_path: Path = None,
         non_binary: bool = False,
         keep_tmp: bool = False,
+        cached_data: pd.DataFrame = None,
+        sources_to_fetch: dict = None,
     ) -> pd.DataFrame:
-        """Generate metadata CSV and return DataFrame."""
+        """Generate metadata and return DataFrame.
+
+        Args:
+            headers: Protein identifiers
+            annotations: Annotation spec string
+            delimiter: CSV delimiter
+            metadata_save_path: Path to save parquet cache
+            non_binary: Whether to use non-binary output format
+            keep_tmp: Whether to keep temporary files
+            cached_data: Previously cached DataFrame (for incremental fetching)
+            sources_to_fetch: Dict indicating which sources to fetch
+        """
         try:
             if annotations and annotations.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
@@ -383,11 +448,19 @@ class UniProtQueryProcessor(BaseProcessor):
                 if metadata_save_path:
                     metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
 
+                manager_kwargs = {
+                    "headers": headers,
+                    "annotations": annotations_list,
+                    "output_path": metadata_save_path,
+                    "non_binary": False if metadata_save_path else non_binary,
+                }
+                if cached_data is not None:
+                    manager_kwargs["cached_data"] = cached_data
+                if sources_to_fetch is not None:
+                    manager_kwargs["sources_to_fetch"] = sources_to_fetch
+
                 annotations_df = ProteinAnnotationManager(
-                    headers=headers,
-                    annotations=annotations_list,
-                    output_path=metadata_save_path,
-                    non_binary=non_binary,
+                    **manager_kwargs,
                 ).to_pd()
 
                 if keep_tmp and metadata_save_path:

@@ -89,7 +89,9 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     query=f"sec_acc:{accession}", format="json"
                 ).each_page():
                     content = page.read() if hasattr(page, "read") else page
-                    parsed = json.loads(content) if isinstance(content, str) else content
+                    parsed = (
+                        json.loads(content) if isinstance(content, str) else content
+                    )
                     records.extend(parsed.get("results", []))
                 if records:
                     entry = UniProtEntry(records[0])
@@ -99,9 +101,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                             identifier=accession, annotations=annotations_dict
                         )
                     )
-                    logger.info(
-                        f"Resolved inactive entry {accession} → {entry.entry}"
-                    )
+                    logger.info(f"Resolved inactive entry {accession} → {entry.entry}")
                 else:
                     resolved.append(
                         ProteinAnnotations(
@@ -120,9 +120,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                         annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
                     )
                 )
-                logger.warning(
-                    f"Failed to resolve inactive entry {accession}: {e}"
-                )
+                logger.warning(f"Failed to resolve inactive entry {accession}: {e}")
         return resolved
 
     def fetch_annotations(self) -> list[ProteinAnnotations]:

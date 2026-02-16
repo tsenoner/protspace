@@ -29,9 +29,9 @@ from src.protspace.data.annotations.transformers.length_binning import LengthBin
 from src.protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
-from src.protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
 from src.protspace.data.io.formatters import DataFormatter
 from src.protspace.data.io.writers import AnnotationWriter
+from src.protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
 
 # Use new name throughout tests
 ProteinAnnotationExtractor = ProteinAnnotationManager  # For test compatibility
@@ -97,7 +97,13 @@ class TestProteinAnnotationExtractorInit:
 
         assert extractor.headers == headers
         # Always-included annotations are added automatically
-        expected_annotations = ["length", "genus", "gene_name", "protein_name", "uniprot_kb_id"]
+        expected_annotations = [
+            "length",
+            "genus",
+            "gene_name",
+            "protein_name",
+            "uniprot_kb_id",
+        ]
         assert extractor.user_annotations == expected_annotations
         assert extractor.output_path is None
         assert extractor.non_binary is False
@@ -153,7 +159,15 @@ class TestAnnotationConfiguration:
         config = AnnotationConfiguration(user_annotations=valid_annotations)
 
         # Always-included annotations are added automatically
-        expected_annotations = ["length", "genus", "species", "protein_families", "gene_name", "protein_name", "uniprot_kb_id"]
+        expected_annotations = [
+            "length",
+            "genus",
+            "species",
+            "protein_families",
+            "gene_name",
+            "protein_name",
+            "uniprot_kb_id",
+        ]
         assert config.user_annotations == expected_annotations
 
     def test_validate_with_none(self):
@@ -180,7 +194,14 @@ class TestAnnotationConfiguration:
         config = AnnotationConfiguration(user_annotations=annotations_with_binning)
 
         # Always-included annotations are added automatically
-        expected_annotations = ["length_fixed", "length_quantile", "genus", "gene_name", "protein_name", "uniprot_kb_id"]
+        expected_annotations = [
+            "length_fixed",
+            "length_quantile",
+            "genus",
+            "gene_name",
+            "protein_name",
+            "uniprot_kb_id",
+        ]
         assert config.user_annotations == expected_annotations
 
     def test_split_by_source_with_user_annotations(self):
@@ -271,7 +292,9 @@ class TestLengthBinner:
         for protein in result:
             assert "length_fixed" in protein.annotations
             assert "length_quantile" in protein.annotations
-            assert "length" in protein.annotations  # Original length is kept for caching
+            assert (
+                "length" in protein.annotations
+            )  # Original length is kept for caching
 
         # Verify binning
         assert result[0].annotations["length_fixed"] == "100-200"
@@ -762,15 +785,9 @@ class TestConstants:
         assert len(ALL_ANNOTATIONS) == len(UNIPROT_ANNOTATIONS) + len(
             TAXONOMY_ANNOTATIONS
         ) + len(INTERPRO_ANNOTATIONS)
-        assert all(
-            annotation in ALL_ANNOTATIONS for annotation in UNIPROT_ANNOTATIONS
-        )
-        assert all(
-            annotation in ALL_ANNOTATIONS for annotation in TAXONOMY_ANNOTATIONS
-        )
-        assert all(
-            annotation in ALL_ANNOTATIONS for annotation in INTERPRO_ANNOTATIONS
-        )
+        assert all(annotation in ALL_ANNOTATIONS for annotation in UNIPROT_ANNOTATIONS)
+        assert all(annotation in ALL_ANNOTATIONS for annotation in TAXONOMY_ANNOTATIONS)
+        assert all(annotation in ALL_ANNOTATIONS for annotation in INTERPRO_ANNOTATIONS)
 
     def test_needed_uniprot_annotations_constant(self):
         """Test NEEDED_UNIPROT_ANNOTATIONS constant."""
@@ -1111,3 +1128,134 @@ class TestUniProtTransformerEvidence:
         """EC transform keeps evidence even when no name found in map."""
         result = UniProtTransformer.transform_ec("9.9.9.9|EXP", {})
         assert result == "9.9.9.9|EXP"
+
+
+class TestStripScores:
+    """Test the strip_scores_from_df() utility function."""
+
+    def test_strips_uniprot_evidence_codes(self):
+        """UniProt evidence codes like 'Cytoplasm|EXP;Nucleus|IEA' → 'Cytoplasm;Nucleus'."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "cc_subcellular_location": ["Cytoplasm|EXP;Nucleus|IEA"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["cc_subcellular_location"].iloc[0] == "Cytoplasm;Nucleus"
+
+    def test_strips_interpro_bit_scores(self):
+        """InterPro bit scores like 'PF00001 (7tm_1)|50.2' → 'PF00001 (7tm_1)'."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "pfam": ["PF00001 (7tm_1)|50.2;PF00002 (7tm_2)|60.5"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["pfam"].iloc[0] == "PF00001 (7tm_1);PF00002 (7tm_2)"
+
+    def test_leaves_non_score_columns_untouched(self):
+        """Columns not in SCORE_BEARING_COLUMNS remain unchanged."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "reviewed": ["Swiss-Prot"],
+                "gene_name": ["INS"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["reviewed"].iloc[0] == "Swiss-Prot"
+        assert result["gene_name"].iloc[0] == "INS"
+
+    def test_handles_empty_and_nan_values(self):
+        """Empty strings and NaN values are preserved."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1", "P2"],
+                "ec": ["", float("nan")],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["ec"].iloc[0] == ""
+        assert pd.isna(result["ec"].iloc[1])
+
+    def test_df_without_score_columns_unchanged(self):
+        """A DataFrame with no score-bearing columns is returned unchanged."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "reviewed": ["Swiss-Prot"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result.equals(df)
+
+    def test_strips_all_score_bearing_columns(self):
+        """All SCORE_BEARING_COLUMNS are stripped when present."""
+        from src.protspace.data.annotations.scores import (
+            SCORE_BEARING_COLUMNS,
+            strip_scores_from_df,
+        )
+
+        data = {"identifier": ["P1"]}
+        for col in SCORE_BEARING_COLUMNS:
+            data[col] = ["value|score"]
+        df = pd.DataFrame(data)
+
+        result = strip_scores_from_df(df)
+        for col in SCORE_BEARING_COLUMNS:
+            assert result[col].iloc[0] == "value"
+
+    def test_strips_ec_evidence(self):
+        """EC numbers 2.7.11.1|EXP → 2.7.11.1."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "ec": ["2.7.11.1|EXP;3.4.21.1|IEA"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["ec"].iloc[0] == "2.7.11.1;3.4.21.1"
+
+    def test_strips_protein_families_evidence(self):
+        """Protein families 'Insulin family|ISS' → 'Insulin family'."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "protein_families": ["Insulin family|ISS"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["protein_families"].iloc[0] == "Insulin family"
+
+    def test_strips_go_terms_evidence(self):
+        """GO terms 'apoptotic process|TAS;signal transduction|IEA' stripped."""
+        from src.protspace.data.annotations.scores import strip_scores_from_df
+
+        df = pd.DataFrame(
+            {
+                "identifier": ["P1"],
+                "go_bp": ["apoptotic process|TAS;signal transduction|IEA"],
+                "go_mf": ["kinase activity|IDA;ATP binding"],
+                "go_cc": ["cytoplasm|IDA;nucleus"],
+            }
+        )
+        result = strip_scores_from_df(df)
+        assert result["go_bp"].iloc[0] == "apoptotic process;signal transduction"
+        assert result["go_mf"].iloc[0] == "kinase activity;ATP binding"
+        assert result["go_cc"].iloc[0] == "cytoplasm;nucleus"

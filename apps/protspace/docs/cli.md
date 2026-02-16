@@ -12,6 +12,9 @@ Run `protspace-local --help` or `protspace-query --help` for the full list of op
 - `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 - `--keep-tmp`: Cache intermediate files for reuse
+- `--no-scores`: Omit evidence codes and bit scores from annotation output
+- `--dump-cache`: Print cached annotations as CSV to stdout and exit
+- `--force-refetch`: Discard cached annotations and re-download everything
 - `--bundled`: Bundle output files (true/false, default: true)
 
 **protspace-query** (UniProt search):
@@ -22,6 +25,8 @@ Run `protspace-local --help` or `protspace-query --help` for the full list of op
 - `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
 - `--non-binary`: Use legacy JSON format
 - `--keep-tmp`: Cache intermediate files for reuse
+- `--no-scores`: Omit evidence codes and bit scores from annotation output
+- `--dump-cache`: Print cached annotations as CSV to stdout and exit
 - `--bundled`: Bundle output files (true/false, default: true)
 
 ## Method Default Parameters
@@ -61,5 +66,25 @@ Available shapes: `circle`, `circle-open`, `cross`, `diamond`, `diamond-open`, `
 - **Default**: Parquet files (projections_data.parquet, projections_metadata.parquet, selected_annotations.parquet)
 - **Legacy**: JSON format with `--non-binary` flag
 - **Temporary files**: FASTA sequences, similarity matrices, all annotations (with `--keep-tmp`)
+
+## Annotation Caching (`--keep-tmp`)
+
+When `--keep-tmp` is enabled, fetched annotations are stored as `all_annotations.parquet` in a per-dataset intermediate directory (keyed by a hash of the protein identifiers).
+
+- **Always parquet, always with scores.** The internal cache format is fixed regardless of `--non-binary` or `--no-scores`. Those flags only affect the final output, never the cached data.
+- **Incremental fetching.** On subsequent runs, the cache is compared against the requested annotations. Only missing sources (UniProt, InterPro, or Taxonomy) are re-fetched and merged into the existing cache.
+
+Switching `--no-scores` or `--non-binary` between runs reuses the same cache. Requesting additional annotations (e.g. `-a default` then `-a all`) fetches only the delta.
+
+```bash
+# First run: fetches default annotations, caches them
+protspace-local -i data.h5 -a default --keep-tmp
+
+# Second run: only fetches InterPro + Taxonomy (UniProt cached)
+protspace-local -i data.h5 -a all --keep-tmp
+
+# Inspect raw cache contents
+protspace-local -i data.h5 --dump-cache --keep-tmp
+```
 
 See also: [Annotation Reference](annotations.md)

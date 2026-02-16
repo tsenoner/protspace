@@ -51,7 +51,9 @@ ENTRY_API_DB_MAPPING = {
 }
 
 # FTP XML-based name resolution
-INTERPRO_XML_URL = "https://ftp.ebi.ac.uk/pub/databases/interpro/current_release/interpro.xml.gz"
+INTERPRO_XML_URL = (
+    "https://ftp.ebi.ac.uk/pub/databases/interpro/current_release/interpro.xml.gz"
+)
 INTERPRO_CACHE_DIR = Path.home() / ".cache" / "protspace" / "interpro"
 CACHE_MAX_AGE_DAYS = 7
 
@@ -496,7 +498,11 @@ class InterProRetriever(BaseAnnotationRetriever):
                 if elem.tag == "interpro":
                     # Get the InterPro entry name
                     name_elem = elem.find("name")
-                    ipr_name = name_elem.text.strip() if name_elem is not None and name_elem.text else ""
+                    ipr_name = (
+                        name_elem.text.strip()
+                        if name_elem is not None and name_elem.text
+                        else ""
+                    )
 
                     for db_xref in elem.iter("db_xref"):
                         db = db_xref.get("db", "")

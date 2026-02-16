@@ -116,6 +116,8 @@ When multiple evidence sources exist for a single value, the most reliable code 
 
 Codes are derived from [ECO (Evidence & Conclusion Ontology)](https://www.evidenceontology.org/) identifiers returned by the UniProt API. GO terms use native short codes from the `GoEvidenceType` field; other annotations map ECO IDs (e.g., `ECO:0000269` → `EXP`).
 
+Use `--no-scores` to omit evidence codes from output.
+
 ## InterPro Annotations
 
 9 signature databases queried via the [InterPro Matches API](https://www.ebi.ac.uk/interpro/matches/api) using MD5 hashes of protein sequences (chunk size: 100):
@@ -133,6 +135,8 @@ Codes are derived from [ECO (Evidence & Conclusion Ontology)](https://www.eviden
 | `prints`         | PRINTS           | Protein fingerprints              |
 
 **Output format**: `accession (name)|score1,score2;accession2 (name2)|score1`
+
+Use `--no-scores` to omit bit scores from output.
 
 - **Scores**: Bit scores reported by each member database's analysis tool (e.g. HMMER for Pfam). Higher = stronger match. Scoring systems differ across databases, so values are not directly comparable between e.g. Pfam and SUPERFAMILY.
 - **Multiple scores**: Comma-separated values indicate the domain was found at multiple locations in the protein, one score per occurrence.
@@ -175,3 +179,5 @@ Taxonomy resolution requires `organism_id` from UniProt, which is fetched automa
 | EC names       | `~/.cache/protspace/enzyme/`   | 7 days  | Enzyme descriptions from ExPASy                   |
 
 The `default` group requires only the UniProt REST API (plus the ExPASy ENZYME database for EC name resolution). No InterPro or NCBI Taxonomy network calls are needed. `gene_name`, `protein_name`, and `uniprot_kb_id` are always included regardless of group.
+
+For `--keep-tmp` annotation caching behavior, see [CLI Reference](cli.md#annotation-caching---keep-tmp).
