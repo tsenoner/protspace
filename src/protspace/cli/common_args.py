@@ -154,17 +154,23 @@ def add_annotations_argument(parser: argparse.ArgumentParser, allow_csv: bool = 
         allow_csv: Whether to allow CSV file paths (True for local_data, False for uniprot_query)
     """
     csv_note = (
-        " or path to metadata CSV file (first column = protein identifiers)"
+        ".\nCan be specified multiple times. Use a separate -a for a CSV metadata\n"
+        "file (first column = protein identifiers) to combine with DB annotations"
         if allow_csv
         else ""
     )
-    csv_example = "\n  --annotations /path/to/metadata.csv" if allow_csv else ""
+    csv_examples = (
+        "\n  -a /path/to/metadata.csv              (CSV only)\n"
+        "  -a metadata.csv -a pfam,kingdom        (CSV + database annotations)"
+        if allow_csv
+        else ""
+    )
 
     parser.add_argument(
         "-a",
         "--annotations",
         type=str,
-        required=False,
+        action="append",
         default=None,
         help=(
             f"Protein annotations to extract as comma-separated values{csv_note}.\n"
@@ -188,7 +194,7 @@ def add_annotations_argument(parser: argparse.ArgumentParser, allow_csv: bool = 
             "Examples:\n"
             f"  -a all                               (everything)\n"
             f"  -a default,interpro,kingdom           (mix groups + individual)\n"
-            f"  -a pfam,cath,reviewed{csv_example}"
+            f"  -a pfam,cath,reviewed{csv_examples}"
         ),
     )
 

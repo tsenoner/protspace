@@ -398,7 +398,7 @@ class TestLoadOrGenerateMetadata:
 
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations=str(csv_path),
+                annotations=[str(csv_path)],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -419,7 +419,7 @@ class TestLoadOrGenerateMetadata:
 
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations=str(csv_path),
+                annotations=[str(csv_path)],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=";",
                 non_binary=False,
@@ -441,7 +441,7 @@ class TestLoadOrGenerateMetadata:
         with tempfile.TemporaryDirectory() as temp_dir:
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="length,genus",
+                annotations=["length,genus"],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -497,7 +497,7 @@ class TestLoadOrGenerateMetadata:
         with tempfile.TemporaryDirectory() as temp_dir:
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="length",
+                annotations=["length"],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -515,7 +515,7 @@ class TestLoadOrGenerateMetadata:
             # Test with non-existent CSV file
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="nonexistent.csv",
+                annotations=["nonexistent.csv"],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -552,7 +552,7 @@ class TestPublicMethods:
             data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                annotations=annotations_path,
+                annotations=[str(annotations_path)],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -611,7 +611,7 @@ class TestPublicMethods:
             data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                annotations="length,organism",
+                annotations=["length,organism"],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -678,7 +678,7 @@ class TestIntegration:
             data, headers = processor.load_input_files([input_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                annotations="length,genus",
+                annotations=["length,genus"],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=True,
@@ -725,7 +725,7 @@ class TestIntegration:
             data, headers = processor.load_input_files([sim_csv_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                annotations=str(annotations_csv_path),
+                annotations=[str(annotations_csv_path)],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -776,7 +776,7 @@ class TestIntegration:
             data, headers = processor.load_input_files([sim_csv_path])
             metadata = processor.load_or_generate_metadata(
                 headers=headers,
-                annotations=str(annotations_csv_path),
+                annotations=[str(annotations_csv_path)],
                 intermediate_dir=Path(temp_dir) / "intermediate",
                 delimiter=",",
                 non_binary=False,
@@ -827,7 +827,7 @@ class TestIntegration:
                 data, headers = processor.load_input_files([input_path])
                 metadata = processor.load_or_generate_metadata(
                     headers=headers,
-                    annotations="length,organism",
+                    annotations=["length,organism"],
                     intermediate_dir=Path(temp_dir) / "intermediate",
                     delimiter=",",
                     non_binary=False,
@@ -953,7 +953,7 @@ class TestIncrementalCaching:
             # Request subset of cached annotations
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="reviewed,length",
+                annotations=["reviewed,length"],
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -1013,7 +1013,7 @@ class TestIncrementalCaching:
             # Request annotations including taxonomy (not in cache)
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="reviewed,length,kingdom",
+                annotations=["reviewed,length,kingdom"],
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -1052,7 +1052,7 @@ class TestIncrementalCaching:
             # Request with force_refetch=True
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="reviewed",
+                annotations=["reviewed"],
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,
@@ -1091,7 +1091,7 @@ class TestIncrementalCaching:
             # Request cached annotations with non_binary=True
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="reviewed",
+                annotations=["reviewed"],
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=True,
@@ -1122,7 +1122,7 @@ class TestIncrementalCaching:
 
             result = LocalDataProcessor.load_or_generate_metadata(
                 headers=SAMPLE_HEADERS,
-                annotations="reviewed,length",
+                annotations=["reviewed,length"],
                 intermediate_dir=intermediate_dir,
                 delimiter=",",
                 non_binary=False,

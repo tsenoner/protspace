@@ -94,15 +94,12 @@ def main():
 
     # Validate metadata argument - CSV files are not supported
     if args.annotations:
-        if (
-            args.annotations.endswith(".csv")
-            or args.annotations.endswith(".CSV")
-            or Path(args.annotations).exists()
-        ):
-            raise ValueError(
-                "CSV files are not supported when using protspace-query. "
-                "Please provide a comma-separated list of annotation names instead."
-            )
+        for ann in args.annotations:
+            if ann.strip().lower().endswith(".csv") or Path(ann.strip()).exists():
+                raise ValueError(
+                    "CSV files are not supported when using protspace-query. "
+                    "Please provide annotation names instead, e.g. -a pfam,kingdom"
+                )
 
     # Warn if both --non-binary and --bundled false are used together
     if args.non_binary and args.bundled == "false":
@@ -161,9 +158,11 @@ def main():
             return
 
         # Process the query with the determined paths
+        # Join list back to comma-separated string for uniprot_query_processor
+        annotations_str = ",".join(args.annotations) if args.annotations else None
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
-            annotations=args.annotations,
+            annotations=annotations_str,
             delimiter=",",
             output_path=output_path,
             intermediate_dir=intermediate_dir,
