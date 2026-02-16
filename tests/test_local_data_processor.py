@@ -965,7 +965,14 @@ class TestIncrementalCaching:
             mock_annotation_manager.assert_not_called()
             assert isinstance(result, pd.DataFrame)
             # Always-included annotations are automatically added
-            assert set(result.columns) == {"identifier", "reviewed", "length", "gene_name", "protein_name", "uniprot_kb_id"}
+            assert set(result.columns) == {
+                "identifier",
+                "reviewed",
+                "length",
+                "gene_name",
+                "protein_name",
+                "uniprot_kb_id",
+            }
 
     @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
     def test_cache_miss_triggers_fetch(self, mock_annotation_manager):

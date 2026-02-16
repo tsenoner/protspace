@@ -44,7 +44,9 @@ class LengthBinner:
 
     @staticmethod
     def _update_proteins_with_bins(
-        proteins: list[ProteinAnnotations], fixed_bins: list[str], quantile_bins: list[str]
+        proteins: list[ProteinAnnotations],
+        fixed_bins: list[str],
+        quantile_bins: list[str],
     ) -> list[ProteinAnnotations]:
         """Update proteins with bin values (keeping original length field for caching)."""
         updated_proteins = []
