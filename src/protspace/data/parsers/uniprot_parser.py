@@ -54,22 +54,32 @@ from unipressed import UniprotkbClient
 
 # ECO evidence code mapping (ECO ID → short human-readable code)
 ECO_TO_SHORT: dict[str, str] = {
-    "ECO:0000269": "EXP",   # Experimental evidence
-    "ECO:0000303": "TAS",   # Traceable author statement
-    "ECO:0000305": "IC",    # Curator inference
-    "ECO:0000250": "ISS",   # Sequence similarity
-    "ECO:0000255": "SAM",   # Sequence analysis method
-    "ECO:0000256": "SAM",   # Sequence analysis method (variant)
-    "ECO:0000259": "SAM",   # Sequence analysis method (variant)
-    "ECO:0000312": "IMP",   # Imported
-    "ECO:0000313": "IEA",   # Electronic annotation
-    "ECO:0007669": "IEA",   # Electronic annotation (variant)
-    "ECO:0007744": "HDA",   # High throughput direct assay
+    "ECO:0000269": "EXP",  # Experimental evidence
+    "ECO:0000303": "TAS",  # Traceable author statement
+    "ECO:0000305": "IC",  # Curator inference
+    "ECO:0000250": "ISS",  # Sequence similarity
+    "ECO:0000255": "SAM",  # Sequence analysis method
+    "ECO:0000256": "SAM",  # Sequence analysis method (variant)
+    "ECO:0000259": "SAM",  # Sequence analysis method (variant)
+    "ECO:0000312": "IMP",  # Imported
+    "ECO:0000313": "IEA",  # Electronic annotation
+    "ECO:0007669": "IEA",  # Electronic annotation (variant)
+    "ECO:0007744": "HDA",  # High throughput direct assay
     "ECO:0000244": "COMB",  # Combinatorial evidence
 }
 
 EVIDENCE_PRIORITY: list[str] = [
-    "EXP", "HDA", "IDA", "TAS", "NAS", "IC", "ISS", "SAM", "COMB", "IMP", "IEA",
+    "EXP",
+    "HDA",
+    "IDA",
+    "TAS",
+    "NAS",
+    "IC",
+    "ISS",
+    "SAM",
+    "COMB",
+    "IMP",
+    "IEA",
 ]
 
 # List of all available properties for validation
@@ -123,7 +133,11 @@ class UniProtEntry:
     """Parser for UniProt JSON entries from the REST API."""
 
     def __init__(self, data: dict[str, Any]) -> None:
-        """Initialize with raw JSON data from UniProt API."""
+        """Initialize with raw JSON data from UniProt API.
+
+        Args:
+            data: Raw JSON data from UniProt API
+        """
         self.data = data
 
     # --- Names & Taxonomy ---
@@ -526,8 +540,10 @@ class UniProtEntry:
         """
         if not evidences:
             return ""
-        codes = [ECO_TO_SHORT.get(e.get("evidenceCode", ""), e.get("evidenceCode", ""))
-                 for e in evidences]
+        codes = [
+            ECO_TO_SHORT.get(e.get("evidenceCode", ""), e.get("evidenceCode", ""))
+            for e in evidences
+        ]
         for priority in EVIDENCE_PRIORITY:
             if priority in codes:
                 return priority

@@ -262,6 +262,24 @@ def add_output_format_arguments(parser: argparse.ArgumentParser):
             "This avoids re-downloading data from UniProt, InterPro, and taxonomy databases."
         ),
     )
+    parser.add_argument(
+        "--no-scores",
+        action="store_true",
+        help=(
+            "Omit confidence scores from annotations.\n"
+            "Suppresses UniProt evidence codes (e.g., Cytoplasm|EXP → Cytoplasm)\n"
+            "and InterPro bit scores (e.g., PF00001 (7tm_1)|50.2 → PF00001 (7tm_1))."
+        ),
+    )
+    parser.add_argument(
+        "--dump-cache",
+        action="store_true",
+        help=(
+            "Print the cached annotations as CSV to stdout and exit.\n"
+            "Requires --keep-tmp to have been used in a previous run.\n"
+            "Useful for inspecting what's stored in the internal parquet cache."
+        ),
+    )
 
 
 def add_methods_argument(parser: argparse.ArgumentParser, default: str = "pca2"):

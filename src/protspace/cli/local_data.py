@@ -1,6 +1,7 @@
 import argparse
 import logging
 import shutil
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -17,6 +18,7 @@ from protspace.cli.common_args import (
     parse_custom_names,
     setup_logging,
 )
+from protspace.data.annotations.scores import strip_scores_from_df
 from protspace.data.processors.local_processor import LocalProcessor
 
 logger = logging.getLogger(__name__)
@@ -174,6 +176,21 @@ def main():
         if intermediate_dir:
             logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
 
+        # Handle --dump-cache: print cached data and exit
+        if args.dump_cache:
+            if not intermediate_dir:
+                logger.error("No cache directory. Run with --keep-tmp first.")
+                sys.exit(1)
+            cache_path = intermediate_dir / "all_annotations.parquet"
+            if cache_path.exists():
+                df = pd.read_parquet(cache_path)
+                print(df.to_csv(index=False))
+            else:
+                logger.error(
+                    f"No cache found at {cache_path}. Run with --keep-tmp first."
+                )
+            return
+
         # Load/generate metadata
         metadata = processor.load_or_generate_metadata(
             headers=headers,
@@ -184,6 +201,10 @@ def main():
             keep_tmp=args.keep_tmp,
             force_refetch=args.force_refetch,
         )
+
+        # Apply score stripping at presentation layer
+        if args.no_scores:
+            metadata = strip_scores_from_df(metadata)
 
         # Create full metadata
         full_metadata = pd.DataFrame({"identifier": headers})

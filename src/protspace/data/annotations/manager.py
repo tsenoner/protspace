@@ -168,7 +168,8 @@ class ProteinAnnotationManager:
         """Fetch UniProt annotations."""
         try:
             retriever = UniProtRetriever(
-                headers=self.headers, annotations=self.config.uniprot_annotations
+                headers=self.headers,
+                annotations=self.config.uniprot_annotations,
             )
             return retriever.fetch_annotations()
         except Exception as e:

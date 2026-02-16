@@ -199,21 +199,12 @@ class LocalProcessor(BaseProcessor):
                 if keep_tmp and intermediate_dir:
                     # Generate metadata in intermediate directory for caching
                     intermediate_dir.mkdir(parents=True, exist_ok=True)
-                    # Use intermediate directory for caching
-                    if non_binary:
-                        metadata_file_path = intermediate_dir / "all_annotations.csv"
-                    else:
-                        metadata_file_path = (
-                            intermediate_dir / "all_annotations.parquet"
-                        )
+                    # Always use parquet for internal cache
+                    metadata_file_path = intermediate_dir / "all_annotations.parquet"
 
                     # Check if cached metadata exists
                     if metadata_file_path.exists():
-                        cached_df = (
-                            pd.read_parquet(metadata_file_path)
-                            if not non_binary
-                            else pd.read_csv(metadata_file_path)
-                        )
+                        cached_df = pd.read_parquet(metadata_file_path)
                         cached_annotations = set(cached_df.columns) - {"identifier"}
 
                         # Determine required annotations
@@ -276,7 +267,7 @@ class LocalProcessor(BaseProcessor):
                                 headers=headers,
                                 annotations=annotations_list,
                                 output_path=metadata_file_path,
-                                non_binary=non_binary,
+                                non_binary=False,  # Cache is always parquet
                                 cached_data=cached_df,
                                 sources_to_fetch=sources_to_fetch,
                             ).to_pd()
@@ -289,7 +280,7 @@ class LocalProcessor(BaseProcessor):
                             headers=headers,
                             annotations=annotations_list,
                             output_path=metadata_file_path,
-                            non_binary=non_binary,
+                            non_binary=False,  # Cache is always parquet
                         ).to_pd()
                         logger.info(f"Metadata file saved to: {metadata_file_path}")
                 else:

@@ -395,9 +395,15 @@ class TestConstants:
         assert protein_annotations.annotations["organism_id"] == "9606"
 
 
-def _make_mock_record(accession, entry_name="TEST_HUMAN", length=110, organism_id=9606,
-                      protein_name="Test protein", entry_type="UniProtKB reviewed (Swiss-Prot)",
-                      annotation_score=5.0):
+def _make_mock_record(
+    accession,
+    entry_name="TEST_HUMAN",
+    length=110,
+    organism_id=9606,
+    protein_name="Test protein",
+    entry_type="UniProtKB reviewed (Swiss-Prot)",
+    annotation_score=5.0,
+):
     """Helper to build a minimal mock UniProt JSON record."""
     return {
         "primaryAccession": accession,
@@ -447,14 +453,17 @@ class TestExtractAnnotations:
         result = UniProtRetriever._extract_annotations(entry)
 
         for key, value in result.items():
-            assert isinstance(value, str), f"{key} should be a string, got {type(value)}"
+            assert isinstance(value, str), (
+                f"{key} should be a string, got {type(value)}"
+            )
 
     def test_extract_annotations_specific_values(self):
         """Spot-check specific annotation values."""
         from src.protspace.data.parsers.uniprot_parser import UniProtEntry
 
-        record = _make_mock_record("P99999", length=200, organism_id=9606,
-                                   annotation_score=3.0)
+        record = _make_mock_record(
+            "P99999", length=200, organism_id=9606, annotation_score=3.0
+        )
         entry = UniProtEntry(record)
         result = UniProtRetriever._extract_annotations(entry)
 
@@ -549,6 +558,7 @@ class TestResolveInactiveEntries:
     )
     def test_resolve_multiple_missing(self, mock_client_class):
         """Multiple missing accessions are each resolved independently."""
+
         def fake_search(query, format):
             acc = query.split(":")[1]
             record = _make_mock_record(f"NEW_{acc}", protein_name=f"Resolved {acc}")
