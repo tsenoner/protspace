@@ -15,6 +15,19 @@ plus UI preferences (maxVisibleValues, sortMode, hiddenValues, etc.).
 import re
 
 NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
+NA_INTERNAL = "__NA__"  # frontend internal key for N/A categories
+NA_PINNED_COLOR = "#DDDDDD"  # lighter gray used for N/A in pinned settings
+_NA_LABELS = {"", "<NA>", "NaN", "__NA__"}
+REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency
+
+# Kelly's 21 Colors of Maximum Contrast (same order as the web frontend)
+KELLYS_COLORS = [
+    "#F3C300", "#875692", "#F38400", "#A1CAF1", "#BE0032",
+    "#C2B280", "#008856", "#E68FAC", "#0067A5", "#F99379",
+    "#604E97", "#F6A600", "#B3446C", "#DCD300", "#882D17",
+    "#8DB600", "#654522", "#E25822", "#2B3D26", "#F2F3F4",
+    "#222222",
+]
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 0.8) -> str:
@@ -133,8 +146,10 @@ def visualization_state_to_settings(
     annotation_colors = viz_state.get("annotation_colors", {})
     marker_shapes = viz_state.get("marker_shapes", {})
 
-    # Collect all annotation names referenced in either dict
+    # Collect all annotation names referenced in colors, shapes, or style_overrides
     all_annotations = set(annotation_colors.keys()) | set(marker_shapes.keys())
+    if style_overrides:
+        all_annotations |= set(style_overrides.keys())
 
     settings: dict = {}
     for annotation_name in all_annotations:
@@ -160,26 +175,92 @@ def visualization_state_to_settings(
         _SETTINGS_KEYS = {
             "sortMode", "maxVisibleValues", "shapeSize",
             "hiddenValues", "selectedPaletteId",
+            "zOrderSort", "pinnedValues",
         }
         if style_overrides and annotation_name in style_overrides:
             for key, val in style_overrides[annotation_name].items():
                 if key in _SETTINGS_KEYS:
                     ann_settings[key] = val
 
-        # Determine sort mode and frequencies for this annotation
-        sort_mode = ann_settings.get("sortMode", "size-desc")
+        # Pop processing-only keys (not stored in output settings).
+        # "zOrderSort" overrides "sortMode" for zOrder computation only
+        # (e.g. zOrderSort="size-desc" + sortMode="manual" → frequency-based
+        # zOrders displayed in manual order by the frontend).
+        # "pinnedValues" is an ordered list of category names that receive
+        # zOrders 0..N-1; remaining values follow, sorted by zOrderSort/sortMode.
+        zorder_sort = ann_settings.pop("zOrderSort", None)
+        pinned_values: list[str] = ann_settings.pop("pinnedValues", None) or []
+        sort_mode = zorder_sort or ann_settings.get("sortMode", "size-desc")
         freqs = (
             value_frequencies.get(annotation_name)
             if value_frequencies
             else None
         )
 
-        # Build categories from colors and shapes
+        # Build categories from colors, shapes, and (if needed) frequency data.
+        # When style_overrides reference an annotation with no pre-existing
+        # colors/shapes, fall back to value_frequencies for the value list.
         categories: dict = {}
         all_values = set(colors.keys()) | set(shapes.keys())
+        if not all_values and freqs:
+            all_values = set(freqs.keys())
 
-        ordered_values = _sort_values_for_zorder(all_values, sort_mode, freqs)
+        if pinned_values:
+            # Resolve pinned values against all_values (with NA alias matching).
+            # ONLY pinned values go into categories — this ensures the
+            # frontend's _visibleValues matches exactly the pinned set.
+            #
+            # The special marker __REST__ is expanded to top values by frequency
+            # to fill up to maxVisibleValues.  Example:
+            #   pinnedValues: ["__REST__", ""]  →  top N-1 by freq, then NA
+            max_vis = ann_settings.get("maxVisibleValues", 10)
 
+            # First pass: collect explicit (non-REST) pinned values
+            explicit_pinned: list[str] = []
+            has_rest = False
+            for pv in pinned_values:
+                if pv == REST_MARKER:
+                    has_rest = True
+                elif pv in all_values:
+                    explicit_pinned.append(pv)
+                elif pv in _NA_LABELS:
+                    for alias in _NA_LABELS:
+                        if alias in all_values:
+                            explicit_pinned.append(alias)
+                            break
+
+            if has_rest and freqs:
+                # Auto-fill: pick top values by sort_mode, excluding already-pinned and NA
+                candidates = _sort_values_for_zorder(
+                    all_values - _NA_LABELS - set(explicit_pinned),
+                    sort_mode,
+                    freqs,
+                )
+                # explicit_pinned already includes resolved NA entries,
+                # so subtracting its length accounts for all non-REST slots.
+                rest_slots = max_vis - len(explicit_pinned)
+                rest_values = candidates[:max(0, rest_slots)]
+
+                # Second pass: build ordered list, replacing __REST__ with auto-fill
+                valid_pinned: list[str] = []
+                for pv in pinned_values:
+                    if pv == REST_MARKER:
+                        valid_pinned.extend(rest_values)
+                    elif pv in all_values:
+                        valid_pinned.append(pv)
+                    elif pv in _NA_LABELS:
+                        for alias in _NA_LABELS:
+                            if alias in all_values:
+                                valid_pinned.append(alias)
+                                break
+            else:
+                valid_pinned = explicit_pinned
+
+            ordered_values = valid_pinned
+        else:
+            ordered_values = _sort_values_for_zorder(all_values, sort_mode, freqs)
+
+        color_slot = 0
         for i, value in enumerate(ordered_values):
             cat = dict(existing_categories.get(value, {}))
             cat["zOrder"] = i
@@ -187,16 +268,26 @@ def visualization_state_to_settings(
             color = colors.get(value, cat.get("color", ""))
             if color:
                 cat["color"] = _rgba_to_hex(color) if "rgba" in str(color) else color
+            elif pinned_values:
+                # Auto-assign Kelly's palette colors for pinned values
+                if value in _NA_LABELS:
+                    cat["color"] = NA_PINNED_COLOR
+                else:
+                    cat["color"] = KELLYS_COLORS[color_slot % len(KELLYS_COLORS)]
+                    color_slot += 1
 
             shape = shapes.get(value, cat.get("shape", "circle"))
             cat["shape"] = shape
 
-            categories[value] = cat
+            # Use __NA__ as the key for NA values (frontend internal format)
+            key = NA_INTERNAL if value in _NA_LABELS else value
+            categories[key] = cat
 
-        # Ensure <NA> / empty values always get light gray
-        for na_label in ("", "<NA>", "NaN"):
-            if na_label in categories:
-                categories[na_label].setdefault("color", NA_COLOR)
+        if not pinned_values:
+            # Ensure <NA> / empty values always get light gray
+            for na_label in ("", "<NA>", "NaN"):
+                if na_label in categories:
+                    categories[na_label].setdefault("color", NA_COLOR)
 
         ann_settings["categories"] = categories
         # Set maxVisibleValues to actual category count

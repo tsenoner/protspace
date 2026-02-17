@@ -16,13 +16,17 @@ ALLOWED_SHAPES = [
 ]
 
 # Settings-level keys that are passed through to the bundle settings
-# (everything except "colors" and "shapes" which are applied via the reader)
+# (everything except "colors" and "shapes" which are applied via the reader).
+# "zOrderSort" and "pinnedValues" are processing-only keys consumed by the
+# settings converter (not stored in the final output).
 _SETTINGS_KEYS = {
     "sortMode",
     "maxVisibleValues",
     "shapeSize",
     "hiddenValues",
     "selectedPaletteId",
+    "zOrderSort",
+    "pinnedValues",
 }
 
 
@@ -85,16 +89,43 @@ def _resolve_na(value: str, all_values: set[str]) -> str | None:
     return None
 
 
+def _to_display_value(raw: str) -> list[str]:
+    """Convert a raw annotation value to its display name(s).
+
+    Applies the same transformations the ProtSpace web frontend uses:
+
+    1. **Semicolon split** – ``"familyA;familyB"`` becomes two entries
+       ``["familyA", "familyB"]`` (multi-label).
+    2. **Pipe trim** – ``"value|source"`` becomes ``"value"``
+       (the part after ``|`` is a source tag, e.g. ``IC``, ``SAM``).
+
+    Empty / whitespace-only parts are preserved as ``""`` (N/A sentinel).
+    """
+    parts = raw.split(";")
+    display: list[str] = []
+    for part in parts:
+        trimmed = part.split("|", 1)[0]
+        display.append(trimmed)
+    return display
+
+
 def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     """Compute value frequencies for each annotation from a reader.
 
+    Raw values are preprocessed to match the ProtSpace web frontend:
+    pipe suffixes are trimmed and semicolons split into multi-label entries.
+
     Returns:
-        ``{annotation_name: {value: count}}``
+        ``{annotation_name: {display_value: count}}``
     """
     frequencies: dict[str, dict[str, int]] = {}
     for annotation in reader.get_all_annotations():
-        all_values = [str(v) for v in reader.get_all_annotation_values(annotation)]
-        frequencies[annotation] = dict(Counter(all_values))
+        raw_values = [str(v) for v in reader.get_all_annotation_values(annotation)]
+        freq: dict[str, int] = {}
+        for raw in raw_values:
+            for display in _to_display_value(raw):
+                freq[display] = freq.get(display, 0) + 1
+        frequencies[annotation] = freq
     return frequencies
 
 
@@ -403,33 +434,64 @@ def dump_settings(input_file: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Add or update annotation colors and shapes in ProtSpace JSON, Parquet, or .parquetbundle files"
+        description="Add or update annotation styles (colors, shapes, legend ordering) "
+        "in ProtSpace .parquetbundle, Parquet, or JSON files.",
+        epilog="""\
+styles JSON format:
+  Each top-level key is an annotation name. Per annotation:
+
+  Stored keys (persisted in the output bundle):
+    colors             Map of {value: color} (hex or rgba)
+    shapes             Map of {value: shape} (circle, square, diamond, ...)
+    sortMode           Legend sort: size-desc, size-asc, alpha-asc, alpha-desc, manual
+    maxVisibleValues   Max legend entries before "Other" (default: 10)
+    shapeSize          Marker size (default: 30)
+    hiddenValues       List of values hidden from the plot
+    selectedPaletteId  Color palette (default: kellys)
+
+  Processing-only keys (consumed during generation, NOT stored):
+    zOrderSort         Sort mode for zOrder assignment only, overriding sortMode
+    pinnedValues       Ordered list of values for legend positions 0..N-1
+                       Use "" for N/A, "__REST__" to auto-fill from top values
+
+  Example — pin 2 families + N/A:
+    {"protein_families": {"maxVisibleValues": 3, "sortMode": "manual",
+     "zOrderSort": "size-desc", "pinnedValues": ["familyA", "familyB", ""]}}
+
+  Example — top values by frequency, N/A at end:
+    {"ec": {"sortMode": "manual", "zOrderSort": "size-desc",
+     "pinnedValues": ["__REST__", ""]}}
+
+  Values use display names (pipe suffixes trimmed, semicolons split).
+  See docs/styling.md for full documentation.
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "input_file",
-        help="Path to input JSON file, .parquetbundle file, or directory containing parquet files",
+        help="Path to input .parquetbundle, .json file, or parquet directory",
     )
     parser.add_argument(
         "output_file",
         nargs="?",
         default=None,
-        help="Path to save the updated file (JSON, .parquetbundle) or output directory (parquet). "
-        "Not required when using --dump-settings.",
+        help="Output path. Not required for --dump-settings or --generate-template.",
     )
     parser.add_argument(
         "--annotation_styles",
-        help='JSON string of annotation styles or path to a JSON file, e.g., \'{"annotation1": {"colors": {"value1": "rgba(255, 0, 0, 0.8)"}, "shapes": {"value1": "circle"}}}\' or \'path/to/styles.json\'',
+        help="Styles as an inline JSON string or path to a JSON file. "
+        "See epilog below or docs/styling.md for the full format.",
     )
     parser.add_argument(
         "--dump-settings",
         action="store_true",
-        help="Print the stored settings/visualization_state and exit",
+        help="Print stored settings and exit (no output_file needed).",
     )
     parser.add_argument(
         "--generate-template",
         action="store_true",
-        help="Generate a pre-filled styles template JSON from the input file and exit. "
-        "Values are listed in frequency-descending order with empty color placeholders.",
+        help="Print a pre-filled styles template (values in frequency order, "
+        "empty color placeholders) and exit.",
     )
 
     args = parser.parse_args()

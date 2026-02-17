@@ -59,7 +59,7 @@ protspace-query -q 'organism_name:"Homo sapiens" AND reviewed:true' -m pca2,umap
 
 ## `protspace-annotation-colors`
 
-Add custom colors, shapes, and display settings to existing ProtSpace files. See [Annotation Styling](styling.md) for the full styles JSON format.
+Add custom colors, shapes, legend ordering, and display settings to existing ProtSpace files. See [Annotation Styling](styling.md) for the full styles JSON format, including legend ordering with `pinnedValues`.
 
 ```bash
 # Generate a styles template (values in frequency order, empty color placeholders)
@@ -70,6 +70,14 @@ protspace-annotation-colors input.parquetbundle output.parquetbundle --annotatio
 
 # Apply styles from an inline JSON string
 protspace-annotation-colors input.parquetbundle output.parquetbundle --annotation_styles '{"ann": {"colors": {"val": "#FF0000"}}}'
+
+# Pin specific legend entries with N/A at the end
+protspace-annotation-colors input.parquetbundle output.parquetbundle --annotation_styles \
+  '{"ann": {"sortMode": "manual", "zOrderSort": "size-desc", "pinnedValues": ["val1", "val2", ""]}}'
+
+# Auto-fill top values by frequency, N/A at end
+protspace-annotation-colors input.parquetbundle output.parquetbundle --annotation_styles \
+  '{"ann": {"sortMode": "manual", "zOrderSort": "size-desc", "pinnedValues": ["__REST__", ""]}}'
 
 # Inspect stored settings
 protspace-annotation-colors data.parquetbundle --dump-settings
