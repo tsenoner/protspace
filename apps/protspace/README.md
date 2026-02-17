@@ -63,6 +63,7 @@ protspace-local -i data.h5 -a default,interpro,kingdom  # mix groups and individ
 ## 📖 Documentation
 
 - [Annotation Reference](docs/annotations.md) — full list of annotations, groups, data sources, output formats
+- [Annotation Styling](docs/styling.md) — custom colors, shapes, sort modes, and the `--generate-template` workflow
 - [CLI Reference](docs/cli.md) — command options, method parameters, file formats
 
 ## 📝 Citation

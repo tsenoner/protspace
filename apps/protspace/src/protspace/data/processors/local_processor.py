@@ -387,6 +387,16 @@ class LocalProcessor(BaseProcessor):
                             annotations_df = annotations_df.rename(
                                 columns={col: base}
                             )
+                # Reorder: CSV columns first, then DB-only columns
+                csv_cols = [
+                    c for c in csv_df.columns if c in annotations_df.columns
+                ]
+                db_only = [
+                    c
+                    for c in annotations_df.columns
+                    if c not in csv_cols
+                ]
+                annotations_df = annotations_df[csv_cols + db_only]
             elif csv_df is not None:
                 annotations_df = csv_df
             else:

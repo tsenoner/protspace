@@ -1,90 +1,156 @@
 # CLI Reference
 
-Run `protspace-local --help` or `protspace-query --help` for the full list of options.
+ProtSpace provides three CLI commands:
 
-## Command Options
+| Command                        | Purpose                                         |
+| ------------------------------ | ----------------------------------------------- |
+| `protspace-local`              | Process local embeddings or similarity matrices  |
+| `protspace-query`              | Search UniProt, compute embeddings, and process  |
+| `protspace-annotation-colors`  | Add/inspect annotation styles in existing files  |
 
-**protspace-local** (Local data):
+## `protspace-local`
 
-- `-i, --input`: HDF5 file(s)/directory or CSV similarity matrix (required, supports multiple inputs)
-- `-o, --output`: Output file or directory (optional, default: derived from input filename)
-- `-a, --annotations`: Annotations to extract (comma-separated) or CSV metadata file path
-- `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
-- `--non-binary`: Use legacy JSON format
-- `--keep-tmp`: Cache intermediate files for reuse
-- `--no-scores`: Omit evidence codes and bit scores from annotation output
-- `--dump-cache`: Print cached annotations as CSV to stdout and exit
-- `--force-refetch`: Discard cached annotations and re-download everything
-- `--bundled`: Bundle output files (true/false, default: true)
-
-**protspace-query** (UniProt search):
-
-- `-q, --query`: UniProt search query (required)
-- `-o, --output`: Output file or directory (optional, default: `protspace.parquetbundle`)
-- `-a, --annotations`: Annotations to extract (comma-separated)
-- `-m, --methods`: Reduction methods (e.g., `pca2,umap3,tsne2`)
-- `--non-binary`: Use legacy JSON format
-- `--keep-tmp`: Cache intermediate files for reuse
-- `--no-scores`: Omit evidence codes and bit scores from annotation output
-- `--dump-cache`: Print cached annotations as CSV to stdout and exit
-- `--bundled`: Bundle output files (true/false, default: true)
-
-## Method Default Parameters
-
-Default parameters for each method. Override these to fine-tune dimensionality reduction:
-
-- **UMAP**: `--n_neighbors 15 --min_dist 0.1`
-- **t-SNE**: `--perplexity 30 --learning_rate 200`
-- **PaCMAP**: `--mn_ratio 0.5 --fp_ratio 2.0`
-- **MDS**: `--n_init 4 --max_iter 300 --eps 1e-3`
-
-## Custom Styling
+Process local protein data with dimensionality reduction.
 
 ```bash
-protspace-annotation-colors input.json output.json --annotation_styles '{
-  "annotation_name": {
-    "colors": {"value1": "#FF0000", "value2": "#00FF00"},
-    "shapes": {"value1": "circle", "value2": "square"}
-  }
-}'
+protspace-local -i embeddings.h5 -a metadata.csv -m pca2,umap2 -o output.parquetbundle
 ```
 
-Available shapes: `circle`, `circle-open`, `cross`, `diamond`, `diamond-open`, `square`, `square-open`, `x`
+### Options
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-i, --input` | HDF5 file(s), directory of HDF5 files, or CSV similarity matrix. Multiple files are merged automatically. | required |
+| `-o, --output` | Output path (file or directory). | `protspace_<input>.parquetbundle` |
+| `-a, --annotations` | Annotations as comma-separated names/groups, or path to a CSV metadata file. Repeatable (`-a csv -a pfam,kingdom`). | `default` |
+| `-m, --methods` | Reduction methods: `pca`, `umap`, `tsne`, `pacmap`, `mds`, `localmap` + dimensions (e.g. `umap2,pca3`). | `pca2` |
+| `--custom_names` | Custom display names for projections (e.g. `pca2=PCA_2D,umap2=UMAP`). | — |
+| `--delimiter` | CSV delimiter for metadata files. | `,` |
+| `--bundled` | Bundle parquet files into a single `.parquetbundle` (`true`/`false`). | `true` |
+| `--non-binary` | Output in legacy JSON + CSV format instead of Parquet. | `false` |
+| `--keep-tmp` | Cache intermediate files (annotations, FASTA) for reuse. | `false` |
+| `--dump-cache` | Print cached annotations as CSV and exit. Requires prior `--keep-tmp` run. | `false` |
+| `--force-refetch` | Discard cached annotations and re-download from APIs. | `false` |
+| `--no-scores` | Omit evidence codes and bit scores from output. | `false` |
+| `-v, --verbose` | Increase verbosity (`-v` = INFO, `-vv` = DEBUG). | warnings only |
+
+## `protspace-query`
+
+Search UniProt, download sequences, compute ESM2 embeddings, and process.
+
+```bash
+protspace-query -q 'organism_name:"Homo sapiens" AND reviewed:true' -m pca2,umap2
+```
+
+### Options
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-q, --query` | UniProt search query ([syntax](https://www.uniprot.org/help/query-fields)). | required |
+| `-o, --output` | Output path. | `protspace.parquetbundle` |
+| `-a, --annotations` | Annotations as comma-separated names/groups. | `default` |
+| `-m, --methods` | Reduction methods (same as `protspace-local`). | `pca2` |
+| `--bundled` | Bundle into `.parquetbundle` (`true`/`false`). | `true` |
+| `--non-binary` | Legacy JSON + CSV output. | `false` |
+| `--keep-tmp` | Cache intermediate files. | `false` |
+| `--dump-cache` | Print cached annotations and exit. | `false` |
+| `--no-scores` | Omit evidence codes and bit scores. | `false` |
+| `-v, --verbose` | Increase verbosity. | warnings only |
+
+## `protspace-annotation-colors`
+
+Add custom colors, shapes, and display settings to existing ProtSpace files. See [Annotation Styling](styling.md) for the full styles JSON format.
+
+```bash
+# Generate a styles template (values in frequency order, empty color placeholders)
+protspace-annotation-colors data.parquetbundle --generate-template > styles.json
+
+# Apply styles from a JSON file
+protspace-annotation-colors input.parquetbundle output.parquetbundle --annotation_styles styles.json
+
+# Apply styles from an inline JSON string
+protspace-annotation-colors input.parquetbundle output.parquetbundle --annotation_styles '{"ann": {"colors": {"val": "#FF0000"}}}'
+
+# Inspect stored settings
+protspace-annotation-colors data.parquetbundle --dump-settings
+```
+
+### Options
+
+| Flag | Description |
+| ---- | ----------- |
+| `input_file` | Input `.parquetbundle`, `.json`, or parquet directory. |
+| `output_file` | Output path (not required for `--dump-settings` or `--generate-template`). |
+| `--annotation_styles` | Path to styles JSON file or inline JSON string. |
+| `--generate-template` | Print a pre-filled styles template and exit. |
+| `--dump-settings` | Print stored settings and exit. |
+
+## Reduction Method Parameters
+
+Parameters shared by both `protspace-local` and `protspace-query`.
+
+### General
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`, `correlation`). Applies to UMAP, t-SNE, MDS. | `euclidean` |
+| `--random_state` | Random seed for reproducibility. | `42` |
+
+### UMAP / PaCMAP / LocalMAP
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--n_neighbors` | Number of neighbors for manifold approximation (5-50). | `15` |
+| `--min_dist` | Minimum distance between points (0.0-0.99). | `0.1` |
+| `--mn_ratio` | Mid-near pairs ratio (PaCMAP/LocalMAP only, 0.1-1.0). | `0.5` |
+| `--fp_ratio` | Further pairs ratio (PaCMAP/LocalMAP only, 1.0-3.0). | `2.0` |
+
+### t-SNE
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--perplexity` | Balance between local/global structure (5-50). | `30` |
+| `--learning_rate` | Gradient descent step size (10-1000). | `200` |
+
+### MDS
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--n_init` | Number of initializations (1-10). | `4` |
+| `--max_iter` | Max optimization iterations (100-1000). | `300` |
+| `--eps` | Convergence tolerance (1e-6 to 1e-2). | `1e-3` |
 
 ## File Formats
 
 ### Input
 
-- **UniProt queries**: Text queries using UniProt syntax
-- **Embeddings**: HDF5 files (.h5, .hdf5, .hdf) - supports single/multiple files and directories
-- **Similarity matrices**: CSV files with symmetric matrices
-- **Metadata**: CSV with protein identifiers in the first column + annotation columns
-- **Structures**: ZIP files containing PDB/CIF files
+| Format | Extension | Description |
+| ------ | --------- | ----------- |
+| Embeddings | `.h5`, `.hdf5`, `.hdf` | HDF5 files with protein IDs as keys. Supports multiple files and directories. |
+| Similarity matrix | `.csv` | Symmetric CSV matrix. |
+| Metadata | `.csv` | First column = protein identifiers, remaining columns = annotations. |
+| UniProt query | text | Query string using [UniProt syntax](https://www.uniprot.org/help/query-fields). |
 
 ### Output
 
-- **Default**: Parquet files (projections_data.parquet, projections_metadata.parquet, selected_annotations.parquet)
-- **Legacy**: JSON format with `--non-binary` flag
-- **Temporary files**: FASTA sequences, similarity matrices, all annotations (with `--keep-tmp`)
+| Format | Description |
+| ------ | ----------- |
+| `.parquetbundle` | Single file bundling all parquet tables + optional settings (default). |
+| Parquet directory | Separate `.parquet` files (`--bundled false`). |
+| JSON + CSV | Legacy format (`--non-binary`). |
 
 ## Annotation Caching (`--keep-tmp`)
 
-When `--keep-tmp` is enabled, fetched annotations are stored as `all_annotations.parquet` in a per-dataset intermediate directory (keyed by a hash of the protein identifiers).
+When `--keep-tmp` is enabled, annotations are stored as `all_annotations.parquet` in a per-dataset directory (keyed by a hash of the protein identifiers).
 
-- **Always parquet, always with scores.** The internal cache format is fixed regardless of `--non-binary` or `--no-scores`. Those flags only affect the final output, never the cached data.
-- **Incremental fetching.** On subsequent runs, the cache is compared against the requested annotations. Only missing sources (UniProt, InterPro, or Taxonomy) are re-fetched and merged into the existing cache.
-
-Switching `--no-scores` or `--non-binary` between runs reuses the same cache. Requesting additional annotations (e.g. `-a default` then `-a all`) fetches only the delta.
+- **Fixed format**: The cache is always parquet with scores, regardless of `--non-binary` or `--no-scores`.
+- **Incremental**: Only missing annotation sources are fetched on subsequent runs.
+- **Reusable**: Switching `--no-scores` or `--non-binary` between runs reuses the same cache.
 
 ```bash
-# First run: fetches default annotations, caches them
-protspace-local -i data.h5 -a default --keep-tmp
-
-# Second run: only fetches InterPro + Taxonomy (UniProt cached)
-protspace-local -i data.h5 -a all --keep-tmp
-
-# Inspect raw cache contents
-protspace-local -i data.h5 --dump-cache --keep-tmp
+protspace-local -i data.h5 -a default --keep-tmp        # first run: fetches + caches
+protspace-local -i data.h5 -a all --keep-tmp             # fetches only the delta
+protspace-local -i data.h5 --dump-cache --keep-tmp       # inspect cache contents
 ```
 
-See also: [Annotation Reference](annotations.md)
+See also: [Annotation Reference](annotations.md) | [Annotation Styling](styling.md)

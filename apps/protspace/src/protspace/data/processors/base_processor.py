@@ -1,4 +1,3 @@
-import io
 import json
 import logging
 from pathlib import Path
@@ -9,6 +8,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.data.io.bundle import write_bundle
 from protspace.utils import DimensionReductionConfig
 from protspace.utils.reducers import MDS_NAME
 
@@ -121,35 +121,18 @@ class BaseProcessor:
         if bundled:
             # Determine the bundle file path
             if output_path.suffix == ".parquetbundle":
-                # User provided a file path ending with .parquetbundle
                 bundle_path = output_path
-                output_path.parent.mkdir(parents=True, exist_ok=True)
             elif output_path.suffix:
-                # User provided a file path with different extension - use it as is but warn
                 bundle_path = output_path.with_suffix(".parquetbundle")
                 logger.warning(
                     f"Output path has extension '{output_path.suffix}', "
                     f"using '.parquetbundle' instead: {bundle_path}"
                 )
-                bundle_path.parent.mkdir(parents=True, exist_ok=True)
             else:
-                # User provided a directory path - create bundle inside with default name
                 output_path.mkdir(parents=True, exist_ok=True)
                 bundle_path = output_path / "data.parquetbundle"
 
-            delimiter = b"---PARQUET_DELIMITER---"
-
-            with open(bundle_path, "wb") as bundle_file:
-                for i, (_, table) in enumerate(data.items()):
-                    if i > 0:
-                        bundle_file.write(delimiter)
-
-                    buffer = io.BytesIO()
-                    pq.write_table(table, buffer)
-                    buffer.seek(0)
-                    bundle_file.write(buffer.read())
-
-            logger.info(f"Saved bundled output to: {bundle_path}")
+            write_bundle(list(data.values()), bundle_path)
         else:
             # Save as separate parquet files
             # output_path must be a directory
