@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.3.0 (2026-02-17)
+
+### Features
+
+* feat(styling): add pinnedValues, __REST__ marker, and value preprocessing
+
+Add legend ordering support to protspace-annotation-colors:
+- pinnedValues for explicit control over legend order and visible categories
+- __REST__ auto-fill marker to expand top values by frequency
+- zOrderSort to decouple zOrder computation from stored sortMode
+- Value preprocessing (pipe trimming, semicolon splitting) matching the
+  ProtSpace web frontend
+- Auto-assign Kelly's palette colors for pinned values, __NA__ key format
+- Comprehensive docs in docs/styling.md, docs/cli.md, and CLI epilog
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`530cd3c`](https://github.com/tsenoner/protspace/commit/530cd3c90cb7acbc5ea35f3974eb39d0bb74c34c))
+
+
 ## v3.2.0 (2026-02-17)
 
 ### Code Style
