@@ -1,6 +1,309 @@
 # CHANGELOG
 
 
+## v3.2.0 (2026-02-17)
+
+### Code Style
+
+* style: apply ruff fixes and update notebooks for current CLI
+
+Run ruff lint and format across the codebase. Add notebook-specific
+per-file-ignores to ruff config for common Jupyter patterns (E402,
+F811, ARG001, F841). Fix B904, C414, I001, UP012 lint issues.
+
+Update Run_ProtSpace and PfamExplorer notebooks for current CLI:
+replace removed -f/--features with -a/--annotations, change methods
+from space-separated to comma-separated, and remove pinned commit
+hash from install URL.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`5ad70f2`](https://github.com/tsenoner/protspace/commit/5ad70f205e97c14c057047fd5b9ea29596c56985))
+
+### Documentation
+
+* docs: polish README, add annotation and CLI reference docs
+
+De-emphasize 3D in favor of 2D/ProtSpace Web focus, slim README by
+moving detailed content to docs/annotations.md and docs/cli.md, update
+example image with ProtSpace Web screenshot, and fix minor inconsistencies.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`a464d57`](https://github.com/tsenoner/protspace/commit/a464d5726f231eeddc4d46fc3de7fb2a368817b5))
+
+* docs: remove redundant poster landing page ([`20db594`](https://github.com/tsenoner/protspace/commit/20db594529089af79d1932da705c8518d1a8094f))
+
+* docs(README): clarify method parameters section
+
+- Change section title from 'Method Parameters' to 'Method Default Parameters'
+- Add clarifying text about overriding defaults for fine-tuning ([`3ad6c7e`](https://github.com/tsenoner/protspace/commit/3ad6c7e5e1ae0829f13b1fd9abd3e13c4a964c0a))
+
+### Features
+
+* feat(styling): extend annotation styles with settings support and frequency-based zOrder
+
+Add bundle I/O module and settings converter for parquetbundle 4-part
+format. Extend protspace-annotation-colors to accept settings-level keys
+(sortMode, maxVisibleValues, shapeSize, hiddenValues, selectedPaletteId)
+alongside colors and shapes. Add --generate-template flag for scaffolding
+styles JSON files. Fix selectedPaletteId default to "kellys", default
+maxVisibleValues to 10, and assign zOrder by frequency when sortMode is
+size-based. Normalize NA representations across data sources. Update
+ALLOWED_SHAPES to the 6 shapes supported by protspace_web. Clean up 3FTx
+example data and add styling documentation.
+
+Closes #25
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`4f18546`](https://github.com/tsenoner/protspace/commit/4f1854601a557b000ab12a6c9923cee031a69dff))
+
+* feat(notebook): add ProtSpace Preparation notebook and move notebooks to root
+
+Move all notebooks from examples/notebook/ to notebooks/ at repo root.
+Add ProtSpace_Preparation.ipynb (from protspace_web) with bug fixes:
+- Fix -f flag to -a for annotation CLI argument
+- Add CSV metadata upload widget for custom annotations
+- Complete annotation lists (ec, gene_name, go_*, keyword, cdd, panther, prints, prosite, smart)
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`1abf3d4`](https://github.com/tsenoner/protspace/commit/1abf3d42121113c7bb7955bb85bef31f0c528597))
+
+* feat(annotations): allow mixing custom CSV with database annotations
+
+Support multiple -a flags so users can combine a CSV metadata file with
+database annotations (e.g. -a metadata.csv -a pfam,kingdom). Columns are
+merged on the identifier column with CSV values taking precedence on
+collision. Only API-fetched annotations go into the parquet cache.
+
+Closes #20, closes #23, closes #27
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`d01d34a`](https://github.com/tsenoner/protspace/commit/d01d34abaa34a744a1d172a902095321b80e204e))
+
+* feat(annotations): add ECO evidence codes to UniProt annotations
+
+Surface per-value evidence codes from the UniProt API inline using
+the `value|CODE` format (same separator pattern as InterPro bit scores).
+
+Affected fields: ec, cc_subcellular_location, protein_families, go_bp,
+go_cc, go_mf. Keywords excluded (API never provides evidence on them).
+GO source suffixes (e.g. IEA:UniProtKB-EC) are stripped to bare codes.
+When multiple evidences exist, the highest-priority code is chosen.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`3991dbc`](https://github.com/tsenoner/protspace/commit/3991dbcecb8b1de07fd9ae58f9d09196e0bc47d4))
+
+* feat(annotations): add named annotation groups (default, all, uniprot, interpro, taxonomy)
+
+Replace the implicit "None means fetch everything" behavior with explicit
+annotation groups. Users can now mix group names with individual annotations
+(e.g. -a default,interpro,kingdom). When no annotations are specified, the
+curated 'default' group (ec, keyword, length_quantile, protein_families,
+reviewed) is used instead of fetching all annotations.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`7bd544c`](https://github.com/tsenoner/protspace/commit/7bd544cac6a5a5da79866d1b655790d876579f6b))
+
+* feat(annotations): add EC, keyword, GO terms to UniProt annotations
+
+Add 5 new annotations (ec, keyword, go_bp, go_cc, go_mf) to
+UNIPROT_ANNOTATIONS, bringing the total from 13 to 18.
+
+- EC numbers resolved with enzyme names via ExPASy ENZYME database
+  (cached at ~/.cache/protspace/enzyme/, 7-day TTL)
+- Keywords now include both ID and name: "KW-0418 (Kinase)"
+- GO terms split by aspect (BP/CC/MF) with prefix stripping
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`2a4952e`](https://github.com/tsenoner/protspace/commit/2a4952e16c2f3076fa2477061e46f3e10cdab107))
+
+* feat(interpro): resolve entry names via FTP XML download with local cache
+
+Replace the slow paginated list API for name resolution (SUPERFAMILY ~2min,
+CATH ~5min, PANTHER timeout) with a single download of interpro.xml.gz from
+the EBI FTP server (~7s total). The XML is parsed via streaming ET.iterparse
+and cached as JSON in ~/.cache/protspace/interpro/ with a 7-day TTL.
+
+Also updates CLI help text and README with the full list of available
+InterPro databases (cath, cdd, panther, pfam, prints, prosite,
+signal_peptide, smart, superfamily).
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`274bb6f`](https://github.com/tsenoner/protspace/commit/274bb6f1607d04e5149f1d9232383ca7545f36a7))
+
+* feat(tests): update tests to reflect always-included annotations in user-defined lists ([`c519a7c`](https://github.com/tsenoner/protspace/commit/c519a7caab3c7d415ca15f59e4ebcf51db38331b))
+
+* feat(annotations): include always included annotations in user-defined lists ([`7894fc3`](https://github.com/tsenoner/protspace/commit/7894fc36f349f8ba6fe9ae669f437e9932308918))
+
+* feat(uniprot): add uniprot_kb_id and protein_name properties to UniProt retrieval ([`e8bfd04`](https://github.com/tsenoner/protspace/commit/e8bfd042474b4ee3c011ed3ab9b29dcc937145c1))
+
+* feat(local): support multiple embedding files and directories
+
+Enable protspace-local to accept and merge multiple HDF5 files/directories
+via the --input argument. Automatically handles duplicates (keeps first) and
+filters NaN values. Streamlined input loading logic and added comprehensive
+test coverage with reusable mock helpers. ([`7306cb7`](https://github.com/tsenoner/protspace/commit/7306cb744c0dffd91418b8a84515030f7b965af9))
+
+* feat(annotations): add InterPro signature names and refactor test data
+
+Include signature names in parentheses after accessions (e.g., PF00001 (7tm_1)|50.2).
+Refactor test data using helper functions and constants for better maintainability. ([`aad6acc`](https://github.com/tsenoner/protspace/commit/aad6acc8d457b5643eac84de083f9d454407151a))
+
+* feat(annotations): store InterPro annotations with confidence scores in pipe-separated format
+
+Store InterPro accessions and confidence scores in a single field using
+pipe-separated format: accession|score1,score2;accession2|score1
+
+- Collect all scores for duplicate accessions
+- Add multidomain tests
+- Update README documentation ([`b4e0556`](https://github.com/tsenoner/protspace/commit/b4e055653b8dac10ca25412907d09216c71ba468))
+
+* feat(annotations): refactor feature extraction to annotation extraction
+
+- Replace all instances of "features" with "annotations" in the codebase
+- Rename data/features/ directory to data/annotations/
+- Update all module imports and class names
+- Update CLI commands and documentation to reflect the terminology change
+- Add comprehensive tests for annotation retrieval and processing
+
+This change improves code clarity by aligning internal terminology with the actual data being processed. The JSON output format remains unchanged (still uses "features" key). ([`61bc76b`](https://github.com/tsenoner/protspace/commit/61bc76baaef1e55b21e50a04b998e54a0cb606e6))
+
+* feat(uniprot): add gene_symbol feature to UniProt retrieval
+
+Closes #21 ([`cc0c00d`](https://github.com/tsenoner/protspace/commit/cc0c00d5f4cd3373541a94e2345b8485b7cdaebd))
+
+* feat(cli): use first CSV column as identifier regardless of name
+
+Closes #10 ([`2e7ec11`](https://github.com/tsenoner/protspace/commit/2e7ec111ae9db74a6a636158657d9433f72ce774))
+
+* feat(cache): add incremental feature caching for --keep-tmp
+
+Enable source-level caching that only fetches missing features from UniProt,
+Taxonomy, or InterPro APIs. Previously, cache was all-or-nothing.
+
+- Add feature categorization and source determination helpers
+- Support cached data in ProteinFeatureManager
+- Add --force-refetch flag to bypass cache
+- Add comprehensive tests for caching behavior ([`230fc5a`](https://github.com/tsenoner/protspace/commit/230fc5aca16a0dba2169079bf2a79b66946f4058))
+
+* feat(cache): add incremental feature caching for --keep-tmp
+
+Enable source-level caching that only fetches missing features from UniProt,
+Taxonomy, or InterPro APIs. Previously, cache was all-or-nothing.
+
+- Add feature categorization and source determination helpers
+- Support cached data in ProteinFeatureManager
+- Add --force-refetch flag to bypass cache
+- Add comprehensive tests for caching behavior ([`d387775`](https://github.com/tsenoner/protspace/commit/d387775fdf872c585e1267c20af895b8a261b23d))
+
+* feat(local-processor): add NaN handling and improve method API
+
+- Add automatic detection and filtering of embeddings with NaN values
+- Remove problematic entries with warning instead of failing
+- Add strict=True to zip() for safer iteration
+- Remove unused output_path parameter from load_data signature
+- Rename private methods to public API (load_input_file, load_or_generate_metadata)
+- Remove unused process_local() wrapper method
+
+These changes simplify the API by exposing the actual working methods
+that are used by the CLI, making the interface more honest and maintainable.
+
+NaN handling prevents PCA failures when input data contains invalid embeddings,
+automatically filtering them out with informative warnings. ([`e2aaa54`](https://github.com/tsenoner/protspace/commit/e2aaa54134b66de2dd368f3d829a88b9199b7d15))
+
+### Fixes
+
+* fix(cache): separate storage from presentation in --keep-tmp cache
+
+Always cache annotations as parquet with scores, regardless of
+--no-scores or --non-binary flags. Move score stripping to the CLI
+output layer via new strip_scores_from_df() utility. Add incremental
+annotation fetching to UniProtQueryProcessor. Add --dump-cache flag
+for inspecting cached data.
+
+Closes #24
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`2a0a838`](https://github.com/tsenoner/protspace/commit/2a0a83821dd22310608fcfa2f151a6a71b9ea5c1))
+
+* fix(uniprot): resolve inactive/obsolete entries via secondary accession search
+
+fetch_many() silently drops inactive UniProt entries (merged/demerged).
+After each batch, detect missing accessions and resolve them by searching
+the sec_acc field, which returns the current replacement entry.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`64cd2ce`](https://github.com/tsenoner/protspace/commit/64cd2ceebc593b993b0f6f1182d5706f406e022f))
+
+* fix(uniprot): correct reviewed field parsing for TrEMBL entries
+
+Parser incorrectly matched "unreviewed" when checking for "reviewed" string.
+Now returns "Swiss-Prot" or "TrEMBL" directly, eliminating the need for
+transform_reviewed() method. ([`589cbac`](https://github.com/tsenoner/protspace/commit/589cbac79f6ac5a06ab508f9880c3e71731d2c03))
+
+* fix(annotations): remove internal columns from final output, keep in cache ([`a25e86f`](https://github.com/tsenoner/protspace/commit/a25e86fa7ba158b6f7b9d6272494b4c607c59087))
+
+* fix(annotations): remove raw length field from output after binning ([`2cfef29`](https://github.com/tsenoner/protspace/commit/2cfef299e5bfb1a57cc3b23b3cca8415794edfcb))
+
+* fix(features): correct user feature filtering in configuration
+
+Previously, when users specified specific features (e.g., -f domain),
+the configuration was filtering DEFAULT_FEATURES instead of user_features,
+causing all default features to be fetched unnecessarily.
+
+Now correctly filters user_features, ensuring only requested features
+and their dependencies are retrieved from data sources.
+
+Fixes issue where requesting only taxonomy features would still trigger
+full UniProt and InterPro data downloads. ([`f0297b2`](https://github.com/tsenoner/protspace/commit/f0297b2b23492f41e61683347136450a39a02b5e))
+
+### Refactoring
+
+* refactor(notebooks): improve both Colab notebooks
+
+ProtSpace_Preparation.ipynb:
+- Fix -f → -a CLI flag bug
+- Add CSV metadata upload widget
+- Complete annotation lists (all UniProt + InterPro)
+- Remove legacy JSON output option
+- Simplify code (~43% line reduction), consolidate imports
+- Apply ruff check + format
+
+ClickThrough_GenerateEmbeddings.ipynb:
+- Add adaptive batched embedding (sorted by length, auto-halves on OOM)
+- Set comparison to skip already-computed embeddings upfront
+- Fix HF login: wrap userdata.get in try/except, actually call hf_login
+- Use torch.inference_mode() in both embed paths
+- Use tqdm.auto for proper notebook widget rendering
+- Split config form from function definitions
+- Rename variables for clarity (MODEL_SHORT_KEYS, preprocess_sequences)
+- Apply ruff check + format
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`eeb21b0`](https://github.com/tsenoner/protspace/commit/eeb21b0569cd515fedd10004a9b1b93a38143e1a))
+
+* refactor(annotations): rename gene_symbol to gene_name
+
+Rename the gene_symbol property to gene_name across the codebase for
+simpler and more intuitive naming. ([`a1ada56`](https://github.com/tsenoner/protspace/commit/a1ada56d79ff43922925110a128673d55e8901f9))
+
+* refactor(cli): update to use public LocalProcessor API
+
+Update CLI to call public methods instead of private ones:
+- _load_input_file() → load_input_file()
+- _load_or_generate_metadata() → load_or_generate_metadata()
+
+No functional changes, just using the now-public API. ([`7cac0c5`](https://github.com/tsenoner/protspace/commit/7cac0c5f9d62d440e20815439889a0c47e88d572))
+
+### Testing
+
+* test(local-processor): update tests for public API
+
+- Rename test class: TestLoadData → TestPublicMethods
+- Update all test calls to use public method names
+- Update test documentation to reflect public API
+- Ensure tests mirror production usage patterns
+
+All 19 tests passing. ([`be7d9ca`](https://github.com/tsenoner/protspace/commit/be7d9ca731dbbecfc72656dcb30f9a60e8207d99))
+
+### Unknown
+
+* Merge pull request #29 from tsenoner/stage
+
+Merge stage: extended annotations, styling, and CLI improvements ([`ea7e0b0`](https://github.com/tsenoner/protspace/commit/ea7e0b0f06c8c9013e949ff65ea37aa9c63139e0))
+
+* Merge branch 'stage' of https://github.com/tsenoner/protspace into stage ([`cb486ab`](https://github.com/tsenoner/protspace/commit/cb486ab02f193dfbc574c57773d4f4b15caa2276))
+
+* Merge branch 'refactor/local-processor-improvements' into stage ([`afbe054`](https://github.com/tsenoner/protspace/commit/afbe0540c4d15e67af40ab2a959c3e48b616f172))
+
+
 ## v3.1.1 (2025-10-26)
 
 ### Documentation
