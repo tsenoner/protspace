@@ -11,7 +11,7 @@ import requests
 from pymmseqs.commands import easy_search
 from tqdm import tqdm
 
-from protspace.data.features.manager import ProteinFeatureManager
+from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
@@ -33,7 +33,7 @@ class UniProtQueryProcessor(BaseProcessor):
             "verbose",
             "custom_names",
             "delimiter",
-            "features",
+            "annotations",
             "save_files",
             "no_save_files",
             "keep_tmp",
@@ -48,7 +48,7 @@ class UniProtQueryProcessor(BaseProcessor):
         query: str,
         output_path: Path,
         intermediate_dir: Path,
-        features: str = None,
+        annotations: str = None,
         delimiter: str = ",",
         keep_tmp: bool = False,
         non_binary: bool = False,
@@ -62,33 +62,26 @@ class UniProtQueryProcessor(BaseProcessor):
             query: UniProt search query (exact query to send to UniProt)
             output_path: Path for output file
             intermediate_dir: Directory for intermediate files
-            features: Features to fetch
+            annotations: Annotations to fetch
             delimiter: CSV delimiter
-            keep_tmp: Whether to keep temporary files (FASTA, complete protein features, and similarity matrix)
+            keep_tmp: Whether to keep temporary files (FASTA, complete protein annotations, and similarity matrix)
             non_binary: Whether to use non-binary formats (CSV instead of parquet)
             fasta_path: Optional pre-downloaded FASTA file path
             headers: Optional pre-extracted protein IDs
 
         Returns:
-            Tuple of (features_df, embeddings_array, headers_list, saved_files_dict)
+            Tuple of (annotations_df, embeddings_array, headers_list, saved_files_dict)
         """
 
         saved_files = {}
         fasta_filename = "sequences.fasta"
 
-        # Metadata file format depends on non_binary flag
+        # Always use parquet for internal metadata cache
         if keep_tmp:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
             fasta_save_path = intermediate_dir / fasta_filename
-
-            if non_binary:
-                metadata_filename = "all_features.csv"
-            else:
-                metadata_filename = "all_features.parquet"
-
-            metadata_save_path = intermediate_dir / metadata_filename
+            metadata_save_path = intermediate_dir / "all_annotations.parquet"
             similarity_matrix_path = intermediate_dir / "similarity_matrix.csv"
-
         else:
             fasta_save_path = None
             metadata_save_path = None
@@ -148,22 +141,86 @@ class UniProtQueryProcessor(BaseProcessor):
                 self._save_similarity_matrix(data, headers, similarity_matrix_path)
                 saved_files["similarity_matrix"] = similarity_matrix_path
 
-        # Generate or load metadata file
+        # Generate or load metadata file (with incremental fetching support)
         if metadata_cached:
             logger.info(f"Loading cached metadata from: {metadata_save_path}")
-            if non_binary:
-                features_df = pd.read_csv(metadata_save_path)
+            cached_df = pd.read_parquet(metadata_save_path)
+
+            # Determine required annotations for incremental check
+            if annotations and not annotations.endswith(".csv"):
+                annotations_list = [
+                    annotation.strip() for annotation in annotations.split(",")
+                ]
+                from protspace.data.annotations.configuration import (
+                    AnnotationConfiguration,
+                )
+
+                annotations_list = AnnotationConfiguration(
+                    annotations_list
+                ).user_annotations
             else:
-                features_df = pd.read_parquet(metadata_save_path)
+                annotations_list = None
+
+            if annotations_list is None:
+                from protspace.data.annotations.configuration import (
+                    ANNOTATION_GROUPS,
+                )
+
+                required_annotations = set(ANNOTATION_GROUPS["default"])
+            else:
+                required_annotations = set(annotations_list)
+
+            cached_annotations = set(cached_df.columns) - {"identifier"}
+            missing = required_annotations - cached_annotations
+
+            if not missing:
+                # Cache has everything we need
+                if annotations_list:
+                    cols = ["identifier"] + [
+                        f for f in annotations_list if f in cached_df.columns
+                    ]
+                    annotations_df = cached_df[cols]
+                else:
+                    annotations_df = cached_df
+            else:
+                # Incremental fetch of missing annotations
+                from protspace.data.annotations.configuration import (
+                    AnnotationConfiguration,
+                )
+
+                sources_to_fetch = AnnotationConfiguration.determine_sources_to_fetch(
+                    cached_annotations, required_annotations
+                )
+                logger.info(f"Missing annotations: {missing}")
+                logger.info(
+                    f"Will fetch from sources: {[k for k, v in sources_to_fetch.items() if v]}"
+                )
+
+                annotations_df = self._generate_metadata(
+                    headers,
+                    annotations,
+                    delimiter,
+                    metadata_save_path,
+                    non_binary,
+                    keep_tmp,
+                    cached_data=cached_df,
+                    sources_to_fetch=sources_to_fetch,
+                )
+
             saved_files["metadata"] = metadata_save_path
         else:
-            features_df = self._generate_metadata(
-                headers, features, delimiter, metadata_save_path, non_binary, keep_tmp
+            annotations_df = self._generate_metadata(
+                headers,
+                annotations,
+                delimiter,
+                metadata_save_path,
+                non_binary,
+                keep_tmp,
             )
             if metadata_save_path:
                 saved_files["metadata"] = metadata_save_path
 
-        return features_df, data, headers, saved_files
+        return annotations_df, data, headers, saved_files
 
     def _search_and_download_fasta(
         self,
@@ -344,34 +401,66 @@ class UniProtQueryProcessor(BaseProcessor):
     def _generate_metadata(
         self,
         headers: list[str],
-        features: str,
+        annotations: str,
         delimiter: str,
         metadata_save_path: Path = None,
         non_binary: bool = False,
         keep_tmp: bool = False,
+        cached_data: pd.DataFrame = None,
+        sources_to_fetch: dict = None,
     ) -> pd.DataFrame:
-        """Generate metadata CSV and return DataFrame."""
+        """Generate metadata and return DataFrame.
+
+        Args:
+            headers: Protein identifiers
+            annotations: Annotation spec string
+            delimiter: CSV delimiter
+            metadata_save_path: Path to save parquet cache
+            non_binary: Whether to use non-binary output format
+            keep_tmp: Whether to keep temporary files
+            cached_data: Previously cached DataFrame (for incremental fetching)
+            sources_to_fetch: Dict indicating which sources to fetch
+        """
         try:
-            if features and features.endswith(".csv"):
+            if annotations and annotations.endswith(".csv"):
                 logger.info(f"Using delimiter: {repr(delimiter)} to read metadata")
-                features_df = pd.read_csv(
-                    features, delimiter=delimiter
+                annotations_df = pd.read_csv(
+                    annotations, delimiter=delimiter
                 ).convert_dtypes()
             else:
-                if features:
-                    features_list = [feature.strip() for feature in features.split(",")]
+                if annotations:
+                    annotations_list = [
+                        annotation.strip() for annotation in annotations.split(",")
+                    ]
+                    from protspace.data.annotations.configuration import (
+                        AnnotationConfiguration,
+                    )
+
+                    annotations_list = AnnotationConfiguration(
+                        annotations_list
+                    ).user_annotations
                 else:
-                    features_list = None  # No specific features requested, use all
+                    annotations_list = (
+                        None  # No specific annotations requested, use all
+                    )
 
                 # Create directory only if metadata_save_path is provided
                 if metadata_save_path:
                     metadata_save_path.parent.mkdir(parents=True, exist_ok=True)
 
-                features_df = ProteinFeatureManager(
-                    headers=headers,
-                    features=features_list,
-                    output_path=metadata_save_path,
-                    non_binary=non_binary,
+                manager_kwargs = {
+                    "headers": headers,
+                    "annotations": annotations_list,
+                    "output_path": metadata_save_path,
+                    "non_binary": False if metadata_save_path else non_binary,
+                }
+                if cached_data is not None:
+                    manager_kwargs["cached_data"] = cached_data
+                if sources_to_fetch is not None:
+                    manager_kwargs["sources_to_fetch"] = sources_to_fetch
+
+                annotations_df = ProteinAnnotationManager(
+                    **manager_kwargs,
                 ).to_pd()
 
                 if keep_tmp and metadata_save_path:
@@ -387,14 +476,14 @@ class UniProtQueryProcessor(BaseProcessor):
             logger.warning(
                 f"Could not generate metadata ({str(e)}) - creating empty metadata"
             )
-            features_df = pd.DataFrame(columns=["identifier"])
+            annotations_df = pd.DataFrame(columns=["identifier"])
 
         # Create full metadata with NaN for missing entries
         full_metadata = pd.DataFrame({"identifier": headers})
-        if len(features_df.columns) > 1:
-            features_df = features_df.astype(str)
+        if len(annotations_df.columns) > 1:
+            annotations_df = annotations_df.astype(str)
             full_metadata = full_metadata.merge(
-                features_df.drop_duplicates("identifier"),
+                annotations_df.drop_duplicates("identifier"),
                 on="identifier",
                 how="left",
             )

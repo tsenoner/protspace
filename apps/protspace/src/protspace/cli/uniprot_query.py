@@ -1,12 +1,15 @@
 import argparse
 import logging
 import shutil
+import sys
 from pathlib import Path
+
+import pandas as pd
 
 from protspace.cli.common_args import (
     CustomHelpFormatter,
     add_all_reducer_parameters,
-    add_features_argument,
+    add_annotations_argument,
     add_methods_argument,
     add_output_argument,
     add_output_format_arguments,
@@ -14,6 +17,7 @@ from protspace.cli.common_args import (
     determine_output_paths,
     setup_logging,
 )
+from protspace.data.annotations.scores import strip_scores_from_df
 from protspace.data.processors.uniprot_query_processor import UniProtQueryProcessor
 
 logger = logging.getLogger(__name__)
@@ -27,7 +31,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
             "\n"
             "This tool searches UniProt, downloads protein sequences, computes embeddings\n"
             "using ESM2, performs dimensionality reduction, and optionally extracts\n"
-            "protein features from UniProt, InterPro, and taxonomy databases."
+            "protein annotations from UniProt, InterPro, and taxonomy databases."
         ),
         formatter_class=CustomHelpFormatter,
     )
@@ -54,8 +58,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Add shared output argument (optional, defaults to protspace.parquetbundle)
     add_output_argument(parser, required=False, default_name="protspace.parquetbundle")
 
-    # Add shared features argument (does NOT allow CSV files for query mode)
-    add_features_argument(parser, allow_csv=False)
+    # Add shared annotations argument (does NOT allow CSV files for query mode)
+    add_annotations_argument(parser, allow_csv=False)
 
     # Add shared output format arguments
     add_output_format_arguments(parser)
@@ -89,16 +93,13 @@ def main():
             )
 
     # Validate metadata argument - CSV files are not supported
-    if args.features:
-        if (
-            args.features.endswith(".csv")
-            or args.features.endswith(".CSV")
-            or Path(args.features).exists()
-        ):
-            raise ValueError(
-                "CSV files are not supported when using protspace-query. "
-                "Please provide a comma-separated list of feature names instead."
-            )
+    if args.annotations:
+        for ann in args.annotations:
+            if ann.strip().lower().endswith(".csv") or Path(ann.strip()).exists():
+                raise ValueError(
+                    "CSV files are not supported when using protspace-query. "
+                    "Please provide annotation names instead, e.g. -a pfam,kingdom"
+                )
 
     # Warn if both --non-binary and --bundled false are used together
     if args.non_binary and args.bundled == "false":
@@ -141,10 +142,27 @@ def main():
         if intermediate_dir:
             logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
 
+        # Handle --dump-cache: print cached data and exit
+        if args.dump_cache:
+            if not intermediate_dir:
+                logger.error("No cache directory. Run with --keep-tmp first.")
+                sys.exit(1)
+            cache_path = intermediate_dir / "all_annotations.parquet"
+            if cache_path.exists():
+                df = pd.read_parquet(cache_path)
+                print(df.to_csv(index=False))
+            else:
+                logger.error(
+                    f"No cache found at {cache_path}. Run with --keep-tmp first."
+                )
+            return
+
         # Process the query with the determined paths
+        # Join list back to comma-separated string for uniprot_query_processor
+        annotations_str = ",".join(args.annotations) if args.annotations else None
         metadata, data, headers, saved_files = processor.process_query(
             query=args.query,
-            features=args.features,
+            annotations=annotations_str,
             delimiter=",",
             output_path=output_path,
             intermediate_dir=intermediate_dir,
@@ -153,6 +171,10 @@ def main():
             fasta_path=fasta_path,  # Pass the already downloaded FASTA
             headers=headers,  # Pass the already extracted headers
         )
+
+        # Apply score stripping at presentation layer
+        if args.no_scores:
+            metadata = strip_scores_from_df(metadata)
 
         # Process reduction methods
         methods_list = args.methods.split(",")

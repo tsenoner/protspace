@@ -1,4 +1,3 @@
-import io
 import json
 import logging
 from pathlib import Path
@@ -9,6 +8,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.data.io.bundle import write_bundle
 from protspace.utils import DimensionReductionConfig
 from protspace.utils.reducers import MDS_NAME
 
@@ -94,7 +94,7 @@ class BaseProcessor:
     ) -> dict[str, pa.Table]:
         """Create the final output as Apache Arrow tables."""
         return {
-            "protein_features": self._create_protein_features_table(metadata),
+            "protein_annotations": self._create_protein_annotations_table(metadata),
             "projections_metadata": self._create_projections_metadata_table(reductions),
             "projections_data": self._create_projections_data_table(
                 reductions, headers
@@ -113,7 +113,7 @@ class BaseProcessor:
         """
         # Custom filename mapping for better naming
         filename_mapping = {
-            "protein_features": "selected_features.parquet",
+            "protein_annotations": "selected_annotations.parquet",
             "projections_metadata": "projections_metadata.parquet",
             "projections_data": "projections_data.parquet",
         }
@@ -121,35 +121,18 @@ class BaseProcessor:
         if bundled:
             # Determine the bundle file path
             if output_path.suffix == ".parquetbundle":
-                # User provided a file path ending with .parquetbundle
                 bundle_path = output_path
-                output_path.parent.mkdir(parents=True, exist_ok=True)
             elif output_path.suffix:
-                # User provided a file path with different extension - use it as is but warn
                 bundle_path = output_path.with_suffix(".parquetbundle")
                 logger.warning(
                     f"Output path has extension '{output_path.suffix}', "
                     f"using '.parquetbundle' instead: {bundle_path}"
                 )
-                bundle_path.parent.mkdir(parents=True, exist_ok=True)
             else:
-                # User provided a directory path - create bundle inside with default name
                 output_path.mkdir(parents=True, exist_ok=True)
                 bundle_path = output_path / "data.parquetbundle"
 
-            delimiter = b"---PARQUET_DELIMITER---"
-
-            with open(bundle_path, "wb") as bundle_file:
-                for i, (_, table) in enumerate(data.items()):
-                    if i > 0:
-                        bundle_file.write(delimiter)
-
-                    buffer = io.BytesIO()
-                    pq.write_table(table, buffer)
-                    buffer.seek(0)
-                    bundle_file.write(buffer.read())
-
-            logger.info(f"Saved bundled output to: {bundle_path}")
+            write_bundle(list(data.values()), bundle_path)
         else:
             # Save as separate parquet files
             # output_path must be a directory
@@ -165,12 +148,18 @@ class BaseProcessor:
 
             logger.info(f"Saved separate parquet files to: {base_path}")
 
-    def _create_protein_features_table(self, metadata: pd.DataFrame) -> pa.Table:
-        """Create Apache Arrow table for protein features in wide format."""
+    def _create_protein_annotations_table(self, metadata: pd.DataFrame) -> pa.Table:
+        """Create Apache Arrow table for protein annotations in wide format."""
         df = metadata.copy()
 
         if self.identifier_col != "protein_id":
             df = df.rename(columns={self.identifier_col: "protein_id"})
+
+        # Remove internal columns that are only needed for processing/caching
+        internal_columns = ["organism_id", "length", "sequence"]
+        cols_to_drop = [c for c in internal_columns if c in df.columns]
+        if cols_to_drop:
+            df = df.drop(columns=cols_to_drop)
 
         df = df.fillna("").astype(str)
 
@@ -225,16 +214,16 @@ class BaseProcessor:
         """Create the final output dictionary (legacy JSON format)."""
         output = {"protein_data": {}, "projections": []}
 
-        # Process features
+        # Process annotations
         for _, row in metadata.iterrows():
             protein_id = row[self.identifier_col]
-            features = (
+            annotations = (
                 row.drop(self.identifier_col)
                 .infer_objects(copy=False)
                 .fillna("")
                 .to_dict()
             )
-            output["protein_data"][protein_id] = {"features": features}
+            output["protein_data"][protein_id] = {"annotations": annotations}
 
         # Process projections
         for reduction in reductions:

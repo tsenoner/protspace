@@ -1,2689 +1,2689 @@
 {
   "protein_data": {
     "mAimeC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mAimeF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mAimeDb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mAimeDa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mAimeE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mAifuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mAifuV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mAifuD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mAifuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mAifuC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "cAlmiC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C crocodile"
       }
     },
     "cAlmiD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cAlmiD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cAlmiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E crocodile"
       }
     },
     "cAlsiD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cAlsiC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C crocodile"
       }
     },
     "bAnplC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bAnplD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bAnplB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bAnplE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bAncyE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bAncyB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bAncyD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bAncyC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bApfoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bApfoB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bApfoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bApfoC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bApauC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bAqchB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bAqchD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bAqchC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bBareC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bBareD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bBareB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bBareE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "mBibiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mBibiA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mBibiA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mBibiA4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mBibiDa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mBibiDb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mBibiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mBibiC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "sBocoGo": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G0",
         "group": "G squamates"
       }
     },
     "sBocoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sBocoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sBocoF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "mBotaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mBotaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mBotaDb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mBotaDa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mBotaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mBotaA5": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mBotaA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mBotaA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCaluC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mCaluF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mCaluD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mCaluV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mCaluE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mCahiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mCahiA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCahiA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCahiA4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCahiA5": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCahiV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mCahiDa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mCahiDb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mCahiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mCahiC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "cChmyD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cChmyD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cChmyF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F turtle"
       }
     },
     "mChlaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mChlaA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mChlaA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mChlaA4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mChlaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mChlaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mChlaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mChlaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "bChmaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bChmaB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bChmaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bChmaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "cChpiD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cChpiD2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D2",
         "group": "D2 reptilia"
       }
     },
     "cChpiD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cChpiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F turtle"
       }
     },
     "mCocrE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mCocrA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCocrA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mCocrV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mCocrD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mCocrF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "bCocoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bCocoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "cCrpoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E crocodile"
       }
     },
     "cCrpoD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cCrpoD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cCrpoC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C crocodile"
       }
     },
     "sCradE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCradGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCradGa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCradD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sCradF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCratE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCratGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sCratGk49": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gk",
         "group": "G squamates"
       }
     },
     "sCratGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCratGa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCratF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCrheAE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCrheAGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sCrheAGc1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrheAGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrheAGa2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrheAF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCrheBF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCrheBGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrheBE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCrhoAF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCrhoAGa2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrhoAGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sCrhoAGc1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrhoAGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrhoBE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCrhoBGc1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrhoBD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sCrhoBF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCrhoGa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrhoGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrscAE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCrscAGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sCrscAGc1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrscAGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrscAGc2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrscAGa2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrscAF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sCrscBE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sCrscBGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sCrscBGk49": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gk",
         "group": "G squamates"
       }
     },
     "sCrscBGc1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sCrscBGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sCrscBF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "bCucaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bCucaD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bCucaB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "mDanoA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mDanoV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mDanoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mDanoF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mDanoC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "sDeacF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sDeacGa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sDeacGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sDeacGk49": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gk",
         "group": "G squamates"
       }
     },
     "sDeacGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sDeacE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "mEledF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mEledD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mEledV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mEledA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEledA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEledA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEledE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mEnluC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mEnluF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mEnluD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mEnluV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mEnluE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mEqcaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mEqcaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mEqcaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mEqcaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mEqcaA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEqcaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mEreuC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mEreuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mEreuD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mEreuV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mEreuA15": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA14": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA13": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA12": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA11": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA10": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA9": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA8": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA7": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA6": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA5": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mEreuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mFecaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mFecaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mFecaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mFecaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "bGagaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bGagaB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bGagaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bGagaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "cGavganC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C crocodile"
       }
     },
     "cGavganD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cGavganD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cGavganE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E crocodile"
       }
     },
     "cGoagF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F turtle"
       }
     },
     "cGoagD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cGoagD2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D2",
         "group": "D2 reptilia"
       }
     },
     "cGoagD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cGoagE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E turtle"
       }
     },
     "bHaleB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bHaleD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bHaleC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "mHeglE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mHeglA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mHeglA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mHeglA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mHeglV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V",
         "group": "V mammals"
       }
     },
     "mHeglD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mHeglF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mHosaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mHosaA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mHosaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mHosaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mHosaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "sLabiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E squamates"
       }
     },
     "sLabiGo": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G0",
         "group": "G squamates"
       }
     },
     "sLabiD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sLabiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sLaviF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sLaviD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sLaviGo": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G0",
         "group": "G squamates"
       }
     },
     "sLaviE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E squamates"
       }
     },
     "mLoafC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mLoafF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mLoafD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mLoafV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mLoafA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mLoafA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mLoafE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMamaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mMamaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mMamaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mMamaA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mMamaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMimuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMimuA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mMimuV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mMimuD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mMimuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mMimuC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mModoC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mModoF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mModoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mModoV2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "mModoV1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "mModoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMumuC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mMumuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mMumuD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mMumuV1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mMumuA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mMumuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMupuC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mMupuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mMupuD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mMupuV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mMupuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMyluE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mMyluA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mMyluA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mMyluA4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mMyluV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mMyluD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mMyluF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mMyluC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "bNaauB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bNaauD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bNaauC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "mNescE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mNescV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mNescD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mNescF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "sNoscF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sNoscD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sNoscGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sNoscE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "mOcprC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mOcprF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mOcprD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOcprV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mOcprA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOcprA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOcprA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOcprE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mOdviC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mOdviF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mOdviD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOdviV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mOdviA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOdviA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOdviA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOdviE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "sOphaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sOphaGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sOphaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sOphaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sOpgrF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sOpgrDb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sOpgrG0": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G0",
         "group": "G squamates"
       }
     },
     "bOphoC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bOphoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bOphoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "mOrorE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mOrorV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mOrorD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOrorC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mOranF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mOranD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOran4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOran3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2",
         "group": "pre-V"
       }
     },
     "mOran2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D2",
         "group": "D mammals"
       }
     },
     "mOranE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mOrcuC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mOrcuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mOrcuD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOrcuV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mOrcuA4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOrcuA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOrcuA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOrcuA": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOrcuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mOvarC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mOvarF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mOvarD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mOvarA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOvarA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mOvarA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mPatiC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mPatiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mPatiD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mPatiV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mPatiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mPahoC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mPahoF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mPahoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mPahoV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mPahoA5": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mPahoA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mPahoA1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mPahoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "sPapiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E squamates"
       }
     },
     "sPapiG0": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G0",
         "group": "G squamates"
       }
     },
     "sPapiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "bPafaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bPafaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bPafaB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "cPesiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F turtle"
       }
     },
     "cPesiD3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D3 reptilia"
       }
     },
     "cPesiD2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D2",
         "group": "D2 reptilia"
       }
     },
     "cPesiD1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D1 reptilia"
       }
     },
     "cPesiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E turtle"
       }
     },
     "mPhciC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mPhciF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mPhciDb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mPhciDa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mPhciV3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "mPhciV2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "mPhciV1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "mPhciE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "sPoviF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sPoviD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sPoviG0": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G0",
         "group": "G squamates"
       }
     },
     "sPoviE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E squamates"
       }
     },
     "sPrflGck": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G",
         "group": "G squamates"
       }
     },
     "sPrflGk49": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gk",
         "group": "G squamates"
       }
     },
     "sPrflGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sPrflGa2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sPrflGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sPrflE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sPrmuE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sPrmuGb": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gb",
         "group": "G squamates"
       }
     },
     "sPrmuGk49": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gk",
         "group": "G squamates"
       }
     },
     "sPrmuGck": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2G",
         "group": "G squamates"
       }
     },
     "sPrmuGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sPrmuGa2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sPrmuF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sPsteF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "sPsteD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D squamates"
       }
     },
     "sPsteGc": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Gc",
         "group": "G squamates"
       }
     },
     "sPsteE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "bPskrE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bPskrB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bPskrD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bPskrC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "mPtvaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mPtvaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mPtvaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mPtvaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mPtvaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "bPyadC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bPyadD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bPyadB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "sPybiE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sPybiF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "mSahaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mSahaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mSahaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mSahaV5": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mSahaV4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "mSahaV2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mSahaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mSahaV1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V2",
         "group": "V mammals"
       }
     },
     "bSecoE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bSecoD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "mSoarE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "mSoarA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mSoarA3": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mSoarV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mSoarD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mSoarF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mSoarC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "bStocE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E birds"
       }
     },
     "bStocB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "bStocD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bStocC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "mTrmaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mTrmaF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F mammals"
       }
     },
     "mTrmaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mTrmaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "mTrmaA2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2A",
         "group": "A mammals"
       }
     },
     "mTrmaE": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E mammals"
       }
     },
     "bUrpeC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C birds"
       }
     },
     "bUrpeD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D3",
         "group": "D birds"
       }
     },
     "bUrpeB": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2B",
         "group": "B birds"
       }
     },
     "mUrmaC": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2C",
         "group": "C mammals"
       }
     },
     "mUrmaD": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2D1",
         "group": "D mammals"
       }
     },
     "mUrmaV": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2V1",
         "group": "V mammals"
       }
     },
     "sVibeEa": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2E",
         "group": "E serpentes"
       }
     },
     "sVibeGa1": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sVibeGa2": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sVibeGa4": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2Ga",
         "group": "G squamates"
       }
     },
     "sVibeF": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2F",
         "group": "F squamates"
       }
     },
     "Xela": {
-      "features": {
+      "annotations": {
         "gene": "Pla2g2",
         "group": "pre g2"
       }

@@ -5,7 +5,7 @@ ProtSpace Local Data Example
 This example demonstrates how to use protspace-local to process
 local protein embeddings with dimensionality reduction.
 
-Example: Process toxins dataset with feature extraction
+Example: Process toxins dataset with annotations extraction
 """
 
 import subprocess
@@ -29,7 +29,7 @@ def run_protspace_local():
         "protspace-local",
         "-i",
         input_file,
-        "-f",
+        "-a",
         "phylum,protein_existence,length_fixed,length_quantile,pfam,superfamily,cath,signal_peptide",
         "--methods",
         "pca2,pca3",

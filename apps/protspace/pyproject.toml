@@ -59,13 +59,14 @@ dev = [
     "polars>=1.26.0",
     "taxopy>=0.14.0",
     "jupytext>=1.17.1",
+    "pytest-cov>=7.0.0",
 ]
 
 [project.scripts]
 protspace = "protspace.main:run"
 protspace-local = "protspace.cli.local_data:main"
 protspace-query = "protspace.cli.uniprot_query:main"
-protspace-feature-colors = "protspace.utils.add_feature_style:main"
+protspace-annotation-colors = "protspace.utils.add_annotation_style:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -108,6 +109,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
+"examples/notebook/*" = ["E402", "F811", "ARG001", "F841"]  # Jupyter notebooks: imports after config, cell re-imports, widget callback args
 
 [tool.semantic_release]
 assets = [

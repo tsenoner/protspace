@@ -9,7 +9,7 @@ def main():
     pdb_dir = "data/3FTx/pdb"
 
     # Initialize the ProtSpaceApp (both with or without PDB files)
-    #protspace = ProtSpace(json_file)
+    # protspace = ProtSpace(json_file)
     protspace = ProtSpace(json_file, pdb_dir)
 
     # Run the interactive Dash server

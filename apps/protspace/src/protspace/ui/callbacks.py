@@ -150,31 +150,31 @@ def setup_callbacks(app):
     # Dropdown update callbacks
     @app.callback(
         [
-            Output("feature-dropdown", "options"),
-            Output("feature-dropdown", "value"),
+            Output("annotation-dropdown", "options"),
+            Output("annotation-dropdown", "value"),
             Output("projection-dropdown", "options"),
             Output("projection-dropdown", "value"),
             Output("protein-search-dropdown", "options"),
         ],
         Input("json-data-store", "data"),
-        State("feature-dropdown", "value"),
+        State("annotation-dropdown", "value"),
         State("projection-dropdown", "value"),
     )
-    def update_dropdowns(json_data, selected_feature, selected_projection):
+    def update_dropdowns(json_data, selected_annotation, selected_projection):
         if json_data is None:
             return [], None, [], None, []
         reader = get_reader(json_data)
-        all_features = sorted(reader.get_all_features())
+        all_annotations = sorted(reader.get_all_annotations())
         all_projections = sorted(reader.get_projection_names())
-        feature_options = [{"label": f, "value": f} for f in all_features]
+        annotation_options = [{"label": a, "value": a} for a in all_annotations]
         projection_options = [{"label": p, "value": p} for p in all_projections]
         protein_options = [
             {"label": pid, "value": pid} for pid in sorted(reader.get_protein_ids())
         ]
-        feature_value = (
-            selected_feature
-            if selected_feature in all_features
-            else (all_features[0] if all_features else None)
+        annotation_value = (
+            selected_annotation
+            if selected_annotation in all_annotations
+            else (all_annotations[0] if all_annotations else None)
         )
         projection_value = (
             selected_projection
@@ -182,8 +182,8 @@ def setup_callbacks(app):
             else (all_projections[0] if all_projections else None)
         )
         return (
-            feature_options,
-            feature_value,
+            annotation_options,
+            annotation_value,
             projection_options,
             projection_value,
             protein_options,
@@ -194,7 +194,7 @@ def setup_callbacks(app):
         Output("scatter-plot", "figure"),
         Input("json-data-store", "data"),
         Input("projection-dropdown", "value"),
-        Input("feature-dropdown", "value"),
+        Input("annotation-dropdown", "value"),
         Input("protein-search-dropdown", "value"),
         Input("marker-size-input", "value"),
         Input("legend-marker-size-input", "value"),
@@ -203,12 +203,12 @@ def setup_callbacks(app):
     def update_graph(
         json_data,
         selected_projection,
-        selected_feature,
+        selected_annotation,
         selected_proteins,
         marker_size,
         legend_marker_size,
     ):
-        if not (json_data and selected_projection and selected_feature):
+        if not (json_data and selected_projection and selected_annotation):
             fig = go.Figure()
             fig.update_layout(
                 xaxis={"visible": False},
@@ -221,7 +221,7 @@ def setup_callbacks(app):
         fig, _ = create_plot(
             reader,
             selected_projection,
-            selected_feature,
+            selected_annotation,
             selected_proteins,
             marker_size or 10,
             legend_marker_size or 12,
@@ -282,15 +282,15 @@ def setup_callbacks(app):
 
     # Style and settings callbacks
     @app.callback(
-        Output("feature-value-dropdown", "options"),
-        Input("feature-dropdown", "value"),
+        Output("annotation-value-dropdown", "options"),
+        Input("annotation-dropdown", "value"),
         State("json-data-store", "data"),
     )
-    def update_feature_value_options(selected_feature, json_data):
-        if selected_feature is None or json_data is None:
+    def update_annotation_value_options(selected_annotation, json_data):
+        if selected_annotation is None or json_data is None:
             return []
         reader = get_reader(json_data)
-        all_values = reader.get_all_feature_values(selected_feature)
+        all_values = reader.get_all_annotation_values(selected_annotation)
         unique_values = {v for v in all_values if pd.notna(v)}
         has_nan = any(pd.isna(v) for v in all_values)
         options = [
@@ -302,24 +302,24 @@ def setup_callbacks(app):
 
     @app.callback(
         Output("marker-color-picker", "value"),
-        Input("feature-dropdown", "value"),
-        Input("feature-value-dropdown", "value"),
+        Input("annotation-dropdown", "value"),
+        Input("annotation-value-dropdown", "value"),
         State("json-data-store", "data"),
     )
-    def update_marker_color_picker(selected_feature, selected_value, json_data):
-        if not (selected_feature and selected_value and json_data):
+    def update_marker_color_picker(selected_annotation, selected_value, json_data):
+        if not (selected_annotation and selected_value and json_data):
             raise PreventUpdate
         reader = get_reader(json_data)
 
-        # Get all feature values to determine index for default color
-        all_values = sorted(reader.get_unique_feature_values(selected_feature))
+        # Get all annotation values to determine index for default color
+        all_values = sorted(reader.get_unique_annotation_values(selected_annotation))
 
         # Get existing colors
-        feature_colors = reader.get_feature_colors(selected_feature)
+        annotation_colors = reader.get_annotation_colors(selected_annotation)
 
         # If the value has a color defined, use it
-        if selected_value in feature_colors:
-            color = feature_colors[selected_value]
+        if selected_value in annotation_colors:
+            color = annotation_colors[selected_value]
             # If it's an rgba color, convert to hex
             if color.startswith("rgba"):
                 # Extract RGB values
@@ -348,15 +348,15 @@ def setup_callbacks(app):
 
     @app.callback(
         Output("marker-shape-dropdown", "value"),
-        Input("feature-dropdown", "value"),
-        Input("feature-value-dropdown", "value"),
+        Input("annotation-dropdown", "value"),
+        Input("annotation-value-dropdown", "value"),
         State("json-data-store", "data"),
     )
-    def update_marker_shape_dropdown(selected_feature, selected_value, json_data):
-        if not (selected_feature and selected_value and json_data):
+    def update_marker_shape_dropdown(selected_annotation, selected_value, json_data):
+        if not (selected_annotation and selected_value and json_data):
             return None
         reader = get_reader(json_data)
-        return reader.get_marker_shape(selected_feature).get(selected_value, None)
+        return reader.get_marker_shape(selected_annotation).get(selected_value, None)
 
     @app.callback(
         Output("marker-shape-dropdown", "options"),
@@ -372,16 +372,16 @@ def setup_callbacks(app):
     @app.callback(
         Output("json-data-store", "data", allow_duplicate=True),
         Input("apply-style-button", "n_clicks"),
-        State("feature-dropdown", "value"),
+        State("annotation-dropdown", "value"),
         State("json-data-store", "data"),
-        State("feature-value-dropdown", "value"),
+        State("annotation-value-dropdown", "value"),
         State("marker-color-picker", "value"),
         State("marker-shape-dropdown", "value"),
         prevent_initial_call=True,
     )
     def update_styles(
         n_clicks,
-        selected_feature,
+        selected_annotation,
         json_data,
         selected_value,
         selected_color,
@@ -392,15 +392,19 @@ def setup_callbacks(app):
         reader = JsonReader(json_data)
         if selected_color and "rgb" in selected_color:
             color_str = "rgba({r}, {g}, {b}, {a})".format(**selected_color["rgb"])
-            reader.update_feature_color(selected_feature, selected_value, color_str)
+            reader.update_annotation_color(
+                selected_annotation, selected_value, color_str
+            )
         elif selected_color:
-            reader.update_feature_color(
-                selected_feature,
+            reader.update_annotation_color(
+                selected_annotation,
                 selected_value,
                 selected_color.get("hex", selected_color),
             )
         if selected_shape:
-            reader.update_marker_shape(selected_feature, selected_value, selected_shape)
+            reader.update_marker_shape(
+                selected_annotation, selected_value, selected_shape
+            )
         return reader.get_data()
 
     # Download callbacks
@@ -458,7 +462,7 @@ def setup_callbacks(app):
         Input("download-button", "n_clicks"),
         State("scatter-plot", "figure"),
         State("projection-dropdown", "value"),
-        State("feature-dropdown", "value"),
+        State("annotation-dropdown", "value"),
         State("image-width", "value"),
         State("image-height", "value"),
         State("download-format-dropdown", "value"),
@@ -469,7 +473,7 @@ def setup_callbacks(app):
         n_clicks,
         figure,
         selected_projection,
-        selected_feature,
+        selected_annotation,
         width,
         height,
         download_format,
@@ -488,10 +492,10 @@ def setup_callbacks(app):
         if download_format == "html":
             return {
                 "content": result,
-                "filename": f"{selected_projection}_{selected_feature}.html",
+                "filename": f"{selected_projection}_{selected_annotation}.html",
             }
         else:
             return dcc.send_bytes(
                 result,
-                f"{selected_projection}_{selected_feature}.{download_format}",
+                f"{selected_projection}_{selected_annotation}.{download_format}",
             )

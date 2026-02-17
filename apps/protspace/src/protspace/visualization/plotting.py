@@ -28,7 +28,7 @@ def generate_default_color(index: int, total: int) -> str:
 
 
 def prepare_dataframe(
-    reader: JsonReader, selected_projection: str, selected_feature: str
+    reader: JsonReader, selected_projection: str, selected_annotation: str
 ) -> pd.DataFrame:
     """Prepare the dataframe for plotting."""
     projection_data = reader.get_projection_data(selected_projection)
@@ -38,13 +38,13 @@ def prepare_dataframe(
     if reader.get_projection_info(selected_projection)["dimensions"] == 3:
         df["z"] = [coord["z"] for coord in df["coordinates"]]
 
-    df[selected_feature] = df["identifier"].apply(
-        lambda x: reader.get_protein_features(x).get(selected_feature)
+    df[selected_annotation] = df["identifier"].apply(
+        lambda x: reader.get_protein_annotations(x).get(selected_annotation)
     )
-    df[selected_feature] = standardize_missing(df[selected_feature])
+    df[selected_annotation] = standardize_missing(df[selected_annotation])
 
-    if df[selected_feature].dtype in ["float64", "int64"]:
-        df[selected_feature] = df[selected_feature].astype(str)
+    if df[selected_annotation].dtype in ["float64", "int64"]:
+        df[selected_annotation] = df[selected_annotation].astype(str)
 
     return df
 
@@ -64,27 +64,27 @@ def natural_sort_key(text):
 def _create_base_figure(
     df: pd.DataFrame,
     is_3d: bool,
-    selected_feature: str,
-    feature_colors: dict[str, str],
+    selected_annotation: str,
+    annotation_colors: dict[str, str],
     final_marker_shapes: dict[str, str],
     marker_size: int,
 ) -> go.Figure:
     """Creates the base scatter plot figure."""
     plot_args = {
         "data_frame": df,
-        "color": selected_feature,
-        "color_discrete_map": feature_colors,
+        "color": selected_annotation,
+        "color_discrete_map": annotation_colors,
         "hover_data": {
             "identifier": True,
-            selected_feature: True,
+            selected_annotation: True,
             "x": False,
             "y": False,
         },
-        "symbol": selected_feature,
+        "symbol": selected_annotation,
         "symbol_map": final_marker_shapes,
         "category_orders": {
-            selected_feature: sorted(
-                df[selected_feature].unique(), key=natural_sort_key
+            selected_annotation: sorted(
+                df[selected_annotation].unique(), key=natural_sort_key
             )
         },
     }
@@ -121,14 +121,16 @@ def _add_legend_traces(
     fig: go.Figure,
     df: pd.DataFrame,
     is_3d: bool,
-    selected_feature: str,
-    feature_colors: dict[str, str],
+    selected_annotation: str,
+    annotation_colors: dict[str, str],
     final_marker_shapes: dict[str, str],
     legend_marker_size: int,
 ):
     """Adds invisible traces to the figure for a custom legend."""
     scatter_class = go.Scatter3d if is_3d else go.Scatter
-    sorted_unique_values = sorted(df[selected_feature].unique(), key=natural_sort_key)
+    sorted_unique_values = sorted(
+        df[selected_annotation].unique(), key=natural_sort_key
+    )
 
     for value in sorted_unique_values:
         shape = final_marker_shapes.get(value, "circle")
@@ -140,8 +142,8 @@ def _add_legend_traces(
             "line": {"width": DEFAULT_LINE_WIDTH, "color": "black"},
             "symbol": shape,
         }
-        if value in feature_colors:
-            marker_style["color"] = feature_colors[value]
+        if value in annotation_colors:
+            marker_style["color"] = annotation_colors[value]
 
         trace_params = {
             "x": [None],
@@ -187,7 +189,7 @@ def _configure_layout(
     fig: go.Figure,
     df: pd.DataFrame,
     is_3d: bool,
-    selected_feature: str,
+    selected_annotation: str,
     legend_marker_size: int,
 ):
     """Configures the final layout of the figure."""
@@ -197,7 +199,7 @@ def _configure_layout(
         "uirevision": "constant",
         "legend": {
             "itemwidth": 30 + legend_marker_size * 0.9,
-            "title": selected_feature or None,
+            "title": selected_annotation or None,
             "font": {"size": 5 + legend_marker_size * 0.9},
         },
     }
@@ -235,53 +237,58 @@ def _configure_layout(
 def create_plot(
     reader: "JsonReader",
     selected_projection: str,
-    selected_feature: str,
+    selected_annotation: str,
     selected_proteins: list[str] | None = None,
     marker_size: int = 10,
     legend_marker_size: int = 12,
 ):
     """Creates a 2D or 3D scatter plot of protein data."""
-    df = prepare_dataframe(reader, selected_projection, selected_feature)
+    df = prepare_dataframe(reader, selected_projection, selected_annotation)
 
     projection_info = reader.get_projection_info(selected_projection)
     is_3d = projection_info["dimensions"] == 3
 
     # Get existing colors or generate defaults
-    feature_colors = reader.get_feature_colors(selected_feature).copy()
-    unique_values = sorted(df[selected_feature].unique())
+    annotation_colors = reader.get_annotation_colors(selected_annotation).copy()
+    unique_values = sorted(df[selected_annotation].unique())
 
     # Generate default colors for values that don't have one
     for i, value in enumerate(unique_values):
-        if str(value) not in feature_colors:
+        if str(value) not in annotation_colors:
             if value == "<N/A>":
-                feature_colors[str(value)] = NAN_COLOR
+                annotation_colors[str(value)] = NAN_COLOR
             else:
-                feature_colors[str(value)] = generate_default_color(
+                annotation_colors[str(value)] = generate_default_color(
                     i, len(unique_values)
                 )
 
     # Get existing marker shapes or use defaults
-    marker_shapes = reader.get_marker_shape(selected_feature).copy()
+    marker_shapes = reader.get_marker_shape(selected_annotation).copy()
     final_marker_shapes = {
         str(val): marker_shapes.get(str(val), "circle") for val in unique_values
     }
 
     fig = _create_base_figure(
-        df, is_3d, selected_feature, feature_colors, final_marker_shapes, marker_size
+        df,
+        is_3d,
+        selected_annotation,
+        annotation_colors,
+        final_marker_shapes,
+        marker_size,
     )
     _add_legend_traces(
         fig,
         df,
         is_3d,
-        selected_feature,
-        feature_colors,
+        selected_annotation,
+        annotation_colors,
         final_marker_shapes,
         legend_marker_size,
     )
     if selected_proteins:
         _add_highlight_traces(fig, df, is_3d, selected_proteins)
 
-    _configure_layout(fig, df, is_3d, selected_feature, legend_marker_size)
+    _configure_layout(fig, df, is_3d, selected_annotation, legend_marker_size)
 
     return fig, is_3d
 

@@ -146,35 +146,55 @@ def determine_output_paths(
     return output_path, intermediate_dir
 
 
-def add_features_argument(parser: argparse.ArgumentParser, allow_csv: bool = True):
-    """Add the --features argument with improved help text.
+def add_annotations_argument(parser: argparse.ArgumentParser, allow_csv: bool = True):
+    """Add the --annotations argument with improved help text.
 
     Args:
         parser: ArgumentParser instance to add the argument to
         allow_csv: Whether to allow CSV file paths (True for local_data, False for uniprot_query)
     """
-    csv_note = " or path to metadata CSV file" if allow_csv else ""
-    csv_example = "\n  --features /path/to/metadata.csv" if allow_csv else ""
+    csv_note = (
+        ".\nCan be specified multiple times. Use a separate -a for a CSV metadata\n"
+        "file (first column = protein identifiers) to combine with DB annotations"
+        if allow_csv
+        else ""
+    )
+    csv_examples = (
+        "\n  -a /path/to/metadata.csv              (CSV only)\n"
+        "  -a metadata.csv -a pfam,kingdom        (CSV + database annotations)"
+        if allow_csv
+        else ""
+    )
 
     parser.add_argument(
-        "-f",
-        "--features",
+        "-a",
+        "--annotations",
         type=str,
-        required=False,
+        action="append",
         default=None,
         help=(
-            f"Protein features to extract as comma-separated values{csv_note}.\n"
+            f"Protein annotations to extract as comma-separated values{csv_note}.\n"
+            "If not specified, the 'default' group is used (curated UniProt subset).\n"
             "\n"
-            "Available features:\n"
-            "  UniProt:    annotation_score, cc_subcellular_location, fragment,\n"
-            "              length_fixed, length_quantile, protein_existence,\n"
-            "              protein_families, reviewed, xref_pdb\n"
-            "  InterPro:   cath, pfam, signal_peptide, superfamily\n"
-            "  Taxonomy:   root, domain, kingdom, phylum, class, order, family, genus, species\n"
+            "Groups: default, all, uniprot, interpro, taxonomy\n"
+            "  (mixable with individual names, e.g. -a default,interpro)\n"
+            "\n"
+            "Default group: ec, keyword, length_quantile, protein_families, reviewed\n"
+            "\n"
+            "All available annotations:\n"
+            "  UniProt:    annotation_score, cc_subcellular_location, ec, fragment,\n"
+            "              gene_name, go_bp, go_cc, go_mf, keyword, length_fixed,\n"
+            "              length_quantile, protein_existence, protein_families,\n"
+            "              reviewed, xref_pdb\n"
+            "  InterPro:   cath, cdd, panther, pfam, prints,\n"
+            "              prosite, signal_peptide, smart, superfamily\n"
+            "  Taxonomy:   root, domain, kingdom, phylum, class, order, family,\n"
+            "              genus, species\n"
             "\n"
             "Examples:\n"
-            f"  --features reviewed,length_quantile,kingdom{csv_example}\n"
-            f"  --features pfam,cath,cc_subcellular_location"
+            f"  -a all                               (everything)\n"
+            f"  -a default,interpro,kingdom           (mix groups + individual)\n"
+            f"  -a pfam,cath,reviewed{csv_examples}"
         ),
     )
 
@@ -243,9 +263,27 @@ def add_output_format_arguments(parser: argparse.ArgumentParser):
         action="store_true",
         help=(
             "Cache intermediate files for reuse in subsequent runs.\n"
-            "When enabled, downloaded features are saved and reused\n"
+            "When enabled, downloaded annotations are saved and reused\n"
             "if you run the command again with different reduction methods or parameters.\n"
             "This avoids re-downloading data from UniProt, InterPro, and taxonomy databases."
+        ),
+    )
+    parser.add_argument(
+        "--no-scores",
+        action="store_true",
+        help=(
+            "Omit confidence scores from annotations.\n"
+            "Suppresses UniProt evidence codes (e.g., Cytoplasm|EXP → Cytoplasm)\n"
+            "and InterPro bit scores (e.g., PF00001 (7tm_1)|50.2 → PF00001 (7tm_1))."
+        ),
+    )
+    parser.add_argument(
+        "--dump-cache",
+        action="store_true",
+        help=(
+            "Print the cached annotations as CSV to stdout and exit.\n"
+            "Requires --keep-tmp to have been used in a previous run.\n"
+            "Useful for inspecting what's stored in the internal parquet cache."
         ),
     )
 
