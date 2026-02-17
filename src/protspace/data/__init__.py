@@ -1,13 +1,13 @@
 """
 ProtSpace data module.
 
-This module provides data processing, feature extraction, and I/O functionality.
+This module provides data processing, annotation extraction, and I/O functionality.
 """
 
-from protspace.data.features import (  # Features
-    FeatureConfiguration,
-    FeatureMerger,
-    ProteinFeatureManager,
+from protspace.data.annotations import (  # Annotations
+    AnnotationConfiguration,
+    AnnotationMerger,
+    ProteinAnnotationManager,
 )
 from protspace.data.processors import (  # Processors
     BaseProcessor,
@@ -20,8 +20,8 @@ __all__ = [
     "BaseProcessor",
     "LocalProcessor",
     "UniProtQueryProcessor",
-    # Features
-    "ProteinFeatureManager",
-    "FeatureConfiguration",
-    "FeatureMerger",
+    # Annotations
+    "ProteinAnnotationManager",
+    "AnnotationConfiguration",
+    "AnnotationMerger",
 ]

@@ -5,7 +5,9 @@ AVAILABLE PROPERTIES:
 =====================
 entry                    - Primary UniProt accession number
 entry_name               - UniProtKB entry name (e.g., 'P53_HUMAN')
+uniprot_kb_id            - UniProtKB ID (e.g., 'CCR9_HUMAN')
 gene_primary             - Primary gene name
+gene_name                - Gene name (alias for gene_primary)
 organism_name            - Organism scientific name
 organism_id              - NCBI Taxonomy ID
 protein_name             - Recommended protein name
@@ -23,25 +25,25 @@ annotation_score         - Annotation quality score (1-5)
 keyword                  - Keyword names (list)
 keyword_id               - Keyword IDs (list)
 protein_existence        - Protein existence level
-reviewed                 - True if Swiss-Prot (reviewed), False if TrEMBL
+reviewed                 - 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed
 uniparc_id               - UniParc identifier
 cc_subcellular_location  - Subcellular location values (list)
 protein_families         - Protein family description
 ec                       - EC numbers (list)
 go                       - All Gene Ontology terms (list of dicts)
-go_p                     - GO Biological Process terms (list)
-go_f                     - GO Molecular Function terms (list)
-go_c                     - GO Cellular Component terms (list)
+go_bp                    - GO Biological Process terms (list)
+go_mf                    - GO Molecular Function terms (list)
+go_cc                    - GO Cellular Component terms (list)
 go_id                    - GO term IDs only (list)
 date_created             - Entry creation date
 date_modified            - Last modification date
 date_sequence_modified   - Last sequence modification date
 version                  - Entry version number
-ft_disulfid              - Disulfide bond features (list)
-ft_glycosylation         - Glycosylation features (list)
-ft_lipidation            - Lipidation features (list)
-ft_mod_res               - Modified residue features (list)
-ft_signal                - Signal peptide features
+ft_disulfid              - Disulfide bond (list)
+ft_glycosylation         - Glycosylation (list)
+ft_lipidation            - Lipidation (list)
+ft_mod_res               - Modified residue (list)
+ft_signal                - Signal peptide
 xref_pdb                 - PDB cross-references (list)
 """
 
@@ -50,11 +52,43 @@ from typing import Any
 import pandas as pd
 from unipressed import UniprotkbClient
 
+# ECO evidence code mapping (ECO ID → short human-readable code)
+ECO_TO_SHORT: dict[str, str] = {
+    "ECO:0000269": "EXP",  # Experimental evidence
+    "ECO:0000303": "TAS",  # Traceable author statement
+    "ECO:0000305": "IC",  # Curator inference
+    "ECO:0000250": "ISS",  # Sequence similarity
+    "ECO:0000255": "SAM",  # Sequence analysis method
+    "ECO:0000256": "SAM",  # Sequence analysis method (variant)
+    "ECO:0000259": "SAM",  # Sequence analysis method (variant)
+    "ECO:0000312": "IMP",  # Imported
+    "ECO:0000313": "IEA",  # Electronic annotation
+    "ECO:0007669": "IEA",  # Electronic annotation (variant)
+    "ECO:0007744": "HDA",  # High throughput direct assay
+    "ECO:0000244": "COMB",  # Combinatorial evidence
+}
+
+EVIDENCE_PRIORITY: list[str] = [
+    "EXP",
+    "HDA",
+    "IDA",
+    "TAS",
+    "NAS",
+    "IC",
+    "ISS",
+    "SAM",
+    "COMB",
+    "IMP",
+    "IEA",
+]
+
 # List of all available properties for validation
 AVAILABLE_PROPERTIES = [
     "entry",
     "entry_name",
+    "uniprot_kb_id",
     "gene_primary",
+    "gene_name",
     "organism_name",
     "organism_id",
     "protein_name",
@@ -78,9 +112,9 @@ AVAILABLE_PROPERTIES = [
     "protein_families",
     "ec",
     "go",
-    "go_p",
-    "go_f",
-    "go_c",
+    "go_bp",
+    "go_mf",
+    "go_cc",
     "go_id",
     "date_created",
     "date_modified",
@@ -99,7 +133,11 @@ class UniProtEntry:
     """Parser for UniProt JSON entries from the REST API."""
 
     def __init__(self, data: dict[str, Any]) -> None:
-        """Initialize with raw JSON data from UniProt API."""
+        """Initialize with raw JSON data from UniProt API.
+
+        Args:
+            data: Raw JSON data from UniProt API
+        """
         self.data = data
 
     # --- Names & Taxonomy ---
@@ -115,12 +153,22 @@ class UniProtEntry:
         return self.data.get("uniProtkbId", "")
 
     @property
+    def uniprot_kb_id(self) -> str:
+        """UniProtKB ID (e.g., 'CCR9_HUMAN')."""
+        return self.data.get("uniProtkbId", "")
+
+    @property
     def gene_primary(self) -> str:
         """Primary gene name."""
         genes = self.data.get("genes", [])
         if genes and "geneName" in genes[0]:
             return genes[0]["geneName"].get("value", "")
         return ""
+
+    @property
+    def gene_name(self) -> str:
+        """Gene name (alias for gene_primary)."""
+        return self.gene_primary
 
     @property
     def organism_name(self) -> str:
@@ -137,8 +185,8 @@ class UniProtEntry:
         """Recommended protein name."""
         desc = self.data.get("proteinDescription", {})
         rec_name = desc.get("recommendedName", {})
-        full_name = rec_name.get("fullName", {})
-        return full_name.get("value", "")
+        full_name = rec_name.get("fullName", "")
+        return self._extract_name_value(full_name)
 
     @property
     def xref_proteomes(self) -> list[str]:
@@ -176,30 +224,37 @@ class UniProtEntry:
 
     @property
     def fragment(self) -> str:
-        """Fragment type (if sequence is partial)."""
-        return self.data.get("sequence", {}).get("fragment", "")
+        """Fragment type (if sequence is partial).
+
+        Returns 'fragment' if the protein is a fragment, empty string otherwise.
+        The flag field may contain 'Fragment', 'Precursor', or 'Fragment,Precursor'.
+        """
+        flag = self.data.get("proteinDescription", {}).get("flag", "")
+        if "Fragment" in flag:
+            return "fragment"
+        return ""
 
     @property
     def ft_non_adj(self) -> list[str]:
         """Non-adjacent residues."""
-        features = self.get_features("Non-adjacent residues")
+        annotations = self.get_annotations("Non-adjacent residues")
         return [
-            f"{f['location']['start']['value']}-{f['location']['end']['value']}"
-            for f in features
+            f"{ann['location']['start']['value']}-{ann['location']['end']['value']}"
+            for ann in annotations
         ]
 
     @property
     def ft_non_std(self) -> list[int]:
         """Non-standard residues."""
-        features = self.get_features("Non-standard residue")
-        return [f["location"]["start"]["value"] for f in features]
+        annotations = self.get_annotations("Non-standard residue")
+        return [ann["location"]["start"]["value"] for ann in annotations]
 
     @property
     def ft_non_ter(self) -> int | None:
         """Non-terminal residues."""
-        features = self.get_features("Non-terminal residue")
-        if features:
-            return features[0]["location"]["start"]["value"]
+        annotations = self.get_annotations("Non-terminal residue")
+        if annotations:
+            return annotations[0]["location"]["start"]["value"]
         return None
 
     # --- Miscellaneous ---
@@ -211,9 +266,9 @@ class UniProtEntry:
 
     @property
     def keyword(self) -> list[str]:
-        """Keyword names."""
+        """Keyword IDs with names."""
         keywords = self.data.get("keywords", [])
-        return [kw.get("name", "") for kw in keywords]
+        return [f"{kw.get('id', '')} ({kw.get('name', '')})" for kw in keywords]
 
     @property
     def keyword_id(self) -> list[str]:
@@ -227,10 +282,14 @@ class UniProtEntry:
         return self.data.get("proteinExistence", "")
 
     @property
-    def reviewed(self) -> bool:
-        """True if Swiss-Prot (reviewed), False if TrEMBL."""
+    def reviewed(self) -> str:
+        """Returns 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed."""
         entry_type = self.data.get("entryType", "").lower()
-        return "reviewed" in entry_type or "swiss-prot" in entry_type
+        # Check for "UniProtKB reviewed" or "swiss-prot", but not "unreviewed"
+        is_reviewed = "swiss-prot" in entry_type or (
+            "reviewed" in entry_type and "unreviewed" not in entry_type
+        )
+        return "Swiss-Prot" if is_reviewed else "TrEMBL"
 
     @property
     def uniparc_id(self) -> str:
@@ -241,7 +300,7 @@ class UniProtEntry:
 
     @property
     def cc_subcellular_location(self) -> list[str]:
-        """Subcellular location values."""
+        """Subcellular location values, with evidence codes appended when available."""
         comments = self.get_comments("SUBCELLULAR LOCATION")
         locations = []
         for comment in comments:
@@ -249,6 +308,9 @@ class UniProtEntry:
                 loc = subloc.get("location", {})
                 value = loc.get("value", "")
                 if value:
+                    ev = self._best_evidence(loc.get("evidences", []))
+                    if ev:
+                        value = f"{value}|{ev}"
                     locations.append(value)
         return locations
 
@@ -256,30 +318,42 @@ class UniProtEntry:
 
     @property
     def protein_families(self) -> str:
-        """Protein family description."""
+        """Protein family description, with evidence code appended when available."""
         comments = self.get_comments("SIMILARITY")
         for comment in comments:
             for text in comment.get("texts", []):
                 value = text.get("value", "")
+                ev = self._best_evidence(text.get("evidences", []))
                 prefix = "Belongs to the "
                 if value.startswith(prefix):
                     value = value[len(prefix) :]
                 # Stop at the first dot, if any
                 if "." in value:
-                    return value.split(".", 1)[0]
-                return value
+                    result = value.split(".", 1)[0]
+                else:
+                    result = value
+                if ev:
+                    result = f"{result}|{ev}"
+                return result
         return ""
 
     # --- Function ---
 
     @property
     def ec(self) -> list[str]:
-        """EC numbers."""
+        """EC numbers, with evidence codes appended when available."""
         desc = self.data.get("proteinDescription", {})
         ec_numbers = desc.get("recommendedName", {}).get("ecNumbers", [])
         for alt in desc.get("alternativeNames", []):
             ec_numbers.extend(alt.get("ecNumbers", []))
-        return [ec.get("value", "") for ec in ec_numbers]
+        result = []
+        for ec in ec_numbers:
+            value = ec.get("value", "")
+            ev = self._best_evidence(ec.get("evidences", []))
+            if ev:
+                value = f"{value}|{ev}"
+            result.append(value)
+        return result
 
     # --- Gene Ontology ---
 
@@ -289,19 +363,40 @@ class UniProtEntry:
         return self.get_go_terms()
 
     @property
-    def go_p(self) -> list[str]:
-        """GO Biological Process terms."""
-        return [term["term"] for term in self.get_go_terms(aspect="P")]
+    def go_bp(self) -> list[str]:
+        """GO Biological Process terms, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect="P"):
+            value = term["term"]
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
 
     @property
-    def go_f(self) -> list[str]:
-        """GO Molecular Function terms."""
-        return [term["term"] for term in self.get_go_terms(aspect="F")]
+    def go_mf(self) -> list[str]:
+        """GO Molecular Function terms, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect="F"):
+            value = term["term"]
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
 
     @property
-    def go_c(self) -> list[str]:
-        """GO Cellular Component terms."""
-        return [term["term"] for term in self.get_go_terms(aspect="C")]
+    def go_cc(self) -> list[str]:
+        """GO Cellular Component terms, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect="C"):
+            value = term["term"]
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
 
     @property
     def go_id(self) -> list[str]:
@@ -334,46 +429,46 @@ class UniProtEntry:
 
     @property
     def ft_disulfid(self) -> list[str]:
-        """Disulfide bond features."""
-        bonds = self.get_features("Disulfide bond")
+        """Disulfide bond annotations."""
+        annotations = self.get_annotations("Disulfide bond")
         return [
-            f"{b['location']['start']['value']}-{b['location']['end']['value']}"
-            for b in bonds
+            f"{ann['location']['start']['value']}-{ann['location']['end']['value']}"
+            for ann in annotations
         ]
 
     @property
     def ft_glycosylation(self) -> list[dict[int, str]]:
-        """Glycosylation features."""
-        features = self.get_features("Glycosylation")
+        """Glycosylation annotations."""
+        annotations = self.get_annotations("Glycosylation")
         return [
-            {int(f["location"]["start"]["value"]): f.get("description", "")}
-            for f in features
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
         ]
 
     @property
     def ft_lipidation(self) -> list[dict[int, str]]:
-        """Lipidation features."""
-        features = self.get_features("Lipidation")
+        """Lipidation annotations."""
+        annotations = self.get_annotations("Lipidation")
         return [
-            {int(f["location"]["start"]["value"]): f.get("description", "")}
-            for f in features
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
         ]
 
     @property
     def ft_mod_res(self) -> list[dict[int, str]]:
-        """Modified residue features."""
-        features = self.get_features("Modified residue")
+        """Modified residue annotations."""
+        annotations = self.get_annotations("Modified residue")
         return [
-            {int(f["location"]["start"]["value"]): f.get("description", "")}
-            for f in features
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
         ]
 
     @property
     def ft_signal(self) -> str:
-        """Signal peptide features."""
-        features = self.get_features("Signal")
-        if features:
-            loc = features[0]["location"]
+        """Signal peptide annotations."""
+        annotations = self.get_annotations("Signal")
+        if annotations:
+            loc = annotations[0]["location"]
             return f"{loc['start']['value']}-{loc['end']['value']}"
         return ""
 
@@ -386,12 +481,14 @@ class UniProtEntry:
 
     # --- Core Methods ---
 
-    def get_features(self, feature_type: str | None = None) -> list[dict[str, Any]]:
-        """Get features, optionally filtered by type."""
-        features = self.data.get("features", [])
-        if feature_type:
-            return [f for f in features if f.get("type") == feature_type]
-        return features
+    def get_annotations(
+        self, annotation_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Get annotations, optionally filtered by type."""
+        annotations = self.data.get("annotations", [])
+        if annotation_type:
+            return [f for f in annotations if f.get("type") == annotation_type]
+        return annotations
 
     def get_comments(self, comment_type: str | None = None) -> list[dict[str, Any]]:
         """Get comments, optionally filtered by type."""
@@ -424,6 +521,34 @@ class UniProtEntry:
             else:
                 result.append(term)
         return result
+
+    @staticmethod
+    def _extract_name_value(name: Any) -> str:
+        """Extract a displayable name from UniProt name fields."""
+        if isinstance(name, dict):
+            return name.get("value", "")
+        if isinstance(name, str):
+            return name
+        return ""
+
+    @staticmethod
+    def _best_evidence(evidences: list[dict]) -> str:
+        """Return the highest-priority short evidence code from a list of evidence objects.
+
+        Each evidence object has an 'evidenceCode' key with an ECO ID.
+        Returns empty string if the list is empty.
+        """
+        if not evidences:
+            return ""
+        codes = [
+            ECO_TO_SHORT.get(e.get("evidenceCode", ""), e.get("evidenceCode", ""))
+            for e in evidences
+        ]
+        for priority in EVIDENCE_PRIORITY:
+            if priority in codes:
+                return priority
+        # Unknown code — return the first one
+        return codes[0] if codes else ""
 
     def __repr__(self) -> str:
         """String representation."""

@@ -86,11 +86,11 @@ class TestCreateOutput:
         reductions = SAMPLE_REDUCTIONS
         tables = processor.create_output(SAMPLE_METADATA, reductions, SAMPLE_HEADERS)
         assert set(tables.keys()) == {
-            "protein_features",
+            "protein_annotations",
             "projections_metadata",
             "projections_data",
         }
-        assert isinstance(tables["protein_features"], pa.Table)
+        assert isinstance(tables["protein_annotations"], pa.Table)
         assert isinstance(tables["projections_metadata"], pa.Table)
         assert isinstance(tables["projections_data"], pa.Table)
 
@@ -108,6 +108,38 @@ class TestCreateOutput:
             output["projections"][0]["name"] == "PCA_2"
             or output["projections"][0]["name"] == "CustomPCA"
         )
+
+    def test_create_output_removes_internal_columns(self):
+        """Test that internal columns (organism_id, length, sequence) are removed from output."""
+        processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
+
+        # Create metadata with internal columns
+        metadata_with_internal = pd.DataFrame(
+            {
+                "identifier": SAMPLE_HEADERS,
+                "reviewed": ["Swiss-Prot", "Swiss-Prot", "TrEMBL"],
+                "organism_id": ["9606", "9606", "10090"],
+                "length": ["100", "200", "300"],
+                "sequence": ["MVLSPADKTN", "MVLSGEDKSN", "MVLSAADKGN"],
+                "length_fixed": ["50-100", "100-200", "200-400"],
+            }
+        )
+
+        tables = processor.create_output(
+            metadata_with_internal, SAMPLE_REDUCTIONS, SAMPLE_HEADERS
+        )
+
+        # Convert Arrow table to pandas for easier assertion
+        annotations_df = tables["protein_annotations"].to_pandas()
+
+        # Internal columns should be removed
+        assert "organism_id" not in annotations_df.columns
+        assert "length" not in annotations_df.columns
+        assert "sequence" not in annotations_df.columns
+
+        # Other columns should remain
+        assert "reviewed" in annotations_df.columns
+        assert "length_fixed" in annotations_df.columns
 
 
 class TestSaveOutput:

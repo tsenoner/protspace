@@ -1,6 +1,7 @@
 import argparse
 import logging
 import shutil
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -8,7 +9,7 @@ import pandas as pd
 from protspace.cli.common_args import (
     CustomHelpFormatter,
     add_all_reducer_parameters,
-    add_features_argument,
+    add_annotations_argument,
     add_methods_argument,
     add_output_argument,
     add_output_format_arguments,
@@ -17,6 +18,7 @@ from protspace.cli.common_args import (
     parse_custom_names,
     setup_logging,
 )
+from protspace.data.annotations.scores import strip_scores_from_df
 from protspace.data.processors.local_processor import LocalProcessor
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
             "Process local protein data with dimensionality reduction.\n"
             "\n"
             "This tool performs dimensionality reduction on protein embeddings or\n"
-            "similarity matrices, and optionally extracts protein features from\n"
+            "similarity matrices, and optionally extracts protein annotations from\n"
             "UniProt, InterPro, and taxonomy databases."
         ),
         formatter_class=CustomHelpFormatter,
@@ -40,19 +42,30 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "-i",
         "--input",
         type=Path,
+        nargs="+",
         required=True,
         help=(
-            "Path to input data file.\n"
+            "Path(s) to input data file(s) or directory.\n"
             "Supported formats:\n"
-            "  - HDF5 files (.h5, .hdf5, .hdf) containing protein embeddings\n"
-            "  - CSV files containing precomputed similarity matrices\n"
+            "  - Single HDF5 file (.h5, .hdf5, .hdf) containing protein embeddings\n"
+            "  - Multiple HDF5 files (automatically merged)\n"
+            "  - Directory containing multiple HDF5 files (automatically merged)\n"
+            "  - CSV file containing precomputed similarity matrix\n"
             "\n"
-            "The file must contain protein IDs (e.g., UniProt accessions)."
+            "Examples:\n"
+            "  --input data/embeddings.h5\n"
+            "  --input data/batch1.h5 data/batch2.h5 data/batch3.h5\n"
+            "  --input data/embs/\n"
+            "\n"
+            "When multiple files or a directory are provided, all .h5 files will be\n"
+            "loaded and merged. Duplicate protein IDs will be handled (first occurrence kept).\n"
+            "\n"
+            "Files must contain protein IDs (e.g., UniProt accessions)."
         ),
     )
 
-    # Add shared features argument (allows CSV metadata files)
-    add_features_argument(parser, allow_csv=True)
+    # Add shared annotations argument (allows CSV metadata files)
+    add_annotations_argument(parser, allow_csv=True)
 
     # Add shared output argument (optional, derives from input filename)
     add_output_argument(
@@ -91,6 +104,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Add shared verbosity argument
     add_verbosity_argument(parser)
+
+    # Add force-refetch flag
+    parser.add_argument(
+        "--force-refetch",
+        action="store_true",
+        help=(
+            "Force re-fetching all annotations even if cached data exists.\n"
+            "Use this when you want to update annotations with fresh data from APIs."
+        ),
+    )
 
     # Add all shared reducer parameter groups
     add_all_reducer_parameters(parser)
@@ -131,13 +154,18 @@ def main():
     try:
         processor = LocalProcessor(args_dict)
 
-        # Load data first to get headers
-        data, headers = processor._load_input_file(args.input)
+        # Load input file(s) first to get headers (needed for path computation)
+        # Handle both single and multiple inputs
+        input_paths = args.input if isinstance(args.input, list) else [args.input]
+        data, headers = processor.load_input_files(input_paths)
 
-        # Now determine output paths with headers for hash computation
+        # Use first input path for output path determination
+        primary_input = input_paths[0]
+
+        # Determine output paths with headers for hash computation
         output_path, intermediate_dir = determine_output_paths(
             output_arg=args.output,
-            input_path=args.input,
+            input_path=primary_input,
             non_binary=args.non_binary,
             bundled=args.bundled == "true",
             keep_tmp=args.keep_tmp,
@@ -148,20 +176,44 @@ def main():
         if intermediate_dir:
             logger.info(f"Intermediate files will be saved to: {intermediate_dir}")
 
-        # Load metadata
-        metadata = processor._load_or_generate_metadata(
+        # Handle --dump-cache: print cached data and exit
+        if args.dump_cache:
+            if not intermediate_dir:
+                logger.error("No cache directory. Run with --keep-tmp first.")
+                sys.exit(1)
+            cache_path = intermediate_dir / "all_annotations.parquet"
+            if cache_path.exists():
+                df = pd.read_parquet(cache_path)
+                print(df.to_csv(index=False))
+            else:
+                logger.error(
+                    f"No cache found at {cache_path}. Run with --keep-tmp first."
+                )
+            return
+
+        # Load/generate metadata
+        metadata = processor.load_or_generate_metadata(
             headers=headers,
-            features=args.features,
+            annotations=args.annotations,
             intermediate_dir=intermediate_dir,
             delimiter=args.delimiter,
             non_binary=args.non_binary,
             keep_tmp=args.keep_tmp,
+            force_refetch=args.force_refetch,
         )
+
+        # Apply score stripping at presentation layer
+        if args.no_scores:
+            metadata = strip_scores_from_df(metadata)
 
         # Create full metadata
         full_metadata = pd.DataFrame({"identifier": headers})
         if len(metadata.columns) > 1:
             metadata = metadata.astype(str)
+            # Use first column as identifier regardless of its name
+            id_col = metadata.columns[0]
+            if id_col != "identifier":
+                metadata = metadata.rename(columns={id_col: "identifier"})
             full_metadata = full_metadata.merge(
                 metadata.drop_duplicates("identifier"),
                 on="identifier",

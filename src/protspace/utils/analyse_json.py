@@ -26,18 +26,18 @@ def print_dimensionality_reduction_info(reader: JsonReader, verbosity: int) -> N
                 print(f"  - {key}: {value}")
 
 
-def print_feature_info(reader: JsonReader, verbosity: int) -> None:
-    """Print feature information based on verbosity level."""
-    features = reader.get_all_features()
+def print_annotation_info(reader: JsonReader, verbosity: int) -> None:
+    """Print annotation information based on verbosity level."""
+    annotations = reader.get_all_annotations()
 
     if verbosity == 0:
-        print(f"\nFeatures ({len(features)}): {', '.join(features)}")
+        print(f"\nAnnotations ({len(annotations)}): {', '.join(annotations)}")
         return
 
-    print("\n=== Features Overview ===")
-    for feature in features:
-        unique_values = reader.get_unique_feature_values(feature)
-        print(f"\nFeature: {feature}")
+    print("\n=== Annotations Overview ===")
+    for annotation in annotations:
+        unique_values = reader.get_unique_annotation_values(annotation)
+        print(f"\nAnnotation: {annotation}")
         print(f"Unique values: {len(unique_values)}")
         # Print first 5 values for verbosity level 2
         if verbosity == 2:
@@ -52,22 +52,22 @@ def print_feature_info(reader: JsonReader, verbosity: int) -> None:
 
 
 def print_visualization_info(reader: JsonReader) -> None:
-    """Print information about feature colors and shapes if available."""
+    """Print information about annotation colors and shapes if available."""
     print("\n=== Visualization Settings ===")
-    features = reader.get_all_features()
+    annotations = reader.get_all_annotations()
 
-    for feature in features:
-        print(f"\nFeature: {feature}")
+    for annotation in annotations:
+        print(f"\nAnnotation: {annotation}")
 
         # Print color mappings
-        colors = reader.get_feature_colors(feature)
+        colors = reader.get_annotation_colors(annotation)
         if colors:
             print("Color mappings:")
             for value, color in colors.items():
                 print(f"  - {value}: {color}")
 
         # Print shape mappings
-        shapes = reader.get_marker_shape(feature)
+        shapes = reader.get_marker_shape(annotation)
         if shapes:
             print("Shape mappings:")
             for value, shape in shapes.items():
@@ -107,12 +107,12 @@ def main():
     # Print basic statistics
     print("Summary:")
     print(f"- Proteins: {len(reader.get_protein_ids())}")
-    print(f"- Features: {len(reader.get_all_features())}")
+    print(f"- Annotations: {len(reader.get_all_annotations())}")
     print(f"- Projections: {len(reader.get_projection_names())}")
 
     # Print detailed information based on verbosity
     print_dimensionality_reduction_info(reader, args.verbose)
-    print_feature_info(reader, args.verbose)
+    print_annotation_info(reader, args.verbose)
 
     # Print visualization information at highest verbosity level
     if args.verbose >= 3:
