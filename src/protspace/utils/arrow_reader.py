@@ -121,15 +121,34 @@ class ArrowReader:
         self._load_visualization_state()
 
     def _load_visualization_state(self):
-        """Load visualization state from JSON file if it exists."""
+        """Load visualization state.
+
+        Priority: visualization_state.json > settings.parquet (from bundle).
+        """
         viz_state_path = self.data_path / "visualization_state.json"
         if viz_state_path.exists():
             try:
                 with open(viz_state_path) as f:
                     viz_state = json.load(f)
                     self.data["visualization_state"] = viz_state
+                    return
             except (json.JSONDecodeError, FileNotFoundError):
-                # If file doesn't exist or is corrupted, use default state
+                pass
+
+        # Fall back to settings.parquet (extracted from a 4-part bundle)
+        settings_path = self.data_path / "settings.parquet"
+        if settings_path.exists():
+            try:
+                from protspace.data.io.bundle import read_settings_from_file
+                from protspace.data.io.settings_converter import (
+                    settings_to_visualization_state,
+                )
+
+                settings = read_settings_from_file(settings_path)
+                self.data["visualization_state"] = settings_to_visualization_state(
+                    settings
+                )
+            except Exception:
                 pass
 
     def save_data(self, output_path: Path = None):

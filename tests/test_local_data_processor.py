@@ -459,7 +459,7 @@ class TestLoadOrGenerateMetadata:
                 "protein_name",
                 "uniprot_kb_id",
             ]
-            assert call_kwargs["non_binary"] is True
+            assert call_kwargs["non_binary"] is False  # Cache is always parquet
 
             # Verify result
             pd.testing.assert_frame_equal(result, SAMPLE_METADATA_DF)
@@ -1069,13 +1069,13 @@ class TestIncrementalCaching:
             assert call_kwargs["sources_to_fetch"]["interpro"] is True
 
     @patch("src.protspace.data.processors.local_processor.ProteinAnnotationManager")
-    def test_cache_with_csv_format(self, mock_annotation_manager):
-        """Test caching works with CSV format (non_binary=True)."""
+    def test_cache_with_parquet_format(self, mock_annotation_manager):
+        """Test caching always uses parquet format regardless of non_binary flag."""
         with tempfile.TemporaryDirectory() as temp_dir:
             intermediate_dir = Path(temp_dir) / "intermediate"
             intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create cached metadata CSV file - include always-included annotations
+            # Create cached metadata as parquet (cache is always parquet)
             cached_metadata = pd.DataFrame(
                 {
                     "identifier": SAMPLE_HEADERS,
@@ -1085,8 +1085,8 @@ class TestIncrementalCaching:
                     "uniprot_kb_id": ["P01308", "P01315", "P01316"],
                 }
             )
-            cache_file = intermediate_dir / "all_annotations.csv"
-            cached_metadata.to_csv(cache_file, index=False)
+            cache_file = intermediate_dir / "all_annotations.parquet"
+            cached_metadata.to_parquet(cache_file, index=False)
 
             # Request cached annotations with non_binary=True
             result = LocalDataProcessor.load_or_generate_metadata(
@@ -1099,7 +1099,7 @@ class TestIncrementalCaching:
                 force_refetch=False,
             )
 
-            # Should return cached CSV data
+            # Should return cached parquet data without calling the manager
             mock_annotation_manager.assert_not_called()
             assert isinstance(result, pd.DataFrame)
             assert "reviewed" in result.columns

@@ -172,7 +172,7 @@ class TestProcessQuery:
         _, _, _, saved_files = result
 
         expected_fasta_path = temp_dir / "intermediate" / "sequences.fasta"
-        expected_metadata_path = temp_dir / "intermediate" / "all_annotations.csv"
+        expected_metadata_path = temp_dir / "intermediate" / "all_annotations.parquet"
         expected_similarity_path = temp_dir / "intermediate" / "similarity_matrix.csv"
 
         assert "fasta" in saved_files
@@ -667,11 +667,9 @@ class TestIntegration:
         assert len(saved_files) == 3  # fasta, metadata, similarity_matrix
 
 
-@pytest.mark.parametrize(
-    "non_binary,expected_extension", [(True, "csv"), (False, "parquet")]
-)
-def test_metadata_file_extension(non_binary, expected_extension, processor, temp_dir):
-    """Test that metadata file extension depends on non_binary flag."""
+@pytest.mark.parametrize("non_binary", [True, False])
+def test_metadata_cache_always_parquet(non_binary, processor, temp_dir):
+    """Test that metadata cache is always parquet regardless of non_binary flag."""
     with patch(
         "src.protspace.data.processors.uniprot_query_processor.ProteinAnnotationManager"
     ) as mock_annotation_extractor:
@@ -696,11 +694,11 @@ def test_metadata_file_extension(non_binary, expected_extension, processor, temp
                     non_binary=non_binary,
                 )
 
-                # Verify correct file extension was used
+                # Cache is always parquet regardless of non_binary
                 call_kwargs = mock_annotation_extractor.call_args[1]
-                assert call_kwargs["non_binary"] == non_binary
+                assert call_kwargs["non_binary"] is False
                 expected_path = (
-                    temp_dir / "intermediate" / f"all_annotations.{expected_extension}"
+                    temp_dir / "intermediate" / "all_annotations.parquet"
                 )
                 assert call_kwargs["output_path"] == expected_path
 
