@@ -14,7 +14,6 @@ from unipressed import UniprotkbClient
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.parsers.uniprot_parser import UniProtEntry
 
-logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # UniProt annotations - these are the current protspace annotations

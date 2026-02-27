@@ -10,8 +10,6 @@ from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
-# Configure logging
-logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Validation and configuration
@@ -71,6 +69,10 @@ class LocalProcessor(BaseProcessor):
             )
 
         data = np.array(data)
+
+        # Upcast float16 → float32 to avoid overflow in downstream matrix ops
+        if data.dtype == np.float16:
+            data = data.astype(np.float32)
 
         # Check for NaN values and filter them out
         nan_mask = np.isnan(data).any(axis=1)
