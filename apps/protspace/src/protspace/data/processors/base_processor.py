@@ -1,5 +1,6 @@
 import json
 import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -73,8 +74,20 @@ class BaseProcessor:
         if not reducer_cls:
             raise ValueError(f"Unknown reduction method: {method}")
 
+        # Upcast float16 to float32 to avoid overflow in matrix operations
+        if data.dtype == np.float16:
+            data = data.astype(np.float32)
+
         reducer = reducer_cls(config)
-        reduced_data = reducer.fit_transform(data)
+        # Suppress noisy but harmless warnings from DR libraries:
+        # - sklearn RuntimeWarning: overflow in randomized SVD matmul (results still correct)
+        # - sklearn FutureWarning: force_all_finite rename (umap compat, fixed in newer umap)
+        # - umap UserWarning: n_jobs overridden by random_state (informational)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"sklearn")
+            warnings.filterwarnings("ignore", category=FutureWarning, module=r"sklearn")
+            warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
+            reduced_data = reducer.fit_transform(data)
 
         method_spec = f"{method}{dims}"
         projection_name = self.custom_names.get(method_spec, f"{method.upper()}_{dims}")
