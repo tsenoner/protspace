@@ -232,8 +232,7 @@ def main():
                 logger.warning(
                     f"Unknown reduction method specified: {method}. Skipping."
                 )
-                continue  # Use logger.warning and continue instead of raising ValueError
-                # raise ValueError(f"Unknown reduction method: {method}") # Kept for reference
+                continue
 
             logger.info(f"Applying {method.upper()}{dims} reduction")
             reductions.append(processor.process_reduction(data, method, dims))

@@ -8,7 +8,85 @@ import numpy as np
 from pacmap import LocalMAP, PaCMAP
 from sklearn.decomposition import PCA
 from sklearn.manifold import MDS, TSNE
+from sklearn.neighbors import NearestNeighbors
 from umap import UMAP
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# annoy compatibility shim — annoy can segfault or return empty results on
+# certain platforms (notably macOS ARM64).  We detect that at first use and
+# transparently swap in an sklearn-based replacement so PaCMAP / LocalMAP
+# keep working everywhere.
+# ---------------------------------------------------------------------------
+_annoy_checked: bool = False
+
+
+def _ensure_annoy_or_fallback() -> None:
+    """Patch pacmap to use sklearn if annoy is broken. Only runs once."""
+    global _annoy_checked
+    if _annoy_checked:
+        return
+    _annoy_checked = True
+
+    import subprocess
+    import sys
+
+    # Run the check in a subprocess so a segfault doesn't kill the main process
+    code = (
+        "from annoy import AnnoyIndex; import random; random.seed(0); "
+        "d=10; t=AnnoyIndex(d,'euclidean'); "
+        "[t.add_item(i,[random.gauss(0,1) for _ in range(d)]) for i in range(50)]; "
+        "t.build(5); "
+        "exit(0 if len(t.get_nns_by_item(0,10))>=10 else 1)"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code], timeout=10, capture_output=True
+        )
+        if result.returncode == 0:
+            return
+    except Exception:
+        pass
+
+    # annoy is broken — swap in sklearn fallback
+    import pacmap.pacmap as _pm
+
+    class _SklearnAnnoyIndex:
+        """Drop-in AnnoyIndex replacement backed by sklearn NearestNeighbors."""
+
+        def __init__(self, dim: int, metric: str = "euclidean"):
+            self.dim = dim
+            self.metric = metric
+            self._items: list = []
+
+        def add_item(self, i: int, vec) -> None:
+            while len(self._items) <= i:
+                self._items.append(None)
+            self._items[i] = vec
+
+        def set_seed(self, seed: int) -> None:
+            pass  # determinism handled by sklearn
+
+        def build(self, n_trees: int) -> None:
+            self._data = np.array(self._items, dtype=np.float64)
+            self._nn = NearestNeighbors(metric=self.metric, algorithm="auto")
+            self._nn.fit(self._data)
+
+        def get_nns_by_item(self, i: int, n: int) -> list[int]:
+            k = min(n, len(self._data))
+            _, idx = self._nn.kneighbors(self._data[i : i + 1], n_neighbors=k)
+            return idx[0].tolist()
+
+        def get_distance(self, i: int, j: int) -> float:
+            return float(np.linalg.norm(self._data[i] - self._data[j]))
+
+    _pm.AnnoyIndex = _SklearnAnnoyIndex  # type: ignore[attr-defined]
+    logger.warning(
+        "annoy is non-functional on this platform; "
+        "using sklearn NearestNeighbors fallback for PaCMAP/LocalMAP"
+    )
 
 # Method names constants
 PCA_NAME = "pca"
@@ -23,8 +101,6 @@ REDUCER_METHODS = [PCA_NAME, TSNE_NAME, UMAP_NAME, PACMAP_NAME, MDS_NAME, LOCALM
 # Metric types
 METRIC_TYPES = Literal["euclidean", "cosine"]
 
-logging.basicConfig(format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -195,7 +271,7 @@ class DimensionReductionConfig:
                     )
             return result
         except Exception as e:
-            print(e)
+            logger.error("Failed to extract parameter info: %s", e)
             return []
 
 
@@ -300,6 +376,7 @@ class PaCMAPReducer(DimensionReducer):
     """PaCMAP (Pairwise Controlled Manifold Approximation) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        _ensure_annoy_or_fallback()
         return PaCMAP(
             n_components=self.config.n_components,
             n_neighbors=self.config.n_neighbors,
@@ -320,6 +397,7 @@ class LocalMAPReducer(DimensionReducer):
     """LocalMAP (Local Manifold Approximation) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        _ensure_annoy_or_fallback()
         return LocalMAP(
             n_components=self.config.n_components,
             n_neighbors=self.config.n_neighbors,

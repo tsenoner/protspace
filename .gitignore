@@ -1,6 +1,7 @@
 # ignore for now
 .DS_Store
 /.vscode
+/.claude
 /backup
 /bin
 /docs/publication
