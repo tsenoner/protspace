@@ -339,6 +339,7 @@ class TSNEReducer(DimensionReducer):
             perplexity=self.config.perplexity,
             learning_rate=self.config.learning_rate,
             metric=self.config.metric,
+            random_state=self.config.random_state,
         ).fit_transform(data)
 
     def get_params(self) -> dict[str, Any]:
@@ -347,6 +348,7 @@ class TSNEReducer(DimensionReducer):
             "perplexity": self.config.perplexity,
             "learning_rate": self.config.learning_rate,
             "metric": self.config.metric,
+            "random_state": self.config.random_state,
         }
 
 
@@ -382,6 +384,7 @@ class PaCMAPReducer(DimensionReducer):
             n_neighbors=self.config.n_neighbors,
             MN_ratio=self.config.mn_ratio,
             FP_ratio=self.config.fp_ratio,
+            random_state=self.config.random_state,
         ).fit_transform(data)
 
     def get_params(self) -> dict[str, Any]:
@@ -390,6 +393,7 @@ class PaCMAPReducer(DimensionReducer):
             "n_neighbors": self.config.n_neighbors,
             "MN_ratio": self.config.mn_ratio,
             "FP_ratio": self.config.fp_ratio,
+            "random_state": self.config.random_state,
         }
 
 
@@ -403,6 +407,7 @@ class LocalMAPReducer(DimensionReducer):
             n_neighbors=self.config.n_neighbors,
             MN_ratio=self.config.mn_ratio,
             FP_ratio=self.config.fp_ratio,
+            random_state=self.config.random_state,
         ).fit_transform(data, init="pca")
 
     def get_params(self) -> dict[str, Any]:
@@ -411,6 +416,7 @@ class LocalMAPReducer(DimensionReducer):
             "n_neighbors": self.config.n_neighbors,
             "MN_ratio": self.config.mn_ratio,
             "FP_ratio": self.config.fp_ratio,
+            "random_state": self.config.random_state,
         }
 
 
@@ -424,6 +430,7 @@ class MDSReducer(DimensionReducer):
             n_init=self.config.n_init,
             max_iter=self.config.max_iter,
             eps=self.config.eps,
+            random_state=self.config.random_state,
             dissimilarity=("precomputed" if self.config.precomputed else "euclidean"),
         ).fit_transform(data)
 
@@ -433,4 +440,5 @@ class MDSReducer(DimensionReducer):
             "n_init": self.config.n_init,
             "max_iter": self.config.max_iter,
             "eps": self.config.eps,
+            "random_state": self.config.random_state,
         }

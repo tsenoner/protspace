@@ -83,11 +83,18 @@ class BaseProcessor:
         # - sklearn RuntimeWarning: overflow in randomized SVD matmul (results still correct)
         # - sklearn FutureWarning: force_all_finite rename (umap compat, fixed in newer umap)
         # - umap UserWarning: n_jobs overridden by random_state (informational)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"sklearn")
-            warnings.filterwarnings("ignore", category=FutureWarning, module=r"sklearn")
-            warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
-            reduced_data = reducer.fit_transform(data)
+        # - pacmap logger.warning: "random state is set to ..." (informational)
+        pacmap_logger = logging.getLogger("pacmap.pacmap")
+        prev_level = pacmap_logger.level
+        pacmap_logger.setLevel(logging.ERROR)
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"sklearn")
+                warnings.filterwarnings("ignore", category=FutureWarning, module=r"sklearn")
+                warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
+                reduced_data = reducer.fit_transform(data)
+        finally:
+            pacmap_logger.setLevel(prev_level)
 
         method_spec = f"{method}{dims}"
         projection_name = self.custom_names.get(method_spec, f"{method.upper()}_{dims}")
