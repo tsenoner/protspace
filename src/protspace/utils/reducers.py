@@ -101,8 +101,6 @@ REDUCER_METHODS = [PCA_NAME, TSNE_NAME, UMAP_NAME, PACMAP_NAME, MDS_NAME, LOCALM
 # Metric types
 METRIC_TYPES = Literal["euclidean", "cosine"]
 
-logging.basicConfig(format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -273,7 +271,7 @@ class DimensionReductionConfig:
                     )
             return result
         except Exception as e:
-            print(e)
+            logger.error("Failed to extract parameter info: %s", e)
             return []
 
 
