@@ -10,8 +10,6 @@ from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
-# Configure logging
-logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Validation and configuration

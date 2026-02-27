@@ -28,7 +28,6 @@ from protspace.data.annotations.transformers.transformer import AnnotationTransf
 from protspace.data.io.formatters import DataFormatter
 from protspace.data.io.writers import AnnotationWriter
 
-logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
