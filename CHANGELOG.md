@@ -1,6 +1,72 @@
 # CHANGELOG
 
 
+## v3.3.1 (2026-02-27)
+
+### Chores
+
+* chore: remove dead code and redundant logging.basicConfig calls
+
+- Remove 6 redundant logging.basicConfig() calls from library modules
+  (only the CLI entry point setup_logging() should configure logging)
+- Remove duplicate logger assignment in reducers.py
+- Replace bare print(e) with logger.error() in reducers.py
+- Remove commented-out dead code in local_data.py
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`74f04f4`](https://github.com/tsenoner/protspace/commit/74f04f4aee338db09a3abcea699b3932b51ec01a))
+
+### Documentation
+
+* docs(notebook): overhaul Colab UI with interactive widgets
+
+Replace basic SelectMultiple widgets with a polished interactive UI:
+- Annotation selection: checkboxes in 2-column CSS grids per category
+  (UniProt/InterPro/Taxonomy) with per-group and global preset buttons
+- DR method selection: ToggleButtons with color feedback and tooltips
+- Method parameters: bordered cards in responsive flex-wrap grid with
+  shared params merged (n_neighbors for UMAP/PaCMAP/LocalMAP, etc.)
+- Dynamic show/hide of parameter groups based on selected methods
+- Remove gene_name from selectable annotations (always auto-included)
+- Add /.claude to .gitignore
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`f671715`](https://github.com/tsenoner/protspace/commit/f671715ebf13eb808e7f44567b3c0407a5accb41))
+
+### Fixes
+
+* fix(reducers): robust float16 upcast, annoy fallback, suppress noisy warnings
+
+- Upcast float16 → float32 at HDF5 load time (local_processor) with a
+  safety-net in base_processor, preventing overflow in all DR methods
+- Add lazy annoy health check: on platforms where annoy segfaults or
+  returns empty results (e.g. macOS ARM64), transparently swap in an
+  sklearn NearestNeighbors drop-in so PaCMAP/LocalMAP keep working
+- Suppress harmless sklearn RuntimeWarnings (randomized SVD overflow),
+  FutureWarnings, and umap UserWarnings during fit_transform
+- Add LocalMAP to Colab notebook (METHODS list, parameter sliders,
+  intro text) — previously missing from the preparation UI
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`7c8193e`](https://github.com/tsenoner/protspace/commit/7c8193ef0ef4c2b9df3a9031dc142f77b28d9fc6))
+
+### Testing
+
+* test(reducers): add comprehensive tests for all 6 DR methods
+
+51 tests covering PCA, t-SNE, UMAP, PaCMAP, MDS, and LocalMAP:
+- Per-method: output shape (2D/3D), NaN-free, get_params, determinism
+- Cross-cutting (parametrized): finite output, float dtype, no Inf
+- Float16 handling: verify upcast produces correct results
+- Config validation: defaults, custom values, invalid inputs
+- End-to-end: all methods through BaseProcessor.process_reduction
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`85697c0`](https://github.com/tsenoner/protspace/commit/85697c00bd84885999a96bd4613eb3289bcb03bb))
+
+### Unknown
+
+* Merge pull request #34 from tsenoner/stage
+
+Robust reducers, test suite, and Colab UI overhaul ([`e1e416d`](https://github.com/tsenoner/protspace/commit/e1e416d1b51e7880b65a60c60d4d489f4f58645a))
+
+
 ## v3.3.0 (2026-02-17)
 
 ### Features
