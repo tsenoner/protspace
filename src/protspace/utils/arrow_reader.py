@@ -69,12 +69,15 @@ class ArrowReader:
 
     def _build_data_structure(self):
         """Build the data structure to match JsonReader format."""
+        # Use the first column as identifier (issue #10)
+        id_col = self._protein_annotations_df.columns[0]
+
         # Build protein_data
         for _, row in self._protein_annotations_df.iterrows():
-            protein_id = row["protein_id"]
+            protein_id = row[id_col]
             annotations = {}
             for col in self._protein_annotations_df.columns:
-                if col != "protein_id":
+                if col != id_col:
                     annotations[col] = row[col]
             self.data["protein_data"][protein_id] = {"annotations": annotations}
 
