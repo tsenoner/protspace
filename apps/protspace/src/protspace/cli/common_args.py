@@ -41,6 +41,20 @@ def parse_custom_names(custom_names_arg: str) -> dict:
     return custom_names
 
 
+class _TqdmLoggingHandler(logging.StreamHandler):
+    """Logging handler that uses tqdm.write() to avoid garbling progress bars."""
+
+    def emit(self, record):
+        try:
+            from tqdm import tqdm
+
+            msg = self.format(record)
+            tqdm.write(msg, file=self.stream)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
+
 def setup_logging(verbosity: int):
     """Set up logging based on verbosity level.
 
@@ -49,12 +63,18 @@ def setup_logging(verbosity: int):
     """
     level = [logging.WARNING, logging.INFO, logging.DEBUG][min(verbosity, 2)]
 
-    # Configure root logger
-    logging.basicConfig(
-        level=level,
-        format="%(levelname)s: %(message)s",
-        force=True,  # Override any existing configuration
-    )
+    # Configure root logger with tqdm-aware handler
+    root = logging.getLogger()
+    root.setLevel(level)
+    # Remove existing handlers (equivalent to force=True in basicConfig)
+    root.handlers.clear()
+    handler = _TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    root.addHandler(handler)
+
+    # Keep noisy third-party loggers at WARNING even with -vv
+    for name in ("urllib3", "requests", "urllib3.connectionpool"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def compute_cache_hash(identifiers: list[str]) -> str:

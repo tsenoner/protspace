@@ -36,6 +36,27 @@ class LocalProcessor(BaseProcessor):
         # Initialize base class with cleaned config and reducers
         super().__init__(clean_config, REDUCERS)
 
+    @staticmethod
+    def _collect_datasets(
+        hdf_handle: h5py.File,
+    ) -> list[tuple[str, h5py.Dataset]]:
+        """Collect (name, dataset) pairs from an HDF5 file.
+
+        Handles both flat layouts (datasets at root) and one level of groups
+        (e.g. group/dataset).
+        """
+        pairs: list[tuple[str, h5py.Dataset]] = []
+        for key, item in hdf_handle.items():
+            if isinstance(item, h5py.Group):
+                # Recurse one level into groups
+                for sub_key, sub_item in item.items():
+                    if not isinstance(sub_item, h5py.Group):
+                        pairs.append((sub_key, sub_item))
+            else:
+                # h5py.Dataset or array-like (e.g. in tests)
+                pairs.append((key, item))
+        return pairs
+
     def _load_h5_files(self, h5_files: list[Path]) -> tuple[np.ndarray, list[str]]:
         """
         Load and merge H5 files.
@@ -49,23 +70,69 @@ class LocalProcessor(BaseProcessor):
         data, headers = [], []
         seen_ids = set()
         duplicates_count = 0
+        expected_dim = None
+        dim_mismatch_count = 0
 
         for h5_file in h5_files:
             with h5py.File(h5_file, "r") as hdf_handle:
-                for header, emb in hdf_handle.items():
+                pairs = self._collect_datasets(hdf_handle)
+                if not pairs:
+                    raise ValueError(
+                        f"No datasets found in '{h5_file}'. "
+                        f"The HDF5 file may be empty or have an unsupported layout."
+                    )
+
+                for header, dataset in pairs:
                     if header in seen_ids:
                         duplicates_count += 1
                         continue  # Skip duplicates, keep first occurrence
 
-                    emb = np.array(emb).flatten()
+                    emb = np.array(dataset)
+
+                    # Handle 2D embeddings like (1, 1024) — squeeze to 1D
+                    if emb.ndim == 2 and emb.shape[0] == 1:
+                        emb = emb.squeeze(axis=0)
+                    elif emb.ndim > 1:
+                        # Per-residue embeddings (seq_len, dim) — not supported
+                        raise ValueError(
+                            f"Embedding '{header}' has shape {dataset.shape} which looks "
+                            f"like per-residue embeddings. ProtSpace requires per-protein "
+                            f"embeddings (1D vectors). Use mean-pooling or CLS token "
+                            f"extraction to create per-protein embeddings."
+                        )
+
+                    emb = emb.flatten()
+
+                    # Validate consistent dimensions
+                    if expected_dim is None:
+                        expected_dim = emb.shape[0]
+                    elif emb.shape[0] != expected_dim:
+                        dim_mismatch_count += 1
+                        logger.warning(
+                            f"Skipping '{header}': dimension {emb.shape[0]} "
+                            f"doesn't match expected {expected_dim}"
+                        )
+                        continue
+
                     data.append(emb)
                     headers.append(header)
                     seen_ids.add(header)
+
+        if not data:
+            raise ValueError(
+                "No valid embeddings found. Check that the HDF5 file contains "
+                "per-protein embedding vectors."
+            )
 
         if duplicates_count > 0:
             logger.warning(
                 f"Found {duplicates_count} duplicate protein IDs across files. "
                 f"Kept first occurrence of each."
+            )
+
+        if dim_mismatch_count > 0:
+            logger.warning(
+                f"Skipped {dim_mismatch_count} embeddings with mismatched dimensions."
             )
 
         data = np.array(data)
@@ -410,6 +477,11 @@ class LocalProcessor(BaseProcessor):
         except Exception as e:
             logger.warning(
                 f"Could not load metadata ({str(e)}) - creating empty metadata"
+            )
+            print(
+                f"WARNING: Annotation retrieval failed: {e}\n"
+                f"Continuing without annotations.",
+                flush=True,
             )
             annotations_df = pd.DataFrame(columns=["identifier"])
 
