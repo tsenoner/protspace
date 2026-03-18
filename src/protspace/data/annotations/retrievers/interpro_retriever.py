@@ -158,8 +158,9 @@ class InterProRetriever(BaseAnnotationRetriever):
                 missing_sequences.append(header)
 
         if missing_sequences:
-            logger.warning(
-                f"Missing sequences for {len(missing_sequences)} proteins: {missing_sequences[:5]}..."
+            logger.debug(
+                f"Missing sequences for {len(missing_sequences)} proteins"
+                f" (likely deleted from UniProt): {missing_sequences[:5]}..."
             )
 
         if not md5_to_identifier:
@@ -212,9 +213,6 @@ class InterProRetriever(BaseAnnotationRetriever):
                     if response.status_code == 200:
                         batch_results = response.json().get("results", [])
                         all_results.extend(batch_results)
-                        logger.debug(
-                            f"Batch {i}/{len(chunks)} successful. Received {len(batch_results)} results."
-                        )
                     else:
                         logger.error(
                             f"Error processing batch {i}: {response.status_code} - {response.text}"

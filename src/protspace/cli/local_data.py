@@ -255,13 +255,25 @@ def main():
             shutil.rmtree(intermediate_dir)
             logger.info(f"Cleaned up temporary directory: {intermediate_dir}")
 
-    except Exception as e:
+    except FileNotFoundError as e:
         # Clean up temporary directory if --keep-tmp is not active (even on error)
         if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
             shutil.rmtree(intermediate_dir)
-            logger.info(f"Cleaned up temporary directory: {intermediate_dir}")
-        logger.error(f"Error: {str(e)}")
-        raise
+        logger.error(str(e))
+        print(f"ERROR: {e}", flush=True)
+        sys.exit(1)
+    except ValueError as e:
+        if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
+            shutil.rmtree(intermediate_dir)
+        logger.error(str(e))
+        print(f"ERROR: {e}", flush=True)
+        sys.exit(1)
+    except Exception as e:
+        if not args.keep_tmp and intermediate_dir and intermediate_dir.exists():
+            shutil.rmtree(intermediate_dir)
+        logger.error(str(e))
+        print(f"ERROR: {e}", flush=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

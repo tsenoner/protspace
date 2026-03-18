@@ -473,130 +473,269 @@ class TestExtractAnnotations:
         assert result["reviewed"] == "Swiss-Prot"
 
 
+_FETCH_ONE_PATCH = (
+    "src.protspace.data.annotations.retrievers"
+    ".uniprot_retriever._fetch_one_with_timeout"
+)
+_UNIPARC_PATCH = (
+    "src.protspace.data.annotations.retrievers"
+    ".uniprot_retriever._fetch_uniparc_sequence"
+)
+_CLIENT_PATCH = (
+    "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
+)
+
+
 class TestResolveInactiveEntries:
     """Test the _resolve_inactive_entries method."""
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_resolve_merged_entry(self, mock_client_class):
-        """A merged accession should resolve to its replacement, keeping the original ID."""
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_returns_active_entry(self, mock_fetch_one):
+        """fetch_one returns active replacement (transparent merge) → extracts annotations."""
+        active_record = _make_mock_record("Q076D1", protein_name="Crotastatin")
+        mock_fetch_one.return_value = active_record
+
+        retriever = UniProtRetriever(headers=[])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["C5H5D1"])
+
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "C5H5D1"  # original accession preserved
+        assert resolved[0].annotations["protein_name"] == "Crotastatin"
+        assert resolved[0].annotations["length"] == "110"
+        assert res_count == 1
+        assert del_count == 0
+        mock_fetch_one.assert_called_once_with("C5H5D1")
+
+    @patch(_UNIPARC_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_returns_inactive_deleted_with_uniparc(
+        self, mock_fetch_one, mock_uniparc
+    ):
+        """Deleted entry recovers sequence from UniParc."""
+        mock_fetch_one.return_value = {
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "DELETED",
+                "deletedReason": "Deleted from sequence source (ENSEMBL)",
+            },
+            "extraAttributes": {"uniParcId": "UPI000012345"},
+        }
+        mock_uniparc.return_value = ("MALWMRLLPL", 10)
+
+        retriever = UniProtRetriever(headers=[])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["X12345"])
+
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "X12345"
+        assert resolved[0].annotations["sequence"] == "MALWMRLLPL"
+        assert resolved[0].annotations["length"] == "10"
+        # Other annotations remain empty
+        assert resolved[0].annotations["protein_name"] == ""
+        assert res_count == 0
+        assert del_count == 1
+        mock_uniparc.assert_called_once_with("UPI000012345")
+
+    @patch(_UNIPARC_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_returns_inactive_deleted_uniparc_fails(
+        self, mock_fetch_one, mock_uniparc
+    ):
+        """Deleted entry with UniParc fetch failure → empty annotations."""
+        mock_fetch_one.return_value = {
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "DELETED",
+                "deletedReason": "Deleted from sequence source (ENSEMBL)",
+            },
+            "extraAttributes": {"uniParcId": "UPI000012345"},
+        }
+        mock_uniparc.return_value = ("", 0)
+
+        retriever = UniProtRetriever(headers=[])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["X12345"])
+
+        assert len(resolved) == 1
+        assert resolved[0].annotations["sequence"] == ""
+        assert resolved[0].annotations["length"] == ""
+        assert del_count == 1
+
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_returns_inactive_merged(self, mock_fetch_one):
+        """fetch_one returns Inactive with MERGED + mergeDemergeTo → fetches target."""
+        inactive_result = {
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "MERGED",
+                "mergeDemergeTo": ["Q076D1"],
+            },
+            "extraAttributes": {},
+        }
+        target_record = _make_mock_record("Q076D1", protein_name="Crotastatin")
+
+        mock_fetch_one.side_effect = [inactive_result, target_record]
+
+        retriever = UniProtRetriever(headers=[])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["C5H5D1"])
+
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "C5H5D1"
+        assert resolved[0].annotations["protein_name"] == "Crotastatin"
+        assert res_count == 1
+        assert del_count == 0
+        assert mock_fetch_one.call_count == 2
+
+    @patch(_UNIPARC_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_merged_target_also_inactive(
+        self, mock_fetch_one, mock_uniparc
+    ):
+        """When merged target is also inactive, entry is counted as deleted."""
+        inactive_result = {
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "MERGED",
+                "mergeDemergeTo": ["Q99999"],
+            },
+            "extraAttributes": {},
+        }
+        target_also_inactive = {
+            "entryType": "Inactive",
+            "inactiveReason": {"inactiveReasonType": "DELETED"},
+            "extraAttributes": {},
+        }
+
+        mock_fetch_one.side_effect = [
+            inactive_result,
+            target_also_inactive,
+        ]
+        mock_uniparc.return_value = ("", 0)  # no UniParc ID in extraAttributes
+
+        retriever = UniProtRetriever(headers=[])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["Z12345"])
+
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "Z12345"
+        assert resolved[0].annotations["sequence"] == ""
+        assert res_count == 0
+        assert del_count == 1
+
+    @patch(_CLIENT_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_fails_falls_back_to_sec_acc(
+        self, mock_fetch_one, mock_client_class
+    ):
+        """When fetch_one raises, falls back to sec_acc: search."""
+        mock_fetch_one.side_effect = Exception("404 Not Found")
+
         replacement_record = _make_mock_record("Q076D1", protein_name="Crotastatin")
         page = _make_search_page([replacement_record])
-
         mock_search_result = Mock()
         mock_search_result.each_page.return_value = iter([page])
         mock_client_class.search.return_value = mock_search_result
 
         retriever = UniProtRetriever(headers=[])
-        result = retriever._resolve_inactive_entries(["C5H5D1"])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["C5H5D1"])
 
-        assert len(result) == 1
-        assert result[0].identifier == "C5H5D1"  # original accession preserved
-        assert result[0].annotations["protein_name"] == "Crotastatin"
-        assert result[0].annotations["length"] == "110"
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "C5H5D1"
+        assert resolved[0].annotations["protein_name"] == "Crotastatin"
+        assert res_count == 1
+        assert del_count == 0
         mock_client_class.search.assert_called_once_with(
             query="sec_acc:C5H5D1", format="json"
         )
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_resolve_demerged_entry_takes_first(self, mock_client_class):
-        """A demerged accession returns multiple results; we take the first."""
-        records = [
-            _make_mock_record("P0DRL2", protein_name="Protein A"),
-            _make_mock_record("P0DRL1", protein_name="Protein B"),
-        ]
-        page = _make_search_page(records)
+    @patch(_CLIENT_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_fetch_one_fails_sec_acc_no_results(
+        self, mock_fetch_one, mock_client_class
+    ):
+        """When fetch_one fails and sec_acc returns nothing → empty annotations."""
+        mock_fetch_one.side_effect = Exception("404 Not Found")
 
-        mock_search_result = Mock()
-        mock_search_result.each_page.return_value = iter([page])
-        mock_client_class.search.return_value = mock_search_result
-
-        retriever = UniProtRetriever(headers=[])
-        result = retriever._resolve_inactive_entries(["D5KR58"])
-
-        assert len(result) == 1
-        assert result[0].identifier == "D5KR58"
-        assert result[0].annotations["protein_name"] == "Protein A"
-
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_resolve_no_results_returns_empty_annotations(self, mock_client_class):
-        """When search returns no results, empty annotations are created."""
         page = _make_search_page([])
-
         mock_search_result = Mock()
         mock_search_result.each_page.return_value = iter([page])
         mock_client_class.search.return_value = mock_search_result
 
         retriever = UniProtRetriever(headers=[])
-        result = retriever._resolve_inactive_entries(["XXXXXX"])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["XXXXXX"])
 
-        assert len(result) == 1
-        assert result[0].identifier == "XXXXXX"
-        assert all(v == "" for v in result[0].annotations.values())
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "XXXXXX"
+        assert all(v == "" for v in resolved[0].annotations.values())
+        assert res_count == 0
+        assert del_count == 1
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_resolve_api_error_returns_empty_annotations(self, mock_client_class):
-        """When the search API raises an exception, empty annotations are created."""
+    @patch(_CLIENT_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_both_fetch_one_and_search_fail(self, mock_fetch_one, mock_client_class):
+        """When both fetch_one and search fail → empty annotations."""
+        mock_fetch_one.side_effect = Exception("404")
         mock_client_class.search.side_effect = Exception("Network error")
 
         retriever = UniProtRetriever(headers=[])
-        result = retriever._resolve_inactive_entries(["BROKEN"])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(["BROKEN"])
 
-        assert len(result) == 1
-        assert result[0].identifier == "BROKEN"
-        assert all(v == "" for v in result[0].annotations.values())
+        assert len(resolved) == 1
+        assert resolved[0].identifier == "BROKEN"
+        assert all(v == "" for v in resolved[0].annotations.values())
+        assert res_count == 0
+        assert del_count == 1
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_resolve_multiple_missing(self, mock_client_class):
-        """Multiple missing accessions are each resolved independently."""
+    @patch(_UNIPARC_PATCH)
+    @patch(_FETCH_ONE_PATCH)
+    def test_resolve_multiple_mixed(self, mock_fetch_one, mock_uniparc):
+        """Multiple missing accessions with mixed outcomes."""
+        active_record = _make_mock_record("NEW_AAA", protein_name="Resolved AAA")
+        deleted_result = {
+            "entryType": "Inactive",
+            "inactiveReason": {
+                "inactiveReasonType": "DELETED",
+                "deletedReason": "Deleted",
+            },
+            "extraAttributes": {"uniParcId": "UPI0000BBB"},
+        }
+        active_record_ccc = _make_mock_record("NEW_CCC", protein_name="Resolved CCC")
 
-        def fake_search(query, format):
-            acc = query.split(":")[1]
-            record = _make_mock_record(f"NEW_{acc}", protein_name=f"Resolved {acc}")
-            page = _make_search_page([record])
-            mock_result = Mock()
-            mock_result.each_page.return_value = iter([page])
-            return mock_result
-
-        mock_client_class.search.side_effect = fake_search
+        mock_fetch_one.side_effect = [
+            active_record,
+            deleted_result,
+            active_record_ccc,
+        ]
+        mock_uniparc.return_value = ("SEQBBB", 6)
 
         retriever = UniProtRetriever(headers=[])
-        result = retriever._resolve_inactive_entries(["AAA", "BBB", "CCC"])
+        resolved, res_count, del_count = retriever._resolve_inactive_entries(
+            ["AAA", "BBB", "CCC"]
+        )
 
-        assert len(result) == 3
-        assert [r.identifier for r in result] == ["AAA", "BBB", "CCC"]
-        assert result[0].annotations["protein_name"] == "Resolved AAA"
-        assert result[2].annotations["protein_name"] == "Resolved CCC"
+        assert len(resolved) == 3
+        assert [r.identifier for r in resolved] == ["AAA", "BBB", "CCC"]
+        assert resolved[0].annotations["protein_name"] == "Resolved AAA"
+        assert resolved[1].annotations["sequence"] == "SEQBBB"
+        assert resolved[1].annotations["length"] == "6"
+        assert resolved[1].annotations["protein_name"] == ""
+        assert resolved[2].annotations["protein_name"] == "Resolved CCC"
+        assert res_count == 2
+        assert del_count == 1
 
 
 class TestFetchAnnotationsWithMissingEntries:
     """Test that fetch_annotations detects and resolves missing entries."""
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_missing_entries_are_resolved(self, mock_client_class):
-        """When fetch_many drops an entry, it gets resolved via secondary accession."""
+    @patch(_FETCH_ONE_PATCH)
+    @patch(_CLIENT_PATCH)
+    def test_missing_entries_are_resolved(self, mock_client_class, mock_fetch_one):
+        """When fetch_many drops an entry, it gets resolved via fetch_one."""
         # fetch_many returns only P01308, dropping C5H5D1
         mock_client_class.fetch_many.return_value = [
             _make_mock_record("P01308", protein_name="Insulin"),
         ]
 
-        # search resolves C5H5D1 → Q076D1
+        # fetch_one resolves C5H5D1 → active replacement
         replacement = _make_mock_record("Q076D1", protein_name="Crotastatin")
-        page = _make_search_page([replacement])
-        mock_search_result = Mock()
-        mock_search_result.each_page.return_value = iter([page])
-        mock_client_class.search.return_value = mock_search_result
+        mock_fetch_one.return_value = replacement
 
         retriever = UniProtRetriever(headers=["P01308", "C5H5D1"])
         result = retriever.fetch_annotations()
@@ -608,10 +747,11 @@ class TestFetchAnnotationsWithMissingEntries:
         resolved = [r for r in result if r.identifier == "C5H5D1"][0]
         assert resolved.annotations["protein_name"] == "Crotastatin"
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_no_missing_entries_skips_resolution(self, mock_client_class):
+    @patch(_FETCH_ONE_PATCH)
+    @patch(_CLIENT_PATCH)
+    def test_no_missing_entries_skips_resolution(
+        self, mock_client_class, mock_fetch_one
+    ):
         """When all entries are returned, _resolve_inactive_entries is not called."""
         mock_client_class.fetch_many.return_value = [
             _make_mock_record("P01308"),
@@ -622,4 +762,5 @@ class TestFetchAnnotationsWithMissingEntries:
         result = retriever.fetch_annotations()
 
         assert len(result) == 2
+        mock_fetch_one.assert_not_called()
         mock_client_class.search.assert_not_called()
