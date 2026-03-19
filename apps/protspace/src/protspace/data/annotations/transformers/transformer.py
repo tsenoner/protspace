@@ -9,7 +9,6 @@ from collections import namedtuple
 from protspace.data.annotations.transformers.interpro_transforms import (
     InterProTransformer,
 )
-from protspace.data.annotations.transformers.length_binning import LengthBinner
 from protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
@@ -23,26 +22,20 @@ class AnnotationTransformer:
     def __init__(self):
         self.uniprot_transformer = UniProtTransformer()
         self.interpro_transformer = InterProTransformer()
-        self.length_binner = LengthBinner()
         self._ec_name_map = None
 
     def transform(
-        self, proteins: list[ProteinAnnotations], apply_length_binning: bool = True
+        self, proteins: list[ProteinAnnotations]
     ) -> list[ProteinAnnotations]:
         """
         Apply all transformations to protein annotations.
 
         Args:
             proteins: List of ProteinAnnotations to transform
-            apply_length_binning: Whether to apply length binning (default: True)
 
         Returns:
             List of transformed ProteinAnnotations
         """
-        # Apply length binning if requested and length field exists
-        if apply_length_binning and proteins and "length" in proteins[0].annotations:
-            proteins = self.length_binner.add_bins(proteins)
-
         # Apply field-specific transformations
         transformed_proteins = []
         for protein in proteins:

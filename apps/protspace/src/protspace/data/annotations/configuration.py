@@ -22,9 +22,8 @@ logger = logging.getLogger(__name__)
 ALL_ANNOTATIONS = UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
 NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
-LENGTH_BINNING_ANNOTATIONS = ["length_fixed", "length_quantile"]
 
-# User-facing UniProt annotations (excludes internal: sequence, organism_id, length)
+# User-facing UniProt annotations (excludes internal: sequence, organism_id)
 _UNIPROT_USER_ANNOTATIONS = [
     "annotation_score",
     "cc_subcellular_location",
@@ -34,12 +33,11 @@ _UNIPROT_USER_ANNOTATIONS = [
     "go_cc",
     "go_mf",
     "keyword",
+    "length",
     "protein_existence",
     "protein_families",
     "reviewed",
     "xref_pdb",
-    "length_fixed",
-    "length_quantile",
     # gene_name, protein_name, uniprot_kb_id added via ALWAYS_INCLUDED
 ]
 
@@ -47,7 +45,7 @@ ANNOTATION_GROUPS = {
     "default": [
         "ec",
         "keyword",
-        "length_quantile",
+        "length",
         "protein_families",
         "reviewed",
     ],
@@ -167,7 +165,7 @@ class AnnotationConfiguration:
 
         user_annotations = expand_annotation_groups(user_annotations)
 
-        all_annotations = ALL_ANNOTATIONS + LENGTH_BINNING_ANNOTATIONS
+        all_annotations = ALL_ANNOTATIONS
         normalized_annotations = []
 
         for annotation in user_annotations + ALWAYS_INCLUDED_ANNOTATIONS:
@@ -209,16 +207,6 @@ class AnnotationConfiguration:
             for annotation in self.user_annotations
             if annotation in INTERPRO_ANNOTATIONS
         ]
-
-        # Check if user requested length binning annotations
-        user_has_length_annotations = any(
-            annotation in self.user_annotations
-            for annotation in LENGTH_BINNING_ANNOTATIONS
-        )
-
-        # If user requested length annotations, we need the length annotation from UniProt
-        if user_has_length_annotations and "length" not in uniprot_annotations:
-            uniprot_annotations.append("length")
 
         # Add required annotations (accession, organism_id) and sequence if needed
         uniprot_annotations = self._add_required_annotations(

@@ -8,7 +8,6 @@ import pytest
 from src.protspace.data.annotations.configuration import (
     ALL_ANNOTATIONS,
     ANNOTATION_GROUPS,
-    LENGTH_BINNING_ANNOTATIONS,
     NEEDED_UNIPROT_ANNOTATIONS,
     AnnotationConfiguration,
     expand_annotation_groups,
@@ -25,7 +24,6 @@ from src.protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
     ProteinAnnotations,
 )
-from src.protspace.data.annotations.transformers.length_binning import LengthBinner
 from src.protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
@@ -188,15 +186,14 @@ class TestAnnotationConfiguration:
         ):
             AnnotationConfiguration(user_annotations=invalid_annotations)
 
-    def test_validate_with_length_binning(self):
-        """Test validation includes length binning annotations."""
-        annotations_with_binning = ["length_fixed", "length_quantile", "genus"]
-        config = AnnotationConfiguration(user_annotations=annotations_with_binning)
+    def test_validate_with_length(self):
+        """Test validation includes length annotation."""
+        annotations = ["length", "genus"]
+        config = AnnotationConfiguration(user_annotations=annotations)
 
         # Always-included annotations are added automatically
         expected_annotations = [
-            "length_fixed",
-            "length_quantile",
+            "length",
             "genus",
             "gene_name",
             "protein_name",
@@ -231,14 +228,6 @@ class TestAnnotationConfiguration:
         # Should NOT include unrequested InterPro annotations
         assert "cath" not in config.interpro_annotations
 
-    def test_split_by_source_adds_length_for_binning(self):
-        """Test splitting adds 'length' when length binning annotations requested."""
-        user_annotations = ["length_fixed", "genus"]
-        config = AnnotationConfiguration(user_annotations=user_annotations)
-
-        # Should automatically include "length" for binning computation
-        assert "length" in config.uniprot_annotations
-
     def test_split_by_source_default_annotations(self):
         """Test splitting with default annotations (None) uses default group."""
         config = AnnotationConfiguration(user_annotations=None)
@@ -250,56 +239,6 @@ class TestAnnotationConfiguration:
         # Default group has no taxonomy or interpro annotations
         assert config.taxonomy_annotations is None
         assert config.interpro_annotations is None
-
-
-class TestLengthBinner:
-    """Test the LengthBinner module."""
-
-    def test_compute_fixed_bins(self):
-        """Test fixed length binning."""
-        binner = LengthBinner()
-        lengths = [25, 75, 150, 350, 1500, None]
-
-        result = binner.compute_fixed_bins(lengths)
-
-        expected = ["<50", "50-100", "100-200", "200-400", "1400-1600", "unknown"]
-        assert result == expected
-
-    def test_compute_quantile_bins(self):
-        """Test quantile-based length binning."""
-        binner = LengthBinner()
-        lengths = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-
-        result = binner.compute_quantile_bins(lengths, num_bins=5)
-
-        # Should create 5 bins with roughly equal numbers of sequences
-        assert len(set(result)) <= 5
-        assert all(isinstance(bin_label, str) for bin_label in result)
-
-    def test_add_bins_integration(self):
-        """Test complete length binning computation."""
-        binner = LengthBinner()
-        protein_annotations = [
-            ProteinAnnotations(identifier="P1", annotations={"length": "110"}),
-            ProteinAnnotations(identifier="P2", annotations={"length": "250"}),
-            ProteinAnnotations(identifier="P3", annotations={"length": "invalid"}),
-        ]
-
-        result = binner.add_bins(protein_annotations)
-
-        # Verify structure
-        assert len(result) == 3
-        for protein in result:
-            assert "length_fixed" in protein.annotations
-            assert "length_quantile" in protein.annotations
-            assert (
-                "length" in protein.annotations
-            )  # Original length is kept for caching
-
-        # Verify binning
-        assert result[0].annotations["length_fixed"] == "100-200"
-        assert result[1].annotations["length_fixed"] == "200-400"
-        assert result[2].annotations["length_fixed"] == "unknown"
 
 
 class TestAnnotationMerger:
@@ -594,9 +533,9 @@ class TestIntegration:
         )
         mock_taxonomy_retriever.return_value = mock_taxonomy_instance
 
-        # Test with specific annotations including length binning
+        # Test with specific annotations including length
         headers = SAMPLE_HEADERS
-        requested_annotations = ["length_fixed", "genus"]
+        requested_annotations = ["length", "genus"]
         extractor = ProteinAnnotationExtractor(
             headers=headers, annotations=requested_annotations
         )
@@ -604,7 +543,7 @@ class TestIntegration:
         result = extractor.to_pd()
 
         # Should only have identifier + requested annotations
-        expected_columns = {"identifier", "length_fixed", "genus"}
+        expected_columns = {"identifier", "length", "genus"}
         assert set(result.columns) == expected_columns
 
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
@@ -612,7 +551,7 @@ class TestIntegration:
     def test_internal_columns_removed_from_output(
         self, mock_uniprot_retriever, mock_taxonomy_retriever
     ):
-        """Test that internal columns (organism_id, length) are removed from final output."""
+        """Test that internal columns (organism_id) are removed from final output."""
         # Setup mocks
         mock_uniprot_instance = Mock()
         mock_uniprot_instance.fetch_annotations.return_value = (
@@ -634,11 +573,10 @@ class TestIntegration:
 
         # Internal columns should never appear in final output
         assert "organism_id" not in result.columns
-        assert "length" not in result.columns
         assert "sequence" not in result.columns
 
-        # Default group annotations should be present
-        assert "length_quantile" in result.columns
+        # Default group annotations should be present (length is now user-facing)
+        assert "length" in result.columns
         assert "protein_families" in result.columns
 
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
@@ -674,10 +612,11 @@ class TestIntegration:
             assert "organism_id" in cached_df.columns
             assert "length" in cached_df.columns
 
-            # But returned DataFrame should not have them
+            # But returned DataFrame should not have organism_id
             assert "organism_id" not in result.columns
-            assert "length" not in result.columns
             assert "sequence" not in result.columns
+            # length is now a user-facing annotation in the default group
+            assert "length" in result.columns
 
 
 class TestExpandAnnotationGroups:
@@ -793,9 +732,10 @@ class TestConstants:
         """Test NEEDED_UNIPROT_ANNOTATIONS constant."""
         assert NEEDED_UNIPROT_ANNOTATIONS == ["accession", "organism_id"]
 
-    def test_length_binning_annotations_constant(self):
-        """Test LENGTH_BINNING_ANNOTATIONS constant."""
-        assert LENGTH_BINNING_ANNOTATIONS == ["length_fixed", "length_quantile"]
+    def test_length_in_user_annotations(self):
+        """Test that length is a user-facing annotation."""
+        assert "length" in ANNOTATION_GROUPS["default"]
+        assert "length" in ANNOTATION_GROUPS["uniprot"]
 
 
 # --- Mock UniProt JSON data with evidence ---

@@ -110,7 +110,7 @@ class TestCreateOutput:
         )
 
     def test_create_output_removes_internal_columns(self):
-        """Test that internal columns (organism_id, length, sequence) are removed from output."""
+        """Test that internal columns (organism_id, sequence) are removed from output."""
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
 
         # Create metadata with internal columns
@@ -121,7 +121,6 @@ class TestCreateOutput:
                 "organism_id": ["9606", "9606", "10090"],
                 "length": ["100", "200", "300"],
                 "sequence": ["MVLSPADKTN", "MVLSGEDKSN", "MVLSAADKGN"],
-                "length_fixed": ["50-100", "100-200", "200-400"],
             }
         )
 
@@ -134,12 +133,11 @@ class TestCreateOutput:
 
         # Internal columns should be removed
         assert "organism_id" not in annotations_df.columns
-        assert "length" not in annotations_df.columns
         assert "sequence" not in annotations_df.columns
 
-        # Other columns should remain
+        # length is now a user-facing annotation and should remain
+        assert "length" in annotations_df.columns
         assert "reviewed" in annotations_df.columns
-        assert "length_fixed" in annotations_df.columns
 
 
 class TestSaveOutput:

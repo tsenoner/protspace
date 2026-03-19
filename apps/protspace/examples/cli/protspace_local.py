@@ -30,7 +30,7 @@ def run_protspace_local():
         "-i",
         input_file,
         "-a",
-        "phylum,protein_existence,length_fixed,length_quantile,pfam,superfamily,cath,signal_peptide",
+        "phylum,protein_existence,length,pfam,superfamily,cath,signal_peptide",
         "--methods",
         "pca2,pca3",
         "-o",

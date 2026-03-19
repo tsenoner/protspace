@@ -132,13 +132,7 @@ class ProteinAnnotationManager:
         )
 
         # 3. Apply transformations
-        apply_binning = (
-            "length_fixed" in self.user_annotations
-            or "length_quantile" in self.user_annotations
-        )
-        transformed_annotations = self.transformer.transform(
-            merged_annotations, apply_length_binning=apply_binning
-        )
+        transformed_annotations = self.transformer.transform(merged_annotations)
 
         # 4. Create output
         if self.output_path:
@@ -146,9 +140,14 @@ class ProteinAnnotationManager:
         else:
             df = DataFormatter.to_dataframe(transformed_annotations)
 
-        # 5. Always remove internal-only columns from final output
-        # (organism_id for taxonomy, length for binning, sequence for InterPro)
-        internal_columns = ["organism_id", "length", "sequence"]
+        # 5. Remove internal-only columns from final output
+        # (organism_id for taxonomy, sequence for InterPro)
+        # Keep columns that the user explicitly requested
+        internal_columns = ["organism_id", "sequence"]
+        if self.user_annotations:
+            internal_columns = [
+                col for col in internal_columns if col not in self.user_annotations
+            ]
         columns_to_drop = [col for col in internal_columns if col in df.columns]
         if columns_to_drop:
             df = df.drop(columns=columns_to_drop)
