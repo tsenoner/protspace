@@ -79,25 +79,24 @@ class TestAnnotationTransformerInit:
         assert hasattr(transformer.uniprot_transformer, "transform_protein_families")
         assert hasattr(transformer.interpro_transformer, "transform_cath")
         assert hasattr(transformer.interpro_transformer, "transform_pfam")
-        assert hasattr(transformer.length_binner, "add_bins")
-        assert hasattr(transformer.length_binner, "compute_fixed_bins")
+        assert not hasattr(transformer, "length_binner")
 
 
 class TestAnnotationTransformerTransform:
     """Test the transform() method."""
 
-    def test_transform_with_length_binning_enabled(self):
-        """Test transformation with length binning enabled."""
+    def test_transform_with_length(self):
+        """Test transformation preserves length field."""
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=True)
+        result = transformer.transform(proteins)
 
-        # Should have length binning fields added
         assert len(result) == 2
-        assert "length_fixed" in result[0].annotations
-        assert "length_quantile" in result[0].annotations
-        assert "length" in result[0].annotations  # Original length kept for caching
+        # Length is preserved as-is (no binning)
+        assert result[0].annotations["length"] == "110"
+        assert "length_fixed" not in result[0].annotations
+        assert "length_quantile" not in result[0].annotations
 
         # Should have transformed annotations
         assert result[0].annotations["annotation_score"] == "5"
@@ -106,33 +105,15 @@ class TestAnnotationTransformerTransform:
         assert result[0].annotations["xref_pdb"] == "True"
         assert result[0].annotations["fragment"] == "yes"
 
-    def test_transform_with_length_binning_disabled(self):
-        """Test transformation with length binning disabled."""
-        transformer = AnnotationTransformer()
-        proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
-
-        result = transformer.transform(proteins, apply_length_binning=False)
-
-        # Should NOT have length binning fields
-        assert len(result) == 2
-        assert "length_fixed" not in result[0].annotations
-        assert "length_quantile" not in result[0].annotations
-        assert "length" in result[0].annotations  # Original length preserved
-
-        # Should still have transformed annotations
-        assert result[0].annotations["annotation_score"] == "5"
-
     def test_transform_without_length_field(self):
         """Test transformation when length field is missing."""
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITHOUT_LENGTH.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=True)
+        result = transformer.transform(proteins)
 
-        # Should not add length binning when length field is missing
         assert len(result) == 1
-        assert "length_fixed" not in result[0].annotations
-        assert "length_quantile" not in result[0].annotations
+        assert "length" not in result[0].annotations
 
         # Should still transform other annotations
         assert result[0].annotations["annotation_score"] == "5"
@@ -141,7 +122,7 @@ class TestAnnotationTransformerTransform:
         """Test transformation with empty protein list."""
         transformer = AnnotationTransformer()
 
-        result = transformer.transform([], apply_length_binning=True)
+        result = transformer.transform([])
 
         assert result == []
 
@@ -150,7 +131,7 @@ class TestAnnotationTransformerTransform:
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 2
         assert result[0].identifier == "P01308"
@@ -161,7 +142,7 @@ class TestAnnotationTransformerTransform:
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITH_INTERPRO.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         # CATH should be cleaned (G3DSA: prefix removed, sorted)
@@ -193,11 +174,11 @@ class TestAnnotationTransformerTransform:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=True)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         # Check all transformations applied
-        assert "length_fixed" in result[0].annotations
+        assert result[0].annotations["length"] == "200"
         assert result[0].annotations["annotation_score"] == "5"
         assert result[0].annotations["protein_families"] == "Insulin family"
         assert result[0].annotations["reviewed"] == "Swiss-Prot"
@@ -221,7 +202,7 @@ class TestAnnotationTransformerTransform:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         assert result[0].annotations["custom_field"] == "custom_value"
@@ -451,7 +432,7 @@ class TestAnnotationTransformerEdgeCases:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         # Should handle None values without crashing
         assert len(result) == 1
@@ -471,7 +452,7 @@ class TestAnnotationTransformerEdgeCases:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         assert result[0].annotations["xref_pdb"] == "False"

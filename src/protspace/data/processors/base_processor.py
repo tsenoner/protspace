@@ -176,7 +176,7 @@ class BaseProcessor:
             df = df.rename(columns={self.identifier_col: "protein_id"})
 
         # Remove internal columns that are only needed for processing/caching
-        internal_columns = ["organism_id", "length", "sequence"]
+        internal_columns = ["organism_id", "sequence"]
         cols_to_drop = [c for c in internal_columns if c in df.columns]
         if cols_to_drop:
             df = df.drop(columns=cols_to_drop)

@@ -19,7 +19,7 @@ def run_protspace_query():
         "-q",
         "(organism_id:9606) AND (reviewed:true) AND (ft_transmem_exp:helical)",
         "--annotations",
-        "phylum,protein_existence,length_fixed,length_quantile,pfam,cath,superfamily,signal_peptide",
+        "phylum,protein_existence,length,pfam,cath,superfamily,signal_peptide",
         "--methods",
         "pca2,pca3",
         "-o",

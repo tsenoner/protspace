@@ -4,23 +4,23 @@ ProtSpace retrieves annotations from three data sources: **UniProt**, **InterPro
 
 ## Available Annotations
 
-| Source           | Annotations                                                                                                                                                                                                            |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **UniProt** (15) | `annotation_score`, `cc_subcellular_location`, `ec`, `fragment`, `gene_name`, `go_bp`, `go_cc`, `go_mf`, `keyword`, `length_fixed`, `length_quantile`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb` |
-| **InterPro** (9) | `cath`, `cdd`, `panther`, `pfam`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily`                                                                                                                        |
-| **Taxonomy** (9) | `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`                                                                                                                                  |
+| Source           | Annotations                                                                                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **UniProt** (14) | `annotation_score`, `cc_subcellular_location`, `ec`, `fragment`, `gene_name`, `go_bp`, `go_cc`, `go_mf`, `keyword`, `length`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb` |
+| **InterPro** (9) | `cath`, `cdd`, `panther`, `pfam`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily`                                                                                                        |
+| **Taxonomy** (9) | `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`                                                                                                                  |
 
 _Always included_: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardless of selection).
 
 ## Group Presets
 
-| Group      | Contents                                                           |
-| ---------- | ------------------------------------------------------------------ |
-| `default`  | `ec`, `keyword`, `length_quantile`, `protein_families`, `reviewed` |
-| `all`      | All annotations from all sources                                   |
-| `uniprot`  | All UniProt annotations                                            |
-| `interpro` | All InterPro annotations                                           |
-| `taxonomy` | All taxonomy annotations                                           |
+| Group      | Contents                                                   |
+| ---------- | ---------------------------------------------------------- |
+| `default`  | `ec`, `keyword`, `length`, `protein_families`, `reviewed`  |
+| `all`      | All annotations from all sources                           |
+| `uniprot`  | All UniProt annotations                                    |
+| `interpro` | All InterPro annotations                                   |
+| `taxonomy` | All taxonomy annotations                                   |
 
 Groups are mixable with individual names. If `-a` is omitted, `default` is used.
 
@@ -46,7 +46,7 @@ With `--keep-tmp`, only API-fetched annotations are cached; the CSV is always re
 
 ## UniProt Annotations
 
-15 annotations retrieved from the [UniProt REST API](https://rest.uniprot.org/) via `unipressed` (batch size: 100):
+14 annotations retrieved from the [UniProt REST API](https://rest.uniprot.org/) via `unipressed` (batch size: 100):
 
 | Name                      | Description                          | Example                                                        |
 | ------------------------- | ------------------------------------ | -------------------------------------------------------------- |
@@ -59,28 +59,24 @@ With `--keep-tmp`, only API-fetched annotations are cached; the CSV is always re
 | `go_cc`                   | GO — Cellular Component              | `nucleus\|IDA;cytoplasm\|IEA`                                  |
 | `go_mf`                   | GO — Molecular Function              | `DNA binding\|IDA;protein binding\|IEA`                        |
 | `keyword`                 | UniProt keywords                     | `KW-0002 (3D-structure);KW-0025 (Alternative splicing)`        |
-| `length_fixed`            | Sequence length in predefined bins   | `200-400`                                                      |
-| `length_quantile`         | Sequence length in decile bins       | `100-199`                                                      |
+| `length`                  | Sequence length (amino acids)        | `393`                                                          |
 | `protein_existence`       | Evidence level for protein existence | `Evidence at protein level`                                    |
 | `protein_families`        | First protein family                 | `Protein kinase superfamily\|ISS`                              |
 | `reviewed`                | Swiss-Prot / TrEMBL                  | `true` / `false`                                               |
 | `xref_pdb`                | Has experimental 3D structure        | `True` / `False`                                               |
 
-**Internal fields** (not user-selectable): `sequence`, `organism_id`, `length` are fetched automatically when needed by InterPro, taxonomy, or length binning. Inactive/obsolete accessions are resolved via secondary accession search; unresolvable entries get empty values.
+**Internal fields** (not user-selectable): `sequence`, `organism_id` are fetched automatically when needed by InterPro and taxonomy lookups. Inactive/obsolete accessions are resolved via secondary accession search; unresolvable entries get empty values.
 
 ### Transformations
 
-| Annotation                | Transformation                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| `annotation_score`        | Float → integer                                                                 |
-| `ec`                      | Enzyme names appended from ExPASy ENZYME database                               |
-| `fragment`                | `"fragment"` normalized to `"yes"`                                              |
-| `go_bp`, `go_cc`, `go_mf` | Aspect prefix stripped (`P:apoptotic process` → `apoptotic process`)            |
-| `protein_families`        | First family only (before `,` or `;`)                                           |
-| `xref_pdb`                | Converted to `True`/`False`                                                     |
-| `length`                  | Split into `length_fixed` (predefined bins) and `length_quantile` (decile bins) |
-
-**Fixed length bins**: `<50`, `50-100`, `100-200`, `200-400`, `400-600`, `600-800`, `800-1000`, `1000-1200`, `1200-1400`, `1400-1600`, `1600-1800`, `1800-2000`, `2000+`. **Quantile bins**: 10 equal-frequency bins from the dataset's length distribution.
+| Annotation                | Transformation                                                       |
+| ------------------------- | -------------------------------------------------------------------- |
+| `annotation_score`        | Float → integer                                                      |
+| `ec`                      | Enzyme names appended from ExPASy ENZYME database                    |
+| `fragment`                | `"fragment"` normalized to `"yes"`                                   |
+| `go_bp`, `go_cc`, `go_mf` | Aspect prefix stripped (`P:apoptotic process` → `apoptotic process`) |
+| `protein_families`        | First family only (before `,` or `;`)                                |
+| `xref_pdb`                | Converted to `True`/`False`                                          |
 
 ### Evidence Codes
 
