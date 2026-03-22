@@ -19,6 +19,7 @@ dependencies = [
     "pymmseqs>=1.0.4",
     "pyarrow>=20.0.0",
     "unipressed>=1.4.0",
+    "biocentral-api>=1.1.2",
 ]
 
 [project.optional-dependencies]

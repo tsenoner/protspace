@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from protspace.data.annotations.manager import ProteinAnnotationManager
+from protspace.data.io.fasta import FASTA_EXTENSIONS, parse_fasta
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
@@ -22,6 +23,15 @@ class LocalProcessor(BaseProcessor):
     def __init__(self, config: dict[str, Any]):
         # Remove command-line specific arguments that aren't used for dimension reduction
         clean_config = config.copy()
+
+        # Store FASTA/embedding args before stripping
+        self._embedder = clean_config.pop("embedder", None)
+        self._batch_size = clean_config.pop("batch_size", 1000)
+        self._half_precision = clean_config.pop("half_precision", False)
+        self._embedding_cache = clean_config.pop("embedding_cache", None)
+        clean_config.pop("probe", None)
+        clean_config.pop("dry_run", None)
+
         for arg in [
             "input",
             "annotations",
@@ -162,6 +172,32 @@ class LocalProcessor(BaseProcessor):
 
         return data, headers
 
+    def _embed_fasta_to_h5(self, fasta_path: Path) -> Path:
+        """Parse FASTA, embed via Biocentral API, return path to HDF5 cache."""
+        from protspace.data.embedding.biocentral import (
+            derive_h5_cache_path,
+            embed_sequences,
+            resolve_embedder,
+        )
+
+        sequences = parse_fasta(fasta_path)
+        if not sequences:
+            raise ValueError(f"No sequences found in {fasta_path}")
+
+        embedder = resolve_embedder(self._embedder)
+        h5_path = (
+            Path(self._embedding_cache)
+            if self._embedding_cache
+            else derive_h5_cache_path(fasta_path, embedder)
+        )
+        return embed_sequences(
+            sequences,
+            embedder,
+            h5_path,
+            batch_size=self._batch_size,
+            half_precision=self._half_precision,
+        )
+
     def load_input_files(self, input_paths: list[Path]) -> tuple[np.ndarray, list[str]]:
         """
         Load input from one or more paths (files or directories).
@@ -175,6 +211,7 @@ class LocalProcessor(BaseProcessor):
         # Collect all files to process
         embedding_files = []
         csv_file = None
+        fasta_file = None
 
         for path in input_paths:
             if path.is_dir():
@@ -193,11 +230,27 @@ class LocalProcessor(BaseProcessor):
                 if csv_file is not None:
                     raise ValueError("Only one CSV file can be provided")
                 csv_file = path
+            elif path.suffix.lower() in FASTA_EXTENSIONS:
+                if fasta_file is not None:
+                    raise ValueError("Only one FASTA file can be provided")
+                fasta_file = path
             else:
                 raise ValueError(
                     f"Unsupported file type: {path}. "
-                    f"Must be HDF5 files (.h5, .hdf5, .hdf), directories, or CSV file."
+                    f"Must be HDF5 (.h5, .hdf5, .hdf), FASTA (.fasta, .fa, .faa), "
+                    f"directories, or CSV file."
                 )
+
+        # Handle FASTA (embed via Biocentral, then load HDF5)
+        if fasta_file is not None:
+            if embedding_files:
+                raise ValueError("Cannot mix FASTA and HDF5 inputs")
+            if csv_file is not None:
+                raise ValueError("Cannot mix FASTA and CSV inputs")
+
+            logger.info(f"Embedding FASTA file via Biocentral: {fasta_file}")
+            h5_path = self._embed_fasta_to_h5(fasta_file)
+            return self._load_h5_files([h5_path])
 
         # Handle CSV (similarity matrix)
         if csv_file is not None:

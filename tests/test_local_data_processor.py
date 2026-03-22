@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from src.protspace.data.annotations.configuration import AnnotationConfiguration
+from src.protspace.data.io.fasta import FASTA_EXTENSIONS
 from src.protspace.data.processors.local_processor import (
     EMBEDDING_EXTENSIONS,
     LocalProcessor,
@@ -1137,3 +1138,86 @@ class TestIncrementalCaching:
                 "cached_data" not in call_kwargs
                 or call_kwargs.get("cached_data") is None
             )
+
+
+class TestFastaInput:
+    """Test FASTA file handling in load_input_files."""
+
+    @patch.object(LocalProcessor, "_embed_fasta_to_h5")
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_load_fasta_file(self, mock_h5py_file, mock_embed):
+        """Test that FASTA input triggers embedding and loads the resulting HDF5."""
+        # Setup: _embed_fasta_to_h5 returns an HDF5 path
+        h5_result = Path("/tmp/seqs_prot_t5.h5")
+        mock_embed.return_value = h5_result
+
+        # Setup HDF5 mock for the resulting file
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {
+                "P01308": np.array([0.1, 0.2, 0.3, 0.4]),
+                "P01315": np.array([0.5, 0.6, 0.7, 0.8]),
+            },
+        )
+
+        processor = LocalProcessor({"embedder": "esm2_8m"})
+        data, headers = processor.load_input_files([Path("sequences.fasta")])
+
+        mock_embed.assert_called_once_with(Path("sequences.fasta"))
+        assert len(headers) == 2
+        assert data.shape == (2, 4)
+
+    def test_load_fasta_mixed_with_h5_raises(self):
+        """Test that mixing FASTA and HDF5 inputs raises ValueError."""
+        processor = LocalProcessor({"embedder": "esm2_8m"})
+        with pytest.raises(ValueError, match="Cannot mix FASTA and HDF5"):
+            processor.load_input_files([Path("seqs.fasta"), Path("embs.h5")])
+
+    def test_load_fasta_mixed_with_csv_raises(self):
+        """Test that mixing FASTA and CSV inputs raises ValueError."""
+        processor = LocalProcessor({"embedder": "esm2_8m"})
+        with pytest.raises(ValueError, match="Cannot mix FASTA and CSV"):
+            processor.load_input_files([Path("seqs.fasta"), Path("sim.csv")])
+
+    def test_load_multiple_fasta_raises(self):
+        """Test that providing multiple FASTA files raises ValueError."""
+        processor = LocalProcessor({"embedder": "esm2_8m"})
+        with pytest.raises(ValueError, match="Only one FASTA file"):
+            processor.load_input_files([Path("a.fasta"), Path("b.fa")])
+
+    @pytest.mark.parametrize("ext", [".fasta", ".fa", ".faa"])
+    @patch.object(LocalProcessor, "_embed_fasta_to_h5")
+    @patch("src.protspace.data.processors.local_processor.h5py.File")
+    def test_fasta_extension_detection(self, mock_h5py_file, mock_embed, ext):
+        """Test that all FASTA extensions are detected."""
+        mock_embed.return_value = Path(f"/tmp/seqs{ext}.h5")
+        setup_mock_h5_files(
+            mock_h5py_file,
+            {"P01308": np.array([0.1, 0.2])},
+        )
+
+        processor = LocalProcessor({"embedder": "prot_t5"})
+        processor.load_input_files([Path(f"sequences{ext}")])
+        mock_embed.assert_called_once()
+
+    def test_init_strips_embedding_args(self):
+        """Test that embedding-related args are stripped from config."""
+        config = {
+            "embedder": "esm2_8m",
+            "batch_size": 500,
+            "half_precision": True,
+            "embedding_cache": "/tmp/cache.h5",
+            "probe": False,
+            "dry_run": False,
+            "n_components": 2,
+        }
+        processor = LocalProcessor(config)
+        assert "embedder" not in processor.config
+        assert "batch_size" not in processor.config
+        assert "half_precision" not in processor.config
+        assert "embedding_cache" not in processor.config
+        assert "probe" not in processor.config
+        assert "dry_run" not in processor.config
+        assert processor.config["n_components"] == 2
+        assert processor._embedder == "esm2_8m"
+        assert processor._batch_size == 500

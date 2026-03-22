@@ -47,12 +47,14 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Path(s) to input data file(s) or directory.\n"
             "Supported formats:\n"
+            "  - FASTA file (.fasta, .fa, .faa) — embeddings generated via Biocentral\n"
             "  - Single HDF5 file (.h5, .hdf5, .hdf) containing protein embeddings\n"
             "  - Multiple HDF5 files (automatically merged)\n"
             "  - Directory containing multiple HDF5 files (automatically merged)\n"
             "  - CSV file containing precomputed similarity matrix\n"
             "\n"
             "Examples:\n"
+            "  --input sequences.fasta --embedder esm2_8m\n"
             "  --input data/embeddings.h5\n"
             "  --input data/batch1.h5 data/batch2.h5 data/batch3.h5\n"
             "  --input data/embs/\n"
@@ -118,6 +120,51 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Add all shared reducer parameter groups
     add_all_reducer_parameters(parser)
 
+    # Biocentral Embedding arguments
+    emb_group = parser.add_argument_group("Biocentral Embedding")
+    shortcuts = ", ".join(
+        f"{k}" for k in [
+            "prot_t5", "prost_t5", "esm2_8m", "esm2_650m",
+            "esm2_3b", "one_hot", "blosum62",
+        ]
+    )
+    emb_group.add_argument(
+        "--embedder",
+        type=str,
+        default=None,
+        help=(
+            f"Embedder model name or shortcut (default: prot_t5 for FASTA input).\n"
+            f"Shortcuts: {shortcuts}"
+        ),
+    )
+    emb_group.add_argument(
+        "--batch-size",
+        type=int,
+        default=1000,
+        help="Sequences per API call (default: 1000)",
+    )
+    emb_group.add_argument(
+        "--half-precision",
+        action="store_true",
+        help="Request float16 embeddings from server",
+    )
+    emb_group.add_argument(
+        "--embedding-cache",
+        type=Path,
+        default=None,
+        help="Override HDF5 cache path for embeddings",
+    )
+    emb_group.add_argument(
+        "--probe",
+        action="store_true",
+        help="Submit 2 sequences, print result summary, exit",
+    )
+    emb_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse FASTA, print stats, exit (no API calls)",
+    )
+
     return parser
 
 
@@ -128,6 +175,64 @@ def main():
 
     # Set up logging first
     setup_logging(args.verbose)
+
+    # Detect FASTA input and handle embedding-related early exits
+    from protspace.data.io.fasta import is_fasta_file
+
+    input_paths = args.input if isinstance(args.input, list) else [args.input]
+    has_fasta = any(is_fasta_file(p) for p in input_paths if not p.is_dir())
+
+    # Validation: embedding args require FASTA input
+    if (args.embedder or args.probe or args.dry_run) and not has_fasta:
+        parser.error("--embedder, --probe, and --dry-run require a FASTA input file")
+
+    # Auto-default embedder when FASTA detected
+    if has_fasta and args.embedder is None:
+        from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
+
+        args.embedder = DEFAULT_EMBEDDER
+        logger.info(f"FASTA input detected, defaulting embedder to '{args.embedder}'")
+
+    # Early exit: --dry-run
+    if args.dry_run:
+        from protspace.data.io.fasta import parse_fasta
+
+        fasta_path = next(p for p in input_paths if is_fasta_file(p))
+        sequences = parse_fasta(fasta_path)
+        if not sequences:
+            print(f"No sequences found in {fasta_path}")
+            return
+        lengths = [len(s) for s in sequences.values()]
+        from protspace.data.embedding.biocentral import resolve_embedder
+
+        embedder = resolve_embedder(args.embedder)
+        print(f"FASTA:      {fasta_path}")
+        print(f"Sequences:  {len(sequences):,}")
+        print(
+            f"Lengths:    min={min(lengths)}, "
+            f"median={sorted(lengths)[len(lengths) // 2]}, "
+            f"max={max(lengths)}"
+        )
+        print(f"Embedder:   {embedder}")
+        print(
+            f"Batches:    "
+            f"{(len(sequences) + args.batch_size - 1) // args.batch_size}"
+        )
+        return
+
+    # Early exit: --probe
+    if args.probe:
+        from protspace.data.embedding.biocentral import probe_embedder, resolve_embedder
+        from protspace.data.io.fasta import parse_fasta
+
+        fasta_path = next(p for p in input_paths if is_fasta_file(p))
+        sequences = parse_fasta(fasta_path)
+        if not sequences:
+            print(f"No sequences found in {fasta_path}")
+            return
+        embedder = resolve_embedder(args.embedder)
+        probe_embedder(sequences, embedder, half_precision=args.half_precision)
+        return
 
     # Validate bundled flag with output
     if args.bundled == "false" and not args.non_binary:
