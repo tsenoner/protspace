@@ -26,11 +26,14 @@ logger = logging.getLogger(__name__)
 
 # Input
 Opt_Input = Annotated[
-    list[Path] | None,
+    list[str] | None,
     typer.Option(
         "-i",
         "--input",
-        help="Input HDF5 or FASTA file(s). Repeat for multi-embedding.",
+        help=(
+            "Input HDF5 or FASTA file(s). Repeat for multi-embedding.\n"
+            "Use colon syntax for name override: -i file.h5:model_name"
+        ),
         rich_help_panel="Input",
     ),
 ]
@@ -55,13 +58,14 @@ Opt_Fasta = Annotated[
 
 # Embedding
 Opt_Embedder = Annotated[
-    str | None,
+    list[str] | None,
     typer.Option(
         "-e",
         "--embedder",
         help=(
-            "Biocentral model shortcut: prot_t5, prost_t5, esm2_8m, "
-            "esm2_650m, esm2_3b, one_hot, blosum62, aa_ontology, random."
+            "Biocentral model shortcut (repeatable for multi-model).\n"
+            "Models: prot_t5, prost_t5, esm2_8m, esm2_650m, esm2_3b, "
+            "one_hot, blosum62, aa_ontology, random."
         ),
         rich_help_panel="Embedding",
     ),
@@ -256,31 +260,38 @@ def prepare(
 
     setup_logging(verbose)
 
+    # --- Parse input paths with optional colon name overrides ---
+    input_specs = _parse_input_specs(input) if input else []
+
     # --- Early exits (FASTA-only) ---
-    if input:
-        from protspace.data.io.fasta import is_fasta_file
+    from protspace.data.io.fasta import is_fasta_file
 
-        has_fasta = any(is_fasta_file(p) for p in input if not p.is_dir())
-    else:
-        has_fasta = False
+    has_fasta = any(
+        is_fasta_file(spec[0]) for spec in input_specs if not spec[0].is_dir()
+    )
 
-    if (embedder or probe or dry_run) and not has_fasta and not query:
+    # Normalize embedder to a list
+    embedders: list[str] = list(embedder) if embedder else []
+
+    if (embedders or probe or dry_run) and not has_fasta and not query:
         raise typer.BadParameter(
             "--embedder, --probe, and --dry-run require a FASTA input file."
         )
 
-    if has_fasta and embedder is None:
+    if has_fasta and not embedders:
         from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
 
-        embedder = DEFAULT_EMBEDDER
-        logger.info(f"FASTA detected, defaulting embedder to '{embedder}'")
+        embedders = [DEFAULT_EMBEDDER]
+        logger.info(f"FASTA detected, defaulting embedder to '{embedders[0]}'")
 
     if dry_run:
-        _handle_dry_run(input, embedder, batch_size)
+        input_paths = [spec[0] for spec in input_specs]
+        _handle_dry_run(input_paths, embedders[0], batch_size)
         return
 
     if probe:
-        _handle_probe(input, embedder, half_precision)
+        input_paths = [spec[0] for spec in input_specs]
+        _handle_probe(input_paths, embedders[0], half_precision)
         return
 
     # --- Build embedding sets ---
@@ -298,45 +309,52 @@ def prepare(
         if not headers:
             raise typer.BadParameter(f"No sequences found for query: '{query}'")
 
-        if not embedder:
+        if not embedders:
             from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
 
-            embedder = DEFAULT_EMBEDDER
+            embedders = [DEFAULT_EMBEDDER]
 
-        emb_set = embed_fasta(
-            fasta_path,
-            embedder,
-            batch_size=batch_size,
-            half_precision=half_precision,
-            embedding_cache=embedding_cache,
-        )
-        emb_set.fasta_path = fasta_path
-        embedding_sets.append(emb_set)
+        # Embed with each requested model
+        for emb_name in embedders:
+            emb_set = embed_fasta(
+                fasta_path,
+                emb_name,
+                batch_size=batch_size,
+                half_precision=half_precision,
+                embedding_cache=embedding_cache,
+            )
+            emb_set.fasta_path = fasta_path
+            embedding_sets.append(emb_set)
         fasta_for_similarity = fasta_path
 
-    elif input:
-        for path in input:
+    elif input_specs:
+        for path, name_override in input_specs:
             if path.is_dir():
-                # Directory of H5 files — merge into one set
                 h5_files = sorted(
                     f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
                 )
                 if not h5_files:
                     logger.warning(f"No embedding files found in: {path}")
                     continue
-                embedding_sets.append(load_h5(h5_files))
-            elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
-                embedding_sets.append(load_h5([path]))
-            elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
-                emb_set = embed_fasta(
-                    path,
-                    embedder,
-                    batch_size=batch_size,
-                    half_precision=half_precision,
-                    embedding_cache=embedding_cache,
+                embedding_sets.append(
+                    load_h5(h5_files, name_override=name_override)
                 )
-                emb_set.fasta_path = path
-                embedding_sets.append(emb_set)
+            elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
+                embedding_sets.append(
+                    load_h5([path], name_override=name_override)
+                )
+            elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
+                # Embed with each requested model
+                for emb_name in embedders:
+                    emb_set = embed_fasta(
+                        path,
+                        emb_name,
+                        batch_size=batch_size,
+                        half_precision=half_precision,
+                        embedding_cache=embedding_cache,
+                    )
+                    emb_set.fasta_path = path
+                    embedding_sets.append(emb_set)
                 fasta_for_similarity = path
             else:
                 raise typer.BadParameter(f"Unsupported file type: {path}")
@@ -418,6 +436,46 @@ def prepare(
     except (FileNotFoundError, ValueError) as e:
         logger.error(str(e))
         raise typer.Exit(1) from e
+
+
+# ---------------------------------------------------------------------------
+# Input parsing helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_input_specs(raw_inputs: list[str]) -> list[tuple[Path, str | None]]:
+    """Parse input arguments, supporting colon syntax for name overrides.
+
+    Examples:
+        "file.h5"           → (Path("file.h5"), None)
+        "file.h5:esm2_3b"  → (Path("file.h5"), "esm2_3b")
+        "/abs/path.h5"     → (Path("/abs/path.h5"), None)
+        "C:\\file.h5:name"  → handled correctly on Windows
+    """
+    specs: list[tuple[Path, str | None]] = []
+    for raw in raw_inputs:
+        # Split on last colon, but only if the part before it looks like a file path
+        # Avoid splitting drive letters on Windows (e.g. C:\path)
+        if ":" in raw:
+            # Find the last colon
+            last_colon = raw.rfind(":")
+            path_part = raw[:last_colon]
+            name_part = raw[last_colon + 1:]
+
+            # Only treat as name override if path_part looks like a file
+            # and name_part is non-empty and doesn't look like a path
+            if (
+                name_part
+                and not name_part.startswith("/")
+                and not name_part.startswith("\\")
+                and Path(path_part).suffix  # has an extension
+            ):
+                specs.append((Path(path_part), name_part))
+            else:
+                specs.append((Path(raw), None))
+        else:
+            specs.append((Path(raw), None))
+    return specs
 
 
 # ---------------------------------------------------------------------------
