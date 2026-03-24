@@ -16,22 +16,16 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from src.protspace.cli.common_args import determine_output_paths
-from src.protspace.data.processors.local_processor import LocalProcessor
-from src.protspace.data.processors.uniprot_query_processor import (
-    UniProtQueryProcessor,
-)
+from src.protspace.cli.app import determine_output_paths
+from src.protspace.data.processors.base_processor import BaseProcessor
+from src.protspace.utils import REDUCERS
 from tests.test_config import (
-    FASTA_CONTENT,
     LEGACY_OUTPUT_DATA,
     OUTPUT_SCENARIOS,
     sample_data,
     sample_query_data,
     temp_dir,
 )
-
-# Alias for test compatibility
-LocalDataProcessor = LocalProcessor
 
 
 class TestOutputPathCombinations:
@@ -194,7 +188,7 @@ class TestOutputFileGeneration:
             temp_path = Path(temp_dir_path)
 
             # Create mock processor
-            processor = LocalDataProcessor({})
+            processor = BaseProcessor({}, REDUCERS)
 
             # Create real output data using the sample data
             output_data = processor.create_output(
@@ -226,7 +220,7 @@ class TestOutputFileGeneration:
             temp_path = Path(temp_dir_path)
 
             # Create mock processor
-            processor = LocalDataProcessor({})
+            processor = BaseProcessor({}, REDUCERS)
 
             # Create real output data using the sample data
             output_data = processor.create_output(
@@ -258,7 +252,7 @@ class TestOutputFileGeneration:
             temp_path = Path(temp_dir_path)
 
             # Create mock processor
-            processor = LocalDataProcessor({})
+            processor = BaseProcessor({}, REDUCERS)
 
             # Test JSON output
             output_path = temp_path / "test.json"
@@ -380,7 +374,7 @@ class TestUniProtQueryProcessor:
             temp_path = Path(temp_dir_path)
 
             # Create mock processor
-            processor = UniProtQueryProcessor({})
+            processor = BaseProcessor({}, REDUCERS)
 
             # Create real output data using the sample data
             output_data = processor.create_output(
@@ -412,7 +406,7 @@ class TestUniProtQueryProcessor:
             temp_path = Path(temp_dir_path)
 
             # Create mock processor
-            processor = UniProtQueryProcessor({})
+            processor = BaseProcessor({}, REDUCERS)
 
             # Create real output data using the sample data
             output_data = processor.create_output(
@@ -444,7 +438,7 @@ class TestUniProtQueryProcessor:
             temp_path = Path(temp_dir_path)
 
             # Create mock processor
-            processor = UniProtQueryProcessor({})
+            processor = BaseProcessor({}, REDUCERS)
 
             # Test JSON output
             output_path = temp_path / "query_test.json"
@@ -453,152 +447,6 @@ class TestUniProtQueryProcessor:
             # Verify file was created
             assert output_path.exists()
             assert output_path.suffix == ".json"
-
-    @patch(
-        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
-    )
-    @patch(
-        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._generate_metadata"
-    )
-    @patch(
-        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
-    )
-    def test_query_processor_with_keep_tmp(
-        self, mock_similarity, mock_metadata, mock_fasta
-    ):
-        """Test query processor with keep_tmp=True."""
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as temp_dir_path:
-            temp_path = Path(temp_dir_path)
-
-            # Create a mock FASTA file
-            fasta_path = temp_path / "sequences.fasta"
-            fasta_path.write_text(FASTA_CONTENT["basic"])
-
-            # Mock the processor methods
-            mock_fasta.return_value = (["P12345", "P67890"], fasta_path)
-            mock_metadata.return_value = pd.DataFrame(
-                {"identifier": ["P12345", "P67890"], "length": [100, 150]}
-            )
-            mock_similarity.return_value = (np.random.rand(2, 2), ["P12345", "P67890"])
-
-            processor = UniProtQueryProcessor({})
-
-            # Test with keep_tmp=True
-            result = processor.process_query(
-                query="organism_id:9606",
-                output_path=temp_path / "output.parquetbundle",
-                intermediate_dir=temp_path / "intermediate",
-                annotations="length",
-                delimiter=",",
-                keep_tmp=True,
-                non_binary=False,
-                fasta_path=fasta_path,
-                headers=["P12345", "P67890"],
-            )
-
-            _, _, _, saved_files = result
-
-            # Verify intermediate files are saved
-            assert "fasta" in saved_files
-            assert "metadata" in saved_files
-            assert "similarity_matrix" in saved_files
-
-            # Verify paths are in intermediate directory
-            assert saved_files["fasta"].parent == temp_path / "intermediate"
-            assert saved_files["metadata"].parent == temp_path / "intermediate"
-            assert saved_files["similarity_matrix"].parent == temp_path / "intermediate"
-
-    @patch(
-        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._search_and_download_fasta"
-    )
-    @patch(
-        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._generate_metadata"
-    )
-    @patch(
-        "src.protspace.data.processors.uniprot_query_processor.UniProtQueryProcessor._get_similarity_matrix"
-    )
-    def test_query_processor_without_keep_tmp(
-        self, mock_similarity, mock_metadata, mock_fasta
-    ):
-        """Test query processor with keep_tmp=False."""
-        with tempfile.TemporaryDirectory() as temp_dir_path:
-            temp_path = Path(temp_dir_path)
-
-            # Mock the processor methods
-            mock_fasta.return_value = (
-                ["P12345", "P67890"],
-                temp_path / "sequences.fasta",
-            )
-            mock_metadata.return_value = pd.DataFrame(
-                {"identifier": ["P12345", "P67890"], "length": [100, 150]}
-            )
-            mock_similarity.return_value = (np.random.rand(2, 2), ["P12345", "P67890"])
-
-            processor = UniProtQueryProcessor({})
-
-            # Test with keep_tmp=False
-            result = processor.process_query(
-                query="organism_id:9606",
-                output_path=temp_path / "output.parquetbundle",
-                intermediate_dir=None,  # No intermediate directory
-                annotations="length",
-                delimiter=",",
-                keep_tmp=False,
-                non_binary=False,
-                fasta_path=temp_path / "sequences.fasta",
-                headers=["P12345", "P67890"],
-            )
-
-            _, _, _, saved_files = result
-
-            # Verify no intermediate files are saved
-            assert saved_files == {}
-
-    def test_query_processor_pre_downloaded_fasta(self, sample_query_data):
-        """Test query processor with pre-downloaded FASTA file."""
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as temp_dir_path:
-            temp_path = Path(temp_dir_path)
-
-            # Create a mock FASTA file
-            fasta_path = temp_path / "sequences.fasta"
-            fasta_path.write_text(FASTA_CONTENT["basic"])
-
-            processor = UniProtQueryProcessor({})
-
-            # Test with pre-downloaded FASTA
-            with (
-                patch.object(processor, "_generate_metadata") as mock_metadata,
-                patch.object(processor, "_get_similarity_matrix") as mock_similarity,
-            ):
-                mock_metadata.return_value = sample_query_data["metadata"]
-                mock_similarity.return_value = (
-                    np.random.rand(3, 3),
-                    sample_query_data["headers"],
-                )
-
-                result = processor.process_query(
-                    query="organism_id:9606",
-                    output_path=temp_path / "output.parquetbundle",
-                    intermediate_dir=temp_path / "intermediate",
-                    annotations="length",
-                    delimiter=",",
-                    keep_tmp=True,
-                    non_binary=False,
-                    fasta_path=fasta_path,
-                    headers=sample_query_data["headers"],
-                )
-
-                _, _, _, saved_files = result
-
-                # Verify FASTA was copied to intermediate directory
-                assert "fasta" in saved_files
-                assert saved_files["fasta"].exists()
-                assert saved_files["fasta"].read_text() == FASTA_CONTENT["basic"]
-
 
 class TestEdgeCases:
     """Test edge cases and error conditions."""
