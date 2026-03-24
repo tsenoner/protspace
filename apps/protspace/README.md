@@ -37,15 +37,31 @@ pip install protspace
 
 ## 🎯 Quick Start
 
-### 1. Process local data
+### 1. Prepare data
 
 ```bash
-protspace-local -i embeddings.h5 -o output_dir -m pca2,umap2
+# From HDF5 embeddings
+protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
+
+# From FASTA (auto-embeds via Biocentral API)
+protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
+
+# Multi-model comparison
+protspace prepare -i sequences.fasta -e prot_t5 -e esm2_3b -m pca2,umap2 -o output
 ```
 
 ### 2. Explore results
 
 Upload the generated `.parquetbundle` file at [protspace.app/explore](https://protspace.app/explore).
+
+### 3. Power-user workflow (individual steps)
+
+```bash
+protspace embed -i sequences.fasta -e prot_t5 -e esm2_3b -o embeddings/
+protspace project -i embeddings/prot_t5.h5 -i embeddings/esm2_3b.h5 -m pca2,umap2 -o projections/
+protspace annotate -i embeddings/prot_t5.h5 -a default -o annotations.parquet
+protspace bundle -p projections/ -a annotations.parquet -o output.parquetbundle
+```
 
 ## 📊 Example Output
 
@@ -56,8 +72,8 @@ Upload the generated `.parquetbundle` file at [protspace.app/explore](https://pr
 Use `-a` to color-code proteins by UniProt, InterPro, or Taxonomy annotations. Groups (`default`, `all`, `uniprot`, `interpro`, `taxonomy`) and individual names can be mixed freely. If `-a` is omitted, the `default` group is used.
 
 ```bash
-protspace-local -i data.h5                              # default UniProt annotations (fast)
-protspace-local -i data.h5 -a default,interpro,kingdom  # mix groups and individual names
+protspace prepare -i data.h5 -m pca2                              # default annotations
+protspace prepare -i data.h5 -a default,interpro,kingdom -m pca2  # mix groups + individual
 ```
 
 ## 📖 Documentation
