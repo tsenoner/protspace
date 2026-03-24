@@ -2,7 +2,7 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Version:** 3.3.1
+- **Version:** 4.0.0
 - **Python:** >=3.10
 - **License:** GPL-3.0
 - **PyPI:** `pip install protspace`
@@ -28,32 +28,38 @@ uv run ruff check src/ tests/
 # Run scripts
 uv run python scripts/biocentral_embed.py --help
 
-# Run CLI entry points
-uv run protspace-local -i data/sizes/phosphatase.h5 -m pca2 -o output --no-scores
+# Run CLI
+uv run protspace prepare -i data/sizes/phosphatase.h5 -m pca2 -o output --no-scores
 
 # Run all 6 DR methods on sample data
-uv run protspace-local -i data/sizes/phosphatase.h5 -m "pca2,tsne2,umap2,pacmap2,mds2,localmap2" -o output --no-scores -v
+uv run protspace prepare -i data/sizes/phosphatase.h5 -m "pca2,tsne2,umap2,pacmap2,mds2,localmap2" -o output --no-scores -v
 ```
 
-## CLI Entry Points
+## CLI Commands
 
-| Command | Module | Purpose |
-|---------|--------|---------|
-| `protspace` | `protspace.main:run` | Launch Dash web frontend |
-| `protspace-local` | `protspace.cli.local_data:main` | DR on local HDF5 embeddings |
-| `protspace-query` | `protspace.cli.uniprot_query:main` | Fetch from UniProt + DR |
-| `protspace-annotation-colors` | `protspace.utils.add_annotation_style:main` | Add annotation styling to bundles |
+Single entry point: `protspace = protspace.cli.app:app`
 
-### protspace-local Usage
+| Command | Purpose |
+|---------|---------|
+| `protspace prepare` | Full pipeline: embed → reduce → annotate → bundle |
+| `protspace embed` | FASTA → HDF5 embeddings via Biocentral API |
+| `protspace project` | HDF5 → dimensionality reduction |
+| `protspace annotate` | Fetch protein annotations |
+| `protspace bundle` | Combine projections + annotations → .parquetbundle |
+| `protspace serve` | Launch Dash web frontend |
+| `protspace style` | Add annotation colors/styles |
+
+### protspace prepare Usage
 
 ```bash
-protspace-local -i <input.h5> -m <methods> -o <output> [options]
+protspace prepare -i <input> -m <methods> -o <output> [options]
 
-# Method format: name + dimensions (e.g., pca2, umap3)
-# Multiple methods: comma-separated (e.g., "pca2,umap2,tsne2")
-# --no-scores    Skip annotation score computation
-# -a <annots>    Comma-separated annotation names or CSV file path
-# -v / -vv       Verbose / debug logging
+# From HDF5: protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
+# From FASTA: protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
+# Multi-model: protspace prepare -i seq.fasta -e prot_t5 -e esm2_3b -m pca2 -o output
+# Multi-embedding: protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
+# With similarity: protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
+# Name override: protspace prepare -i emb.h5:custom_name -m pca2 -o output
 ```
 
 ## Package Structure
@@ -61,10 +67,21 @@ protspace-local -i <input.h5> -m <methods> -o <output> [options]
 ```
 src/protspace/
 ├── cli/
-│   ├── common_args.py          # Shared CLI argument definitions
-│   ├── local_data.py           # protspace-local entry point
-│   └── uniprot_query.py        # protspace-query entry point
+│   ├── app.py                  # Typer app root, shared utilities
+│   ├── prepare.py              # Full pipeline command
+│   ├── embed.py                # FASTA → HDF5 embedding
+│   ├── project.py              # HDF5 → DR projections
+│   ├── annotate.py             # Annotation fetching
+│   ├── bundle.py               # Combine into .parquetbundle
+│   ├── serve.py                # Dash web frontend
+│   └── style.py                # Annotation styling
 ├── data/
+│   ├── loaders/
+│   │   ├── embedding_set.py    # EmbeddingSet dataclass
+│   │   ├── h5.py               # HDF5 loading with model_name resolution
+│   │   ├── fasta.py            # FASTA → Biocentral → HDF5
+│   │   ├── query.py            # UniProt query → FASTA download
+│   │   └── similarity.py       # FASTA → MMseqs2 → similarity matrix
 │   ├── annotations/
 │   │   ├── configuration.py    # Annotation category definitions
 │   │   ├── manager.py          # ProteinAnnotationManager orchestrator
@@ -81,9 +98,8 @@ src/protspace/
 │   ├── parsers/
 │   │   └── uniprot_parser.py   # UniProt XML/TSV parsing
 │   └── processors/
-│       ├── base_processor.py   # BaseProcessor — DR pipeline + output creation
-│       ├── local_processor.py  # LocalProcessor — HDF5 loading + annotation fetch
-│       └── uniprot_query_processor.py  # UniProt query + similarity matrix
+│       ├── base_processor.py   # BaseProcessor — DR + output creation core
+│       └── pipeline.py         # ReductionPipeline — unified orchestrator
 ├── utils/
 │   ├── __init__.py             # Exports REDUCERS dict, DimensionReductionConfig
 │   ├── reducers.py             # All DR method implementations + annoy fallback
