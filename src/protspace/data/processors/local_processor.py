@@ -8,13 +8,14 @@ import pandas as pd
 
 from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.io.fasta import FASTA_EXTENSIONS, parse_fasta
+from protspace.data.loaders.h5 import (
+    EMBEDDING_EXTENSIONS,
+    _collect_datasets,
+)
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 
 logger = logging.getLogger(__name__)
-
-# Validation and configuration
-EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}  # file extensions
 
 
 class LocalProcessor(BaseProcessor):
@@ -52,20 +53,9 @@ class LocalProcessor(BaseProcessor):
     ) -> list[tuple[str, h5py.Dataset]]:
         """Collect (name, dataset) pairs from an HDF5 file.
 
-        Handles both flat layouts (datasets at root) and one level of groups
-        (e.g. group/dataset).
+        Delegates to data.loaders.h5._collect_datasets.
         """
-        pairs: list[tuple[str, h5py.Dataset]] = []
-        for key, item in hdf_handle.items():
-            if isinstance(item, h5py.Group):
-                # Recurse one level into groups
-                for sub_key, sub_item in item.items():
-                    if not isinstance(sub_item, h5py.Group):
-                        pairs.append((sub_key, sub_item))
-            else:
-                # h5py.Dataset or array-like (e.g. in tests)
-                pairs.append((key, item))
-        return pairs
+        return _collect_datasets(hdf_handle)
 
     def _load_h5_files(self, h5_files: list[Path]) -> tuple[np.ndarray, list[str]]:
         """
