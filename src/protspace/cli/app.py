@@ -133,7 +133,15 @@ def parse_custom_names(custom_names_arg: str | None) -> dict:
 
 def _register_commands() -> None:
     """Register all subcommands on the typer app."""
-    from protspace.cli import prepare, serve, style  # noqa: F401
+    from protspace.cli import (  # noqa: F401
+        annotate,
+        bundle,
+        embed,
+        prepare,
+        project,
+        serve,
+        style,
+    )
 
 
 # Defer registration until the app module is fully loaded
