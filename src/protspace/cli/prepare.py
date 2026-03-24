@@ -5,7 +5,6 @@ and outputs a .parquetbundle for visualization at protspace.app.
 """
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -53,6 +52,7 @@ Opt_Fasta = Annotated[
         rich_help_panel="Input",
     ),
 ]
+
 # Embedding
 Opt_Embedder = Annotated[
     str | None,
@@ -256,103 +256,15 @@ def prepare(
 
     setup_logging(verbose)
 
-    if similarity:
-        logger.warning("--similarity is not yet implemented, ignoring.")
-    if fasta:
-        logger.warning("--fasta is not yet implemented, ignoring.")
+    # --- Early exits (FASTA-only) ---
+    if input:
+        from protspace.data.io.fasta import is_fasta_file
 
-    # Delegate to existing processors (replaced by ReductionPipeline later)
-    if query:
-        _run_query_pipeline(
-            query=query,
-            methods=methods,
-            annotations=annotations,
-            output=output,
-            non_binary=non_binary,
-            bundled=bundled,
-            keep_tmp=keep_tmp,
-            no_scores=no_scores,
-            force_refetch=force_refetch,
-            custom_names_str=custom_names,
-            metric=metric,
-            random_state=random_state,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            perplexity=perplexity,
-            learning_rate=learning_rate,
-            mn_ratio=mn_ratio,
-            fp_ratio=fp_ratio,
-            n_init=n_init,
-            max_iter=max_iter,
-            eps=eps,
-        )
+        has_fasta = any(is_fasta_file(p) for p in input if not p.is_dir())
     else:
-        _run_local_pipeline(
-            input_paths=input,
-            methods=methods,
-            annotations=annotations,
-            output=output,
-            non_binary=non_binary,
-            bundled=bundled,
-            keep_tmp=keep_tmp,
-            no_scores=no_scores,
-            force_refetch=force_refetch,
-            custom_names_str=custom_names,
-            dump_cache=dump_cache,
-            embedder=embedder,
-            batch_size=batch_size,
-            half_precision=half_precision,
-            embedding_cache=embedding_cache,
-            probe=probe,
-            dry_run=dry_run,
-            metric=metric,
-            random_state=random_state,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            perplexity=perplexity,
-            learning_rate=learning_rate,
-            mn_ratio=mn_ratio,
-            fp_ratio=fp_ratio,
-            n_init=n_init,
-            max_iter=max_iter,
-            eps=eps,
-        )
+        has_fasta = False
 
-
-# ---------------------------------------------------------------------------
-# Internal: bridge to existing processor code (replaced by pipeline later)
-# ---------------------------------------------------------------------------
-
-
-def _run_local_pipeline(
-    *,
-    input_paths: list[Path],
-    methods: str,
-    annotations: list[str] | None,
-    output: Path | None,
-    non_binary: bool,
-    bundled: bool,
-    keep_tmp: bool,
-    no_scores: bool,
-    force_refetch: bool,
-    custom_names_str: str | None,
-    dump_cache: bool,
-    embedder: str | None,
-    batch_size: int,
-    half_precision: bool,
-    embedding_cache: Path | None,
-    probe: bool,
-    dry_run: bool,
-    **reducer_params,
-) -> None:
-    """Bridge to existing LocalProcessor."""
-    from protspace.data.annotations.scores import strip_scores_from_df
-    from protspace.data.io.fasta import is_fasta_file
-    from protspace.data.processors.local_processor import LocalProcessor
-
-    has_fasta = any(is_fasta_file(p) for p in input_paths if not p.is_dir())
-
-    if (embedder or probe or dry_run) and not has_fasta:
+    if (embedder or probe or dry_run) and not has_fasta and not query:
         raise typer.BadParameter(
             "--embedder, --probe, and --dry-run require a FASTA input file."
         )
@@ -364,209 +276,189 @@ def _run_local_pipeline(
         logger.info(f"FASTA detected, defaulting embedder to '{embedder}'")
 
     if dry_run:
-        from protspace.data.embedding.biocentral import resolve_embedder
-        from protspace.data.io.fasta import parse_fasta
-
-        fasta_path = next(p for p in input_paths if is_fasta_file(p))
-        sequences = parse_fasta(fasta_path)
-        if not sequences:
-            typer.echo(f"No sequences found in {fasta_path}")
-            return
-        lengths = [len(s) for s in sequences.values()]
-        resolved = resolve_embedder(embedder)
-        typer.echo(f"FASTA:      {fasta_path}")
-        typer.echo(f"Sequences:  {len(sequences):,}")
-        typer.echo(
-            f"Lengths:    min={min(lengths)}, "
-            f"median={sorted(lengths)[len(lengths) // 2]}, "
-            f"max={max(lengths)}"
-        )
-        typer.echo(f"Embedder:   {resolved}")
-        typer.echo(f"Batches:    {(len(sequences) + batch_size - 1) // batch_size}")
+        _handle_dry_run(input, embedder, batch_size)
         return
 
     if probe:
-        from protspace.data.embedding.biocentral import probe_embedder, resolve_embedder
-        from protspace.data.io.fasta import parse_fasta
-
-        fasta_path = next(p for p in input_paths if is_fasta_file(p))
-        sequences = parse_fasta(fasta_path)
-        if not sequences:
-            typer.echo(f"No sequences found in {fasta_path}")
-            return
-        resolved = resolve_embedder(embedder)
-        probe_embedder(sequences, resolved, half_precision=half_precision)
+        _handle_probe(input, embedder, half_precision)
         return
 
-    custom_names = parse_custom_names(custom_names_str)
+    # --- Build embedding sets ---
+    from protspace.data.loaders import EmbeddingSet, embed_fasta, load_h5
+    from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
+    from protspace.data.loaders.query import query_uniprot
 
-    config = {
-        "custom_names": custom_names,
-        "embedder": embedder,
-        "batch_size": batch_size,
-        "half_precision": half_precision,
-        "embedding_cache": embedding_cache,
-        **reducer_params,
-    }
+    embedding_sets: list[EmbeddingSet] = []
+    primary_input_path: Path | None = None
+    fasta_for_similarity: Path | None = fasta
 
-    intermediate_dir = None
-    try:
-        processor = LocalProcessor(config)
-        data, headers = processor.load_input_files(input_paths)
+    if query:
+        # UniProt query mode
+        headers, fasta_path = query_uniprot(query)
+        if not headers:
+            raise typer.BadParameter(f"No sequences found for query: '{query}'")
 
-        output_path, intermediate_dir = determine_output_paths(
-            output_arg=output,
-            input_path=input_paths[0],
-            non_binary=non_binary,
-            bundled=bundled,
-            keep_tmp=keep_tmp,
-            identifiers=headers if keep_tmp else None,
+        if not embedder:
+            from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
+
+            embedder = DEFAULT_EMBEDDER
+
+        emb_set = embed_fasta(
+            fasta_path,
+            embedder,
+            batch_size=batch_size,
+            half_precision=half_precision,
+            embedding_cache=embedding_cache,
         )
+        emb_set.fasta_path = fasta_path
+        embedding_sets.append(emb_set)
+        fasta_for_similarity = fasta_path
 
-        logger.info(f"Output will be saved to: {output_path}")
-
-        if dump_cache:
-            if not intermediate_dir:
-                logger.error("No cache directory. Run with --keep-tmp first.")
-                raise typer.Exit(1)
-            cache_path = intermediate_dir / "all_annotations.parquet"
-            if cache_path.exists():
-                df = pd.read_parquet(cache_path)
-                typer.echo(df.to_csv(index=False))
+    elif input:
+        for path in input:
+            if path.is_dir():
+                # Directory of H5 files — merge into one set
+                h5_files = sorted(
+                    f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
+                )
+                if not h5_files:
+                    logger.warning(f"No embedding files found in: {path}")
+                    continue
+                embedding_sets.append(load_h5(h5_files))
+            elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
+                embedding_sets.append(load_h5([path]))
+            elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
+                emb_set = embed_fasta(
+                    path,
+                    embedder,
+                    batch_size=batch_size,
+                    half_precision=half_precision,
+                    embedding_cache=embedding_cache,
+                )
+                emb_set.fasta_path = path
+                embedding_sets.append(emb_set)
+                fasta_for_similarity = path
             else:
-                logger.error(f"No cache found at {cache_path}.")
-            return
+                raise typer.BadParameter(f"Unsupported file type: {path}")
 
-        metadata = processor.load_or_generate_metadata(
-            headers=headers,
-            annotations=annotations,
-            intermediate_dir=intermediate_dir,
-            delimiter=",",
-            non_binary=non_binary,
-            keep_tmp=keep_tmp,
-            force_refetch=force_refetch,
-        )
+            if primary_input_path is None:
+                primary_input_path = path
 
-        if no_scores:
-            metadata = strip_scores_from_df(metadata)
+    if not embedding_sets:
+        raise typer.BadParameter("No valid input data found.")
 
-        full_metadata = pd.DataFrame({"identifier": headers})
-        if len(metadata.columns) > 1:
-            metadata = metadata.astype(str)
-            id_col = metadata.columns[0]
-            if id_col != "identifier":
-                metadata = metadata.rename(columns={id_col: "identifier"})
-            full_metadata = full_metadata.merge(
-                metadata.drop_duplicates("identifier"),
-                on="identifier",
-                how="left",
+    # --- Sequence similarity ---
+    if similarity:
+        if fasta_for_similarity is None:
+            raise typer.BadParameter(
+                "--similarity requires a FASTA file. "
+                "Use -f/--fasta when input is HDF5."
             )
-        metadata = full_metadata
+        from protspace.data.loaders import compute_similarity
 
-        methods_list = methods.split(",")
-        reductions = []
-        for method_spec in methods_list:
-            method = "".join(filter(str.isalpha, method_spec))
-            dims = int("".join(filter(str.isdigit, method_spec)))
-            if method not in processor.reducers:
-                logger.warning(f"Unknown method: {method}. Skipping.")
-                continue
-            logger.info(f"Applying {method.upper()}{dims} reduction")
-            reductions.append(processor.process_reduction(data, method, dims))
+        sim_set = compute_similarity(
+            fasta_for_similarity, embedding_sets[0].headers
+        )
+        embedding_sets.append(sim_set)
 
-        if non_binary:
-            out = processor.create_output_legacy(metadata, reductions, headers)
-            processor.save_output_legacy(out, output_path)
-        else:
-            out = processor.create_output(metadata, reductions, headers)
-            processor.save_output(out, output_path, bundled=bundled)
-
-        logger.info(f"Processed {len(headers)} items with {len(methods_list)} methods")
-        logger.info(f"Output saved to: {output_path}")
-
-        if not keep_tmp and intermediate_dir and intermediate_dir.exists():
-            shutil.rmtree(intermediate_dir)
-
-    except (FileNotFoundError, ValueError) as e:
-        if not keep_tmp and intermediate_dir and intermediate_dir.exists():
-            shutil.rmtree(intermediate_dir)
-        logger.error(str(e))
-        raise typer.Exit(1) from e
-    except Exception as e:
-        if not keep_tmp and intermediate_dir and intermediate_dir.exists():
-            shutil.rmtree(intermediate_dir)
-        logger.error(str(e))
-        raise typer.Exit(1) from e
-
-
-def _run_query_pipeline(
-    *,
-    query: str,
-    methods: str,
-    annotations: list[str] | None,
-    output: Path | None,
-    non_binary: bool,
-    bundled: bool,
-    keep_tmp: bool,
-    no_scores: bool,
-    force_refetch: bool,
-    custom_names_str: str | None,
-    **reducer_params,
-) -> None:
-    """Bridge to existing UniProtQueryProcessor."""
-    from protspace.data.annotations.scores import strip_scores_from_df
-    from protspace.data.processors.uniprot_query_processor import (
-        UniProtQueryProcessor,
-    )
-
-    custom_names = parse_custom_names(custom_names_str)
-
-    config = {
-        "custom_names": custom_names,
-        **reducer_params,
-    }
-
+    # --- Determine output paths ---
     output_path, intermediate_dir = determine_output_paths(
         output_arg=output,
-        input_path=None,
+        input_path=primary_input_path,
         non_binary=non_binary,
         bundled=bundled,
         keep_tmp=keep_tmp,
+        identifiers=embedding_sets[0].headers if keep_tmp else None,
     )
 
-    processor = UniProtQueryProcessor(config)
-    metadata, similarity_matrix, headers, _ = processor.process_query(
-        query=query,
+    # --- Dump cache early exit ---
+    if dump_cache:
+        if not intermediate_dir:
+            logger.error("No cache directory. Run with --keep-tmp first.")
+            raise typer.Exit(1)
+        cache_path = intermediate_dir / "all_annotations.parquet"
+        if cache_path.exists():
+            df = pd.read_parquet(cache_path)
+            typer.echo(df.to_csv(index=False))
+        else:
+            logger.error(f"No cache found at {cache_path}.")
+        return
+
+    # --- Run pipeline ---
+    from protspace.data.processors.pipeline import PipelineConfig, ReductionPipeline
+
+    config = PipelineConfig(
+        methods=methods.split(","),
         output_path=output_path,
-        intermediate_dir=intermediate_dir,
-        annotations=annotations,
+        bundled=bundled,
         non_binary=non_binary,
         keep_tmp=keep_tmp,
+        no_scores=no_scores,
         force_refetch=force_refetch,
+        annotations=annotations,
+        intermediate_dir=intermediate_dir,
+        custom_names=parse_custom_names(custom_names),
+        reducer_params={
+            "metric": metric,
+            "random_state": random_state,
+            "n_neighbors": n_neighbors,
+            "min_dist": min_dist,
+            "perplexity": perplexity,
+            "learning_rate": learning_rate,
+            "mn_ratio": mn_ratio,
+            "fp_ratio": fp_ratio,
+            "n_init": n_init,
+            "max_iter": max_iter,
+            "eps": eps,
+        },
     )
 
-    if no_scores:
-        metadata = strip_scores_from_df(metadata)
+    try:
+        ReductionPipeline(config).run(embedding_sets)
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(str(e))
+        raise typer.Exit(1) from e
 
-    methods_list = methods.split(",")
-    reductions = []
-    for method_spec in methods_list:
-        method = "".join(filter(str.isalpha, method_spec))
-        dims = int("".join(filter(str.isdigit, method_spec)))
-        if method not in processor.reducers:
-            logger.warning(f"Unknown method: {method}. Skipping.")
-            continue
-        logger.info(f"Applying {method.upper()}{dims} reduction")
-        reductions.append(
-            processor.process_reduction(similarity_matrix, method, dims)
-        )
 
-    if non_binary:
-        out = processor.create_output_legacy(metadata, reductions, headers)
-        processor.save_output_legacy(out, output_path)
-    else:
-        out = processor.create_output(metadata, reductions, headers)
-        processor.save_output(out, output_path, bundled=bundled)
+# ---------------------------------------------------------------------------
+# Early exit helpers
+# ---------------------------------------------------------------------------
 
-    logger.info(f"Processed {len(headers)} items with {len(methods_list)} methods")
-    logger.info(f"Output saved to: {output_path}")
+
+def _handle_dry_run(
+    input_paths: list[Path], embedder: str, batch_size: int
+) -> None:
+    from protspace.data.embedding.biocentral import resolve_embedder
+    from protspace.data.io.fasta import is_fasta_file, parse_fasta
+
+    fasta_path = next(p for p in input_paths if is_fasta_file(p))
+    sequences = parse_fasta(fasta_path)
+    if not sequences:
+        typer.echo(f"No sequences found in {fasta_path}")
+        return
+    lengths = [len(s) for s in sequences.values()]
+    resolved = resolve_embedder(embedder)
+    typer.echo(f"FASTA:      {fasta_path}")
+    typer.echo(f"Sequences:  {len(sequences):,}")
+    typer.echo(
+        f"Lengths:    min={min(lengths)}, "
+        f"median={sorted(lengths)[len(lengths) // 2]}, "
+        f"max={max(lengths)}"
+    )
+    typer.echo(f"Embedder:   {resolved}")
+    typer.echo(f"Batches:    {(len(sequences) + batch_size - 1) // batch_size}")
+
+
+def _handle_probe(
+    input_paths: list[Path], embedder: str, half_precision: bool
+) -> None:
+    from protspace.data.embedding.biocentral import probe_embedder, resolve_embedder
+    from protspace.data.io.fasta import is_fasta_file, parse_fasta
+
+    fasta_path = next(p for p in input_paths if is_fasta_file(p))
+    sequences = parse_fasta(fasta_path)
+    if not sequences:
+        typer.echo(f"No sequences found in {fasta_path}")
+        return
+    resolved = resolve_embedder(embedder)
+    probe_embedder(sequences, resolved, half_precision=half_precision)

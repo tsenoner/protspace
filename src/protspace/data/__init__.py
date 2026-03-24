@@ -11,15 +11,15 @@ from protspace.data.annotations import (  # Annotations
 )
 from protspace.data.processors import (  # Processors
     BaseProcessor,
-    LocalProcessor,
-    UniProtQueryProcessor,
+    PipelineConfig,
+    ReductionPipeline,
 )
 
 __all__ = [
     # Processors
     "BaseProcessor",
-    "LocalProcessor",
-    "UniProtQueryProcessor",
+    "PipelineConfig",
+    "ReductionPipeline",
     # Annotations
     "ProteinAnnotationManager",
     "AnnotationConfiguration",
