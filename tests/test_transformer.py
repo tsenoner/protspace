@@ -653,6 +653,111 @@ class TestEcNameMapParsing:
         assert result == {}
 
 
+class TestEnzclassParsing:
+    """Test parsing of ExPASy enzclass.txt format."""
+
+    def test_parse_enzclass_basic(self):
+        """Test basic enzclass.txt parsing with all three hierarchy levels."""
+        text = (
+            "1. -. -.-  Oxidoreductases.\n"
+            "1. 1. -.-   Acting on the CH-OH group of donors.\n"
+            "1. 1. 1.-    With NAD(+) or NADP(+) as acceptor.\n"
+        )
+        result = UniProtTransformer._parse_enzclass_txt(text)
+        assert result == {
+            "1.-.-.-": "Oxidoreductases",
+            "1.1.-.-": "Acting on the CH-OH group of donors",
+            "1.1.1.-": "With NAD(+) or NADP(+) as acceptor",
+        }
+
+    def test_parse_enzclass_skips_headers(self):
+        """Test that header/separator lines are skipped."""
+        text = (
+            "---\n"
+            "  ENZYME nomenclature database\n"
+            "\n"
+            "1. -. -.-  Oxidoreductases.\n"
+        )
+        result = UniProtTransformer._parse_enzclass_txt(text)
+        assert result == {"1.-.-.-": "Oxidoreductases"}
+
+    def test_parse_enzclass_two_digit_subclass(self):
+        """Test parsing of two-digit sub-subclass numbers."""
+        text = "3. 4.21.-    Serine endopeptidases.\n"
+        result = UniProtTransformer._parse_enzclass_txt(text)
+        assert result == {"3.4.21.-": "Serine endopeptidases"}
+
+    def test_parse_enzclass_empty(self):
+        """Test parsing empty input."""
+        result = UniProtTransformer._parse_enzclass_txt("")
+        assert result == {}
+
+
+class TestEcPartialNumbers:
+    """Test EC name resolution for partial/incomplete EC numbers."""
+
+    def test_ec_partial_two_level(self):
+        """Test partial EC like 3.4.-.- resolves to class name."""
+        ec_map = {
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+            "3.4.21.1": "Chymotrypsin",
+        }
+        result = UniProtTransformer.transform_ec("3.4.-.-", ec_map)
+        assert result == "3.4.-.- (Acting on peptide bonds (peptidases))"
+
+    def test_ec_partial_three_level(self):
+        """Test partial EC like 3.4.21.- resolves to sub-subclass name."""
+        ec_map = {
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+            "3.4.21.-": "Serine endopeptidases",
+        }
+        result = UniProtTransformer.transform_ec("3.4.21.-", ec_map)
+        assert result == "3.4.21.- (Serine endopeptidases)"
+
+    def test_ec_partial_one_level(self):
+        """Test partial EC like 2.-.-.- resolves to top-level class."""
+        ec_map = {"2.-.-.-": "Transferases"}
+        result = UniProtTransformer.transform_ec("2.-.-.-", ec_map)
+        assert result == "2.-.-.- (Transferases)"
+
+    def test_ec_partial_with_evidence(self):
+        """Test partial EC with evidence code preserved."""
+        ec_map = {"3.4.-.-": "Acting on peptide bonds (peptidases)"}
+        result = UniProtTransformer.transform_ec("3.4.-.-|EXP", ec_map)
+        assert result == "3.4.-.- (Acting on peptide bonds (peptidases))|EXP"
+
+    def test_ec_mixed_partial_and_complete(self):
+        """Test mix of partial and complete EC numbers."""
+        ec_map = {
+            "2.7.11.1": "Non-specific serine/threonine protein kinase",
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+        }
+        result = UniProtTransformer.transform_ec("2.7.11.1;3.4.-.-", ec_map)
+        assert result == (
+            "2.7.11.1 (Non-specific serine/threonine protein kinase);"
+            "3.4.-.- (Acting on peptide bonds (peptidases))"
+        )
+
+    def test_ec_partial_no_match(self):
+        """Test that partial EC with no match stays unchanged."""
+        result = UniProtTransformer.transform_ec("9.-.-.-", {})
+        assert result == "9.-.-.-"
+
+    def test_ec_partial_integrated_in_transformer(self):
+        """Test partial EC resolution through main transformer."""
+        transformer = AnnotationTransformer()
+        transformer._ec_name_map = {
+            "1.1.1.1": "Alcohol dehydrogenase",
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+        }
+        annotations = {"ec": "1.1.1.1;3.4.-.-"}
+        result = transformer._transform_annotations(annotations)
+        assert result["ec"] == (
+            "1.1.1.1 (Alcohol dehydrogenase);"
+            "3.4.-.- (Acting on peptide bonds (peptidases))"
+        )
+
+
 class TestKeywordCombinedFormat:
     """Test that keyword annotations come through in combined id (name) format."""
 

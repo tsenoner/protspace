@@ -7,6 +7,7 @@ raw values into user-friendly formats.
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ExPASy ENZYME database for EC name resolution
 ENZYME_DAT_URL = "https://ftp.expasy.org/databases/enzyme/enzyme.dat"
+ENZCLASS_URL = "https://ftp.expasy.org/databases/enzyme/enzclass.txt"
 ENZYME_CACHE_DIR = Path.home() / ".cache" / "protspace" / "enzyme"
 CACHE_MAX_AGE_DAYS = 7
 
@@ -221,8 +223,17 @@ class UniProtTransformer:
 
             resp = requests.get(ENZYME_DAT_URL, timeout=120)
             resp.raise_for_status()
-
             ec_map = cls._parse_enzyme_dat(resp.text)
+
+            # Also fetch EC class hierarchy for partial EC resolution
+            try:
+                resp_class = requests.get(ENZCLASS_URL, timeout=60)
+                resp_class.raise_for_status()
+                class_map = cls._parse_enzclass_txt(resp_class.text)
+                # Class-level entries first, enzyme.dat entries take precedence
+                ec_map = {**class_map, **ec_map}
+            except Exception as e:
+                logger.warning(f"Failed to download enzclass.txt: {e}")
 
             # Persist cache
             cache_file.write_text(json.dumps(ec_map))
@@ -277,4 +288,35 @@ class UniProtTransformer:
                 current_id = None
                 current_de_parts = []
 
+        return ec_map
+
+    @staticmethod
+    def _parse_enzclass_txt(text: str) -> dict[str, str]:
+        """
+        Parse ExPASy enzclass.txt to extract {ec_number: description} for
+        EC classes, subclasses, and sub-subclasses.
+
+        Each data line looks like:
+            1. -. -.-  Oxidoreductases.
+            1. 1. -.-   Acting on the CH-OH group of donors.
+            1. 1. 1.-    With NAD(+) or NADP(+) as acceptor.
+            3. 4.21.-    Serine endopeptidases.
+
+        Keys are normalized to standard EC format (e.g., "3.4.-.-", "3.4.21.-").
+
+        Args:
+            text: Raw text content of enzclass.txt
+
+        Returns:
+            Dictionary mapping partial EC numbers to class names
+        """
+        ec_map: dict[str, str] = {}
+        for line in text.splitlines():
+            m = re.match(r"^([\d\s.\-]+?)\s{2,}(.+)\.\s*$", line)
+            if not m:
+                continue
+            raw_ec = m.group(1).replace(" ", "")
+            description = m.group(2).strip()
+            if raw_ec and description:
+                ec_map[raw_ec] = description
         return ec_map
