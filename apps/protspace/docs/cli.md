@@ -27,7 +27,7 @@ protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 
 # Multi-model from FASTA
-protspace prepare -i sequences.fasta -e prot_t5 -e esm2_3b -m pca2,umap2 -o output
+protspace prepare -i sequences.fasta -e prot_t5,esm2_3b -m pca2,umap2 -o output
 
 # Multi-embedding from HDF5
 protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output

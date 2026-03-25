@@ -33,7 +33,6 @@ class PipelineConfig:
     force_refetch: bool = False
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
-    custom_names: dict[str, str] = field(default_factory=dict)
     # DR parameters
     reducer_params: dict[str, Any] = field(default_factory=dict)
 
@@ -55,10 +54,7 @@ class ReductionPipeline:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
-        self.base = BaseProcessor(
-            {**config.reducer_params, "custom_names": config.custom_names},
-            REDUCERS,
-        )
+        self.base = BaseProcessor(config.reducer_params, REDUCERS)
 
     def run(self, embedding_sets: list[EmbeddingSet]) -> Path:
         """Execute the full pipeline.

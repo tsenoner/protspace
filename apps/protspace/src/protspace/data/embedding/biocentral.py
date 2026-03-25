@@ -20,10 +20,6 @@ MODEL_SHORT_KEYS: dict[str, str] = {
     "esm2_8m": "ESM_8M",
     "esm2_650m": "ESM2_650M",
     "esm2_3b": "ESM2_3B",
-    "one_hot": "ONE_HOT_ENCODING",
-    "blosum62": "BLOSUM62",
-    "aa_ontology": "AAOntology",
-    "random": "RANDOM_EMBEDDER",
 }
 
 DEFAULT_EMBEDDER = "prot_t5"
