@@ -1,8 +1,6 @@
 """ProtSpace CLI application — typer-based command interface."""
 
-import hashlib
 import logging
-from pathlib import Path
 
 import typer
 
@@ -20,7 +18,7 @@ app = typer.Typer(
 
 
 # ---------------------------------------------------------------------------
-# Shared utilities (absorbed from common_args.py)
+# Shared utilities
 # ---------------------------------------------------------------------------
 
 
@@ -55,75 +53,6 @@ def setup_logging(verbosity: int) -> None:
 
     for name in ("urllib3", "requests", "urllib3.connectionpool"):
         logging.getLogger(name).setLevel(logging.WARNING)
-
-
-def compute_cache_hash(identifiers: list[str]) -> str:
-    """Compute MD5 hash of sorted identifiers for cache naming."""
-    sorted_ids = sorted(identifiers)
-    hash_input = "".join(sorted_ids).encode("utf-8")
-    return hashlib.md5(hash_input).hexdigest()[:16]
-
-
-def determine_output_paths(
-    output_arg: Path | None,
-    input_path: Path | None,
-    non_binary: bool,
-    bundled: bool,
-    keep_tmp: bool,
-    identifiers: list[str] | None = None,
-) -> tuple[Path, Path | None]:
-    """Determine output file path and intermediate directory."""
-    if input_path:
-        base_dir = input_path.parent
-        input_stem = input_path.stem
-    else:
-        base_dir = Path(".")
-        input_stem = "protspace"
-
-    if non_binary:
-        ext = ".json"
-    else:
-        ext = ".parquetbundle" if bundled else ""
-
-    if output_arg is None:
-        if bundled or non_binary:
-            output_path = base_dir / f"{input_stem}{ext}"
-        else:
-            output_path = base_dir / "protspace"
-    else:
-        if output_arg.suffix:
-            if non_binary:
-                output_path = output_arg.with_suffix(".json")
-            elif bundled:
-                output_path = output_arg.with_suffix(".parquetbundle")
-            else:
-                output_path = output_arg.with_suffix("")
-        else:
-            if bundled or non_binary:
-                output_path = output_arg.with_suffix(ext)
-            else:
-                output_path = output_arg
-
-    if keep_tmp and identifiers:
-        cache_hash = compute_cache_hash(identifiers)
-        intermediate_dir = base_dir / "tmp" / cache_hash
-    else:
-        intermediate_dir = None
-
-    return output_path, intermediate_dir
-
-
-def parse_custom_names(custom_names_arg: str | None) -> dict:
-    """Parse custom names argument into dictionary."""
-    custom_names = {}
-    if custom_names_arg:
-        for name_spec in custom_names_arg.split(","):
-            try:
-                method, name = name_spec.split("=")
-                custom_names[method] = name
-            except ValueError:
-                logger.warning(f"Invalid custom name specification: {name_spec}")
-    return custom_names
 
 
 # ---------------------------------------------------------------------------

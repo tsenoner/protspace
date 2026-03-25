@@ -56,7 +56,7 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 
 # From HDF5: protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 # From FASTA: protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
-# Multi-model: protspace prepare -i seq.fasta -e prot_t5 -e esm2_3b -m pca2 -o output
+# Multi-model: protspace prepare -i seq.fasta -e prot_t5,esm2_3b -m pca2 -o output
 # Multi-embedding: protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
 # With similarity: protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 # Name override: protspace prepare -i emb.h5:custom_name -m pca2 -o output

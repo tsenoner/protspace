@@ -83,35 +83,26 @@ def query_uniprot(
 
 
 def extract_identifiers_from_fasta(fasta_path: Path) -> list[str]:
-    """Extract UniProt accessions from an uncompressed FASTA file.
+    """Extract protein identifiers from an uncompressed FASTA file."""
+    from protspace.data.loaders.h5 import parse_identifier
 
-    Handles both sp|ACCESSION|NAME and plain >ACCESSION formats.
-    """
     identifiers = []
     with open(fasta_path) as f:
         for line in f:
             if line.startswith(">"):
-                header = line.strip()
-                if "|" in header:
-                    parts = header.split("|")
-                    if len(parts) >= 2:
-                        identifiers.append(parts[1])
-                else:
-                    identifiers.append(header[1:].split()[0])
+                raw = line[1:].strip().split()[0]
+                identifiers.append(parse_identifier(raw))
     return identifiers
 
 
 def _extract_identifiers_gz(fasta_gz_path: Path) -> list[str]:
-    """Extract UniProt accessions from a gzipped FASTA file."""
+    """Extract protein identifiers from a gzipped FASTA file."""
+    from protspace.data.loaders.h5 import parse_identifier
+
     identifiers = []
     with gzip.open(fasta_gz_path, "rt") as f:
         for line in f:
             if line.startswith(">"):
-                header = line.strip()
-                if "|" in header:
-                    parts = header.split("|")
-                    if len(parts) >= 2:
-                        identifiers.append(parts[1])
-                else:
-                    identifiers.append(header[1:].split()[0])
+                raw = line[1:].strip().split()[0]
+                identifiers.append(parse_identifier(raw))
     return identifiers

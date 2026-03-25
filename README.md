@@ -47,7 +47,7 @@ protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 
 # Multi-model comparison
-protspace prepare -i sequences.fasta -e prot_t5 -e esm2_3b -m pca2,umap2 -o output
+protspace prepare -i sequences.fasta -e prot_t5,esm2_3b -m pca2,umap2 -o output
 ```
 
 ### 2. Explore results
