@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from protspace.data.loaders.embedding_set import EmbeddingSet
+from protspace.data.loaders.h5 import parse_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +54,8 @@ def compute_similarity(
         header_to_idx = {header: idx for idx, header in enumerate(headers)}
 
         for _, row in df.iterrows():
-            target_idx = header_to_idx.get(row["target"])
-            query_idx = header_to_idx.get(row["query"])
+            target_idx = header_to_idx.get(parse_identifier(row["target"]))
+            query_idx = header_to_idx.get(parse_identifier(row["query"]))
             if target_idx is not None and query_idx is not None:
                 fident = row["fident"]
                 similarity_matrix[target_idx, query_idx] = fident

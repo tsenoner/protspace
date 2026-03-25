@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from protspace.data.loaders.embedding_set import EmbeddingSet
-from protspace.data.loaders.h5 import load_h5
+from protspace.data.loaders.h5 import load_h5, parse_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +22,9 @@ def embed_fasta(
 ) -> EmbeddingSet:
     """Parse FASTA, embed via Biocentral API, return EmbeddingSet.
 
-    The model_name attribute is written to the HDF5 root attrs so that
-    subsequent load_h5 calls can resolve the PLM name automatically.
-
-    Args:
-        fasta_path: Path to FASTA file.
-        embedder: Biocentral model shortcut (e.g. "esm2_3b", "prot_t5").
-        batch_size: Sequences per API call.
-        half_precision: Request float16 embeddings.
-        embedding_cache: Override HDF5 cache path.
-
-    Returns:
-        EmbeddingSet with embeddings and PLM name.
+    FASTA headers are parsed to extract UniProt accessions before embedding,
+    so H5 keys are clean identifiers (e.g. P12345 instead of sp|P12345|NAME).
+    The model_name attribute is written to H5 root attrs.
     """
     from protspace.data.embedding.biocentral import (
         derive_h5_cache_path,
@@ -42,9 +33,14 @@ def embed_fasta(
     )
     from protspace.data.io.fasta import parse_fasta
 
-    sequences = parse_fasta(fasta_path)
-    if not sequences:
+    raw_sequences = parse_fasta(fasta_path)
+    if not raw_sequences:
         raise ValueError(f"No sequences found in {fasta_path}")
+
+    # Remap keys: sp|P12345|NAME → P12345
+    sequences = {
+        parse_identifier(header): seq for header, seq in raw_sequences.items()
+    }
 
     resolved = resolve_embedder(embedder)
     h5_path = (

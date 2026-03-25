@@ -1,27 +1,29 @@
-"""protspace prepare — unified data preparation pipeline.
-
-Performs dimensionality reduction on protein embeddings, fetches annotations,
-and outputs a .parquetbundle for visualization at protspace.app.
-"""
+"""protspace prepare — unified data preparation pipeline."""
 
 import logging
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
 import typer
 
-from protspace.cli.app import (
-    app,
-    determine_output_paths,
-    parse_custom_names,
-    setup_logging,
-)
+from protspace.cli.app import app, setup_logging
 
 logger = logging.getLogger(__name__)
 
+ANNOTATIONS_URL = "https://github.com/tsenoner/protspace/blob/main/docs/annotations.md"
+EMBEDDER_MODELS = {"prot_t5", "prost_t5", "esm2_8m", "esm2_650m", "esm2_3b"}
+
+
+class Metric(str, Enum):
+    euclidean = "euclidean"
+    cosine = "cosine"
+    manhattan = "manhattan"
+
+
 # ---------------------------------------------------------------------------
-# Option type aliases (spaCy pattern — keeps the command signature readable)
+# Option type aliases
 # ---------------------------------------------------------------------------
 
 # Input
@@ -30,10 +32,7 @@ Opt_Input = Annotated[
     typer.Option(
         "-i",
         "--input",
-        help=(
-            "Input HDF5 or FASTA file(s). Repeat for multi-embedding.\n"
-            "Use colon syntax for name override: -i file.h5:model_name"
-        ),
+        help="HDF5/FASTA file(s). Repeat for multi-embedding. Name override: -i f.h5:name",
         rich_help_panel="Input",
     ),
 ]
@@ -42,7 +41,7 @@ Opt_Query = Annotated[
     typer.Option(
         "-q",
         "--query",
-        help="UniProt search query (alternative to -i).",
+        help="UniProt query (alternative to -i).",
         rich_help_panel="Input",
     ),
 ]
@@ -51,44 +50,34 @@ Opt_Fasta = Annotated[
     typer.Option(
         "-f",
         "--fasta",
-        help="FASTA for similarity computation (required with -s when input is HDF5).",
+        help="FASTA for -s/--similarity when input is HDF5.",
         rich_help_panel="Input",
     ),
 ]
 
 # Embedding
 Opt_Embedder = Annotated[
-    list[str] | None,
+    str | None,
     typer.Option(
         "-e",
         "--embedder",
-        help=(
-            "Biocentral model shortcut (repeatable for multi-model).\n"
-            "Models: prot_t5, prost_t5, esm2_8m, esm2_650m, esm2_3b, "
-            "one_hot, blosum62, aa_ontology, random."
-        ),
+        help="pLM model(s), comma-separated: prot_t5,esm2_3b,esm2_650m,esm2_8m,prost_t5.",
         rich_help_panel="Embedding",
     ),
 ]
 Opt_BatchSize = Annotated[
     int,
-    typer.Option(help="Sequences per API call.", rich_help_panel="Embedding"),
+    typer.Option(
+        help="Sequences per Biocentral API call.", rich_help_panel="Embedding"
+    ),
 ]
 Opt_HalfPrecision = Annotated[
     bool,
-    typer.Option("--half-precision", help="Request float16 embeddings.", rich_help_panel="Embedding"),
-]
-Opt_EmbeddingCache = Annotated[
-    Path | None,
-    typer.Option(help="Override HDF5 cache path.", rich_help_panel="Embedding"),
-]
-Opt_Probe = Annotated[
-    bool,
-    typer.Option("--probe", help="Test embedder with 2 sequences, then exit.", rich_help_panel="Embedding"),
-]
-Opt_DryRun = Annotated[
-    bool,
-    typer.Option("--dry-run", help="Parse input and print stats, then exit.", rich_help_panel="Embedding"),
+    typer.Option(
+        "--half-precision",
+        help="Request float16 embeddings.",
+        rich_help_panel="Embedding",
+    ),
 ]
 
 # Projection
@@ -97,53 +86,75 @@ Opt_Methods = Annotated[
     typer.Option(
         "-m",
         "--methods",
-        help="DR methods (comma-separated): pca2, umap2, tsne2, pacmap2, mds2, localmap2.",
+        help="DR methods, comma-separated: pca2,umap2,tsne2,pacmap2,mds2,localmap2.",
         rich_help_panel="Projection",
     ),
 ]
 Opt_Similarity = Annotated[
     bool,
-    typer.Option("-s", "--similarity", help="Also compute sequence similarity DR.", rich_help_panel="Projection"),
+    typer.Option(
+        "-s",
+        "--similarity",
+        help="Compute sequence similarity DR via MMseqs2.",
+        rich_help_panel="Projection",
+    ),
 ]
 Opt_Metric = Annotated[
-    str,
-    typer.Option(help="Distance metric: euclidean, cosine, manhattan, ...", rich_help_panel="Projection"),
+    Metric,
+    typer.Option(help="Distance metric for UMAP/t-SNE.", rich_help_panel="Projection"),
 ]
 Opt_RandomState = Annotated[
     int,
-    typer.Option(help="Random seed for reproducibility.", rich_help_panel="Projection"),
+    typer.Option(help="Random seed.", rich_help_panel="Projection"),
 ]
 Opt_NNeighbors = Annotated[
     int,
-    typer.Option(help="Neighbors for UMAP/PaCMAP/LocalMAP (5-50).", rich_help_panel="Projection"),
+    typer.Option(
+        help="UMAP/PaCMAP/LocalMAP neighbors. Larger=more global.",
+        rich_help_panel="Projection",
+        min=2,
+    ),
 ]
 Opt_MinDist = Annotated[
     float,
-    typer.Option(help="UMAP min distance (0.0-0.99).", rich_help_panel="Projection"),
+    typer.Option(
+        help="UMAP min distance.", rich_help_panel="Projection", min=0.0, max=0.99
+    ),
 ]
 Opt_Perplexity = Annotated[
-    int,
-    typer.Option(help="t-SNE perplexity (5-50).", rich_help_panel="Projection"),
+    float,
+    typer.Option(
+        help="t-SNE perplexity. Should be < n_samples/3.",
+        rich_help_panel="Projection",
+        min=5.0,
+    ),
 ]
 Opt_LearningRate = Annotated[
-    int,
-    typer.Option(help="t-SNE learning rate (10-1000).", rich_help_panel="Projection"),
+    float,
+    typer.Option(help="t-SNE learning rate.", rich_help_panel="Projection", min=1.0),
 ]
 Opt_MnRatio = Annotated[
     float,
-    typer.Option(help="PaCMAP mid-near pairs ratio (0.1-1.0).", rich_help_panel="Projection"),
+    typer.Option(
+        help="PaCMAP/LocalMAP mid-near ratio.",
+        rich_help_panel="Projection",
+        min=0.0,
+        max=1.0,
+    ),
 ]
 Opt_FpRatio = Annotated[
     float,
-    typer.Option(help="PaCMAP further pairs ratio (1.0-3.0).", rich_help_panel="Projection"),
+    typer.Option(
+        help="PaCMAP/LocalMAP further ratio.", rich_help_panel="Projection", min=0.0
+    ),
 ]
 Opt_NInit = Annotated[
     int,
-    typer.Option(help="MDS initialization count (1-10).", rich_help_panel="Projection"),
+    typer.Option(help="MDS initializations.", rich_help_panel="Projection", min=1),
 ]
 Opt_MaxIter = Annotated[
     int,
-    typer.Option(help="MDS max iterations (100-1000).", rich_help_panel="Projection"),
+    typer.Option(help="MDS max iterations.", rich_help_panel="Projection", min=1),
 ]
 Opt_Eps = Annotated[
     float,
@@ -152,53 +163,66 @@ Opt_Eps = Annotated[
 
 # Annotations
 Opt_Annotations = Annotated[
-    list[str] | None,
+    str,
     typer.Option(
         "-a",
         "--annotations",
-        help="Annotation sources (repeatable): default, all, uniprot, interpro, taxonomy, or individual names.",
+        help=f"Comma-separated: default,all,uniprot,interpro,taxonomy or names. See {ANNOTATIONS_URL}",
         rich_help_panel="Annotations",
     ),
 ]
 Opt_NoScores = Annotated[
     bool,
-    typer.Option("--no-scores", help="Strip annotation confidence scores.", rich_help_panel="Annotations"),
+    typer.Option(
+        "--no-scores", help="Strip confidence scores.", rich_help_panel="Annotations"
+    ),
 ]
 Opt_ForceRefetch = Annotated[
     bool,
-    typer.Option("--force-refetch", help="Force re-download even if cached.", rich_help_panel="Annotations"),
+    typer.Option(
+        "--force-refetch",
+        help="Re-download all annotations.",
+        rich_help_panel="Annotations",
+    ),
 ]
 
 # Output
 Opt_Output = Annotated[
-    Path | None,
-    typer.Option("-o", "--output", help="Output file or directory path.", rich_help_panel="Output"),
+    Path,
+    typer.Option("-o", "--output", help="Output directory.", rich_help_panel="Output"),
+]
+Opt_KeepTmp = Annotated[
+    bool,
+    typer.Option(
+        help="Cache intermediates in {output}/tmp/ for resumability.",
+        rich_help_panel="Output",
+    ),
 ]
 Opt_Bundled = Annotated[
     bool,
     typer.Option(help="Bundle into single .parquetbundle.", rich_help_panel="Output"),
 ]
-Opt_KeepTmp = Annotated[
-    bool,
-    typer.Option("--keep-tmp", help="Cache intermediate files for reuse.", rich_help_panel="Output"),
-]
 Opt_NonBinary = Annotated[
     bool,
-    typer.Option("--non-binary", help="Output JSON+CSV instead of Parquet.", rich_help_panel="Output"),
-]
-Opt_CustomNames = Annotated[
-    str | None,
-    typer.Option(help='Rename projections: "pca2=My PCA,umap2=My UMAP".', rich_help_panel="Output"),
+    typer.Option(
+        "--non-binary",
+        help="Output JSON+CSV instead of Parquet.",
+        rich_help_panel="Output",
+    ),
 ]
 Opt_DumpCache = Annotated[
     bool,
-    typer.Option("--dump-cache", help="Print cached annotations and exit.", rich_help_panel="Output"),
+    typer.Option(
+        "--dump-cache",
+        help="Print cached annotations and exit.",
+        rich_help_panel="Output",
+    ),
 ]
 
 # General
 Opt_Verbose = Annotated[
     int,
-    typer.Option("-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)."),
+    typer.Option("-v", "--verbose", count=True, help="Verbosity: -v=INFO, -vv=DEBUG."),
 ]
 
 
@@ -217,33 +241,29 @@ def prepare(
     embedder: Opt_Embedder = None,
     batch_size: Opt_BatchSize = 1000,
     half_precision: Opt_HalfPrecision = False,
-    embedding_cache: Opt_EmbeddingCache = None,
-    probe: Opt_Probe = False,
-    dry_run: Opt_DryRun = False,
     # Projection
     methods: Opt_Methods = "pca2",
     similarity: Opt_Similarity = False,
-    metric: Opt_Metric = "euclidean",
+    metric: Opt_Metric = Metric.euclidean,
     random_state: Opt_RandomState = 42,
-    n_neighbors: Opt_NNeighbors = 15,
+    n_neighbors: Opt_NNeighbors = 25,
     min_dist: Opt_MinDist = 0.1,
-    perplexity: Opt_Perplexity = 30,
-    learning_rate: Opt_LearningRate = 200,
+    perplexity: Opt_Perplexity = 30.0,
+    learning_rate: Opt_LearningRate = 200.0,
     mn_ratio: Opt_MnRatio = 0.5,
     fp_ratio: Opt_FpRatio = 2.0,
     n_init: Opt_NInit = 4,
     max_iter: Opt_MaxIter = 300,
-    eps: Opt_Eps = 1e-3,
+    eps: Opt_Eps = 1e-6,
     # Annotations
-    annotations: Opt_Annotations = None,
+    annotations: Opt_Annotations = "default",
     no_scores: Opt_NoScores = False,
     force_refetch: Opt_ForceRefetch = False,
     # Output
-    output: Opt_Output = None,
+    output: Opt_Output = Path("."),
+    keep_tmp: Opt_KeepTmp = True,
     bundled: Opt_Bundled = True,
-    keep_tmp: Opt_KeepTmp = False,
     non_binary: Opt_NonBinary = False,
-    custom_names: Opt_CustomNames = None,
     dump_cache: Opt_DumpCache = False,
     # General
     verbose: Opt_Verbose = 0,
@@ -252,6 +272,7 @@ def prepare(
 
     \b
     Requires at least one of:  -i/--input  or  -q/--query
+    Comma-separated args (-e, -m, -a) must not contain spaces.
     """
     if not input and not query:
         raise typer.BadParameter(
@@ -260,38 +281,54 @@ def prepare(
 
     setup_logging(verbose)
 
-    # --- Parse input paths with optional colon name overrides ---
     input_specs = _parse_input_specs(input) if input else []
 
-    # --- Early exits (FASTA-only) ---
     from protspace.data.io.fasta import is_fasta_file
 
     has_fasta = any(
         is_fasta_file(spec[0]) for spec in input_specs if not spec[0].is_dir()
     )
 
-    # Normalize embedder to a list
-    embedders: list[str] = list(embedder) if embedder else []
+    embedders = _parse_embedders(embedder)
 
-    if (embedders or probe or dry_run) and not has_fasta and not query:
-        raise typer.BadParameter(
-            "--embedder, --probe, and --dry-run require a FASTA input file."
-        )
+    if embedders and not has_fasta and not query:
+        raise typer.BadParameter("-e/--embedder requires FASTA input or -q/--query.")
 
     if has_fasta and not embedders:
         from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
 
         embedders = [DEFAULT_EMBEDDER]
-        logger.info(f"FASTA detected, defaulting embedder to '{embedders[0]}'")
+        logger.info(f"FASTA detected, defaulting to '{embedders[0]}'")
 
-    if dry_run:
-        input_paths = [spec[0] for spec in input_specs]
-        _handle_dry_run(input_paths, embedders[0], batch_size)
-        return
+    # --- Output and cache paths ---
+    output_dir = output if output.suffix == "" else output.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if probe:
-        input_paths = [spec[0] for spec in input_specs]
-        _handle_probe(input_paths, embedders[0], half_precision)
+    cache_dir = output_dir / "tmp" if keep_tmp else None
+    if cache_dir:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if non_binary:
+        output_path = output_dir / "protspace.json"
+    elif bundled:
+        output_path = (
+            output
+            if output.suffix == ".parquetbundle"
+            else output_dir / "data.parquetbundle"
+        )
+    else:
+        output_path = output_dir
+
+    # --- Dump cache ---
+    if dump_cache:
+        if not cache_dir:
+            logger.error("No cache. Use --keep-tmp.")
+            raise typer.Exit(1)
+        cache_path = cache_dir / "all_annotations.parquet"
+        if cache_path.exists():
+            typer.echo(pd.read_parquet(cache_path).to_csv(index=False))
+        else:
+            logger.error(f"No cache at {cache_path}.")
         return
 
     # --- Build embedding sets ---
@@ -300,28 +337,27 @@ def prepare(
     from protspace.data.loaders.query import query_uniprot
 
     embedding_sets: list[EmbeddingSet] = []
-    primary_input_path: Path | None = None
     fasta_for_similarity: Path | None = fasta
 
     if query:
-        # UniProt query mode
-        headers, fasta_path = query_uniprot(query)
+        fasta_save = cache_dir / "sequences.fasta" if cache_dir else None
+        headers, fasta_path = query_uniprot(query, save_to=fasta_save)
         if not headers:
-            raise typer.BadParameter(f"No sequences found for query: '{query}'")
+            raise typer.BadParameter(f"No sequences for query: '{query}'")
 
         if not embedders:
             from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
 
             embedders = [DEFAULT_EMBEDDER]
 
-        # Embed with each requested model
         for emb_name in embedders:
+            emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None
             emb_set = embed_fasta(
                 fasta_path,
                 emb_name,
                 batch_size=batch_size,
                 half_precision=half_precision,
-                embedding_cache=embedding_cache,
+                embedding_cache=emb_cache,
             )
             emb_set.fasta_path = fasta_path
             embedding_sets.append(emb_set)
@@ -330,77 +366,46 @@ def prepare(
     elif input_specs:
         for path, name_override in input_specs:
             if path.is_dir():
-                h5_files = sorted(
+                h5s = sorted(
                     f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
                 )
-                if not h5_files:
-                    logger.warning(f"No embedding files found in: {path}")
+                if not h5s:
+                    logger.warning(f"No embedding files in: {path}")
                     continue
-                embedding_sets.append(
-                    load_h5(h5_files, name_override=name_override)
-                )
+                embedding_sets.append(load_h5(h5s, name_override=name_override))
             elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
-                embedding_sets.append(
-                    load_h5([path], name_override=name_override)
-                )
+                embedding_sets.append(load_h5([path], name_override=name_override))
             elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
-                # Embed with each requested model
                 for emb_name in embedders:
+                    emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None
                     emb_set = embed_fasta(
                         path,
                         emb_name,
                         batch_size=batch_size,
                         half_precision=half_precision,
-                        embedding_cache=embedding_cache,
+                        embedding_cache=emb_cache,
                     )
                     emb_set.fasta_path = path
                     embedding_sets.append(emb_set)
                 fasta_for_similarity = path
             else:
-                raise typer.BadParameter(f"Unsupported file type: {path}")
-
-            if primary_input_path is None:
-                primary_input_path = path
+                raise typer.BadParameter(f"Unsupported file: {path}")
 
     if not embedding_sets:
         raise typer.BadParameter("No valid input data found.")
 
-    # --- Sequence similarity ---
+    # --- Similarity ---
     if similarity:
         if fasta_for_similarity is None:
-            raise typer.BadParameter(
-                "--similarity requires a FASTA file. "
-                "Use -f/--fasta when input is HDF5."
-            )
+            raise typer.BadParameter("-s requires FASTA. Use -f when input is HDF5.")
         from protspace.data.loaders import compute_similarity
 
-        sim_set = compute_similarity(
-            fasta_for_similarity, embedding_sets[0].headers
+        embedding_sets.append(
+            compute_similarity(fasta_for_similarity, embedding_sets[0].headers)
         )
-        embedding_sets.append(sim_set)
 
-    # --- Determine output paths ---
-    output_path, intermediate_dir = determine_output_paths(
-        output_arg=output,
-        input_path=primary_input_path,
-        non_binary=non_binary,
-        bundled=bundled,
-        keep_tmp=keep_tmp,
-        identifiers=embedding_sets[0].headers if keep_tmp else None,
-    )
-
-    # --- Dump cache early exit ---
-    if dump_cache:
-        if not intermediate_dir:
-            logger.error("No cache directory. Run with --keep-tmp first.")
-            raise typer.Exit(1)
-        cache_path = intermediate_dir / "all_annotations.parquet"
-        if cache_path.exists():
-            df = pd.read_parquet(cache_path)
-            typer.echo(df.to_csv(index=False))
-        else:
-            logger.error(f"No cache found at {cache_path}.")
-        return
+    # --- Parse annotations (comma-separated string → list) ---
+    annotation_list = [a.strip() for a in annotations.split(",") if a.strip()]
 
     # --- Run pipeline ---
     from protspace.data.processors.pipeline import PipelineConfig, ReductionPipeline
@@ -413,11 +418,10 @@ def prepare(
         keep_tmp=keep_tmp,
         no_scores=no_scores,
         force_refetch=force_refetch,
-        annotations=annotations,
-        intermediate_dir=intermediate_dir,
-        custom_names=parse_custom_names(custom_names),
+        annotations=annotation_list,
+        intermediate_dir=cache_dir,
         reducer_params={
-            "metric": metric,
+            "metric": metric.value,
             "random_state": random_state,
             "n_neighbors": n_neighbors,
             "min_dist": min_dist,
@@ -439,36 +443,21 @@ def prepare(
 
 
 # ---------------------------------------------------------------------------
-# Input parsing helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 
 def _parse_input_specs(raw_inputs: list[str]) -> list[tuple[Path, str | None]]:
-    """Parse input arguments, supporting colon syntax for name overrides.
-
-    Examples:
-        "file.h5"           → (Path("file.h5"), None)
-        "file.h5:esm2_3b"  → (Path("file.h5"), "esm2_3b")
-        "/abs/path.h5"     → (Path("/abs/path.h5"), None)
-        "C:\\file.h5:name"  → handled correctly on Windows
-    """
+    """Parse inputs with optional colon name override: file.h5:model_name."""
     specs: list[tuple[Path, str | None]] = []
     for raw in raw_inputs:
-        # Split on last colon, but only if the part before it looks like a file path
-        # Avoid splitting drive letters on Windows (e.g. C:\path)
         if ":" in raw:
-            # Find the last colon
             last_colon = raw.rfind(":")
-            path_part = raw[:last_colon]
-            name_part = raw[last_colon + 1:]
-
-            # Only treat as name override if path_part looks like a file
-            # and name_part is non-empty and doesn't look like a path
+            path_part, name_part = raw[:last_colon], raw[last_colon + 1 :]
             if (
                 name_part
-                and not name_part.startswith("/")
-                and not name_part.startswith("\\")
-                and Path(path_part).suffix  # has an extension
+                and not name_part.startswith(("/", "\\"))
+                and Path(path_part).suffix
             ):
                 specs.append((Path(path_part), name_part))
             else:
@@ -478,45 +467,14 @@ def _parse_input_specs(raw_inputs: list[str]) -> list[tuple[Path, str | None]]:
     return specs
 
 
-# ---------------------------------------------------------------------------
-# Early exit helpers
-# ---------------------------------------------------------------------------
-
-
-def _handle_dry_run(
-    input_paths: list[Path], embedder: str, batch_size: int
-) -> None:
-    from protspace.data.embedding.biocentral import resolve_embedder
-    from protspace.data.io.fasta import is_fasta_file, parse_fasta
-
-    fasta_path = next(p for p in input_paths if is_fasta_file(p))
-    sequences = parse_fasta(fasta_path)
-    if not sequences:
-        typer.echo(f"No sequences found in {fasta_path}")
-        return
-    lengths = [len(s) for s in sequences.values()]
-    resolved = resolve_embedder(embedder)
-    typer.echo(f"FASTA:      {fasta_path}")
-    typer.echo(f"Sequences:  {len(sequences):,}")
-    typer.echo(
-        f"Lengths:    min={min(lengths)}, "
-        f"median={sorted(lengths)[len(lengths) // 2]}, "
-        f"max={max(lengths)}"
-    )
-    typer.echo(f"Embedder:   {resolved}")
-    typer.echo(f"Batches:    {(len(sequences) + batch_size - 1) // batch_size}")
-
-
-def _handle_probe(
-    input_paths: list[Path], embedder: str, half_precision: bool
-) -> None:
-    from protspace.data.embedding.biocentral import probe_embedder, resolve_embedder
-    from protspace.data.io.fasta import is_fasta_file, parse_fasta
-
-    fasta_path = next(p for p in input_paths if is_fasta_file(p))
-    sequences = parse_fasta(fasta_path)
-    if not sequences:
-        typer.echo(f"No sequences found in {fasta_path}")
-        return
-    resolved = resolve_embedder(embedder)
-    probe_embedder(sequences, resolved, half_precision=half_precision)
+def _parse_embedders(embedder_arg: str | None) -> list[str]:
+    """Parse comma-separated embedder string into validated list."""
+    if not embedder_arg:
+        return []
+    embedders = [e.strip() for e in embedder_arg.split(",") if e.strip()]
+    for name in embedders:
+        if name not in EMBEDDER_MODELS:
+            raise typer.BadParameter(
+                f"Unknown embedder: '{name}'. Available: {','.join(sorted(EMBEDDER_MODELS))}"
+            )
+    return embedders
