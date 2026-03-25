@@ -5,6 +5,39 @@ from pathlib import Path
 
 import numpy as np
 
+# Display names for pLM models and tools
+MODEL_DISPLAY_NAMES: dict[str, str] = {
+    "prot_t5": "ProtT5",
+    "prost_t5": "ProstT5",
+    "esm2_8m": "ESM2-8M",
+    "esm2_650m": "ESM2-650M",
+    "esm2_3b": "ESM2-3B",
+    "MMseqs2": "MMseqs2",
+}
+
+# Display names for DR methods
+METHOD_DISPLAY_NAMES: dict[str, str] = {
+    "pca": "PCA",
+    "umap": "UMAP",
+    "tsne": "t-SNE",
+    "pacmap": "PaCMAP",
+    "mds": "MDS",
+    "localmap": "LocalMAP",
+}
+
+
+def format_projection_name(source: str, method: str, dims: int) -> str:
+    """Format a human-readable projection name.
+
+    Examples:
+        ("prot_t5", "pca", 2) → "ProtT5 — PCA 2"
+        ("esm2_650m", "umap", 2) → "ESM2-650M — UMAP 2"
+        ("MMseqs2", "mds", 2) → "MMseqs2 — MDS 2"
+    """
+    source_display = MODEL_DISPLAY_NAMES.get(source, source)
+    method_display = METHOD_DISPLAY_NAMES.get(method, method.upper())
+    return f"{source_display} — {method_display} {dims}"
+
 
 @dataclass
 class EmbeddingSet:

@@ -12,6 +12,7 @@ from typing import Any
 import pandas as pd
 
 from protspace.data.loaders import EmbeddingSet
+from protspace.data.loaders.embedding_set import format_projection_name
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import REDUCERS
 from protspace.utils.reducers import MDS_NAME
@@ -280,34 +281,29 @@ class ReductionPipeline:
         all_reductions = []
 
         for emb_set in embedding_sets:
+            if emb_set.precomputed:
+                # Precomputed similarity → always MDS 2, ignore user methods
+                self.base.config["precomputed"] = True
+                logger.info(f"Applying MDS 2 to '{emb_set.name}' (precomputed)")
+                reduction = self.base.process_reduction(emb_set.data, MDS_NAME, 2)
+                reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
+                all_reductions.append(reduction)
+                self.base.config.pop("precomputed", None)
+                continue
+
             for method_spec in self.config.methods:
                 method, dims = parse_method_spec(method_spec)
-
-                # Skip incompatible method/data combinations
-                if emb_set.precomputed and method != MDS_NAME:
-                    logger.warning(
-                        f"Skipping {method} for '{emb_set.name}' "
-                        f"(only MDS supported for precomputed similarity)"
-                    )
-                    continue
 
                 if method not in self.base.reducers:
                     logger.warning(f"Unknown method: {method}. Skipping.")
                     continue
 
-                # Set precomputed flag for similarity matrices
-                if emb_set.precomputed:
-                    self.base.config["precomputed"] = True
-                else:
-                    self.base.config.pop("precomputed", None)
-
                 logger.info(
-                    f"Applying {method.upper()}{dims} to '{emb_set.name}'"
+                    f"Applying {method.upper()} {dims} to '{emb_set.name}'"
                 )
                 reduction = self.base.process_reduction(emb_set.data, method, dims)
 
-                # Always prefix projection name with embedding source
-                reduction["name"] = f"{emb_set.name} — {reduction['name']}"
+                reduction["name"] = format_projection_name(emb_set.name, method, dims)
 
                 all_reductions.append(reduction)
 

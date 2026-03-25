@@ -4,6 +4,7 @@ Extracted from LocalProcessor._load_h5_files and _collect_datasets.
 """
 
 import logging
+import re
 from pathlib import Path
 
 import h5py
@@ -14,6 +15,28 @@ from protspace.data.loaders.embedding_set import EmbeddingSet
 logger = logging.getLogger(__name__)
 
 EMBEDDING_EXTENSIONS = {".hdf", ".hdf5", ".h5"}
+
+# UniProt FASTA header pattern: >sp|ACCESSION|NAME or >tr|ACCESSION|NAME
+_UNIPROT_HEADER_RE = re.compile(
+    r"^(?:sp|tr)\|([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})\|"
+)
+
+
+def parse_identifier(raw_key: str) -> str:
+    """Extract protein identifier from an H5 key.
+
+    Handles UniProt FASTA headers: sp|P12345|NAME → P12345
+    Falls back to the raw key if no UniProt pattern matches.
+    """
+    m = _UNIPROT_HEADER_RE.match(raw_key)
+    if m:
+        return m.group(1)
+    # If it contains pipes but doesn't match UniProt, take the second field
+    if "|" in raw_key:
+        parts = raw_key.split("|")
+        if len(parts) >= 2:
+            return parts[1]
+    return raw_key
 
 
 def _collect_datasets(hdf_handle: h5py.File) -> list[tuple[str, h5py.Dataset]]:
@@ -86,7 +109,8 @@ def load_h5(
                     f"The HDF5 file may be empty or have an unsupported layout."
                 )
 
-            for header, dataset in pairs:
+            for raw_key, dataset in pairs:
+                header = parse_identifier(raw_key)
                 if header in seen_ids:
                     duplicates_count += 1
                     continue
