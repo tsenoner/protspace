@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from protspace.data.embedding.biocentral import EmbedConfig
     from protspace.data.processors.pipeline import PipelineConfig
 
-import pandas as pd
 import typer
 
 from protspace.cli.app import app, setup_logging
@@ -259,6 +258,8 @@ def prepare(
             raise typer.Exit(1)
         cache_path = cache_dir / "all_annotations.parquet"
         if cache_path.exists():
+            import pandas as pd
+
             typer.echo(pd.read_parquet(cache_path).to_csv(index=False))
         else:
             logger.error(f"No cache at {cache_path}.")

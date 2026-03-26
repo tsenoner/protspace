@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from src.protspace.data.processors.base_processor import BaseProcessor
-from src.protspace.utils import REDUCERS
+from src.protspace.utils import get_reducers
 from tests.test_config import (
     LEGACY_OUTPUT_DATA,
     sample_data,
@@ -23,7 +23,7 @@ class TestOutputFileGeneration:
         """Test bundled parquet output generation."""
         with tempfile.TemporaryDirectory() as temp_dir_path:
             temp_path = Path(temp_dir_path)
-            processor = BaseProcessor({}, REDUCERS)
+            processor = BaseProcessor({}, get_reducers())
 
             output_data = processor.create_output(
                 sample_data["metadata"],
@@ -48,7 +48,7 @@ class TestOutputFileGeneration:
         """Test separate parquet files output generation."""
         with tempfile.TemporaryDirectory() as temp_dir_path:
             temp_path = Path(temp_dir_path)
-            processor = BaseProcessor({}, REDUCERS)
+            processor = BaseProcessor({}, get_reducers())
 
             output_data = processor.create_output(
                 sample_data["metadata"],
@@ -73,7 +73,7 @@ class TestOutputFileGeneration:
         """Test bundled parquet output with query-style data."""
         with tempfile.TemporaryDirectory() as temp_dir_path:
             temp_path = Path(temp_dir_path)
-            processor = BaseProcessor({}, REDUCERS)
+            processor = BaseProcessor({}, get_reducers())
 
             output_data = processor.create_output(
                 sample_query_data["metadata"],
@@ -98,7 +98,7 @@ class TestOutputFileGeneration:
         """Test separate parquet files output with query-style data."""
         with tempfile.TemporaryDirectory() as temp_dir_path:
             temp_path = Path(temp_dir_path)
-            processor = BaseProcessor({}, REDUCERS)
+            processor = BaseProcessor({}, get_reducers())
 
             output_data = processor.create_output(
                 sample_query_data["metadata"],

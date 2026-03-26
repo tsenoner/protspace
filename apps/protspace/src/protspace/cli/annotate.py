@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-import pyarrow.parquet as pq
 import typer
 
 from protspace.cli.app import app, setup_logging
@@ -56,6 +55,7 @@ def annotate(
 
     import h5py
     import pyarrow as pa
+    import pyarrow.parquet as pq
 
     from protspace.data.annotations.manager import ProteinAnnotationManager
     from protspace.data.io.fasta import is_fasta_file

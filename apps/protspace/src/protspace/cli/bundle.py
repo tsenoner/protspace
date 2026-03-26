@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-import pyarrow.parquet as pq
 import typer
 
 from protspace.cli.app import app, setup_logging
@@ -49,6 +48,8 @@ def bundle(
     single .parquetbundle file.
     """
     setup_logging(verbose)
+
+    import pyarrow.parquet as pq
 
     from protspace.data.io.bundle import write_bundle
 
