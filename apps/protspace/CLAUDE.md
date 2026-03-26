@@ -194,7 +194,6 @@ Located in `notebooks/`:
 |----------|---------|
 | `ProtSpace_Preparation.ipynb` | Google Colab — upload embeddings, configure DR methods, generate .parquetbundle |
 | `ClickThrough_GenerateEmbeddings.ipynb` | Google Colab — generate embeddings from FASTA using ESM models |
-| `Explore_ProtSpace.ipynb` | Pre-visualization exploration and config |
 
 ## Dependencies
 
