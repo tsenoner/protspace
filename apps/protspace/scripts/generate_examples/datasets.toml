@@ -1,0 +1,48 @@
+# ProtSpace Example Datasets
+#
+# Each entry generates a .parquetbundle via `protspace prepare`.
+# Ordered by increasing complexity — each adds a new feature.
+#
+# Fields:
+#   query       — UniProt REST API query string
+#   embedder    — comma-separated pLM model(s)
+#   methods     — comma-separated DR methods
+#   annotations — annotation group or "all"
+#   similarity  — also compute MMseqs2 sequence similarity (optional)
+#   description — human-readable description
+
+[three_finger_toxin]
+description = "Three-finger toxin family — basic single-PLM example"
+query = '(family:"three-finger toxin") AND (reviewed:true)'
+embedder = "prot_t5"
+methods = "pca2,umap2"
+annotations = "default"
+
+[beta_lactamase]
+description = "Beta-lactamase family — multi-PLM comparison"
+query = '(family:"beta-lactamase") AND (reviewed:true)'
+embedder = "prot_t5,esm2_650m"
+methods = "pca2,umap2"
+annotations = "default"
+
+[globin]
+description = "Globin family — sequence similarity + MDS"
+query = '(family:globin) AND (reviewed:true)'
+embedder = "prot_t5"
+methods = "pca2,umap2"
+annotations = "default"
+similarity = true
+
+[phosphatase]
+description = "Phosphatase family — all annotations"
+query = '(family:phosphatase) AND (reviewed:true)'
+embedder = "prot_t5"
+methods = "pca2,umap2"
+annotations = "all"
+
+[cytochrome_p450]
+description = "Cytochrome P450 — includes unreviewed TrEMBL entries"
+query = '(family:"cytochrome P450")'
+embedder = "prot_t5"
+methods = "pca2,umap2"
+annotations = "default"
