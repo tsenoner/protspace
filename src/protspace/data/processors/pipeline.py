@@ -5,7 +5,7 @@ Composes: loaders → annotation fetch → dimensionality reduction → output.
 
 import logging
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,23 @@ from protspace.utils.reducers import MDS_NAME
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ReducerParams:
+    """User-configurable dimensionality reduction parameters."""
+
+    metric: str = "euclidean"
+    random_state: int = 42
+    n_neighbors: int = 25
+    min_dist: float = 0.1
+    perplexity: float = 30.0
+    learning_rate: float = 200.0
+    mn_ratio: float = 0.5
+    fp_ratio: float = 2.0
+    n_init: int = 4
+    max_iter: int = 300
+    eps: float = 1e-6
+
+
 @dataclass
 class PipelineConfig:
     """Configuration for a ReductionPipeline run."""
@@ -32,8 +49,7 @@ class PipelineConfig:
     force_refetch: bool = False
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
-    # DR parameters
-    reducer_params: dict[str, Any] = field(default_factory=dict)
+    reducer_params: ReducerParams = field(default_factory=ReducerParams)
 
 
 def parse_method_spec(method_spec: str) -> tuple[str, int]:
@@ -53,7 +69,8 @@ class ReductionPipeline:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
-        self.base = BaseProcessor(config.reducer_params, REDUCERS)
+        reducer_dict = asdict(config.reducer_params)
+        self.base = BaseProcessor(reducer_dict, REDUCERS)
 
     def run(self, embedding_sets: list[EmbeddingSet]) -> Path:
         """Execute the full pipeline.

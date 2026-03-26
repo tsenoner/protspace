@@ -3,6 +3,7 @@
 import logging
 import sys
 import time
+from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 
@@ -37,6 +38,14 @@ EXTRA_SHORT_KEYS: dict[str, str] = {
 ALL_SHORT_KEYS: dict[str, str] = {**MODEL_SHORT_KEYS, **EXTRA_SHORT_KEYS}
 
 DEFAULT_EMBEDDER = "prot_t5"
+
+
+@dataclass(frozen=True)
+class EmbedConfig:
+    """Embedding parameters for Biocentral API calls."""
+
+    batch_size: int = 1000
+
 
 # Reverse lookup: full model name → short key
 _FULL_TO_SHORT: dict[str, str] = {
@@ -126,7 +135,7 @@ def embed_sequences(
     sequences: dict[str, str],
     embedder: str,
     h5_path: Path,
-    batch_size: int = 1000,
+    embed_config: EmbedConfig | None = None,
 ) -> Path:
     """Embed *sequences* via Biocentral API and write to *h5_path*.
 
@@ -135,6 +144,8 @@ def embed_sequences(
 
     Returns the path to the completed HDF5 file.
     """
+    cfg = embed_config or EmbedConfig()
+
     # Resume: skip already-embedded sequences
     existing_ids = load_existing_ids(h5_path)
     if existing_ids:
@@ -184,7 +195,7 @@ def embed_sequences(
     logger.info("Server is healthy")
 
     # Batch and embed
-    api_batches = list(batched(unique_ids, batch_size_limit=batch_size))
+    api_batches = list(batched(unique_ids, batch_size_limit=cfg.batch_size))
     total_embedded = 0
     failed_batches = 0
 
