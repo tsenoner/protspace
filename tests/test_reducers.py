@@ -257,7 +257,9 @@ class TestProcessorReduction:
 
     def test_all_methods_through_processor(self, data_2d):
         from protspace.data.processors.base_processor import BaseProcessor
-        from protspace.utils import REDUCERS
+        from protspace.utils import get_reducers
+
+        REDUCERS = get_reducers()
 
         processor = BaseProcessor({"random_state": SEED}, REDUCERS)
 

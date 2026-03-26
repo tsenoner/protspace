@@ -7,7 +7,8 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import app
-from protspace.core.config import DEFAULT_PORT
+
+DEFAULT_PORT = 8050
 
 
 @app.command()

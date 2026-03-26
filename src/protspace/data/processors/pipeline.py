@@ -14,7 +14,7 @@ import pandas as pd
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import format_projection_name
 from protspace.data.processors.base_processor import BaseProcessor
-from protspace.utils import REDUCERS
+from protspace.utils import get_reducers
 from protspace.utils.reducers import MDS_NAME
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class ReductionPipeline:
     def __init__(self, config: PipelineConfig):
         self.config = config
         reducer_dict = asdict(config.reducer_params)
-        self.base = BaseProcessor(reducer_dict, REDUCERS)
+        self.base = BaseProcessor(reducer_dict, get_reducers())
 
     def run(self, embedding_sets: list[EmbeddingSet]) -> Path:
         """Execute the full pipeline.

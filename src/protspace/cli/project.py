@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-import pyarrow.parquet as pq
 import typer
 
 from protspace.cli.app import app, setup_logging
@@ -69,11 +68,13 @@ def project(
     """
     setup_logging(verbose)
 
+    import pyarrow.parquet as pq
+
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.loaders import EmbeddingSet, compute_similarity, load_h5
     from protspace.data.processors.base_processor import BaseProcessor
     from protspace.data.processors.pipeline import parse_method_spec
-    from protspace.utils import REDUCERS
+    from protspace.utils import get_reducers
     from protspace.utils.reducers import MDS_NAME
 
     input_specs = _parse_input_specs(input)
@@ -108,7 +109,8 @@ def project(
         max_iter=max_iter,
         eps=eps,
     )
-    base = BaseProcessor(asdict(reducer_params), REDUCERS)
+    reducers = get_reducers()
+    base = BaseProcessor(asdict(reducer_params), reducers)
 
     all_reductions = []
     headers = embedding_sets[0].headers
@@ -120,7 +122,7 @@ def project(
                     f"Skipping {method} for '{emb_set.name}' (only MDS for precomputed)"
                 )
                 continue
-            if method not in REDUCERS:
+            if method not in reducers:
                 logger.warning(f"Unknown method: {method}. Skipping.")
                 continue
             if emb_set.precomputed:
