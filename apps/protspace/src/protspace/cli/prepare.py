@@ -1,17 +1,42 @@
 """protspace prepare — unified data preparation pipeline."""
 
+from __future__ import annotations
+
 import logging
 import sys
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
+
+if TYPE_CHECKING:
+    from protspace.data.embedding.biocentral import EmbedConfig
+    from protspace.data.processors.pipeline import PipelineConfig
 
 import pandas as pd
 import typer
 
 from protspace.cli.app import app, setup_logging
+from protspace.cli.common_options import (
+    Metric,
+    Opt_BatchSize,
+    Opt_Eps,
+    Opt_Fasta,
+    Opt_FpRatio,
+    Opt_LearningRate,
+    Opt_MaxIter,
+    Opt_Methods,
+    Opt_Metric,
+    Opt_MinDist,
+    Opt_MnRatio,
+    Opt_NInit,
+    Opt_NNeighbors,
+    Opt_Perplexity,
+    Opt_RandomState,
+    Opt_Similarity,
+    Opt_Verbose,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +57,8 @@ EMBEDDER_MODELS = {
 }
 
 
-class Metric(str, Enum):
-    euclidean = "euclidean"
-    cosine = "cosine"
-    manhattan = "manhattan"
-
-
 # ---------------------------------------------------------------------------
-# Option type aliases
+# Prepare-specific option type aliases
 # ---------------------------------------------------------------------------
 
 # Input
@@ -61,15 +80,6 @@ Opt_Query = Annotated[
         rich_help_panel="Input",
     ),
 ]
-Opt_Fasta = Annotated[
-    Path | None,
-    typer.Option(
-        "-f",
-        "--fasta",
-        help="FASTA for -s/--similarity when input is HDF5.",
-        rich_help_panel="Input",
-    ),
-]
 
 # Embedding
 Opt_Embedder = Annotated[
@@ -86,93 +96,6 @@ Opt_Embedder = Annotated[
         ),
         rich_help_panel="Embedding",
     ),
-]
-Opt_BatchSize = Annotated[
-    int,
-    typer.Option(
-        help="Sequences per Biocentral API call.", rich_help_panel="Embedding"
-    ),
-]
-
-# Projection
-Opt_Methods = Annotated[
-    str,
-    typer.Option(
-        "-m",
-        "--methods",
-        help="DR methods, comma-separated: pca2,umap2,tsne2,pacmap2,mds2,localmap2.",
-        rich_help_panel="Projection",
-    ),
-]
-Opt_Similarity = Annotated[
-    bool,
-    typer.Option(
-        "-s",
-        "--similarity",
-        help="Compute sequence similarity DR via MMseqs2.",
-        rich_help_panel="Projection",
-    ),
-]
-Opt_Metric = Annotated[
-    Metric,
-    typer.Option(help="Distance metric for UMAP/t-SNE.", rich_help_panel="Projection"),
-]
-Opt_RandomState = Annotated[
-    int,
-    typer.Option(help="Random seed.", rich_help_panel="Projection"),
-]
-Opt_NNeighbors = Annotated[
-    int,
-    typer.Option(
-        help="UMAP/PaCMAP/LocalMAP neighbors. Larger=more global.",
-        rich_help_panel="Projection",
-        min=2,
-    ),
-]
-Opt_MinDist = Annotated[
-    float,
-    typer.Option(
-        help="UMAP min distance.", rich_help_panel="Projection", min=0.0, max=0.99
-    ),
-]
-Opt_Perplexity = Annotated[
-    float,
-    typer.Option(
-        help="t-SNE perplexity. Should be < n_samples/3.",
-        rich_help_panel="Projection",
-        min=5.0,
-    ),
-]
-Opt_LearningRate = Annotated[
-    float,
-    typer.Option(help="t-SNE learning rate.", rich_help_panel="Projection", min=1.0),
-]
-Opt_MnRatio = Annotated[
-    float,
-    typer.Option(
-        help="PaCMAP/LocalMAP mid-near ratio.",
-        rich_help_panel="Projection",
-        min=0.0,
-        max=1.0,
-    ),
-]
-Opt_FpRatio = Annotated[
-    float,
-    typer.Option(
-        help="PaCMAP/LocalMAP further ratio.", rich_help_panel="Projection", min=0.0
-    ),
-]
-Opt_NInit = Annotated[
-    int,
-    typer.Option(help="MDS initializations.", rich_help_panel="Projection", min=1),
-]
-Opt_MaxIter = Annotated[
-    int,
-    typer.Option(help="MDS max iterations.", rich_help_panel="Projection", min=1),
-]
-Opt_Eps = Annotated[
-    float,
-    typer.Option(help="MDS convergence tolerance.", rich_help_panel="Projection"),
 ]
 
 # Annotations
@@ -233,12 +156,6 @@ Opt_NoLog = Annotated[
         help="Skip writing run.log to the output directory.",
         rich_help_panel="Output",
     ),
-]
-
-# General
-Opt_Verbose = Annotated[
-    int,
-    typer.Option("-v", "--verbose", count=True, help="Verbosity: -v=INFO, -vv=DEBUG."),
 ]
 
 
@@ -348,10 +265,12 @@ def prepare(
         return
 
     # --- Build embedding sets ---
+    from protspace.data.embedding.biocentral import EmbedConfig
     from protspace.data.loaders import EmbeddingSet, embed_fasta, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
     from protspace.data.loaders.query import query_uniprot
 
+    embed_config = EmbedConfig(batch_size=batch_size)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
 
@@ -372,7 +291,7 @@ def prepare(
                 emb_set = embed_fasta(
                     fasta_path,
                     emb_name,
-                    batch_size=batch_size,
+                    embed_config=embed_config,
                     embedding_cache=emb_cache,
                 )
                 emb_set.fasta_path = fasta_path
@@ -397,7 +316,7 @@ def prepare(
                         emb_set = embed_fasta(
                             path,
                             emb_name,
-                            batch_size=batch_size,
+                            embed_config=embed_config,
                             embedding_cache=emb_cache,
                         )
                         emb_set.fasta_path = path
@@ -427,9 +346,23 @@ def prepare(
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (
             PipelineConfig,
+            ReducerParams,
             ReductionPipeline,
         )
 
+        reducer_params = ReducerParams(
+            metric=metric.value,
+            random_state=random_state,
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            perplexity=perplexity,
+            learning_rate=learning_rate,
+            mn_ratio=mn_ratio,
+            fp_ratio=fp_ratio,
+            n_init=n_init,
+            max_iter=max_iter,
+            eps=eps,
+        )
         config = PipelineConfig(
             methods=methods.split(","),
             output_path=output_path,
@@ -439,19 +372,7 @@ def prepare(
             force_refetch=force_refetch,
             annotations=annotation_list,
             intermediate_dir=cache_dir,
-            reducer_params={
-                "metric": metric.value,
-                "random_state": random_state,
-                "n_neighbors": n_neighbors,
-                "min_dist": min_dist,
-                "perplexity": perplexity,
-                "learning_rate": learning_rate,
-                "mn_ratio": mn_ratio,
-                "fp_ratio": fp_ratio,
-                "n_init": n_init,
-                "max_iter": max_iter,
-                "eps": eps,
-            },
+            reducer_params=reducer_params,
         )
 
         ReductionPipeline(config).run(embedding_sets)
@@ -469,24 +390,11 @@ def prepare(
             query=query,
             input_specs=input_specs,
             embedders=embedders,
-            methods=methods,
+            embed_config=embed_config,
+            pipeline_config=config,
             similarity=similarity,
-            metric=metric.value,
-            random_state=random_state,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            perplexity=perplexity,
-            learning_rate=learning_rate,
-            mn_ratio=mn_ratio,
-            fp_ratio=fp_ratio,
-            n_init=n_init,
-            max_iter=max_iter,
-            eps=eps,
-            annotations=annotations,
             scores=scores,
-            batch_size=batch_size,
             output_path=output_path,
-            bundled=bundled,
             n_proteins=len(embedding_sets[0].headers) if embedding_sets else 0,
             n_embedding_sets=len(embedding_sets),
         )
@@ -549,33 +457,26 @@ def _write_run_log(
     query: str | None,
     input_specs: list[tuple[Path, str | None]],
     embedders: list[str],
-    methods: str,
+    embed_config: EmbedConfig,
+    pipeline_config: PipelineConfig,
     similarity: bool,
-    metric: str,
-    random_state: int,
-    n_neighbors: int,
-    min_dist: float,
-    perplexity: float,
-    learning_rate: float,
-    mn_ratio: float,
-    fp_ratio: float,
-    n_init: int,
-    max_iter: int,
-    eps: float,
-    annotations: str,
     scores: bool,
-    batch_size: int,
     output_path: Path,
-    bundled: bool,
     n_proteins: int,
     n_embedding_sets: int,
 ) -> None:
-    """Write a reproducibility log to {output_dir}/run.log."""
+    """Write a reproducibility log to {output_dir}/run.log.
+
+    Config objects are serialized automatically via ``dataclasses.asdict()``,
+    so adding new fields to ``EmbedConfig`` or ``ReducerParams`` requires
+    no changes here.
+    """
     import protspace
 
     ts_end = datetime.now(timezone.utc)
-    method_list = [m.strip() for m in methods.split(",") if m.strip()]
-    n_projections = len(method_list) * n_embedding_sets
+    n_projections = len(pipeline_config.methods) * n_embedding_sets
+    rp = asdict(pipeline_config.reducer_params)
+    ec = asdict(embed_config)
 
     lines = [
         "# protspace run log",
@@ -596,33 +497,25 @@ def _write_run_log(
             lines.append(f"input: {label}")
     lines.append(f"proteins: {n_proteins}")
 
+    lines += ["", "## Embedding"]
+    lines.append(f"embedders: {', '.join(embedders) if embedders else '(from HDF5)'}")
+    for key, val in ec.items():
+        lines.append(f"{key}: {val}")
+
+    lines += ["", "## Projection"]
+    lines.append(f"methods: {', '.join(pipeline_config.methods)}")
+    lines.append(f"similarity: {similarity}")
+    for key, val in rp.items():
+        lines.append(f"{key}: {val}")
+
     lines += [
         "",
-        "## Embedding",
-        f"embedders: {', '.join(embedders) if embedders else '(from HDF5)'}",
-        f"batch_size: {batch_size}",
-        "",
-        "## Projection",
-        f"methods: {', '.join(method_list)}",
-        f"similarity: {similarity}",
-        f"metric: {metric}",
-        f"random_state: {random_state}",
-        f"n_neighbors: {n_neighbors}",
-        f"min_dist: {min_dist}",
-        f"perplexity: {perplexity}",
-        f"learning_rate: {learning_rate}",
-        f"mn_ratio: {mn_ratio}",
-        f"fp_ratio: {fp_ratio}",
-        f"n_init: {n_init}",
-        f"max_iter: {max_iter}",
-        f"eps: {eps}",
-        "",
         "## Annotations",
-        f"categories: {annotations}",
+        f"categories: {', '.join(pipeline_config.annotations or ['default'])}",
         f"scores: {scores}",
         "",
         "## Output",
-        f"format: {'parquetbundle' if bundled else 'parquet'}",
+        f"format: {'parquetbundle' if pipeline_config.bundled else 'parquet'}",
         f"path: {output_path}",
         f"embedding_sets: {n_embedding_sets}",
         f"projections: {n_projections}",

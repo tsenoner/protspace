@@ -3,11 +3,17 @@
 Extracted from LocalProcessor._embed_fasta_to_h5.
 """
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from protspace.data.loaders.embedding_set import EmbeddingSet
 from protspace.data.loaders.h5 import load_h5, parse_identifier
+
+if TYPE_CHECKING:
+    from protspace.data.embedding.biocentral import EmbedConfig
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +22,7 @@ def embed_fasta(
     fasta_path: Path,
     embedder: str,
     *,
-    batch_size: int = 1000,
+    embed_config: EmbedConfig | None = None,
     embedding_cache: Path | None = None,
 ) -> EmbeddingSet:
     """Parse FASTA, embed via Biocentral API, return EmbeddingSet.
@@ -50,7 +56,7 @@ def embed_fasta(
         sequences,
         resolved,
         h5_path,
-        batch_size=batch_size,
+        embed_config=embed_config,
     )
 
     # Write model_name attr to H5 so load_h5 can resolve it later

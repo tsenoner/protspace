@@ -219,7 +219,6 @@ class TestEmbedSequences:
                 sequences={"P01308": "AAAA", "P01315": "BBBB"},
                 embedder="facebook/esm2_t6_8M_UR50D",
                 h5_path=h5_path,
-                batch_size=1000,
             )
 
             assert result == h5_path

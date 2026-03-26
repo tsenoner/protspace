@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import app, setup_logging
+from protspace.cli.common_options import Opt_BatchSize, Opt_Verbose
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +41,8 @@ def embed(
         Path,
         typer.Option("-o", "--output", help="Output directory (one H5 per model)."),
     ],
-    batch_size: Annotated[
-        int,
-        typer.Option(help="Sequences per API call."),
-    ] = 1000,
-    verbose: Annotated[
-        int,
-        typer.Option(
-            "-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)."
-        ),
-    ] = 0,
+    batch_size: Opt_BatchSize = 1000,
+    verbose: Opt_Verbose = 0,
 ) -> None:
     """Generate protein embeddings from a FASTA file via Biocentral API.
 
@@ -62,6 +55,7 @@ def embed(
     import h5py
 
     from protspace.data.embedding.biocentral import (
+        EmbedConfig,
         embed_sequences,
         resolve_embedder,
     )
@@ -72,6 +66,7 @@ def embed(
         raise typer.BadParameter(f"No sequences found in {input}")
 
     output.mkdir(parents=True, exist_ok=True)
+    embed_config = EmbedConfig(batch_size=batch_size)
 
     for model_name in embedder:
         resolved = resolve_embedder(model_name)
@@ -82,7 +77,7 @@ def embed(
             sequences,
             resolved,
             h5_path,
-            batch_size=batch_size,
+            embed_config=embed_config,
         )
 
         # Write model_name attr

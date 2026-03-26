@@ -5,6 +5,7 @@ from protspace.data.embedding.biocentral import (
     DEFAULT_EMBEDDER,
     EXTRA_SHORT_KEYS,
     MODEL_SHORT_KEYS,
+    EmbedConfig,
     embed_sequences,
     resolve_embedder,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "DEFAULT_EMBEDDER",
     "EXTRA_SHORT_KEYS",
     "MODEL_SHORT_KEYS",
+    "EmbedConfig",
     "resolve_embedder",
     "embed_sequences",
 ]
