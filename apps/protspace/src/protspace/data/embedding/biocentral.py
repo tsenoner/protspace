@@ -22,12 +22,26 @@ MODEL_SHORT_KEYS: dict[str, str] = {
     "esm2_3b": "ESM2_3B",
 }
 
+# Extra models not in CommonEmbedder — short key → full HuggingFace name.
+EXTRA_SHORT_KEYS: dict[str, str] = {
+    "esm2_35m": "facebook/esm2_t12_35M_UR50D",
+    "esm2_150m": "facebook/esm2_t30_150M_UR50D",
+    "ankh_base": "ElnaggarLab/ankh-base",
+    "ankh_large": "ElnaggarLab/ankh-large",
+    "ankh3_large": "ElnaggarLab/ankh3-large",
+    "esmc_300m": "Synthyra/ESMplusplus_small",
+    "esmc_600m": "Synthyra/ESMplusplus_large",
+}
+
+# Combined lookup for help text and error messages.
+ALL_SHORT_KEYS: dict[str, str] = {**MODEL_SHORT_KEYS, **EXTRA_SHORT_KEYS}
+
 DEFAULT_EMBEDDER = "prot_t5"
 
 # Reverse lookup: full model name → short key
 _FULL_TO_SHORT: dict[str, str] = {
     CommonEmbedder[v].value: k for k, v in MODEL_SHORT_KEYS.items()
-}
+} | {v: k for k, v in EXTRA_SHORT_KEYS.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -36,13 +50,21 @@ _FULL_TO_SHORT: dict[str, str] = {
 
 
 def resolve_embedder(name: str) -> str:
-    """Resolve a short alias to the full embedder name via CommonEmbedder.
+    """Resolve a short alias to the full embedder name.
 
-    Falls back to checking enum member names and raw values.  Raises
-    :class:`SystemExit` with suggestions if the name is unrecognised.
+    Checks ``MODEL_SHORT_KEYS`` (CommonEmbedder models), then
+    ``EXTRA_SHORT_KEYS`` (arbitrary HuggingFace models), then enum
+    member names, then raw values.  Raises :class:`SystemExit` with
+    suggestions if the name is unrecognised.
     """
     if name in MODEL_SHORT_KEYS:
         full = CommonEmbedder[MODEL_SHORT_KEYS[name]].value
+        logger.info("Resolved embedder '%s' → '%s'", name, full)
+        return full
+
+    # Extra models (not in CommonEmbedder enum)?
+    if name in EXTRA_SHORT_KEYS:
+        full = EXTRA_SHORT_KEYS[name]
         logger.info("Resolved embedder '%s' → '%s'", name, full)
         return full
 
@@ -53,17 +75,17 @@ def resolve_embedder(name: str) -> str:
         pass
 
     # Already a full model value?
-    known_values = {e.value for e in CommonEmbedder}
+    known_values = {e.value for e in CommonEmbedder} | set(EXTRA_SHORT_KEYS.values())
     if name in known_values:
         return name
 
     # Unknown — suggest close matches.
-    close = get_close_matches(name, MODEL_SHORT_KEYS.keys(), n=3, cutoff=0.5)
+    close = get_close_matches(name, ALL_SHORT_KEYS.keys(), n=3, cutoff=0.5)
     msg = f"Unknown embedder shortcut: '{name}'"
     if close:
         msg += f". Did you mean: {', '.join(close)}?"
     else:
-        msg += f". Available shortcuts: {', '.join(MODEL_SHORT_KEYS)}"
+        msg += f". Available shortcuts: {', '.join(sorted(ALL_SHORT_KEYS))}"
     print(msg, file=sys.stderr)
     sys.exit(1)
 

@@ -45,8 +45,8 @@ protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 # From FASTA (auto-embeds via Biocentral API)
 protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 
-# Multi-model comparison
-protspace prepare -i sequences.fasta -e prot_t5,esm2_3b -m pca2,umap2 -o output
+# Multi-model comparison (12 pLMs supported)
+protspace prepare -i sequences.fasta -e prot_t5,esm2_650m,ankh_base -m pca2,umap2 -o output
 ```
 
 ### 2. Explore results

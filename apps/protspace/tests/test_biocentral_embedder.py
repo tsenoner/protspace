@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from src.protspace.data.embedding.biocentral import (
+    EXTRA_SHORT_KEYS,
     MODEL_SHORT_KEYS,
     derive_h5_cache_path,
     load_existing_ids,
@@ -46,6 +47,28 @@ class TestResolveEmbedder:
             assert isinstance(result, str)
             assert len(result) > 0
 
+    def test_extra_shortcut_ankh_base(self):
+        result = resolve_embedder("ankh_base")
+        assert result == "ElnaggarLab/ankh-base"
+
+    def test_extra_shortcut_esmc_300m(self):
+        result = resolve_embedder("esmc_300m")
+        assert result == "Synthyra/ESMplusplus_small"
+
+    def test_extra_shortcut_esm2_35m(self):
+        result = resolve_embedder("esm2_35m")
+        assert result == "facebook/esm2_t12_35M_UR50D"
+
+    def test_all_extra_shortcuts_resolve(self):
+        """Verify every shortcut in EXTRA_SHORT_KEYS resolves without error."""
+        for shortcut, expected in EXTRA_SHORT_KEYS.items():
+            result = resolve_embedder(shortcut)
+            assert result == expected
+
+    def test_extra_full_value_passthrough(self):
+        result = resolve_embedder("ElnaggarLab/ankh-base")
+        assert result == "ElnaggarLab/ankh-base"
+
 
 class TestDeriveH5CachePath:
     """Test derive_h5_cache_path function."""
@@ -63,6 +86,20 @@ class TestDeriveH5CachePath:
             "Rostlab/prot_t5_xl_uniref50",
         )
         assert result == Path("/data/seqs_prot_t5.h5")
+
+    def test_extra_embedder_ankh(self):
+        result = derive_h5_cache_path(
+            Path("/data/seqs.fasta"),
+            "ElnaggarLab/ankh-base",
+        )
+        assert result == Path("/data/seqs_ankh_base.h5")
+
+    def test_extra_embedder_esmc(self):
+        result = derive_h5_cache_path(
+            Path("/data/seqs.fasta"),
+            "Synthyra/ESMplusplus_small",
+        )
+        assert result == Path("/data/seqs_esmc_300m.h5")
 
     def test_unknown_embedder_slashes_replaced(self):
         result = derive_h5_cache_path(

@@ -13,7 +13,12 @@ from protspace.cli.app import app, setup_logging
 logger = logging.getLogger(__name__)
 
 ANNOTATIONS_URL = "https://github.com/tsenoner/protspace/blob/main/docs/annotations.md"
-EMBEDDER_MODELS = {"prot_t5", "prost_t5", "esm2_8m", "esm2_650m", "esm2_3b"}
+EMBEDDER_MODELS = {
+    "prot_t5", "prost_t5",
+    "esm2_8m", "esm2_35m", "esm2_150m", "esm2_650m", "esm2_3b",
+    "ankh_base", "ankh_large", "ankh3_large",
+    "esmc_300m", "esmc_600m",
+}
 
 
 class Metric(str, Enum):
@@ -61,7 +66,13 @@ Opt_Embedder = Annotated[
     typer.Option(
         "-e",
         "--embedder",
-        help="pLM model(s), comma-separated: prot_t5,esm2_3b,esm2_650m,esm2_8m,prost_t5.",
+        help=(
+            "pLM model(s), comma-separated. "
+            "Models: prot_t5, prost_t5, esm2_8m, esm2_35m, esm2_150m, "
+            "esm2_650m, esm2_3b, ankh_base, ankh_large, ankh3_large, "
+            "esmc_300m, esmc_600m. "
+            "Note: ankh_*, ankh3_*, esmc_600m are non-commercial licenses."
+        ),
         rich_help_panel="Embedding",
     ),
 ]
