@@ -26,8 +26,10 @@ def embed(
             "--embedder",
             help=(
                 "Biocentral model shortcut (repeatable for multi-model).\n"
-                "Models: prot_t5, prost_t5, esm2_8m, esm2_650m, esm2_3b, "
-                "one_hot, blosum62, aa_ontology, random."
+                "Models: prot_t5, prost_t5, esm2_8m, esm2_35m, esm2_150m, "
+                "esm2_650m, esm2_3b, ankh_base, ankh_large, ankh3_large, "
+                "esmc_300m, esmc_600m.\n"
+                "Note: ankh_*, ankh3_*, esmc_600m are non-commercial licenses."
             ),
         ),
     ],

@@ -57,10 +57,32 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 # From HDF5: protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 # From FASTA: protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 # Multi-model: protspace prepare -i seq.fasta -e prot_t5,esm2_3b -m pca2 -o output
+# All 12 pLMs: protspace prepare -i seq.fasta -e prot_t5,prost_t5,esm2_8m,esm2_35m,esm2_150m,esm2_650m,esm2_3b,ankh_base,ankh_large,ankh3_large,esmc_300m,esmc_600m -m pca2 -o output
 # Multi-embedding: protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
 # With similarity: protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 # Name override: protspace prepare -i emb.h5:custom_name -m pca2 -o output
 ```
+
+### Supported Embedders (via Biocentral API)
+
+| Shortcut | Model | Dim | License |
+|----------|-------|-----|---------|
+| `prot_t5` | Rostlab/prot_t5_xl_uniref50 | 1024 | MIT |
+| `prost_t5` | Rostlab/ProstT5 | 1024 | MIT |
+| `esm2_8m` | facebook/esm2_t6_8M_UR50D | 320 | MIT |
+| `esm2_35m` | facebook/esm2_t12_35M_UR50D | 480 | MIT |
+| `esm2_150m` | facebook/esm2_t30_150M_UR50D | 640 | MIT |
+| `esm2_650m` | facebook/esm2_t33_650M_UR50D | 1280 | MIT |
+| `esm2_3b` | facebook/esm2_t36_3B_UR50D | 2560 | MIT |
+| `ankh_base` | ElnaggarLab/ankh-base | 768 | CC-BY-NC-SA-4.0 |
+| `ankh_large` | ElnaggarLab/ankh-large | 1536 | CC-BY-NC-SA-4.0 |
+| `ankh3_large` | ElnaggarLab/ankh3-large | 1536 | CC-BY-NC-SA-4.0 |
+| `esmc_300m` | Synthyra/ESMplusplus_small | 960 | Cambrian Open |
+| `esmc_600m` | Synthyra/ESMplusplus_large | 1152 | Cambrian Non-Commercial |
+
+Ankh models, ankh3_large, and esmc_600m are non-commercial only. ESMC models use Synthyra's HuggingFace-compatible reimplementation of EvolutionaryScale's ESM-C (near-identical embeddings, MSE ~7.74e-10).
+
+Model shortcuts are defined in `MODEL_SHORT_KEYS` (CommonEmbedder models) and `EXTRA_SHORT_KEYS` (additional HuggingFace models) in `src/protspace/data/embedding/biocentral.py`. Display names are in `src/protspace/data/loaders/embedding_set.py`.
 
 ## Package Structure
 

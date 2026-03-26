@@ -10,8 +10,15 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "prot_t5": "ProtT5",
     "prost_t5": "ProstT5",
     "esm2_8m": "ESM2-8M",
+    "esm2_35m": "ESM2-35M",
+    "esm2_150m": "ESM2-150M",
     "esm2_650m": "ESM2-650M",
     "esm2_3b": "ESM2-3B",
+    "ankh_base": "Ankh-Base",
+    "ankh_large": "Ankh-Large",
+    "ankh3_large": "Ankh3-Large",
+    "esmc_300m": "ESMC-300M",
+    "esmc_600m": "ESMC-600M",
     "MMseqs2": "MMseqs2",
 }
 

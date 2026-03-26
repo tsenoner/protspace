@@ -60,7 +60,9 @@ protspace prepare -i embeddings.h5 -f sequences.fasta -s -m pca2,mds2 -o output
 | `--probe` | Test embedder with 2 sequences, then exit. | off |
 | `--dry-run` | Parse input and print stats, then exit. | off |
 
-**Available embedders:** `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_650m`, `esm2_3b`, `one_hot`, `blosum62`, `aa_ontology`, `random`
+**Available embedders:** `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`, `esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
+
+> **Licensing:** `ankh_base`, `ankh_large`, `ankh3_large` are CC-BY-NC-SA-4.0 (non-commercial). `esmc_600m` is under the Cambrian Non-Commercial License. `esmc_300m` is under the Cambrian Open License (commercial OK). All ESM2 and ProtT5/ProstT5 models are permissively licensed.
 
 #### Projection
 
