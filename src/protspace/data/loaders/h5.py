@@ -177,9 +177,7 @@ def load_h5(
             f"Removing these entries ({num_nan / total * 100:.2f}%)."
         )
         arr = arr[~nan_mask]
-        headers = [
-            h for h, is_nan in zip(headers, nan_mask, strict=True) if not is_nan
-        ]
+        headers = [h for h, is_nan in zip(headers, nan_mask, strict=True) if not is_nan]
         if len(arr) == 0:
             raise ValueError(
                 "All embeddings contain NaN values. Please check your input file."
@@ -192,9 +190,11 @@ def load_h5(
         name = _resolve_model_name(h5_files)
         if name is None:
             file_list = ", ".join(str(f) for f in h5_files)
+            example = f"-i {h5_files[0]}:prot_t5" if h5_files else "-i file.h5:prot_t5"
             raise ValueError(
-                f"No model name found in HDF5 attributes for: {file_list}. "
-                f"Use the colon syntax to specify: -i file.h5:model_name"
+                f"HDF5 file has no 'model_name' attribute: {file_list}\n"
+                f"  Fix: specify the model name with the colon syntax, e.g.\n"
+                f"       protspace prepare {example} -o output"
             )
 
     return EmbeddingSet(name=name, data=arr, headers=headers)

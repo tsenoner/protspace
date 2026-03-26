@@ -139,9 +139,7 @@ def embed_sequences(
     # Resume: skip already-embedded sequences
     existing_ids = load_existing_ids(h5_path)
     if existing_ids:
-        logger.info(
-            "Found %d existing embeddings in %s", len(existing_ids), h5_path
-        )
+        logger.info("Found %d existing embeddings in %s", len(existing_ids), h5_path)
     remaining = {k: v for k, v in sequences.items() if k not in existing_ids}
     logger.info(
         "Remaining sequences to embed: %d (skipped %d)",
@@ -150,9 +148,7 @@ def embed_sequences(
     )
 
     if not remaining:
-        print(
-            f"All {len(sequences):,} sequences already embedded in {h5_path}"
-        )
+        print(f"All {len(sequences):,} sequences already embedded in {h5_path}")
         return h5_path
 
     # Deduplicate sequences (API rejects batches with duplicate sequences)
@@ -276,9 +272,7 @@ def probe_embedder(
     probe_seqs = dict(list(sequences.items())[:2])
     print(f"Probe: submitting {len(probe_seqs)} sequence(s) with {embedder}")
     for pid, seq in probe_seqs.items():
-        print(
-            f"  {pid}: {seq[:40]}{'...' if len(seq) > 40 else ''} ({len(seq)} aa)"
-        )
+        print(f"  {pid}: {seq[:40]}{'...' if len(seq) > 40 else ''} ({len(seq)} aa)")
 
     api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
     api = api.wait_until_healthy(max_wait_seconds=30)
