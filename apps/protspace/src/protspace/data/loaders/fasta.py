@@ -17,7 +17,6 @@ def embed_fasta(
     embedder: str,
     *,
     batch_size: int = 1000,
-    half_precision: bool = False,
     embedding_cache: Path | None = None,
 ) -> EmbeddingSet:
     """Parse FASTA, embed via Biocentral API, return EmbeddingSet.
@@ -38,9 +37,7 @@ def embed_fasta(
         raise ValueError(f"No sequences found in {fasta_path}")
 
     # Remap keys: sp|P12345|NAME → P12345
-    sequences = {
-        parse_identifier(header): seq for header, seq in raw_sequences.items()
-    }
+    sequences = {parse_identifier(header): seq for header, seq in raw_sequences.items()}
 
     resolved = resolve_embedder(embedder)
     h5_path = (
@@ -54,7 +51,6 @@ def embed_fasta(
         resolved,
         h5_path,
         batch_size=batch_size,
-        half_precision=half_precision,
     )
 
     # Write model_name attr to H5 so load_h5 can resolve it later

@@ -16,19 +16,6 @@ from protspace.utils.reducers import MDS_NAME
 logger = logging.getLogger(__name__)
 
 
-class NumpyEncoder(json.JSONEncoder):
-    """Custom JSON encoder that handles NumPy data types."""
-
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super().default(obj)
-
-
 class BaseProcessor:
     """Base class containing common data processing methods."""
 
@@ -89,8 +76,12 @@ class BaseProcessor:
         pacmap_logger.setLevel(logging.ERROR)
         try:
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"sklearn")
-                warnings.filterwarnings("ignore", category=FutureWarning, module=r"sklearn")
+                warnings.filterwarnings(
+                    "ignore", category=RuntimeWarning, module=r"sklearn"
+                )
+                warnings.filterwarnings(
+                    "ignore", category=FutureWarning, module=r"sklearn"
+                )
                 warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
                 reduced_data = reducer.fit_transform(data)
         finally:
@@ -224,70 +215,3 @@ class BaseProcessor:
 
         df = pd.DataFrame(rows)
         return pa.Table.from_pandas(df)
-
-    def create_output_legacy(
-        self,
-        metadata: pd.DataFrame,
-        reductions: list[dict[str, Any]],
-        headers: list[str],
-    ) -> dict[str, Any]:
-        """Create the final output dictionary (legacy JSON format)."""
-        output = {"protein_data": {}, "projections": []}
-
-        # Process annotations
-        for _, row in metadata.iterrows():
-            protein_id = row[self.identifier_col]
-            annotations = (
-                row.drop(self.identifier_col)
-                .infer_objects(copy=False)
-                .fillna("")
-                .to_dict()
-            )
-            output["protein_data"][protein_id] = {"annotations": annotations}
-
-        # Process projections
-        for reduction in reductions:
-            projection = {
-                "name": reduction["name"],
-                "dimensions": reduction["dimensions"],
-                "info": reduction["info"],
-                "data": [],
-            }
-
-            for i, header in enumerate(headers):
-                coordinates = {
-                    "x": np.float32(reduction["data"][i][0]),
-                    "y": np.float32(reduction["data"][i][1]),
-                }
-                if reduction["dimensions"] == 3:
-                    coordinates["z"] = np.float32(reduction["data"][i][2])
-
-                projection["data"].append(
-                    {"identifier": header, "coordinates": coordinates}
-                )
-
-            output["projections"].append(projection)
-
-        return output
-
-    def save_output_legacy(self, data: dict[str, Any], output_path: Path):
-        """Save output data to JSON file (legacy format)."""
-        # output_path is the final .json file path
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        json_file_path = output_path
-
-        if json_file_path.exists():
-            with json_file_path.open("r") as f:
-                existing = json.load(f)
-                existing["protein_data"].update(data["protein_data"])
-
-                # Update or add projections
-                existing_projs = {p["name"]: p for p in existing["projections"]}
-                for new_proj in data["projections"]:
-                    existing_projs[new_proj["name"]] = new_proj
-                existing["projections"] = list(existing_projs.values())
-
-            data = existing
-
-        with json_file_path.open("w") as f:
-            json.dump(data, f, indent=2, cls=NumpyEncoder)

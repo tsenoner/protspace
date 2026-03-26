@@ -55,9 +55,7 @@ def parse_fasta(path: Path) -> dict[str, str]:
                 else:
                     sequences[current_header] = seq
             else:
-                logger.warning(
-                    "Empty sequence for '%s', skipping", current_header
-                )
+                logger.warning("Empty sequence for '%s', skipping", current_header)
 
     if duplicates:
         logger.warning(

@@ -27,7 +27,6 @@ class PipelineConfig:
     methods: list[str]
     output_path: Path
     bundled: bool = True
-    non_binary: bool = False
     keep_tmp: bool = False
     no_scores: bool = False
     force_refetch: bool = False
@@ -98,16 +97,10 @@ class ReductionPipeline:
         all_reductions = self._run_reductions(embedding_sets)
 
         # Create and save output
-        if self.config.non_binary:
-            output = self.base.create_output_legacy(
-                metadata, all_reductions, all_headers
-            )
-            self.base.save_output_legacy(output, self.config.output_path)
-        else:
-            output = self.base.create_output(metadata, all_reductions, all_headers)
-            self.base.save_output(
-                output, self.config.output_path, bundled=self.config.bundled
-            )
+        output = self.base.create_output(metadata, all_reductions, all_headers)
+        self.base.save_output(
+            output, self.config.output_path, bundled=self.config.bundled
+        )
 
         logger.info(
             f"Processed {len(all_headers)} proteins, "
@@ -186,7 +179,6 @@ class ReductionPipeline:
         keep_tmp = self.config.keep_tmp
         intermediate_dir = self.config.intermediate_dir
         force_refetch = self.config.force_refetch
-        non_binary = self.config.non_binary
 
         if keep_tmp and intermediate_dir:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -235,7 +227,6 @@ class ReductionPipeline:
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
-                    non_binary=False,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
                 ).to_pd()
@@ -244,14 +235,12 @@ class ReductionPipeline:
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
-                    non_binary=False,
                 ).to_pd()
         else:
             return ProteinAnnotationManager(
                 headers=headers,
                 annotations=annotations_list,
                 output_path=None,
-                non_binary=non_binary,
             ).to_pd()
 
     def _resolve_annotation_names(self) -> list[str]:
@@ -294,9 +283,7 @@ class ReductionPipeline:
                     logger.warning(f"Unknown method: {method}. Skipping.")
                     continue
 
-                logger.info(
-                    f"Applying {method.upper()} {dims} to '{emb_set.name}'"
-                )
+                logger.info(f"Applying {method.upper()} {dims} to '{emb_set.name}'")
                 reduction = self.base.process_reduction(emb_set.data, method, dims)
 
                 reduction["name"] = format_projection_name(emb_set.name, method, dims)

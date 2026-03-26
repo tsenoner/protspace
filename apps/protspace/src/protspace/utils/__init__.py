@@ -28,8 +28,8 @@ REDUCERS = {
 }
 
 __all__ = [
-    "JsonReader",
     "ArrowReader",
+    "JsonReader",
     "REDUCER_METHODS",
     "DimensionReductionConfig",
     "REDUCERS",

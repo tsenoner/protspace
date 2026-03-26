@@ -69,18 +69,6 @@ class TestOutputFileGeneration:
             assert output_dir.exists()
             assert output_dir.is_dir()
 
-    def test_json_output(self):
-        """Test JSON output generation."""
-        with tempfile.TemporaryDirectory() as temp_dir_path:
-            temp_path = Path(temp_dir_path)
-            processor = BaseProcessor({}, REDUCERS)
-
-            output_path = temp_path / "test.json"
-            processor.save_output_legacy(LEGACY_OUTPUT_DATA, output_path)
-
-            assert output_path.exists()
-            assert output_path.suffix == ".json"
-
     def test_bundled_parquet_output_query_data(self, sample_query_data):
         """Test bundled parquet output with query-style data."""
         with tempfile.TemporaryDirectory() as temp_dir_path:
@@ -130,15 +118,3 @@ class TestOutputFileGeneration:
 
             assert output_dir.exists()
             assert output_dir.is_dir()
-
-    def test_json_output_query_data(self):
-        """Test JSON output with query-style data."""
-        with tempfile.TemporaryDirectory() as temp_dir_path:
-            temp_path = Path(temp_dir_path)
-            processor = BaseProcessor({}, REDUCERS)
-
-            output_path = temp_path / "query_test.json"
-            processor.save_output_legacy(LEGACY_OUTPUT_DATA, output_path)
-
-            assert output_path.exists()
-            assert output_path.suffix == ".json"

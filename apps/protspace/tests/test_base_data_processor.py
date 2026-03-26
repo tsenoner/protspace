@@ -94,21 +94,6 @@ class TestCreateOutput:
         assert isinstance(tables["projections_metadata"], pa.Table)
         assert isinstance(tables["projections_data"], pa.Table)
 
-    def test_create_output_legacy(self):
-        processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
-        reductions = SAMPLE_REDUCTIONS
-        output = processor.create_output_legacy(
-            SAMPLE_METADATA, reductions, SAMPLE_HEADERS
-        )
-        assert "protein_data" in output
-        assert "projections" in output
-        assert set(output["protein_data"].keys()) == set(SAMPLE_HEADERS)
-        assert isinstance(output["projections"], list)
-        assert (
-            output["projections"][0]["name"] == "PCA_2"
-            or output["projections"][0]["name"] == "CustomPCA"
-        )
-
     def test_create_output_removes_internal_columns(self):
         """Test that internal columns (organism_id, sequence) are removed from output."""
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
@@ -165,19 +150,3 @@ class TestSaveOutput:
             processor.save_output(tables, Path("output_dir"), bundled=True)
             mock_mkdir.assert_called()
             mock_open.assert_called()
-
-    @patch("json.dump")
-    def test_save_output_legacy(self, mock_json_dump):
-        processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
-        output = processor.create_output_legacy(
-            SAMPLE_METADATA, SAMPLE_REDUCTIONS, SAMPLE_HEADERS
-        )
-        with (
-            patch("pathlib.Path.mkdir") as mock_mkdir,
-            patch("pathlib.Path.open", new_callable=MagicMock) as mock_open,
-            patch("pathlib.Path.exists", return_value=False),
-        ):
-            processor.save_output_legacy(output, Path("output_dir"))
-            mock_mkdir.assert_called()
-            mock_open.assert_called()
-            mock_json_dump.assert_called()

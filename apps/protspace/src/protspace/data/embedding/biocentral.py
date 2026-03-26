@@ -127,7 +127,6 @@ def embed_sequences(
     embedder: str,
     h5_path: Path,
     batch_size: int = 1000,
-    half_precision: bool = False,
 ) -> Path:
     """Embed *sequences* via Biocentral API and write to *h5_path*.
 
@@ -199,7 +198,6 @@ def embed_sequences(
                 embedder_name=embedder,
                 sequence_data=batch_seqs,
                 reduce=True,
-                use_half_precision=half_precision,
             ).run()
 
             if result is not None:
@@ -266,7 +264,6 @@ def embed_sequences(
 def probe_embedder(
     sequences: dict[str, str],
     embedder: str,
-    half_precision: bool = False,
 ) -> None:
     """Submit 2 sequences as a probe and print the result summary."""
     probe_seqs = dict(list(sequences.items())[:2])
@@ -281,7 +278,6 @@ def probe_embedder(
         embedder_name=embedder,
         sequence_data=probe_seqs,
         reduce=True,
-        use_half_precision=half_precision,
     ).run_with_progress()
 
     if result is None:

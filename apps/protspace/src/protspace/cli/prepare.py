@@ -93,14 +93,6 @@ Opt_BatchSize = Annotated[
         help="Sequences per Biocentral API call.", rich_help_panel="Embedding"
     ),
 ]
-Opt_HalfPrecision = Annotated[
-    bool,
-    typer.Option(
-        "--half-precision",
-        help="Request float16 embeddings.",
-        rich_help_panel="Embedding",
-    ),
-]
 
 # Projection
 Opt_Methods = Annotated[
@@ -193,10 +185,12 @@ Opt_Annotations = Annotated[
         rich_help_panel="Annotations",
     ),
 ]
-Opt_NoScores = Annotated[
+Opt_Scores = Annotated[
     bool,
     typer.Option(
-        "--no-scores", help="Strip confidence scores.", rich_help_panel="Annotations"
+        "--scores/--no-scores",
+        help="Include annotation confidence scores.",
+        rich_help_panel="Annotations",
     ),
 ]
 Opt_ForceRefetch = Annotated[
@@ -223,14 +217,6 @@ Opt_KeepTmp = Annotated[
 Opt_Bundled = Annotated[
     bool,
     typer.Option(help="Bundle into single .parquetbundle.", rich_help_panel="Output"),
-]
-Opt_NonBinary = Annotated[
-    bool,
-    typer.Option(
-        "--non-binary",
-        help="Output JSON+CSV instead of Parquet.",
-        rich_help_panel="Output",
-    ),
 ]
 Opt_DumpCache = Annotated[
     bool,
@@ -270,7 +256,6 @@ def prepare(
     # Embedding
     embedder: Opt_Embedder = None,
     batch_size: Opt_BatchSize = 1000,
-    half_precision: Opt_HalfPrecision = False,
     # Projection
     methods: Opt_Methods = "pca2",
     similarity: Opt_Similarity = False,
@@ -287,13 +272,12 @@ def prepare(
     eps: Opt_Eps = 1e-6,
     # Annotations
     annotations: Opt_Annotations = "default",
-    no_scores: Opt_NoScores = False,
+    scores: Opt_Scores = True,
     force_refetch: Opt_ForceRefetch = False,
     # Output
     output: Opt_Output = Path("."),
     keep_tmp: Opt_KeepTmp = True,
     bundled: Opt_Bundled = True,
-    non_binary: Opt_NonBinary = False,
     dump_cache: Opt_DumpCache = False,
     no_log: Opt_NoLog = False,
     # General
@@ -342,9 +326,7 @@ def prepare(
     if cache_dir:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-    if non_binary:
-        output_path = output_dir / "protspace.json"
-    elif bundled:
+    if bundled:
         output_path = (
             output
             if output.suffix == ".parquetbundle"
@@ -391,7 +373,6 @@ def prepare(
                     fasta_path,
                     emb_name,
                     batch_size=batch_size,
-                    half_precision=half_precision,
                     embedding_cache=emb_cache,
                 )
                 emb_set.fasta_path = fasta_path
@@ -417,7 +398,6 @@ def prepare(
                             path,
                             emb_name,
                             batch_size=batch_size,
-                            half_precision=half_precision,
                             embedding_cache=emb_cache,
                         )
                         emb_set.fasta_path = path
@@ -454,9 +434,8 @@ def prepare(
             methods=methods.split(","),
             output_path=output_path,
             bundled=bundled,
-            non_binary=non_binary,
             keep_tmp=keep_tmp,
-            no_scores=no_scores,
+            no_scores=not scores,
             force_refetch=force_refetch,
             annotations=annotation_list,
             intermediate_dir=cache_dir,
@@ -504,12 +483,10 @@ def prepare(
             max_iter=max_iter,
             eps=eps,
             annotations=annotations,
-            no_scores=no_scores,
+            scores=scores,
             batch_size=batch_size,
-            half_precision=half_precision,
             output_path=output_path,
             bundled=bundled,
-            non_binary=non_binary,
             n_proteins=len(embedding_sets[0].headers) if embedding_sets else 0,
             n_embedding_sets=len(embedding_sets),
         )
@@ -586,12 +563,10 @@ def _write_run_log(
     max_iter: int,
     eps: float,
     annotations: str,
-    no_scores: bool,
+    scores: bool,
     batch_size: int,
-    half_precision: bool,
     output_path: Path,
     bundled: bool,
-    non_binary: bool,
     n_proteins: int,
     n_embedding_sets: int,
 ) -> None:
@@ -626,7 +601,6 @@ def _write_run_log(
         "## Embedding",
         f"embedders: {', '.join(embedders) if embedders else '(from HDF5)'}",
         f"batch_size: {batch_size}",
-        f"half_precision: {half_precision}",
         "",
         "## Projection",
         f"methods: {', '.join(method_list)}",
@@ -645,10 +619,10 @@ def _write_run_log(
         "",
         "## Annotations",
         f"categories: {annotations}",
-        f"no_scores: {no_scores}",
+        f"scores: {scores}",
         "",
         "## Output",
-        f"format: {'json' if non_binary else 'parquetbundle' if bundled else 'parquet'}",
+        f"format: {'parquetbundle' if bundled else 'parquet'}",
         f"path: {output_path}",
         f"embedding_sets: {n_embedding_sets}",
         f"projections: {n_projections}",

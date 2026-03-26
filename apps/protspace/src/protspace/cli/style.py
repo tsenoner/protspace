@@ -12,11 +12,15 @@ from protspace.cli.app import app
 def style(
     input_file: Annotated[
         str,
-        typer.Argument(help="Path to .parquetbundle, .json file, or parquet directory."),
+        typer.Argument(
+            help="Path to .parquetbundle, .json file, or parquet directory."
+        ),
     ],
     output_file: Annotated[
         str | None,
-        typer.Argument(help="Output path. Not required for --dump-settings or --generate-template."),
+        typer.Argument(
+            help="Output path. Not required for --dump-settings or --generate-template."
+        ),
     ] = None,
     annotation_styles: Annotated[
         str | None,

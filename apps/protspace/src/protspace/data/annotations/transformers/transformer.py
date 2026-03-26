@@ -24,9 +24,7 @@ class AnnotationTransformer:
         self.interpro_transformer = InterProTransformer()
         self._ec_name_map = None
 
-    def transform(
-        self, proteins: list[ProteinAnnotations]
-    ) -> list[ProteinAnnotations]:
+    def transform(self, proteins: list[ProteinAnnotations]) -> list[ProteinAnnotations]:
         """
         Apply all transformations to protein annotations.
 

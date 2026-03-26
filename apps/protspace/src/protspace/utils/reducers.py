@@ -88,6 +88,7 @@ def _ensure_annoy_or_fallback() -> None:
         "using sklearn NearestNeighbors fallback for PaCMAP/LocalMAP"
     )
 
+
 # Method names constants
 PCA_NAME = "pca"
 TSNE_NAME = "tsne"
@@ -100,7 +101,6 @@ REDUCER_METHODS = [PCA_NAME, TSNE_NAME, UMAP_NAME, PACMAP_NAME, MDS_NAME, LOCALM
 
 # Metric types
 METRIC_TYPES = Literal["euclidean", "cosine"]
-
 
 
 @dataclass(frozen=True)

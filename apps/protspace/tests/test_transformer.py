@@ -672,12 +672,7 @@ class TestEnzclassParsing:
 
     def test_parse_enzclass_skips_headers(self):
         """Test that header/separator lines are skipped."""
-        text = (
-            "---\n"
-            "  ENZYME nomenclature database\n"
-            "\n"
-            "1. -. -.-  Oxidoreductases.\n"
-        )
+        text = "---\n  ENZYME nomenclature database\n\n1. -. -.-  Oxidoreductases.\n"
         result = UniProtTransformer._parse_enzclass_txt(text)
         assert result == {"1.-.-.-": "Oxidoreductases"}
 

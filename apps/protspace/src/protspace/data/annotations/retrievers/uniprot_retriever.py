@@ -151,9 +151,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                         )
                     )
                     resolved_count += 1
-                    logger.debug(
-                        f"Resolved inactive entry {accession} → {entry.entry}"
-                    )
+                    logger.debug(f"Resolved inactive entry {accession} → {entry.entry}")
                     continue
 
                 # Inactive entry — check reason
@@ -165,9 +163,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     target = reason["mergeDemergeTo"][0]
                     try:
                         target_result = _fetch_one_with_timeout(target)
-                        if "Inactive" not in str(
-                            target_result.get("entryType", "")
-                        ):
+                        if "Inactive" not in str(target_result.get("entryType", "")):
                             entry = UniProtEntry(target_result)
                             annotations_dict = self._extract_annotations(entry)
                             resolved.append(
@@ -199,10 +195,13 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 )
                 deleted_count += 1
                 deleted_reason = reason.get("deletedReason", reason_type)
-                seq_status = "sequence from UniParc" if annotations["sequence"] else "no sequence"
+                seq_status = (
+                    "sequence from UniParc"
+                    if annotations["sequence"]
+                    else "no sequence"
+                )
                 logger.debug(
-                    f"Deleted entry {accession}: {deleted_reason}"
-                    f" ({seq_status})"
+                    f"Deleted entry {accession}: {deleted_reason} ({seq_status})"
                 )
 
             except Exception:
@@ -212,13 +211,9 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     for page in UniprotkbClient.search(
                         query=f"sec_acc:{accession}", format="json"
                     ).each_page():
-                        content = (
-                            page.read() if hasattr(page, "read") else page
-                        )
+                        content = page.read() if hasattr(page, "read") else page
                         parsed = (
-                            json.loads(content)
-                            if isinstance(content, str)
-                            else content
+                            json.loads(content) if isinstance(content, str) else content
                         )
                         records.extend(parsed.get("results", []))
                     if records:
@@ -239,9 +234,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                         resolved.append(
                             ProteinAnnotations(
                                 identifier=accession,
-                                annotations=dict.fromkeys(
-                                    UNIPROT_ANNOTATIONS, ""
-                                ),
+                                annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
                             )
                         )
                         deleted_count += 1
@@ -302,8 +295,8 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     # Resolve any missing (inactive/obsolete) entries
                     missing = [acc for acc in batch if acc not in returned_ids]
                     if missing:
-                        resolved, res_count, del_count = (
-                            self._resolve_inactive_entries(missing)
+                        resolved, res_count, del_count = self._resolve_inactive_entries(
+                            missing
                         )
                         result.extend(resolved)
                         total_resolved += res_count
@@ -325,14 +318,10 @@ class UniProtRetriever(BaseAnnotationRetriever):
         if total_resolved or total_deleted:
             parts = []
             if total_deleted:
-                parts.append(
-                    f"{total_deleted} deleted (sequence from UniParc)"
-                )
+                parts.append(f"{total_deleted} deleted (sequence from UniParc)")
             if total_resolved:
                 parts.append(f"{total_resolved} merged into other entries")
-            logger.warning(
-                f"Inactive UniProt entries: {', '.join(parts)}"
-            )
+            logger.warning(f"Inactive UniProt entries: {', '.join(parts)}")
 
         return result
 

@@ -17,7 +17,9 @@ def annotate(
     input: Annotated[
         Path,
         typer.Option(
-            "-i", "--input", help="HDF5 or FASTA file (to extract protein identifiers).",
+            "-i",
+            "--input",
+            help="HDF5 or FASTA file (to extract protein identifiers).",
             exists=True,
         ),
     ],
@@ -33,10 +35,12 @@ def annotate(
         Path,
         typer.Option("-o", "--output", help="Output parquet file path."),
     ] = Path("annotations.parquet"),
-    no_scores: Annotated[
+    scores: Annotated[
         bool,
-        typer.Option("--no-scores", help="Strip annotation confidence scores."),
-    ] = False,
+        typer.Option(
+            "--scores/--no-scores", help="Include annotation confidence scores."
+        ),
+    ] = True,
     verbose: Annotated[
         int,
         typer.Option("-v", "--verbose", count=True, help="Increase verbosity."),
@@ -97,10 +101,9 @@ def annotate(
         headers=headers,
         annotations=annotations_list,
         output_path=None,
-        non_binary=False,
     ).to_pd()
 
-    if no_scores:
+    if not scores:
         from protspace.data.annotations.scores import strip_scores_from_df
 
         df = strip_scores_from_df(df)
