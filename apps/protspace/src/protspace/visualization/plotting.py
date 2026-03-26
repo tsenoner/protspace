@@ -17,7 +17,7 @@ from protspace.core.config import (
     NAN_COLOR,
 )
 from protspace.core.constants import standardize_missing
-from protspace.utils import JsonReader
+from protspace.utils.arrow_reader import ArrowReader
 
 
 def generate_default_color(index: int, total: int) -> str:
@@ -28,7 +28,7 @@ def generate_default_color(index: int, total: int) -> str:
 
 
 def prepare_dataframe(
-    reader: JsonReader, selected_projection: str, selected_annotation: str
+    reader: ArrowReader, selected_projection: str, selected_annotation: str
 ) -> pd.DataFrame:
     """Prepare the dataframe for plotting."""
     projection_data = reader.get_projection_data(selected_projection)
@@ -235,7 +235,7 @@ def _configure_layout(
 
 
 def create_plot(
-    reader: "JsonReader",
+    reader: "ArrowReader",
     selected_projection: str,
     selected_annotation: str,
     selected_proteins: list[str] | None = None,
@@ -404,4 +404,4 @@ def save_plot(
 
 
 def get_reader(json_data):
-    return JsonReader(json_data)
+    return ArrowReader(json_data)

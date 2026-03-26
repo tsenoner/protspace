@@ -1,9 +1,7 @@
 """
 Input/Output operations for ProtSpace data.
 
-This module centralizes file I/O operations:
-- DataReader: Unified interface for reading different file formats
-- AnnotationWriter: Writes annotation data to different formats
+- AnnotationWriter: Writes annotation data to Parquet
 - DataFormatter: Format data for different outputs
 - Bundle I/O: Read/write .parquetbundle files
 - Settings converter: Bidirectional conversion between settings formats
@@ -20,7 +18,6 @@ from protspace.data.io.bundle import (
     write_bundle,
 )
 from protspace.data.io.formatters import DataFormatter
-from protspace.data.io.readers import DataReader
 from protspace.data.io.settings_converter import (
     settings_to_visualization_state,
     visualization_state_to_settings,
@@ -28,7 +25,6 @@ from protspace.data.io.settings_converter import (
 from protspace.data.io.writers import AnnotationWriter
 
 __all__ = [
-    "DataReader",
     "AnnotationWriter",
     "DataFormatter",
     "PARQUET_BUNDLE_DELIMITER",
