@@ -40,15 +40,11 @@ def get_reducers() -> dict:
 
 def __getattr__(name: str):
     """Lazy attribute access for readers, reducer constants, and config."""
-    # Readers (pull in pandas/pyarrow)
+    # Reader (pulls in pandas/pyarrow)
     if name == "ArrowReader":
         from .arrow_reader import ArrowReader
 
         return ArrowReader
-    if name == "JsonReader":
-        from .json_reader import JsonReader
-
-        return JsonReader
 
     # Reducer constants and config (pull in sklearn/umap/pacmap)
     _reducer_attrs = {
@@ -76,7 +72,6 @@ def __dir__():
     """Expose all lazy attributes for IDE autocomplete and dir()."""
     return [
         "ArrowReader",
-        "JsonReader",
         "get_reducers",
         "DimensionReductionConfig",
         "REDUCER_METHODS",

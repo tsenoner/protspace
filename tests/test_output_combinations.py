@@ -9,7 +9,6 @@ import pandas as pd
 from src.protspace.data.processors.base_processor import BaseProcessor
 from src.protspace.utils import get_reducers
 from tests.test_config import (
-    LEGACY_OUTPUT_DATA,
     sample_data,
     sample_query_data,
     temp_dir,

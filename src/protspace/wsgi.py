@@ -6,10 +6,9 @@ from protspace import ProtSpace
 
 load_dotenv(".env.example")
 
-# Initialize ProtSpace with default JSON data and optional PDB ZIP
 protspace = ProtSpace(
     pdb_zip=os.getenv("PDB_ZIP_PATH"),
-    default_json_file=os.getenv("DEFAULT_JSON_FILE_PATH"),
+    arrow_dir=os.getenv("ARROW_DIR_PATH"),
 )
 
 # Create the Dash app

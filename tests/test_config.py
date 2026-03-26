@@ -210,12 +210,3 @@ EXPECTED_IDENTIFIERS = {
     "simple": ["P01308", "P01315"],
     "malformed": ["malformed_header_without_pipes", "incomplete"],
 }
-
-# Legacy output data for JSON tests
-LEGACY_OUTPUT_DATA = {
-    "protein_data": {
-        "P12345": {"annotations": {"length": "100"}},
-        "P67890": {"annotations": {"length": "150"}},
-    },
-    "projections": [{"name": "PCA_2", "data": []}],
-}
