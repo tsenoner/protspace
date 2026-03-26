@@ -1,7 +1,5 @@
 # CLI Reference
 
-ProtSpace provides a unified CLI with subcommands:
-
 | Command              | Purpose                                               |
 | -------------------- | ----------------------------------------------------- |
 | `protspace prepare`  | Full pipeline: embed → reduce → annotate → bundle     |
@@ -12,102 +10,98 @@ ProtSpace provides a unified CLI with subcommands:
 | `protspace serve`    | Launch interactive Dash web frontend                  |
 | `protspace style`    | Add/inspect annotation styles in existing files       |
 
-Run `protspace <command> -h` for detailed help on any command.
+Run `protspace <command> -h` for detailed help.
 
 ## `protspace prepare`
 
-Full pipeline: load embeddings or FASTA, perform dimensionality reduction,
-fetch annotations, and create a `.parquetbundle` for [protspace.app](https://protspace.app).
+Full pipeline: load protein embeddings (from HDF5, FASTA, or UniProt query), run dimensionality reduction, fetch biological annotations, and create a `.parquetbundle` for visualization at [protspace.app](https://protspace.app).
+
+Accepts three input types:
+- **HDF5 files** (`-i`) — pre-computed embeddings from any pLM
+- **FASTA files** (`-i` + `-e`) — sequences are embedded on-the-fly via the Biocentral API
+- **UniProt queries** (`-q` + `-e`) — sequences are fetched from UniProt, then embedded
 
 ```bash
 # From HDF5 embeddings
 protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 
-# From FASTA (embed + reduce)
-protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
+# From FASTA — auto-embed with two models
+protspace prepare -i sequences.fasta -e prot_t5,esm2_650m -m pca2,umap2 -o output
 
-# Multi-model from FASTA
-protspace prepare -i sequences.fasta -e prot_t5,esm2_3b -m pca2,umap2 -o output
+# From UniProt query
+protspace prepare -q "(family:phosphatase) AND (reviewed:true)" -e prot_t5 -m pca2 -o output
 
-# Multi-embedding from HDF5
-protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
+# With sequence similarity (MMseqs2)
+protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 
-# UniProt query
-protspace prepare -q "organism_name:\"Homo sapiens\" AND reviewed:true" -m pca2 -o output
-
-# With sequence similarity
-protspace prepare -i embeddings.h5 -f sequences.fasta -s -m pca2,mds2 -o output
+# External HDF5 without model_name attribute — use colon syntax
+protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 ```
 
 ### Options
 
 #### Input
 
-| Flag          | Description                                                                                                    | Default |
-| ------------- | -------------------------------------------------------------------------------------------------------------- | ------- |
-| `-i, --input` | HDF5 or FASTA file(s). Repeat for multi-embedding. Use colon syntax for name override: `-i file.h5:model_name` | —       |
-| `-q, --query` | UniProt search query (alternative to -i).                                                                      | —       |
-| `-f, --fasta` | FASTA for similarity computation (required with -s when input is HDF5).                                        | —       |
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-i, --input` | HDF5 or FASTA file(s). Repeat for multi-embedding. Use `-i file.h5:name` for external HDF5 files (see [Model Name Resolution](#model-name-resolution--i-fileh5name)). | — |
+| `-q, --query` | UniProt search query (alternative to -i). | — |
+| `-f, --fasta` | FASTA for similarity computation (with -s when input is HDF5). | — |
 
 #### Embedding
 
-| Flag                | Description                                             | Default   |
-| ------------------- | ------------------------------------------------------- | --------- |
-| `-e, --embedder`    | Biocentral model shortcut (repeatable for multi-model). | `prot_t5` |
-| `--batch-size`      | Sequences per API call.                                 | `1000`    |
-| `--embedding-cache` | Override HDF5 cache path.                               | —         |
-| `--probe`           | Test embedder with 2 sequences, then exit.              | off       |
-| `--dry-run`         | Parse input and print stats, then exit.                 | off       |
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-e, --embedder` | Biocentral model shortcut (comma-separated for multi-model). | `prot_t5` |
+| `--batch-size` | Sequences per API call. | `1000` |
 
 **Available embedders:** `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`, `esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
 
-> **Licensing:** `ankh_base`, `ankh_large`, `ankh3_large` are CC-BY-NC-SA-4.0 (non-commercial). `esmc_600m` is under the Cambrian Non-Commercial License. `esmc_300m` is under the Cambrian Open License (commercial OK). All ESM2 and ProtT5/ProstT5 models are permissively licensed.
+> **Licensing:** `ankh_base`, `ankh_large`, `ankh3_large` (CC-BY-NC-SA-4.0), `esmc_600m` (Cambrian Non-Commercial). All others are permissively licensed.
 
 #### Projection
 
-| Flag               | Description                                                                             | Default     |
-| ------------------ | --------------------------------------------------------------------------------------- | ----------- |
-| `-m, --methods`    | DR methods (comma-separated): `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2`. | `pca2`      |
-| `-s, --similarity` | Also compute sequence similarity DR from FASTA.                                         | off         |
-| `--metric`         | Distance metric (`euclidean`, `cosine`, `manhattan`, ...).                              | `euclidean` |
-| `--random-state`   | Random seed for reproducibility.                                                        | `42`        |
-| `--n-neighbors`    | Neighbors for UMAP/PaCMAP/LocalMAP (5-50).                                              | `15`        |
-| `--min-dist`       | UMAP min distance (0.0-0.99).                                                           | `0.1`       |
-| `--perplexity`     | t-SNE perplexity (5-50).                                                                | `30`        |
-| `--learning-rate`  | t-SNE learning rate (10-1000).                                                          | `200`       |
-| `--mn-ratio`       | PaCMAP mid-near pairs ratio (0.1-1.0).                                                  | `0.5`       |
-| `--fp-ratio`       | PaCMAP further pairs ratio (1.0-3.0).                                                   | `2.0`       |
-| `--n-init`         | MDS initialization count (1-10).                                                        | `4`         |
-| `--max-iter`       | MDS max iterations (100-1000).                                                          | `300`       |
-| `--eps`            | MDS convergence tolerance.                                                              | `1e-3`      |
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-m, --methods` | DR methods (comma-separated): `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2` | `pca2` |
+| `-s, --similarity` | Also compute sequence similarity DR from FASTA. | off |
+| `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`). | `euclidean` |
+| `--random-state` | Random seed. | `42` |
+| `--n-neighbors` | UMAP/PaCMAP/LocalMAP neighbors. | `25` |
+| `--min-dist` | UMAP min distance (0.0–0.99). | `0.1` |
+| `--perplexity` | t-SNE perplexity. | `30` |
+| `--learning-rate` | t-SNE learning rate. | `200` |
+| `--mn-ratio` | PaCMAP/LocalMAP mid-near ratio. | `0.5` |
+| `--fp-ratio` | PaCMAP/LocalMAP further ratio. | `2.0` |
+| `--n-init` | MDS initializations. | `4` |
+| `--max-iter` | MDS max iterations. | `300` |
+| `--eps` | MDS convergence tolerance. | `1e-3` |
 
 #### Annotations
 
-| Flag                     | Description                                                  | Default   |
-| ------------------------ | ------------------------------------------------------------ | --------- |
-| `-a, --annotations`      | Annotation sources (repeatable): groups or individual names. | `default` |
-| `--scores / --no-scores` | Include annotation confidence scores.                        | on        |
-| `--force-refetch`        | Force re-download even if cached.                            | off       |
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-a, --annotations` | Annotation sources: groups or individual names. | `default` |
+| `--scores / --no-scores` | Include annotation confidence scores. | on |
+| `--force-refetch` | Re-download all annotations. | off |
 
 #### Output
 
-| Flag                       | Description                                        | Default            |
-| -------------------------- | -------------------------------------------------- | ------------------ |
-| `-o, --output`             | Output file or directory path.                     | derived from input |
-| `--bundled / --no-bundled` | Bundle into single `.parquetbundle`.               | bundled            |
-| `--keep-tmp`               | Cache intermediate files for reuse.                | off                |
-| `--custom-names`           | Rename projections: `"pca2=My PCA,umap2=My UMAP"`. | —                  |
-| `--dump-cache`             | Print cached annotations and exit.                 | off                |
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-o, --output` | Output directory. | `.` |
+| `--bundled / --no-bundled` | Bundle into single `.parquetbundle`. | bundled |
+| `--keep-tmp` | Cache intermediates for resumability. | on |
+| `--no-log` | Skip writing `run.log`. | off |
+| `--dump-cache` | Print cached annotations and exit. | off |
 
 ## `protspace embed`
 
-Generate protein embeddings from a FASTA file via the Biocentral API.
+Generate HDF5 embeddings from FASTA via the Biocentral API.
 
 ```bash
 protspace embed -i sequences.fasta -e prot_t5 -e esm2_3b -o embeddings/
 ```
-
-Creates one HDF5 file per model with `model_name` written to root attributes.
 
 ## `protspace project`
 
@@ -116,8 +110,6 @@ Run dimensionality reduction on HDF5 embeddings.
 ```bash
 protspace project -i embeddings/prot_t5.h5 -i embeddings/esm2_3b.h5 -m pca2,umap2 -o projections/
 ```
-
-Outputs `projections_metadata.parquet` and `projections_data.parquet`.
 
 ## `protspace annotate`
 
@@ -145,7 +137,7 @@ protspace serve output.parquetbundle
 
 ## `protspace style`
 
-Add custom colors, shapes, legend ordering, and display settings. See [Annotation Styling](styling.md).
+Add custom colors, shapes, and display settings. See [Annotation Styling](styling.md).
 
 ```bash
 protspace style data.parquetbundle --generate-template > styles.json
@@ -155,25 +147,35 @@ protspace style data.parquetbundle --dump-settings
 
 ## Projection Naming
 
-All projection names are prefixed with the embedding source:
+Projections are prefixed with the embedding source: `ESM2-650M — PCA 2`, `ProtT5 — UMAP 2`, `MMseqs2 — MDS 2`.
 
-- PLM embeddings: `esm2_3b — PCA_2`, `prot_t5 — UMAP_2`
-- Sequence similarity: `MMseqs2 — MDS_2`
+## Model Name Resolution (`-i file.h5:name`)
 
-## Model Name Resolution
+HDF5 files need a model name for projection labels. Resolved in order:
 
-The PLM name for projection prefixes is resolved in order:
+1. **Colon syntax** — `-i file.h5:prot_t5` (highest priority)
+2. **HDF5 attribute** — `model_name` in root attrs (auto-set by `protspace embed`/`prepare`)
+3. **Error** — exits with a copy-pasteable fix command
 
-1. **HDF5 root attribute** `model_name` (set automatically when embedding via ProtSpace)
-2. **CLI colon syntax**: `-i file.h5:model_name`
-3. Error if neither is found
+Use the colon syntax for HDF5 files created outside protspace (bio_embeddings, custom scripts, Colab). Files from `protspace embed`/`prepare` already have the attribute.
+
+```bash
+# External files — need colon syntax
+protspace prepare -i my_embeddings.h5:prot_t5 -m pca2 -o output
+protspace prepare -i esm2.h5:esm2_650m -i prott5.h5:prot_t5 -m pca2 -o output
+
+# Protspace-generated files — just work
+protspace prepare -i embeddings/prot_t5.h5 -m pca2 -o output
+```
+
+Check if an HDF5 file has the attribute: `python -c "import h5py; print(dict(h5py.File('file.h5','r').attrs))"`
 
 ## Annotation Caching (`--keep-tmp`)
 
-When `--keep-tmp` is enabled, annotations are cached as `all_annotations.parquet` in a per-dataset directory.
+With `--keep-tmp`, annotations are cached as `all_annotations.parquet` in `{output}/tmp/`.
 
-- **Fixed format**: Cache is always parquet with scores, regardless of `--no-scores`.
-- **Incremental**: Only missing annotation sources are fetched on subsequent runs.
-- **Reusable**: Switching `--no-scores` between runs reuses the same cache.
+- Cache always includes scores regardless of `--no-scores`
+- Only missing sources are fetched on subsequent runs
+- Use `--force-refetch` to re-download everything
 
 See also: [Annotation Reference](annotations.md) | [Annotation Styling](styling.md)
