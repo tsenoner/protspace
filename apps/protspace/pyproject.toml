@@ -112,12 +112,6 @@ ignore = [
 "examples/notebook/*" = ["E402", "F811", "ARG001", "F841"]  # Jupyter notebooks: imports after config, cell re-imports, widget callback args
 
 [tool.semantic_release]
-assets = [
-    "uv.lock",
-    "requirements-py310.txt",
-    "requirements-py311.txt",
-    "requirements-py312.txt",
-]
+assets = ["uv.lock"]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/protspace/__init__.py:__version__"]
-build_command = "bash update_deps.sh"

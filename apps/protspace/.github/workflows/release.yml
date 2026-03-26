@@ -16,16 +16,22 @@ jobs:
       released: ${{ steps.semantic_release.outputs.released }}
       tag: ${{ steps.semantic_release.outputs.tag }}
     env:
-      UV_TOOL_DIR: /tmp/.uv-tool
+      UV_TOOL_DIR: /tmp/.uv-tools
 
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-          # Use PAT token for checkout to allow pushing to protected branches
-          token: ${{ secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Force correct release branch
         run: |
@@ -54,16 +60,10 @@ jobs:
       - name: Run Semantic Release
         id: semantic_release
         env:
-          # Use PAT token that can bypass branch protection
-          GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -e
           echo "Running semantic release..."
-
-          # Check if we have the special token
-          if [ -z "${{ secrets.SEMANTIC_RELEASE_TOKEN }}" ]; then
-            echo "WARNING: SEMANTIC_RELEASE_TOKEN not found, using GITHUB_TOKEN (may fail on protected branches)"
-          fi
 
           # Run semantic release with error handling
           if output=$(uv tool run --from python-semantic-release semantic-release version --commit --changelog --push --tag --vcs-release 2>&1); then
@@ -89,22 +89,13 @@ jobs:
             fi
           fi
 
-  trigger-builds:
+  trigger-publish:
     needs: release
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
     steps:
-      - name: Trigger Python Build
+      - name: Trigger Publish
         uses: peter-evans/repository-dispatch@v3
         with:
-          event-type: trigger-python-build
-          client-payload: '{"tag": "${{ needs.release.outputs.tag }}"}'
-
-      - name: Trigger Docker Build
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          event-type: trigger-docker-build
+          event-type: trigger-publish
           client-payload: '{"tag": "${{ needs.release.outputs.tag }}"}'
