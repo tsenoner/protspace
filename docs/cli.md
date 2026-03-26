@@ -2,15 +2,15 @@
 
 ProtSpace provides a unified CLI with subcommands:
 
-| Command              | Purpose                                                     |
-| -------------------- | ----------------------------------------------------------- |
-| `protspace prepare`  | Full pipeline: embed → reduce → annotate → bundle           |
-| `protspace embed`    | Generate embeddings from FASTA via Biocentral API           |
-| `protspace project`  | Dimensionality reduction on HDF5 embeddings                 |
-| `protspace annotate` | Fetch protein annotations from databases                    |
-| `protspace bundle`   | Combine projections + annotations into .parquetbundle       |
-| `protspace serve`    | Launch interactive Dash web frontend                        |
-| `protspace style`    | Add/inspect annotation styles in existing files             |
+| Command              | Purpose                                               |
+| -------------------- | ----------------------------------------------------- |
+| `protspace prepare`  | Full pipeline: embed → reduce → annotate → bundle     |
+| `protspace embed`    | Generate embeddings from FASTA via Biocentral API     |
+| `protspace project`  | Dimensionality reduction on HDF5 embeddings           |
+| `protspace annotate` | Fetch protein annotations from databases              |
+| `protspace bundle`   | Combine projections + annotations into .parquetbundle |
+| `protspace serve`    | Launch interactive Dash web frontend                  |
+| `protspace style`    | Add/inspect annotation styles in existing files       |
 
 Run `protspace <command> -h` for detailed help on any command.
 
@@ -43,22 +43,21 @@ protspace prepare -i embeddings.h5 -f sequences.fasta -s -m pca2,mds2 -o output
 
 #### Input
 
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `-i, --input` | HDF5 or FASTA file(s). Repeat for multi-embedding. Use colon syntax for name override: `-i file.h5:model_name` | — |
-| `-q, --query` | UniProt search query (alternative to -i). | — |
-| `-f, --fasta` | FASTA for similarity computation (required with -s when input is HDF5). | — |
+| Flag          | Description                                                                                                    | Default |
+| ------------- | -------------------------------------------------------------------------------------------------------------- | ------- |
+| `-i, --input` | HDF5 or FASTA file(s). Repeat for multi-embedding. Use colon syntax for name override: `-i file.h5:model_name` | —       |
+| `-q, --query` | UniProt search query (alternative to -i).                                                                      | —       |
+| `-f, --fasta` | FASTA for similarity computation (required with -s when input is HDF5).                                        | —       |
 
 #### Embedding
 
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `-e, --embedder` | Biocentral model shortcut (repeatable for multi-model). | `prot_t5` |
-| `--batch-size` | Sequences per API call. | `1000` |
-| `--half-precision` | Request float16 embeddings. | off |
-| `--embedding-cache` | Override HDF5 cache path. | — |
-| `--probe` | Test embedder with 2 sequences, then exit. | off |
-| `--dry-run` | Parse input and print stats, then exit. | off |
+| Flag                | Description                                             | Default   |
+| ------------------- | ------------------------------------------------------- | --------- |
+| `-e, --embedder`    | Biocentral model shortcut (repeatable for multi-model). | `prot_t5` |
+| `--batch-size`      | Sequences per API call.                                 | `1000`    |
+| `--embedding-cache` | Override HDF5 cache path.                               | —         |
+| `--probe`           | Test embedder with 2 sequences, then exit.              | off       |
+| `--dry-run`         | Parse input and print stats, then exit.                 | off       |
 
 **Available embedders:** `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`, `esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
 
@@ -66,40 +65,39 @@ protspace prepare -i embeddings.h5 -f sequences.fasta -s -m pca2,mds2 -o output
 
 #### Projection
 
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `-m, --methods` | DR methods (comma-separated): `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2`. | `pca2` |
-| `-s, --similarity` | Also compute sequence similarity DR from FASTA. | off |
-| `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`, ...). | `euclidean` |
-| `--random-state` | Random seed for reproducibility. | `42` |
-| `--n-neighbors` | Neighbors for UMAP/PaCMAP/LocalMAP (5-50). | `15` |
-| `--min-dist` | UMAP min distance (0.0-0.99). | `0.1` |
-| `--perplexity` | t-SNE perplexity (5-50). | `30` |
-| `--learning-rate` | t-SNE learning rate (10-1000). | `200` |
-| `--mn-ratio` | PaCMAP mid-near pairs ratio (0.1-1.0). | `0.5` |
-| `--fp-ratio` | PaCMAP further pairs ratio (1.0-3.0). | `2.0` |
-| `--n-init` | MDS initialization count (1-10). | `4` |
-| `--max-iter` | MDS max iterations (100-1000). | `300` |
-| `--eps` | MDS convergence tolerance. | `1e-3` |
+| Flag               | Description                                                                             | Default     |
+| ------------------ | --------------------------------------------------------------------------------------- | ----------- |
+| `-m, --methods`    | DR methods (comma-separated): `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2`. | `pca2`      |
+| `-s, --similarity` | Also compute sequence similarity DR from FASTA.                                         | off         |
+| `--metric`         | Distance metric (`euclidean`, `cosine`, `manhattan`, ...).                              | `euclidean` |
+| `--random-state`   | Random seed for reproducibility.                                                        | `42`        |
+| `--n-neighbors`    | Neighbors for UMAP/PaCMAP/LocalMAP (5-50).                                              | `15`        |
+| `--min-dist`       | UMAP min distance (0.0-0.99).                                                           | `0.1`       |
+| `--perplexity`     | t-SNE perplexity (5-50).                                                                | `30`        |
+| `--learning-rate`  | t-SNE learning rate (10-1000).                                                          | `200`       |
+| `--mn-ratio`       | PaCMAP mid-near pairs ratio (0.1-1.0).                                                  | `0.5`       |
+| `--fp-ratio`       | PaCMAP further pairs ratio (1.0-3.0).                                                   | `2.0`       |
+| `--n-init`         | MDS initialization count (1-10).                                                        | `4`         |
+| `--max-iter`       | MDS max iterations (100-1000).                                                          | `300`       |
+| `--eps`            | MDS convergence tolerance.                                                              | `1e-3`      |
 
 #### Annotations
 
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `-a, --annotations` | Annotation sources (repeatable): groups or individual names. | `default` |
-| `--no-scores` | Strip annotation confidence scores. | off |
-| `--force-refetch` | Force re-download even if cached. | off |
+| Flag                     | Description                                                  | Default   |
+| ------------------------ | ------------------------------------------------------------ | --------- |
+| `-a, --annotations`      | Annotation sources (repeatable): groups or individual names. | `default` |
+| `--scores / --no-scores` | Include annotation confidence scores.                        | on        |
+| `--force-refetch`        | Force re-download even if cached.                            | off       |
 
 #### Output
 
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `-o, --output` | Output file or directory path. | derived from input |
-| `--bundled / --no-bundled` | Bundle into single `.parquetbundle`. | bundled |
-| `--keep-tmp` | Cache intermediate files for reuse. | off |
-| `--non-binary` | Output JSON+CSV instead of Parquet. | off |
-| `--custom-names` | Rename projections: `"pca2=My PCA,umap2=My UMAP"`. | — |
-| `--dump-cache` | Print cached annotations and exit. | off |
+| Flag                       | Description                                        | Default            |
+| -------------------------- | -------------------------------------------------- | ------------------ |
+| `-o, --output`             | Output file or directory path.                     | derived from input |
+| `--bundled / --no-bundled` | Bundle into single `.parquetbundle`.               | bundled            |
+| `--keep-tmp`               | Cache intermediate files for reuse.                | off                |
+| `--custom-names`           | Rename projections: `"pca2=My PCA,umap2=My UMAP"`. | —                  |
+| `--dump-cache`             | Print cached annotations and exit.                 | off                |
 
 ## `protspace embed`
 
@@ -158,12 +156,14 @@ protspace style data.parquetbundle --dump-settings
 ## Projection Naming
 
 All projection names are prefixed with the embedding source:
+
 - PLM embeddings: `esm2_3b — PCA_2`, `prot_t5 — UMAP_2`
 - Sequence similarity: `MMseqs2 — MDS_2`
 
 ## Model Name Resolution
 
 The PLM name for projection prefixes is resolved in order:
+
 1. **HDF5 root attribute** `model_name` (set automatically when embedding via ProtSpace)
 2. **CLI colon syntax**: `-i file.h5:model_name`
 3. Error if neither is found
@@ -172,8 +172,8 @@ The PLM name for projection prefixes is resolved in order:
 
 When `--keep-tmp` is enabled, annotations are cached as `all_annotations.parquet` in a per-dataset directory.
 
-- **Fixed format**: Cache is always parquet with scores, regardless of `--non-binary` or `--no-scores`.
+- **Fixed format**: Cache is always parquet with scores, regardless of `--no-scores`.
 - **Incremental**: Only missing annotation sources are fetched on subsequent runs.
-- **Reusable**: Switching `--no-scores` or `--non-binary` between runs reuses the same cache.
+- **Reusable**: Switching `--no-scores` between runs reuses the same cache.
 
 See also: [Annotation Reference](annotations.md) | [Annotation Styling](styling.md)

@@ -203,14 +203,10 @@ class TestAllReducers:
 class TestFloat16Handling:
     """Ensure float16 input doesn't cause overflow or NaN."""
 
-    @pytest.mark.parametrize(
-        "name,cls", ALL_REDUCERS, ids=[r[0] for r in ALL_REDUCERS]
-    )
+    @pytest.mark.parametrize("name,cls", ALL_REDUCERS, ids=[r[0] for r in ALL_REDUCERS])
     def test_float16_input_produces_finite_output(self, name, cls, rng):
         # Small values typical of pLM embeddings stored in float16
-        data = (rng.standard_normal((N_SAMPLES, N_FEATURES)) * 0.04).astype(
-            np.float16
-        )
+        data = (rng.standard_normal((N_SAMPLES, N_FEATURES)) * 0.04).astype(np.float16)
         config = DimensionReductionConfig(n_components=2, random_state=SEED)
         # float16 is upcast in the processor, but reducers should still handle it
         result = cls(config).fit_transform(data.astype(np.float32))

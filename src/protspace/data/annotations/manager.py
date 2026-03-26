@@ -39,7 +39,6 @@ class ProteinAnnotationManager:
         headers: list[str],
         annotations: list = None,
         output_path: Path = None,
-        non_binary: bool = False,
         sequences: dict = None,
         cached_data: pd.DataFrame = None,
         sources_to_fetch: dict = None,
@@ -51,14 +50,12 @@ class ProteinAnnotationManager:
             headers: List of protein identifiers/accessions
             annotations: List of annotations to extract (None = use defaults)
             output_path: Path to save output file (None = return DataFrame only)
-            non_binary: If True, save as CSV; if False, save as Parquet
             sequences: Dictionary mapping identifiers to sequences (for InterPro)
             cached_data: Previously cached DataFrame with annotations
             sources_to_fetch: Dict indicating which sources to fetch (uniprot, taxonomy, interpro)
         """
         self.headers = headers
         self.output_path = output_path
-        self.non_binary = non_binary
         self.sequences = sequences
         self.cached_data = cached_data
         self.sources_to_fetch = sources_to_fetch or {
@@ -236,17 +233,10 @@ class ProteinAnnotationManager:
 
     def _save_and_load(self, proteins: list[ProteinAnnotations]) -> pd.DataFrame:
         """Save to file and load back."""
-        if self.non_binary:
-            self.writer.write_csv(
-                proteins, self.output_path, apply_transforms=False
-            )  # Already transformed
-            df = pd.read_csv(self.output_path)
-        else:
-            self.writer.write_parquet(
-                proteins, self.output_path, apply_transforms=False
-            )  # Already transformed
-            df = pd.read_parquet(self.output_path)
-        return df
+        self.writer.write_parquet(
+            proteins, self.output_path, apply_transforms=False
+        )  # Already transformed
+        return pd.read_parquet(self.output_path)
 
     @staticmethod
     def _get_taxon_counts(fetched_uniprot: list[ProteinAnnotations]) -> dict:

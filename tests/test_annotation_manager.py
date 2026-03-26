@@ -104,19 +104,15 @@ class TestProteinAnnotationExtractorInit:
         ]
         assert extractor.user_annotations == expected_annotations
         assert extractor.output_path is None
-        assert extractor.non_binary is False
 
     def test_init_with_output_path(self):
         """Test initialization with output path."""
         headers = SAMPLE_HEADERS
-        output_path = Path("test_output.csv")
+        output_path = Path("test_output.parquet")
 
-        extractor = ProteinAnnotationExtractor(
-            headers=headers, output_path=output_path, non_binary=True
-        )
+        extractor = ProteinAnnotationExtractor(headers=headers, output_path=output_path)
 
         assert extractor.output_path == output_path
-        assert extractor.non_binary is True
 
     def test_init_with_invalid_annotations(self):
         """Test initialization with invalid annotations raises ValueError."""
@@ -504,7 +500,6 @@ class TestIntegration:
                 headers=headers,
                 annotations=["length"],
                 output_path=output_path,
-                non_binary=True,
             )
 
             result = extractor.to_pd()

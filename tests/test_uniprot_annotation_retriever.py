@@ -586,9 +586,7 @@ class TestResolveInactiveEntries:
 
     @patch(_UNIPARC_PATCH)
     @patch(_FETCH_ONE_PATCH)
-    def test_fetch_one_merged_target_also_inactive(
-        self, mock_fetch_one, mock_uniparc
-    ):
+    def test_fetch_one_merged_target_also_inactive(self, mock_fetch_one, mock_uniparc):
         """When merged target is also inactive, entry is counted as deleted."""
         inactive_result = {
             "entryType": "Inactive",

@@ -29,10 +29,10 @@ uv run ruff check src/ tests/
 uv run python scripts/biocentral_embed.py --help
 
 # Run CLI
-uv run protspace prepare -i data/sizes/phosphatase.h5 -m pca2 -o output --no-scores
+uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m pca2 -o output --no-scores
 
 # Run all 6 DR methods on sample data
-uv run protspace prepare -i data/sizes/phosphatase.h5 -m "pca2,tsne2,umap2,pacmap2,mds2,localmap2" -o output --no-scores -v
+uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m "pca2,tsne2,umap2,pacmap2,mds2,localmap2" -o output --no-scores -v
 ```
 
 ## CLI Commands

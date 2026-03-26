@@ -24,11 +24,17 @@ def project(
     ],
     methods: Annotated[
         str,
-        typer.Option("-m", "--methods", help="DR methods (comma-separated): pca2, umap2, tsne2, ..."),
+        typer.Option(
+            "-m",
+            "--methods",
+            help="DR methods (comma-separated): pca2, umap2, tsne2, ...",
+        ),
     ] = "pca2",
     output: Annotated[
         Path,
-        typer.Option("-o", "--output", help="Output directory for projection parquet files."),
+        typer.Option(
+            "-o", "--output", help="Output directory for projection parquet files."
+        ),
     ] = Path("."),
     similarity: Annotated[
         bool,
@@ -105,7 +111,9 @@ def project(
         for method_spec in methods.split(","):
             method, dims = parse_method_spec(method_spec)
             if emb_set.precomputed and method != MDS_NAME:
-                logger.warning(f"Skipping {method} for '{emb_set.name}' (only MDS for precomputed)")
+                logger.warning(
+                    f"Skipping {method} for '{emb_set.name}' (only MDS for precomputed)"
+                )
                 continue
             if method not in REDUCERS:
                 logger.warning(f"Unknown method: {method}. Skipping.")

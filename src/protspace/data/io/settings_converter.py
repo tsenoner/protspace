@@ -22,10 +22,26 @@ REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequen
 
 # Kelly's 21 Colors of Maximum Contrast (same order as the web frontend)
 KELLYS_COLORS = [
-    "#F3C300", "#875692", "#F38400", "#A1CAF1", "#BE0032",
-    "#C2B280", "#008856", "#E68FAC", "#0067A5", "#F99379",
-    "#604E97", "#F6A600", "#B3446C", "#DCD300", "#882D17",
-    "#8DB600", "#654522", "#E25822", "#2B3D26", "#F2F3F4",
+    "#F3C300",
+    "#875692",
+    "#F38400",
+    "#A1CAF1",
+    "#BE0032",
+    "#C2B280",
+    "#008856",
+    "#E68FAC",
+    "#0067A5",
+    "#F99379",
+    "#604E97",
+    "#F6A600",
+    "#B3446C",
+    "#DCD300",
+    "#882D17",
+    "#8DB600",
+    "#654522",
+    "#E25822",
+    "#2B3D26",
+    "#F2F3F4",
     "#222222",
 ]
 
@@ -173,9 +189,13 @@ def visualization_state_to_settings(
 
         # Apply style overrides from user input
         _SETTINGS_KEYS = {
-            "sortMode", "maxVisibleValues", "shapeSize",
-            "hiddenValues", "selectedPaletteId",
-            "zOrderSort", "pinnedValues",
+            "sortMode",
+            "maxVisibleValues",
+            "shapeSize",
+            "hiddenValues",
+            "selectedPaletteId",
+            "zOrderSort",
+            "pinnedValues",
         }
         if style_overrides and annotation_name in style_overrides:
             for key, val in style_overrides[annotation_name].items():
@@ -191,11 +211,7 @@ def visualization_state_to_settings(
         zorder_sort = ann_settings.pop("zOrderSort", None)
         pinned_values: list[str] = ann_settings.pop("pinnedValues", None) or []
         sort_mode = zorder_sort or ann_settings.get("sortMode", "size-desc")
-        freqs = (
-            value_frequencies.get(annotation_name)
-            if value_frequencies
-            else None
-        )
+        freqs = value_frequencies.get(annotation_name) if value_frequencies else None
 
         # Build categories from colors, shapes, and (if needed) frequency data.
         # When style_overrides reference an annotation with no pre-existing
@@ -239,7 +255,7 @@ def visualization_state_to_settings(
                 # explicit_pinned already includes resolved NA entries,
                 # so subtracting its length accounts for all non-REST slots.
                 rest_slots = max_vis - len(explicit_pinned)
-                rest_values = candidates[:max(0, rest_slots)]
+                rest_values = candidates[: max(0, rest_slots)]
 
                 # Second pass: build ordered list, replacing __REST__ with auto-fill
                 valid_pinned: list[str] = []

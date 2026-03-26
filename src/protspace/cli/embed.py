@@ -44,10 +44,6 @@ def embed(
         int,
         typer.Option(help="Sequences per API call."),
     ] = 1000,
-    half_precision: Annotated[
-        bool,
-        typer.Option("--half-precision", help="Request float16 embeddings."),
-    ] = False,
     verbose: Annotated[
         int,
         typer.Option(
@@ -87,7 +83,6 @@ def embed(
             resolved,
             h5_path,
             batch_size=batch_size,
-            half_precision=half_precision,
         )
 
         # Write model_name attr
