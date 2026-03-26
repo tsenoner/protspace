@@ -16,7 +16,10 @@ def embed(
     input: Annotated[
         Path,
         typer.Option(
-            "-i", "--input", help="Input FASTA file.", exists=True,
+            "-i",
+            "--input",
+            help="Input FASTA file.",
+            exists=True,
         ),
     ],
     embedder: Annotated[
@@ -47,7 +50,9 @@ def embed(
     ] = False,
     verbose: Annotated[
         int,
-        typer.Option("-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)."),
+        typer.Option(
+            "-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)."
+        ),
     ] = 0,
 ) -> None:
     """Generate protein embeddings from a FASTA file via Biocentral API.
