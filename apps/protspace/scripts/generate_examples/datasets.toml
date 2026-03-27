@@ -40,9 +40,9 @@ embedder = "prot_t5"
 methods = "pca2,umap2"
 annotations = "all"
 
-[cytochrome_p450]
-description = "Cytochrome P450 — includes unreviewed TrEMBL entries"
-query = '(family:"cytochrome P450")'
+[snake_toxin]
+description = "Snake venom toxins — includes unreviewed TrEMBL entries (~6,000)"
+query = '(keyword:Toxin) AND (taxonomy_id:8570)'
 embedder = "prot_t5"
 methods = "pca2,umap2"
 annotations = "default"

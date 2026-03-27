@@ -40,7 +40,7 @@ def generate_dataset(name: str, cfg: dict, skip_existing: bool = False) -> bool:
         return True
 
     cmd = [
-        sys.executable, "-m", "protspace.cli.app",
+        "protspace",
         "prepare",
         "-q", cfg["query"],
         "-e", cfg["embedder"],
