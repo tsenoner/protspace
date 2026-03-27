@@ -25,9 +25,6 @@ uv run pytest tests/
 # Lint
 uv run ruff check src/ tests/
 
-# Run scripts
-uv run python scripts/biocentral_embed.py --help
-
 # Run CLI
 uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m pca2 -o output --no-scores
 
