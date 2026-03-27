@@ -68,7 +68,6 @@ class BaseProcessor:
         reducer = reducer_cls(config)
         # Suppress noisy but harmless warnings from DR libraries:
         # - sklearn RuntimeWarning: overflow in randomized SVD matmul (results still correct)
-        # - sklearn FutureWarning: force_all_finite rename (umap compat, fixed in newer umap)
         # - umap UserWarning: n_jobs overridden by random_state (informational)
         # - pacmap logger.warning: "random state is set to ..." (informational)
         pacmap_logger = logging.getLogger("pacmap.pacmap")
@@ -78,9 +77,6 @@ class BaseProcessor:
             with warnings.catch_warnings():
                 warnings.filterwarnings(
                     "ignore", category=RuntimeWarning, module=r"sklearn"
-                )
-                warnings.filterwarnings(
-                    "ignore", category=FutureWarning, module=r"sklearn"
                 )
                 warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
                 reduced_data = reducer.fit_transform(data)
