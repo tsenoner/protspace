@@ -8,6 +8,7 @@ import typer
 
 from protspace.cli.app import app, setup_logging
 from protspace.cli.common_options import (
+    Metric,
     Opt_Eps,
     Opt_Fasta,
     Opt_FpRatio,
@@ -47,7 +48,7 @@ def project(
     ] = Path("."),
     similarity: Opt_Similarity = False,
     fasta: Opt_Fasta = None,
-    metric: Opt_Metric = "euclidean",
+    metric: Opt_Metric = Metric.euclidean,
     random_state: Opt_RandomState = 42,
     n_neighbors: Opt_NNeighbors = 25,
     min_dist: Opt_MinDist = 0.1,
@@ -97,7 +98,7 @@ def project(
     from protspace.data.processors.pipeline import ReducerParams
 
     reducer_params = ReducerParams(
-        metric=metric.value if hasattr(metric, "value") else metric,
+        metric=metric.value,
         random_state=random_state,
         n_neighbors=n_neighbors,
         min_dist=min_dist,

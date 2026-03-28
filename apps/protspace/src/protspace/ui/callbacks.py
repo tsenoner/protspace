@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import logging
 import re
 import zipfile
 from pathlib import Path
@@ -27,6 +28,8 @@ from protspace.visualization.plotting import (
     generate_default_color,
     save_plot,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_reader(json_data):
@@ -116,7 +119,7 @@ def setup_callbacks(app):
             else:
                 return no_update
         except Exception as e:
-            print(f"Error loading JSON: {e}")
+            logger.error(f"Error loading JSON: {e}")
             return no_update
 
     @app.callback(
@@ -131,7 +134,7 @@ def setup_callbacks(app):
             raise PreventUpdate
         pdb_files, message = parse_zip_contents(contents, filename)
         if pdb_files is None:
-            print(message)
+            logger.warning(message)
             return pdb_files_store_data
 
         # Convert PDB files content to base64 strings for storage

@@ -5,21 +5,21 @@ Custom colors, shapes, and legend settings for annotation categories.
 **Two approaches:**
 
 - **Web UI** — interactive editing in [ProtSpace Web](https://protspace.app/explore), save to download the updated bundle
-- **CLI** — programmatic via `protspace-annotation-colors` (see [CLI Reference](cli.md#protspace-annotation-colors))
+- **CLI** — programmatic via `protspace style` (see [CLI Reference](cli.md#protspace-style))
 
 ## Workflow
 
 ```bash
 # 1. Generate a styles template (values listed in frequency order)
-protspace-annotation-colors data.parquetbundle --generate-template > styles.json
+protspace style data.parquetbundle --generate-template > styles.json
 
 # 2. Edit styles.json — fill in colors, adjust settings
 
 # 3. Apply styles to produce a new bundle
-protspace-annotation-colors data.parquetbundle styled.parquetbundle --annotation_styles styles.json
+protspace style data.parquetbundle styled.parquetbundle --annotation-styles styles.json
 
 # 4. Verify stored settings
-protspace-annotation-colors styled.parquetbundle --dump-settings
+protspace style styled.parquetbundle --dump-settings
 ```
 
 ## Styles JSON format

@@ -2,7 +2,7 @@ import argparse
 import warnings
 from pathlib import Path
 
-from protspace import ProtSpace
+from protspace.app import ProtSpace
 from protspace.data.io.bundle import extract_bundle_to_dir
 
 DEFAULT_PORT = 8050
