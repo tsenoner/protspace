@@ -13,8 +13,9 @@ Python package for dimensionality reduction of protein language model (pLM) embe
 **Always use `uv run` to execute Python commands in this project.** Do not use bare `python` or `python3`.
 
 ```bash
-# Install with dev deps
+# Install with dev deps + enable pre-commit hook (once per clone)
 uv sync --group dev
+git config core.hooksPath .githooks
 
 # Run tests (skip slow)
 uv run pytest tests/ -m "not slow"
