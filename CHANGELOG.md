@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v4.1.0 (2026-03-28)
+
+### Features
+
+* feat: replace taxopy with UniProt Taxonomy API for taxonomy lookups
+
+Replace the taxopy-based taxonomy retriever (which required downloading
+the full NCBI taxonomy database ~50 MB on first use) with the UniProt
+Taxonomy API (/taxonomy/search). This eliminates the slow first-run
+download, weekly cache refresh, and ~120 lines of cache management code.
+
+Also fix typer[all] → typer (the [all] extra was removed) and add
+requests as an explicit core dependency.
+
+Closes #36
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`754fa9b`](https://github.com/tsenoner/protspace/commit/754fa9b45cf5a913a97823b2b45012c49221ca7a))
+
+### Unknown
+
+* Merge pull request #37 from tsenoner/feat/replace-taxopy-with-uniprot-api
+
+Replace taxopy with UniProt Taxonomy API ([`034c0ec`](https://github.com/tsenoner/protspace/commit/034c0ece32238144fe68819ce2b6e5e43d8b57a5))
+
+
 ## v4.0.2 (2026-03-28)
 
 ### Fixes
