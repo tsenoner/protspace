@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v4.0.1 (2026-03-28)
+
+### Fixes
+
+* fix(ci): bump all workflow actions to latest versions and add uv lock to semantic-release build
+
+- Bump actions in release.yml and publish.yml to Node 22+ versions
+  (checkout v6, setup-python v6, setup-uv v7, cache v5, etc.)
+- Add build_command = "uv lock" to semantic-release config so uv.lock
+  is regenerated after version bumps, fixing Docker --locked builds
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`2474612`](https://github.com/tsenoner/protspace/commit/24746126da81515e3fdf9ca4ffca9d21feb55250))
+
+
 ## v4.0.0 (2026-03-28)
 
 ### Breaking
