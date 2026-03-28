@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.0.2 (2026-03-28)
+
+### Fixes
+
+* fix(ci): replace semantic-release publish with gh release upload and remove unused deps
+
+semantic-release publish fails in detached HEAD (tag checkout). Use
+gh release upload instead, and drop the now-unused python-semantic-release
+tool install + cache from the pypi job.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`1b45ddb`](https://github.com/tsenoner/protspace/commit/1b45ddb86fc9c69c3491d879212b70e2a1dd30ba))
+
+
 ## v4.0.1 (2026-03-28)
 
 ### Fixes
