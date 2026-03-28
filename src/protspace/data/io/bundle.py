@@ -53,9 +53,7 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
     parts = content.split(PARQUET_BUNDLE_DELIMITER)
 
     if len(parts) < 3 or len(parts) > 4:
-        raise ValueError(
-            f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}"
-        )
+        raise ValueError(f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}")
 
     # Write core parts
     for part_bytes, filename in zip(parts[:3], CORE_FILENAMES, strict=False):
@@ -81,9 +79,7 @@ def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
     parts = content.split(PARQUET_BUNDLE_DELIMITER)
 
     if len(parts) < 3 or len(parts) > 4:
-        raise ValueError(
-            f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}"
-        )
+        raise ValueError(f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}")
 
     settings = None
     if len(parts) == 4 and parts[3]:

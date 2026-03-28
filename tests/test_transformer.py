@@ -79,25 +79,24 @@ class TestAnnotationTransformerInit:
         assert hasattr(transformer.uniprot_transformer, "transform_protein_families")
         assert hasattr(transformer.interpro_transformer, "transform_cath")
         assert hasattr(transformer.interpro_transformer, "transform_pfam")
-        assert hasattr(transformer.length_binner, "add_bins")
-        assert hasattr(transformer.length_binner, "compute_fixed_bins")
+        assert not hasattr(transformer, "length_binner")
 
 
 class TestAnnotationTransformerTransform:
     """Test the transform() method."""
 
-    def test_transform_with_length_binning_enabled(self):
-        """Test transformation with length binning enabled."""
+    def test_transform_with_length(self):
+        """Test transformation preserves length field."""
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=True)
+        result = transformer.transform(proteins)
 
-        # Should have length binning fields added
         assert len(result) == 2
-        assert "length_fixed" in result[0].annotations
-        assert "length_quantile" in result[0].annotations
-        assert "length" in result[0].annotations  # Original length kept for caching
+        # Length is preserved as-is (no binning)
+        assert result[0].annotations["length"] == "110"
+        assert "length_fixed" not in result[0].annotations
+        assert "length_quantile" not in result[0].annotations
 
         # Should have transformed annotations
         assert result[0].annotations["annotation_score"] == "5"
@@ -106,33 +105,15 @@ class TestAnnotationTransformerTransform:
         assert result[0].annotations["xref_pdb"] == "True"
         assert result[0].annotations["fragment"] == "yes"
 
-    def test_transform_with_length_binning_disabled(self):
-        """Test transformation with length binning disabled."""
-        transformer = AnnotationTransformer()
-        proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
-
-        result = transformer.transform(proteins, apply_length_binning=False)
-
-        # Should NOT have length binning fields
-        assert len(result) == 2
-        assert "length_fixed" not in result[0].annotations
-        assert "length_quantile" not in result[0].annotations
-        assert "length" in result[0].annotations  # Original length preserved
-
-        # Should still have transformed annotations
-        assert result[0].annotations["annotation_score"] == "5"
-
     def test_transform_without_length_field(self):
         """Test transformation when length field is missing."""
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITHOUT_LENGTH.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=True)
+        result = transformer.transform(proteins)
 
-        # Should not add length binning when length field is missing
         assert len(result) == 1
-        assert "length_fixed" not in result[0].annotations
-        assert "length_quantile" not in result[0].annotations
+        assert "length" not in result[0].annotations
 
         # Should still transform other annotations
         assert result[0].annotations["annotation_score"] == "5"
@@ -141,7 +122,7 @@ class TestAnnotationTransformerTransform:
         """Test transformation with empty protein list."""
         transformer = AnnotationTransformer()
 
-        result = transformer.transform([], apply_length_binning=True)
+        result = transformer.transform([])
 
         assert result == []
 
@@ -150,7 +131,7 @@ class TestAnnotationTransformerTransform:
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 2
         assert result[0].identifier == "P01308"
@@ -161,7 +142,7 @@ class TestAnnotationTransformerTransform:
         transformer = AnnotationTransformer()
         proteins = SAMPLE_PROTEINS_WITH_INTERPRO.copy()
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         # CATH should be cleaned (G3DSA: prefix removed, sorted)
@@ -193,11 +174,11 @@ class TestAnnotationTransformerTransform:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=True)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         # Check all transformations applied
-        assert "length_fixed" in result[0].annotations
+        assert result[0].annotations["length"] == "200"
         assert result[0].annotations["annotation_score"] == "5"
         assert result[0].annotations["protein_families"] == "Insulin family"
         assert result[0].annotations["reviewed"] == "Swiss-Prot"
@@ -221,7 +202,7 @@ class TestAnnotationTransformerTransform:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         assert result[0].annotations["custom_field"] == "custom_value"
@@ -451,7 +432,7 @@ class TestAnnotationTransformerEdgeCases:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         # Should handle None values without crashing
         assert len(result) == 1
@@ -471,7 +452,7 @@ class TestAnnotationTransformerEdgeCases:
             ),
         ]
 
-        result = transformer.transform(proteins, apply_length_binning=False)
+        result = transformer.transform(proteins)
 
         assert len(result) == 1
         assert result[0].annotations["xref_pdb"] == "False"
@@ -670,6 +651,106 @@ class TestEcNameMapParsing:
         """Test parsing empty input."""
         result = UniProtTransformer._parse_enzyme_dat("")
         assert result == {}
+
+
+class TestEnzclassParsing:
+    """Test parsing of ExPASy enzclass.txt format."""
+
+    def test_parse_enzclass_basic(self):
+        """Test basic enzclass.txt parsing with all three hierarchy levels."""
+        text = (
+            "1. -. -.-  Oxidoreductases.\n"
+            "1. 1. -.-   Acting on the CH-OH group of donors.\n"
+            "1. 1. 1.-    With NAD(+) or NADP(+) as acceptor.\n"
+        )
+        result = UniProtTransformer._parse_enzclass_txt(text)
+        assert result == {
+            "1.-.-.-": "Oxidoreductases",
+            "1.1.-.-": "Acting on the CH-OH group of donors",
+            "1.1.1.-": "With NAD(+) or NADP(+) as acceptor",
+        }
+
+    def test_parse_enzclass_skips_headers(self):
+        """Test that header/separator lines are skipped."""
+        text = "---\n  ENZYME nomenclature database\n\n1. -. -.-  Oxidoreductases.\n"
+        result = UniProtTransformer._parse_enzclass_txt(text)
+        assert result == {"1.-.-.-": "Oxidoreductases"}
+
+    def test_parse_enzclass_two_digit_subclass(self):
+        """Test parsing of two-digit sub-subclass numbers."""
+        text = "3. 4.21.-    Serine endopeptidases.\n"
+        result = UniProtTransformer._parse_enzclass_txt(text)
+        assert result == {"3.4.21.-": "Serine endopeptidases"}
+
+    def test_parse_enzclass_empty(self):
+        """Test parsing empty input."""
+        result = UniProtTransformer._parse_enzclass_txt("")
+        assert result == {}
+
+
+class TestEcPartialNumbers:
+    """Test EC name resolution for partial/incomplete EC numbers."""
+
+    def test_ec_partial_two_level(self):
+        """Test partial EC like 3.4.-.- resolves to class name."""
+        ec_map = {
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+            "3.4.21.1": "Chymotrypsin",
+        }
+        result = UniProtTransformer.transform_ec("3.4.-.-", ec_map)
+        assert result == "3.4.-.- (Acting on peptide bonds (peptidases))"
+
+    def test_ec_partial_three_level(self):
+        """Test partial EC like 3.4.21.- resolves to sub-subclass name."""
+        ec_map = {
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+            "3.4.21.-": "Serine endopeptidases",
+        }
+        result = UniProtTransformer.transform_ec("3.4.21.-", ec_map)
+        assert result == "3.4.21.- (Serine endopeptidases)"
+
+    def test_ec_partial_one_level(self):
+        """Test partial EC like 2.-.-.- resolves to top-level class."""
+        ec_map = {"2.-.-.-": "Transferases"}
+        result = UniProtTransformer.transform_ec("2.-.-.-", ec_map)
+        assert result == "2.-.-.- (Transferases)"
+
+    def test_ec_partial_with_evidence(self):
+        """Test partial EC with evidence code preserved."""
+        ec_map = {"3.4.-.-": "Acting on peptide bonds (peptidases)"}
+        result = UniProtTransformer.transform_ec("3.4.-.-|EXP", ec_map)
+        assert result == "3.4.-.- (Acting on peptide bonds (peptidases))|EXP"
+
+    def test_ec_mixed_partial_and_complete(self):
+        """Test mix of partial and complete EC numbers."""
+        ec_map = {
+            "2.7.11.1": "Non-specific serine/threonine protein kinase",
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+        }
+        result = UniProtTransformer.transform_ec("2.7.11.1;3.4.-.-", ec_map)
+        assert result == (
+            "2.7.11.1 (Non-specific serine/threonine protein kinase);"
+            "3.4.-.- (Acting on peptide bonds (peptidases))"
+        )
+
+    def test_ec_partial_no_match(self):
+        """Test that partial EC with no match stays unchanged."""
+        result = UniProtTransformer.transform_ec("9.-.-.-", {})
+        assert result == "9.-.-.-"
+
+    def test_ec_partial_integrated_in_transformer(self):
+        """Test partial EC resolution through main transformer."""
+        transformer = AnnotationTransformer()
+        transformer._ec_name_map = {
+            "1.1.1.1": "Alcohol dehydrogenase",
+            "3.4.-.-": "Acting on peptide bonds (peptidases)",
+        }
+        annotations = {"ec": "1.1.1.1;3.4.-.-"}
+        result = transformer._transform_annotations(annotations)
+        assert result["ec"] == (
+            "1.1.1.1 (Alcohol dehydrogenase);"
+            "3.4.-.- (Acting on peptide bonds (peptidases))"
+        )
 
 
 class TestKeywordCombinedFormat:

@@ -2,46 +2,42 @@ import argparse
 import warnings
 from pathlib import Path
 
-from protspace import ProtSpace
-from protspace.core.config import DEFAULT_PORT
+from protspace.app import ProtSpace
 from protspace.data.io.bundle import extract_bundle_to_dir
+
+DEFAULT_PORT = 8050
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 
-def detect_data_type(data_path: str) -> tuple[str | None, str | None]:
-    """
-    Detect if the input is a JSON file, Arrow directory, or bundled parquet file.
+def detect_data_type(data_path: str) -> str:
+    """Resolve *data_path* to a directory of Parquet files.
+
+    Accepts a ``.parquetbundle`` file (extracted to a temp dir) or a
+    directory containing ``.parquet`` files.
 
     Returns:
-        tuple: (json_file_path, arrow_dir_path) - one will be None
+        Path to the Parquet directory.
     """
     path = Path(data_path)
 
-    if path.is_file() and path.suffix.lower() == ".json":
-        return str(path), None
-    elif path.is_file() and path.suffix.lower() == ".parquetbundle":
-        # Handle bundled parquet files (3 or 4 parts)
-        temp_dir = extract_bundle_to_dir(path)
-        return None, temp_dir
+    if path.is_file() and path.suffix.lower() == ".parquetbundle":
+        return extract_bundle_to_dir(path)
     elif path.is_dir():
-        # Check if directory contains parquet files (Arrow format)
         parquet_files = list(path.glob("*.parquet"))
         if parquet_files:
-            return None, str(path)
+            return str(path)
 
-        # Check if directory contains the bundle file
         bundle_file = path / "data.parquetbundle"
         if bundle_file.exists():
-            temp_dir = extract_bundle_to_dir(bundle_file)
-            return None, temp_dir
+            return extract_bundle_to_dir(bundle_file)
 
         raise ValueError(
-            f"Directory '{data_path}' does not contain any .parquet files or data.parquetbundle"
+            f"Directory '{data_path}' does not contain .parquet files or data.parquetbundle"
         )
     else:
         raise ValueError(
-            f"Input '{data_path}' must be either a .json file, a .parquetbundle file, or a directory containing .parquet or .parquetbundle files"
+            f"Input '{data_path}' must be a .parquetbundle file or a directory containing .parquet files"
         )
 
 
@@ -49,7 +45,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ProtSpace")
     parser.add_argument(
         "data",
-        help="Path to JSON file, .parquetbundle file, or directory containing Arrow/Parquet files",
+        help="Path to .parquetbundle file or directory containing Parquet files",
     )
     parser.add_argument(
         "--pdb_zip",
@@ -70,10 +66,8 @@ def main(
     port: int = DEFAULT_PORT,
     pdb_zip: str | None = None,
 ) -> None:
-    json_file, arrow_dir = detect_data_type(data)
-    protspace = ProtSpace(
-        pdb_zip=pdb_zip, default_json_file=json_file, arrow_dir=arrow_dir
-    )
+    arrow_dir = detect_data_type(data)
+    protspace = ProtSpace(pdb_zip=pdb_zip, arrow_dir=arrow_dir)
     protspace.run_server(debug=True, port=port)
 
 

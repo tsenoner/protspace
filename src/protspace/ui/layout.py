@@ -8,7 +8,7 @@ from dash_iconify import DashIconify
 
 from protspace.core.config import MARKER_SHAPES_2D, MARKER_SHAPES_3D
 from protspace.ui import styles
-from protspace.utils import JsonReader
+from protspace.utils.arrow_reader import ArrowReader
 
 
 def _create_header():
@@ -280,7 +280,7 @@ def create_layout(app):
     pdb_files_data = app.get_pdb_files_data()
 
     if default_json_data:
-        reader = JsonReader(default_json_data)
+        reader = ArrowReader(default_json_data)
         annotations = sorted(reader.get_all_annotations())
         projections = sorted(reader.get_projection_names())
         protein_ids = sorted(reader.get_protein_ids())
