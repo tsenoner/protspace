@@ -13,8 +13,6 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    env:
-      UV_TOOL_DIR: /tmp/.uv-tools
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -33,28 +31,16 @@ jobs:
         with:
           python-version-file: "pyproject.toml"
 
-      - name: Restore uv tools
-        uses: actions/cache@v5
-        with:
-          path: /tmp/.uv-tools
-          key: uv-tools-${{ runner.os }}-psr-v9.11.1
-          restore-keys: |
-            uv-tools-${{ runner.os }}-psr-v9.11.1
-            uv-tools-${{ runner.os }}
-
-      - name: Install Python Semantic Release
-        run: uv tool install python-semantic-release@v9.11.1
-
       - name: Build Python Package
         run: uv build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-      - name: Publish to GitHub Release
+      - name: Upload dists to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uv tool run --from python-semantic-release semantic-release publish --tag ${{ github.event.client_payload.tag }}
+        run: gh release upload ${{ github.event.client_payload.tag }} dist/* --clobber
 
   docker:
     runs-on: ubuntu-latest
