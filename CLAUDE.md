@@ -205,7 +205,7 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
 | `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
-| `test_taxonomy_annotation_retriever.py` | 12 | Taxonomy database lookups |
+| `test_taxonomy_annotation_retriever.py` | 15 | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_h5_parse_identifier.py` | 9 | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | 8 | BaseProcessor: reduction, output creation, save |
 | `test_formatters.py` | 5 | ProteinAnnotations → DataFrame formatting |
@@ -225,7 +225,7 @@ Located in `notebooks/`:
 
 ## Dependencies
 
-**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, taxopy, pymmseqs, unipressed, biocentral-api, typer, rich
+**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, unipressed, biocentral-api, typer, rich
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar, gunicorn
 

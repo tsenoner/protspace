@@ -1,17 +1,16 @@
 import logging
-import os
-import shutil
-import tempfile
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
-import taxopy
+import requests
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 
 logger = logging.getLogger(__name__)
+
+TAXONOMY_API_URL = "https://rest.uniprot.org/taxonomy/search"
+_API_TIMEOUT = 30
+_BATCH_SIZE = 100  # Max taxon IDs per request (URL length safety)
 
 # Taxonomy annotations
 TAXONOMY_ANNOTATIONS = [
@@ -28,13 +27,12 @@ TAXONOMY_ANNOTATIONS = [
 
 
 class TaxonomyRetriever(BaseAnnotationRetriever):
-    """Retrieves taxonomy lineage data from NCBI."""
+    """Retrieves taxonomy lineage data from the UniProt Taxonomy API."""
 
     def __init__(self, taxon_ids: list[int], annotations: list = None):
         # Don't call super().__init__() as we use taxon_ids instead of headers
         self.taxon_ids = self._validate_taxon_ids(taxon_ids)
         self.annotations = annotations
-        self.taxdb = self._initialize_taxdb()
 
     def fetch_annotations(self) -> dict[int, dict[str, Any]]:
         result = {}
@@ -61,166 +59,79 @@ class TaxonomyRetriever(BaseAnnotationRetriever):
         for taxon_id in taxon_ids:
             if not isinstance(taxon_id, int):
                 raise ValueError(f"Taxon ID {taxon_id} is not an integer")
-
         return taxon_ids
 
     def _get_taxonomy_info(self, taxon_ids: list[int]) -> dict[int, dict[str, str]]:
         result = {}
 
-        for taxon_id in taxon_ids:
-            try:
-                taxon = taxopy.Taxon(taxon_id, self.taxdb)
-                ranks = taxon.rank_name_dictionary
-
-                # Determine root ('cellular root' or 'acellular root' rank)
-                root_value = ranks.get("cellular root", "") or ranks.get(
-                    "acellular root", ""
-                )
-                # Determine domain ('domain'  or 'realm' rank)
-                domain_value = ranks.get("domain", "") or ranks.get("realm", "")
-
-                # Fetch all available taxonomy information
-                full_taxonomy_info = {
-                    "root": root_value,
-                    "domain": domain_value,
-                    "kingdom": ranks.get("kingdom", ""),
-                    "phylum": ranks.get("phylum", ""),
-                    "class": ranks.get("class", ""),
-                    "order": ranks.get("order", ""),
-                    "family": ranks.get("family", ""),
-                    "genus": ranks.get("genus", ""),
-                    "species": ranks.get("species", ""),
-                }
-
-                # Filter based on requested taxonomy annotations
-                taxonomy_info = {
-                    annotation: full_taxonomy_info.get(annotation, "")
-                    for annotation in self.annotations
-                }
-
-                result[taxon_id] = taxonomy_info
-
-            except Exception as e:
-                logger.error(f"Failed to get taxonomy for {taxon_id}: {e}")
-                result[taxon_id] = dict.fromkeys(self.annotations, "")
+        # Fetch in batches to stay within URL length limits
+        for i in range(0, len(taxon_ids), _BATCH_SIZE):
+            batch = taxon_ids[i : i + _BATCH_SIZE]
+            batch_results = self._fetch_batch(batch)
+            result.update(batch_results)
 
         return result
 
-    def _initialize_taxdb(self):
-        # Allow overriding cache directory via environment variable
-        # Defaults to ~/.cache/taxopy_db
-        env_override = os.environ.get("PROTSPACE_TAXDB_DIR")
-        db_dir = (
-            Path(env_override).expanduser()
-            if env_override
-            else Path.home() / ".cache" / "taxopy_db"
-        )
-        db_dir.mkdir(parents=True, exist_ok=True)
-        nodes_file = db_dir / "nodes.dmp"
-        names_file = db_dir / "names.dmp"
-        merged_file = db_dir / "merged.dmp"
-        timestamp_file = db_dir / ".download_timestamp"
+    def _fetch_batch(self, taxon_ids: list[int]) -> dict[int, dict[str, str]]:
+        """Fetch taxonomy info for a batch of taxon IDs from UniProt Taxonomy API."""
+        result = {}
+        query = " OR ".join(f"id:{tid}" for tid in taxon_ids)
 
-        # Determine if this is a first-time setup (missing required files)
-        first_time_setup = not (nodes_file.exists() and names_file.exists())
+        try:
+            url = TAXONOMY_API_URL
+            params = {"query": query, "format": "json", "size": "500"}
 
-        # Check if cache needs refresh based on timestamp file
-        needs_refresh = False
-        if timestamp_file.exists():
-            try:
-                with open(timestamp_file) as f:
-                    download_time = datetime.fromisoformat(f.read().strip())
-                one_week_ago = datetime.now() - timedelta(weeks=1)
+            while url:
+                resp = requests.get(url, params=params, timeout=_API_TIMEOUT)
+                resp.raise_for_status()
+                data = resp.json()
 
-                if download_time < one_week_ago:
-                    logger.info(
-                        "Your taxonomy dataset is more than one week old. Refreshing cache..."
-                    )
-                    needs_refresh = True
-            except (ValueError, OSError) as e:
-                logger.warning(
-                    f"Could not read timestamp file: {e}. Will refresh cache."
-                )
-                needs_refresh = True
-        else:
-            # No timestamp file: if DB files exist, create timestamp; otherwise we need a fresh download
-            if first_time_setup:
-                needs_refresh = True
-            else:
-                try:
-                    with open(timestamp_file, "w") as f:
-                        f.write(datetime.now().isoformat())
-                except OSError as e:
-                    logger.warning(
-                        f"Failed to create timestamp file at first-time detection: {e}"
-                    )
+                for entry in data.get("results", []):
+                    taxon_id = entry.get("taxonId")
+                    if taxon_id is not None:
+                        result[taxon_id] = self._extract_taxonomy(entry)
 
-        existing_db_present = nodes_file.exists() and names_file.exists()
+                # Pagination: follow Link header if present
+                link = resp.headers.get("Link", "")
+                url = None
+                params = None
+                if 'rel="next"' in link:
+                    url = link.split(";")[0].strip(" <>")
 
-        # Load or download the database with a safe refresh strategy
-        if existing_db_present:
-            if needs_refresh:
-                logger.info(
-                    "Taxonomy cache is stale. Attempting safe refresh without deleting existing cache."
-                )
-                temp_dir_path = None
-                try:
-                    # Download into a temporary directory first
-                    temp_dir_path = Path(tempfile.mkdtemp(prefix="taxopy_tmp_"))
-                    taxopy.TaxDb(taxdb_dir=str(temp_dir_path), keep_files=True)
+        except Exception as e:
+            logger.error(f"Failed to fetch taxonomy batch: {e}")
+            # Return empty annotations for all IDs in this batch
+            for tid in taxon_ids:
+                if tid not in result:
+                    result[tid] = dict.fromkeys(self.annotations, "")
 
-                    # Move refreshed files into place atomically
-                    for src_name, dst_path in [
-                        ("nodes.dmp", nodes_file),
-                        ("names.dmp", names_file),
-                        ("merged.dmp", merged_file),
-                    ]:
-                        src_path = temp_dir_path / src_name
-                        if src_path.exists():
-                            # Replace destination with the new file
-                            shutil.move(str(src_path), str(dst_path))
+        return result
 
-                    # Update timestamp only after a successful refresh
-                    with open(timestamp_file, "w") as f:
-                        f.write(datetime.now().isoformat())
+    def _extract_taxonomy(self, entry: dict) -> dict[str, str]:
+        """Extract taxonomy ranks from a UniProt Taxonomy API result."""
+        lineage = entry.get("lineage", [])
+        rank_map = {item["rank"]: item["scientificName"] for item in lineage}
 
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to refresh taxonomy database: {e}. Falling back to existing cached database."
-                    )
-                    # Fall back: keep using the existing DB files
-                finally:
-                    if temp_dir_path and temp_dir_path.exists():
-                        shutil.rmtree(temp_dir_path, ignore_errors=True)
+        # The lineage only contains ancestors. If the taxon itself is a
+        # species (e.g., Human 9606), include it from the entry's own rank.
+        own_rank = entry.get("rank", "")
+        if own_rank and own_rank not in rank_map:
+            rank_map[own_rank] = entry.get("scientificName", "")
 
-            # Load existing (potentially refreshed) DB files
-            logger.info(f"Loading taxopy database from {db_dir}")
-            try:
-                taxdb = taxopy.TaxDb(
-                    nodes_dmp=str(nodes_file),
-                    names_dmp=str(names_file),
-                    merged_dmp=str(merged_file) if merged_file.exists() else None,
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to load existing taxonomy database from cache: {e}"
-                )
-                raise
-        else:
-            # First-time setup: must download
-            logger.info(
-                f"Downloading NCBI taxonomy database to {db_dir} "
-                f"(first run only, ~1 min)..."
-            )
-            try:
-                taxdb = taxopy.TaxDb(taxdb_dir=str(db_dir), keep_files=True)
-                # Create/update timestamp file after successful download
-                with open(timestamp_file, "w") as f:
-                    f.write(datetime.now().isoformat())
-            except Exception as e:
-                logger.error(
-                    f"Failed to initialize taxopy database (first-time setup): {e}"
-                )
-                raise
+        full_taxonomy_info = {
+            "root": rank_map.get("no rank", ""),
+            "domain": rank_map.get("domain", "") or rank_map.get("realm", ""),
+            "kingdom": rank_map.get("kingdom", ""),
+            "phylum": rank_map.get("phylum", ""),
+            "class": rank_map.get("class", ""),
+            "order": rank_map.get("order", ""),
+            "family": rank_map.get("family", ""),
+            "genus": rank_map.get("genus", ""),
+            "species": rank_map.get("species", ""),
+        }
 
-        return taxdb
+        # Filter based on requested taxonomy annotations
+        return {
+            annotation: full_taxonomy_info.get(annotation, "")
+            for annotation in self.annotations
+        }
