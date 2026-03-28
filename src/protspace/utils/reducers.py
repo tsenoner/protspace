@@ -5,11 +5,8 @@ from dataclasses import fields
 from typing import Any, get_type_hints
 
 import numpy as np
-from pacmap import LocalMAP, PaCMAP
 from sklearn.decomposition import PCA
 from sklearn.manifold import MDS, TSNE
-from sklearn.neighbors import NearestNeighbors
-from umap import UMAP
 
 # Re-export constants and config from lightweight module
 from protspace.utils.constants import (  # noqa: F401
@@ -65,6 +62,7 @@ def _ensure_annoy_or_fallback() -> None:
 
     # annoy is broken — swap in sklearn fallback
     import pacmap.pacmap as _pm
+    from sklearn.neighbors import NearestNeighbors
 
     class _SklearnAnnoyIndex:
         """Drop-in AnnoyIndex replacement backed by sklearn NearestNeighbors."""
@@ -106,6 +104,9 @@ def _ensure_annoy_or_fallback() -> None:
 # Constants and DimensionReductionConfig are imported from constants.py above
 
     def parameters_by_method(self, method: str) -> list[dict[str, Any]]:
+        from pacmap import LocalMAP, PaCMAP
+        from umap import UMAP
+
         method_map = {
             TSNE_NAME: TSNE,
             PCA_NAME: PCA,
@@ -286,6 +287,8 @@ class UMAPReducer(DimensionReducer):
     """UMAP (Uniform Manifold Approximation and Projection) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        from umap import UMAP
+
         return UMAP(
             n_components=self.config.n_components,
             n_neighbors=self.config.n_neighbors,
@@ -308,6 +311,8 @@ class PaCMAPReducer(DimensionReducer):
     """PaCMAP (Pairwise Controlled Manifold Approximation) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        from pacmap import PaCMAP
+
         _ensure_annoy_or_fallback()
         return PaCMAP(
             n_components=self.config.n_components,
@@ -331,6 +336,8 @@ class LocalMAPReducer(DimensionReducer):
     """LocalMAP (Local Manifold Approximation) reduction."""
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
+        from pacmap import LocalMAP
+
         _ensure_annoy_or_fallback()
         return LocalMAP(
             n_components=self.config.n_components,
