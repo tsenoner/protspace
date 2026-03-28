@@ -15,7 +15,7 @@ from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import format_projection_name
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import get_reducers
-from protspace.utils.reducers import MDS_NAME
+from protspace.utils.constants import MDS_NAME
 
 logger = logging.getLogger(__name__)
 

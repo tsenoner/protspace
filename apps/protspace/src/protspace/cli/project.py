@@ -75,7 +75,7 @@ def project(
     from protspace.data.processors.base_processor import BaseProcessor
     from protspace.data.processors.pipeline import parse_method_spec
     from protspace.utils import get_reducers
-    from protspace.utils.reducers import MDS_NAME
+    from protspace.utils.constants import MDS_NAME
 
     input_specs = _parse_input_specs(input)
     embedding_sets: list[EmbeddingSet] = []
