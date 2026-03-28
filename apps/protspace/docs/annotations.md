@@ -46,7 +46,7 @@ With `--keep-tmp`, only API-fetched annotations are cached; the CSV is always re
 
 ## UniProt Annotations
 
-14 annotations retrieved from the [UniProt REST API](https://rest.uniprot.org/) via `unipressed` (batch size: 100):
+14 annotations retrieved from the [UniProt REST API](https://rest.uniprot.org/) (batch size: 100):
 
 | Name                      | Description                          | Example                                                        |
 | ------------------------- | ------------------------------------ | -------------------------------------------------------------- |

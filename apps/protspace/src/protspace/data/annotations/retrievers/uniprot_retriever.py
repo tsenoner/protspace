@@ -4,13 +4,11 @@ UniProt annotation retriever.
 This module fetches protein annotations from the UniProt API.
 """
 
-import json
 import logging
 from collections import namedtuple
 
 import requests
 from tqdm import tqdm
-from unipressed import UniprotkbClient
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.parsers.uniprot_parser import UniProtEntry
@@ -46,11 +44,7 @@ _API_TIMEOUT = 30  # seconds per HTTP request
 
 
 def _fetch_one_with_timeout(accession: str, timeout: int = _API_TIMEOUT) -> dict:
-    """Fetch a single UniProt entry with a timeout.
-
-    The unipressed library's fetch_one() uses requests.get without a timeout,
-    which can hang indefinitely. This wrapper adds timeout protection.
-    """
+    """Fetch a single UniProt entry by accession with timeout protection."""
     url = f"https://rest.uniprot.org/uniprotkb/{accession}.json"
     resp = requests.get(url, timeout=timeout)
     resp.raise_for_status()
@@ -79,6 +73,50 @@ def _fetch_uniparc_sequence(
     except Exception as e:
         logger.debug(f"Failed to fetch UniParc sequence {uniparc_id}: {e}")
         return "", 0
+
+
+def _fetch_many_accessions(
+    accessions: list[str], timeout: int = _API_TIMEOUT
+) -> list[dict]:
+    """Fetch multiple UniProt entries by accession via the REST API."""
+    results = []
+    url = "https://rest.uniprot.org/uniprotkb/accessions"
+    params = {"accessions": ",".join(accessions)}
+
+    while url:
+        resp = requests.get(url, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        results.extend(data.get("results", []))
+
+        link = resp.headers.get("Link", "")
+        url = None
+        params = None
+        if 'rel="next"' in link:
+            url = link.split(";")[0].strip(" <>")
+
+    return results
+
+
+def _search_sec_acc(accession: str, timeout: int = _API_TIMEOUT) -> list[dict]:
+    """Search UniProt by secondary accession (fallback for inactive entries)."""
+    records = []
+    url = "https://rest.uniprot.org/uniprotkb/search"
+    params = {"query": f"sec_acc:{accession}", "format": "json", "size": "500"}
+
+    while url:
+        resp = requests.get(url, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        records.extend(data.get("results", []))
+
+        link = resp.headers.get("Link", "")
+        url = None
+        params = None
+        if 'rel="next"' in link:
+            url = link.split(";")[0].strip(" <>")
+
+    return records
 
 
 class UniProtRetriever(BaseAnnotationRetriever):
@@ -207,15 +245,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
             except Exception:
                 # fetch_one failed — fall back to sec_acc: search
                 try:
-                    records = []
-                    for page in UniprotkbClient.search(
-                        query=f"sec_acc:{accession}", format="json"
-                    ).each_page():
-                        content = page.read() if hasattr(page, "read") else page
-                        parsed = (
-                            json.loads(content) if isinstance(content, str) else content
-                        )
-                        records.extend(parsed.get("results", []))
+                    records = _search_sec_acc(accession)
                     if records:
                         entry = UniProtEntry(records[0])
                         annotations_dict = self._extract_annotations(entry)
@@ -277,8 +307,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 batch = self.headers[i : i + batch_size]
 
                 try:
-                    # Fetch records using unipressed
-                    records = UniprotkbClient.fetch_many(batch)
+                    records = _fetch_many_accessions(batch)
 
                     # Parse each record and track returned identifiers
                     returned_ids = set()
