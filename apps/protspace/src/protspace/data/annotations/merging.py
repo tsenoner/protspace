@@ -18,26 +18,21 @@ class AnnotationMerger:
         taxonomy_annotations: dict,
         interpro_annotations: list[ProteinAnnotations] = None,
         ted_annotations: list[ProteinAnnotations] = None,
+        biocentral_annotations: list[ProteinAnnotations] = None,
     ) -> list[ProteinAnnotations]:
-        """
-        Merge annotations from all sources.
-
-        Args:
-            uniprot_annotations: List of ProteinAnnotations from UniProt
-            taxonomy_annotations: Dict mapping organism_id to taxonomy annotations
-            interpro_annotations: List of ProteinAnnotations from InterPro (optional)
-            ted_annotations: List of ProteinAnnotations from TED (optional)
-
-        Returns:
-            List of ProteinAnnotations with merged annotations
-        """
+        """Merge annotations from all sources."""
         interpro_dict = self._create_lookup_dict(interpro_annotations)
         ted_dict = self._create_lookup_dict(ted_annotations)
+        biocentral_dict = self._create_lookup_dict(biocentral_annotations)
 
         merged_annotations = []
         for protein in uniprot_annotations:
             merged_protein = self._merge_protein(
-                protein, taxonomy_annotations, interpro_dict, ted_dict
+                protein,
+                taxonomy_annotations,
+                interpro_dict,
+                ted_dict,
+                biocentral_dict,
             )
             merged_annotations.append(merged_protein)
 
@@ -58,6 +53,7 @@ class AnnotationMerger:
         taxonomy_annotations: dict,
         interpro_dict: dict,
         ted_dict: dict = None,
+        biocentral_dict: dict = None,
     ) -> ProteinAnnotations:
         """
         Merge all annotation sources for a single protein.
@@ -89,6 +85,12 @@ class AnnotationMerger:
         if ted_dict:
             updated_annotations = self._merge_interpro(
                 updated_annotations, protein.identifier, ted_dict
+            )
+
+        # Merge Biocentral predictions
+        if biocentral_dict:
+            updated_annotations = self._merge_interpro(
+                updated_annotations, protein.identifier, biocentral_dict
             )
 
         return ProteinAnnotations(

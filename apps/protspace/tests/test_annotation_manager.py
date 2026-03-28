@@ -712,6 +712,9 @@ class TestConstants:
 
     def test_all_annotations_constant(self):
         """Test that ALL_ANNOTATIONS combines all annotation sources."""
+        from protspace.data.annotations.retrievers.biocentral_retriever import (
+            BIOCENTRAL_ANNOTATIONS,
+        )
         from protspace.data.annotations.retrievers.interpro_retriever import (
             INTERPRO_ANNOTATIONS,
         )
@@ -724,12 +727,17 @@ class TestConstants:
             + len(TAXONOMY_ANNOTATIONS)
             + len(INTERPRO_ANNOTATIONS)
             + len(TED_ANNOTATIONS)
+            + len(BIOCENTRAL_ANNOTATIONS)
         )
         assert len(ALL_ANNOTATIONS) == expected_len
-        assert all(annotation in ALL_ANNOTATIONS for annotation in UNIPROT_ANNOTATIONS)
-        assert all(annotation in ALL_ANNOTATIONS for annotation in TAXONOMY_ANNOTATIONS)
-        assert all(annotation in ALL_ANNOTATIONS for annotation in INTERPRO_ANNOTATIONS)
-        assert all(annotation in ALL_ANNOTATIONS for annotation in TED_ANNOTATIONS)
+        for source in [
+            UNIPROT_ANNOTATIONS,
+            TAXONOMY_ANNOTATIONS,
+            INTERPRO_ANNOTATIONS,
+            TED_ANNOTATIONS,
+            BIOCENTRAL_ANNOTATIONS,
+        ]:
+            assert all(a in ALL_ANNOTATIONS for a in source)
 
     def test_needed_uniprot_annotations_constant(self):
         """Test NEEDED_UNIPROT_ANNOTATIONS constant."""
