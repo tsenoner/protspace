@@ -721,7 +721,7 @@ def test_interpro_annotations_constant():
     for annotation in expected_annotations:
         assert annotation in INTERPRO_ANNOTATIONS
 
-    assert len(INTERPRO_ANNOTATIONS) == 9
+    assert len(INTERPRO_ANNOTATIONS) == 10  # 9 databases + pfam_clan (derived)
 
 
 class TestNewInterProDatabases:

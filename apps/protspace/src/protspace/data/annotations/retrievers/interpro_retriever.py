@@ -33,7 +33,11 @@ INTERPRO_MAPPING = {
 }
 
 # List of supported InterPro annotations for easy access
-INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys())
+# pfam_clan is a derived annotation (computed from pfam in the transformer)
+INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys()) + ["pfam_clan"]
+
+# Annotations derived from other InterPro fields (not fetched from API directly)
+DERIVED_INTERPRO_ANNOTATIONS = {"pfam_clan"}
 
 # API Configuration
 BASE_URL = "https://www.ebi.ac.uk/interpro/matches/api"
@@ -127,6 +131,10 @@ class InterProRetriever(BaseAnnotationRetriever):
             self.annotations = [
                 f for f in self.annotations if f in INTERPRO_ANNOTATIONS
             ]
+
+        # Ensure dependencies: pfam_clan requires pfam
+        if "pfam_clan" in self.annotations and "pfam" not in self.annotations:
+            self.annotations.append("pfam")
 
     def fetch_annotations(self) -> list[NamedTuple]:
         """

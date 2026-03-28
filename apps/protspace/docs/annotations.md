@@ -120,16 +120,24 @@ Codes are derived from [ECO (Evidence & Conclusion Ontology)](https://www.eviden
 
 Three databases (`cath`, `superfamily`, `panther`) resolve human-readable entry names via InterPro FTP XML (cached 7 days). `cath` has `G3DSA:` prefix removed; `signal_peptide` is converted to `True`/`False`.
 
+### Derived Annotation
+
+| Name        | Source | Description                                               |
+| ----------- | ------ | --------------------------------------------------------- |
+| `pfam_clan` | Pfam   | Maps Pfam families to CLANS (higher-level groupings)      |
+
+**Output format**: `CL0023 (P-loop_NTPase);CL0192 (HAD)` — semicolon-separated unique clan IDs with names. Requires `pfam` (fetched automatically). Clan mapping from [Pfam FTP](https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.clans.tsv.gz) (cached 30 days).
+
 ## Taxonomy Annotations
 
-9 taxonomic ranks resolved via `taxopy` (NCBI Taxonomy): `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`. `root` is the cellular/acellular classification; `domain` is the top-level biological domain (e.g. Bacteria, Archaea, Eukaryota). Requires `organism_id` from UniProt (fetched automatically).
+9 taxonomic ranks resolved via the [UniProt Taxonomy API](https://rest.uniprot.org/taxonomy/search): `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`. `root` is the cellular/acellular classification; `domain` is the top-level biological domain (e.g. Bacteria, Archaea, Eukaryota). Requires `organism_id` from UniProt (fetched automatically).
 
 ## Caching
 
-| Cache          | Location                       | Max Age | Purpose                                           |
-| -------------- | ------------------------------ | ------- | ------------------------------------------------- |
-| NCBI Taxonomy  | `~/.cache/taxopy_db/`          | 7 days  | Taxonomy lineage resolution                       |
-| InterPro names | `~/.cache/protspace/interpro/` | 7 days  | Domain entry names for cath, superfamily, panther |
-| EC names       | `~/.cache/protspace/enzyme/`   | 7 days  | Enzyme descriptions from ExPASy                   |
+| Cache          | Location                          | Max Age  | Purpose                                           |
+| -------------- | --------------------------------- | -------- | ------------------------------------------------- |
+| InterPro names | `~/.cache/protspace/interpro/`    | 7 days   | Domain entry names for cath, superfamily, panther |
+| EC names       | `~/.cache/protspace/enzyme/`      | 7 days   | Enzyme descriptions from ExPASy                   |
+| Pfam clans     | `~/.cache/protspace/pfam_clans/`  | 30 days  | Pfam family → clan mapping                        |
 
 The `default` group only requires the UniProt REST API (+ ExPASy for EC names). For `--keep-tmp` annotation caching, see [CLI Reference](cli.md#annotation-caching---keep-tmp).
