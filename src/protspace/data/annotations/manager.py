@@ -11,6 +11,10 @@ import pandas as pd
 
 from protspace.data.annotations.configuration import AnnotationConfiguration
 from protspace.data.annotations.merging import AnnotationMerger
+from protspace.data.annotations.retrievers.biocentral_retriever import (
+    BIOCENTRAL_ANNOTATIONS,
+    BiocentralPredictionRetriever,
+)
 from protspace.data.annotations.retrievers.interpro_retriever import (
     INTERPRO_ANNOTATIONS,
     InterProRetriever,
@@ -76,6 +80,7 @@ class ProteinAnnotationManager:
                 "taxonomy": self.config.taxonomy_annotations is not None,
                 "interpro": self.config.interpro_annotations is not None,
                 "ted": self.config.ted_annotations is not None,
+                "biocentral": self.config.biocentral_annotations is not None,
             }
 
         # Initialize components
@@ -114,6 +119,12 @@ class ProteinAnnotationManager:
             if self.cached_data is not None and not self.sources_to_fetch.get("ted")
             else None
         )
+        cached_biocentral = (
+            self._extract_cached_source(BIOCENTRAL_ANNOTATIONS)
+            if self.cached_data is not None
+            and not self.sources_to_fetch.get("biocentral")
+            else None
+        )
 
         # 1. Conditionally fetch based on sources_to_fetch
         uniprot_annotations = (
@@ -136,6 +147,11 @@ class ProteinAnnotationManager:
             if self.sources_to_fetch.get("ted")
             else cached_ted
         )
+        biocentral_annotations = (
+            self._fetch_biocentral(uniprot_annotations, failed_sources)
+            if self.sources_to_fetch.get("biocentral")
+            else cached_biocentral
+        )
 
         # Report failed sources
         if failed_sources:
@@ -149,6 +165,7 @@ class ProteinAnnotationManager:
             taxonomy_annotations,
             interpro_annotations,
             ted_annotations,
+            biocentral_annotations,
         )
 
         # 3. Apply transformations
@@ -252,6 +269,32 @@ class ProteinAnnotationManager:
         except Exception as e:
             failed_sources.append(f"InterPro ({str(e)})")
             logger.warning(f"Failed to retrieve InterPro annotations: {e}")
+            return []
+
+    def _fetch_biocentral(
+        self, uniprot_annotations: list[ProteinAnnotations], failed_sources: list
+    ) -> list[ProteinAnnotations]:
+        """Fetch Biocentral prediction annotations if requested."""
+        if not self.config.biocentral_annotations:
+            return []
+
+        try:
+            # Extract sequences from UniProt data
+            sequences = {}
+            for protein in uniprot_annotations:
+                seq = protein.annotations.get("sequence", "")
+                if seq:
+                    sequences[protein.identifier] = seq
+
+            retriever = BiocentralPredictionRetriever(
+                headers=self.headers,
+                annotations=self.config.biocentral_annotations,
+                sequences=sequences,
+            )
+            return retriever.fetch_annotations()
+        except Exception as e:
+            failed_sources.append(f"Biocentral ({str(e)})")
+            logger.warning(f"Failed to retrieve Biocentral predictions: {e}")
             return []
 
     def _fetch_ted(self, failed_sources: list) -> list[ProteinAnnotations]:
