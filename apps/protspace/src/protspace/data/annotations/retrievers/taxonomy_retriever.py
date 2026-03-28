@@ -1,15 +1,14 @@
 import logging
 from typing import Any
 
-import requests
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
+from protspace.data.annotations.retrievers.http_utils import paginated_get
 
 logger = logging.getLogger(__name__)
 
 TAXONOMY_API_URL = "https://rest.uniprot.org/taxonomy/search"
-_API_TIMEOUT = 30
 _BATCH_SIZE = 100  # Max taxon IDs per request (URL length safety)
 
 # Taxonomy annotations
@@ -78,29 +77,17 @@ class TaxonomyRetriever(BaseAnnotationRetriever):
         query = " OR ".join(f"id:{tid}" for tid in taxon_ids)
 
         try:
-            url = TAXONOMY_API_URL
-            params = {"query": query, "format": "json", "size": "500"}
-
-            while url:
-                resp = requests.get(url, params=params, timeout=_API_TIMEOUT)
-                resp.raise_for_status()
-                data = resp.json()
-
-                for entry in data.get("results", []):
-                    taxon_id = entry.get("taxonId")
-                    if taxon_id is not None:
-                        result[taxon_id] = self._extract_taxonomy(entry)
-
-                # Pagination: follow Link header if present
-                link = resp.headers.get("Link", "")
-                url = None
-                params = None
-                if 'rel="next"' in link:
-                    url = link.split(";")[0].strip(" <>")
+            entries = paginated_get(
+                TAXONOMY_API_URL,
+                params={"query": query, "format": "json", "size": "500"},
+            )
+            for entry in entries:
+                taxon_id = entry.get("taxonId")
+                if taxon_id is not None:
+                    result[taxon_id] = self._extract_taxonomy(entry)
 
         except Exception as e:
             logger.error(f"Failed to fetch taxonomy batch: {e}")
-            # Return empty annotations for all IDs in this batch
             for tid in taxon_ids:
                 if tid not in result:
                     result[tid] = dict.fromkeys(self.annotations, "")

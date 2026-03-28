@@ -11,6 +11,7 @@ import requests
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
+from protspace.data.annotations.retrievers.http_utils import API_TIMEOUT, paginated_get
 from protspace.data.parsers.uniprot_parser import UniProtEntry
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,7 @@ UNIPROT_ANNOTATIONS = [
 ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
 
-_API_TIMEOUT = 30  # seconds per HTTP request
-
-
-def _fetch_one_with_timeout(accession: str, timeout: int = _API_TIMEOUT) -> dict:
+def _fetch_one_with_timeout(accession: str, timeout: int = API_TIMEOUT) -> dict:
     """Fetch a single UniProt entry by accession with timeout protection."""
     url = f"https://rest.uniprot.org/uniprotkb/{accession}.json"
     resp = requests.get(url, timeout=timeout)
@@ -52,15 +50,9 @@ def _fetch_one_with_timeout(accession: str, timeout: int = _API_TIMEOUT) -> dict
 
 
 def _fetch_uniparc_sequence(
-    uniparc_id: str, timeout: int = _API_TIMEOUT
+    uniparc_id: str, timeout: int = API_TIMEOUT
 ) -> tuple[str, int]:
-    """Fetch sequence and length from UniParc.
-
-    Deleted UniProt entries still have their sequence archived in UniParc.
-
-    Returns:
-        Tuple of (sequence_string, length) or ("", 0) on failure.
-    """
+    """Fetch sequence and length from UniParc for deleted entries."""
     url = f"https://rest.uniprot.org/uniparc/{uniparc_id}.json"
     try:
         resp = requests.get(url, timeout=timeout)
@@ -75,48 +67,20 @@ def _fetch_uniparc_sequence(
         return "", 0
 
 
-def _fetch_many_accessions(
-    accessions: list[str], timeout: int = _API_TIMEOUT
-) -> list[dict]:
-    """Fetch multiple UniProt entries by accession via the REST API."""
-    results = []
-    url = "https://rest.uniprot.org/uniprotkb/accessions"
-    params = {"accessions": ",".join(accessions)}
-
-    while url:
-        resp = requests.get(url, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        results.extend(data.get("results", []))
-
-        link = resp.headers.get("Link", "")
-        url = None
-        params = None
-        if 'rel="next"' in link:
-            url = link.split(";")[0].strip(" <>")
-
-    return results
+def _fetch_many_accessions(accessions: list[str]) -> list[dict]:
+    """Fetch multiple UniProt entries by accession."""
+    return paginated_get(
+        "https://rest.uniprot.org/uniprotkb/accessions",
+        params={"accessions": ",".join(accessions)},
+    )
 
 
-def _search_sec_acc(accession: str, timeout: int = _API_TIMEOUT) -> list[dict]:
+def _search_sec_acc(accession: str) -> list[dict]:
     """Search UniProt by secondary accession (fallback for inactive entries)."""
-    records = []
-    url = "https://rest.uniprot.org/uniprotkb/search"
-    params = {"query": f"sec_acc:{accession}", "format": "json", "size": "500"}
-
-    while url:
-        resp = requests.get(url, params=params, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        records.extend(data.get("results", []))
-
-        link = resp.headers.get("Link", "")
-        url = None
-        params = None
-        if 'rel="next"' in link:
-            url = link.split(";")[0].strip(" <>")
-
-    return records
+    return paginated_get(
+        "https://rest.uniprot.org/uniprotkb/search",
+        params={"query": f"sec_acc:{accession}", "format": "json", "size": "500"},
+    )
 
 
 class UniProtRetriever(BaseAnnotationRetriever):
