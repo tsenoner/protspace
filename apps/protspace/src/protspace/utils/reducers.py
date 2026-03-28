@@ -99,9 +99,7 @@ def _ensure_annoy_or_fallback() -> None:
         "using sklearn NearestNeighbors fallback for PaCMAP/LocalMAP"
     )
 
-
-
-# Constants and DimensionReductionConfig are imported from constants.py above
+    # Constants and DimensionReductionConfig are imported from constants.py above
 
     def parameters_by_method(self, method: str) -> list[dict[str, Any]]:
         from pacmap import LocalMAP, PaCMAP
