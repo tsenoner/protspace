@@ -19,6 +19,10 @@ from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
     TaxonomyRetriever,
 )
+from protspace.data.annotations.retrievers.ted_retriever import (
+    TED_ANNOTATIONS,
+    TedRetriever,
+)
 from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
     ProteinAnnotations,
@@ -71,6 +75,7 @@ class ProteinAnnotationManager:
                 "uniprot": True,  # Always needed (identifiers, organism_id)
                 "taxonomy": self.config.taxonomy_annotations is not None,
                 "interpro": self.config.interpro_annotations is not None,
+                "ted": self.config.ted_annotations is not None,
             }
 
         # Initialize components
@@ -104,6 +109,11 @@ class ProteinAnnotationManager:
             if self.cached_data is not None and not self.sources_to_fetch["interpro"]
             else None
         )
+        cached_ted = (
+            self._extract_cached_source(TED_ANNOTATIONS)
+            if self.cached_data is not None and not self.sources_to_fetch.get("ted")
+            else None
+        )
 
         # 1. Conditionally fetch based on sources_to_fetch
         uniprot_annotations = (
@@ -121,6 +131,11 @@ class ProteinAnnotationManager:
             if self.sources_to_fetch["interpro"]
             else cached_interpro
         )
+        ted_annotations = (
+            self._fetch_ted(failed_sources)
+            if self.sources_to_fetch.get("ted")
+            else cached_ted
+        )
 
         # Report failed sources
         if failed_sources:
@@ -130,7 +145,10 @@ class ProteinAnnotationManager:
 
         # 2. Merge annotations from all sources (including cached)
         merged_annotations = self.merger.merge(
-            uniprot_annotations, taxonomy_annotations, interpro_annotations
+            uniprot_annotations,
+            taxonomy_annotations,
+            interpro_annotations,
+            ted_annotations,
         )
 
         # 3. Apply transformations
@@ -234,6 +252,22 @@ class ProteinAnnotationManager:
         except Exception as e:
             failed_sources.append(f"InterPro ({str(e)})")
             logger.warning(f"Failed to retrieve InterPro annotations: {e}")
+            return []
+
+    def _fetch_ted(self, failed_sources: list) -> list[ProteinAnnotations]:
+        """Fetch TED domain annotations if requested."""
+        if not self.config.ted_annotations:
+            return []
+
+        try:
+            retriever = TedRetriever(
+                headers=self.headers,
+                annotations=self.config.ted_annotations,
+            )
+            return retriever.fetch_annotations()
+        except Exception as e:
+            failed_sources.append(f"TED ({str(e)})")
+            logger.warning(f"Failed to retrieve TED annotations: {e}")
             return []
 
     def _save_and_load(self, proteins: list[ProteinAnnotations]) -> pd.DataFrame:

@@ -17,50 +17,47 @@ class AnnotationMerger:
         uniprot_annotations: list[ProteinAnnotations],
         taxonomy_annotations: dict,
         interpro_annotations: list[ProteinAnnotations] = None,
+        ted_annotations: list[ProteinAnnotations] = None,
     ) -> list[ProteinAnnotations]:
         """
-        Merge annotations from UniProt, Taxonomy, and InterPro sources.
+        Merge annotations from all sources.
 
         Args:
             uniprot_annotations: List of ProteinAnnotations from UniProt
             taxonomy_annotations: Dict mapping organism_id to taxonomy annotations
             interpro_annotations: List of ProteinAnnotations from InterPro (optional)
+            ted_annotations: List of ProteinAnnotations from TED (optional)
 
         Returns:
             List of ProteinAnnotations with merged annotations
         """
-        # Create a mapping from identifier to InterPro annotations for efficient lookup
-        interpro_dict = self._create_interpro_dict(interpro_annotations)
+        interpro_dict = self._create_lookup_dict(interpro_annotations)
+        ted_dict = self._create_lookup_dict(ted_annotations)
 
-        # Process each protein
         merged_annotations = []
         for protein in uniprot_annotations:
             merged_protein = self._merge_protein(
-                protein, taxonomy_annotations, interpro_dict
+                protein, taxonomy_annotations, interpro_dict, ted_dict
             )
             merged_annotations.append(merged_protein)
 
         return merged_annotations
 
     @staticmethod
-    def _create_interpro_dict(
-        interpro_annotations: list[ProteinAnnotations] | None,
+    def _create_lookup_dict(
+        annotations: list[ProteinAnnotations] | None,
     ) -> dict:
-        """Create a dictionary mapping protein identifier to InterPro annotations."""
-        if not interpro_annotations:
+        """Create a dictionary mapping protein identifier to annotations."""
+        if not annotations:
             return {}
-
-        interpro_dict = {}
-        for interpro_protein in interpro_annotations:
-            interpro_dict[interpro_protein.identifier] = interpro_protein.annotations
-
-        return interpro_dict
+        return {p.identifier: p.annotations for p in annotations}
 
     def _merge_protein(
         self,
         protein: ProteinAnnotations,
         taxonomy_annotations: dict,
         interpro_dict: dict,
+        ted_dict: dict = None,
     ) -> ProteinAnnotations:
         """
         Merge all annotation sources for a single protein.
@@ -87,6 +84,12 @@ class AnnotationMerger:
         updated_annotations = self._merge_interpro(
             updated_annotations, protein.identifier, interpro_dict
         )
+
+        # Merge TED annotations
+        if ted_dict:
+            updated_annotations = self._merge_interpro(
+                updated_annotations, protein.identifier, ted_dict
+            )
 
         return ProteinAnnotations(
             identifier=protein.identifier, annotations=updated_annotations
