@@ -167,7 +167,9 @@ class ArrowReader:
                     settings
                 )
             except Exception:
-                logger.debug("Failed to load visualization state from settings", exc_info=True)
+                logger.debug(
+                    "Failed to load visualization state from settings", exc_info=True
+                )
 
     def save_data(self, output_path: Path = None):
         """Save the current data back to parquet files."""
