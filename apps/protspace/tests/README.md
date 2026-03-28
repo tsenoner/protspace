@@ -5,26 +5,26 @@
 ### Run all tests (including slow tests)
 
 ```bash
-uvrun pytest
+uv run pytest
 ```
 
 ### Skip slow tests (recommended for development)
 
 ```bash
-uvrun pytest -m "not slow"
+uv run pytest -m "not slow"
 ```
 
 ### Run only slow/integration tests
 
 ```bash
-uvrun pytest -m slow
-uvrun pytest -m integration
+uv run pytest -m slow
+uv run pytest -m integration
 ```
 
 ### Run specific test files
 
 ```bash
-uvrun pytest tests/test_config.py
+uv run pytest tests/test_reducers.py
 ```
 
 ## Test Markers
@@ -36,8 +36,8 @@ uvrun pytest tests/test_config.py
 
 The following tests are marked as slow and can be skipped during rapid development:
 
-- `tests/test_taxonomy_feature_retriever.py` - Downloads and uses NCBI taxonomy database (~several seconds per test run)
+- `tests/test_taxonomy_annotation_retriever.py` - Downloads and uses NCBI taxonomy database (~several seconds per test run)
 
 ## CI/CD
 
-In CI pipelines, always run the full test suite including slow tests to ensure complete coverage.
+CI runs `uv run pytest tests/ -m "not slow" -q` by default. Slow/integration tests are skipped in CI to avoid external service dependencies.

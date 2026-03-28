@@ -21,7 +21,7 @@
 - Toggle between 2D and 3D visualizations
 - PCA: Preserves global structure - [Pearson (1901)](https://doi.org/10.1080/14786440109462720)
 - UMAP: Emphasizes local relationships - [McInnes et al. (2018)](https://arxiv.org/abs/1802.03426)
-- PaCMAP: Can emphasizes local and global patterns, based on choosen parameters - [Wang et al. (2021)](http://jmlr.org/papers/v22/20-1061.html)
+- PaCMAP: Can emphasize local and global patterns, based on chosen parameters - [Wang et al. (2021)](http://jmlr.org/papers/v22/20-1061.html)
 - For a comparison of dimensionality reduction methods, see [Huang et al. (2022)](https://www.nature.com/articles/s42003-022-03628-x)
 
 ---
@@ -38,7 +38,7 @@
 ##### D. Utility Buttons
 
 - *Help:* Access this guide
-- *JSON Download:* Download JSON file to share with colleugues
+- *JSON Download:* Download JSON file to share with colleagues
 - *JSON Upload:* Upload precomputed JSON file for visualization
 - *PDB Upload:* Add protein structures as a zipped directory with PDB files named by protein identifier
 - *Settings:* Customize marker shapes (circle, square, diamond, etc.) and colors

@@ -1,10 +1,7 @@
-import argparse
 import json
-from collections import Counter
 from pathlib import Path
 
 from protspace.utils.arrow_reader import ArrowReader
-from protspace.utils.json_reader import JsonReader
 
 ALLOWED_SHAPES = [
     "circle",
@@ -48,15 +45,12 @@ def load_annotation_styles(
 
 
 def detect_data_format(input_path: str) -> str:
-    """Detect if input is JSON file, parquet directory, or parquetbundle."""
+    """Detect if input is a parquet directory or parquetbundle."""
     path = Path(input_path)
 
-    if path.is_file() and path.suffix.lower() == ".json":
-        return "json"
-    elif path.is_file() and path.suffix.lower() == ".parquetbundle":
+    if path.is_file() and path.suffix.lower() == ".parquetbundle":
         return "parquetbundle"
     elif path.is_dir():
-        # Check if directory contains parquet files
         parquet_files = list(path.glob("*.parquet"))
         if parquet_files:
             return "parquet"
@@ -66,7 +60,7 @@ def detect_data_format(input_path: str) -> str:
             )
     else:
         raise ValueError(
-            f"Input '{input_path}' must be a JSON file, a .parquetbundle file, "
+            f"Input '{input_path}' must be a .parquetbundle file "
             "or a directory containing parquet files."
         )
 
@@ -138,11 +132,7 @@ def generate_template(input_file: str) -> dict:
     """
     data_format = detect_data_format(input_file)
 
-    if data_format == "json":
-        with open(input_file) as f:
-            data = json.load(f)
-        reader = JsonReader(data)
-    elif data_format == "parquetbundle":
+    if data_format == "parquetbundle":
         from protspace.data.io.bundle import extract_bundle_to_dir
 
         temp_dir = extract_bundle_to_dir(Path(input_file))
@@ -156,7 +146,9 @@ def generate_template(input_file: str) -> dict:
     for annotation in sorted(reader.get_all_annotations()):
         freqs = frequencies.get(annotation, {})
         # Sort values by frequency descending
-        sorted_values = sorted(freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True)
+        sorted_values = sorted(
+            freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True
+        )
 
         colors: dict[str, str] = {}
         for value in sorted_values:
@@ -176,67 +168,6 @@ def generate_template(input_file: str) -> dict:
         }
 
     return template
-
-
-def add_annotation_styles_json(
-    json_file: str,
-    annotation_styles: dict[str, dict[str, dict[str, str]]],
-    output_file: str,
-) -> None:
-    """Add annotation styles to JSON format data."""
-    with open(json_file) as f:
-        data = json.load(f)
-
-    reader = JsonReader(data)
-
-    if "visualization_state" not in data:
-        data["visualization_state"] = {}
-    if "annotation_colors" not in data["visualization_state"]:
-        data["visualization_state"]["annotation_colors"] = {}
-    if "marker_shapes" not in data["visualization_state"]:
-        data["visualization_state"]["marker_shapes"] = {}
-
-    for annotation, styles in annotation_styles.items():
-        # Check if the annotation exists
-        all_annotations = reader.get_all_annotations()
-        if annotation not in all_annotations:
-            raise ValueError(
-                f"Annotation '{annotation}' does not exist in the protein data. Available annotations: {all_annotations}"
-            )
-
-        # Check if all values exist for the annotation
-        all_values = {str(val) for val in reader.get_all_annotation_values(annotation)}
-
-        # Add colors
-        if "colors" in styles:
-            for value, color in styles["colors"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation '{annotation}'. Available values: {sorted(all_values)}"
-                        )
-                reader.update_annotation_color(annotation, resolved, color)
-
-        # Add shapes
-        if "shapes" in styles:
-            for value, shape in styles["shapes"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation '{annotation}'. Available values: {sorted(all_values)}"
-                        )
-                reader.update_marker_shape(annotation, resolved, shape)
-
-    with open(output_file, "w") as f:
-        json.dump(reader.get_data(), f, indent=2)
 
 
 def add_annotation_styles_parquet(
@@ -379,9 +310,7 @@ def add_annotation_styles_bundle(
     )
 
     # Write output bundle with updated settings
-    replace_settings_in_bundle(
-        Path(bundle_file), Path(output_file), new_settings
-    )
+    replace_settings_in_bundle(Path(bundle_file), Path(output_file), new_settings)
 
 
 def add_annotation_styles(
@@ -389,12 +318,10 @@ def add_annotation_styles(
     annotation_styles: dict[str, dict[str, dict[str, str]]],
     output_file: str,
 ) -> None:
-    """Add annotation styles to JSON, parquet, or parquetbundle format data."""
+    """Add annotation styles to parquet or parquetbundle format data."""
     data_format = detect_data_format(input_file)
 
-    if data_format == "json":
-        add_annotation_styles_json(input_file, annotation_styles, output_file)
-    elif data_format == "parquet":
+    if data_format == "parquet":
         add_annotation_styles_parquet(input_file, annotation_styles, output_file)
     elif data_format == "parquetbundle":
         add_annotation_styles_bundle(input_file, annotation_styles, output_file)
@@ -425,94 +352,3 @@ def dump_settings(input_file: str) -> None:
             print(json.dumps(settings, indent=2))
         else:
             print("No settings found in parquet directory.")
-    elif data_format == "json":
-        with open(input_file) as f:
-            data = json.load(f)
-        viz_state = data.get("visualization_state", {})
-        print(json.dumps(viz_state, indent=2))
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Add or update annotation styles (colors, shapes, legend ordering) "
-        "in ProtSpace .parquetbundle, Parquet, or JSON files.",
-        epilog="""\
-styles JSON format:
-  Each top-level key is an annotation name. Per annotation:
-
-  Stored keys (persisted in the output bundle):
-    colors             Map of {value: color} (hex or rgba)
-    shapes             Map of {value: shape} (circle, square, diamond, ...)
-    sortMode           Legend sort: size-desc, size-asc, alpha-asc, alpha-desc, manual
-    maxVisibleValues   Max legend entries before "Other" (default: 10)
-    shapeSize          Marker size (default: 30)
-    hiddenValues       List of values hidden from the plot
-    selectedPaletteId  Color palette (default: kellys)
-
-  Processing-only keys (consumed during generation, NOT stored):
-    zOrderSort         Sort mode for zOrder assignment only, overriding sortMode
-    pinnedValues       Ordered list of values for legend positions 0..N-1
-                       Use "" for N/A, "__REST__" to auto-fill from top values
-
-  Example — pin 2 families + N/A:
-    {"protein_families": {"maxVisibleValues": 3, "sortMode": "manual",
-     "zOrderSort": "size-desc", "pinnedValues": ["familyA", "familyB", ""]}}
-
-  Example — top values by frequency, N/A at end:
-    {"ec": {"sortMode": "manual", "zOrderSort": "size-desc",
-     "pinnedValues": ["__REST__", ""]}}
-
-  Values use display names (pipe suffixes trimmed, semicolons split).
-  See docs/styling.md for full documentation.
-""",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "input_file",
-        help="Path to input .parquetbundle, .json file, or parquet directory",
-    )
-    parser.add_argument(
-        "output_file",
-        nargs="?",
-        default=None,
-        help="Output path. Not required for --dump-settings or --generate-template.",
-    )
-    parser.add_argument(
-        "--annotation_styles",
-        help="Styles as an inline JSON string or path to a JSON file. "
-        "See epilog below or docs/styling.md for the full format.",
-    )
-    parser.add_argument(
-        "--dump-settings",
-        action="store_true",
-        help="Print stored settings and exit (no output_file needed).",
-    )
-    parser.add_argument(
-        "--generate-template",
-        action="store_true",
-        help="Print a pre-filled styles template (values in frequency order, "
-        "empty color placeholders) and exit.",
-    )
-
-    args = parser.parse_args()
-
-    if args.dump_settings:
-        dump_settings(args.input_file)
-        return
-
-    if args.generate_template:
-        template = generate_template(args.input_file)
-        print(json.dumps(template, indent=2))
-        return
-
-    if not args.annotation_styles:
-        parser.error("--annotation_styles is required when not using --dump-settings or --generate-template")
-    if not args.output_file:
-        parser.error("output_file is required when not using --dump-settings or --generate-template")
-
-    annotation_styles = load_annotation_styles(args.annotation_styles)
-    add_annotation_styles(args.input_file, annotation_styles, args.output_file)
-
-
-if __name__ == "__main__":
-    main()

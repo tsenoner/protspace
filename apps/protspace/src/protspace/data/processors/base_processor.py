@@ -10,23 +10,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.io.bundle import write_bundle
-from protspace.utils import DimensionReductionConfig
-from protspace.utils.reducers import MDS_NAME
+from protspace.utils.constants import MDS_NAME, DimensionReductionConfig
 
 logger = logging.getLogger(__name__)
-
-
-class NumpyEncoder(json.JSONEncoder):
-    """Custom JSON encoder that handles NumPy data types."""
-
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super().default(obj)
 
 
 class BaseProcessor:
@@ -81,13 +67,20 @@ class BaseProcessor:
         reducer = reducer_cls(config)
         # Suppress noisy but harmless warnings from DR libraries:
         # - sklearn RuntimeWarning: overflow in randomized SVD matmul (results still correct)
-        # - sklearn FutureWarning: force_all_finite rename (umap compat, fixed in newer umap)
         # - umap UserWarning: n_jobs overridden by random_state (informational)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"sklearn")
-            warnings.filterwarnings("ignore", category=FutureWarning, module=r"sklearn")
-            warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
-            reduced_data = reducer.fit_transform(data)
+        # - pacmap logger.warning: "random state is set to ..." (informational)
+        pacmap_logger = logging.getLogger("pacmap.pacmap")
+        prev_level = pacmap_logger.level
+        pacmap_logger.setLevel(logging.ERROR)
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", category=RuntimeWarning, module=r"sklearn"
+                )
+                warnings.filterwarnings("ignore", category=UserWarning, module=r"umap")
+                reduced_data = reducer.fit_transform(data)
+        finally:
+            pacmap_logger.setLevel(prev_level)
 
         method_spec = f"{method}{dims}"
         projection_name = self.custom_names.get(method_spec, f"{method.upper()}_{dims}")
@@ -169,7 +162,7 @@ class BaseProcessor:
             df = df.rename(columns={self.identifier_col: "protein_id"})
 
         # Remove internal columns that are only needed for processing/caching
-        internal_columns = ["organism_id", "length", "sequence"]
+        internal_columns = ["organism_id", "sequence"]
         cols_to_drop = [c for c in internal_columns if c in df.columns]
         if cols_to_drop:
             df = df.drop(columns=cols_to_drop)
@@ -217,70 +210,3 @@ class BaseProcessor:
 
         df = pd.DataFrame(rows)
         return pa.Table.from_pandas(df)
-
-    def create_output_legacy(
-        self,
-        metadata: pd.DataFrame,
-        reductions: list[dict[str, Any]],
-        headers: list[str],
-    ) -> dict[str, Any]:
-        """Create the final output dictionary (legacy JSON format)."""
-        output = {"protein_data": {}, "projections": []}
-
-        # Process annotations
-        for _, row in metadata.iterrows():
-            protein_id = row[self.identifier_col]
-            annotations = (
-                row.drop(self.identifier_col)
-                .infer_objects(copy=False)
-                .fillna("")
-                .to_dict()
-            )
-            output["protein_data"][protein_id] = {"annotations": annotations}
-
-        # Process projections
-        for reduction in reductions:
-            projection = {
-                "name": reduction["name"],
-                "dimensions": reduction["dimensions"],
-                "info": reduction["info"],
-                "data": [],
-            }
-
-            for i, header in enumerate(headers):
-                coordinates = {
-                    "x": np.float32(reduction["data"][i][0]),
-                    "y": np.float32(reduction["data"][i][1]),
-                }
-                if reduction["dimensions"] == 3:
-                    coordinates["z"] = np.float32(reduction["data"][i][2])
-
-                projection["data"].append(
-                    {"identifier": header, "coordinates": coordinates}
-                )
-
-            output["projections"].append(projection)
-
-        return output
-
-    def save_output_legacy(self, data: dict[str, Any], output_path: Path):
-        """Save output data to JSON file (legacy format)."""
-        # output_path is the final .json file path
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        json_file_path = output_path
-
-        if json_file_path.exists():
-            with json_file_path.open("r") as f:
-                existing = json.load(f)
-                existing["protein_data"].update(data["protein_data"])
-
-                # Update or add projections
-                existing_projs = {p["name"]: p for p in existing["projections"]}
-                for new_proj in data["projections"]:
-                    existing_projs[new_proj["name"]] = new_proj
-                existing["projections"] = list(existing_projs.values())
-
-            data = existing
-
-        with json_file_path.open("w") as f:
-            json.dump(data, f, indent=2, cls=NumpyEncoder)

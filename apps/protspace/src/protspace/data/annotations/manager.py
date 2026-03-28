@@ -39,7 +39,6 @@ class ProteinAnnotationManager:
         headers: list[str],
         annotations: list = None,
         output_path: Path = None,
-        non_binary: bool = False,
         sequences: dict = None,
         cached_data: pd.DataFrame = None,
         sources_to_fetch: dict = None,
@@ -51,25 +50,28 @@ class ProteinAnnotationManager:
             headers: List of protein identifiers/accessions
             annotations: List of annotations to extract (None = use defaults)
             output_path: Path to save output file (None = return DataFrame only)
-            non_binary: If True, save as CSV; if False, save as Parquet
             sequences: Dictionary mapping identifiers to sequences (for InterPro)
             cached_data: Previously cached DataFrame with annotations
             sources_to_fetch: Dict indicating which sources to fetch (uniprot, taxonomy, interpro)
         """
         self.headers = headers
         self.output_path = output_path
-        self.non_binary = non_binary
         self.sequences = sequences
         self.cached_data = cached_data
-        self.sources_to_fetch = sources_to_fetch or {
-            "uniprot": True,
-            "taxonomy": True,
-            "interpro": True,
-        }
-
-        # Initialize configuration
+        # Initialize configuration first so we can derive sources_to_fetch
         self.config = AnnotationConfiguration(annotations)
         self.user_annotations = self.config.user_annotations
+
+        # Derive which sources to fetch from the requested annotations,
+        # unless the caller explicitly specified sources_to_fetch
+        if sources_to_fetch is not None:
+            self.sources_to_fetch = sources_to_fetch
+        else:
+            self.sources_to_fetch = {
+                "uniprot": True,  # Always needed (identifiers, organism_id)
+                "taxonomy": self.config.taxonomy_annotations is not None,
+                "interpro": self.config.interpro_annotations is not None,
+            }
 
         # Initialize components
         self.transformer = AnnotationTransformer()
@@ -132,13 +134,7 @@ class ProteinAnnotationManager:
         )
 
         # 3. Apply transformations
-        apply_binning = (
-            "length_fixed" in self.user_annotations
-            or "length_quantile" in self.user_annotations
-        )
-        transformed_annotations = self.transformer.transform(
-            merged_annotations, apply_length_binning=apply_binning
-        )
+        transformed_annotations = self.transformer.transform(merged_annotations)
 
         # 4. Create output
         if self.output_path:
@@ -146,9 +142,14 @@ class ProteinAnnotationManager:
         else:
             df = DataFormatter.to_dataframe(transformed_annotations)
 
-        # 5. Always remove internal-only columns from final output
-        # (organism_id for taxonomy, length for binning, sequence for InterPro)
-        internal_columns = ["organism_id", "length", "sequence"]
+        # 5. Remove internal-only columns from final output
+        # (organism_id for taxonomy, sequence for InterPro)
+        # Keep columns that the user explicitly requested
+        internal_columns = ["organism_id", "sequence"]
+        if self.user_annotations:
+            internal_columns = [
+                col for col in internal_columns if col not in self.user_annotations
+            ]
         columns_to_drop = [col for col in internal_columns if col in df.columns]
         if columns_to_drop:
             df = df.drop(columns=columns_to_drop)
@@ -237,17 +238,10 @@ class ProteinAnnotationManager:
 
     def _save_and_load(self, proteins: list[ProteinAnnotations]) -> pd.DataFrame:
         """Save to file and load back."""
-        if self.non_binary:
-            self.writer.write_csv(
-                proteins, self.output_path, apply_transforms=False
-            )  # Already transformed
-            df = pd.read_csv(self.output_path)
-        else:
-            self.writer.write_parquet(
-                proteins, self.output_path, apply_transforms=False
-            )  # Already transformed
-            df = pd.read_parquet(self.output_path)
-        return df
+        self.writer.write_parquet(
+            proteins, self.output_path, apply_transforms=False
+        )  # Already transformed
+        return pd.read_parquet(self.output_path)
 
     @staticmethod
     def _get_taxon_counts(fetched_uniprot: list[ProteinAnnotations]) -> dict:

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from protspace.utils import JsonReader
+from protspace.utils.arrow_reader import ArrowReader
 
 
 def standardize_missing(series: pd.Series) -> pd.Series:
@@ -12,7 +12,7 @@ def standardize_missing(series: pd.Series) -> pd.Series:
     return series.replace(replacements).fillna("<N/A>")
 
 
-def is_projection_3d(reader: JsonReader, projection_name: str) -> bool:
+def is_projection_3d(reader: ArrowReader, projection_name: str) -> bool:
     """Check if a given projection is 3D."""
     if not projection_name or not reader:
         return False

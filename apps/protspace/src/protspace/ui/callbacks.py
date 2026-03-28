@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import logging
 import re
 import zipfile
 from pathlib import Path
@@ -20,7 +21,7 @@ from protspace.core.config import (
 )
 from protspace.core.constants import is_projection_3d
 from protspace.ui import styles
-from protspace.utils import JsonReader
+from protspace.utils.arrow_reader import ArrowReader
 from protspace.visualization.molstar import get_molstar_data
 from protspace.visualization.plotting import (
     create_plot,
@@ -28,11 +29,13 @@ from protspace.visualization.plotting import (
     save_plot,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def get_reader(json_data):
-    """Helper function to get JsonReader instance."""
+    """Helper function to get ArrowReader instance."""
     if json_data:
-        return JsonReader(json_data)
+        return ArrowReader(json_data)
     else:
         return None
 
@@ -116,7 +119,7 @@ def setup_callbacks(app):
             else:
                 return no_update
         except Exception as e:
-            print(f"Error loading JSON: {e}")
+            logger.error(f"Error loading JSON: {e}")
             return no_update
 
     @app.callback(
@@ -131,7 +134,7 @@ def setup_callbacks(app):
             raise PreventUpdate
         pdb_files, message = parse_zip_contents(contents, filename)
         if pdb_files is None:
-            print(message)
+            logger.warning(message)
             return pdb_files_store_data
 
         # Convert PDB files content to base64 strings for storage
@@ -217,7 +220,7 @@ def setup_callbacks(app):
                 margin={"l": 0, "r": 0, "t": 0, "b": 0},
             )
             return fig
-        reader = JsonReader(json_data)
+        reader = ArrowReader(json_data)
         fig, _ = create_plot(
             reader,
             selected_projection,
@@ -389,7 +392,7 @@ def setup_callbacks(app):
     ):
         if n_clicks is None or not selected_value:
             raise PreventUpdate
-        reader = JsonReader(json_data)
+        reader = ArrowReader(json_data)
         if selected_color and "rgb" in selected_color:
             color_str = "rgba({r}, {g}, {b}, {a})".format(**selected_color["rgb"])
             reader.update_annotation_color(
@@ -482,7 +485,7 @@ def setup_callbacks(app):
         if n_clicks is None:
             raise PreventUpdate
 
-        reader = JsonReader(json_data)
+        reader = ArrowReader(json_data)
         is_3d = reader.get_projection_info(selected_projection)["dimensions"] == 3
         fig_obj = go.Figure(figure)
 

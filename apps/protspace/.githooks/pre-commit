@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Auto-format staged Python files with ruff before committing.
+# Install: git config core.hooksPath .githooks
+
+staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+[ -z "$staged" ] && exit 0
+
+uv run ruff format $staged
+uv run ruff check --fix $staged
+
+# Re-stage the formatted files
+echo "$staged" | xargs git add
+
+exit 0

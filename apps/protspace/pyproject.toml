@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "h5py>=3.12.1",
     "scikit-learn>=1.6.1",
-    "umap-learn>=0.5.7",
+    "umap-learn>=0.5.10",
     "pacmap>=0.8.0",
     "numpy>=1.23.0",
     "pandas>=2.0.0",
@@ -19,6 +19,9 @@ dependencies = [
     "pymmseqs>=1.0.4",
     "pyarrow>=20.0.0",
     "unipressed>=1.4.0",
+    "biocentral-api>=1.1.2",
+    "typer[all]>=0.15.0",
+    "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]
@@ -50,10 +53,10 @@ dev = [
     "jupyter-black>=0.4.0",
     "jupyter-bokeh>=4.0.5",
     "panel>=1.5.2",
-    "pyarrow>=17.0.0",
+    "pyarrow>=20.0.0",
     "ruff>=0.6.9",
     "xarray>=2024.9.0",
-    "torch==2.2",
+    "torch>=2.2,<3.0",
     "seaborn>=0.13.2",
     "pytest>=8.3.3",
     "polars>=1.26.0",
@@ -63,10 +66,7 @@ dev = [
 ]
 
 [project.scripts]
-protspace = "protspace.main:run"
-protspace-local = "protspace.cli.local_data:main"
-protspace-query = "protspace.cli.uniprot_query:main"
-protspace-annotation-colors = "protspace.utils.add_annotation_style:main"
+protspace = "protspace.cli.app:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -82,6 +82,8 @@ filterwarnings = [
     "ignore::DeprecationWarning:selenium.*:",
     "ignore::DeprecationWarning:kaleido.*:",
     "ignore::DeprecationWarning:dash_molstar.*:",
+    "ignore::RuntimeWarning:sklearn.utils.extmath:",
+    "ignore:n_jobs value:UserWarning:umap:",
 ]
 
 [tool.ruff]
@@ -112,12 +114,6 @@ ignore = [
 "examples/notebook/*" = ["E402", "F811", "ARG001", "F841"]  # Jupyter notebooks: imports after config, cell re-imports, widget callback args
 
 [tool.semantic_release]
-assets = [
-    "uv.lock",
-    "requirements-py310.txt",
-    "requirements-py311.txt",
-    "requirements-py312.txt",
-]
+assets = ["uv.lock"]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/protspace/__init__.py:__version__"]
-build_command = "bash update_deps.sh"

@@ -1,5 +1,4 @@
 import base64
-import json
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,6 @@ from dash import Dash
 
 from protspace.ui.callbacks import setup_callbacks
 from protspace.ui.layout import create_layout
-from protspace.utils import JsonReader
 from protspace.utils.arrow_reader import ArrowReader
 from protspace.visualization.plotting import create_plot, save_plot
 
@@ -20,21 +18,15 @@ class ProtSpace:
     def __init__(
         self,
         pdb_zip: str | None = None,
-        default_json_file: str | None = None,
         arrow_dir: str | None = None,
     ):
         self.pdb_zip = pdb_zip
         self.default_json_data = None
-        self.arrow_reader = None
         self.pdb_files_data = {}
 
-        if default_json_file:
-            with open(default_json_file) as f:
-                self.default_json_data = json.load(f)
-        elif arrow_dir:
-            self.arrow_reader = ArrowReader(Path(arrow_dir))
-            # Convert Arrow data to JSON format for compatibility
-            self.default_json_data = self.arrow_reader.get_data()
+        if arrow_dir:
+            reader = ArrowReader(Path(arrow_dir))
+            self.default_json_data = reader.get_data()
 
         if self.pdb_zip:
             self.load_pdb_files_from_zip(self.pdb_zip)
@@ -79,13 +71,6 @@ class ProtSpace:
         """Return the PDB files data."""
         return self.pdb_files_data
 
-    # def run_server(
-    #     self, port: int = 8050, debug: bool = False, quiet: bool = True
-    # ) -> None:
-    #     """Run the Dash server."""
-    #     app = self.create_app()
-    #     app.run_server(debug=debug, port=port)
-
     def run_server(
         self, port: int = 8050, debug: bool = False, quiet: bool = False
     ) -> None:
@@ -122,9 +107,9 @@ class ProtSpace:
     ) -> None:
         """Generate a plot image for a specific projection and annotation."""
         if not self.default_json_data:
-            raise ValueError("No JSON data loaded")
+            raise ValueError("No data loaded")
 
-        reader = JsonReader(self.default_json_data)
+        reader = ArrowReader(self.default_json_data)
         fig, is_3d = create_plot(reader, projection, annotation)
 
         # Get image bytes from save_plot

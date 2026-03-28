@@ -208,7 +208,10 @@ class TaxonomyRetriever(BaseAnnotationRetriever):
                 raise
         else:
             # First-time setup: must download
-            logger.info(f"Downloading taxopy database to {db_dir}")
+            logger.info(
+                f"Downloading NCBI taxonomy database to {db_dir} "
+                f"(first run only, ~1 min)..."
+            )
             try:
                 taxdb = taxopy.TaxDb(taxdb_dir=str(db_dir), keep_files=True)
                 # Create/update timestamp file after successful download

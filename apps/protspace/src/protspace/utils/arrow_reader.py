@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -6,29 +7,43 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+logger = logging.getLogger(__name__)
+
 
 class ArrowReader:
-    """A class to read and manipulate Arrow data for ProtSpace."""
+    """Read and manipulate ProtSpace data from Parquet files or a dict.
 
-    def __init__(self, arrow_data_path: Path):
+    Accepts either a ``Path`` to a directory of Parquet files or a
+    pre-built ``dict`` (the same structure previously handled by the
+    legacy ``JsonReader``).
+    """
+
+    def __init__(self, source: Path | dict):
         """
-        Initialize with path to directory containing Arrow/Parquet files.
-
         Args:
-            arrow_data_path: Path to directory containing the .parquet files
+            source: Path to directory containing .parquet files, or a
+                pre-built data dict (protein_data, projections, …).
         """
-        self.data_path = Path(arrow_data_path)
-        self._protein_annotations_df = None
-        self._projections_metadata_df = None
-        self._projections_data_df = None
-        # Initialize data structure to match JsonReader format
-        self.data = {
-            "protein_data": {},
-            "projections": [],
-            "visualization_state": {"annotation_colors": {}, "marker_shapes": {}},
-        }
-        self._load_data()
-        self._build_data_structure()
+        if isinstance(source, dict):
+            # Direct dict input
+            self.data = source
+            self.data_path = None
+            self._protein_annotations_df = None
+            self._projections_metadata_df = None
+            self._projections_data_df = None
+        else:
+            # Parquet file loading
+            self.data_path = Path(source)
+            self._protein_annotations_df = None
+            self._projections_metadata_df = None
+            self._projections_data_df = None
+            self.data = {
+                "protein_data": {},
+                "projections": [],
+                "visualization_state": {"annotation_colors": {}, "marker_shapes": {}},
+            }
+            self._load_data()
+            self._build_data_structure()
 
     def _load_data(self):
         """Load data from Parquet files."""
@@ -68,13 +83,16 @@ class ArrowReader:
             ) from e
 
     def _build_data_structure(self):
-        """Build the data structure to match JsonReader format."""
+        """Build the data structure matching the ProtSpace data schema."""
+        # Use the first column as identifier (issue #10)
+        id_col = self._protein_annotations_df.columns[0]
+
         # Build protein_data
         for _, row in self._protein_annotations_df.iterrows():
-            protein_id = row["protein_id"]
+            protein_id = row[id_col]
             annotations = {}
             for col in self._protein_annotations_df.columns:
-                if col != "protein_id":
+                if col != id_col:
                     annotations[col] = row[col]
             self.data["protein_data"][protein_id] = {"annotations": annotations}
 
@@ -149,7 +167,9 @@ class ArrowReader:
                     settings
                 )
             except Exception:
-                pass
+                logger.debug(
+                    "Failed to load visualization state from settings", exc_info=True
+                )
 
     def save_data(self, output_path: Path = None):
         """Save the current data back to parquet files."""
@@ -196,14 +216,14 @@ class ArrowReader:
         return list(self.data.get("protein_data", {}).keys())
 
     def get_projection_data(self, projection_name: str) -> list[dict[str, Any]]:
-        """Get projection data in the same format as JsonReader."""
+        """Get projection data as a list of dicts."""
         for proj in self.data.get("projections", []):
             if proj["name"] == projection_name:
                 return proj.get("data", [])
         raise ValueError(f"Projection {projection_name} not found")
 
     def get_projection_info(self, projection_name: str) -> dict[str, Any]:
-        """Get projection info in the same format as JsonReader."""
+        """Get projection info as a list of dicts."""
         for proj in self.data.get("projections", []):
             if proj["name"] == projection_name:
                 result = {"dimensions": proj.get("dimensions")}
@@ -213,7 +233,7 @@ class ArrowReader:
         raise ValueError(f"Projection {projection_name} not found")
 
     def get_protein_annotations(self, protein_id: str) -> dict[str, Any]:
-        """Get protein annotations in the same format as JsonReader."""
+        """Get protein annotations as a list of dicts."""
         return (
             self.data.get("protein_data", {}).get(protein_id, {}).get("annotations", {})
         )
