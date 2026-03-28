@@ -1,6 +1,722 @@
 # CHANGELOG
 
 
+## v4.0.0 (2026-03-28)
+
+### Breaking
+
+* fix(ci)!: use GitHub App token for repository-dispatch to trigger publish workflow
+
+The trigger-publish job was using the default GITHUB_TOKEN, which cannot
+trigger other workflows due to GitHub's anti-recursion protection. Generate
+a GitHub App token in the job and pass it to peter-evans/repository-dispatch.
+
+BREAKING CHANGE: CLI flags changed in v3.3.1→v4.0.0 release cycle —
+--no-scores replaced by --scores/--no-scores (default: scores enabled),
+--non-binary removed (legacy JSON output dropped, only Parquet remains),
+--half-precision removed (not implemented in Biocentral server).
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`5cfb265`](https://github.com/tsenoner/protspace/commit/5cfb26549fdad5d196e8feb0f880bd988a31610b))
+
+### Chores
+
+* chore: clean up scripts/, examples/, and .gitignore
+
+Remove redundant scripts (biocentral/, figures_script/, check_version_bump.sh,
+download_foldcomp.sh, plotly_markers.py, probe_hf_models.py), stale example
+visualizations (examples/out/, ~60MB tracked), unused assets (annotate.py),
+and bin/foldcomp. Move Workflow.svg to docs/publication/.
+
+Trim .gitignore from 182-line GitHub template to 42 lines of project-relevant
+rules. Add missing ignores (.playwright-mcp, .ruff_cache). Un-ignore scripts/
+now that only useful scripts remain. Fix stale CLAUDE.md reference to removed
+biocentral_embed.py.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`c4986ae`](https://github.com/tsenoner/protspace/commit/c4986ae04afd7bb1eaff15206cceaa105e629a42))
+
+### Code Style
+
+* style: fix ruff formatting in arrow_reader.py and reducers.py
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`1aadcc9`](https://github.com/tsenoner/protspace/commit/1aadcc922b6f56bb113e45aa8cfef1a7b5b29ee7))
+
+### Continuous Integration
+
+* ci: add ruff lint + pytest workflow on push/PR
+
+Runs ruff check (blocking) and ruff format --check (advisory) plus
+pytest with fast tests on push/PR to main and stage branches.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`930b628`](https://github.com/tsenoner/protspace/commit/930b62895b2f0a6e6ada038ff29f0499e315fad4))
+
+### Documentation
+
+* docs: remove legacy Dash frontend link from README
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`b9ca1e5`](https://github.com/tsenoner/protspace/commit/b9ca1e576cabda1895ad2138bbc1c06aa22f36b1))
+
+* docs: update notebook examples to use parquetbundle release assets
+
+Point ProtSpace_Preparation.ipynb to the new `examples` release tag
+with pre-generated .parquetbundle files instead of old H5 embeddings.
+
+- URL: releases/download/v3.3.1/ → releases/download/examples/
+- Replace 4 old H5 datasets with 5 new parquetbundles:
+  three_finger_toxin, beta_lactamase, globin, phosphatase, snake_toxin
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`411b27e`](https://github.com/tsenoner/protspace/commit/411b27ec0dcae66214c86b8109972aba83ba3324))
+
+* docs: rewrite CLI reference — concise, complete, with colon syntax guide
+
+Tighten all sections, add detailed prepare description with input
+types, add model name resolution section explaining -i file.h5:name
+colon syntax for external HDF5 files. Document --no-log and --keep-tmp.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`746b288`](https://github.com/tsenoner/protspace/commit/746b288ea1b6290874f5cd59732a11133db5573b))
+
+* docs: remove Explore_ProtSpace.ipynb (legacy Dash frontend)
+
+Downloads pre-generated JSON and launches old Dash UI in Colab.
+Replaced by protspace.app/explore for .parquetbundle visualization.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`5593276`](https://github.com/tsenoner/protspace/commit/5593276f28703a3e0883a6ec42fb852961779472))
+
+* docs: remove Run_ProtSpace.ipynb (legacy Dash frontend)
+
+The notebook launched the old Dash frontend inline in Colab.
+Users should use ProtSpace_Preparation.ipynb to generate a
+.parquetbundle and upload it at protspace.app instead.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`2afc9cf`](https://github.com/tsenoner/protspace/commit/2afc9cf24ed7031d5fa84456953ad8f368788a3d))
+
+* docs: update Colab notebooks for new CLI
+
+Update all 3 affected notebooks for the v4.0.0 CLI:
+- ProtSpace_Preparation.ipynb: protspace-local → protspace prepare,
+  update n_neighbors range (2-500, default 25), perplexity range (5-5000),
+  eps default (1e-6)
+- Run_ProtSpace.ipynb: protspace-local → protspace prepare,
+  parameter names with hyphens
+- PfamExplorer_ProtSpace.ipynb: protspace-local → protspace prepare,
+  parameter names with hyphens, n_neighbors range updated
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`fd9d2aa`](https://github.com/tsenoner/protspace/commit/fd9d2aa87d2b680545dcdb8e4ec84513d6b74e95))
+
+* docs: update Colab notebooks for new CLI
+
+Update all 3 affected notebooks for the v4.0.0 CLI:
+- ProtSpace_Preparation.ipynb: protspace-local → protspace prepare,
+  update n_neighbors range (2-500, default 25), perplexity range (5-5000),
+  eps default (1e-6)
+- Run_ProtSpace.ipynb: protspace-local → protspace prepare,
+  parameter names with hyphens
+- PfamExplorer_ProtSpace.ipynb: protspace-local → protspace prepare,
+  parameter names with hyphens, n_neighbors range updated
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`752bd25`](https://github.com/tsenoner/protspace/commit/752bd2504e3feea8f6856d2c4c74cf131b98c40a))
+
+* docs: update CLI reference, README, and CLAUDE.md for new typer CLI
+
+- Rewrite docs/cli.md with all 7 subcommands (prepare, embed, project,
+  annotate, bundle, serve, style), model name resolution, projection
+  naming, and annotation caching documentation
+- Update README.md quick start with new CLI commands and power-user
+  workflow examples
+- Update CLAUDE.md: CLI commands table, package structure (loaders,
+  pipeline), usage examples
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`5cce1d1`](https://github.com/tsenoner/protspace/commit/5cce1d1f31bc3982168bae09554e1161623f94b4))
+
+* docs: add CLAUDE.md with full project reference
+
+Merge the previously split .claude/CLAUDE.md (untracked, comprehensive)
+and CLAUDE.md (untracked, slim pointer) into a single tracked CLAUDE.md.
+Includes package structure, DR methods, implementation details, testing,
+conventions, and uv run instructions.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`fbed9c2`](https://github.com/tsenoner/protspace/commit/fbed9c218ace754abfb8b4cea58c3b7dd6cf68f6))
+
+### Features
+
+* feat: add pre-commit hook for auto ruff format and lint fix
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`beace0f`](https://github.com/tsenoner/protspace/commit/beace0f01355699f75f206b1c7f7aa7ad2d17b98))
+
+* feat: add CSV annotation support to protspace prepare pipeline
+
+- _resolve_annotation_names() now detects .csv/.tsv file paths and
+  separates them from annotation names
+- _fetch_annotations() loads user CSV and merges with API annotations
+  (CSV wins on column name collision)
+- Update docs/annotations.md: protspace-local → protspace prepare
+- Update docs/cli.md: mention CSV/TSV in -a flag description
+- Update CLI help text to mention CSV/TSV file paths
+- Add 3 tests for CSV path parsing
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`7b834b3`](https://github.com/tsenoner/protspace/commit/7b834b3572e0da28425e00310cc21c1a596bb282))
+
+* feat: add example dataset generation system
+
+TOML-driven generation of reproducible example datasets that test the
+full pipeline and serve as release assets. Each dataset adds complexity:
+
+1. three_finger_toxin (536) — basic single-PLM
+2. beta_lactamase (731) — multi-PLM comparison (prot_t5 + esm2_650m)
+3. globin (1,200) — sequence similarity + MDS
+4. phosphatase (1,587) — all annotations
+5. cytochrome_p450 (~5,500) — includes unreviewed TrEMBL entries
+
+- scripts/generate_examples/datasets.toml: dataset registry
+- scripts/generate_examples/generate.py: CLI orchestrator wrapping
+  `protspace prepare`, supports --dataset/--all/--skip-existing/--list
+- .gitignore: allow scripts/generate_examples/ (was fully ignored)
+
+Usage:
+  uv run python scripts/generate_examples/generate.py --dataset three_finger_toxin
+  uv run python scripts/generate_examples/generate.py --all
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`8c0246c`](https://github.com/tsenoner/protspace/commit/8c0246cb152c850ad3e45925c71a4bf5c9dc3e68))
+
+* feat(cli): add run.log for reproducibility, improve error messages
+
+- protspace prepare now writes a run.log to the output directory
+  capturing all parameters, timing, and version info. Appends with
+  separator on re-runs. Disable with --no-log.
+- Wrap input-loading + pipeline in try/except so ValueError and
+  FileNotFoundError show clean messages without tracebacks.
+- Improve missing model_name error with actionable fix command
+  using the user's actual file path.
+- Ruff format on changed files.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`bfba756`](https://github.com/tsenoner/protspace/commit/bfba7569bb9fa30f8cc587cc4a1327f16dd46068))
+
+* feat(embed): add 7 new pLM embedders via Biocentral API
+
+Expand supported models from 5 to 12 by adding ESM2-35M, ESM2-150M,
+Ankh-Base, Ankh-Large, Ankh3-Large, and ESMC-300M/600M (via Synthyra
+ESM++ reimplementation). Remove unsupported one_hot, blosum62,
+aa_ontology, and random embedders.
+
+New EXTRA_SHORT_KEYS dict maps short aliases directly to HuggingFace
+model names for models not in the CommonEmbedder enum. resolve_embedder()
+checks both dicts. Documentation updated with full model table including
+embedding dimensions and licensing info (Ankh/ESMC-600M are non-commercial).
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`837a239`](https://github.com/tsenoner/protspace/commit/837a2390c35280a5c2ae2485cfb67c9a77a3fb0f))
+
+* feat(cli): add individual step commands (embed, project, annotate, bundle)
+
+Add power-user subcommands for running each pipeline step independently,
+similar to mmseqs2's composable design.
+
+- protspace embed: FASTA → HDF5 via Biocentral API (repeatable -e)
+- protspace project: HDF5 → projection parquets (DR on embeddings)
+- protspace annotate: HDF5/FASTA → annotation parquet (API fetch)
+- protspace bundle: projections + annotations → .parquetbundle
+
+All commands use the same loader infrastructure as `protspace prepare`.
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`121e40e`](https://github.com/tsenoner/protspace/commit/121e40e74a5254996f8cd2faa2e68259c06de5e5))
+
+* feat(cli): add multi-embedding and multi-embedder support
+
+Support multiple embedding sources and models in the prepare command.
+
+- Make -e/--embedder repeatable: -e prot_t5 -e esm2_3b embeds FASTA
+  with each model, producing separate EmbeddingSets
+- Add -i colon syntax for model name override: -i file.h5:model_name
+  (parsed by _parse_input_specs helper)
+- Change -i from list[Path] to list[str] to support colon parsing
+- Each -i flag creates a separate EmbeddingSet (multi-embedding)
+- Pipeline prefixes each projection: "esm2_3b — PCA_2", "prot_t5 — UMAP_2"
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`a57a93f`](https://github.com/tsenoner/protspace/commit/a57a93ffb871b23092ea3367599eaa5e6d1b9bcc))
+
+* feat(pipeline): create unified ReductionPipeline, remove old processors
+
+Replace LocalProcessor and UniProtQueryProcessor with a single
+ReductionPipeline that composes loaders + annotation fetch + DR + output.
+
+- Create data/processors/pipeline.py with PipelineConfig and ReductionPipeline
+- Inline annotation fetching logic (from LocalProcessor._fetch_api_annotations)
+- Wire cli/prepare.py to use ReductionPipeline + loaders directly
+- Support -q/--query via query_uniprot loader + embed_fasta
+- Support -s/--similarity via compute_similarity loader
+- Always prefix projection names: "{source} — {METHOD}_{D}"
+- Delete local_processor.py, uniprot_query_processor.py, common_args.py,
+  local_data.py, uniprot_query.py (all replaced by new pipeline + loaders)
+- Delete test_local_data_processor.py, test_uniprot_query_processor.py
+  (test removed code)
+- Update test_output_combinations.py to use BaseProcessor directly
+- Update data/__init__.py and processors/__init__.py exports
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`ed6c15d`](https://github.com/tsenoner/protspace/commit/ed6c15df3b05cab0e1cd87b4ac7bfc0ce627ae00))
+
+* feat(cli): add typer+rich and create CLI app with prepare/serve/style subcommands
+
+Replace the four separate entry points (protspace, protspace-local,
+protspace-query, protspace-annotation-colors) with a single typer-based
+CLI app: `protspace {prepare,serve,style}`.
+
+- Add typer[all] and rich as core dependencies
+- Create cli/app.py with typer root app, shared utilities (logging, cache
+  hash, output path computation), -h shorthand, and clean exception display
+- Create cli/prepare.py with all options defined as Annotated type aliases
+  (spaCy pattern), grouped into Input/Embedding/Projection/Annotations/Output
+  panels via rich_help_panel. Boolean flags use explicit names to avoid the
+  --flag/--no-flag toggle. Validates -i or -q required via typer.BadParameter
+- Create cli/serve.py wrapping the Dash web frontend
+- Create cli/style.py wrapping annotation style management
+- Remove --delimiter option (CSV similarity input no longer supported)
+- Update pyproject.toml to single entry point: protspace = protspace.cli.app:app
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`d235d28`](https://github.com/tsenoner/protspace/commit/d235d28699746d5d86df3f1d03df103e48cd9aeb))
+
+* feat(local): integrate Biocentral API embedding into protspace-local
+
+FASTA files can now be passed directly to `protspace-local`, which
+embeds sequences via the Biocentral API before running dimensionality
+reduction. Supports deduplication, length-sorted batching, resume via
+HDF5 cache, and all 9 pLM embedders (esm2_8m, prot_t5, etc.).
+
+New CLI flags: --embedder, --batch-size, --half-precision,
+--embedding-cache, --probe, --dry-run.
+
+Example:
+  protspace-local -i sequences.fasta --embedder esm2_8m -m pca2,umap2
+
+Closes #30
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`53b2157`](https://github.com/tsenoner/protspace/commit/53b215722adb51e445547cf609c5442a89c8f9df))
+
+* feat(uniprot,local): resolve inactive entries via UniParc and harden HDF5 loading
+
+Inactive UniProt entries are now resolved using fetch_one() to detect
+merged/deleted status, with sequence recovery from UniParc for deleted
+entries and sec_acc: search as fallback. Per-entry diagnostics logged at
+DEBUG; a one-line summary at WARNING.
+
+HDF5 loader now handles grouped layouts, validates consistent embedding
+dimensions, and rejects per-residue embeddings with a clear error.
+
+Logging uses a tqdm-aware handler to avoid garbling progress bars, and
+third-party loggers (urllib3, requests) are capped at WARNING even with
+-vv. Redundant InterPro per-batch success logs removed.
+
+CLI error handling improved with specific exception types and clean
+sys.exit(1) instead of re-raising tracebacks.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`58fee00`](https://github.com/tsenoner/protspace/commit/58fee0044d08583e833de49fbd94d5cc5034b60e))
+
+* feat(reducers,notebook): add general DR params and seed all stochastic methods
+
+Pass random_state to t-SNE, MDS, PaCMAP, and LocalMAP reducers (previously
+only UMAP was seeded), enabling reproducible results across all stochastic
+DR methods.
+
+Notebook changes:
+- Expose metric, random_state, and eps via interactive widgets
+- Fix FloatSlider step bug that made fp_ratio slider non-functional
+- Use responsive CSS Grid layout for parameter group boxes
+- Suppress PaCMAP's informational "random state is set to" log message
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`7717b55`](https://github.com/tsenoner/protspace/commit/7717b55de6ddb444d38a5d6384e659945e911c49))
+
+### Fixes
+
+* fix(ci): bump all actions to latest major versions (checkout v6, setup-python v6, setup-uv v7)
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`9feae8c`](https://github.com/tsenoner/protspace/commit/9feae8c324b620241d39b8e2f03cbd42f3f80e40))
+
+* fix(ci): bump actions to Node 22 versions to silence deprecation warnings
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`51e1f77`](https://github.com/tsenoner/protspace/commit/51e1f77d6ffd0466a60abdcf2337624dc1c42412))
+
+* fix(ci): run push checks only on main to avoid duplicate PR checks
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`b3c6ab9`](https://github.com/tsenoner/protspace/commit/b3c6ab9536a8599d2a1c90faa7b755d8f2de6e28))
+
+* fix: install protspace from PyPI instead of git in Colab notebook
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`e2a2daf`](https://github.com/tsenoner/protspace/commit/e2a2dafed6e9b8246e9c897bf6861bea445cf9e8))
+
+* fix: audit — critical bugs, consistency fixes, and documentation overhaul
+
+Critical fixes:
+- MDS reducer: metric param was conflated with precomputed (forced non-metric MDS)
+- serve/wsgi: ProtSpace import failed (missing from __init__.py)
+- wsgi: loaded .env.example instead of .env
+
+Consistency:
+- Align eps default between prepare (was 1e-6) and project (1e-3)
+- Fix Metric enum handling (string default → proper enum in project.py)
+- Make -a/--annotations repeatable in prepare (was single string)
+
+Code quality:
+- Replace print() with logging in Dash callbacks
+- Log instead of swallowing exceptions in ArrowReader
+- Add per-duplicate DEBUG logging in h5 loader
+- Unpin torch, align pyarrow dev dep to >=20.0.0
+
+Documentation:
+- Fix outdated file references in CLAUDE.md (local_processor→h5, common_args→app)
+- Update test table to actual 16 files with real counts
+- Fix styling.md: protspace-annotation-colors → protspace style
+- Fix pfam_clans README: protspace local → protspace prepare
+- Fix README: add LocalMAP to DR method list
+- Fix tests README: uvrun typo, wrong test file, CI description
+- Fix help_overview.md typos
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`75a6bf2`](https://github.com/tsenoner/protspace/commit/75a6bf20c8d2e60d44e2fa8ef282928dac4bbe7b))
+
+* fix: use raw H5 keys as identifiers instead of parsing them
+
+H5 keys from UniProt and Biocentral are already clean accessions
+(e.g., P12345). The parse_identifier() extraction was lossy for
+non-UniProt data (e.g., NCBI|name|species → name) and caused CSV
+annotation mismatches. Now H5 keys are used as-is.
+
+parse_identifier() is kept for FASTA header parsing where extraction
+is still needed (query.py, fasta.py, similarity.py).
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`e10e3bf`](https://github.com/tsenoner/protspace/commit/e10e3bfb1be0020d4607d2d66e860b7c9f15f330))
+
+* fix: skip taxonomy/interpro fetch when not requested
+
+ProteinAnnotationManager previously defaulted to fetching all three
+annotation sources (UniProt, taxonomy, InterPro) regardless of which
+annotations were actually requested. With default annotations (ec,
+keyword, length, protein_families, reviewed) — all UniProt-only — this
+unnecessarily downloaded the NCBI taxonomy database (~1 min).
+
+Now derives sources_to_fetch from AnnotationConfiguration when not
+explicitly provided, so only needed sources are queried.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`1b05dc3`](https://github.com/tsenoner/protspace/commit/1b05dc36756d168a7c6378a3783376e8b42be096))
+
+* fix: identifier parsing, projection naming, CLI cleanup, frontend passthrough
+
+Identifier parsing:
+- Parse UniProt accessions from FASTA headers before embedding
+  (sp|P12345|NAME → P12345), so H5 keys are clean from the start
+- load_h5 also applies parse_identifier as safety net for old H5 files
+- similarity loader maps MMseqs2 output IDs through parse_identifier
+
+Projection naming:
+- Add format_projection_name() with display name maps for pLMs and methods
+- Produces: "ProtT5 — PCA 2", "ESM2-650M — UMAP 2", "MMseqs2 — MDS 2"
+- Frontend formatProjectionName() now passes through names as-is
+
+Similarity handling:
+- Precomputed sets always get MDS 2 automatically, independent of -m methods
+- No longer warns about skipping other methods for precomputed sets
+
+CLI cleanup:
+- Remove --custom-names, --probe, --dry-run, --embedding-cache
+- Make -e and -a comma-separated (like -m)
+- Remove non-pLM embedders, constrain --metric to enum
+- Default --metric cosine, --n-neighbors 25, --eps 1e-6
+- --keep-tmp default True, -a default "default"
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`8afc64b`](https://github.com/tsenoner/protspace/commit/8afc64b0dab5202b69ce7e0e54cead8633e6759f))
+
+* fix(annotations): resolve EC names for partial/incomplete EC numbers
+
+Parse ExPASy enzclass.txt alongside enzyme.dat to provide human-readable
+names for partial EC numbers like 3.4.-.- or 2.-.-.-. Both files are
+merged into a single cached map keyed by standard EC format.
+
+Closes #33
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`294b4c7`](https://github.com/tsenoner/protspace/commit/294b4c739ef2ea8b77415485412dab368aa16d09))
+
+* fix(arrow_reader): use first column as identifier instead of hardcoded "protein_id"
+
+Resolves #10
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> ([`edb3eb0`](https://github.com/tsenoner/protspace/commit/edb3eb01bf29a5c86e4efae88fee8dd3e34afcc3))
+
+### Performance Improvements
+
+* perf: lazy per-method reducer imports + use logger for taxonomy status
+
+- Move umap/pacmap imports into fit_transform() so PCA-only runs skip
+  pynndescent/numba entirely
+- Replace print() with logger.info() for taxonomy database download
+  status — proper logging, controllable by callers
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`17530b8`](https://github.com/tsenoner/protspace/commit/17530b8db1b4d920eb257122733773fcbd5239b0))
+
+* perf: lazy-load umap/pacmap per-method instead of all at once
+
+Move `from umap import UMAP` and `from pacmap import PaCMAP, LocalMAP`
+from top-level into each reducer's fit_transform() method. PCA-only
+runs no longer trigger pynndescent/numba JIT compilation.
+
+Before: importing reducers.py loaded all 6 reducer libraries (~3s).
+After: importing reducers.py loads only sklearn (~0.3s). umap/pacmap
+are imported on first use of their respective reducers.
+
+Verified: PCA run completes with umap=False, pacmap=False in sys.modules.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`8cb0751`](https://github.com/tsenoner/protspace/commit/8cb0751a5e209a2bf270f50fdb336920890629ab))
+
+* perf: defer heavy reducer imports (umap/pacmap/numba) until first use
+
+Extracted DimensionReductionConfig and method name constants from
+reducers.py into a new constants.py with zero heavy dependencies.
+
+Before: importing pipeline.py triggered reducers.py which eagerly
+imported umap, pacmap, pynndescent, and numba — ~3s locally, ~30-60s
+in Colab due to CUDA/TensorFlow interference.
+
+After: pipeline.py imports only constants.py (0.3s). The heavy reducer
+classes are loaded lazily via get_reducers() at reduction time.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`0203a83`](https://github.com/tsenoner/protspace/commit/0203a8372f1d820ce6dc52b6cede44b1e1403965))
+
+* perf: lazy imports for 20x faster CLI startup (2.0s → 0.1s)
+
+Defer heavy ML library imports (sklearn, umap, pacmap, pandas,
+pyarrow) until first use via PEP 562 module __getattr__. CLI help
+now responds in ~100ms instead of 2 seconds.
+
+- utils/__init__.py: lazy-load reducer classes via get_reducers()
+  and __getattr__ with __dir__ for IDE support
+- protspace/__init__.py: remove eager imports of add_annotation_style
+  and ProtSpace
+- serve.py: inline DEFAULT_PORT constant (was importing entire
+  Dash/pandas stack for a single 8050 integer)
+- annotate.py, bundle.py, project.py, prepare.py: move pyarrow and
+  pandas imports inside function bodies
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`30aae74`](https://github.com/tsenoner/protspace/commit/30aae7445187bc17295614f45334be2e48010232))
+
+### Refactoring
+
+* refactor: complete Colab notebook rewrite for bulletproof UX
+
+Addresses NAR reviewer feedback: "ProtSpace processing failed with
+return code: 2" with no explanation. The notebook is now bulletproof.
+
+## Notebook Architecture (3 cells)
+
+Cell 1 — Install & Setup (~30s):
+- pip install under %%capture (zero output)
+- tqdm patched for notebook-style progress bars before protspace import
+- Pre-import protspace pipeline (lightweight — heavy reducers deferred)
+
+Cell 2 — Choose Input Data (4 tabs):
+- Example Dataset: auto-selects first dataset on cell run, downloads
+  from GitHub releases on dropdown change (no button needed)
+- Upload H5: HDF5 embedding upload with validation (groups, 2D squeeze,
+  per-residue detection, protein count, dim, dtype reporting)
+- Upload FASTA: sequences for on-the-fly embedding via Biocentral API
+- UniProt Query: direct protein fetch with example queries
+- Embedder multi-select shown only for FASTA/Query tabs
+- Dark mode fix: CSS in same cell as Tab widget (per-cell iframes),
+  bridges --jp-ui-font-color0 missed by Colab's colabtools#1895
+
+Cell 3 — Generate & Download:
+- Direct Python pipeline calls (no subprocess, no 30s import overhead)
+- Step indicators: 1/4 Loading → 2/4 Annotations → 3/4 Reducing → 4/4 Bundling
+- Annotation caching via keep_tmp (re-runs skip API fetching)
+- CSV/TSV upload for custom annotations (merged with API data, CSV wins)
+- Annotation presets: Default, All, Custom (no None option)
+- Auto-download on completion (no separate download cell)
+- Method parameter sliders with overflow:hidden (no scrollbars)
+- Taxonomy note inline with annotation controls
+
+## Package Changes (already committed separately)
+
+- fix: skip taxonomy/interpro fetch when not requested (manager.py)
+- perf: extract constants.py — pipeline import 2.96s → 0.30s
+- perf: lazy per-method reducer imports — PCA skips umap/pacmap/numba
+- feat: CSV annotation support in protspace prepare pipeline
+- docs: update annotations.md/cli.md command names and CSV docs
+- fix: better error handling in CLI (sys.exit(1) + stdout errors)
+- fix: harden HDF5 loading (groups, 2D squeeze, dim validation)
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`649aa02`](https://github.com/tsenoner/protspace/commit/649aa021d06d859767d973cbf78911ee617f9bd0))
+
+* refactor: run CI on all branches, not just main/stage
+
+Support feature-branch workflow by triggering CI on every push
+and PRs targeting main.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`c79ad56`](https://github.com/tsenoner/protspace/commit/c79ad56f2bda7f428ee5af12f20bc2b0d32ec02c))
+
+* refactor: simplify CI/CD — consolidate workflows, add Python version matrix, use GitHub App auth
+
+- Remove jekyll-gh-pages.yml (no Jekyll site exists)
+- Remove unused requirements-py310/311/312.txt and update_deps.sh
+- Merge python.yml + docker.yml into single publish.yml (no Render deploy)
+- Replace expiring SEMANTIC_RELEASE_TOKEN PAT with GitHub App token
+- Fix UV_TOOL_DIR/cache path mismatch in release.yml
+- Add Python 3.10/3.11/3.12 test matrix to ci.yml
+- Remove continue-on-error from ruff format check
+- Simplify [tool.semantic_release] config in pyproject.toml
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`4946388`](https://github.com/tsenoner/protspace/commit/4946388d2c1ca5fe1a9b99e178eb34c24a4a338d))
+
+* refactor: remove JsonReader, unify Dash frontend on ArrowReader
+
+ArrowReader now accepts both Path (Parquet files) and dict (in-memory
+data), fully replacing JsonReader. All Dash frontend code migrated.
+
+- ArrowReader.__init__ accepts Path | dict via isinstance dispatch
+- Delete json_reader.py (97 lines) and readers.py (105 lines)
+- Remove JSON file input from main.py detect_data_type()
+- Remove default_json_file param from ProtSpace.__init__
+- Fix wsgi.py broken API call (was using removed param)
+- Remove LEGACY_OUTPUT_DATA from test fixtures
+- Remove commented-out dead code from app.py
+- Clean up data/io/__init__.py exports
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`dfd35e2`](https://github.com/tsenoner/protspace/commit/dfd35e2a61effd8f041ea6880105f0bd00beca3a))
+
+* refactor: consolidate parameter passing with config dataclasses
+
+Introduce config objects to reduce parameter threading across the
+codebase. Adding a new CLI flag now requires ~4 changes instead of
+12-14.
+
+- New cli/common_options.py: shared Typer option types (Opt_Methods,
+  Opt_Metric, Opt_NNeighbors, etc.) used by both prepare and project
+  commands, eliminating duplicated definitions.
+- New EmbedConfig frozen dataclass: consolidates embedding params
+  (batch_size). Passed as single object through embed_fasta() →
+  embed_sequences() instead of threading individual args.
+- New ReducerParams frozen dataclass: replaces dict[str, Any] in
+  PipelineConfig with typed, IDE-friendly config. Converted to dict
+  via asdict() at the BaseProcessor boundary.
+- Simplified _write_run_log(): from 22 keyword params to 14 by
+  accepting config objects and auto-serializing via asdict(). New
+  config fields appear in the log automatically.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`7cfc796`](https://github.com/tsenoner/protspace/commit/7cfc796eef0389e55f34e89802497c1e870954f7))
+
+* refactor(cli): normalize flags, remove legacy JSON format, ruff format
+
+Breaking changes:
+- --no-scores → --scores/--no-scores (default: ON, pass --no-scores
+  to strip). Internal APIs unchanged (PipelineConfig.no_scores stays).
+- --non-binary removed — legacy JSON output format dropped. Only
+  Parquet and .parquetbundle output remain.
+- --half-precision removed — not implemented in Biocentral server.
+
+Cleanup:
+- Delete NumpyEncoder, create_output_legacy(), save_output_legacy()
+  from base_processor.py.
+- Remove non_binary from PipelineConfig, AnnotationManager, pipeline.
+- Remove JSON code paths from add_annotation_style.py.
+- Delete PfamExplorer_ProtSpace.ipynb (depended on JSON format).
+- Add ankh3-large to ClickThrough_GenerateEmbeddings.ipynb dropdown.
+- ruff format across all src/ and tests/ (19 files).
+- Remove 4 legacy JSON test cases.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`663af14`](https://github.com/tsenoner/protspace/commit/663af14602ab1c5bc100715557988094e637d4dc))
+
+* refactor: remove dead code, non-pLM embedders, and outdated references
+
+Dead code removal (-794 lines):
+- cli/app.py: remove parse_custom_names(), determine_output_paths(),
+  compute_cache_hash() and unused hashlib/Path imports
+- pipeline.py: remove unused custom_names field from PipelineConfig
+- utils/analyse_json.py: delete unregistered CLI utility
+- utils/add_annotation_style.py: remove dead argparse main()
+- examples/cli/protspace_local.py, protspace_query.py: delete old examples
+- tests/test_output_combinations.py: remove test classes for deleted functions
+
+Code quality:
+- query.py: unify identifier parsing via parse_identifier() from h5.py
+- biocentral.py: remove non-pLM embedders (one_hot, blosum62, aa_ontology,
+  random) from MODEL_SHORT_KEYS
+
+Documentation:
+- Fix -e syntax in README.md, CLAUDE.md, docs/cli.md (comma-separated)
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`815ba9c`](https://github.com/tsenoner/protspace/commit/815ba9c41f2326e4cd979c1247de99a22e877976))
+
+* refactor(data): extract input loaders into data/loaders/ package
+
+Create composable loader functions extracted from LocalProcessor and
+UniProtQueryProcessor, preparing for the unified ReductionPipeline.
+
+- data/loaders/embedding_set.py: EmbeddingSet dataclass (name, data, headers,
+  precomputed, fasta_path)
+- data/loaders/h5.py: load_h5() with PLM name resolution from H5 attrs,
+  CLI override, or error. Extracted from LocalProcessor._load_h5_files
+- data/loaders/fasta.py: embed_fasta() via Biocentral API, writes model_name
+  attr to H5. Extracted from LocalProcessor._embed_fasta_to_h5
+- data/loaders/query.py: query_uniprot() for FASTA download from UniProt REST
+  API. Extracted from UniProtQueryProcessor._search_and_download_fasta
+- data/loaders/similarity.py: compute_similarity() via MMseqs2, returns
+  EmbeddingSet(precomputed=True, name="MMseqs2"). Extracted from
+  UniProtQueryProcessor._get_similarity_matrix
+- LocalProcessor._collect_datasets now delegates to loaders.h5
+
+Ref #26
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`ae767c8`](https://github.com/tsenoner/protspace/commit/ae767c869903a3d7253af8c3d59df9213539dd4f))
+
+* refactor(annotations): remove length binning, promote raw `length` to user-facing annotation
+
+Length binning (`length_fixed`, `length_quantile`) is moved to the frontend
+(protspace_web). The backend now exposes raw `length` as a regular annotation
+in the default group. Deleted `LengthBinner` class and all associated plumbing
+(configuration constants, transformer wiring, manager binning logic, internal
+column filtering). Updated CLI help, docs, examples, notebook, and tests.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`e9ceb0f`](https://github.com/tsenoner/protspace/commit/e9ceb0fe80d376f897677b2db0ae6f68cfcebbc3))
+
+### Testing
+
+* test: add 86 unit tests for pure-logic functions, bump umap-learn
+
+Add tests for settings_converter (color conversion, sorting, state
+roundtrip), H5 identifier parsing, pipeline utilities (method spec
+parsing, header validation, annotation name resolution), bundle settings
+serialization, data formatters, and DR config validation.
+
+Bump umap-learn >=0.5.7 → >=0.5.10 to fix sklearn FutureWarning
+(force_all_finite rename). Remove now-unnecessary FutureWarning
+suppression from base_processor. Add pytest filterwarnings for remaining
+harmless third-party warnings (sklearn MDS matmul, umap n_jobs).
+
+Coverage: 42% → 46% (399 tests, 0 warnings).
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`9d97cdf`](https://github.com/tsenoner/protspace/commit/9d97cdf5479e23d6071faf1f87c5d493d155f052))
+
+### Unknown
+
+* Merge pull request #35 from tsenoner/stage
+
+Merge stage into main — CLI rewrite, audit fixes, docs overhaul ([`c4c7a3b`](https://github.com/tsenoner/protspace/commit/c4c7a3b13548d5ef48c3e5f7a46bf67d5c12f63b))
+
+* Merge branch 'stage' of https://github.com/tsenoner/protspace into stage ([`627e675`](https://github.com/tsenoner/protspace/commit/627e67578c343b561e4b13abc03f0fb709362fff))
+
+
 ## v3.3.1 (2026-02-27)
 
 ### Chores
