@@ -12,6 +12,9 @@ from protspace.data.annotations.retrievers.interpro_retriever import (
 from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
 )
+from protspace.data.annotations.retrievers.ted_retriever import (
+    TED_ANNOTATIONS,
+)
 from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
 )
@@ -19,7 +22,9 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
 logger = logging.getLogger(__name__)
 
 # Constants
-ALL_ANNOTATIONS = UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS
+ALL_ANNOTATIONS = (
+    UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS + TED_ANNOTATIONS
+)
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
 NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
 
@@ -52,7 +57,11 @@ ANNOTATION_GROUPS = {
     "uniprot": _UNIPROT_USER_ANNOTATIONS,
     "interpro": INTERPRO_ANNOTATIONS,
     "taxonomy": TAXONOMY_ANNOTATIONS,
-    "all": _UNIPROT_USER_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS,
+    "ted": TED_ANNOTATIONS,
+    "all": _UNIPROT_USER_ANNOTATIONS
+    + TAXONOMY_ANNOTATIONS
+    + INTERPRO_ANNOTATIONS
+    + TED_ANNOTATIONS,
 }
 
 
@@ -95,6 +104,7 @@ class AnnotationConfiguration:
             self.uniprot_annotations,
             self.taxonomy_annotations,
             self.interpro_annotations,
+            self.ted_annotations,
         ) = self._split_by_source()
 
     @staticmethod
@@ -112,6 +122,7 @@ class AnnotationConfiguration:
             "uniprot": annotations & set(UNIPROT_ANNOTATIONS),
             "taxonomy": annotations & set(TAXONOMY_ANNOTATIONS),
             "interpro": annotations & set(INTERPRO_ANNOTATIONS),
+            "ted": annotations & set(TED_ANNOTATIONS),
         }
 
     @staticmethod
@@ -135,6 +146,7 @@ class AnnotationConfiguration:
             "uniprot": len(categorized["uniprot"]) > 0,
             "taxonomy": len(categorized["taxonomy"]) > 0,
             "interpro": len(categorized["interpro"]) > 0,
+            "ted": len(categorized["ted"]) > 0,
         }
 
         # Handle dependencies: taxonomy needs organism_id from UniProt
@@ -178,50 +190,36 @@ class AnnotationConfiguration:
 
         return normalized_annotations
 
-    def _split_by_source(self) -> tuple[list[str], list[str] | None, list[str] | None]:
-        """
-        Split annotations into UniProt, Taxonomy, and InterPro annotations.
+    def _split_by_source(
+        self,
+    ) -> tuple[list[str], list[str] | None, list[str] | None, list[str] | None]:
+        """Split annotations into source-specific lists.
 
         Returns:
-            Tuple of (uniprot_annotations, taxonomy_annotations, interpro_annotations)
+            Tuple of (uniprot, taxonomy, interpro, ted) annotations
         """
-        return self._split_user_annotations()
-
-    def _split_user_annotations(
-        self,
-    ) -> tuple[list[str], list[str] | None, list[str] | None]:
-        """Split user-requested annotations by source."""
-        # Extract annotations by source
         uniprot_annotations = [
-            annotation
-            for annotation in self.user_annotations
-            if annotation in UNIPROT_ANNOTATIONS
+            a for a in self.user_annotations if a in UNIPROT_ANNOTATIONS
         ]
         taxonomy_annotations = [
-            annotation
-            for annotation in self.user_annotations
-            if annotation in TAXONOMY_ANNOTATIONS
+            a for a in self.user_annotations if a in TAXONOMY_ANNOTATIONS
         ]
         interpro_annotations = [
-            annotation
-            for annotation in self.user_annotations
-            if annotation in INTERPRO_ANNOTATIONS
+            a for a in self.user_annotations if a in INTERPRO_ANNOTATIONS
         ]
+        ted_annotations = [a for a in self.user_annotations if a in TED_ANNOTATIONS]
 
         # Add required annotations (accession, organism_id) and sequence if needed
         uniprot_annotations = self._add_required_annotations(
             uniprot_annotations, interpro_annotations
         )
 
-        # Return based on what's needed
-        if taxonomy_annotations or interpro_annotations:
-            return (
-                uniprot_annotations,
-                taxonomy_annotations if taxonomy_annotations else None,
-                interpro_annotations if interpro_annotations else None,
-            )
-        else:
-            return uniprot_annotations, None, None
+        return (
+            uniprot_annotations,
+            taxonomy_annotations or None,
+            interpro_annotations or None,
+            ted_annotations or None,
+        )
 
     def _add_required_annotations(
         self, annotations: list[str], interpro_annotations: list[str] = None

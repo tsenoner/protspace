@@ -128,6 +128,18 @@ Three databases (`cath`, `superfamily`, `panther`) resolve human-readable entry 
 
 **Output format**: `CL0023 (P-loop_NTPase);CL0192 (HAD)` — semicolon-separated unique clan IDs with names. Requires `pfam` (fetched automatically). Clan mapping from [Pfam FTP](https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.clans.tsv.gz) (cached 30 days).
 
+## TED Domain Annotations
+
+Structure-based domain annotations from [TED (The Encyclopedia of Domains)](https://ted.cathdb.info/) via the [AlphaFold Database API](https://alphafold.ebi.ac.uk/):
+
+| Name          | Description                                                |
+| ------------- | ---------------------------------------------------------- |
+| `ted_domains` | Structural domains with CATH classification and confidence |
+
+**Output format**: `2.60.40.720 (Immunoglobulin-like)|95.1;3.40.50.300|88.3` — semicolon-separated domains. Each domain has a CATH superfamily code, name (when available, resolved from InterPro CATH-Gene3D cache), and pLDDT confidence score. Unclassified domains show as `unclassified|{plddt}`.
+
+**Data source**: Per-protein lookup via `alphafold.ebi.ac.uk/api/domains/{accession}`. Domains are predicted from AlphaFold structures using a consensus of Chainsaw, Merizo, and UniDoc methods.
+
 ## Taxonomy Annotations
 
 9 taxonomic ranks resolved via the [UniProt Taxonomy API](https://rest.uniprot.org/taxonomy/search): `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`. `root` is the cellular/acellular classification; `domain` is the top-level biological domain (e.g. Bacteria, Archaea, Eukaryota). Requires `organism_id` from UniProt (fetched automatically).
