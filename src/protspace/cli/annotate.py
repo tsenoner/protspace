@@ -67,11 +67,11 @@ def annotate(
 
         headers = extract_identifiers_from_fasta(input)
     elif input.suffix.lower() in EMBEDDING_EXTENSIONS:
-        from protspace.data.loaders.h5 import _collect_datasets, parse_identifier
+        from protspace.data.loaders.h5 import _collect_datasets
 
         with h5py.File(input, "r") as f:
             pairs = _collect_datasets(f)
-            headers = [parse_identifier(name) for name, _ in pairs]
+            headers = [name for name, _ in pairs]
     else:
         raise typer.BadParameter(
             f"Unsupported input type: {input.suffix}. Use HDF5 or FASTA."
