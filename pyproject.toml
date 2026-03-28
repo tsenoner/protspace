@@ -115,5 +115,6 @@ ignore = [
 
 [tool.semantic_release]
 assets = ["uv.lock"]
+build_command = "uv lock"
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/protspace/__init__.py:__version__"]
