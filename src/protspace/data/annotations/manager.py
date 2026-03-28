@@ -58,15 +58,20 @@ class ProteinAnnotationManager:
         self.output_path = output_path
         self.sequences = sequences
         self.cached_data = cached_data
-        self.sources_to_fetch = sources_to_fetch or {
-            "uniprot": True,
-            "taxonomy": True,
-            "interpro": True,
-        }
-
-        # Initialize configuration
+        # Initialize configuration first so we can derive sources_to_fetch
         self.config = AnnotationConfiguration(annotations)
         self.user_annotations = self.config.user_annotations
+
+        # Derive which sources to fetch from the requested annotations,
+        # unless the caller explicitly specified sources_to_fetch
+        if sources_to_fetch is not None:
+            self.sources_to_fetch = sources_to_fetch
+        else:
+            self.sources_to_fetch = {
+                "uniprot": True,  # Always needed (identifiers, organism_id)
+                "taxonomy": self.config.taxonomy_annotations is not None,
+                "interpro": self.config.interpro_annotations is not None,
+            }
 
         # Initialize components
         self.transformer = AnnotationTransformer()
