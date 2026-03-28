@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v4.2.0 (2026-03-28)
+
+### Features
+
+* feat: replace unipressed with direct UniProt REST API calls
+
+Replace the unipressed library (community UniProt API wrapper) with
+direct HTTP calls to rest.uniprot.org. Adds _fetch_many_accessions()
+and _search_sec_acc() helpers using the same Link-header pagination
+pattern as the taxonomy retriever.
+
+Simplifies the sec_acc search fallback from 8 lines of page-parsing
+to a single function call.
+
+Closes #32
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`5605a93`](https://github.com/tsenoner/protspace/commit/5605a935e680132ee7d22adb30a45b3ff26df02b))
+
+### Refactoring
+
+* refactor: extract shared paginated_get() utility for REST API calls
+
+Consolidate the duplicated Link-header pagination loop (4 instances
+across uniprot_retriever, taxonomy_retriever, and uniprot_parser) into
+a single paginated_get() function in http_utils.py. Each caller is
+now a 1-3 line function.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`cd528ed`](https://github.com/tsenoner/protspace/commit/cd528ed68ba7cf9bf3a33183345b483c00b4f9d1))
+
+### Unknown
+
+* Merge pull request #39 from tsenoner/feat/replace-unipressed-with-direct-api
+
+Replace unipressed with direct UniProt REST API calls ([`5d365c7`](https://github.com/tsenoner/protspace/commit/5d365c70dfb66fe1754fb610c7df3acb3cfae480))
+
+
 ## v4.1.0 (2026-03-28)
 
 ### Features
