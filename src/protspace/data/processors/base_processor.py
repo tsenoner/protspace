@@ -10,8 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.io.bundle import write_bundle
-from protspace.utils import DimensionReductionConfig
-from protspace.utils.reducers import MDS_NAME
+from protspace.utils.constants import MDS_NAME, DimensionReductionConfig
 
 logger = logging.getLogger(__name__)
 
