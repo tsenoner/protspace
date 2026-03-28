@@ -4,15 +4,14 @@ UniProt annotation retriever.
 This module fetches protein annotations from the UniProt API.
 """
 
-import json
 import logging
 from collections import namedtuple
 
 import requests
 from tqdm import tqdm
-from unipressed import UniprotkbClient
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
+from protspace.data.annotations.retrievers.http_utils import API_TIMEOUT, paginated_get
 from protspace.data.parsers.uniprot_parser import UniProtEntry
 
 logger = logging.getLogger(__name__)
@@ -42,15 +41,8 @@ UNIPROT_ANNOTATIONS = [
 ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
 
-_API_TIMEOUT = 30  # seconds per HTTP request
-
-
-def _fetch_one_with_timeout(accession: str, timeout: int = _API_TIMEOUT) -> dict:
-    """Fetch a single UniProt entry with a timeout.
-
-    The unipressed library's fetch_one() uses requests.get without a timeout,
-    which can hang indefinitely. This wrapper adds timeout protection.
-    """
+def _fetch_one_with_timeout(accession: str, timeout: int = API_TIMEOUT) -> dict:
+    """Fetch a single UniProt entry by accession with timeout protection."""
     url = f"https://rest.uniprot.org/uniprotkb/{accession}.json"
     resp = requests.get(url, timeout=timeout)
     resp.raise_for_status()
@@ -58,15 +50,9 @@ def _fetch_one_with_timeout(accession: str, timeout: int = _API_TIMEOUT) -> dict
 
 
 def _fetch_uniparc_sequence(
-    uniparc_id: str, timeout: int = _API_TIMEOUT
+    uniparc_id: str, timeout: int = API_TIMEOUT
 ) -> tuple[str, int]:
-    """Fetch sequence and length from UniParc.
-
-    Deleted UniProt entries still have their sequence archived in UniParc.
-
-    Returns:
-        Tuple of (sequence_string, length) or ("", 0) on failure.
-    """
+    """Fetch sequence and length from UniParc for deleted entries."""
     url = f"https://rest.uniprot.org/uniparc/{uniparc_id}.json"
     try:
         resp = requests.get(url, timeout=timeout)
@@ -79,6 +65,22 @@ def _fetch_uniparc_sequence(
     except Exception as e:
         logger.debug(f"Failed to fetch UniParc sequence {uniparc_id}: {e}")
         return "", 0
+
+
+def _fetch_many_accessions(accessions: list[str]) -> list[dict]:
+    """Fetch multiple UniProt entries by accession."""
+    return paginated_get(
+        "https://rest.uniprot.org/uniprotkb/accessions",
+        params={"accessions": ",".join(accessions)},
+    )
+
+
+def _search_sec_acc(accession: str) -> list[dict]:
+    """Search UniProt by secondary accession (fallback for inactive entries)."""
+    return paginated_get(
+        "https://rest.uniprot.org/uniprotkb/search",
+        params={"query": f"sec_acc:{accession}", "format": "json", "size": "500"},
+    )
 
 
 class UniProtRetriever(BaseAnnotationRetriever):
@@ -207,15 +209,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
             except Exception:
                 # fetch_one failed — fall back to sec_acc: search
                 try:
-                    records = []
-                    for page in UniprotkbClient.search(
-                        query=f"sec_acc:{accession}", format="json"
-                    ).each_page():
-                        content = page.read() if hasattr(page, "read") else page
-                        parsed = (
-                            json.loads(content) if isinstance(content, str) else content
-                        )
-                        records.extend(parsed.get("results", []))
+                    records = _search_sec_acc(accession)
                     if records:
                         entry = UniProtEntry(records[0])
                         annotations_dict = self._extract_annotations(entry)
@@ -277,8 +271,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 batch = self.headers[i : i + batch_size]
 
                 try:
-                    # Fetch records using unipressed
-                    records = UniprotkbClient.fetch_many(batch)
+                    records = _fetch_many_accessions(batch)
 
                     # Parse each record and track returned identifiers
                     returned_ids = set()

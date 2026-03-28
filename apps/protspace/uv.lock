@@ -2741,7 +2741,6 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
     { name = "umap-learn" },
-    { name = "unipressed" },
 ]
 
 [package.optional-dependencies]
@@ -2809,7 +2808,6 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "typer", specifier = ">=0.24.1" },
     { name = "umap-learn", specifier = ">=0.5.10" },
-    { name = "unipressed", specifier = ">=1.4.0" },
 ]
 provides-extras = ["frontend"]
 
@@ -4128,20 +4126,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/94/9a/a1e4a257a9aa979dac4f6d5781dac929cbb0949959e2003ed82657d10b0f/umap_learn-0.5.11.tar.gz", hash = "sha256:31566ffd495fbf05d7ab3efcba703861c0f5e6fc6998a838d0e2becdd00e54f5", size = 96409, upload-time = "2026-01-12T20:44:47.553Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/d2/fcf7192dd1cd8c090b6cfd53fa223c4fb2887a17c47e06bc356d44f40dfb/umap_learn-0.5.11-py3-none-any.whl", hash = "sha256:cb17adbde9d544ba79481b3ab4d81ac222e940f3d9219307bea6044f869af3cc", size = 90890, upload-time = "2026-01-12T20:44:46.511Z" },
-]
-
-[[package]]
-name = "unipressed"
-version = "1.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-    { name = "typing-extensions", version = "4.14.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "typing-extensions", version = "4.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/57/f3/1bff788016e59c20228e0afd5336766723a2ad07dcc2de63de2fce8943af/unipressed-1.4.0.tar.gz", hash = "sha256:a590f4b8f41b4daf5485400b6149449face7ca91e3e93a113dacefbfdc684887", size = 27337, upload-time = "2024-08-16T12:05:21.31Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/f3/9e4144e6fdfcc9fb8de255564e9773dc3ee9499a27ca706fda8b495fbb0f/unipressed-1.4.0-py3-none-any.whl", hash = "sha256:f3c53280668846b3164eae066a575b28399d1606d124f6cce5ac0bf405cf24e1", size = 35784, upload-time = "2024-08-16T12:05:19.904Z" },
 ]
 
 [[package]]

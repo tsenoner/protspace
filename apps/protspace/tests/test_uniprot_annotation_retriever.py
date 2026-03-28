@@ -1,6 +1,4 @@
-import io
-import json
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from src.protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
@@ -10,6 +8,21 @@ from src.protspace.data.annotations.retrievers.uniprot_retriever import (
 
 # Alias for test compatibility
 UniProtAnnotationRetriever = UniProtRetriever
+
+_FETCH_ONE_PATCH = (
+    "src.protspace.data.annotations.retrievers"
+    ".uniprot_retriever._fetch_one_with_timeout"
+)
+_UNIPARC_PATCH = (
+    "src.protspace.data.annotations.retrievers"
+    ".uniprot_retriever._fetch_uniparc_sequence"
+)
+_FETCH_MANY_PATCH = (
+    "src.protspace.data.annotations.retrievers.uniprot_retriever._fetch_many_accessions"
+)
+_SEARCH_SEC_ACC_PATCH = (
+    "src.protspace.data.annotations.retrievers.uniprot_retriever._search_sec_acc"
+)
 
 
 class TestUniProtAnnotationRetrieverInit:
@@ -96,10 +109,8 @@ class TestManageHeaders:
 class TestFetchAnnotations:
     """Test the fetch_annotations method."""
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_fetch_annotations_success(self, mock_client_class):
+    @patch(_FETCH_MANY_PATCH)
+    def test_fetch_annotations_success(self, mock_fetch_many):
         """Test successful annotation fetching with new unipressed implementation."""
         # Mock API response with minimal required fields
         mock_records = [
@@ -141,7 +152,7 @@ class TestFetchAnnotations:
             },
         ]
 
-        mock_client_class.fetch_many.return_value = mock_records
+        mock_fetch_many.return_value = mock_records
 
         # Create retriever and test
         headers = ["P01308", "P01315"]
@@ -163,17 +174,15 @@ class TestFetchAnnotations:
         assert result[1].annotations["annotation_score"] == "4.0"
 
         # Verify API call
-        mock_client_class.fetch_many.assert_called_once_with(["P01308", "P01315"])
+        mock_fetch_many.assert_called_once_with(["P01308", "P01315"])
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_fetch_annotations_batching_logic(self, mock_client_class):
+    @patch(_FETCH_MANY_PATCH)
+    def test_fetch_annotations_batching_logic(self, mock_fetch_many):
         """Test annotation fetching with batching behavior."""
         # Create mock records for batching test
         headers = [f"P{i:05d}" for i in range(150)]  # More than batch size (100)
 
-        def mock_fetch_many(batch):
+        def mock_fetch_many_fn(batch):
             """Mock fetch_many to return appropriate records for batch."""
             return [
                 {
@@ -197,7 +206,7 @@ class TestFetchAnnotations:
                 for i, acc in enumerate(batch)
             ]
 
-        mock_client_class.fetch_many.side_effect = mock_fetch_many
+        mock_fetch_many.side_effect = mock_fetch_many_fn
 
         # Create retriever and test
         annotations = ["entry", "length"]
@@ -208,15 +217,13 @@ class TestFetchAnnotations:
         # Verify results
         assert len(result) == 150
         # Verify API was called multiple times for batching
-        assert mock_client_class.fetch_many.call_count == 2  # 100 + 50
+        assert mock_fetch_many.call_count == 2  # 100 + 50
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_fetch_annotations_handles_errors(self, mock_client_class):
+    @patch(_FETCH_MANY_PATCH)
+    def test_fetch_annotations_handles_errors(self, mock_fetch_many):
         """Test handling of API errors."""
         # Mock API to raise an exception
-        mock_client_class.fetch_many.side_effect = Exception("API Error")
+        mock_fetch_many.side_effect = Exception("API Error")
 
         # Create retriever and test
         headers = ["P01308"]
@@ -231,10 +238,8 @@ class TestFetchAnnotations:
         # All annotations should be empty strings due to error
         assert all(v == "" for v in result[0].annotations.values())
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_fetch_annotations_stores_uniprot_annotations(self, mock_client_class):
+    @patch(_FETCH_MANY_PATCH)
+    def test_fetch_annotations_stores_uniprot_annotations(self, mock_fetch_many):
         """Test that fetch_annotations stores UNIPROT_ANNOTATIONS including organism_id."""
         mock_records = [
             {
@@ -260,7 +265,7 @@ class TestFetchAnnotations:
             }
         ]
 
-        mock_client_class.fetch_many.return_value = mock_records
+        mock_fetch_many.return_value = mock_records
 
         # Request annotations (actual storage is UNIPROT_ANNOTATIONS)
         headers = ["P01308"]
@@ -286,10 +291,8 @@ class TestFetchAnnotations:
             result[0].annotations["gene_name"] == "INS"
         )  # Gene name from genes[0].geneName
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-    )
-    def test_reviewed_field_parsing_swiss_prot_and_trembl(self, mock_client_class):
+    @patch(_FETCH_MANY_PATCH)
+    def test_reviewed_field_parsing_swiss_prot_and_trembl(self, mock_fetch_many):
         """End-to-end test: reviewed field correctly parsed for both Swiss-Prot and TrEMBL entries."""
         # Mock API responses with both reviewed (Swiss-Prot) and unreviewed (TrEMBL) entries
         mock_records = [
@@ -331,7 +334,7 @@ class TestFetchAnnotations:
             },
         ]
 
-        mock_client_class.fetch_many.return_value = mock_records
+        mock_fetch_many.return_value = mock_records
 
         # Create retriever and fetch
         headers = ["P01308", "Q12345"]
@@ -425,12 +428,6 @@ def _make_mock_record(
     }
 
 
-def _make_search_page(records):
-    """Build a TextIOWrapper mimicking unipressed search().each_page() output."""
-    content = json.dumps({"results": records})
-    return io.TextIOWrapper(io.BytesIO(content.encode("utf-8")), encoding="utf-8")
-
-
 class TestExtractAnnotations:
     """Test the _extract_annotations static method."""
 
@@ -471,19 +468,6 @@ class TestExtractAnnotations:
         assert result["organism_id"] == "9606"
         assert result["annotation_score"] == "3.0"
         assert result["reviewed"] == "Swiss-Prot"
-
-
-_FETCH_ONE_PATCH = (
-    "src.protspace.data.annotations.retrievers"
-    ".uniprot_retriever._fetch_one_with_timeout"
-)
-_UNIPARC_PATCH = (
-    "src.protspace.data.annotations.retrievers"
-    ".uniprot_retriever._fetch_uniparc_sequence"
-)
-_CLIENT_PATCH = (
-    "src.protspace.data.annotations.retrievers.uniprot_retriever.UniprotkbClient"
-)
 
 
 class TestResolveInactiveEntries:
@@ -617,19 +601,14 @@ class TestResolveInactiveEntries:
         assert res_count == 0
         assert del_count == 1
 
-    @patch(_CLIENT_PATCH)
+    @patch(_SEARCH_SEC_ACC_PATCH)
     @patch(_FETCH_ONE_PATCH)
-    def test_fetch_one_fails_falls_back_to_sec_acc(
-        self, mock_fetch_one, mock_client_class
-    ):
+    def test_fetch_one_fails_falls_back_to_sec_acc(self, mock_fetch_one, mock_search):
         """When fetch_one raises, falls back to sec_acc: search."""
         mock_fetch_one.side_effect = Exception("404 Not Found")
 
         replacement_record = _make_mock_record("Q076D1", protein_name="Crotastatin")
-        page = _make_search_page([replacement_record])
-        mock_search_result = Mock()
-        mock_search_result.each_page.return_value = iter([page])
-        mock_client_class.search.return_value = mock_search_result
+        mock_search.return_value = [replacement_record]
 
         retriever = UniProtRetriever(headers=[])
         resolved, res_count, del_count = retriever._resolve_inactive_entries(["C5H5D1"])
@@ -639,22 +618,14 @@ class TestResolveInactiveEntries:
         assert resolved[0].annotations["protein_name"] == "Crotastatin"
         assert res_count == 1
         assert del_count == 0
-        mock_client_class.search.assert_called_once_with(
-            query="sec_acc:C5H5D1", format="json"
-        )
+        mock_search.assert_called_once_with("C5H5D1")
 
-    @patch(_CLIENT_PATCH)
+    @patch(_SEARCH_SEC_ACC_PATCH)
     @patch(_FETCH_ONE_PATCH)
-    def test_fetch_one_fails_sec_acc_no_results(
-        self, mock_fetch_one, mock_client_class
-    ):
+    def test_fetch_one_fails_sec_acc_no_results(self, mock_fetch_one, mock_search):
         """When fetch_one fails and sec_acc returns nothing → empty annotations."""
         mock_fetch_one.side_effect = Exception("404 Not Found")
-
-        page = _make_search_page([])
-        mock_search_result = Mock()
-        mock_search_result.each_page.return_value = iter([page])
-        mock_client_class.search.return_value = mock_search_result
+        mock_search.return_value = []
 
         retriever = UniProtRetriever(headers=[])
         resolved, res_count, del_count = retriever._resolve_inactive_entries(["XXXXXX"])
@@ -665,12 +636,12 @@ class TestResolveInactiveEntries:
         assert res_count == 0
         assert del_count == 1
 
-    @patch(_CLIENT_PATCH)
+    @patch(_SEARCH_SEC_ACC_PATCH)
     @patch(_FETCH_ONE_PATCH)
-    def test_both_fetch_one_and_search_fail(self, mock_fetch_one, mock_client_class):
+    def test_both_fetch_one_and_search_fail(self, mock_fetch_one, mock_search):
         """When both fetch_one and search fail → empty annotations."""
         mock_fetch_one.side_effect = Exception("404")
-        mock_client_class.search.side_effect = Exception("Network error")
+        mock_search.side_effect = Exception("Network error")
 
         retriever = UniProtRetriever(headers=[])
         resolved, res_count, del_count = retriever._resolve_inactive_entries(["BROKEN"])
@@ -723,11 +694,11 @@ class TestFetchAnnotationsWithMissingEntries:
     """Test that fetch_annotations detects and resolves missing entries."""
 
     @patch(_FETCH_ONE_PATCH)
-    @patch(_CLIENT_PATCH)
-    def test_missing_entries_are_resolved(self, mock_client_class, mock_fetch_one):
+    @patch(_FETCH_MANY_PATCH)
+    def test_missing_entries_are_resolved(self, mock_fetch_many, mock_fetch_one):
         """When fetch_many drops an entry, it gets resolved via fetch_one."""
         # fetch_many returns only P01308, dropping C5H5D1
-        mock_client_class.fetch_many.return_value = [
+        mock_fetch_many.return_value = [
             _make_mock_record("P01308", protein_name="Insulin"),
         ]
 
@@ -746,12 +717,10 @@ class TestFetchAnnotationsWithMissingEntries:
         assert resolved.annotations["protein_name"] == "Crotastatin"
 
     @patch(_FETCH_ONE_PATCH)
-    @patch(_CLIENT_PATCH)
-    def test_no_missing_entries_skips_resolution(
-        self, mock_client_class, mock_fetch_one
-    ):
+    @patch(_FETCH_MANY_PATCH)
+    def test_no_missing_entries_skips_resolution(self, mock_fetch_many, mock_fetch_one):
         """When all entries are returned, _resolve_inactive_entries is not called."""
-        mock_client_class.fetch_many.return_value = [
+        mock_fetch_many.return_value = [
             _make_mock_record("P01308"),
             _make_mock_record("P01315"),
         ]
@@ -761,4 +730,3 @@ class TestFetchAnnotationsWithMissingEntries:
 
         assert len(result) == 2
         mock_fetch_one.assert_not_called()
-        mock_client_class.search.assert_not_called()

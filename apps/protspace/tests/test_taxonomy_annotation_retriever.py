@@ -187,7 +187,7 @@ class TestTaxonomyConstants:
 class TestTaxonomyRetrieverMocked:
     """Unit tests with mocked UniProt Taxonomy API."""
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_bacteria_taxonomy(self, mock_get):
         """Test bacterial taxonomy (E. coli K-12)."""
         mock_get.return_value = _make_api_response(
@@ -215,7 +215,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["genus"] == "Escherichia"
         assert annotations["species"] == "Escherichia coli"
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_human_species_from_own_rank(self, mock_get):
         """Test that species-rank taxon IDs get species from entry's own name."""
         mock_get.return_value = _make_api_response(
@@ -235,7 +235,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["genus"] == "Homo"
         assert annotations["species"] == "Homo sapiens"
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_virus_realm_as_domain(self, mock_get):
         """Test viral taxonomy — realm used as domain fallback."""
         mock_get.return_value = _make_api_response(
@@ -260,7 +260,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["kingdom"] == "Orthornavirae"
         assert annotations["family"] == "Coronaviridae"
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_batch_retrieval(self, mock_get):
         """Test batch retrieval of multiple organisms in one call."""
         mock_get.return_value = _make_api_response(
@@ -282,7 +282,7 @@ class TestTaxonomyRetrieverMocked:
         assert result[9606]["annotations"]["domain"] == "Eukaryota"
         assert result[2697049]["annotations"]["domain"] == "Riboviria"
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_partial_annotations(self, mock_get):
         """Test requesting only a subset of annotations."""
         mock_get.return_value = _make_api_response(
@@ -302,7 +302,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["genus"] == "Homo"
         assert annotations["species"] == "Homo sapiens"
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_invalid_taxon_returns_empty(self, mock_get):
         """Test graceful handling of IDs not found in API response."""
         mock_get.return_value = _make_api_response([])  # No results
@@ -316,7 +316,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["genus"] == ""
         assert annotations["species"] == ""
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_api_error_returns_empty(self, mock_get):
         """Test graceful handling of API errors."""
         mock_get.side_effect = Exception("Connection failed")
@@ -330,7 +330,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["domain"] == ""
         assert annotations["genus"] == ""
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_missing_ranks_return_empty_strings(self, mock_get):
         """Test that missing taxonomy ranks return empty strings."""
         sparse_lineage = [
@@ -372,7 +372,7 @@ class TestTaxonomyRetrieverMocked:
         assert annotations["order"] == ""
         assert annotations["family"] == ""
 
-    @patch("protspace.data.annotations.retrievers.taxonomy_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
     def test_batch_chunking(self, mock_get):
         """Test that large ID lists are split into batches."""
         # Create 150 IDs to force 2 batches (batch size = 100)
