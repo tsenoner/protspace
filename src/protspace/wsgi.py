@@ -2,9 +2,9 @@ import os
 
 from dotenv import load_dotenv
 
-from protspace import ProtSpace
+from protspace.app import ProtSpace
 
-load_dotenv(".env.example")
+load_dotenv()
 
 protspace = ProtSpace(
     pdb_zip=os.getenv("PDB_ZIP_PATH"),

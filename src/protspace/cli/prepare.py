@@ -99,11 +99,11 @@ Opt_Embedder = Annotated[
 
 # Annotations
 Opt_Annotations = Annotated[
-    str,
+    list[str] | None,
     typer.Option(
         "-a",
         "--annotations",
-        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy), individual names, or a CSV/TSV file path. See {ANNOTATIONS_URL}",
+        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy), individual names, or a CSV/TSV file path. Repeatable. See {ANNOTATIONS_URL}",
         rich_help_panel="Annotations",
     ),
 ]
@@ -185,9 +185,9 @@ def prepare(
     fp_ratio: Opt_FpRatio = 2.0,
     n_init: Opt_NInit = 4,
     max_iter: Opt_MaxIter = 300,
-    eps: Opt_Eps = 1e-6,
+    eps: Opt_Eps = 1e-3,
     # Annotations
-    annotations: Opt_Annotations = "default",
+    annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
     force_refetch: Opt_ForceRefetch = False,
     # Output
@@ -341,8 +341,14 @@ def prepare(
                 compute_similarity(fasta_for_similarity, embedding_sets[0].headers)
             )
 
-        # --- Parse annotations (comma-separated string → list) ---
-        annotation_list = [a.strip() for a in annotations.split(",") if a.strip()]
+        # --- Parse annotations (repeatable option → flat list) ---
+        raw = annotations if annotations else ["default"]
+        annotation_list = []
+        for item in raw:
+            for part in item.split(","):
+                part = part.strip()
+                if part:
+                    annotation_list.append(part)
 
         # --- Run pipeline ---
         from protspace.data.processors.pipeline import (

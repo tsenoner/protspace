@@ -98,8 +98,8 @@ If you have embeddings split across multiple batch files (e.g., `batch1.h5`, `ba
 ProtSpace can directly process directories containing multiple H5 files:
 
 ```bash
-# Pass the directory path instead of a file
-protspace local data/clans/CL0023/embs -o output/CL0023
+# Pass the directory path instead of individual files
+protspace prepare -i data/clans/CL0023/embs -m pca2 -o output/CL0023
 ```
 
 ProtSpace will automatically:
@@ -123,7 +123,7 @@ python scripts/pfam_clans/merge_h5_batches.py --input-dir data/clans/CL0023/embs
 Then use with ProtSpace:
 
 ```bash
-protspace local data/clans/CL0023/embs/merged.h5 -o output/CL0023
+protspace prepare -i data/clans/CL0023/embs/merged.h5 -m pca2 -o output/CL0023
 ```
 
 ## Notes

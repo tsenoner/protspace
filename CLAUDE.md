@@ -2,7 +2,7 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Version:** 4.0.0
+- **Version:** 3.3.1
 - **Python:** >=3.10
 - **License:** GPL-3.0
 - **PyPI:** `pip install protspace`
@@ -114,17 +114,19 @@ src/protspace/
 │   │   ├── readers.py          # HDF5/CSV data readers
 │   │   ├── settings_converter.py # Settings table conversion
 │   │   └── writers.py          # Annotation output writers
+│   ├── embedding/
+│   │   └── biocentral.py       # Biocentral API client, model shortcut mappings
 │   ├── parsers/
 │   │   └── uniprot_parser.py   # UniProt XML/TSV parsing
 │   └── processors/
 │       ├── base_processor.py   # BaseProcessor — DR + output creation core
 │       └── pipeline.py         # ReductionPipeline — unified orchestrator
 ├── utils/
-│   ├── __init__.py             # Exports REDUCERS dict, DimensionReductionConfig
+│   ├── __init__.py             # Lazy exports: REDUCERS dict, reducer constants
+│   ├── constants.py            # DimensionReductionConfig, method name constants
 │   ├── reducers.py             # All DR method implementations + annoy fallback
 │   ├── add_annotation_style.py # Annotation color/style utilities
-│   ├── arrow_reader.py         # Parquet/Arrow reading helpers
-│   └── json_reader.py          # Legacy JSON format reader
+│   └── arrow_reader.py         # Parquet/Arrow reading helpers
 ├── core/                       # Core data models
 ├── ui/                         # Dash UI components
 ├── visualization/              # Plotly visualization builders
@@ -148,21 +150,21 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 
 ### Key Implementation Details
 
-- **Float16 upcast:** HDF5 embeddings (often float16 from pLMs) are upcast to float32 at load time in `local_processor.py` to prevent matrix overflow. A safety-net upcast also exists in `base_processor.py`.
-- **HDF5 loading:** `_load_h5_files()` handles both flat and grouped HDF5 layouts, validates embedding dimensions are consistent, and rejects per-residue embeddings with a clear error message.
+- **Float16 upcast:** HDF5 embeddings (often float16 from pLMs) are upcast to float32 in `data/loaders/h5.py:load_h5()` to prevent matrix overflow. A safety-net upcast also exists in `base_processor.py`.
+- **HDF5 loading:** `load_h5()` in `data/loaders/h5.py` handles both flat and grouped HDF5 layouts, validates embedding dimensions are consistent, and rejects per-residue embeddings with a clear error message.
 - **Inactive entry resolution:** `uniprot_retriever.py` resolves inactive UniProt entries via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc. Falls back to `sec_acc:` search if `fetch_one()` fails. Summary logged at WARNING; per-entry details at DEBUG.
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
-- **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow), FutureWarnings, and umap UserWarnings during `fit_transform`.
+- **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
 - **Annoy fallback:** `reducers.py` includes a lazy annoy health check. On platforms where annoy is broken (e.g., macOS ARM64 segfaults), it monkey-patches pacmap to use sklearn `NearestNeighbors` instead. The check only runs when PaCMAP/LocalMAP are first used.
-- **Config validation:** `DimensionReductionConfig` (frozen dataclass) validates all parameters on init.
-- **Reducer registry:** `REDUCERS` dict in `utils/__init__.py` maps method names to reducer classes.
-- **Logging:** `setup_logging()` in `common_args.py` uses a tqdm-aware handler to avoid garbling progress bars. Third-party loggers (`urllib3`, `requests`) are capped at WARNING even with `-vv`.
+- **Config validation:** `DimensionReductionConfig` (frozen dataclass in `utils/constants.py`) validates all parameters on init.
+- **Reducer registry:** `REDUCERS` dict in `utils/__init__.py` maps method names to reducer classes (lazy-loaded).
+- **Logging:** `setup_logging()` in `cli/app.py` uses a tqdm-aware handler to avoid garbling progress bars. Third-party loggers (`urllib3`, `requests`) are capped at WARNING even with `-vv`.
 
 ### Data Pipeline Flow
 
 ```
 HDF5 file (float16 embeddings)
-  → LocalProcessor._load_h5_files()     # upcast to float32, validate dims, handle groups
+  → h5.load_h5()                         # upcast to float32, validate dims, handle groups
   → AnnotationManager.process()          # fetch UniProt/InterPro/taxonomy
     → UniProtRetriever                   # batch fetch + resolve inactive entries via UniParc
     → InterProRetriever                  # MD5-based batch API + name resolution
@@ -192,16 +194,22 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 
 | File | Tests | What it covers |
 |------|-------|---------------|
-| `test_reducers.py` | 51 | All 6 DR methods: shapes, finite output, float16, config validation, end-to-end |
-| `test_base_data_processor.py` | ~15 | BaseProcessor: reduction, output creation, save |
-| `test_local_data_processor.py` | ~50 | LocalProcessor: HDF5 loading, merging, CLI integration |
-| `test_annotation_manager.py` | ~60 | Annotation fetch, merge, cache, configuration |
-| `test_output_combinations.py` | ~30 | Output format flag combinations |
-| `test_interpro_annotation_retriever.py` | ~40 | InterPro API mocking, parsing |
-| `test_uniprot_annotation_retriever.py` | ~30 | UniProt API mocking, parsing |
-| `test_taxonomy_annotation_retriever.py` | ~10 | Taxonomy database lookups |
-| `test_transformer.py` | ~30 | Annotation transformers |
-| `test_uniprot_query_processor.py` | ~30 | UniProt query pipeline |
+| `test_annotation_manager.py` | 79 | Annotation fetch, merge, cache, configuration, evidence parsing |
+| `test_transformer.py` | 56 | Annotation transformers (field normalization, EC names) |
+| `test_reducers.py` | 51 | All 6 DR methods: shapes, finite output, float16, config validation |
+| `test_interpro_annotation_retriever.py` | 46 | InterPro API mocking, parsing |
+| `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
+| `test_uniprot_annotation_retriever.py` | 29 | UniProt API mocking, inactive entry resolution |
+| `test_pipeline_utils.py` | 28 | ReductionPipeline, EmbeddingSet, method parsing |
+| `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
+| `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
+| `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
+| `test_taxonomy_annotation_retriever.py` | 12 | Taxonomy database lookups |
+| `test_h5_parse_identifier.py` | 9 | HDF5 key parsing, identifier extraction |
+| `test_base_data_processor.py` | 8 | BaseProcessor: reduction, output creation, save |
+| `test_formatters.py` | 5 | ProteinAnnotations → DataFrame formatting |
+| `test_output_combinations.py` | 4 | Output format flag combinations |
+| `test_bundle_settings.py` | 4 | Parquetbundle settings read/write |
 
 **Markers:** `@pytest.mark.slow` (database downloads), `@pytest.mark.integration` (external APIs)
 
@@ -216,7 +224,7 @@ Located in `notebooks/`:
 
 ## Dependencies
 
-**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, taxopy, pymmseqs, unipressed
+**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, taxopy, pymmseqs, unipressed, biocentral-api, typer, rich
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar, gunicorn
 

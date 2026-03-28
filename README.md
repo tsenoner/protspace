@@ -8,7 +8,7 @@
 
 ProtSpace is a visualization tool for exploring **protein embeddings** or **similarity matrices**. It projects high-dimensional protein language model data into 2D space, color-codes proteins by biological annotations, and exports publication-ready figures.
 
-- **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP
+- **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP, LocalMAP
 - **Automatic annotations**: UniProt, InterPro, and Taxonomy
 - **Structure viewer**: Integrated protein structure visualization
 - **Export**: PNG, PDF, SVG, HTML

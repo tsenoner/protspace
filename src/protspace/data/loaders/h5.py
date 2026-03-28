@@ -113,6 +113,7 @@ def load_h5(
                 header = raw_key
                 if header in seen_ids:
                     duplicates_count += 1
+                    logger.debug(f"Skipping duplicate protein ID: {header}")
                     continue
 
                 emb = np.array(dataset)

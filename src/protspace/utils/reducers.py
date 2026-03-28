@@ -363,7 +363,7 @@ class MDSReducer(DimensionReducer):
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
         return MDS(
             n_components=self.config.n_components,
-            metric=self.config.precomputed,
+            metric=True,
             n_init=self.config.n_init,
             max_iter=self.config.max_iter,
             eps=self.config.eps,

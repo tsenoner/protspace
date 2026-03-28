@@ -1,10 +1,13 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+logger = logging.getLogger(__name__)
 
 
 class ArrowReader:
@@ -164,7 +167,7 @@ class ArrowReader:
                     settings
                 )
             except Exception:
-                pass
+                logger.debug("Failed to load visualization state from settings", exc_info=True)
 
     def save_data(self, output_path: Path = None):
         """Save the current data back to parquet files."""
