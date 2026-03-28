@@ -17,7 +17,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "pymmseqs>=1.0.4",
     "pyarrow>=20.0.0",
-    "unipressed>=1.4.0",
     "biocentral-api>=1.1.2",
     "requests>=2.32.4",
     "typer>=0.24.1",
