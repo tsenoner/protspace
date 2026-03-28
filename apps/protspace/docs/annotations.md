@@ -1,6 +1,6 @@
 # Annotation Reference
 
-ProtSpace retrieves annotations from three data sources: **UniProt**, **InterPro**, and **NCBI Taxonomy**. Select annotations with `-a` in `protspace-local` and `protspace-query`.
+ProtSpace retrieves annotations from three data sources: **UniProt**, **InterPro**, and **NCBI Taxonomy**. Select annotations with `-a` in `protspace prepare`.
 
 ## Available Annotations
 
@@ -25,11 +25,11 @@ _Always included_: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardl
 Groups are mixable with individual names. If `-a` is omitted, `default` is used.
 
 ```bash
-protspace-local -i data.h5                          # default group
-protspace-local -i data.h5 -a all                   # everything
-protspace-local -i data.h5 -a default,interpro,kingdom
-protspace-local -i data.h5 -a pfam,cath,reviewed
-protspace-query -q "..." -a interpro,kingdom
+protspace prepare -i data.h5:prot_t5                          # default group
+protspace prepare -i data.h5:prot_t5 -a all                   # everything
+protspace prepare -i data.h5:prot_t5 -a default,interpro,kingdom
+protspace prepare -i data.h5:prot_t5 -a pfam,cath,reviewed
+protspace prepare -q "..." -e prot_t5 -a interpro,kingdom
 ```
 
 ## Custom CSV Annotations
@@ -37,9 +37,9 @@ protspace-query -q "..." -a interpro,kingdom
 Provide your own metadata CSV via `-a`. The first column must contain protein identifiers; remaining columns become annotation categories. CSV and database annotations can be combined by specifying `-a` multiple times:
 
 ```bash
-protspace-local -i data.h5 -a metadata.csv                   # CSV only
-protspace-local -i data.h5 -a metadata.csv -a pfam,kingdom   # CSV + DB
-protspace-local -i data.h5 -a metadata.csv -a default        # CSV + default group
+protspace prepare -i data.h5:prot_t5 -a metadata.csv                   # CSV only
+protspace prepare -i data.h5:prot_t5 -a metadata.csv -a pfam,kingdom   # CSV + DB
+protspace prepare -i data.h5:prot_t5 -a metadata.csv -a default        # CSV + default group
 ```
 
 With `--keep-tmp`, only API-fetched annotations are cached; the CSV is always re-read fresh. On column name collisions, CSV values take precedence.

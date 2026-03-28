@@ -103,7 +103,7 @@ Opt_Annotations = Annotated[
     typer.Option(
         "-a",
         "--annotations",
-        help=f"Comma-separated: default,all,uniprot,interpro,taxonomy or names. See {ANNOTATIONS_URL}",
+        help=f"Annotation groups (default,all,uniprot,interpro,taxonomy), individual names, or a CSV/TSV file path. See {ANNOTATIONS_URL}",
         rich_help_panel="Annotations",
     ),
 ]
