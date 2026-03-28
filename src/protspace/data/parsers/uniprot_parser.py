@@ -50,7 +50,8 @@ xref_pdb                 - PDB cross-references (list)
 from typing import Any
 
 import pandas as pd
-from unipressed import UniprotkbClient
+
+from protspace.data.annotations.retrievers.http_utils import paginated_get
 
 # ECO evidence code mapping (ECO ID → short human-readable code)
 ECO_TO_SHORT: dict[str, str] = {
@@ -586,9 +587,12 @@ def fetch_uniprot_data(
                 f"Invalid properties: {invalid}. Available: {AVAILABLE_PROPERTIES}"
             )
 
-    # Fetch records
-    records = UniprotkbClient.fetch_many(accessions)
-    entries = [UniProtEntry(record) for record in records]
+    # Fetch records via UniProt REST API
+    results = paginated_get(
+        "https://rest.uniprot.org/uniprotkb/accessions",
+        params={"accessions": ",".join(accessions)},
+    )
+    entries = [UniProtEntry(record) for record in results]
 
     # Extract properties
     data = []

@@ -225,7 +225,7 @@ Located in `notebooks/`:
 
 ## Dependencies
 
-**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, unipressed, biocentral-api, typer, rich
+**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar, gunicorn
 
