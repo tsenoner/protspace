@@ -87,34 +87,46 @@ class TestResolveAnnotationNames:
         return pipeline._resolve_annotation_names()
 
     def test_none(self):
-        assert self._resolve(None) == []
+        assert self._resolve(None) == ([], None)
 
     def test_empty_list(self):
-        assert self._resolve([]) == []
+        assert self._resolve([]) == ([], None)
 
     def test_single(self):
-        assert self._resolve(["organism_name"]) == ["organism_name"]
+        assert self._resolve(["organism_name"]) == (["organism_name"], None)
 
     def test_comma_separated(self):
-        assert self._resolve(["organism_name,ec_number"]) == [
-            "organism_name",
-            "ec_number",
-        ]
+        assert self._resolve(["organism_name,ec_number"]) == (
+            ["organism_name", "ec_number"],
+            None,
+        )
 
     def test_multiple_items(self):
-        assert self._resolve(["organism_name", "ec_number"]) == [
-            "organism_name",
-            "ec_number",
-        ]
+        assert self._resolve(["organism_name", "ec_number"]) == (
+            ["organism_name", "ec_number"],
+            None,
+        )
 
     def test_strips_whitespace(self):
-        assert self._resolve(["  organism_name , ec_number  "]) == [
-            "organism_name",
-            "ec_number",
-        ]
+        assert self._resolve(["  organism_name , ec_number  "]) == (
+            ["organism_name", "ec_number"],
+            None,
+        )
 
     def test_skips_empty_parts(self):
-        assert self._resolve(["a,,b", ""]) == ["a", "b"]
+        assert self._resolve(["a,,b", ""]) == (["a", "b"], None)
+
+    def test_csv_path(self):
+        assert self._resolve(["metadata.csv"]) == ([], "metadata.csv")
+
+    def test_csv_with_annotations(self):
+        assert self._resolve(["metadata.csv", "default,pfam"]) == (
+            ["default", "pfam"],
+            "metadata.csv",
+        )
+
+    def test_tsv_path(self):
+        assert self._resolve(["data.tsv", "ec"]) == (["ec"], "data.tsv")
 
 
 # ---------------------------------------------------------------------------

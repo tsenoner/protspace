@@ -81,7 +81,7 @@ protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
-| `-a, --annotations` | Annotation sources: groups or individual names. | `default` |
+| `-a, --annotations` | Annotation sources: groups, individual names, or a CSV/TSV file path. See [Annotation Reference](annotations.md). | `default` |
 | `--scores / --no-scores` | Include annotation confidence scores. | on |
 | `--force-refetch` | Re-download all annotations. | off |
 

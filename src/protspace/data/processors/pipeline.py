@@ -180,7 +180,19 @@ class ReductionPipeline:
         """Fetch annotations from APIs with incremental caching support."""
         from protspace.data.annotations.manager import ProteinAnnotationManager
 
-        annotation_names = self._resolve_annotation_names()
+        annotation_names, csv_path = self._resolve_annotation_names()
+
+        # Load user CSV if provided
+        csv_df = None
+        if csv_path:
+            logger.info(f"Loading custom annotations from: {csv_path}")
+            csv_df = pd.read_csv(
+                csv_path,
+                sep="\t" if csv_path.endswith(".tsv") else ",",
+            )
+            id_col = csv_df.columns[0]
+            if id_col != "identifier":
+                csv_df = csv_df.rename(columns={id_col: "identifier"})
 
         if annotation_names:
             from protspace.data.annotations.configuration import (
@@ -192,6 +204,10 @@ class ReductionPipeline:
             ).user_annotations
         else:
             annotations_list = None
+
+        # CSV-only: no API annotations requested
+        if annotations_list is None and csv_df is not None:
+            return csv_df
 
         keep_tmp = self.config.keep_tmp
         intermediate_dir = self.config.intermediate_dir
@@ -222,8 +238,10 @@ class ReductionPipeline:
                         cols = ["identifier"] + [
                             f for f in annotations_list if f in cached_df.columns
                         ]
-                        return cached_df[cols]
-                    return cached_df
+                        api_df = cached_df[cols]
+                    else:
+                        api_df = cached_df
+                    return self._merge_csv(api_df, csv_df)
 
                 from protspace.data.annotations.configuration import (
                     AnnotationConfiguration,
@@ -240,41 +258,74 @@ class ReductionPipeline:
                 else:
                     logger.info(f"Missing annotations: {missing}")
 
-                return ProteinAnnotationManager(
+                api_df = ProteinAnnotationManager(
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
                 ).to_pd()
+                return self._merge_csv(api_df, csv_df)
             else:
-                return ProteinAnnotationManager(
+                api_df = ProteinAnnotationManager(
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
                 ).to_pd()
+                return self._merge_csv(api_df, csv_df)
         else:
-            return ProteinAnnotationManager(
+            api_df = ProteinAnnotationManager(
                 headers=headers,
                 annotations=annotations_list,
                 output_path=None,
             ).to_pd()
+            return self._merge_csv(api_df, csv_df)
 
-    def _resolve_annotation_names(self) -> list[str]:
-        """Parse annotation arguments into a flat list of annotation names."""
+    def _resolve_annotation_names(self) -> tuple[list[str], str | None]:
+        """Parse annotation arguments into annotation names and optional CSV path.
+
+        Returns:
+            Tuple of (annotation_names, csv_path_or_None)
+        """
         if not self.config.annotations:
-            return []
+            return [], None
 
         names = []
+        csv_path = None
         for item in self.config.annotations:
             item = item.strip()
             if not item:
                 continue
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    names.append(part)
-        return names
+            if item.endswith((".csv", ".tsv")):
+                csv_path = item
+            else:
+                for part in item.split(","):
+                    part = part.strip()
+                    if part:
+                        names.append(part)
+        return names, csv_path
+
+    @staticmethod
+    def _merge_csv(api_df: pd.DataFrame, csv_df: pd.DataFrame | None) -> pd.DataFrame:
+        """Merge user CSV annotations onto API annotations. CSV wins on collision."""
+        if csv_df is None:
+            return api_df
+
+        merged = api_df.merge(
+            csv_df.drop_duplicates("identifier"),
+            on="identifier",
+            how="left",
+            suffixes=("_api", ""),
+        )
+        # Drop API-suffixed duplicates so CSV values win
+        for col in list(merged.columns):
+            if col.endswith("_api"):
+                base = col.removesuffix("_api")
+                if base in merged.columns:
+                    merged = merged.drop(columns=[col])
+                else:
+                    merged = merged.rename(columns={col: base})
+        return merged
 
     def _run_reductions(
         self, embedding_sets: list[EmbeddingSet]
