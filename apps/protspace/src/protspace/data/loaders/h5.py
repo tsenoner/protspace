@@ -110,7 +110,7 @@ def load_h5(
                 )
 
             for raw_key, dataset in pairs:
-                header = parse_identifier(raw_key)
+                header = raw_key
                 if header in seen_ids:
                     duplicates_count += 1
                     continue
