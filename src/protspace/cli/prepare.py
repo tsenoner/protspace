@@ -338,7 +338,11 @@ def prepare(
             from protspace.data.loaders import compute_similarity
 
             embedding_sets.append(
-                compute_similarity(fasta_for_similarity, embedding_sets[0].headers)
+                compute_similarity(
+                    fasta_for_similarity,
+                    embedding_sets[0].headers,
+                    cache_dir=cache_dir,
+                )
             )
 
         # --- Parse annotations (repeatable option → flat list) ---
