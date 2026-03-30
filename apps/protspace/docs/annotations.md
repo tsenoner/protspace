@@ -14,6 +14,17 @@ ProtSpace retrieves annotations from five data sources: **UniProt**, **InterPro*
 
 _Always included_: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardless of selection).
 
+### Input Requirements
+
+Annotation sources have different requirements for protein identifiers:
+
+| Requirement | Sources | Works with `-f` FASTA? |
+| ----------- | ------- | ---------------------- |
+| **UniProt accession** | UniProt, Taxonomy, TED | No — accession needed |
+| **Protein sequence** | InterPro, Biocentral, Pfam CLANS | Yes — provide `-f` |
+
+If your H5 keys are not valid UniProt accessions (e.g., `NCBI|...`, custom IDs), accession-dependent annotations will be empty. Sequence-dependent annotations can still work if you provide the original FASTA file with `-f`.
+
 ## Group Presets
 
 | Group        | Contents                                                                    |

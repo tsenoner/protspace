@@ -241,10 +241,9 @@ class AnnotationConfiguration:
         ]
 
         # Add required annotations (accession, organism_id) and sequence if needed
-        # Biocentral predictions also need sequences
         needs_sequence = bool(interpro_annotations or biocentral_annotations)
         uniprot_annotations = self._add_required_annotations(
-            uniprot_annotations, interpro_annotations if needs_sequence else None
+            uniprot_annotations, needs_sequence=needs_sequence
         )
 
         return (
@@ -256,28 +255,23 @@ class AnnotationConfiguration:
         )
 
     def _add_required_annotations(
-        self, annotations: list[str], interpro_annotations: list[str] = None
+        self, annotations: list[str], *, needs_sequence: bool = False
     ) -> list[str]:
-        """
-        Add required annotations (accession, organism_id) and sequence if needed for InterPro.
+        """Add required annotations (accession, organism_id) and optionally sequence.
 
         Args:
             annotations: List of requested UniProt annotations
-            interpro_annotations: List of InterPro annotations (if any)
+            needs_sequence: Whether to include sequence (needed by InterPro and Biocentral)
 
         Returns:
             Updated list with required annotations
         """
-        # Remove required annotations if already present to avoid duplicates
         filtered_annotations = [
             f for f in annotations if f not in NEEDED_UNIPROT_ANNOTATIONS
         ]
-
-        # Always start with required annotations
         result = NEEDED_UNIPROT_ANNOTATIONS + filtered_annotations
 
-        # Always include sequence if InterPro annotations are requested (needed for MD5 calculation)
-        if interpro_annotations and "sequence" not in result:
+        if needs_sequence and "sequence" not in result:
             result.append("sequence")
 
         return result

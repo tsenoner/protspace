@@ -39,14 +39,14 @@ class TestUniProtAnnotationRetrieverInit:
         assert retriever.annotations == annotations
 
     def test_init_with_pipe_headers(self):
-        """Test initialization with headers containing pipe notation."""
+        """Headers with pipe notation are passed through as-is (no stripping)."""
         headers = ["sp|P01308|INS_HUMAN", "tr|P01315|INSL3_HUMAN"]
         annotations = ["length"]
 
         retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
 
-        # Should extract accession IDs from pipe notation
-        assert retriever.headers == ["P01308", "P01315"]
+        # Headers are kept as-is; non-UniProt IDs are filtered before API calls
+        assert retriever.headers == headers
         assert retriever.annotations == annotations
 
     def test_init_with_defaults(self):
@@ -55,55 +55,6 @@ class TestUniProtAnnotationRetrieverInit:
 
         assert retriever.headers == []
         assert retriever.annotations is None
-
-
-class TestManageHeaders:
-    """Test the _manage_headers method."""
-
-    def test_manage_headers_swissprot_format(self):
-        """Test header management with SwissProt format."""
-        retriever = UniProtAnnotationRetriever()
-        headers = ["sp|P01308|INS_HUMAN", "sp|P01315|INSL3_HUMAN"]
-
-        result = retriever._manage_headers(headers)
-
-        assert result == ["P01308", "P01315"]
-
-    def test_manage_headers_trembl_format(self):
-        """Test header management with TrEMBL format."""
-        retriever = UniProtAnnotationRetriever()
-        headers = ["tr|A0A0A0MRZ7|A0A0A0MRZ7_HUMAN", "tr|Q8N2C7|Q8N2C7_HUMAN"]
-
-        result = retriever._manage_headers(headers)
-
-        assert result == ["A0A0A0MRZ7", "Q8N2C7"]
-
-    def test_manage_headers_mixed_formats(self):
-        """Test header management with mixed formats."""
-        retriever = UniProtAnnotationRetriever()
-        headers = ["sp|P01308|INS_HUMAN", "P01315", "tr|Q8N2C7|Q8N2C7_HUMAN"]
-
-        result = retriever._manage_headers(headers)
-
-        assert result == ["P01308", "P01315", "Q8N2C7"]
-
-    def test_manage_headers_simple_format(self):
-        """Test header management with simple accession format."""
-        retriever = UniProtAnnotationRetriever()
-        headers = ["P01308", "P01315", "Q8N2C7"]
-
-        result = retriever._manage_headers(headers)
-
-        assert result == ["P01308", "P01315", "Q8N2C7"]
-
-    def test_manage_headers_case_insensitive(self):
-        """Test that header management is case insensitive."""
-        retriever = UniProtAnnotationRetriever()
-        headers = ["SP|P01308|INS_HUMAN", "TR|P01315|INSL3_HUMAN"]
-
-        result = retriever._manage_headers(headers)
-
-        assert result == ["P01308", "P01315"]
 
 
 class TestFetchAnnotations:

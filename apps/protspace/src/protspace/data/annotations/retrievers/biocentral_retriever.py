@@ -45,11 +45,8 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
             ProteinAnnotations,
         )
 
-        if not self.sequences:
-            logger.warning(
-                "No sequences available for Biocentral predictions. "
-                "Provide a FASTA file (-f) or use UniProt accessions as identifiers."
-            )
+        if not self.sequences or not any(self.sequences.values()):
+            logger.debug("No sequences available for Biocentral predictions")
             return [
                 ProteinAnnotations(
                     identifier=h,
@@ -110,7 +107,12 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
             return {}
 
         # Prepare sequence data — deduplicate (API rejects duplicate sequences)
-        all_seqs = {h: self.sequences[h] for h in self.headers if h in self.sequences}
+        # Filter out empty sequences
+        all_seqs = {
+            h: self.sequences[h]
+            for h in self.headers
+            if h in self.sequences and self.sequences[h]
+        }
         seen_seqs: dict[str, str] = {}  # seq → first header
         seq_data: dict[str, str] = {}  # header → seq (unique only)
         self._seq_duplicates: dict[str, str] = {}  # header → representative header
