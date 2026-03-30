@@ -240,6 +240,20 @@ class ProteinAnnotationManager:
             logger.warning(f"Failed to retrieve Taxonomy annotations: {e}")
             return {}
 
+    def _build_sequence_map(
+        self, uniprot_annotations: list[ProteinAnnotations]
+    ) -> dict[str, str]:
+        """Build a mapping from headers to sequences.
+
+        Merges local sequences (from FASTA, priority) with UniProt results (fallback).
+        """
+        sequences = dict(self.sequences) if self.sequences else {}
+        for protein in uniprot_annotations:
+            seq = protein.annotations.get("sequence", "")
+            if seq and protein.identifier not in sequences:
+                sequences[protein.identifier] = seq
+        return sequences
+
     def _fetch_interpro(
         self, uniprot_annotations: list[ProteinAnnotations], failed_sources: list
     ) -> list[ProteinAnnotations]:
@@ -248,17 +262,12 @@ class ProteinAnnotationManager:
             return []
 
         try:
-            # Merge: local sequences (from FASTA, priority) + UniProt (fallback)
-            sequences = dict(self.sequences) if self.sequences else {}
-            for protein in uniprot_annotations:
-                seq = protein.annotations.get("sequence", "")
-                if seq and protein.identifier not in sequences:
-                    sequences[protein.identifier] = seq
+            sequences = self._build_sequence_map(uniprot_annotations)
 
             retriever = InterProRetriever(
                 headers=self.headers,
                 annotations=self.config.interpro_annotations,
-                sequences=self.sequences,
+                sequences=sequences,
             )
             return retriever.fetch_annotations()
         except Exception as e:
@@ -274,12 +283,7 @@ class ProteinAnnotationManager:
             return []
 
         try:
-            # Merge: local sequences (from FASTA, priority) + UniProt (fallback)
-            sequences = dict(self.sequences) if self.sequences else {}
-            for protein in uniprot_annotations:
-                seq = protein.annotations.get("sequence", "")
-                if seq and protein.identifier not in sequences:
-                    sequences[protein.identifier] = seq
+            sequences = self._build_sequence_map(uniprot_annotations)
 
             retriever = BiocentralPredictionRetriever(
                 headers=self.headers,

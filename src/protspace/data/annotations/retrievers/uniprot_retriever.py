@@ -5,6 +5,7 @@ This module fetches protein annotations from the UniProt API.
 """
 
 import logging
+import re
 from collections import namedtuple
 
 import requests
@@ -95,7 +96,6 @@ class UniProtRetriever(BaseAnnotationRetriever):
             annotations: List of annotations to retrieve (not used, always retrieves UNIPROT_ANNOTATIONS)
         """
         super().__init__(headers, annotations)
-        self.headers = self._manage_headers(self.headers)
 
     @staticmethod
     def _extract_annotations(entry: UniProtEntry) -> dict:
@@ -263,12 +263,34 @@ class UniProtRetriever(BaseAnnotationRetriever):
         result = []
         total_resolved = 0
         total_deleted = 0
+        total_batch_failures = 0
+        total_failed_proteins = 0
+
+        # Separate valid UniProt accessions from non-UniProt identifiers
+        # to prevent invalid IDs from causing entire batch failures
+        _uniprot_re = re.compile(
+            r"^[OPQ][0-9][A-Z0-9]{3}[0-9]$"
+            r"|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$"
+        )
+        valid_headers = [h for h in self.headers if _uniprot_re.match(h)]
+        invalid_headers = [h for h in self.headers if not _uniprot_re.match(h)]
+
+        if invalid_headers:
+            # Add empty annotations for non-UniProt identifiers immediately
+            for header in invalid_headers:
+                result.append(
+                    ProteinAnnotations(
+                        identifier=header,
+                        annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                    )
+                )
 
         with tqdm(
             total=len(self.headers), desc="Fetching UniProt annotations", unit="seq"
         ) as pbar:
-            for i in range(0, len(self.headers), batch_size):
-                batch = self.headers[i : i + batch_size]
+            pbar.update(len(invalid_headers))
+            for i in range(0, len(valid_headers), batch_size):
+                batch = valid_headers[i : i + batch_size]
 
                 try:
                     records = _fetch_many_accessions(batch)
@@ -296,7 +318,11 @@ class UniProtRetriever(BaseAnnotationRetriever):
                         total_deleted += del_count
 
                 except Exception as e:
-                    logger.warning(f"Failed to fetch batch {i}-{i + batch_size}: {e}")
+                    total_batch_failures += 1
+                    total_failed_proteins += len(batch)
+                    logger.debug(
+                        f"Failed to fetch UniProt batch {i}-{i + batch_size}: {e}"
+                    )
                     # Add empty annotations for failed proteins
                     for accession in batch:
                         result.append(
@@ -308,6 +334,25 @@ class UniProtRetriever(BaseAnnotationRetriever):
 
                 pbar.update(len(batch))
 
+        # Summary
+        seq_count = sum(1 for p in result if p.annotations.get("sequence", ""))
+
+        if invalid_headers:
+            msg = (
+                f"{len(valid_headers)}/{len(self.headers)} identifiers are valid "
+                f"UniProt accessions ({len(invalid_headers)} skipped)."
+            )
+            if seq_count == 0:
+                msg += (
+                    "\n  Accession-dependent annotations (UniProt, Taxonomy, TED) "
+                    "will be empty for non-UniProt identifiers."
+                    "\n  Sequence-dependent annotations (InterPro, Biocentral) can "
+                    "still work if you provide a FASTA file with -f."
+                )
+            else:
+                msg += f" {seq_count} sequences retrieved."
+            logger.warning(msg)
+
         if total_resolved or total_deleted:
             parts = []
             if total_deleted:
@@ -317,24 +362,3 @@ class UniProtRetriever(BaseAnnotationRetriever):
             logger.warning(f"Inactive UniProt entries: {', '.join(parts)}")
 
         return result
-
-    def _manage_headers(self, headers: list[str]) -> list[str]:
-        """
-        Clean protein headers by extracting accessions from FASTA format.
-
-        Args:
-            headers: List of protein headers
-
-        Returns:
-            List of cleaned accessions
-        """
-        managed_headers = []
-        prefixes = ["sp|", "tr|"]
-        for header in headers:
-            header_lower = header.lower()
-            if any(header_lower.startswith(prefix) for prefix in prefixes):
-                accession = header.split("|")[1]
-                managed_headers.append(accession)
-            else:
-                managed_headers.append(header)
-        return managed_headers
