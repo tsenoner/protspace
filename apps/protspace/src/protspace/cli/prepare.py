@@ -310,7 +310,11 @@ def prepare(
                         continue
                     embedding_sets.append(load_h5(h5s, name_override=name_override))
                 elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
-                    embedding_sets.append(load_h5([path], name_override=name_override))
+                    emb_set = load_h5([path], name_override=name_override)
+                    # Attach FASTA path from -f flag if provided (for sequence reuse)
+                    if fasta_for_similarity:
+                        emb_set.fasta_path = fasta_for_similarity
+                    embedding_sets.append(emb_set)
                 elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
                     for emb_name in embedders:
                         emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None

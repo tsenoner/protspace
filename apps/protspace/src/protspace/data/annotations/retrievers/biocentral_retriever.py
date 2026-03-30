@@ -46,7 +46,10 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         )
 
         if not self.sequences:
-            logger.warning("No sequences provided for Biocentral predictions")
+            logger.warning(
+                "No sequences available for Biocentral predictions. "
+                "Provide a FASTA file (-f) or use UniProt accessions as identifiers."
+            )
             return [
                 ProteinAnnotations(
                     identifier=h,
