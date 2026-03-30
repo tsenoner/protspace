@@ -251,7 +251,10 @@ class ReductionPipeline:
                 missing = required - cached_annotations
 
                 if not missing and not force_refetch:
-                    logger.info(f"All annotations found in cache: {cache_path}")
+                    logger.warning(
+                        f"Using cached annotations from {cache_path} "
+                        f"(use --force-refetch to re-download)"
+                    )
                     if annotations_list:
                         cols = ["identifier"] + [
                             f for f in annotations_list if f in cached_df.columns
@@ -259,6 +262,21 @@ class ReductionPipeline:
                         api_df = cached_df[cols]
                     else:
                         api_df = cached_df
+
+                    # Warn if cached annotations are all empty
+                    data_cols = [c for c in api_df.columns if c != "identifier"]
+                    if data_cols:
+                        non_empty = api_df[data_cols].apply(
+                            lambda col: (col != "").any()
+                        )
+                        if not non_empty.any():
+                            logger.warning(
+                                "All cached annotations are empty. This may be "
+                                "from a previous run with non-UniProt identifiers. "
+                                "Use --force-refetch to re-fetch, or provide a "
+                                "FASTA file with -f."
+                            )
+
                     return self._merge_csv(api_df, csv_df)
 
                 from protspace.data.annotations.configuration import (
