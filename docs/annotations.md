@@ -1,26 +1,30 @@
 # Annotation Reference
 
-ProtSpace retrieves annotations from three data sources: **UniProt**, **InterPro**, and **NCBI Taxonomy**. Select annotations with `-a` in `protspace prepare`.
+ProtSpace retrieves annotations from five data sources: **UniProt**, **InterPro**, **Taxonomy**, **TED Domains**, and **Biocentral Predictions**. Select annotations with `-a` in `protspace prepare`.
 
 ## Available Annotations
 
-| Source           | Annotations                                                                                                                                                                                                |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **UniProt** (14) | `annotation_score`, `cc_subcellular_location`, `ec`, `fragment`, `gene_name`, `go_bp`, `go_cc`, `go_mf`, `keyword`, `length`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb` |
-| **InterPro** (9) | `cath`, `cdd`, `panther`, `pfam`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily`                                                                                                        |
-| **Taxonomy** (9) | `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`                                                                                                                  |
+| Source               | Annotations                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **UniProt** (14)     | `annotation_score`, `cc_subcellular_location`, `ec`, `fragment`, `gene_name`, `go_bp`, `go_cc`, `go_mf`, `keyword`, `length`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb` |
+| **InterPro** (10)    | `cath`, `cdd`, `panther`, `pfam`, `pfam_clan`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily`                                                                                           |
+| **Taxonomy** (9)     | `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`                                                                                                                  |
+| **TED** (1)          | `ted_domains`                                                                                                                                                                                          |
+| **Biocentral** (4)   | `predicted_subcellular_location`, `predicted_membrane`, `predicted_signal_peptide`, `predicted_transmembrane`                                                                                           |
 
 _Always included_: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardless of selection).
 
 ## Group Presets
 
-| Group      | Contents                                                   |
-| ---------- | ---------------------------------------------------------- |
-| `default`  | `ec`, `keyword`, `length`, `protein_families`, `reviewed`  |
-| `all`      | All annotations from all sources                           |
-| `uniprot`  | All UniProt annotations                                    |
-| `interpro` | All InterPro annotations                                   |
-| `taxonomy` | All taxonomy annotations                                   |
+| Group        | Contents                                                                    |
+| ------------ | --------------------------------------------------------------------------- |
+| `default`    | `ec`, `keyword`, `length`, `protein_families`, `reviewed`                   |
+| `all`        | All annotations from all sources                                            |
+| `uniprot`    | All UniProt annotations                                                     |
+| `interpro`   | All InterPro annotations (incl. `pfam_clan`)                                |
+| `taxonomy`   | All taxonomy annotations                                                    |
+| `ted`        | All TED domain annotations                                                  |
+| `biocentral` | All Biocentral prediction annotations                                       |
 
 Groups are mixable with individual names. If `-a` is omitted, `default` is used.
 
@@ -28,6 +32,7 @@ Groups are mixable with individual names. If `-a` is omitted, `default` is used.
 protspace prepare -i data.h5:prot_t5                          # default group
 protspace prepare -i data.h5:prot_t5 -a all                   # everything
 protspace prepare -i data.h5:prot_t5 -a default,interpro,kingdom
+protspace prepare -i data.h5:prot_t5 -a ted,biocentral        # all predictions
 protspace prepare -i data.h5:prot_t5 -a pfam,cath,reviewed
 protspace prepare -q "..." -e prot_t5 -a interpro,kingdom
 ```
