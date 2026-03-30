@@ -119,9 +119,7 @@ class TestProteinAnnotationExtractorInit:
         headers = SAMPLE_HEADERS
         invalid_annotations = ["length", "invalid_annotation", "genus"]
 
-        with pytest.raises(
-            ValueError, match="Annotation invalid_annotation is not a valid annotation"
-        ):
+        with pytest.raises(ValueError, match="Unknown annotation 'invalid_annotation'"):
             ProteinAnnotationExtractor(headers=headers, annotations=invalid_annotations)
 
     def test_init_with_no_annotations(self):
@@ -178,7 +176,7 @@ class TestAnnotationConfiguration:
 
         with pytest.raises(
             ValueError,
-            match="Annotation nonexistent_annotation is not a valid annotation",
+            match="Unknown annotation 'nonexistent_annotation'",
         ):
             AnnotationConfiguration(user_annotations=invalid_annotations)
 
