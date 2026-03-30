@@ -19,12 +19,14 @@ logger = logging.getLogger(__name__)
 def compute_similarity(
     fasta_path: Path,
     headers: list[str],
+    cache_dir: Path | None = None,
 ) -> EmbeddingSet:
     """Compute pairwise sequence similarity using MMseqs2 easy_search.
 
     Args:
         fasta_path: Path to FASTA file.
         headers: Protein identifiers (order determines matrix rows/cols).
+        cache_dir: Optional directory for MMseqs2 temp files (uses system temp if None).
 
     Returns:
         EmbeddingSet with precomputed=True, name="MMseqs2".
@@ -36,7 +38,12 @@ def compute_similarity(
 
     logger.info("Computing sequence similarity with MMseqs2...")
 
-    temp_dir = str(Path(tempfile.mkdtemp(prefix="protspace_mmseqs_")).absolute())
+    if cache_dir:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = str((cache_dir / "mmseqs_tmp").absolute())
+        Path(temp_dir).mkdir(exist_ok=True)
+    else:
+        temp_dir = str(Path(tempfile.mkdtemp(prefix="protspace_mmseqs_")).absolute())
     temp_alignment = str(Path(temp_dir) / "output.tsv")
 
     try:
@@ -62,7 +69,8 @@ def compute_similarity(
                 similarity_matrix[query_idx, target_idx] = fident
 
     finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        if not cache_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     return EmbeddingSet(
         name="MMseqs2",
