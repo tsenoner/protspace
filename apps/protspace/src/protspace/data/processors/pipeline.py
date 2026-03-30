@@ -87,8 +87,8 @@ class ReductionPipeline:
         # Validate all sets share the same headers (or compute intersection)
         all_headers = self._validate_headers(embedding_sets)
 
-        # Fetch annotations
-        metadata = self._fetch_annotations(all_headers)
+        # Fetch annotations (pass embedding sets so FASTA sequences can be reused)
+        metadata = self._fetch_annotations(all_headers, embedding_sets)
 
         # Apply score stripping
         if self.config.no_scores:
@@ -136,6 +136,19 @@ class ReductionPipeline:
 
         return self.config.output_path
 
+    @staticmethod
+    def _extract_sequences(embedding_sets: list[EmbeddingSet]) -> dict[str, str]:
+        """Extract protein sequences from FASTA files referenced by embedding sets."""
+        sequences = {}
+        for emb_set in embedding_sets:
+            if emb_set.fasta_path and Path(emb_set.fasta_path).exists():
+                from protspace.data.io.fasta import parse_fasta
+                from protspace.data.loaders.h5 import parse_identifier
+
+                raw = parse_fasta(Path(emb_set.fasta_path))
+                sequences.update({parse_identifier(h): s for h, s in raw.items()})
+        return sequences
+
     def _validate_headers(self, embedding_sets: list[EmbeddingSet]) -> list[str]:
         """Ensure all embedding sets share the same identifiers.
 
@@ -176,9 +189,14 @@ class ReductionPipeline:
 
         return common_headers
 
-    def _fetch_annotations(self, headers: list[str]) -> pd.DataFrame:
+    def _fetch_annotations(
+        self, headers: list[str], embedding_sets: list[EmbeddingSet] = None
+    ) -> pd.DataFrame:
         """Fetch annotations from APIs with incremental caching support."""
         from protspace.data.annotations.manager import ProteinAnnotationManager
+
+        # Extract sequences from FASTA files (if available) to avoid re-fetching
+        sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
 
         annotation_names, csv_path = self._resolve_annotation_names()
 
@@ -262,6 +280,7 @@ class ReductionPipeline:
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
+                    sequences=sequences,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
                 ).to_pd()
@@ -271,6 +290,7 @@ class ReductionPipeline:
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
+                    sequences=sequences,
                 ).to_pd()
                 return self._merge_csv(api_df, csv_df)
         else:
@@ -278,6 +298,7 @@ class ReductionPipeline:
                 headers=headers,
                 annotations=annotations_list,
                 output_path=None,
+                sequences=sequences,
             ).to_pd()
             return self._merge_csv(api_df, csv_df)
 

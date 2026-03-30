@@ -248,17 +248,12 @@ class ProteinAnnotationManager:
             return []
 
         try:
-            # Extract sequences from UniProt data for InterPro MD5 calculation
-            sequences = {}
+            # Merge: local sequences (from FASTA, priority) + UniProt (fallback)
+            sequences = dict(self.sequences) if self.sequences else {}
             for protein in uniprot_annotations:
-                if (
-                    "sequence" in protein.annotations
-                    and protein.annotations["sequence"]
-                ):
-                    sequences[protein.identifier] = protein.annotations["sequence"]
-
-            # Update self.sequences for InterPro retrieval
-            self.sequences = sequences
+                seq = protein.annotations.get("sequence", "")
+                if seq and protein.identifier not in sequences:
+                    sequences[protein.identifier] = seq
 
             retriever = InterProRetriever(
                 headers=self.headers,
@@ -279,11 +274,11 @@ class ProteinAnnotationManager:
             return []
 
         try:
-            # Extract sequences from UniProt data
-            sequences = {}
+            # Merge: local sequences (from FASTA, priority) + UniProt (fallback)
+            sequences = dict(self.sequences) if self.sequences else {}
             for protein in uniprot_annotations:
                 seq = protein.annotations.get("sequence", "")
-                if seq:
+                if seq and protein.identifier not in sequences:
                     sequences[protein.identifier] = seq
 
             retriever = BiocentralPredictionRetriever(

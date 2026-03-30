@@ -106,8 +106,23 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         if not model_enums:
             return {}
 
-        # Prepare sequence data (Biocentral wants {id: sequence})
-        seq_data = {h: self.sequences[h] for h in self.headers if h in self.sequences}
+        # Prepare sequence data — deduplicate (API rejects duplicate sequences)
+        all_seqs = {h: self.sequences[h] for h in self.headers if h in self.sequences}
+        seen_seqs: dict[str, str] = {}  # seq → first header
+        seq_data: dict[str, str] = {}  # header → seq (unique only)
+        self._seq_duplicates: dict[str, str] = {}  # header → representative header
+
+        for header, seq in all_seqs.items():
+            if seq in seen_seqs:
+                self._seq_duplicates[header] = seen_seqs[seq]
+            else:
+                seen_seqs[seq] = header
+                seq_data[header] = seq
+
+        if len(all_seqs) != len(seq_data):
+            logger.info(
+                f"Deduplicated {len(all_seqs)} → {len(seq_data)} unique sequences"
+            )
 
         logger.info(
             f"Running Biocentral predictions ({', '.join(m.name for m in model_enums)}) "
@@ -129,8 +144,10 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         if not predictions:
             return ""
 
-        # Find predictions for this protein (keyed by sequence hash)
-        seq = self.sequences.get(header, "")
+        # For deduplicated sequences, use the representative header
+        lookup_header = getattr(self, "_seq_duplicates", {}).get(header, header)
+
+        seq = self.sequences.get(lookup_header, "")
         if not seq:
             return ""
 
@@ -141,8 +158,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
 
         protein_preds = predictions.get(seq_hash, [])
         if not protein_preds:
-            # Try looking up by header directly (fallback)
-            protein_preds = predictions.get(header, [])
+            protein_preds = predictions.get(lookup_header, [])
 
         if not protein_preds:
             return ""
