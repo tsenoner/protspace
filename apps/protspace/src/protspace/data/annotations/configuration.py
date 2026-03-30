@@ -194,8 +194,18 @@ class AnnotationConfiguration:
 
         for annotation in user_annotations + ALWAYS_INCLUDED_ANNOTATIONS:
             if annotation not in all_annotations:
+                from difflib import get_close_matches
+
+                candidates = list(ANNOTATION_GROUPS.keys()) + all_annotations
+                suggestions = get_close_matches(annotation, candidates, n=3, cutoff=0.5)
+                hint = (
+                    f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+                )
+                groups = ", ".join(sorted(ANNOTATION_GROUPS.keys()))
                 raise ValueError(
-                    f"Annotation {annotation} is not a valid annotation. Valid annotations are: {all_annotations}"
+                    f"Unknown annotation '{annotation}'.{hint}\n"
+                    f"  Groups: {groups}\n"
+                    f"  See https://github.com/tsenoner/protspace/blob/main/docs/annotations.md"
                 )
             if annotation not in normalized_annotations:
                 normalized_annotations.append(annotation)
