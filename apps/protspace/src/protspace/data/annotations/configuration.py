@@ -6,11 +6,17 @@ This module handles annotation selection, validation, and source splitting.
 
 import logging
 
+from protspace.data.annotations.retrievers.biocentral_retriever import (
+    BIOCENTRAL_ANNOTATIONS,
+)
 from protspace.data.annotations.retrievers.interpro_retriever import (
     INTERPRO_ANNOTATIONS,
 )
 from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
+)
+from protspace.data.annotations.retrievers.ted_retriever import (
+    TED_ANNOTATIONS,
 )
 from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
@@ -19,7 +25,13 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
 logger = logging.getLogger(__name__)
 
 # Constants
-ALL_ANNOTATIONS = UNIPROT_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS
+ALL_ANNOTATIONS = (
+    UNIPROT_ANNOTATIONS
+    + TAXONOMY_ANNOTATIONS
+    + INTERPRO_ANNOTATIONS
+    + TED_ANNOTATIONS
+    + BIOCENTRAL_ANNOTATIONS
+)
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
 NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
 
@@ -52,7 +64,13 @@ ANNOTATION_GROUPS = {
     "uniprot": _UNIPROT_USER_ANNOTATIONS,
     "interpro": INTERPRO_ANNOTATIONS,
     "taxonomy": TAXONOMY_ANNOTATIONS,
-    "all": _UNIPROT_USER_ANNOTATIONS + TAXONOMY_ANNOTATIONS + INTERPRO_ANNOTATIONS,
+    "ted": TED_ANNOTATIONS,
+    "biocentral": BIOCENTRAL_ANNOTATIONS,
+    "all": _UNIPROT_USER_ANNOTATIONS
+    + TAXONOMY_ANNOTATIONS
+    + INTERPRO_ANNOTATIONS
+    + TED_ANNOTATIONS
+    + BIOCENTRAL_ANNOTATIONS,
 }
 
 
@@ -95,6 +113,8 @@ class AnnotationConfiguration:
             self.uniprot_annotations,
             self.taxonomy_annotations,
             self.interpro_annotations,
+            self.ted_annotations,
+            self.biocentral_annotations,
         ) = self._split_by_source()
 
     @staticmethod
@@ -112,6 +132,8 @@ class AnnotationConfiguration:
             "uniprot": annotations & set(UNIPROT_ANNOTATIONS),
             "taxonomy": annotations & set(TAXONOMY_ANNOTATIONS),
             "interpro": annotations & set(INTERPRO_ANNOTATIONS),
+            "ted": annotations & set(TED_ANNOTATIONS),
+            "biocentral": annotations & set(BIOCENTRAL_ANNOTATIONS),
         }
 
     @staticmethod
@@ -135,6 +157,8 @@ class AnnotationConfiguration:
             "uniprot": len(categorized["uniprot"]) > 0,
             "taxonomy": len(categorized["taxonomy"]) > 0,
             "interpro": len(categorized["interpro"]) > 0,
+            "ted": len(categorized["ted"]) > 0,
+            "biocentral": len(categorized["biocentral"]) > 0,
         }
 
         # Handle dependencies: taxonomy needs organism_id from UniProt
@@ -170,82 +194,84 @@ class AnnotationConfiguration:
 
         for annotation in user_annotations + ALWAYS_INCLUDED_ANNOTATIONS:
             if annotation not in all_annotations:
+                from difflib import get_close_matches
+
+                candidates = list(ANNOTATION_GROUPS.keys()) + all_annotations
+                suggestions = get_close_matches(annotation, candidates, n=3, cutoff=0.5)
+                hint = (
+                    f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+                )
+                groups = ", ".join(sorted(ANNOTATION_GROUPS.keys()))
                 raise ValueError(
-                    f"Annotation {annotation} is not a valid annotation. Valid annotations are: {all_annotations}"
+                    f"Unknown annotation '{annotation}'.{hint}\n"
+                    f"  Groups: {groups}\n"
+                    f"  See https://github.com/tsenoner/protspace/blob/main/docs/annotations.md"
                 )
             if annotation not in normalized_annotations:
                 normalized_annotations.append(annotation)
 
         return normalized_annotations
 
-    def _split_by_source(self) -> tuple[list[str], list[str] | None, list[str] | None]:
-        """
-        Split annotations into UniProt, Taxonomy, and InterPro annotations.
+    def _split_by_source(
+        self,
+    ) -> tuple[
+        list[str],
+        list[str] | None,
+        list[str] | None,
+        list[str] | None,
+        list[str] | None,
+    ]:
+        """Split annotations into source-specific lists.
 
         Returns:
-            Tuple of (uniprot_annotations, taxonomy_annotations, interpro_annotations)
+            Tuple of (uniprot, taxonomy, interpro, ted, biocentral) annotations
         """
-        return self._split_user_annotations()
-
-    def _split_user_annotations(
-        self,
-    ) -> tuple[list[str], list[str] | None, list[str] | None]:
-        """Split user-requested annotations by source."""
-        # Extract annotations by source
         uniprot_annotations = [
-            annotation
-            for annotation in self.user_annotations
-            if annotation in UNIPROT_ANNOTATIONS
+            a for a in self.user_annotations if a in UNIPROT_ANNOTATIONS
         ]
         taxonomy_annotations = [
-            annotation
-            for annotation in self.user_annotations
-            if annotation in TAXONOMY_ANNOTATIONS
+            a for a in self.user_annotations if a in TAXONOMY_ANNOTATIONS
         ]
         interpro_annotations = [
-            annotation
-            for annotation in self.user_annotations
-            if annotation in INTERPRO_ANNOTATIONS
+            a for a in self.user_annotations if a in INTERPRO_ANNOTATIONS
+        ]
+        ted_annotations = [a for a in self.user_annotations if a in TED_ANNOTATIONS]
+        biocentral_annotations = [
+            a for a in self.user_annotations if a in BIOCENTRAL_ANNOTATIONS
         ]
 
         # Add required annotations (accession, organism_id) and sequence if needed
+        needs_sequence = bool(interpro_annotations or biocentral_annotations)
         uniprot_annotations = self._add_required_annotations(
-            uniprot_annotations, interpro_annotations
+            uniprot_annotations, needs_sequence=needs_sequence
         )
 
-        # Return based on what's needed
-        if taxonomy_annotations or interpro_annotations:
-            return (
-                uniprot_annotations,
-                taxonomy_annotations if taxonomy_annotations else None,
-                interpro_annotations if interpro_annotations else None,
-            )
-        else:
-            return uniprot_annotations, None, None
+        return (
+            uniprot_annotations,
+            taxonomy_annotations or None,
+            interpro_annotations or None,
+            ted_annotations or None,
+            biocentral_annotations or None,
+        )
 
     def _add_required_annotations(
-        self, annotations: list[str], interpro_annotations: list[str] = None
+        self, annotations: list[str], *, needs_sequence: bool = False
     ) -> list[str]:
-        """
-        Add required annotations (accession, organism_id) and sequence if needed for InterPro.
+        """Add required annotations (accession, organism_id) and optionally sequence.
 
         Args:
             annotations: List of requested UniProt annotations
-            interpro_annotations: List of InterPro annotations (if any)
+            needs_sequence: Whether to include sequence (needed by InterPro and Biocentral)
 
         Returns:
             Updated list with required annotations
         """
-        # Remove required annotations if already present to avoid duplicates
         filtered_annotations = [
             f for f in annotations if f not in NEEDED_UNIPROT_ANNOTATIONS
         ]
-
-        # Always start with required annotations
         result = NEEDED_UNIPROT_ANNOTATIONS + filtered_annotations
 
-        # Always include sequence if InterPro annotations are requested (needed for MD5 calculation)
-        if interpro_annotations and "sequence" not in result:
+        if needs_sequence and "sequence" not in result:
             result.append("sequence")
 
         return result

@@ -3,6 +3,7 @@
 import logging
 import sys
 import time
+import warnings
 from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
@@ -158,7 +159,11 @@ def embed_sequences(
     )
 
     if not remaining:
-        print(f"All {len(sequences):,} sequences already embedded in {h5_path}")
+        logger.info(
+            "All %s sequences already embedded in %s",
+            f"{len(sequences):,}",
+            h5_path,
+        )
         return h5_path
 
     # Deduplicate sequences (API rejects batches with duplicate sequences)
@@ -205,11 +210,17 @@ def embed_sequences(
         batch_seqs = {pid: unique_seqs[pid] for pid in batch_ids}
 
         try:
-            result = api.embed(
-                embedder_name=embedder,
-                sequence_data=batch_seqs,
-                reduce=True,
-            ).run()
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*longer than the recommended.*",
+                    category=UserWarning,
+                )
+                result = api.embed(
+                    embedder_name=embedder,
+                    sequence_data=batch_seqs,
+                    reduce=True,
+                ).run()
 
             if result is not None:
                 emb_dict = result.to_dict()

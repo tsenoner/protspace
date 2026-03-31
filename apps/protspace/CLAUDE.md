@@ -153,7 +153,7 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 
 - **Float16 upcast:** HDF5 embeddings (often float16 from pLMs) are upcast to float32 in `data/loaders/h5.py:load_h5()` to prevent matrix overflow. A safety-net upcast also exists in `base_processor.py`.
 - **HDF5 loading:** `load_h5()` in `data/loaders/h5.py` handles both flat and grouped HDF5 layouts, validates embedding dimensions are consistent, and rejects per-residue embeddings with a clear error message.
-- **Inactive entry resolution:** `uniprot_retriever.py` resolves inactive UniProt entries via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc. Falls back to `sec_acc:` search if `fetch_one()` fails. Summary logged at WARNING; per-entry details at DEBUG.
+- **UniProt ID validation:** `uniprot_retriever.py` pre-filters identifiers with a UniProt accession regex — non-matching IDs (e.g., `NCBI|...`, `sp|P12345|NAME`) are skipped with a summary warning. Identifiers must be bare accessions (e.g., `P12345`, `A0A2P1BSS8`). Inactive entries are resolved via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc.
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
 - **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
 - **Annoy fallback:** `reducers.py` includes a lazy annoy health check. On platforms where annoy is broken (e.g., macOS ARM64 segfaults), it monkey-patches pacmap to use sklearn `NearestNeighbors` instead. The check only runs when PaCMAP/LocalMAP are first used.
@@ -200,14 +200,17 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_reducers.py` | 51 | All 6 DR methods: shapes, finite output, float16, config validation |
 | `test_interpro_annotation_retriever.py` | 46 | InterPro API mocking, parsing |
 | `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
-| `test_uniprot_annotation_retriever.py` | 29 | UniProt API mocking, inactive entry resolution |
+| `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
 | `test_pipeline_utils.py` | 28 | ReductionPipeline, EmbeddingSet, method parsing |
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
-| `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
+| `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |
 | `test_taxonomy_annotation_retriever.py` | 15 | Taxonomy via UniProt Taxonomy API (mocked + integration) |
+| `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
 | `test_h5_parse_identifier.py` | 9 | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | 8 | BaseProcessor: reduction, output creation, save |
+| `test_ted_retriever.py` | 7 | TED domain retriever (mocked AlphaFold API, CATH names) |
+| `test_pfam_clan.py` | 7 | Pfam CLAN transformer (mapping, dedup, edge cases) |
 | `test_formatters.py` | 5 | ProteinAnnotations → DataFrame formatting |
 | `test_output_combinations.py` | 4 | Output format flag combinations |
 | `test_bundle_settings.py` | 4 | Parquetbundle settings read/write |

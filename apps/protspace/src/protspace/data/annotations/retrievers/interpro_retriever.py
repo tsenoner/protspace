@@ -14,6 +14,7 @@ import requests
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
+from protspace.data.annotations.retrievers.cath_names import get_cath_names
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,11 @@ INTERPRO_MAPPING = {
 }
 
 # List of supported InterPro annotations for easy access
-INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys())
+# pfam_clan is a derived annotation (computed from pfam in the transformer)
+INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys()) + ["pfam_clan"]
+
+# Annotations derived from other InterPro fields (not fetched from API directly)
+DERIVED_INTERPRO_ANNOTATIONS = {"pfam_clan"}
 
 # API Configuration
 BASE_URL = "https://www.ebi.ac.uk/interpro/matches/api"
@@ -127,6 +132,10 @@ class InterProRetriever(BaseAnnotationRetriever):
             self.annotations = [
                 f for f in self.annotations if f in INTERPRO_ANNOTATIONS
             ]
+
+        # Ensure dependencies: pfam_clan requires pfam
+        if "pfam_clan" in self.annotations and "pfam" not in self.annotations:
+            self.annotations.append("pfam")
 
     def fetch_annotations(self) -> list[NamedTuple]:
         """
@@ -380,11 +389,10 @@ class InterProRetriever(BaseAnnotationRetriever):
         self, accessions: set[str], annotation_key: str
     ) -> dict[str, str]:
         """
-        Resolve accessions to human-readable names via the InterPro FTP XML.
+        Resolve accessions to human-readable names.
 
-        Downloads ``interpro.xml.gz`` once (cached locally for 7 days) and
-        extracts the parent InterPro entry name for each member-database
-        accession.
+        For CATH: uses the official CATH names file (all hierarchy levels).
+        For others (superfamily, panther): uses InterPro FTP XML.
 
         Args:
             accessions: Set of accessions (e.g., {"G3DSA:1.10.10.10"} or {"SSF53098"})
@@ -396,6 +404,18 @@ class InterProRetriever(BaseAnnotationRetriever):
         """
         if not accessions or annotation_key not in ENTRY_API_DB_MAPPING:
             return {}
+
+        # CATH: use authoritative CATH names file (covers all hierarchy levels)
+        if annotation_key == "cath":
+            cath_names = get_cath_names()
+            name_map = {}
+            for acc in accessions:
+                code = acc.removeprefix("G3DSA:")
+                name = cath_names.get(code, "")
+                if name:
+                    name_map[acc] = name
+            logger.info(f"Resolved {len(name_map)}/{len(accessions)} CATH names")
+            return name_map
 
         xml_db = _ANNOTATION_KEY_TO_XML_DB.get(annotation_key)
         if not xml_db:

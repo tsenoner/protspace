@@ -8,6 +8,7 @@ from collections import namedtuple
 
 from protspace.data.annotations.transformers.interpro_transforms import (
     InterProTransformer,
+    _get_pfam_clan_mapping,
 )
 from protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
@@ -23,6 +24,7 @@ class AnnotationTransformer:
         self.uniprot_transformer = UniProtTransformer()
         self.interpro_transformer = InterProTransformer()
         self._ec_name_map = None
+        self._pfam_clan_map = None
 
     def transform(self, proteins: list[ProteinAnnotations]) -> list[ProteinAnnotations]:
         """
@@ -119,6 +121,13 @@ class AnnotationTransformer:
         if "pfam" in transformed:
             transformed["pfam"] = self.interpro_transformer.transform_pfam(
                 transformed["pfam"]
+            )
+
+        if "pfam_clan" in transformed:
+            if self._pfam_clan_map is None:
+                self._pfam_clan_map = _get_pfam_clan_mapping()
+            transformed["pfam_clan"] = self.interpro_transformer.transform_pfam_clan(
+                transformed.get("pfam", ""), self._pfam_clan_map
             )
 
         return transformed
