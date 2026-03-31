@@ -158,7 +158,11 @@ def embed_sequences(
     )
 
     if not remaining:
-        print(f"All {len(sequences):,} sequences already embedded in {h5_path}")
+        logger.info(
+            "All %s sequences already embedded in %s",
+            f"{len(sequences):,}",
+            h5_path,
+        )
         return h5_path
 
     # Deduplicate sequences (API rejects batches with duplicate sequences)
