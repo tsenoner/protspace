@@ -6,9 +6,7 @@ import requests
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
-from protspace.data.annotations.retrievers.interpro_retriever import (
-    InterProRetriever,
-)
+from protspace.data.annotations.retrievers.cath_names import get_cath_names
 
 logger = logging.getLogger(__name__)
 
@@ -96,19 +94,10 @@ class TedRetriever(BaseAnnotationRetriever):
         return ";".join(parts)
 
     def _resolve_cath_name(self, cath_label: str) -> str:
-        """Resolve a CATH superfamily code to a human-readable name.
+        """Resolve a CATH code (any level) to a human-readable name.
 
-        Reuses the InterPro CATH-Gene3D name map. InterPro stores CATH
-        accessions with a 'G3DSA:' prefix, so we add it for lookup.
+        Uses the official CATH names file which covers all 4 hierarchy levels.
         """
         if self._cath_names is None:
-            try:
-                all_names = InterProRetriever._get_member_db_name_map()
-                self._cath_names = all_names.get("CATHGENE3D", {})
-            except Exception as e:
-                logger.warning(f"Failed to load CATH name map: {e}")
-                self._cath_names = {}
-
-        # InterPro stores CATH accessions as "G3DSA:2.60.40.720"
-        prefixed = f"G3DSA:{cath_label}"
-        return self._cath_names.get(prefixed, "")
+            self._cath_names = get_cath_names()
+        return self._cath_names.get(cath_label, "")
