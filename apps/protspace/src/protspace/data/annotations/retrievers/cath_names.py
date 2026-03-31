@@ -15,8 +15,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 CATH_NAMES_URL = (
-    "https://download.cathdb.info/cath/releases/all-releases/v4_4_0/"
-    "cath-classification-data/cath-names-v4_4_0.txt"
+    "https://download.cathdb.info/cath/releases/latest-release/"
+    "cath-classification-data/cath-names.txt"
 )
 CATH_CACHE_DIR = Path.home() / ".cache" / "protspace" / "cath"
 CACHE_MAX_AGE_DAYS = 30
