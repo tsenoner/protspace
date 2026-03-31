@@ -119,8 +119,8 @@ Opt_ForceRefetch = Annotated[
     bool,
     typer.Option(
         "--force-refetch",
-        help="Re-download all annotations.",
-        rich_help_panel="Annotations",
+        help="Bypass all intermediate caches and recompute everything.",
+        rich_help_panel="Output",
     ),
 ]
 
@@ -269,7 +269,10 @@ def prepare(
     from protspace.data.embedding.biocentral import EmbedConfig
     from protspace.data.loaders import EmbeddingSet, embed_fasta, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
-    from protspace.data.loaders.query import query_uniprot
+    from protspace.data.loaders.query import (
+        extract_identifiers_from_fasta,
+        query_uniprot,
+    )
 
     embed_config = EmbedConfig(batch_size=batch_size)
     embedding_sets: list[EmbeddingSet] = []
@@ -278,7 +281,20 @@ def prepare(
     try:
         if query:
             fasta_save = cache_dir / "sequences.fasta" if cache_dir else None
-            headers, fasta_path = query_uniprot(query, save_to=fasta_save)
+            if (
+                fasta_save
+                and fasta_save.exists()
+                and fasta_save.stat().st_size > 0
+                and not force_refetch
+            ):
+                logger.warning(
+                    "Using cached FASTA from %s (use --force-refetch to re-download)",
+                    fasta_save,
+                )
+                headers = extract_identifiers_from_fasta(fasta_save)
+                fasta_path = fasta_save
+            else:
+                headers, fasta_path = query_uniprot(query, save_to=fasta_save)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
 
@@ -346,6 +362,7 @@ def prepare(
                     fasta_for_similarity,
                     embedding_sets[0].headers,
                     cache_dir=cache_dir,
+                    force_refetch=force_refetch,
                 )
             )
 

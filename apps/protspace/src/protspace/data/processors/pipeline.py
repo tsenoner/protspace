@@ -3,12 +3,15 @@
 Composes: loaders → annotation fetch → dimensionality reduction → output.
 """
 
+import hashlib
+import json
 import logging
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from protspace.data.loaders import EmbeddingSet
@@ -366,6 +369,57 @@ class ReductionPipeline:
                     merged = merged.rename(columns={col: base})
         return merged
 
+    # --- Projection caching helpers ---
+
+    def _projection_cache_path(
+        self, embedding_name: str, method: str, dims: int
+    ) -> Path | None:
+        cache_dir = self.config.intermediate_dir
+        if not cache_dir or not self.config.keep_tmp:
+            return None
+        key_dict = {
+            "embedding": embedding_name,
+            "method": method,
+            "dims": dims,
+            "params": asdict(self.config.reducer_params),
+        }
+        key_json = json.dumps(key_dict, sort_keys=True, default=str)
+        h = hashlib.sha256(key_json.encode()).hexdigest()[:12]
+        return cache_dir / f"proj_{embedding_name}_{method}{dims}_{h}.npz"
+
+    def _load_cached_projection(
+        self, embedding_name: str, method: str, dims: int
+    ) -> dict[str, Any] | None:
+        path = self._projection_cache_path(embedding_name, method, dims)
+        if path is None or not path.exists() or self.config.force_refetch:
+            return None
+        logger.warning(
+            "Using cached %s %d projection for '%s' (use --force-refetch to recompute)",
+            method.upper(),
+            dims,
+            embedding_name,
+        )
+        cached = np.load(path, allow_pickle=False)
+        info = json.loads(str(cached["info"]))
+        return {
+            "name": format_projection_name(embedding_name, method, dims),
+            "dimensions": dims,
+            "info": info,
+            "data": cached["data"],
+        }
+
+    def _save_projection_cache(
+        self, embedding_name: str, method: str, dims: int, reduction: dict
+    ) -> None:
+        path = self._projection_cache_path(embedding_name, method, dims)
+        if path is None:
+            return
+        np.savez(
+            path, data=reduction["data"], info=np.array(json.dumps(reduction["info"]))
+        )
+
+    # --- Dimensionality reduction ---
+
     def _run_reductions(
         self, embedding_sets: list[EmbeddingSet]
     ) -> list[dict[str, Any]]:
@@ -374,12 +428,16 @@ class ReductionPipeline:
 
         for emb_set in embedding_sets:
             if emb_set.precomputed:
-                # Precomputed similarity → always MDS 2, ignore user methods
+                cached = self._load_cached_projection(emb_set.name, MDS_NAME, 2)
+                if cached:
+                    all_reductions.append(cached)
+                    continue
                 self.base.config["precomputed"] = True
                 logger.info(f"Applying MDS 2 to '{emb_set.name}' (precomputed)")
                 reduction = self.base.process_reduction(emb_set.data, MDS_NAME, 2)
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 all_reductions.append(reduction)
+                self._save_projection_cache(emb_set.name, MDS_NAME, 2, reduction)
                 self.base.config.pop("precomputed", None)
                 continue
 
@@ -390,11 +448,15 @@ class ReductionPipeline:
                     logger.warning(f"Unknown method: {method}. Skipping.")
                     continue
 
+                cached = self._load_cached_projection(emb_set.name, method, dims)
+                if cached:
+                    all_reductions.append(cached)
+                    continue
+
                 logger.info(f"Applying {method.upper()} {dims} to '{emb_set.name}'")
                 reduction = self.base.process_reduction(emb_set.data, method, dims)
-
                 reduction["name"] = format_projection_name(emb_set.name, method, dims)
-
                 all_reductions.append(reduction)
+                self._save_projection_cache(emb_set.name, method, dims, reduction)
 
         return all_reductions
