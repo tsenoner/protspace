@@ -83,7 +83,7 @@ protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 | ---- | ----------- | ------- |
 | `-a, --annotations` | Annotation sources: groups, individual names, or a CSV/TSV file path. See [Annotation Reference](annotations.md). | `default` |
 | `--scores / --no-scores` | Include annotation confidence scores. | on |
-| `--force-refetch` | Re-download all annotations. | off |
+| `--refetch STAGES` | Recompute specific stages (comma-separated): query, embed, similarity, projections, uniprot, taxonomy, interpro, ted, biocentral. Shorthands: `all`, `annotations`. | off |
 
 #### Output
 
@@ -184,6 +184,6 @@ With `--keep-tmp` (default), all intermediate results are cached in `{output}/tm
 
 - Annotation cache always includes scores regardless of `--no-scores`
 - DR projection caches are keyed by embedding name, method, dimensions, and all parameters — changing any parameter creates a new cache entry
-- Use `--force-refetch` to bypass all caches and recompute everything
+- Use `--refetch all` to bypass all caches, or `--refetch <stages>` selectively (e.g., `--refetch ted,biocentral`)
 
 See also: [Annotation Reference](annotations.md) | [Annotation Styling](styling.md)
