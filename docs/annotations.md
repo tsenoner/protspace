@@ -177,7 +177,8 @@ Per-protein predictions from the [Biocentral API](https://biocentral.rostlab.org
 
 | Cache          | Location                          | Max Age  | Purpose                                           |
 | -------------- | --------------------------------- | -------- | ------------------------------------------------- |
-| InterPro names | `~/.cache/protspace/interpro/`    | 7 days   | Domain entry names for cath, superfamily, panther |
+| CATH names     | `~/.cache/protspace/cath/`        | 30 days  | CATH hierarchy names (all levels) for TED and cath |
+| InterPro names | `~/.cache/protspace/interpro/`    | 7 days   | Domain entry names for superfamily, panther        |
 | EC names       | `~/.cache/protspace/enzyme/`      | 7 days   | Enzyme descriptions from ExPASy                   |
 | Pfam clans     | `~/.cache/protspace/pfam_clans/`  | 30 days  | Pfam family → clan mapping                        |
 

@@ -421,14 +421,14 @@ def _make_name_map(**kwargs):
 class TestEntryNameResolution:
     """Test entry name resolution via InterPro XML-based name map."""
 
-    @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_resolve_cath_names_success(self, mock_name_map):
-        """Test successful CATH name resolution."""
-        mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={
-                "G3DSA:1.10.10.10": "Winged helix-like DNA-binding domain superfamily"
-            }
-        )
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
+    )
+    def test_resolve_cath_names_success(self, mock_cath_names):
+        """Test successful CATH name resolution via CATH names file."""
+        mock_cath_names.return_value = {
+            "1.10.10.10": "Winged helix-like DNA-binding domain superfamily"
+        }
 
         retriever = InterProAnnotationRetriever(annotations=["cath"])
         result = retriever._resolve_entry_names({"G3DSA:1.10.10.10"}, "cath")
@@ -449,10 +449,12 @@ class TestEntryNameResolution:
 
         assert result == {"SSF53098": "Ribonuclease H-like"}
 
-    @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_resolve_entry_names_download_failure(self, mock_name_map):
-        """Test graceful handling when name map returns empty (download failed)."""
-        mock_name_map.return_value = {}
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
+    )
+    def test_resolve_entry_names_download_failure(self, mock_cath_names):
+        """Test graceful handling when CATH names returns empty (download failed)."""
+        mock_cath_names.return_value = {}
 
         retriever = InterProAnnotationRetriever(annotations=["cath"])
         result = retriever._resolve_entry_names({"G3DSA:1.10.10.10"}, "cath")
@@ -473,15 +475,15 @@ class TestEntryNameResolution:
 
         assert result == {}
 
-    @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_resolve_entry_names_multiple_accessions(self, mock_name_map):
-        """Test resolving multiple accessions."""
-        mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={
-                "G3DSA:1.10.10.10": "Winged helix",
-                "G3DSA:2.40.50.140": "OB fold",
-            }
-        )
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
+    )
+    def test_resolve_entry_names_multiple_accessions(self, mock_cath_names):
+        """Test resolving multiple CATH accessions."""
+        mock_cath_names.return_value = {
+            "1.10.10.10": "Winged helix",
+            "2.40.50.140": "OB fold",
+        }
 
         retriever = InterProAnnotationRetriever(annotations=["cath"])
         result = retriever._resolve_entry_names(
@@ -525,8 +527,10 @@ class TestEntryNameResolution:
 class TestParsingWithNameResolution:
     """Test that CATH and SUPERFAMILY names are injected into parsed results."""
 
-    @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_parse_cath_with_resolved_names(self, mock_name_map):
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
+    )
+    def test_parse_cath_with_resolved_names(self, mock_cath_names):
         """Test that CATH annotations include resolved names."""
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["cath"]
@@ -538,12 +542,10 @@ class TestParsingWithNameResolution:
         api_result = create_api_result(TEST_MD5, found=True, matches=[match1, match2])
         api_results = [api_result]
 
-        mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={
-                "G3DSA:1.10.10.10": "Winged helix",
-                "G3DSA:2.40.50.140": "OB fold",
-            }
-        )
+        mock_cath_names.return_value = {
+            "1.10.10.10": "Winged helix",
+            "2.40.50.140": "OB fold",
+        }
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
         result = retriever._parse_interpro_results(api_results, md5_to_identifier)
@@ -595,10 +597,8 @@ class TestParsingWithNameResolution:
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
         api_results = [api_result]
 
-        # The XML would return a different name, but shouldn't be used
-        mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={"G3DSA:1.10.10.10": "XML name"}
-        )
+        # _get_member_db_name_map won't be called for cath (uses get_cath_names now)
+        mock_name_map.return_value = _make_name_map()
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
         result = retriever._parse_interpro_results(api_results, md5_to_identifier)
@@ -635,9 +635,11 @@ class TestParsingWithNameResolution:
             == "SSF53098 (Matches API name)|1.5e-20"
         )
 
-    @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_parse_cath_partial_name_resolution(self, mock_name_map):
-        """Test when only some CATH names can be resolved (accession not in XML)."""
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
+    )
+    def test_parse_cath_partial_name_resolution(self, mock_cath_names):
+        """Test when only some CATH names can be resolved."""
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["cath"]
 
@@ -646,10 +648,7 @@ class TestParsingWithNameResolution:
         api_result = create_api_result(TEST_MD5, found=True, matches=[match1, match2])
         api_results = [api_result]
 
-        # Only G3DSA:1.10.10.10 appears in the XML
-        mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={"G3DSA:1.10.10.10": "Winged helix"}
-        )
+        mock_cath_names.return_value = {"1.10.10.10": "Winged helix"}
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
         result = retriever._parse_interpro_results(api_results, md5_to_identifier)
@@ -673,8 +672,13 @@ class TestParsingWithNameResolution:
 
         assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
 
+    @patch(
+        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
+    )
     @patch.object(InterProRetriever, "_get_member_db_name_map")
-    def test_parse_both_cath_and_superfamily_resolved(self, mock_name_map):
+    def test_parse_both_cath_and_superfamily_resolved(
+        self, mock_name_map, mock_cath_names
+    ):
         """Test that both CATH and SUPERFAMILY names are resolved in a single parse."""
         md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
         annotations = ["cath", "superfamily"]
@@ -688,8 +692,8 @@ class TestParsingWithNameResolution:
         )
         api_results = [api_result]
 
+        mock_cath_names.return_value = {"1.10.10.10": "Winged helix"}
         mock_name_map.return_value = _make_name_map(
-            CATHGENE3D={"G3DSA:1.10.10.10": "Winged helix"},
             SSF={"SSF53098": "Ribonuclease H-like"},
         )
 

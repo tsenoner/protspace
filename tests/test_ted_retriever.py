@@ -26,8 +26,7 @@ def _make_domain(cath_label="2.60.40.720", plddt=95.1, start=109, end=287):
 
 _REQUESTS_PATCH = "src.protspace.data.annotations.retrievers.ted_retriever.requests"
 _CATH_NAMES_PATCH = (
-    "src.protspace.data.annotations.retrievers.ted_retriever.InterProRetriever"
-    "._get_member_db_name_map"
+    "src.protspace.data.annotations.retrievers.ted_retriever.get_cath_names"
 )
 
 
@@ -38,9 +37,7 @@ class TestTedRetriever:
     @patch(_REQUESTS_PATCH)
     def test_single_domain(self, mock_requests, mock_cath_names):
         """Single domain with CATH name."""
-        mock_cath_names.return_value = {
-            "CATHGENE3D": {"G3DSA:2.60.40.720": "Immunoglobulin-like"}
-        }
+        mock_cath_names.return_value = {"2.60.40.720": "Immunoglobulin-like"}
         mock_resp = MagicMock()
         mock_resp.json.return_value = _make_alphafold_response(
             [_make_domain("2.60.40.720", 95.1)]
@@ -63,10 +60,8 @@ class TestTedRetriever:
     def test_multiple_domains(self, mock_requests, mock_cath_names):
         """Protein with multiple domains."""
         mock_cath_names.return_value = {
-            "CATHGENE3D": {
-                "G3DSA:2.60.40.720": "Immunoglobulin-like",
-                "G3DSA:3.40.50.300": "P-loop NTPases",
-            }
+            "2.60.40.720": "Immunoglobulin-like",
+            "3.40.50.300": "P-loop NTPases",
         }
         mock_resp = MagicMock()
         mock_resp.json.return_value = _make_alphafold_response(
@@ -90,7 +85,7 @@ class TestTedRetriever:
     @patch(_REQUESTS_PATCH)
     def test_no_domains(self, mock_requests, mock_cath_names):
         """Protein with no domains returns empty string."""
-        mock_cath_names.return_value = {"CATHGENE3D": {}}
+        mock_cath_names.return_value = {}
         mock_resp = MagicMock()
         mock_resp.json.return_value = {}  # Empty response
         mock_resp.raise_for_status = MagicMock()
@@ -105,7 +100,7 @@ class TestTedRetriever:
     @patch(_REQUESTS_PATCH)
     def test_unclassified_domain(self, mock_requests, mock_cath_names):
         """Domain with cath_label '-' shows as unclassified."""
-        mock_cath_names.return_value = {"CATHGENE3D": {}}
+        mock_cath_names.return_value = {}
         mock_resp = MagicMock()
         mock_resp.json.return_value = _make_alphafold_response(
             [_make_domain("-", 90.5)]
@@ -122,7 +117,7 @@ class TestTedRetriever:
     @patch(_REQUESTS_PATCH)
     def test_api_error_returns_empty(self, mock_requests, mock_cath_names):
         """API error returns empty annotation."""
-        mock_cath_names.return_value = {"CATHGENE3D": {}}
+        mock_cath_names.return_value = {}
         mock_requests.get.side_effect = Exception("Connection error")
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
@@ -134,7 +129,7 @@ class TestTedRetriever:
     @patch(_REQUESTS_PATCH)
     def test_cath_name_not_found(self, mock_requests, mock_cath_names):
         """CATH code without a name shows code only."""
-        mock_cath_names.return_value = {"CATHGENE3D": {}}  # No names
+        mock_cath_names.return_value = {}  # No names
         mock_resp = MagicMock()
         mock_resp.json.return_value = _make_alphafold_response(
             [_make_domain("3.40.50.2300", 96.8)]
@@ -146,6 +141,28 @@ class TestTedRetriever:
         result = retriever.fetch_annotations()
 
         assert result[0].annotations["ted_domains"] == "3.40.50.2300|96.8"
+
+    @patch(_CATH_NAMES_PATCH)
+    @patch(_REQUESTS_PATCH)
+    def test_partial_cath_code(self, mock_requests, mock_cath_names):
+        """Partial CATH code (3 numbers) resolves directly from CATH names."""
+        mock_cath_names.return_value = {
+            "2.60.40": "Immunoglobulin-like",
+            "2.60.40.720": "Immunoglobulins",
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_alphafold_response(
+            [_make_domain("2.60.40", 91.0)]
+        )
+        mock_resp.raise_for_status = MagicMock()
+        mock_requests.get.return_value = mock_resp
+
+        retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
+        result = retriever.fetch_annotations()
+
+        assert (
+            "2.60.40 (Immunoglobulin-like)|91.0" in result[0].annotations["ted_domains"]
+        )
 
 
 class TestTedConstants:
