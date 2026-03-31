@@ -46,11 +46,7 @@ def compute_similarity(
     ):
         cached_headers = list(np.load(headers_cache, allow_pickle=False))
         if cached_headers == headers:
-            logger.warning(
-                "Using cached similarity matrix from %s "
-                "(use --force-refetch to recompute)",
-                matrix_cache,
-            )
+            logger.warning("Using cached similarity matrix")
             return EmbeddingSet(
                 name="MMseqs2",
                 data=np.load(matrix_cache),

@@ -159,6 +159,49 @@ Opt_NoLog = Annotated[
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _embed_all(
+    embedders: list[str],
+    fasta_path: Path,
+    cache_dir: Path | None,
+    embed_config: EmbedConfig | None,
+    embedding_sets: list,
+) -> list[str]:
+    """Embed all models, return list of cache-hit model names."""
+    from protspace.data.loaders.fasta import embed_fasta
+
+    cached_names: list[str] = []
+    for emb_name in embedders:
+        emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None
+        old_mtime = (
+            emb_cache.stat().st_mtime if emb_cache and emb_cache.exists() else None
+        )
+        emb_set = embed_fasta(
+            fasta_path,
+            emb_name,
+            embed_config=embed_config,
+            embedding_cache=emb_cache,
+        )
+        emb_set.fasta_path = fasta_path
+        embedding_sets.append(emb_set)
+        # Cache hit if file existed before and was not modified
+        if old_mtime is not None and emb_cache.stat().st_mtime == old_mtime:
+            cached_names.append(emb_name)
+
+    if cached_names:
+        logger.warning(
+            "Using %d cached embedding%s (%s)",
+            len(cached_names),
+            "s" if len(cached_names) != 1 else "",
+            ", ".join(cached_names),
+        )
+    return cached_names
+
+
+# ---------------------------------------------------------------------------
 # Command
 # ---------------------------------------------------------------------------
 
@@ -267,7 +310,7 @@ def prepare(
 
     # --- Build embedding sets ---
     from protspace.data.embedding.biocentral import EmbedConfig
-    from protspace.data.loaders import EmbeddingSet, embed_fasta, load_h5
+    from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
     from protspace.data.loaders.query import (
         extract_identifiers_from_fasta,
@@ -287,11 +330,11 @@ def prepare(
                 and fasta_save.stat().st_size > 0
                 and not force_refetch
             ):
-                logger.warning(
-                    "Using cached FASTA from %s (use --force-refetch to re-download)",
-                    fasta_save,
-                )
                 headers = extract_identifiers_from_fasta(fasta_save)
+                logger.warning(
+                    "Using cached FASTA (%s sequences)",
+                    f"{len(headers):,}",
+                )
                 fasta_path = fasta_save
             else:
                 headers, fasta_path = query_uniprot(query, save_to=fasta_save)
@@ -303,16 +346,7 @@ def prepare(
 
                 embedders = [DEFAULT_EMBEDDER]
 
-            for emb_name in embedders:
-                emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None
-                emb_set = embed_fasta(
-                    fasta_path,
-                    emb_name,
-                    embed_config=embed_config,
-                    embedding_cache=emb_cache,
-                )
-                emb_set.fasta_path = fasta_path
-                embedding_sets.append(emb_set)
+            _embed_all(embedders, fasta_path, cache_dir, embed_config, embedding_sets)
             fasta_for_similarity = fasta_path
 
         elif input_specs:
@@ -332,16 +366,7 @@ def prepare(
                         emb_set.fasta_path = fasta_for_similarity
                     embedding_sets.append(emb_set)
                 elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
-                    for emb_name in embedders:
-                        emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None
-                        emb_set = embed_fasta(
-                            path,
-                            emb_name,
-                            embed_config=embed_config,
-                            embedding_cache=emb_cache,
-                        )
-                        emb_set.fasta_path = path
-                        embedding_sets.append(emb_set)
+                    _embed_all(embedders, path, cache_dir, embed_config, embedding_sets)
                     fasta_for_similarity = path
                 else:
                     raise typer.BadParameter(f"Unsupported file: {path}")
@@ -408,6 +433,9 @@ def prepare(
         )
 
         ReductionPipeline(config).run(embedding_sets)
+
+        if keep_tmp and not force_refetch:
+            logger.warning("Hint: use --force-refetch to recompute everything")
 
     except (FileNotFoundError, ValueError) as e:
         logger.error(str(e))

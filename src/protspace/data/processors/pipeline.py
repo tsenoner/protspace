@@ -254,10 +254,7 @@ class ReductionPipeline:
                 missing = required - cached_annotations
 
                 if not missing and not force_refetch:
-                    logger.warning(
-                        f"Using cached annotations from {cache_path} "
-                        f"(use --force-refetch to re-download)"
-                    )
+                    logger.warning("Using cached annotations")
                     if annotations_list:
                         cols = ["identifier"] + [
                             f for f in annotations_list if f in cached_df.columns
@@ -393,8 +390,8 @@ class ReductionPipeline:
         path = self._projection_cache_path(embedding_name, method, dims)
         if path is None or not path.exists() or self.config.force_refetch:
             return None
-        logger.warning(
-            "Using cached %s %d projection for '%s' (use --force-refetch to recompute)",
+        logger.info(
+            "Using cached %s %d projection for '%s'",
             method.upper(),
             dims,
             embedding_name,
@@ -425,12 +422,15 @@ class ReductionPipeline:
     ) -> list[dict[str, Any]]:
         """Run dimensionality reduction on all embedding sets."""
         all_reductions = []
+        cached_projections: list[str] = []  # e.g. "PCA 2 (prot_t5)"
+        computed_count = 0
 
         for emb_set in embedding_sets:
             if emb_set.precomputed:
                 cached = self._load_cached_projection(emb_set.name, MDS_NAME, 2)
                 if cached:
                     all_reductions.append(cached)
+                    cached_projections.append(f"MDS 2 ({emb_set.name})")
                     continue
                 self.base.config["precomputed"] = True
                 logger.info(f"Applying MDS 2 to '{emb_set.name}' (precomputed)")
@@ -439,6 +439,7 @@ class ReductionPipeline:
                 all_reductions.append(reduction)
                 self._save_projection_cache(emb_set.name, MDS_NAME, 2, reduction)
                 self.base.config.pop("precomputed", None)
+                computed_count += 1
                 continue
 
             for method_spec in self.config.methods:
@@ -451,6 +452,9 @@ class ReductionPipeline:
                 cached = self._load_cached_projection(emb_set.name, method, dims)
                 if cached:
                     all_reductions.append(cached)
+                    cached_projections.append(
+                        f"{method.upper()} {dims} ({emb_set.name})"
+                    )
                     continue
 
                 logger.info(f"Applying {method.upper()} {dims} to '{emb_set.name}'")
@@ -458,5 +462,13 @@ class ReductionPipeline:
                 reduction["name"] = format_projection_name(emb_set.name, method, dims)
                 all_reductions.append(reduction)
                 self._save_projection_cache(emb_set.name, method, dims, reduction)
+                computed_count += 1
+
+        if cached_projections:
+            logger.warning(
+                "Using %d cached projection%s",
+                len(cached_projections),
+                "s" if len(cached_projections) != 1 else "",
+            )
 
         return all_reductions
