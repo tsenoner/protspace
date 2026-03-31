@@ -49,7 +49,7 @@ class PipelineConfig:
     bundled: bool = True
     keep_tmp: bool = False
     no_scores: bool = False
-    force_refetch: bool = False
+    refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
     reducer_params: ReducerParams = field(default_factory=ReducerParams)
@@ -232,7 +232,9 @@ class ReductionPipeline:
 
         keep_tmp = self.config.keep_tmp
         intermediate_dir = self.config.intermediate_dir
-        force_refetch = self.config.force_refetch
+        refetch = self.config.refetch_stages
+        _ANN_SOURCES = ("uniprot", "taxonomy", "interpro", "ted", "biocentral")
+        refetching_annotations = bool(refetch & set(_ANN_SOURCES))
 
         if keep_tmp and intermediate_dir:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -253,7 +255,7 @@ class ReductionPipeline:
 
                 missing = required - cached_annotations
 
-                if not missing and not force_refetch:
+                if not missing and not refetching_annotations:
                     logger.warning("Using cached annotations")
                     if annotations_list:
                         cols = ["identifier"] + [
@@ -273,8 +275,8 @@ class ReductionPipeline:
                             logger.warning(
                                 "All cached annotations are empty. This may be "
                                 "from a previous run with non-UniProt identifiers. "
-                                "Use --force-refetch to re-fetch, or provide a "
-                                "FASTA file with -f."
+                                "Use --refetch annotations to re-fetch, or provide "
+                                "a FASTA file with -f."
                             )
 
                     return self._merge_csv(api_df, csv_df)
@@ -287,10 +289,26 @@ class ReductionPipeline:
                     cached_annotations, required
                 )
 
-                if force_refetch:
-                    logger.info("--force-refetch: re-fetching all annotations")
-                    sources = {"uniprot": True, "taxonomy": True, "interpro": True}
-                    cached_df = None
+                if refetching_annotations:
+                    # Override with explicitly requested sources
+                    sources = {src: src in refetch for src in _ANN_SOURCES}
+                    refetched = [s for s in _ANN_SOURCES if sources[s]]
+                    logger.info(f"--refetch: re-fetching {', '.join(refetched)}")
+                    # Drop cached columns for refetched sources so manager
+                    # re-fetches them
+                    from protspace.data.annotations.configuration import (
+                        AnnotationConfiguration as AnnCfg,
+                    )
+
+                    cols_to_drop = set()
+                    for src in refetched:
+                        cols_to_drop |= AnnCfg.categorize_annotations_by_source(
+                            cached_annotations
+                        ).get(src, set())
+                    if cols_to_drop:
+                        cached_df = cached_df.drop(
+                            columns=[c for c in cols_to_drop if c in cached_df.columns]
+                        )
                 else:
                     logger.info(f"Missing annotations: {missing}")
 
@@ -388,7 +406,11 @@ class ReductionPipeline:
         self, embedding_name: str, method: str, dims: int
     ) -> dict[str, Any] | None:
         path = self._projection_cache_path(embedding_name, method, dims)
-        if path is None or not path.exists() or self.config.force_refetch:
+        if (
+            path is None
+            or not path.exists()
+            or "projections" in self.config.refetch_stages
+        ):
             return None
         logger.info(
             "Using cached %s %d projection for '%s'",

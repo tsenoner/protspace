@@ -2,6 +2,7 @@
 
 import logging
 import re
+import warnings
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 
@@ -135,10 +136,16 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         )
 
         try:
-            result = api.predict(
-                model_names=model_enums,
-                sequence_data=seq_data,
-            ).run_with_progress()
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*longer than the recommended.*",
+                    category=UserWarning,
+                )
+                result = api.predict(
+                    model_names=model_enums,
+                    sequence_data=seq_data,
+                ).run_with_progress()
             return result
         except Exception as e:
             logger.warning(f"Biocentral prediction failed: {e}")

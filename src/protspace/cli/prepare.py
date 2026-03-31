@@ -115,11 +115,42 @@ Opt_Scores = Annotated[
         rich_help_panel="Annotations",
     ),
 ]
-Opt_ForceRefetch = Annotated[
-    bool,
+REFETCH_STAGES = frozenset(
+    {
+        "query",
+        "embed",
+        "similarity",
+        "projections",
+        "uniprot",
+        "taxonomy",
+        "interpro",
+        "ted",
+        "biocentral",
+    }
+)
+ANNOTATION_SOURCES = frozenset(
+    {
+        "uniprot",
+        "taxonomy",
+        "interpro",
+        "ted",
+        "biocentral",
+    }
+)
+REFETCH_SHORTHANDS: dict[str, frozenset[str]] = {
+    "all": REFETCH_STAGES,
+    "annotations": ANNOTATION_SOURCES,
+}
+Opt_Refetch = Annotated[
+    str | None,
     typer.Option(
-        "--force-refetch",
-        help="Bypass all intermediate caches and recompute everything.",
+        "--refetch",
+        help=(
+            "Recompute specific stages (comma-separated). "
+            "Stages: query, embed, similarity, projections, "
+            "uniprot, taxonomy, interpro, ted, biocentral. "
+            "Shorthands: all, annotations."
+        ),
         rich_help_panel="Output",
     ),
 ]
@@ -163,12 +194,36 @@ Opt_NoLog = Annotated[
 # ---------------------------------------------------------------------------
 
 
+def _parse_refetch(raw: str | None) -> frozenset[str]:
+    """Parse ``--refetch`` value into a set of stage names."""
+    if not raw:
+        return frozenset()
+    stages: set[str] = set()
+    for token in raw.split(","):
+        token = token.strip().lower()
+        if not token:
+            continue
+        if token in REFETCH_SHORTHANDS:
+            stages |= REFETCH_SHORTHANDS[token]
+        elif token in REFETCH_STAGES:
+            stages.add(token)
+        else:
+            raise typer.BadParameter(
+                f"Unknown refetch stage: '{token}'. "
+                f"Valid stages: {', '.join(sorted(REFETCH_STAGES))}. "
+                f"Shorthands: {', '.join(sorted(REFETCH_SHORTHANDS))}."
+            )
+    return frozenset(stages)
+
+
 def _embed_all(
     embedders: list[str],
     fasta_path: Path,
     cache_dir: Path | None,
     embed_config: EmbedConfig | None,
     embedding_sets: list,
+    *,
+    force_reembed: bool = False,
 ) -> list[str]:
     """Embed all models, return list of cache-hit model names."""
     from protspace.data.loaders.fasta import embed_fasta
@@ -176,6 +231,9 @@ def _embed_all(
     cached_names: list[str] = []
     for emb_name in embedders:
         emb_cache = cache_dir / f"{emb_name}.h5" if cache_dir else None
+        # Delete cache to force re-embedding
+        if force_reembed and emb_cache and emb_cache.exists():
+            emb_cache.unlink()
         old_mtime = (
             emb_cache.stat().st_mtime if emb_cache and emb_cache.exists() else None
         )
@@ -232,7 +290,7 @@ def prepare(
     # Annotations
     annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
-    force_refetch: Opt_ForceRefetch = False,
+    refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),
     keep_tmp: Opt_KeepTmp = True,
@@ -257,6 +315,10 @@ def prepare(
         )
 
     setup_logging(verbose)
+
+    refetch_stages = _parse_refetch(refetch)
+    if refetch_stages:
+        logger.info(f"Refetching stages: {', '.join(sorted(refetch_stages))}")
 
     input_specs = _parse_input_specs(input) if input else []
 
@@ -328,7 +390,7 @@ def prepare(
                 fasta_save
                 and fasta_save.exists()
                 and fasta_save.stat().st_size > 0
-                and not force_refetch
+                and "query" not in refetch_stages
             ):
                 headers = extract_identifiers_from_fasta(fasta_save)
                 logger.warning(
@@ -346,7 +408,14 @@ def prepare(
 
                 embedders = [DEFAULT_EMBEDDER]
 
-            _embed_all(embedders, fasta_path, cache_dir, embed_config, embedding_sets)
+            _embed_all(
+                embedders,
+                fasta_path,
+                cache_dir,
+                embed_config,
+                embedding_sets,
+                force_reembed="embed" in refetch_stages,
+            )
             fasta_for_similarity = fasta_path
 
         elif input_specs:
@@ -366,7 +435,14 @@ def prepare(
                         emb_set.fasta_path = fasta_for_similarity
                     embedding_sets.append(emb_set)
                 elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
-                    _embed_all(embedders, path, cache_dir, embed_config, embedding_sets)
+                    _embed_all(
+                        embedders,
+                        path,
+                        cache_dir,
+                        embed_config,
+                        embedding_sets,
+                        force_reembed="embed" in refetch_stages,
+                    )
                     fasta_for_similarity = path
                 else:
                     raise typer.BadParameter(f"Unsupported file: {path}")
@@ -387,7 +463,7 @@ def prepare(
                     fasta_for_similarity,
                     embedding_sets[0].headers,
                     cache_dir=cache_dir,
-                    force_refetch=force_refetch,
+                    force_refetch="similarity" in refetch_stages,
                 )
             )
 
@@ -426,7 +502,7 @@ def prepare(
             bundled=bundled,
             keep_tmp=keep_tmp,
             no_scores=not scores,
-            force_refetch=force_refetch,
+            refetch_stages=refetch_stages,
             annotations=annotation_list,
             intermediate_dir=cache_dir,
             reducer_params=reducer_params,
@@ -434,8 +510,11 @@ def prepare(
 
         ReductionPipeline(config).run(embedding_sets)
 
-        if keep_tmp and not force_refetch:
-            logger.warning("Hint: use --force-refetch to recompute everything")
+        if keep_tmp and not refetch_stages:
+            logger.warning(
+                "Hint: use --refetch all to recompute everything, "
+                "or --refetch <stages> selectively"
+            )
 
     except (FileNotFoundError, ValueError) as e:
         logger.error(str(e))
