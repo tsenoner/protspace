@@ -1,26 +1,41 @@
 # Annotation Reference
 
-ProtSpace retrieves annotations from three data sources: **UniProt**, **InterPro**, and **NCBI Taxonomy**. Select annotations with `-a` in `protspace prepare`.
+ProtSpace retrieves annotations from five data sources: **UniProt**, **InterPro**, **Taxonomy**, **TED Domains**, and **Biocentral Predictions**. Select annotations with `-a` in `protspace prepare`.
 
 ## Available Annotations
 
-| Source           | Annotations                                                                                                                                                                                                |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **UniProt** (14) | `annotation_score`, `cc_subcellular_location`, `ec`, `fragment`, `gene_name`, `go_bp`, `go_cc`, `go_mf`, `keyword`, `length`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb` |
-| **InterPro** (9) | `cath`, `cdd`, `panther`, `pfam`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily`                                                                                                        |
-| **Taxonomy** (9) | `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`                                                                                                                  |
+| Source               | Annotations                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **UniProt** (14)     | `annotation_score`, `cc_subcellular_location`, `ec`, `fragment`, `gene_name`, `go_bp`, `go_cc`, `go_mf`, `keyword`, `length`, `protein_existence`, `protein_families`, `reviewed`, `xref_pdb` |
+| **InterPro** (10)    | `cath`, `cdd`, `panther`, `pfam`, `pfam_clan`, `prints`, `prosite`, `signal_peptide`, `smart`, `superfamily`                                                                                           |
+| **Taxonomy** (9)     | `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`                                                                                                                  |
+| **TED** (1)          | `ted_domains`                                                                                                                                                                                          |
+| **Biocentral** (4)   | `predicted_subcellular_location`, `predicted_membrane`, `predicted_signal_peptide`, `predicted_transmembrane`                                                                                           |
 
 _Always included_: `gene_name`, `protein_name`, `uniprot_kb_id` (fetched regardless of selection).
 
+### Input Requirements
+
+Annotation sources have different requirements for protein identifiers:
+
+| Requirement | Sources | Works with `-f` FASTA? |
+| ----------- | ------- | ---------------------- |
+| **UniProt accession** | UniProt, Taxonomy, TED | No — accession needed |
+| **Protein sequence** | InterPro, Biocentral, Pfam CLANS | Yes — provide `-f` |
+
+If your H5 keys are not valid UniProt accessions (e.g., `NCBI|...`, custom IDs), accession-dependent annotations will be empty. Sequence-dependent annotations can still work if you provide the original FASTA file with `-f`.
+
 ## Group Presets
 
-| Group      | Contents                                                   |
-| ---------- | ---------------------------------------------------------- |
-| `default`  | `ec`, `keyword`, `length`, `protein_families`, `reviewed`  |
-| `all`      | All annotations from all sources                           |
-| `uniprot`  | All UniProt annotations                                    |
-| `interpro` | All InterPro annotations                                   |
-| `taxonomy` | All taxonomy annotations                                   |
+| Group        | Contents                                                                    |
+| ------------ | --------------------------------------------------------------------------- |
+| `default`    | `ec`, `keyword`, `length`, `protein_families`, `reviewed`                   |
+| `all`        | All annotations from all sources                                            |
+| `uniprot`    | All UniProt annotations                                                     |
+| `interpro`   | All InterPro annotations (incl. `pfam_clan`)                                |
+| `taxonomy`   | All taxonomy annotations                                                    |
+| `ted`        | All TED domain annotations                                                  |
+| `biocentral` | All Biocentral prediction annotations                                       |
 
 Groups are mixable with individual names. If `-a` is omitted, `default` is used.
 
@@ -28,6 +43,7 @@ Groups are mixable with individual names. If `-a` is omitted, `default` is used.
 protspace prepare -i data.h5:prot_t5                          # default group
 protspace prepare -i data.h5:prot_t5 -a all                   # everything
 protspace prepare -i data.h5:prot_t5 -a default,interpro,kingdom
+protspace prepare -i data.h5:prot_t5 -a ted,biocentral        # all predictions
 protspace prepare -i data.h5:prot_t5 -a pfam,cath,reviewed
 protspace prepare -q "..." -e prot_t5 -a interpro,kingdom
 ```
@@ -120,16 +136,50 @@ Codes are derived from [ECO (Evidence & Conclusion Ontology)](https://www.eviden
 
 Three databases (`cath`, `superfamily`, `panther`) resolve human-readable entry names via InterPro FTP XML (cached 7 days). `cath` has `G3DSA:` prefix removed; `signal_peptide` is converted to `True`/`False`.
 
+### Derived Annotation
+
+| Name        | Source | Description                                               |
+| ----------- | ------ | --------------------------------------------------------- |
+| `pfam_clan` | Pfam   | Maps Pfam families to CLANS (higher-level groupings)      |
+
+**Output format**: `CL0023 (P-loop_NTPase);CL0192 (HAD)` — semicolon-separated unique clan IDs with names. Requires `pfam` (fetched automatically). Clan mapping from [Pfam FTP](https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.clans.tsv.gz) (cached 30 days).
+
+## TED Domain Annotations
+
+Structure-based domain annotations from [TED (The Encyclopedia of Domains)](https://ted.cathdb.info/) via the [AlphaFold Database API](https://alphafold.ebi.ac.uk/):
+
+| Name          | Description                                                |
+| ------------- | ---------------------------------------------------------- |
+| `ted_domains` | Structural domains with CATH classification and confidence |
+
+**Output format**: `2.60.40.720 (Immunoglobulin-like)|95.1;3.40.50.300|88.3` — semicolon-separated domains. Each domain has a CATH superfamily code, name (when available, resolved from InterPro CATH-Gene3D cache), and pLDDT confidence score. Unclassified domains show as `unclassified|{plddt}`.
+
+**Data source**: Per-protein lookup via `alphafold.ebi.ac.uk/api/domains/{accession}`. Domains are predicted from AlphaFold structures using a consensus of Chainsaw, Merizo, and UniDoc methods.
+
 ## Taxonomy Annotations
 
-9 taxonomic ranks resolved via `taxopy` (NCBI Taxonomy): `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`. `root` is the cellular/acellular classification; `domain` is the top-level biological domain (e.g. Bacteria, Archaea, Eukaryota). Requires `organism_id` from UniProt (fetched automatically).
+9 taxonomic ranks resolved via the [UniProt Taxonomy API](https://rest.uniprot.org/taxonomy/search): `root`, `domain`, `kingdom`, `phylum`, `class`, `order`, `family`, `genus`, `species`. `root` is the cellular/acellular classification; `domain` is the top-level biological domain (e.g. Bacteria, Archaea, Eukaryota). Requires `organism_id` from UniProt (fetched automatically).
+
+## Biocentral Prediction Annotations
+
+Per-protein predictions from the [Biocentral API](https://biocentral.rostlab.org/) using pre-trained models. Requires protein sequences (fetched automatically from UniProt).
+
+| Name                             | Model                                | Description                                |
+| -------------------------------- | ------------------------------------ | ------------------------------------------ |
+| `predicted_subcellular_location` | LightAttention                       | 10-class subcellular localization          |
+| `predicted_membrane`             | LightAttention                       | Membrane / Soluble                         |
+| `predicted_signal_peptide`       | TMbed                                | True / False (derived from topology)       |
+| `predicted_transmembrane`        | TMbed                                | none / alpha-helical / beta-barrel         |
+
+**Data source**: Batch predictions via Biocentral API (`api.predict()`). TMbed provides per-residue topology labels (`H`=TM helix, `B`=TM beta strand, `S`=signal peptide); signal peptide and transmembrane type are summarized from these labels.
 
 ## Caching
 
-| Cache          | Location                       | Max Age | Purpose                                           |
-| -------------- | ------------------------------ | ------- | ------------------------------------------------- |
-| NCBI Taxonomy  | `~/.cache/taxopy_db/`          | 7 days  | Taxonomy lineage resolution                       |
-| InterPro names | `~/.cache/protspace/interpro/` | 7 days  | Domain entry names for cath, superfamily, panther |
-| EC names       | `~/.cache/protspace/enzyme/`   | 7 days  | Enzyme descriptions from ExPASy                   |
+| Cache          | Location                          | Max Age  | Purpose                                           |
+| -------------- | --------------------------------- | -------- | ------------------------------------------------- |
+| CATH names     | `~/.cache/protspace/cath/`        | 30 days  | CATH hierarchy names (all levels) for TED and cath |
+| InterPro names | `~/.cache/protspace/interpro/`    | 7 days   | Domain entry names for superfamily, panther        |
+| EC names       | `~/.cache/protspace/enzyme/`      | 7 days   | Enzyme descriptions from ExPASy                   |
+| Pfam clans     | `~/.cache/protspace/pfam_clans/`  | 30 days  | Pfam family → clan mapping                        |
 
 The `default` group only requires the UniProt REST API (+ ExPASy for EC names). For `--keep-tmp` annotation caching, see [CLI Reference](cli.md#annotation-caching---keep-tmp).

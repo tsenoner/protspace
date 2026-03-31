@@ -3,12 +3,15 @@
 Composes: loaders → annotation fetch → dimensionality reduction → output.
 """
 
+import hashlib
+import json
 import logging
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from protspace.data.loaders import EmbeddingSet
@@ -46,7 +49,7 @@ class PipelineConfig:
     bundled: bool = True
     keep_tmp: bool = False
     no_scores: bool = False
-    force_refetch: bool = False
+    refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
     reducer_params: ReducerParams = field(default_factory=ReducerParams)
@@ -87,8 +90,8 @@ class ReductionPipeline:
         # Validate all sets share the same headers (or compute intersection)
         all_headers = self._validate_headers(embedding_sets)
 
-        # Fetch annotations
-        metadata = self._fetch_annotations(all_headers)
+        # Fetch annotations (pass embedding sets so FASTA sequences can be reused)
+        metadata = self._fetch_annotations(all_headers, embedding_sets)
 
         # Apply score stripping
         if self.config.no_scores:
@@ -136,6 +139,19 @@ class ReductionPipeline:
 
         return self.config.output_path
 
+    @staticmethod
+    def _extract_sequences(embedding_sets: list[EmbeddingSet]) -> dict[str, str]:
+        """Extract protein sequences from FASTA files referenced by embedding sets."""
+        sequences = {}
+        for emb_set in embedding_sets:
+            if emb_set.fasta_path and Path(emb_set.fasta_path).exists():
+                from protspace.data.io.fasta import parse_fasta
+                from protspace.data.loaders.h5 import parse_identifier
+
+                raw = parse_fasta(Path(emb_set.fasta_path))
+                sequences.update({parse_identifier(h): s for h, s in raw.items()})
+        return sequences
+
     def _validate_headers(self, embedding_sets: list[EmbeddingSet]) -> list[str]:
         """Ensure all embedding sets share the same identifiers.
 
@@ -176,9 +192,14 @@ class ReductionPipeline:
 
         return common_headers
 
-    def _fetch_annotations(self, headers: list[str]) -> pd.DataFrame:
+    def _fetch_annotations(
+        self, headers: list[str], embedding_sets: list[EmbeddingSet] = None
+    ) -> pd.DataFrame:
         """Fetch annotations from APIs with incremental caching support."""
         from protspace.data.annotations.manager import ProteinAnnotationManager
+
+        # Extract sequences from FASTA files (if available) to avoid re-fetching
+        sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
 
         annotation_names, csv_path = self._resolve_annotation_names()
 
@@ -211,7 +232,9 @@ class ReductionPipeline:
 
         keep_tmp = self.config.keep_tmp
         intermediate_dir = self.config.intermediate_dir
-        force_refetch = self.config.force_refetch
+        refetch = self.config.refetch_stages
+        _ANN_SOURCES = ("uniprot", "taxonomy", "interpro", "ted", "biocentral")
+        refetching_annotations = bool(refetch & set(_ANN_SOURCES))
 
         if keep_tmp and intermediate_dir:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -232,8 +255,8 @@ class ReductionPipeline:
 
                 missing = required - cached_annotations
 
-                if not missing and not force_refetch:
-                    logger.info(f"All annotations found in cache: {cache_path}")
+                if not missing and not refetching_annotations:
+                    logger.warning("Using cached annotations")
                     if annotations_list:
                         cols = ["identifier"] + [
                             f for f in annotations_list if f in cached_df.columns
@@ -241,6 +264,21 @@ class ReductionPipeline:
                         api_df = cached_df[cols]
                     else:
                         api_df = cached_df
+
+                    # Warn if cached annotations are all empty
+                    data_cols = [c for c in api_df.columns if c != "identifier"]
+                    if data_cols:
+                        non_empty = api_df[data_cols].apply(
+                            lambda col: (col != "").any()
+                        )
+                        if not non_empty.any():
+                            logger.warning(
+                                "All cached annotations are empty. This may be "
+                                "from a previous run with non-UniProt identifiers. "
+                                "Use --refetch annotations to re-fetch, or provide "
+                                "a FASTA file with -f."
+                            )
+
                     return self._merge_csv(api_df, csv_df)
 
                 from protspace.data.annotations.configuration import (
@@ -251,10 +289,26 @@ class ReductionPipeline:
                     cached_annotations, required
                 )
 
-                if force_refetch:
-                    logger.info("--force-refetch: re-fetching all annotations")
-                    sources = {"uniprot": True, "taxonomy": True, "interpro": True}
-                    cached_df = None
+                if refetching_annotations:
+                    # Override with explicitly requested sources
+                    sources = {src: src in refetch for src in _ANN_SOURCES}
+                    refetched = [s for s in _ANN_SOURCES if sources[s]]
+                    logger.info(f"--refetch: re-fetching {', '.join(refetched)}")
+                    # Drop cached columns for refetched sources so manager
+                    # re-fetches them
+                    from protspace.data.annotations.configuration import (
+                        AnnotationConfiguration as AnnCfg,
+                    )
+
+                    cols_to_drop = set()
+                    for src in refetched:
+                        cols_to_drop |= AnnCfg.categorize_annotations_by_source(
+                            cached_annotations
+                        ).get(src, set())
+                    if cols_to_drop:
+                        cached_df = cached_df.drop(
+                            columns=[c for c in cols_to_drop if c in cached_df.columns]
+                        )
                 else:
                     logger.info(f"Missing annotations: {missing}")
 
@@ -262,6 +316,7 @@ class ReductionPipeline:
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
+                    sequences=sequences,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
                 ).to_pd()
@@ -271,6 +326,7 @@ class ReductionPipeline:
                     headers=headers,
                     annotations=annotations_list,
                     output_path=cache_path,
+                    sequences=sequences,
                 ).to_pd()
                 return self._merge_csv(api_df, csv_df)
         else:
@@ -278,6 +334,7 @@ class ReductionPipeline:
                 headers=headers,
                 annotations=annotations_list,
                 output_path=None,
+                sequences=sequences,
             ).to_pd()
             return self._merge_csv(api_df, csv_df)
 
@@ -327,21 +384,84 @@ class ReductionPipeline:
                     merged = merged.rename(columns={col: base})
         return merged
 
+    # --- Projection caching helpers ---
+
+    def _projection_cache_path(
+        self, embedding_name: str, method: str, dims: int
+    ) -> Path | None:
+        cache_dir = self.config.intermediate_dir
+        if not cache_dir or not self.config.keep_tmp:
+            return None
+        key_dict = {
+            "embedding": embedding_name,
+            "method": method,
+            "dims": dims,
+            "params": asdict(self.config.reducer_params),
+        }
+        key_json = json.dumps(key_dict, sort_keys=True, default=str)
+        h = hashlib.sha256(key_json.encode()).hexdigest()[:12]
+        return cache_dir / f"proj_{embedding_name}_{method}{dims}_{h}.npz"
+
+    def _load_cached_projection(
+        self, embedding_name: str, method: str, dims: int
+    ) -> dict[str, Any] | None:
+        path = self._projection_cache_path(embedding_name, method, dims)
+        if (
+            path is None
+            or not path.exists()
+            or "projections" in self.config.refetch_stages
+        ):
+            return None
+        logger.info(
+            "Using cached %s %d projection for '%s'",
+            method.upper(),
+            dims,
+            embedding_name,
+        )
+        cached = np.load(path, allow_pickle=False)
+        info = json.loads(str(cached["info"]))
+        return {
+            "name": format_projection_name(embedding_name, method, dims),
+            "dimensions": dims,
+            "info": info,
+            "data": cached["data"],
+        }
+
+    def _save_projection_cache(
+        self, embedding_name: str, method: str, dims: int, reduction: dict
+    ) -> None:
+        path = self._projection_cache_path(embedding_name, method, dims)
+        if path is None:
+            return
+        np.savez(
+            path, data=reduction["data"], info=np.array(json.dumps(reduction["info"]))
+        )
+
+    # --- Dimensionality reduction ---
+
     def _run_reductions(
         self, embedding_sets: list[EmbeddingSet]
     ) -> list[dict[str, Any]]:
         """Run dimensionality reduction on all embedding sets."""
         all_reductions = []
+        cached_projections: list[str] = []  # e.g. "PCA 2 (prot_t5)"
+        computed_count = 0
 
         for emb_set in embedding_sets:
             if emb_set.precomputed:
-                # Precomputed similarity → always MDS 2, ignore user methods
+                cached = self._load_cached_projection(emb_set.name, MDS_NAME, 2)
+                if cached:
+                    all_reductions.append(cached)
+                    cached_projections.append(f"MDS 2 ({emb_set.name})")
+                    continue
                 self.base.config["precomputed"] = True
                 logger.info(f"Applying MDS 2 to '{emb_set.name}' (precomputed)")
                 reduction = self.base.process_reduction(emb_set.data, MDS_NAME, 2)
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 all_reductions.append(reduction)
+                self._save_projection_cache(emb_set.name, MDS_NAME, 2, reduction)
                 self.base.config.pop("precomputed", None)
+                computed_count += 1
                 continue
 
             for method_spec in self.config.methods:
@@ -351,11 +471,26 @@ class ReductionPipeline:
                     logger.warning(f"Unknown method: {method}. Skipping.")
                     continue
 
+                cached = self._load_cached_projection(emb_set.name, method, dims)
+                if cached:
+                    all_reductions.append(cached)
+                    cached_projections.append(
+                        f"{method.upper()} {dims} ({emb_set.name})"
+                    )
+                    continue
+
                 logger.info(f"Applying {method.upper()} {dims} to '{emb_set.name}'")
                 reduction = self.base.process_reduction(emb_set.data, method, dims)
-
                 reduction["name"] = format_projection_name(emb_set.name, method, dims)
-
                 all_reductions.append(reduction)
+                self._save_projection_cache(emb_set.name, method, dims, reduction)
+                computed_count += 1
+
+        if cached_projections:
+            logger.warning(
+                "Using %d cached projection%s",
+                len(cached_projections),
+                "s" if len(cached_projections) != 1 else "",
+            )
 
         return all_reductions

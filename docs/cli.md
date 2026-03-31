@@ -83,7 +83,7 @@ protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 | ---- | ----------- | ------- |
 | `-a, --annotations` | Annotation sources: groups, individual names, or a CSV/TSV file path. See [Annotation Reference](annotations.md). | `default` |
 | `--scores / --no-scores` | Include annotation confidence scores. | on |
-| `--force-refetch` | Re-download all annotations. | off |
+| `--refetch STAGES` | Recompute specific stages (comma-separated): query, embed, similarity, projections, uniprot, taxonomy, interpro, ted, biocentral. Shorthands: `all`, `annotations`. | off |
 
 #### Output
 
@@ -170,12 +170,20 @@ protspace prepare -i embeddings/prot_t5.h5 -m pca2 -o output
 
 Check if an HDF5 file has the attribute: `python -c "import h5py; print(dict(h5py.File('file.h5','r').attrs))"`
 
-## Annotation Caching (`--keep-tmp`)
+## Intermediate Caching (`--keep-tmp`)
 
-With `--keep-tmp`, annotations are cached as `all_annotations.parquet` in `{output}/tmp/`.
+With `--keep-tmp` (default), all intermediate results are cached in `{output}/tmp/` and reused on subsequent runs:
 
-- Cache always includes scores regardless of `--no-scores`
-- Only missing sources are fetched on subsequent runs
-- Use `--force-refetch` to re-download everything
+| Cached item | File | Reuse behavior |
+| ----------- | ---- | -------------- |
+| FASTA sequences | `sequences.fasta` | Skip UniProt query download |
+| Embeddings | `{embedder}.h5` | Skip already-embedded proteins |
+| Annotations | `all_annotations.parquet` | Fetch only missing annotation sources |
+| Similarity matrix | `similarity_matrix.npy` | Skip MMseqs2 recomputation |
+| DR projections | `proj_{name}_{method}_{hash}.npz` | Skip dimensionality reduction |
+
+- Annotation cache always includes scores regardless of `--no-scores`
+- DR projection caches are keyed by embedding name, method, dimensions, and all parameters — changing any parameter creates a new cache entry
+- Use `--refetch all` to bypass all caches, or `--refetch <stages>` selectively (e.g., `--refetch ted,biocentral`)
 
 See also: [Annotation Reference](annotations.md) | [Annotation Styling](styling.md)
