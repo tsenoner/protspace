@@ -1,6 +1,230 @@
 # CHANGELOG
 
 
+## v4.3.0 (2026-04-01)
+
+### Continuous Integration
+
+* ci: re-trigger release after corrupted merge event for PR #41
+
+The merge commit (3725f87) landed on main but GitHub never processed
+the push event due to a network issue, so CI, release, and issue
+auto-close were all skipped. ([`6fae84d`](https://github.com/tsenoner/protspace/commit/6fae84dbbd65697e502936312208ea29a7173e27))
+
+### Documentation
+
+* docs: cache FASTA and embeddings in Colab notebook
+
+Pass embedding_cache to embed_fasta() and cache UniProt query FASTA
+to output/tmp/ so re-runs skip expensive API calls. Also clean up
+unused imports flagged by ruff.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`7e17236`](https://github.com/tsenoner/protspace/commit/7e17236912bc73227fe8ef6f05dbcf6b7d2cea4e))
+
+* docs: update CLI caching section, test table, and UniProt ID handling
+
+- Expand docs/cli.md caching section to document all 5 cached items
+  (FASTA, embeddings, annotations, similarity, DR projections)
+- Add 3 new test files to CLAUDE.md test table (pfam_clan, ted, biocentral)
+- Update UniProt ID handling docs: identifiers must be bare accessions
+- Update test counts (uniprot_retriever: 29→24 after _manage_headers removal)
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`d4a4a14`](https://github.com/tsenoner/protspace/commit/d4a4a1481d74f22128c00bc5ece60d714b4c08a7))
+
+* docs: update annotations.md with all five data sources and groups
+
+Fix header (three → five sources), add TED and Biocentral rows to
+summary table, update InterPro count (9 → 10 for pfam_clan), add
+ted and biocentral to group presets table, add CLI example.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`8fe8f82`](https://github.com/tsenoner/protspace/commit/8fe8f82ede0223cdbfa54f04ca1a8948dc8f15b3))
+
+* docs: update Colab notebook with new annotation sources
+
+Add pfam_clan, TED Domains, and Biocentral prediction annotations
+to the ANNOTATIONS dict in the preparation notebook.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`d667d93`](https://github.com/tsenoner/protspace/commit/d667d937499e78899d3b8a49d39274f315764ddf))
+
+### Features
+
+* feat: replace --force-refetch with granular --refetch <stages>
+
+Replace the all-or-nothing --force-refetch boolean with --refetch
+accepting comma-separated stage names for selective cache invalidation:
+query, embed, similarity, projections, uniprot, taxonomy, interpro,
+ted, biocentral. Shorthands: all, annotations.
+
+Also fixes a bug where --force-refetch skipped TED and Biocentral
+annotations, and suppresses the biocentral API length warning.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`7dadeff`](https://github.com/tsenoner/protspace/commit/7dadeffec3e0b998befd2b2b3de3af901967ab00))
+
+* feat: use official CATH names file for all-level code resolution
+
+Replace InterPro XML-based CATH name lookup with the authoritative
+cath-names-v4_4_0.txt file (393 KB vs 90 MB). This provides names at
+all 4 CATH hierarchy levels (Class, Architecture, Topology, Superfamily),
+fixing resolution of partial codes like 2.60.40 from the AlphaFold API.
+
+- New shared module: cath_names.py (download, cache 30 days, parse)
+- TED retriever: direct lookup at any level, no G3DSA: prefix needed
+- InterPro retriever: CATH names from CATH file, SSF/PANTHER still from
+  InterPro XML
+- Unnamed superfamilies inherit parent topology name as fallback
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`9b906db`](https://github.com/tsenoner/protspace/commit/9b906db1ad42b177140a8a19ec3af1d7e404deea))
+
+* feat: cache FASTA downloads, MMseqs2 similarity, and DR projections
+
+When keep_tmp is active (default), all intermediate results are now
+cached under {output}/tmp/ and reused on subsequent runs:
+
+- FASTA: skip re-download if tmp/sequences.fasta exists
+- Similarity: save/load similarity_matrix.npy + similarity_headers.npy
+- DR projections: save/load .npz files keyed by (embedding, method,
+  dims, params_hash) so different parameters produce separate caches
+
+All caches are bypassed with --force-refetch (help text updated to
+reflect its broader scope). Cache hits log a WARNING for visibility.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`038e502`](https://github.com/tsenoner/protspace/commit/038e5025dfa1be368da0c9b8f9fc96c5585334cd))
+
+* feat: add Biocentral prediction annotations (subcellular location, membrane, signal peptide, transmembrane)
+
+Fetch per-protein predictions from the Biocentral API:
+- predicted_subcellular_location (LightAttention, 10 classes)
+- predicted_membrane (LightAttention, Membrane/Soluble)
+- predicted_signal_peptide (TMbed-derived, True/False)
+- predicted_transmembrane (TMbed-derived, none/alpha-helical/beta-barrel)
+
+Closes #40
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`8a4609a`](https://github.com/tsenoner/protspace/commit/8a4609a72f2d3129643eef3737e83fd430d3179b))
+
+* feat: add TED domain annotations via AlphaFold Database API
+
+Query alphafold.ebi.ac.uk/api/domains/{acc} per protein to get TED
+(The Encyclopedia of Domains) structural domain annotations. Resolves
+CATH superfamily codes to names using the existing InterPro CATH-Gene3D
+name map.
+
+Output format: "2.60.40.720 (Immunoglobulin-like)|95.1;3.40.50.300|88.3"
+
+Closes #22
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`91fc68d`](https://github.com/tsenoner/protspace/commit/91fc68d087d9756422ffab304ea0376d3dda956f))
+
+* feat: add pfam_clan annotation — maps Pfam families to CLANS
+
+Downloads Pfam-A.clans.tsv from EBI FTP (cached 30 days), maps Pfam
+accessions from InterPro annotations to clan IDs with names.
+Output format: "CL0023 (P-loop_NTPase);CL0192 (HAD)"
+
+Closes #38
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`44a1774`](https://github.com/tsenoner/protspace/commit/44a17748712be37e8b1f2341c76146e18361681e))
+
+### Fixes
+
+* fix: use CATH latest-release URL instead of hardcoded v4_4_0
+
+The latest-release/ path is a stable alias that always points to the
+current CATH release, so we automatically pick up new versions.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`bbb2dbf`](https://github.com/tsenoner/protspace/commit/bbb2dbf4c0d8a887ff469823a1b755f54a9fd3ab))
+
+* fix: consolidate repetitive cache-hit messages into compact summaries
+
+Group per-item cache warnings (projections, embeddings) into single
+summary lines, remove repeated --force-refetch hints in favor of one
+at the end, and demote verbose per-item logs to INFO level.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`9245e8d`](https://github.com/tsenoner/protspace/commit/9245e8dcbafc694d0128d114ebb015fdb52a711f))
+
+* fix: warn when using cached annotations and when cache is all empty
+
+Change cache-hit message from INFO (only visible with -v) to WARNING
+so users always know when cached data is being used. Also detect and
+warn about all-empty cached annotations with actionable advice
+(--force-refetch or -f).
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`64e3cbd`](https://github.com/tsenoner/protspace/commit/64e3cbd990d2a8011eda8200670fdc0f4771ee28))
+
+* fix: simplify UniProt ID handling and document annotation input requirements
+
+Remove _manage_headers() — identifiers must be valid UniProt accessions
+directly. Non-matching IDs are skipped with a clear warning that
+distinguishes accession-dependent (UniProt, Taxonomy, TED) from
+sequence-dependent (InterPro, Biocentral) annotations.
+
+Also:
+- Fix _add_required_annotations() to include 'sequence' for Biocentral
+- Simplify _build_sequence_map() (no reverse mapping needed)
+- Document input requirements in docs/annotations.md
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`65ab8ac`](https://github.com/tsenoner/protspace/commit/65ab8ac6436f011e3d566b2deaa2c54fd9876e00))
+
+* fix: improve annotation validation error with suggestions and group list
+
+Show fuzzy-matched suggestions (via difflib), list available groups,
+and link to online annotation reference. Example output:
+
+  Unknown annotation 'biocentra'. Did you mean: biocentral?
+    Groups: all, biocentral, default, interpro, taxonomy, ted, uniprot
+    See https://github.com/tsenoner/protspace/blob/main/docs/annotations.md
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`27fb824`](https://github.com/tsenoner/protspace/commit/27fb82484314bac9ce40f1ad4081ceed21397d2c))
+
+* fix: attach -f FASTA path to H5 embedding sets for sequence reuse
+
+When user provides H5 embeddings with -f fasta.fasta, store the FASTA
+path on the EmbeddingSet so sequences are available for Biocentral
+predictions and InterPro without needing UniProt accessions.
+
+Also improve the warning message when no sequences are available.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`1c0bafd`](https://github.com/tsenoner/protspace/commit/1c0bafdc83cabaf110d664e42ce987fd30c067cf))
+
+* fix: use cache dir for MMseqs2 temp files instead of system temp
+
+Pass cache_dir from CLI to compute_similarity() so MMseqs2 temp files
+are stored alongside other cached data. Falls back to system temp
+when no cache dir is available. Only cleans up temp files when using
+system temp (cache dir is preserved for reuse).
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`dd9b273`](https://github.com/tsenoner/protspace/commit/dd9b27346ee6bc75452bcc49ee12f3047381550d))
+
+* fix: pass FASTA sequences through pipeline and deduplicate for Biocentral
+
+- Extract sequences from EmbeddingSet.fasta_path in the pipeline and
+  pass them to ProteinAnnotationManager, avoiding redundant UniProt
+  sequence re-fetches for FASTA/Query input modes
+- Merge local sequences (priority) with UniProt sequences (fallback)
+  in both _fetch_interpro() and _fetch_biocentral()
+- Deduplicate sequences before sending to Biocentral API (rejects
+  duplicate sequences) and map predictions back to all headers sharing
+  the same sequence
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`b778a7e`](https://github.com/tsenoner/protspace/commit/b778a7ecd1eacccdfcb8a57244f262b31b149b0f))
+
+* fix: add tests for new annotations and update CLI help text
+
+- Add 7 unit tests for Pfam CLAN transformer (mapping, dedup, edge cases)
+- Add 7 unit tests for TED retriever (mocked AlphaFold API, CATH names)
+- Add 14 unit tests for Biocentral retriever (TMbed parsing, per-sequence)
+- Update CLI help text to include ted and biocentral groups
+- Update annotations.md overview with all five sources and group presets
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`6506c83`](https://github.com/tsenoner/protspace/commit/6506c83caae225d8b2dc7a2384ff491b0ed1357f))
+
+### Unknown
+
+* Merge pull request #41 from tsenoner/feat/extend-annotations
+
+feat: extend annotations, improve caching, and fix sequence handling ([`3725f87`](https://github.com/tsenoner/protspace/commit/3725f87a00845dd0fdcfbb7c05c83e161fd6e715))
+
+
 ## v4.2.0 (2026-03-28)
 
 ### Features
