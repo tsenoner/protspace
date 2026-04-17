@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v4.3.1 (2026-04-17)
+
+### Fixes
+
+* fix: union protein IDs when multiple inputs share the same embedding name
+
+When multiple -i inputs resolve to the same embedding name (e.g. two species
+both embedded with ProtT5), their proteins are now concatenated (unioned)
+instead of intersected. Inputs with different names still use intersection
+for multi-embedding comparison. Fixes #44.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`fdb1f54`](https://github.com/tsenoner/protspace/commit/fdb1f54bb446036f2b6eb76706c898fb6df48c9e))
+
+
 ## v4.3.0 (2026-04-01)
 
 ### Continuous Integration
