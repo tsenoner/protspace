@@ -241,3 +241,4 @@ Located in `notebooks/`:
 - **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ tests/`.
 - **Versioning:** python-semantic-release via `pyproject.toml`. Version in `pyproject.toml` + `__init__.py`.
 - **Build:** hatchling backend.
+- **Git workflow:** Always create a feature branch and open a PR — never push directly to `main`.
