@@ -87,6 +87,11 @@ class ReductionPipeline:
         if not embedding_sets:
             raise ValueError("At least one EmbeddingSet is required.")
 
+        # Merge same-name embedding sets (union their proteins)
+        from protspace.data.loaders.embedding_set import merge_same_name_sets
+
+        embedding_sets = merge_same_name_sets(embedding_sets)
+
         # Validate all sets share the same headers (or compute intersection)
         all_headers = self._validate_headers(embedding_sets)
 

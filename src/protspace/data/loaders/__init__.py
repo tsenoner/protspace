@@ -1,6 +1,10 @@
 """Composable input loaders for the ProtSpace pipeline."""
 
-from protspace.data.loaders.embedding_set import EmbeddingSet, format_projection_name
+from protspace.data.loaders.embedding_set import (
+    EmbeddingSet,
+    format_projection_name,
+    merge_same_name_sets,
+)
 from protspace.data.loaders.fasta import embed_fasta
 from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS, load_h5, parse_identifier
 from protspace.data.loaders.query import (
@@ -13,6 +17,7 @@ __all__ = [
     "EMBEDDING_EXTENSIONS",
     "EmbeddingSet",
     "format_projection_name",
+    "merge_same_name_sets",
     "compute_similarity",
     "embed_fasta",
     "extract_identifiers_from_fasta",
