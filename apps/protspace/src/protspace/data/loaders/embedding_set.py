@@ -1,9 +1,14 @@
 """Core data structure for embedding sets."""
 
+from __future__ import annotations
+
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # Display names for pLM models and tools
 MODEL_DISPLAY_NAMES: dict[str, str] = {
@@ -63,3 +68,101 @@ class EmbeddingSet:
     headers: list[str] = field(repr=False)
     precomputed: bool = False
     fasta_path: Path | None = None
+
+
+def merge_same_name_sets(
+    embedding_sets: list[EmbeddingSet],
+) -> list[EmbeddingSet]:
+    """Merge EmbeddingSets that share the same name (union), leave others for intersection.
+
+    When multiple ``-i`` inputs resolve to the same embedding name (e.g. two
+    species both embedded with ProtT5), their proteins should be concatenated
+    rather than intersected.  Sets with *different* names are left as separate
+    entries so that ``_validate_headers`` can intersect them later.
+
+    Raises:
+        ValueError: If same-name sets have mismatched dimensions, conflicting
+            embeddings for the same protein, or are precomputed matrices.
+    """
+    if len(embedding_sets) <= 1:
+        return embedding_sets
+
+    # Group by name, preserving insertion order
+    groups: dict[str, list[EmbeddingSet]] = {}
+    for es in embedding_sets:
+        groups.setdefault(es.name, []).append(es)
+
+    merged: list[EmbeddingSet] = []
+    for name, group in groups.items():
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+
+        # Reject precomputed (similarity) matrices — can't concatenate
+        if any(es.precomputed for es in group):
+            raise ValueError(
+                f"Cannot merge precomputed distance/similarity matrices for "
+                f"'{name}'. Precomputed matrices must be provided as a single "
+                f"file."
+            )
+
+        # Validate consistent embedding dimension
+        dims = {es.data.shape[1] for es in group}
+        if len(dims) > 1:
+            dim_list = ", ".join(str(d) for d in sorted(dims))
+            raise ValueError(
+                f"Cannot merge embedding sets for '{name}': dimension mismatch "
+                f"({dim_list}). All files with the same embedding name must "
+                f"have the same embedding dimension."
+            )
+
+        # Collect unique proteins, detect conflicting duplicates
+        seen: dict[str, int] = {}  # header -> index in merged_rows
+        merged_headers: list[str] = []
+        merged_rows: list[np.ndarray] = []
+        n_dedup = 0
+
+        for es in group:
+            for i, header in enumerate(es.headers):
+                if header in seen:
+                    existing = merged_rows[seen[header]]
+                    if np.allclose(existing, es.data[i], atol=1e-6):
+                        n_dedup += 1
+                        continue
+                    raise ValueError(
+                        f"Cannot merge embedding sets for '{name}': protein "
+                        f"'{header}' has conflicting embedding data across "
+                        f"input files."
+                    )
+                seen[header] = len(merged_rows)
+                merged_headers.append(header)
+                merged_rows.append(es.data[i])
+
+        # Pick first non-None fasta_path
+        fasta_path = next((es.fasta_path for es in group if es.fasta_path), None)
+
+        merged.append(
+            EmbeddingSet(
+                name=name,
+                data=np.vstack(merged_rows),
+                headers=merged_headers,
+                fasta_path=fasta_path,
+            )
+        )
+
+        total = len(merged_headers)
+        sources = len(group)
+        logger.info(
+            "Merged %d input(s) for embedding '%s': %d proteins total",
+            sources,
+            name,
+            total,
+        )
+        if n_dedup:
+            logger.info(
+                "Deduplicated %d protein(s) with identical embeddings in '%s'",
+                n_dedup,
+                name,
+            )
+
+    return merged
