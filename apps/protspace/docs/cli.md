@@ -44,7 +44,7 @@ protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
-| `-i, --input` | HDF5 or FASTA file(s). Repeat for multi-embedding. Use `-i file.h5:name` for external HDF5 files (see [Model Name Resolution](#model-name-resolution--i-fileh5name)). | — |
+| `-i, --input` | HDF5 or FASTA file(s). Repeat for multi-embedding or to combine datasets. Use `-i file.h5:name` for external HDF5 files (see [Model Name Resolution](#model-name-resolution--i-fileh5name)). | — |
 | `-q, --query` | UniProt search query (alternative to -i). | — |
 | `-f, --fasta` | FASTA for similarity computation (with -s when input is HDF5). | — |
 
@@ -145,6 +145,23 @@ protspace style input.parquetbundle output.parquetbundle --annotation-styles sty
 protspace style data.parquetbundle --dump-settings
 ```
 
+## Combining Multiple Inputs (`-i`)
+
+When multiple `-i` inputs are provided, behavior depends on whether they share the same embedding name:
+
+- **Same embedding name** → proteins are **unioned** (concatenated). Use this to combine datasets (e.g., two species both embedded with ProtT5).
+- **Different embedding names** → proteins are **intersected**. Use this for multi-embedding comparison (e.g., ProtT5 vs ESM2 on the same proteins).
+
+```bash
+# Union: combine two species into one visualization
+protspace prepare -i human.h5:prot_t5 -i drosophila.h5:prot_t5 -m umap2 -o output
+
+# Intersection: compare embeddings on shared proteins
+protspace prepare -i prot_t5.h5 -i esm2_650m.h5 -m pca2 -o output
+```
+
+Duplicate proteins across same-name inputs are deduplicated if their embeddings match (within tolerance). Conflicting embeddings for the same protein ID raise an error.
+
 ## Projection Naming
 
 Projections are prefixed with the embedding source: `ESM2-650M — PCA 2`, `ProtT5 — UMAP 2`, `MMseqs2 — MDS 2`.
@@ -163,6 +180,9 @@ Use the colon syntax for HDF5 files created outside protspace (bio_embeddings, c
 # External files — need colon syntax
 protspace prepare -i my_embeddings.h5:prot_t5 -m pca2 -o output
 protspace prepare -i esm2.h5:esm2_650m -i prott5.h5:prot_t5 -m pca2 -o output
+
+# Combine datasets — same name → union proteins
+protspace prepare -i species_a.h5:prot_t5 -i species_b.h5:prot_t5 -m umap2 -o output
 
 # Protspace-generated files — just work
 protspace prepare -i embeddings/prot_t5.h5 -m pca2 -o output

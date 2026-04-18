@@ -2,7 +2,7 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Version:** 3.3.1
+- **Version:** 4.3.1
 - **Python:** >=3.10
 - **License:** GPL-3.0
 - **PyPI:** `pip install protspace`
@@ -56,7 +56,8 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 # From FASTA: protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 # Multi-model: protspace prepare -i seq.fasta -e prot_t5,esm2_3b -m pca2 -o output
 # All 12 pLMs: protspace prepare -i seq.fasta -e prot_t5,prost_t5,esm2_8m,esm2_35m,esm2_150m,esm2_650m,esm2_3b,ankh_base,ankh_large,ankh3_large,esmc_300m,esmc_600m -m pca2 -o output
-# Multi-embedding: protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
+# Combine datasets (same name → union): protspace prepare -i species_a.h5:prot_t5 -i species_b.h5:prot_t5 -m umap2 -o output
+# Multi-embedding (different names → intersection): protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
 # With similarity: protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 # Name override: protspace prepare -i emb.h5:custom_name -m pca2 -o output
 ```
@@ -153,6 +154,7 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 
 - **Float16 upcast:** HDF5 embeddings (often float16 from pLMs) are upcast to float32 in `data/loaders/h5.py:load_h5()` to prevent matrix overflow. A safety-net upcast also exists in `base_processor.py`.
 - **HDF5 loading:** `load_h5()` in `data/loaders/h5.py` handles both flat and grouped HDF5 layouts, validates embedding dimensions are consistent, and rejects per-residue embeddings with a clear error message.
+- **Multi-input merging:** `merge_same_name_sets()` in `data/loaders/embedding_set.py` unions proteins when multiple `-i` inputs share the same embedding name (e.g., two species with ProtT5). Inputs with different names are intersected for multi-embedding comparison. Duplicate proteins with identical embeddings are deduplicated; conflicting embeddings raise an error.
 - **UniProt ID validation:** `uniprot_retriever.py` pre-filters identifiers with a UniProt accession regex — non-matching IDs (e.g., `NCBI|...`, `sp|P12345|NAME`) are skipped with a summary warning. Identifiers must be bare accessions (e.g., `P12345`, `A0A2P1BSS8`). Inactive entries are resolved via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc.
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
 - **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
@@ -166,6 +168,7 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 ```
 HDF5 file (float16 embeddings)
   → h5.load_h5()                         # upcast to float32, validate dims, handle groups
+  → merge_same_name_sets()               # union same-name inputs, keep others for intersection
   → AnnotationManager.process()          # fetch UniProt/InterPro/taxonomy
     → UniProtRetriever                   # batch fetch + resolve inactive entries via UniParc
     → InterProRetriever                  # MD5-based batch API + name resolution
@@ -201,7 +204,7 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_interpro_annotation_retriever.py` | 46 | InterPro API mocking, parsing |
 | `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
-| `test_pipeline_utils.py` | 28 | ReductionPipeline, EmbeddingSet, method parsing |
+| `test_pipeline_utils.py` | 41 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging |
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
 | `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |
