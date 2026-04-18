@@ -7,7 +7,8 @@ import hashlib
 import json
 import logging
 import shutil
-from dataclasses import asdict, dataclass, field
+from collections import Counter
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,10 @@ import numpy as np
 import pandas as pd
 
 from protspace.data.loaders import EmbeddingSet
-from protspace.data.loaders.embedding_set import format_projection_name
+from protspace.data.loaders.embedding_set import (
+    format_param_suffix,
+    format_projection_name,
+)
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.utils import get_reducers
 from protspace.utils.constants import MDS_NAME
@@ -40,11 +44,31 @@ class ReducerParams:
     eps: float = 1e-6
 
 
+@dataclass(frozen=True)
+class MethodSpec:
+    """A single DR method with its dimension count and parameter overrides."""
+
+    method: str  # e.g. "umap"
+    dims: int  # e.g. 2
+    overrides: tuple[tuple[str, int | float | str], ...] = ()
+
+    def __str__(self) -> str:
+        base = f"{self.method}{self.dims}"
+        if self.overrides:
+            params = ";".join(f"{k}={v}" for k, v in self.overrides)
+            return f"{base}:{params}"
+        return base
+
+    @property
+    def overrides_dict(self) -> dict[str, int | float | str]:
+        return dict(self.overrides)
+
+
 @dataclass
 class PipelineConfig:
     """Configuration for a ReductionPipeline run."""
 
-    methods: list[str]
+    methods: list[MethodSpec]
     output_path: Path
     bundled: bool = True
     keep_tmp: bool = False
@@ -55,11 +79,83 @@ class PipelineConfig:
     reducer_params: ReducerParams = field(default_factory=ReducerParams)
 
 
-def parse_method_spec(method_spec: str) -> tuple[str, int]:
-    """Parse 'pca2' into ('pca', 2)."""
-    method = "".join(filter(str.isalpha, method_spec))
-    dims = int("".join(filter(str.isdigit, method_spec)))
-    return method, dims
+# Valid override parameter names (from ReducerParams fields)
+_VALID_OVERRIDE_KEYS = {f.name for f in fields(ReducerParams)}
+# Field types for coercion
+_FIELD_TYPES = {f.name: f.type for f in fields(ReducerParams)}
+
+
+def _coerce_value(key: str, raw: str) -> int | float | str:
+    """Coerce a string value to the appropriate type for the given parameter."""
+    expected = _FIELD_TYPES.get(key)
+    if expected is int:
+        return int(raw)
+    if expected is float:
+        return float(raw)
+    return raw
+
+
+def parse_method_spec(method_spec: str) -> MethodSpec:
+    """Parse a method spec string into a MethodSpec.
+
+    Examples:
+        'pca2'                              → MethodSpec('pca', 2)
+        'umap2:n_neighbors=50;min_dist=0.1' → MethodSpec('umap', 2, overrides=...)
+    """
+    # Split on first ':' to separate method from overrides
+    if ":" in method_spec:
+        base, params_str = method_spec.split(":", 1)
+    else:
+        base, params_str = method_spec, ""
+
+    method = "".join(filter(str.isalpha, base))
+    dims = int("".join(filter(str.isdigit, base)))
+
+    overrides = {}
+    if params_str:
+        for pair in params_str.split(";"):
+            pair = pair.strip()
+            if not pair:
+                continue
+            if "=" not in pair:
+                raise ValueError(
+                    f"Invalid parameter format '{pair}' in '{method_spec}'. "
+                    f"Expected key=value."
+                )
+            key, val = pair.split("=", 1)
+            key = key.strip()
+            if key not in _VALID_OVERRIDE_KEYS:
+                raise ValueError(
+                    f"Unknown parameter '{key}' in '{method_spec}'. "
+                    f"Valid parameters: {', '.join(sorted(_VALID_OVERRIDE_KEYS))}"
+                )
+            overrides[key] = _coerce_value(key, val.strip())
+
+    return MethodSpec(
+        method=method,
+        dims=dims,
+        overrides=tuple(sorted(overrides.items())),
+    )
+
+
+def parse_methods_arg(raw: list[str]) -> list[MethodSpec]:
+    """Parse repeatable -m arguments into a deduplicated MethodSpec list.
+
+    Each element may be comma-separated: "pca2,umap2:n_neighbors=50"
+    Semicolons separate parameters within a method override.
+    """
+    specs: list[MethodSpec] = []
+    seen: set[MethodSpec] = set()
+    for item in raw:
+        for part in item.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            spec = parse_method_spec(part)
+            if spec not in seen:
+                seen.add(spec)
+                specs.append(spec)
+    return specs
 
 
 class ReductionPipeline:
@@ -392,7 +488,11 @@ class ReductionPipeline:
     # --- Projection caching helpers ---
 
     def _projection_cache_path(
-        self, embedding_name: str, method: str, dims: int
+        self,
+        embedding_name: str,
+        method: str,
+        dims: int,
+        effective_params: dict[str, Any] | None = None,
     ) -> Path | None:
         cache_dir = self.config.intermediate_dir
         if not cache_dir or not self.config.keep_tmp:
@@ -401,16 +501,23 @@ class ReductionPipeline:
             "embedding": embedding_name,
             "method": method,
             "dims": dims,
-            "params": asdict(self.config.reducer_params),
+            "params": effective_params or asdict(self.config.reducer_params),
         }
         key_json = json.dumps(key_dict, sort_keys=True, default=str)
         h = hashlib.sha256(key_json.encode()).hexdigest()[:12]
         return cache_dir / f"proj_{embedding_name}_{method}{dims}_{h}.npz"
 
     def _load_cached_projection(
-        self, embedding_name: str, method: str, dims: int
+        self,
+        embedding_name: str,
+        method: str,
+        dims: int,
+        effective_params: dict[str, Any] | None = None,
+        param_suffix: str = "",
     ) -> dict[str, Any] | None:
-        path = self._projection_cache_path(embedding_name, method, dims)
+        path = self._projection_cache_path(
+            embedding_name, method, dims, effective_params
+        )
         if (
             path is None
             or not path.exists()
@@ -426,16 +533,23 @@ class ReductionPipeline:
         cached = np.load(path, allow_pickle=False)
         info = json.loads(str(cached["info"]))
         return {
-            "name": format_projection_name(embedding_name, method, dims),
+            "name": format_projection_name(embedding_name, method, dims, param_suffix),
             "dimensions": dims,
             "info": info,
             "data": cached["data"],
         }
 
     def _save_projection_cache(
-        self, embedding_name: str, method: str, dims: int, reduction: dict
+        self,
+        embedding_name: str,
+        method: str,
+        dims: int,
+        reduction: dict,
+        effective_params: dict[str, Any] | None = None,
     ) -> None:
-        path = self._projection_cache_path(embedding_name, method, dims)
+        path = self._projection_cache_path(
+            embedding_name, method, dims, effective_params
+        )
         if path is None:
             return
         np.savez(
@@ -452,9 +566,18 @@ class ReductionPipeline:
         cached_projections: list[str] = []  # e.g. "PCA 2 (prot_t5)"
         computed_count = 0
 
+        # Pre-compute which (method, dims) pairs appear multiple times
+        method_counts = Counter(
+            (spec.method, spec.dims) for spec in self.config.methods
+        )
+
+        global_params = asdict(self.config.reducer_params)
+
         for emb_set in embedding_sets:
             if emb_set.precomputed:
-                cached = self._load_cached_projection(emb_set.name, MDS_NAME, 2)
+                cached = self._load_cached_projection(
+                    emb_set.name, MDS_NAME, 2, global_params
+                )
                 if cached:
                     all_reductions.append(cached)
                     cached_projections.append(f"MDS 2 ({emb_set.name})")
@@ -464,19 +587,33 @@ class ReductionPipeline:
                 reduction = self.base.process_reduction(emb_set.data, MDS_NAME, 2)
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 all_reductions.append(reduction)
-                self._save_projection_cache(emb_set.name, MDS_NAME, 2, reduction)
+                self._save_projection_cache(
+                    emb_set.name, MDS_NAME, 2, reduction, global_params
+                )
                 self.base.config.pop("precomputed", None)
                 computed_count += 1
                 continue
 
-            for method_spec in self.config.methods:
-                method, dims = parse_method_spec(method_spec)
+            for spec in self.config.methods:
+                method, dims = spec.method, spec.dims
 
                 if method not in self.base.reducers:
                     logger.warning(f"Unknown method: {method}. Skipping.")
                     continue
 
-                cached = self._load_cached_projection(emb_set.name, method, dims)
+                # Merge global defaults with per-method overrides
+                effective_params = {**global_params, **spec.overrides_dict}
+
+                # Build param suffix for disambiguation
+                needs_disambiguation = method_counts[(method, dims)] > 1
+                if needs_disambiguation and spec.overrides:
+                    param_suffix = format_param_suffix(spec.overrides_dict)
+                else:
+                    param_suffix = ""
+
+                cached = self._load_cached_projection(
+                    emb_set.name, method, dims, effective_params, param_suffix
+                )
                 if cached:
                     all_reductions.append(cached)
                     cached_projections.append(
@@ -485,10 +622,22 @@ class ReductionPipeline:
                     continue
 
                 logger.info(f"Applying {method.upper()} {dims} to '{emb_set.name}'")
-                reduction = self.base.process_reduction(emb_set.data, method, dims)
-                reduction["name"] = format_projection_name(emb_set.name, method, dims)
+
+                # Temporarily set effective params for this reduction
+                saved_config = self.base.config
+                self.base.config = effective_params
+                try:
+                    reduction = self.base.process_reduction(emb_set.data, method, dims)
+                finally:
+                    self.base.config = saved_config
+
+                reduction["name"] = format_projection_name(
+                    emb_set.name, method, dims, param_suffix
+                )
                 all_reductions.append(reduction)
-                self._save_projection_cache(emb_set.name, method, dims, reduction)
+                self._save_projection_cache(
+                    emb_set.name, method, dims, reduction, effective_params
+                )
                 computed_count += 1
 
         if cached_projections:

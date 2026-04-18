@@ -36,6 +36,12 @@ protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 
 # External HDF5 without model_name attribute — use colon syntax
 protspace prepare -i external.h5:prot_t5 -m pca2 -o output
+
+# Compare UMAP with different parameters in a single run
+protspace prepare -i emb.h5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" -m pca2 -o output
+
+# Inline params with semicolons, comma-separated methods
+protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3,tsne2" -o output
 ```
 
 ### Options
@@ -63,7 +69,7 @@ protspace prepare -i external.h5:prot_t5 -m pca2 -o output
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
-| `-m, --methods` | DR methods (comma-separated): `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2` | `pca2` |
+| `-m, --methods` | DR methods (comma-sep or repeat). Inline params: `-m 'umap2:n_neighbors=50;min_dist=0.1'`. Methods: `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2` | `pca2` |
 | `-s, --similarity` | Also compute sequence similarity DR from FASTA. | off |
 | `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`). | `euclidean` |
 | `--random-state` | Random seed. | `42` |
