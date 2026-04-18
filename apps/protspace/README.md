@@ -45,6 +45,9 @@ protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 
 # Multi-model comparison (12 pLMs supported)
 protspace prepare -i sequences.fasta -e prot_t5,esm2_650m,ankh_base -m pca2,umap2 -o output
+
+# Combine datasets (same embedding name → proteins are unioned)
+protspace prepare -i species_a.h5:prot_t5 -i species_b.h5:prot_t5 -m umap2 -o output
 ```
 
 ### 2. Explore results
