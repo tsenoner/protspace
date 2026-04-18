@@ -31,6 +31,9 @@ uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m pca2 -o output 
 
 # Run all 6 DR methods on sample data
 uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m "pca2,tsne2,umap2,pacmap2,mds2,localmap2" -o output --no-scores -v
+
+# Compare UMAP with different parameters in a single run
+uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" -m pca2 -o output --no-scores
 ```
 
 ## CLI Commands
@@ -60,6 +63,8 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 # Multi-embedding (different names → intersection): protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
 # With similarity: protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 # Name override: protspace prepare -i emb.h5:custom_name -m pca2 -o output
+# Parameter sweep: protspace prepare -i emb.h5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" -m pca2 -o output
+# Inline params: protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3" -o output
 ```
 
 ### Supported Embedders (via Biocentral API)
@@ -204,7 +209,7 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_interpro_annotation_retriever.py` | 46 | InterPro API mocking, parsing |
 | `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
-| `test_pipeline_utils.py` | 41 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging |
+| `test_pipeline_utils.py` | 70 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
 | `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |

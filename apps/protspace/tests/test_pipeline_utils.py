@@ -5,13 +5,16 @@ import pytest
 
 from protspace.data.loaders.embedding_set import (
     EmbeddingSet,
+    format_param_suffix,
     format_projection_name,
     merge_same_name_sets,
 )
 from protspace.data.processors.pipeline import (
+    MethodSpec,
     PipelineConfig,
     ReductionPipeline,
     parse_method_spec,
+    parse_methods_arg,
 )
 
 # ---------------------------------------------------------------------------
@@ -21,26 +24,162 @@ from protspace.data.processors.pipeline import (
 
 class TestParseMethodSpec:
     def test_pca2(self):
-        assert parse_method_spec("pca2") == ("pca", 2)
+        spec = parse_method_spec("pca2")
+        assert spec.method == "pca"
+        assert spec.dims == 2
+        assert spec.overrides == ()
 
     def test_umap3(self):
-        assert parse_method_spec("umap3") == ("umap", 3)
+        spec = parse_method_spec("umap3")
+        assert spec.method == "umap"
+        assert spec.dims == 3
 
     def test_tsne2(self):
-        assert parse_method_spec("tsne2") == ("tsne", 2)
+        spec = parse_method_spec("tsne2")
+        assert spec.method == "tsne"
+        assert spec.dims == 2
 
     def test_pacmap2(self):
-        assert parse_method_spec("pacmap2") == ("pacmap", 2)
+        spec = parse_method_spec("pacmap2")
+        assert spec.method == "pacmap"
+        assert spec.dims == 2
 
     def test_mds2(self):
-        assert parse_method_spec("mds2") == ("mds", 2)
+        spec = parse_method_spec("mds2")
+        assert spec.method == "mds"
+        assert spec.dims == 2
 
     def test_localmap2(self):
-        assert parse_method_spec("localmap2") == ("localmap", 2)
+        spec = parse_method_spec("localmap2")
+        assert spec.method == "localmap"
+        assert spec.dims == 2
 
     def test_invalid_no_digits(self):
         with pytest.raises(ValueError):
             parse_method_spec("pca")
+
+
+# ---------------------------------------------------------------------------
+# parse_method_spec with overrides
+# ---------------------------------------------------------------------------
+
+
+class TestParseMethodSpecWithOverrides:
+    def test_single_override(self):
+        spec = parse_method_spec("umap2:n_neighbors=50")
+        assert spec.method == "umap"
+        assert spec.dims == 2
+        assert spec.overrides_dict == {"n_neighbors": 50}
+
+    def test_multiple_overrides_semicolon(self):
+        spec = parse_method_spec("umap2:n_neighbors=50;min_dist=0.1")
+        assert spec.overrides_dict == {"n_neighbors": 50, "min_dist": 0.1}
+
+    def test_int_coercion(self):
+        spec = parse_method_spec("umap2:n_neighbors=100")
+        assert isinstance(spec.overrides_dict["n_neighbors"], int)
+
+    def test_float_coercion(self):
+        spec = parse_method_spec("umap2:min_dist=0.5")
+        assert isinstance(spec.overrides_dict["min_dist"], float)
+
+    def test_string_metric(self):
+        spec = parse_method_spec("umap2:metric=cosine")
+        assert spec.overrides_dict["metric"] == "cosine"
+
+    def test_unknown_param_raises(self):
+        with pytest.raises(ValueError, match="Unknown parameter 'bogus'"):
+            parse_method_spec("umap2:bogus=5")
+
+    def test_missing_value_raises(self):
+        with pytest.raises(ValueError, match="Invalid parameter format"):
+            parse_method_spec("umap2:n_neighbors")
+
+    def test_empty_params_after_colon(self):
+        spec = parse_method_spec("umap2:")
+        assert spec.overrides == ()
+
+    def test_overrides_are_sorted(self):
+        spec = parse_method_spec("umap2:min_dist=0.1;n_neighbors=50")
+        keys = [k for k, _ in spec.overrides]
+        assert keys == sorted(keys)
+
+
+# ---------------------------------------------------------------------------
+# MethodSpec
+# ---------------------------------------------------------------------------
+
+
+class TestMethodSpec:
+    def test_str_no_overrides(self):
+        spec = MethodSpec("pca", 2)
+        assert str(spec) == "pca2"
+
+    def test_str_with_overrides(self):
+        spec = MethodSpec("umap", 2, (("min_dist", 0.1), ("n_neighbors", 50)))
+        assert str(spec) == "umap2:min_dist=0.1;n_neighbors=50"
+
+    def test_overrides_dict(self):
+        spec = MethodSpec("umap", 2, (("n_neighbors", 50),))
+        assert spec.overrides_dict == {"n_neighbors": 50}
+
+    def test_equality(self):
+        a = parse_method_spec("umap2:n_neighbors=50")
+        b = parse_method_spec("umap2:n_neighbors=50")
+        assert a == b
+
+    def test_hashable(self):
+        spec = parse_method_spec("umap2:n_neighbors=50")
+        assert hash(spec) == hash(spec)
+
+
+# ---------------------------------------------------------------------------
+# parse_methods_arg
+# ---------------------------------------------------------------------------
+
+
+class TestParseMethodsArg:
+    def test_single_comma_separated(self):
+        result = parse_methods_arg(["pca2,umap2"])
+        assert len(result) == 2
+        assert result[0].method == "pca"
+        assert result[1].method == "umap"
+
+    def test_repeated(self):
+        result = parse_methods_arg(["pca2", "umap2"])
+        assert len(result) == 2
+
+    def test_mixed_with_overrides(self):
+        result = parse_methods_arg(["pca2", "umap2:n_neighbors=50;min_dist=0.1"])
+        assert len(result) == 2
+        assert result[1].overrides_dict == {"n_neighbors": 50, "min_dist": 0.1}
+
+    def test_comma_separated_with_overrides(self):
+        result = parse_methods_arg(["pca2,umap2:n_neighbors=50;min_dist=0.1,tsne2"])
+        assert len(result) == 3
+        assert result[0].method == "pca"
+        assert result[1].overrides_dict == {"n_neighbors": 50, "min_dist": 0.1}
+        assert result[2].method == "tsne"
+
+    def test_deduplicates(self):
+        result = parse_methods_arg(["umap2", "umap2"])
+        assert len(result) == 1
+
+    def test_different_overrides_not_deduped(self):
+        result = parse_methods_arg(["umap2:n_neighbors=50", "umap2:n_neighbors=100"])
+        assert len(result) == 2
+
+    def test_backward_compatible(self):
+        result = parse_methods_arg(["pca2,umap2,tsne2"])
+        assert len(result) == 3
+
+    def test_strips_whitespace(self):
+        result = parse_methods_arg(["  pca2 , umap2  "])
+        assert len(result) == 2
+
+    def test_skips_empty_parts(self):
+        result = parse_methods_arg(["pca2,,umap2"])
+        assert len(result) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +210,36 @@ class TestFormatProjectionName:
     def test_3d(self):
         assert format_projection_name("prot_t5", "tsne", 3) == "ProtT5 — t-SNE 3"
 
+    def test_with_param_suffix(self):
+        assert (
+            format_projection_name("prot_t5", "umap", 2, "n=50, d=0.1")
+            == "ProtT5 — UMAP 2 (n=50, d=0.1)"
+        )
+
+    def test_empty_suffix_no_parens(self):
+        assert format_projection_name("prot_t5", "pca", 2, "") == "ProtT5 — PCA 2"
+
+
+# ---------------------------------------------------------------------------
+# format_param_suffix
+# ---------------------------------------------------------------------------
+
+
+class TestFormatParamSuffix:
+    def test_single_param(self):
+        assert format_param_suffix({"n_neighbors": 50}) == "n=50"
+
+    def test_multiple_params_sorted(self):
+        assert (
+            format_param_suffix({"n_neighbors": 50, "min_dist": 0.1}) == "d=0.1, n=50"
+        )
+
+    def test_string_value(self):
+        assert format_param_suffix({"metric": "cosine"}) == "m=cosine"
+
+    def test_unknown_key_passthrough(self):
+        assert format_param_suffix({"custom_key": 42}) == "custom_key=42"
+
 
 # ---------------------------------------------------------------------------
 # _resolve_annotation_names
@@ -80,7 +249,7 @@ class TestFormatProjectionName:
 class TestResolveAnnotationNames:
     def _resolve(self, annotations):
         config = PipelineConfig(
-            methods=["pca2"],
+            methods=[MethodSpec("pca", 2)],
             output_path=None,
             annotations=annotations,
         )
@@ -137,7 +306,7 @@ class TestResolveAnnotationNames:
 
 class TestValidateHeaders:
     def _make_pipeline(self):
-        config = PipelineConfig(methods=["pca2"], output_path=None)
+        config = PipelineConfig(methods=[MethodSpec("pca", 2)], output_path=None)
         return ReductionPipeline(config)
 
     def _make_es(self, name, headers):
@@ -299,7 +468,7 @@ class TestMergeSameNameSets:
 
     def test_same_name_no_overlap_through_pipeline(self):
         """Regression test for issue #44: same name, disjoint keys should work."""
-        config = PipelineConfig(methods=["pca2"], output_path=None)
+        config = PipelineConfig(methods=[MethodSpec("pca", 2)], output_path=None)
         pipeline = ReductionPipeline(config)
         es1 = _make_es("prot_t5", ["A", "B"])
         es2 = _make_es("prot_t5", ["C", "D"])
