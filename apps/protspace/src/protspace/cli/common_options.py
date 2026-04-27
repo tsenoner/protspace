@@ -27,11 +27,14 @@ Opt_Verbose = Annotated[
 
 # Projection options (shared by prepare and project)
 Opt_Methods = Annotated[
-    str,
+    list[str] | None,
     typer.Option(
         "-m",
         "--methods",
-        help="DR methods, comma-separated: pca2,umap2,tsne2,pacmap2,mds2,localmap2.",
+        help=(
+            "DR methods. Comma-sep or repeat: -m pca2,umap2 or -m pca2 -m umap2. "
+            "Inline params: -m 'umap2:n_neighbors=50;min_dist=0.1'."
+        ),
         rich_help_panel="Projection",
     ),
 ]

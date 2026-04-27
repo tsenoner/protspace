@@ -39,7 +39,7 @@ def project(
             help="HDF5 file(s). Repeat for multi-embedding. Colon syntax: -i file.h5:name",
         ),
     ],
-    methods: Opt_Methods = "pca2",
+    methods: Opt_Methods = None,
     output: Annotated[
         Path,
         typer.Option(
@@ -69,12 +69,20 @@ def project(
     """
     setup_logging(verbose)
 
+    from collections import Counter
+
     import pyarrow.parquet as pq
 
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.loaders import EmbeddingSet, compute_similarity, load_h5
+    from protspace.data.loaders.embedding_set import format_projection_name
     from protspace.data.processors.base_processor import BaseProcessor
-    from protspace.data.processors.pipeline import parse_method_spec
+    from protspace.data.processors.pipeline import (
+        ReducerParams,
+        _run_with_overridden_config,
+        disambiguation_suffix,
+        parse_methods_arg,
+    )
     from protspace.utils import get_reducers
     from protspace.utils.constants import MDS_NAME
 
@@ -95,7 +103,7 @@ def project(
 
     from dataclasses import asdict
 
-    from protspace.data.processors.pipeline import ReducerParams
+    method_specs = parse_methods_arg(methods or ["pca2"])
 
     reducer_params = ReducerParams(
         metric=metric.value,
@@ -110,14 +118,18 @@ def project(
         max_iter=max_iter,
         eps=eps,
     )
+    global_params = asdict(reducer_params)
     reducers = get_reducers()
-    base = BaseProcessor(asdict(reducer_params), reducers)
+    base = BaseProcessor(global_params, reducers)
+
+    # Pre-compute which (method, dims) pairs appear multiple times
+    method_counts = Counter((s.method, s.dims) for s in method_specs)
 
     all_reductions = []
     headers = embedding_sets[0].headers
     for emb_set in embedding_sets:
-        for method_spec in methods.split(","):
-            method, dims = parse_method_spec(method_spec)
+        for spec in method_specs:
+            method, dims = spec.method, spec.dims
             if emb_set.precomputed and method != MDS_NAME:
                 logger.warning(
                     f"Skipping {method} for '{emb_set.name}' (only MDS for precomputed)"
@@ -126,13 +138,21 @@ def project(
             if method not in reducers:
                 logger.warning(f"Unknown method: {method}. Skipping.")
                 continue
+
+            effective_params = {**global_params, **spec.overrides_dict}
             if emb_set.precomputed:
-                base.config["precomputed"] = True
-            else:
-                base.config.pop("precomputed", None)
+                effective_params["precomputed"] = True
+
             logger.info(f"Applying {method.upper()}{dims} to '{emb_set.name}'")
-            reduction = base.process_reduction(emb_set.data, method, dims)
-            reduction["name"] = f"{emb_set.name} — {reduction['name']}"
+            reduction = _run_with_overridden_config(
+                base, effective_params, method, dims, emb_set.data
+            )
+            reduction["name"] = format_projection_name(
+                emb_set.name,
+                method,
+                dims,
+                disambiguation_suffix(spec, method_counts),
+            )
             all_reductions.append(reduction)
 
     output.mkdir(parents=True, exist_ok=True)
