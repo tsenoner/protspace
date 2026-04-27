@@ -75,12 +75,14 @@ def project(
 
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.loaders import EmbeddingSet, compute_similarity, load_h5
-    from protspace.data.loaders.embedding_set import (
-        format_param_suffix,
-        format_projection_name,
-    )
+    from protspace.data.loaders.embedding_set import format_projection_name
     from protspace.data.processors.base_processor import BaseProcessor
-    from protspace.data.processors.pipeline import ReducerParams, parse_methods_arg
+    from protspace.data.processors.pipeline import (
+        ReducerParams,
+        _run_with_overridden_config,
+        disambiguation_suffix,
+        parse_methods_arg,
+    )
     from protspace.utils import get_reducers
     from protspace.utils.constants import MDS_NAME
 
@@ -137,24 +139,19 @@ def project(
                 logger.warning(f"Unknown method: {method}. Skipping.")
                 continue
 
-            # Merge global defaults with per-method overrides
             effective_params = {**global_params, **spec.overrides_dict}
-
             if emb_set.precomputed:
                 effective_params["precomputed"] = True
 
-            base.config = effective_params
             logger.info(f"Applying {method.upper()}{dims} to '{emb_set.name}'")
-            reduction = base.process_reduction(emb_set.data, method, dims)
-
-            # Smart naming
-            needs_disambiguation = method_counts[(method, dims)] > 1
-            if needs_disambiguation and spec.overrides:
-                param_suffix = format_param_suffix(spec.overrides_dict)
-            else:
-                param_suffix = ""
+            reduction = _run_with_overridden_config(
+                base, effective_params, method, dims, emb_set.data
+            )
             reduction["name"] = format_projection_name(
-                emb_set.name, method, dims, param_suffix
+                emb_set.name,
+                method,
+                dims,
+                disambiguation_suffix(spec, method_counts),
             )
             all_reductions.append(reduction)
 
