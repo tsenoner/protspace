@@ -581,3 +581,64 @@ class TestRunWithOverriddenConfig:
             )
 
         assert base.config == original
+
+
+# ---------------------------------------------------------------------------
+# precomputed-MDS branch: base.config isolation
+# ---------------------------------------------------------------------------
+
+
+class TestPrecomputedMDSConfigIsolation:
+    """Regression tests for the precomputed-MDS branch in
+    ReductionPipeline._run_reductions: a `precomputed` flag must not survive
+    in self.base.config after the branch finishes — including when
+    process_reduction raises.
+    """
+
+    def _make_pipeline(self):
+        config = PipelineConfig(methods=[], output_path=None)
+        return ReductionPipeline(config)
+
+    def _make_precomputed_es(self):
+        return EmbeddingSet(
+            name="MMseqs2",
+            data=np.eye(2, dtype=np.float32),
+            headers=["A", "B"],
+            precomputed=True,
+        )
+
+    def test_precomputed_mds_does_not_leak_precomputed_flag_on_success(self):
+        pipeline = self._make_pipeline()
+
+        def fake_reduce(data, method, dims):
+            assert method == "mds"
+            assert pipeline.base.config.get("precomputed") is True
+            return {
+                "name": "stub",
+                "dimensions": dims,
+                "data": np.zeros((2, dims), dtype=np.float32),
+                "info": {},
+            }
+
+        pipeline.base.process_reduction = fake_reduce
+
+        pipeline._run_reductions([self._make_precomputed_es()])
+
+        assert "precomputed" not in pipeline.base.config
+
+    def test_precomputed_mds_restores_config_on_exception(self):
+        pipeline = self._make_pipeline()
+
+        def boom(data, method, dims):
+            raise RuntimeError("boom")
+
+        pipeline.base.process_reduction = boom
+        original_config_id = id(pipeline.base.config)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            pipeline._run_reductions([self._make_precomputed_es()])
+
+        assert "precomputed" not in pipeline.base.config
+        assert id(pipeline.base.config) == original_config_id, (
+            "base.config reference should be the original dict, not a replacement"
+        )

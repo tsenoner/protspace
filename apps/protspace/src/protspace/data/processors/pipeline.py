@@ -619,15 +619,16 @@ class ReductionPipeline:
                     all_reductions.append(cached)
                     cached_projections.append(f"MDS 2 ({emb_set.name})")
                     continue
-                self.base.config["precomputed"] = True
                 logger.info(f"Applying MDS 2 to '{emb_set.name}' (precomputed)")
-                reduction = self.base.process_reduction(emb_set.data, MDS_NAME, 2)
+                effective_params = {**global_params, "precomputed": True}
+                reduction = _run_with_overridden_config(
+                    self.base, effective_params, MDS_NAME, 2, emb_set.data
+                )
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 all_reductions.append(reduction)
                 self._save_projection_cache(
                     emb_set.name, MDS_NAME, 2, reduction, global_params
                 )
-                self.base.config.pop("precomputed", None)
                 computed_count += 1
                 continue
 
