@@ -174,6 +174,27 @@ def disambiguation_suffix(spec: MethodSpec, method_counts: Counter) -> str:
     return ""
 
 
+def _run_with_overridden_config(
+    base: BaseProcessor,
+    effective_params: dict[str, Any],
+    method: str,
+    dims: int,
+    data: Any,
+) -> dict[str, Any]:
+    """Run base.process_reduction with effective_params, restoring the prior
+    base.config afterwards.
+
+    Centralizes the save/restore pattern so a leaked `precomputed` flag (or
+    any other temporary key) cannot survive across reduction calls.
+    """
+    saved = base.config
+    base.config = effective_params
+    try:
+        return base.process_reduction(data, method, dims)
+    finally:
+        base.config = saved
+
+
 class ReductionPipeline:
     """Unified pipeline: load → annotate → reduce → output.
 
@@ -634,14 +655,9 @@ class ReductionPipeline:
                     continue
 
                 logger.info(f"Applying {method.upper()} {dims} to '{emb_set.name}'")
-
-                # Temporarily set effective params for this reduction
-                saved_config = self.base.config
-                self.base.config = effective_params
-                try:
-                    reduction = self.base.process_reduction(emb_set.data, method, dims)
-                finally:
-                    self.base.config = saved_config
+                reduction = _run_with_overridden_config(
+                    self.base, effective_params, method, dims, emb_set.data
+                )
 
                 reduction["name"] = format_projection_name(
                     emb_set.name, method, dims, param_suffix

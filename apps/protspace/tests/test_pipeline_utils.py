@@ -15,6 +15,8 @@ from protspace.data.processors.pipeline import (
     MethodSpec,
     PipelineConfig,
     ReductionPipeline,
+    _run_with_overridden_config,
+    disambiguation_suffix,
     parse_method_spec,
     parse_methods_arg,
 )
@@ -250,15 +252,11 @@ class TestFormatParamSuffix:
 
 class TestDisambiguationSuffix:
     def test_unique_method_returns_empty(self):
-        from protspace.data.processors.pipeline import disambiguation_suffix
-
         spec = parse_method_spec("umap2:n_neighbors=50")
         counts = Counter([(spec.method, spec.dims)])
         assert disambiguation_suffix(spec, counts) == ""
 
     def test_duplicates_with_overrides_return_suffixes(self):
-        from protspace.data.processors.pipeline import disambiguation_suffix
-
         a = parse_method_spec("umap2:n_neighbors=15")
         b = parse_method_spec("umap2:n_neighbors=50")
         counts = Counter([(a.method, a.dims), (b.method, b.dims)])
@@ -272,11 +270,6 @@ class TestDisambiguationSuffix:
         the (method, dims) pair is duplicated. The override spec carries the
         disambiguating suffix.
         """
-        from protspace.data.processors.pipeline import (
-            MethodSpec,
-            disambiguation_suffix,
-        )
-
         plain = MethodSpec("umap", 2)
         override = parse_method_spec("umap2:n_neighbors=50")
         counts = Counter([(plain.method, plain.dims), (override.method, override.dims)])
@@ -289,11 +282,6 @@ class TestDisambiguationSuffix:
         This case cannot occur via parse_methods_arg (it dedupes), but the
         helper should still behave sanely if called directly.
         """
-        from protspace.data.processors.pipeline import (
-            MethodSpec,
-            disambiguation_suffix,
-        )
-
         spec = MethodSpec("umap", 2)
         counts = Counter([(spec.method, spec.dims), (spec.method, spec.dims)])
         assert disambiguation_suffix(spec, counts) == ""
@@ -533,3 +521,63 @@ class TestMergeSameNameSets:
         # Before the fix, this raised "No common protein identifiers"
         result = pipeline._validate_headers(merge_same_name_sets([es1, es2]))
         assert set(result) == {"A", "B", "C", "D"}
+
+
+# ---------------------------------------------------------------------------
+# project.py base.config isolation contract
+# ---------------------------------------------------------------------------
+
+
+class TestRunWithOverriddenConfig:
+    """The shared helper must restore base.config between iterations so a
+    `precomputed` flag (or any temporary key) cannot leak from one spec to
+    the next.
+    """
+
+    def test_base_config_restored_after_call(self):
+        original = {"metric": "euclidean", "n_neighbors": 15}
+
+        class FakeBase:
+            def __init__(self, cfg):
+                self.config = cfg
+                self.seen_config = None
+
+            def process_reduction(self, data, method, dims):
+                self.seen_config = dict(self.config)
+                return {
+                    "name": f"{method}{dims}",
+                    "dimensions": dims,
+                    "data": [],
+                    "info": {},
+                }
+
+        base = FakeBase(dict(original))
+        effective = {**original, "n_neighbors": 50, "precomputed": True}
+
+        result = _run_with_overridden_config(base, effective, "umap", 2, data=None)
+
+        assert base.seen_config == effective, (
+            "process_reduction should observe the overridden config"
+        )
+        assert base.config == original, (
+            f"base.config leaked override; expected {original}, got {base.config}"
+        )
+        assert result["name"] == "umap2"
+
+    def test_config_restored_on_exception(self):
+        original = {"metric": "euclidean"}
+
+        class BoomBase:
+            def __init__(self, cfg):
+                self.config = cfg
+
+            def process_reduction(self, data, method, dims):
+                raise RuntimeError("boom")
+
+        base = BoomBase(dict(original))
+        with pytest.raises(RuntimeError, match="boom"):
+            _run_with_overridden_config(
+                base, {"metric": "cosine"}, "umap", 2, data=None
+            )
+
+        assert base.config == original
