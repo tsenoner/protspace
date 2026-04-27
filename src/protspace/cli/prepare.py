@@ -274,7 +274,7 @@ def prepare(
     embedder: Opt_Embedder = None,
     batch_size: Opt_BatchSize = 1000,
     # Projection
-    methods: Opt_Methods = "pca2",
+    methods: Opt_Methods = None,
     similarity: Opt_Similarity = False,
     metric: Opt_Metric = Metric.euclidean,
     random_state: Opt_RandomState = 42,
@@ -481,7 +481,10 @@ def prepare(
             PipelineConfig,
             ReducerParams,
             ReductionPipeline,
+            parse_methods_arg,
         )
+
+        method_specs = parse_methods_arg(methods or ["pca2"])
 
         reducer_params = ReducerParams(
             metric=metric.value,
@@ -497,7 +500,7 @@ def prepare(
             eps=eps,
         )
         config = PipelineConfig(
-            methods=methods.split(","),
+            methods=method_specs,
             output_path=output_path,
             bundled=bundled,
             keep_tmp=keep_tmp,
@@ -642,7 +645,7 @@ def _write_run_log(
         lines.append(f"{key}: {val}")
 
     lines += ["", "## Projection"]
-    lines.append(f"methods: {', '.join(pipeline_config.methods)}")
+    lines.append(f"methods: {', '.join(str(m) for m in pipeline_config.methods)}")
     lines.append(f"similarity: {similarity}")
     for key, val in rp.items():
         lines.append(f"{key}: {val}")

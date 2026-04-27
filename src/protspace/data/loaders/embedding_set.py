@@ -38,17 +38,51 @@ METHOD_DISPLAY_NAMES: dict[str, str] = {
 }
 
 
-def format_projection_name(source: str, method: str, dims: int) -> str:
+# Abbreviations for DR parameters in projection names
+_PARAM_ABBREVS: dict[str, str] = {
+    "n_neighbors": "n",
+    "min_dist": "d",
+    "perplexity": "p",
+    "learning_rate": "lr",
+    "mn_ratio": "mn",
+    "fp_ratio": "fp",
+    "metric": "m",
+    "random_state": "rs",
+    "n_init": "ni",
+    "max_iter": "mi",
+    "eps": "e",
+}
+
+
+def format_param_suffix(overrides: dict[str, int | float | str]) -> str:
+    """Format parameter overrides into a compact suffix string.
+
+    Examples:
+        {"n_neighbors": 50, "min_dist": 0.1} → "n=50, d=0.1"
+        {"metric": "cosine"} → "m=cosine"
+    """
+    parts = []
+    for key in sorted(overrides):
+        abbr = _PARAM_ABBREVS.get(key, key)
+        parts.append(f"{abbr}={overrides[key]}")
+    return ", ".join(parts)
+
+
+def format_projection_name(
+    source: str, method: str, dims: int, param_suffix: str = ""
+) -> str:
     """Format a human-readable projection name.
 
     Examples:
         ("prot_t5", "pca", 2) → "ProtT5 — PCA 2"
-        ("esm2_650m", "umap", 2) → "ESM2-650M — UMAP 2"
-        ("MMseqs2", "mds", 2) → "MMseqs2 — MDS 2"
+        ("esm2_650m", "umap", 2, "n=50, d=0.1") → "ESM2-650M — UMAP 2 (n=50, d=0.1)"
     """
     source_display = MODEL_DISPLAY_NAMES.get(source, source)
     method_display = METHOD_DISPLAY_NAMES.get(method, method.upper())
-    return f"{source_display} — {method_display} {dims}"
+    name = f"{source_display} — {method_display} {dims}"
+    if param_suffix:
+        name += f" ({param_suffix})"
+    return name
 
 
 @dataclass
