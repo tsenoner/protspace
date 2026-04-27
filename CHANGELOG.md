@@ -1,6 +1,94 @@
 # CHANGELOG
 
 
+## v4.4.0 (2026-04-27)
+
+### Documentation
+
+* docs: document multi-input merging behavior (union vs intersection)
+
+Document the fix from #44 — when multiple -i inputs share the same
+embedding name, proteins are unioned; different names still intersect.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`aca1beb`](https://github.com/tsenoner/protspace/commit/aca1bebd3feb9276083fb8a1ab68a1693f2ebe49))
+
+* docs: add git workflow convention to CLAUDE.md
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`58e5abf`](https://github.com/tsenoner/protspace/commit/58e5abffaa2d17b540960122afab6cf192422670))
+
+### Features
+
+* feat: support multiple DR parameter sets in a single prepare run (#46)
+
+Allow inline per-method parameter overrides in the -m flag using colon
+syntax with semicolon-separated params. This enables comparing the same
+DR method with different parameters in a single run without re-running
+the full pipeline.
+
+Example: -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" -m pca2
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com> ([`b2587d0`](https://github.com/tsenoner/protspace/commit/b2587d0b43d13b1b17cec12b85fa41a087cfb5e5))
+
+### Refactoring
+
+* refactor: use _run_with_overridden_config in precomputed-MDS branch
+
+The precomputed-MDS branch in _run_reductions was the last call site
+still mutating self.base.config in place (set precomputed=True, then
+pop() after). Migrate it to _run_with_overridden_config so:
+
+- The save/restore pattern is consistent across all reduction call sites.
+- A precomputed flag can no longer survive in base.config if
+  process_reduction raises mid-call.
+
+Regression tests cover both the happy path (flag is set during
+reduction, cleared after) and the exception path (flag is cleared
+even when reduction raises).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`8623365`](https://github.com/tsenoner/protspace/commit/8623365e49df06fa6db5ebb75f7cf7a26bfd797e))
+
+* refactor: extract _run_with_overridden_config and dedupe project loop
+
+- Add _run_with_overridden_config(base, effective_params, method, dims, data)
+  to pipeline.py to centralize the save/restore pattern for BaseProcessor.config.
+  A leaked `precomputed` flag (or any temporary key) can no longer survive
+  across reduction calls.
+- Update ReductionPipeline._run_reductions and cli/project.py to use both
+  the new helper and disambiguation_suffix. cli/project.py previously set
+  base.config without restoring it; this is now handled in one place.
+- Hoist the lazy in-test imports added in the previous commit to the top-level
+  import block in tests/test_pipeline_utils.py.
+
+Addresses PR #48 review feedback.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`4fa5e6f`](https://github.com/tsenoner/protspace/commit/4fa5e6fd8cbb4aaaf86c4dbd50a32496576d14ee))
+
+* refactor: extract disambiguation_suffix helper
+
+Centralize the param-suffix rule used by ReductionPipeline._run_reductions
+into a single helper so cli/project.py can share it (follow-up commit).
+
+Includes a regression test for the mixed plain+override case
+(`-m umap2 -m umap2:n_neighbors=50`) which currently emits "ProtT5 — UMAP 2"
+and "ProtT5 — UMAP 2 (n=50)".
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`8bb4a4c`](https://github.com/tsenoner/protspace/commit/8bb4a4c3fc7d937beb64db0d977ba76c72c0d595))
+
+### Unknown
+
+* Merge pull request #48 from tsenoner/feat/multi-dr-params
+
+feat: support multiple DR parameter sets in a single prepare run ([`b0b73f5`](https://github.com/tsenoner/protspace/commit/b0b73f59fe7bc71d33e29fee91044beead75fe8f))
+
+* Merge pull request #47 from tsenoner/docs/multi-input-merging
+
+docs: document multi-input merging behavior ([`b7cc16d`](https://github.com/tsenoner/protspace/commit/b7cc16d191e00d7ee0e33cb24912f865104036a0))
+
+* Merge pull request #45 from tsenoner/docs/git-workflow-convention
+
+docs: add git workflow convention to CLAUDE.md ([`04ed565`](https://github.com/tsenoner/protspace/commit/04ed5655e59dd13d86846b17768ac07c1e65c944))
+
+
 ## v4.3.1 (2026-04-17)
 
 ### Fixes
