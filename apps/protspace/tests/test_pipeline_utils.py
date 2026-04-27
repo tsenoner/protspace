@@ -1,5 +1,7 @@
 """Tests for pipeline utility functions."""
 
+from collections import Counter
+
 import numpy as np
 import pytest
 
@@ -239,6 +241,62 @@ class TestFormatParamSuffix:
 
     def test_unknown_key_passthrough(self):
         assert format_param_suffix({"custom_key": 42}) == "custom_key=42"
+
+
+# ---------------------------------------------------------------------------
+# disambiguation_suffix
+# ---------------------------------------------------------------------------
+
+
+class TestDisambiguationSuffix:
+    def test_unique_method_returns_empty(self):
+        from protspace.data.processors.pipeline import disambiguation_suffix
+
+        spec = parse_method_spec("umap2:n_neighbors=50")
+        counts = Counter([(spec.method, spec.dims)])
+        assert disambiguation_suffix(spec, counts) == ""
+
+    def test_duplicates_with_overrides_return_suffixes(self):
+        from protspace.data.processors.pipeline import disambiguation_suffix
+
+        a = parse_method_spec("umap2:n_neighbors=15")
+        b = parse_method_spec("umap2:n_neighbors=50")
+        counts = Counter([(a.method, a.dims), (b.method, b.dims)])
+        assert disambiguation_suffix(a, counts) == "n=15"
+        assert disambiguation_suffix(b, counts) == "n=50"
+
+    def test_plain_spec_alongside_override_returns_empty(self):
+        """Mixed case: -m umap2 -m umap2:n_neighbors=50.
+
+        The plain spec has no overrides, so its suffix is empty even though
+        the (method, dims) pair is duplicated. The override spec carries the
+        disambiguating suffix.
+        """
+        from protspace.data.processors.pipeline import (
+            MethodSpec,
+            disambiguation_suffix,
+        )
+
+        plain = MethodSpec("umap", 2)
+        override = parse_method_spec("umap2:n_neighbors=50")
+        counts = Counter([(plain.method, plain.dims), (override.method, override.dims)])
+        assert disambiguation_suffix(plain, counts) == ""
+        assert disambiguation_suffix(override, counts) == "n=50"
+
+    def test_duplicate_method_no_overrides_anywhere(self):
+        """If two specs collide with no overrides at all, suffix is empty.
+
+        This case cannot occur via parse_methods_arg (it dedupes), but the
+        helper should still behave sanely if called directly.
+        """
+        from protspace.data.processors.pipeline import (
+            MethodSpec,
+            disambiguation_suffix,
+        )
+
+        spec = MethodSpec("umap", 2)
+        counts = Counter([(spec.method, spec.dims), (spec.method, spec.dims)])
+        assert disambiguation_suffix(spec, counts) == ""
 
 
 # ---------------------------------------------------------------------------

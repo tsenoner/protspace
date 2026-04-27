@@ -158,6 +158,22 @@ def parse_methods_arg(raw: list[str]) -> list[MethodSpec]:
     return specs
 
 
+def disambiguation_suffix(spec: MethodSpec, method_counts: Counter) -> str:
+    """Return a parameter suffix for projection name disambiguation.
+
+    When the same (method, dims) pair appears multiple times in a run AND the
+    given spec carries parameter overrides, return the abbreviated parameter
+    string (e.g. "n=50, d=0.1"). Otherwise return "".
+
+    A plain spec sitting alongside an override spec returns "" — the override
+    spec alone carries the disambiguating suffix, and the plain spec keeps the
+    default name (e.g. "ProtT5 — UMAP 2").
+    """
+    if method_counts[(spec.method, spec.dims)] > 1 and spec.overrides:
+        return format_param_suffix(spec.overrides_dict)
+    return ""
+
+
 class ReductionPipeline:
     """Unified pipeline: load → annotate → reduce → output.
 
@@ -605,11 +621,7 @@ class ReductionPipeline:
                 effective_params = {**global_params, **spec.overrides_dict}
 
                 # Build param suffix for disambiguation
-                needs_disambiguation = method_counts[(method, dims)] > 1
-                if needs_disambiguation and spec.overrides:
-                    param_suffix = format_param_suffix(spec.overrides_dict)
-                else:
-                    param_suffix = ""
+                param_suffix = disambiguation_suffix(spec, method_counts)
 
                 cached = self._load_cached_projection(
                     emb_set.name, method, dims, effective_params, param_suffix
