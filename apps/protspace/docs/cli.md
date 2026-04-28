@@ -69,7 +69,7 @@ protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3,tsne2" -o
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
-| `-m, --methods` | DR methods (comma-sep or repeat). Inline params: `-m 'umap2:n_neighbors=50;min_dist=0.1'`. Methods: `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2` | `pca2` |
+| `-m, --methods` | DR methods. Repeat the flag or use commas to combine methods (`-m pca2,umap2`); use semicolons to inline parameter overrides for one method (`-m 'umap2:n_neighbors=50;min_dist=0.1'`). See [Overridable parameters](#overridable-parameters-with--m) for the supported keys. Methods: `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2`. | `pca2` |
 | `-s, --similarity` | Also compute sequence similarity DR from FASTA. | off |
 | `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`). | `euclidean` |
 | `--random-state` | Random seed. | `42` |
@@ -82,6 +82,38 @@ protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3,tsne2" -o
 | `--n-init` | MDS initializations. | `4` |
 | `--max-iter` | MDS max iterations. | `300` |
 | `--eps` | MDS convergence tolerance. | `1e-3` |
+
+##### Overridable parameters (with `-m`)
+
+`-m` accepts inline overrides per method using `key=value` pairs (semicolon-separated). The same keys are also available as global flags above; an inline override only affects that method's projection.
+
+| Key | Abbrev | Type | Used by |
+| --- | ------ | ---- | ------- |
+| `n_neighbors` | `n` | int | UMAP, PaCMAP, LocalMAP |
+| `min_dist` | `d` | float | UMAP |
+| `perplexity` | `p` | int | t-SNE |
+| `learning_rate` | `lr` | int | t-SNE |
+| `mn_ratio` | `mn` | float | PaCMAP, LocalMAP |
+| `fp_ratio` | `fp` | float | PaCMAP, LocalMAP |
+| `metric` | `m` | str | All (`euclidean`, `cosine`, `manhattan`) |
+| `random_state` | `rs` | int | All |
+| `n_init` | `ni` | int | MDS |
+| `max_iter` | `mi` | int | MDS |
+| `eps` | `e` | float | MDS |
+
+The **abbreviation** is what appears in projection names when the same method and dimension count is requested with different overrides — see [Projection Naming](#projection-naming).
+
+Example:
+
+```bash
+protspace prepare -i emb.h5 \
+  -m 'umap2:n_neighbors=15' \
+  -m 'umap2:n_neighbors=50;min_dist=0.05' \
+  -m pca2 \
+  -o output
+```
+
+This produces three projections: `ProtT5 — PCA 2`, `ProtT5 — UMAP 2 (n=15)`, and `ProtT5 — UMAP 2 (d=0.05, n=50)`.
 
 #### Annotations
 
@@ -171,6 +203,8 @@ Duplicate proteins across same-name inputs are deduplicated if their embeddings 
 ## Projection Naming
 
 Projections are prefixed with the embedding source: `ESM2-650M — PCA 2`, `ProtT5 — UMAP 2`, `MMseqs2 — MDS 2`.
+
+When the same method and dimension count is requested with different inline parameter overrides (a parameter sweep), the differing parameters are appended in parentheses using their abbreviated names — for example, `ProtT5 — UMAP 2 (n=50)` for `umap2:n_neighbors=50` running alongside another `umap2` variant. A plain `umap2` (no overrides) keeps the unsuffixed name. See [Overridable parameters](#overridable-parameters-with--m) for the abbreviation table.
 
 ## Model Name Resolution (`-i file.h5:name`)
 
