@@ -84,6 +84,37 @@ def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
     return sp_map
 
 
+def write_mature_fasta(
+    tsv_path: Path,
+    sp_map: dict[str, int],
+    fasta_out: Path,
+) -> dict[str, int]:
+    """Write FASTA with SPs cleaved; return {accession: mature_length}."""
+    fasta_out.parent.mkdir(parents=True, exist_ok=True)
+    lengths: dict[str, int] = {}
+
+    with tsv_path.open() as fin, fasta_out.open("w") as fout:
+        header = fin.readline().rstrip("\n").split("\t")
+        idx_entry = header.index("Entry")
+        idx_seq = header.index("Sequence")
+
+        for line in fin:
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) <= max(idx_entry, idx_seq):
+                continue
+            acc = fields[idx_entry]
+            seq = fields[idx_seq]
+            if not acc or not seq:
+                continue
+
+            sp_end = sp_map.get(acc, 0)
+            mature = seq[sp_end:]
+            lengths[acc] = len(mature)
+            fout.write(f">{acc}\n{mature}\n")
+
+    return lengths
+
+
 def main() -> int:
     raise NotImplementedError
 

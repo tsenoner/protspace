@@ -73,3 +73,21 @@ def test_parse_signal_peptides_keeps_sp_with_freetext_uncertainty(tmp_path):
         ],
     )
     assert toxprot_demo.parse_signal_peptides(tsv) == {"P1": 23}
+
+
+def test_write_mature_fasta_strips_correctly(tmp_path):
+    tsv = _write_tsv(
+        tmp_path / "in.tsv",
+        [
+            {"Entry": "P1", "Sequence": "AAABBBCCC", "Signal peptide": "SIGNAL 1..3"},
+            {"Entry": "P2", "Sequence": "XYZ", "Signal peptide": ""},
+        ],
+    )
+    out = tmp_path / "mature.fasta"
+    sp_map = {"P1": 3}
+    lengths = toxprot_demo.write_mature_fasta(tsv, sp_map, out)
+
+    assert lengths == {"P1": 6, "P2": 3}
+    text = out.read_text()
+    assert ">P1\nBBBCCC" in text
+    assert ">P2\nXYZ" in text
