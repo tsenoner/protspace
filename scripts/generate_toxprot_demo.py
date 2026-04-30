@@ -11,10 +11,13 @@ See docs/superpowers/specs/2026-04-30-toxprot-demo-regeneration-design.md
 
 from __future__ import annotations
 
+import argparse
 import gzip
 import io
+import json
 import logging
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -35,6 +38,13 @@ METHODS = "umap2:n_neighbors=50;min_dist=0.5,pca2"
 ANNOTATIONS = "default,interpro,taxonomy"
 RANDOM_STATE = 42
 SIGNAL_RE = re.compile(r"SIGNAL\s+(\d+)\.\.(\d+)")
+DEFAULT_SOURCE_SETTINGS = (
+    Path(__file__).resolve().parent.parent.parent
+    / "protspace_web"
+    / "app"
+    / "public"
+    / "data.parquetbundle"
+)
 
 
 def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
@@ -206,7 +216,71 @@ def postprocess_bundle(
 
 
 def main() -> int:
-    raise NotImplementedError
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("data/toxins"),
+        help="Output directory for the bundle and tmp/ cache.",
+    )
+    parser.add_argument(
+        "--source-settings",
+        type=Path,
+        default=DEFAULT_SOURCE_SETTINGS,
+        help=(
+            "Bundle to copy settings JSON from (the existing web demo). "
+            f"Default: {DEFAULT_SOURCE_SETTINGS}"
+        ),
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    out_dir: Path = args.output
+    tmp_dir = out_dir / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    tsv_path = fetch_toxprot_tsv(TOXPROT_QUERY, tmp_dir / "toxprot.tsv")
+    sp_map = parse_signal_peptides(tsv_path)
+    fasta_path = tmp_dir / "toxprot_mature.fasta"
+    mature_lengths = write_mature_fasta(tsv_path, sp_map, fasta_path)
+    (tmp_dir / "mature_lengths.json").write_text(json.dumps(mature_lengths))
+
+    cmd = [
+        "protspace",
+        "prepare",
+        "-i",
+        str(fasta_path),
+        "-e",
+        EMBEDDERS,
+        "-m",
+        METHODS,
+        "-a",
+        ANNOTATIONS,
+        "--random-state",
+        str(RANDOM_STATE),
+        "-o",
+        str(out_dir),
+        "-v",
+    ]
+    logger.info("Running: %s", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+    bundle_path = out_dir / "data.parquetbundle"
+    if not bundle_path.exists():
+        raise SystemExit(f"prepare did not produce {bundle_path}")
+
+    postprocess_bundle(
+        bundle_path=bundle_path,
+        mature_lengths=mature_lengths,
+        source_settings_bundle=args.source_settings,
+    )
+    logger.info("Done: %s", bundle_path)
+    return 0
 
 
 if __name__ == "__main__":
