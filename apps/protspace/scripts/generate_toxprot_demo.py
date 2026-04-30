@@ -175,13 +175,16 @@ def postprocess_bundle(
     metadata = pq.read_table(io.BytesIO(parts[1]))
     data = pq.read_table(io.BytesIO(parts[2]))
 
+    # Map by protein_id (not positional) — bundle row order is not guaranteed
+    # to match FASTA order after EmbeddingSet merging and dedup in the prepare
+    # pipeline.
     ids = annotations.column("protein_id").to_pylist()
     new_lengths = [mature_lengths.get(pid) for pid in ids]
     if any(v is None for v in new_lengths):
         missing = [pid for pid, v in zip(ids, new_lengths, strict=True) if v is None]
         raise SystemExit(
-            f"{len(missing)} protein_ids missing from mature_lengths "
-            f"(first 5: {missing[:5]})"
+            f"{len(missing)} protein_ids in {bundle_path.name} not present in "
+            f"mature_lengths ({len(mature_lengths)} keys). First 5: {missing[:5]}"
         )
 
     existing_type = annotations.column("length").type
