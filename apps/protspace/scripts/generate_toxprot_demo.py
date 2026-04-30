@@ -11,10 +11,14 @@ See docs/superpowers/specs/2026-04-30-toxprot-demo-regeneration-design.md
 
 from __future__ import annotations
 
+import gzip
+import io
 import logging
 import re
 import sys
 from pathlib import Path
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +117,40 @@ def write_mature_fasta(
             fout.write(f">{acc}\n{mature}\n")
 
     return lengths
+
+
+def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
+    """Stream UniProt TSV (gzip on wire) to `out_path`. Cache hit on existing non-empty file."""
+    if out_path.exists() and out_path.stat().st_size > 0:
+        logger.info("Reusing cached TSV at %s", out_path)
+        return out_path
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    params = {
+        "query": query,
+        "format": "tsv",
+        "fields": "accession,sequence,ft_signal",
+        "compressed": "true",
+    }
+
+    logger.info("Streaming UniProt TSV: %s", query)
+    response = requests.get(UNIPROT_STREAM_URL, params=params, stream=True, timeout=300)
+    response.raise_for_status()
+
+    raw = io.BytesIO()
+    for chunk in response.iter_content(chunk_size=8192):
+        if chunk:
+            raw.write(chunk)
+    raw.seek(0)
+
+    decompressed = gzip.decompress(raw.read()).decode("utf-8")
+
+    if decompressed.count("\n") <= 1:
+        raise SystemExit(f"No proteins returned for query: {query!r}")
+
+    out_path.write_text(decompressed)
+    logger.info("Wrote %d bytes to %s", out_path.stat().st_size, out_path)
+    return out_path
 
 
 def main() -> int:
