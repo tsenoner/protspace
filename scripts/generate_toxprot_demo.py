@@ -120,7 +120,11 @@ def write_mature_fasta(
 
 
 def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
-    """Stream UniProt TSV (gzip on wire) to `out_path`. Cache hit on existing non-empty file."""
+    """Stream UniProt TSV (gzip on wire) to `out_path`. Cache hit on existing non-empty file.
+
+    The cache key is `out_path` only — if the query changes, the caller must
+    use a different path or delete the existing file to force a re-fetch.
+    """
     if out_path.exists() and out_path.stat().st_size > 0:
         logger.info("Reusing cached TSV at %s", out_path)
         return out_path
@@ -145,10 +149,10 @@ def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
 
     decompressed = gzip.decompress(raw.read()).decode("utf-8")
 
-    if decompressed.count("\n") <= 1:
+    if len(decompressed.splitlines()) <= 1:
         raise SystemExit(f"No proteins returned for query: {query!r}")
 
-    out_path.write_text(decompressed)
+    out_path.write_text(decompressed, encoding="utf-8")
     logger.info("Wrote %d bytes to %s", out_path.stat().st_size, out_path)
     return out_path
 
