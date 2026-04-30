@@ -114,7 +114,7 @@ Expected: `All checks passed!`
 ```bash
 git add scripts/generate_toxprot_demo.py tests/test_toxprot_demo.py
 git commit -m "$(cat <<'EOF'
-feat(scripts): scaffold generate_toxprot_demo
+chore(scripts): scaffold generate_toxprot_demo
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -263,7 +263,7 @@ Expected: `All checks passed!`
 ```bash
 git add scripts/generate_toxprot_demo.py tests/test_toxprot_demo.py
 git commit -m "$(cat <<'EOF'
-feat(toxprot-demo): parse signal peptides from UniProt TSV
+chore(toxprot-demo): parse signal peptides from UniProt TSV
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -358,7 +358,7 @@ Expected: `All checks passed!`
 ```bash
 git add scripts/generate_toxprot_demo.py tests/test_toxprot_demo.py
 git commit -m "$(cat <<'EOF'
-feat(toxprot-demo): write mature FASTA with SPs cleaved
+chore(toxprot-demo): write mature FASTA with SPs cleaved
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -433,7 +433,7 @@ Expected: `All checks passed!`
 ```bash
 git add scripts/generate_toxprot_demo.py
 git commit -m "$(cat <<'EOF'
-feat(toxprot-demo): stream UniProt TSV with sequence + signal_peptide
+chore(toxprot-demo): stream UniProt TSV with sequence + signal_peptide
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -591,7 +591,7 @@ Expected: `All checks passed!`
 ```bash
 git add scripts/generate_toxprot_demo.py tests/test_toxprot_demo.py
 git commit -m "$(cat <<'EOF'
-feat(toxprot-demo): post-process bundle with mature length + settings
+chore(toxprot-demo): post-process bundle with mature length + settings
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -695,7 +695,7 @@ Expected: `All checks passed!`
 ```bash
 git add scripts/generate_toxprot_demo.py
 git commit -m "$(cat <<'EOF'
-feat(toxprot-demo): wire main orchestration
+chore(toxprot-demo): wire main orchestration
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
