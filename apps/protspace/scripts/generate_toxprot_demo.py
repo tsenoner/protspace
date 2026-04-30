@@ -36,7 +36,8 @@ def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
 
     Skipped (treated as no SP):
       - Empty `ft_signal`.
-      - Bounds containing `?`, `<`, or `>` (uncertain).
+      - Bounds containing `?`, `<`, or `>` (uncertain). Free-text notes within
+        the field do not count — only the SIGNAL bounds do.
       - Multiple SP features on a single entry.
     """
     sp_map: dict[str, int] = {}
@@ -53,6 +54,8 @@ def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
             total += 1
             fields = line.rstrip("\n").split("\t")
             entry = fields[idx_entry]
+            if not entry:
+                continue
             signal = fields[idx_signal] if idx_signal < len(fields) else ""
 
             if not signal.strip():
@@ -63,11 +66,9 @@ def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
                 skipped_multiple += 1
                 continue
             if not matches:
-                if any(c in signal for c in ("?", "<", ">")):
+                # SP feature present but bounds aren't digit..digit → uncertain.
+                if "SIGNAL" in signal:
                     skipped_uncertain += 1
-                continue
-            if any(c in signal for c in ("?", "<", ">")):
-                skipped_uncertain += 1
                 continue
 
             sp_map[entry] = int(matches[0][1])

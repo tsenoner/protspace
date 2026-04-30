@@ -54,3 +54,22 @@ def test_parse_signal_peptides_skips_multiple_features(tmp_path):
         ],
     )
     assert toxprot_demo.parse_signal_peptides(tsv) == {}
+
+
+def test_parse_signal_peptides_keeps_sp_with_freetext_uncertainty(tmp_path):
+    """Spec: only the *bounds* should trigger uncertain-skip.
+
+    UniProt notes can include `?`, `<`, `>` in evidence/comment fields. Those
+    must not poison a cleanly-bounded SP record.
+    """
+    tsv = _write_tsv(
+        tmp_path / "in.tsv",
+        [
+            {
+                "Entry": "P1",
+                "Sequence": "MMMAAA",
+                "Signal peptide": 'SIGNAL 1..23; /evidence="ECO:0000269"; /note="confidence > 99%"',
+            },
+        ],
+    )
+    assert toxprot_demo.parse_signal_peptides(tsv) == {"P1": 23}
