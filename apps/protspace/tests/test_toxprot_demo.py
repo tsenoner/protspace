@@ -12,3 +12,45 @@ spec = importlib.util.spec_from_file_location("generate_toxprot_demo", SCRIPT_PA
 toxprot_demo = importlib.util.module_from_spec(spec)
 sys.modules["generate_toxprot_demo"] = toxprot_demo
 spec.loader.exec_module(toxprot_demo)
+
+
+def _write_tsv(path: Path, rows: list[dict]) -> Path:
+    cols = ["Entry", "Sequence", "Signal peptide"]
+    with path.open("w") as f:
+        f.write("\t".join(cols) + "\n")
+        for row in rows:
+            f.write("\t".join(row.get(c, "") for c in cols) + "\n")
+    return path
+
+
+def test_parse_signal_peptides_keeps_only_clean_bounds(tmp_path):
+    tsv = _write_tsv(
+        tmp_path / "in.tsv",
+        [
+            {
+                "Entry": "P1",
+                "Sequence": "MMMAAA",
+                "Signal peptide": 'SIGNAL 1..3; /evidence="X"',
+            },
+            {"Entry": "P2", "Sequence": "MMMAAA", "Signal peptide": ""},
+            {"Entry": "P3", "Sequence": "MMMAAA", "Signal peptide": "SIGNAL ?..30"},
+            {"Entry": "P4", "Sequence": "MMMAAA", "Signal peptide": "SIGNAL <1..25"},
+            {"Entry": "P5", "Sequence": "MMMAAA", "Signal peptide": "SIGNAL >20..30"},
+        ],
+    )
+    sp_map = toxprot_demo.parse_signal_peptides(tsv)
+    assert sp_map == {"P1": 3}
+
+
+def test_parse_signal_peptides_skips_multiple_features(tmp_path):
+    tsv = _write_tsv(
+        tmp_path / "in.tsv",
+        [
+            {
+                "Entry": "P1",
+                "Sequence": "MMM",
+                "Signal peptide": "SIGNAL 1..3; SIGNAL 5..10",
+            }
+        ],
+    )
+    assert toxprot_demo.parse_signal_peptides(tsv) == {}
