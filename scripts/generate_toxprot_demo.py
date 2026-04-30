@@ -17,6 +17,7 @@ import io
 import json
 import logging
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -232,13 +233,20 @@ def main() -> int:
             f"Default: {DEFAULT_SOURCE_SETTINGS}"
         ),
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Verbose logging. Repeat for more (-v=INFO, -vv=DEBUG).",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    from protspace.cli.app import setup_logging
+
+    # Default to INFO so progress logs are visible during the long live run.
+    # setup_logging maps 1 → INFO, 2+ → DEBUG.
+    setup_logging(args.verbose + 1)
 
     out_dir: Path = args.output
     tmp_dir = out_dir / "tmp"
@@ -267,7 +275,7 @@ def main() -> int:
         str(out_dir),
         "-v",
     ]
-    logger.info("Running: %s", " ".join(cmd))
+    logger.info("Running: %s", shlex.join(cmd))
     subprocess.run(cmd, check=True)
 
     bundle_path = out_dir / "data.parquetbundle"
