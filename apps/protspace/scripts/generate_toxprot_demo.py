@@ -18,6 +18,8 @@ import re
 import sys
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import requests
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,49 @@ def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
     out_path.write_text(decompressed, encoding="utf-8")
     logger.info("Wrote %d bytes to %s", out_path.stat().st_size, out_path)
     return out_path
+
+
+def postprocess_bundle(
+    bundle_path: Path,
+    mature_lengths: dict[str, int],
+    source_settings_bundle: Path,
+) -> None:
+    """Override the `length` column with mature lengths and patch settings JSON."""
+    from protspace.data.io.bundle import read_bundle, write_bundle
+
+    if not source_settings_bundle.exists():
+        raise SystemExit(f"Source settings bundle not found: {source_settings_bundle}")
+
+    parts, _ = read_bundle(bundle_path)
+    annotations = pq.read_table(io.BytesIO(parts[0]))
+    metadata = pq.read_table(io.BytesIO(parts[1]))
+    data = pq.read_table(io.BytesIO(parts[2]))
+
+    ids = annotations.column("protein_id").to_pylist()
+    new_lengths = [mature_lengths.get(pid) for pid in ids]
+    if any(v is None for v in new_lengths):
+        missing = [pid for pid, v in zip(ids, new_lengths, strict=True) if v is None]
+        raise SystemExit(
+            f"{len(missing)} protein_ids missing from mature_lengths "
+            f"(first 5: {missing[:5]})"
+        )
+
+    existing_type = annotations.column("length").type
+    new_col = pa.array(new_lengths).cast(existing_type)
+    new_annotations = annotations.set_column(
+        annotations.schema.get_field_index("length"), "length", new_col
+    )
+
+    _, source_settings = read_bundle(source_settings_bundle)
+    if source_settings is None:
+        raise SystemExit(
+            f"Source settings bundle has no settings part: {source_settings_bundle}"
+        )
+
+    write_bundle(
+        [new_annotations, metadata, data], bundle_path, settings=source_settings
+    )
+    logger.info("Patched bundle %s (length + settings)", bundle_path)
 
 
 def main() -> int:
