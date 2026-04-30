@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import sys
 from pathlib import Path
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # Load the script as a module so tests can import its helpers.
 SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "generate_toxprot_demo.py"
@@ -91,3 +95,54 @@ def test_write_mature_fasta_strips_correctly(tmp_path):
     text = out.read_text()
     assert ">P1\nBBBCCC" in text
     assert ">P2\nXYZ" in text
+
+
+def _make_synthetic_bundle(path: Path, settings: dict | None = None) -> Path:
+    from protspace.data.io.bundle import write_bundle
+
+    annotations = pa.table(
+        {
+            "protein_id": ["P1", "P2"],
+            "length": [100, 200],
+            "ec": ["3.4.21.-", "__NA__"],
+        }
+    )
+    metadata = pa.table(
+        {
+            "projection_name": ["PCA_2"],
+            "dimensions": [2],
+            "info_json": ["{}"],
+        }
+    )
+    data = pa.table(
+        {
+            "projection_name": ["PCA_2", "PCA_2"],
+            "identifier": ["P1", "P2"],
+            "x": [0.0, 1.0],
+            "y": [0.0, 1.0],
+        }
+    )
+    write_bundle([annotations, metadata, data], path, settings=settings)
+    return path
+
+
+def test_postprocess_bundle_replaces_length_and_settings(tmp_path):
+    from protspace.data.io.bundle import read_bundle
+
+    target = _make_synthetic_bundle(tmp_path / "target.parquetbundle")
+    source_settings = {"pfam": {"sortMode": "manual", "categories": {}}}
+    source = _make_synthetic_bundle(
+        tmp_path / "source.parquetbundle", settings=source_settings
+    )
+
+    toxprot_demo.postprocess_bundle(
+        bundle_path=target,
+        mature_lengths={"P1": 50, "P2": 150},
+        source_settings_bundle=source,
+    )
+
+    parts, settings = read_bundle(target)
+    annotations = pq.read_table(io.BytesIO(parts[0])).to_pydict()
+    assert annotations["protein_id"] == ["P1", "P2"]
+    assert annotations["length"] == [50, 150]
+    assert settings == source_settings
