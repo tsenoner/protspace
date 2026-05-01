@@ -2,9 +2,12 @@
 """Regenerate the toxprot demo .parquetbundle.
 
 Fetches UniProt sequences + signal-peptide positions, strips SPs, embeds
-the mature peptides with ProtT5 and ESMC-300m, then runs DR + annotation
-fetch via `protspace prepare`. Finally overrides the `length` column to
-mature length and patches in the existing web-demo settings JSON.
+the mature peptides with ProtT5 and ESM2-650M, then runs DR + annotation
+fetch via `protspace prepare`. Finally trims the bundle's annotations to
+the original demo's column set, replaces `length` with mature length,
+and patches the settings JSON: top-9 categories for pfam/ec/superfamily/
+cath are recomputed from the new data; protein_families styling is
+preserved from the existing web demo.
 
 See docs/superpowers/specs/2026-04-30-toxprot-demo-regeneration-design.md
 """
@@ -34,7 +37,7 @@ TOXPROT_QUERY = (
     "(reviewed:true)"
 )
 UNIPROT_STREAM_URL = "https://rest.uniprot.org/uniprotkb/stream"
-EMBEDDERS = "prot_t5,esmc_300m"
+EMBEDDERS = "prot_t5,esm2_650m"
 METHODS = "umap2:n_neighbors=50;min_dist=0.5,pca2"
 ANNOTATIONS = "default,interpro,taxonomy"
 RANDOM_STATE = 42
@@ -46,6 +49,49 @@ DEFAULT_SOURCE_SETTINGS = (
     / "public"
     / "data.parquetbundle"
 )
+
+# Annotation columns to keep in the final bundle, in display order.
+# Mirrors the original web demo bundle. `length` replaces `length_quantile`
+# because the frontend now does its own binning.
+KEEP_ANNOTATION_COLUMNS: tuple[str, ...] = (
+    "protein_id",
+    "protein_families",
+    "ec",
+    "keyword",
+    "length",
+    "reviewed",
+    "cath",
+    "pfam",
+    "superfamily",
+    "phylum",
+    "class",
+    "order",
+    "family",
+    "genus",
+    "species",
+    "gene_name",
+    "protein_name",
+    "uniprot_kb_id",
+)
+
+# Annotations whose top-9 categories are recomputed from the new data and
+# styled with the Kelly's palette. `protein_families` is intentionally
+# excluded — its hand-curated settings are preserved as-is.
+RESTYLED_ANNOTATIONS: tuple[str, ...] = ("pfam", "ec", "superfamily", "cath")
+
+# First nine Kelly's high-contrast colors (zOrder 0–8). zOrder 9 is __NA__.
+KELLYS_PALETTE: tuple[str, ...] = (
+    "#F3C300",
+    "#875692",
+    "#F38400",
+    "#A1CAF1",
+    "#BE0032",
+    "#C2B280",
+    "#008856",
+    "#E68FAC",
+    "#0067A5",
+)
+NA_COLOR = "#DDDDDD"
 
 
 def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
@@ -170,12 +216,94 @@ def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
     return out_path
 
 
+def _drop_and_reorder_columns(annotations: pa.Table) -> pa.Table:
+    """Filter `annotations` to ``KEEP_ANNOTATION_COLUMNS`` (intersection)
+    in that exact order. Columns not in the keep-list are dropped.
+    """
+    keep = [c for c in KEEP_ANNOTATION_COLUMNS if c in annotations.column_names]
+    return annotations.select(keep)
+
+
+def _extract_categories(cell: str | None) -> list[str]:
+    """Split a multi-value annotation cell into clean category labels.
+
+    Cells use ``;`` as a hard separator and ``|`` to attach a confidence
+    score / evidence code to the value before it. The label is the part
+    before the first ``|``.
+    """
+    if not cell:
+        return []
+    out: list[str] = []
+    for piece in cell.split(";"):
+        head = piece.split("|", 1)[0].strip()
+        if head and head != "__NA__":
+            out.append(head)
+    return out
+
+
+def _build_top_categories_styling(
+    column: pa.ChunkedArray,
+    *,
+    template: dict,
+) -> dict:
+    """Recompute the manual top-9 + ``__NA__`` styling for an annotation.
+
+    Returns a settings dict using the same metadata as ``template``
+    (sortMode, palette, etc.) but with a fresh ``categories`` block built
+    from the most common cleaned tokens in ``column``.
+    """
+    from collections import Counter
+
+    counts: Counter[str] = Counter()
+    n_na = 0
+    for cell in column.to_pylist():
+        cats = _extract_categories(cell)
+        if not cats:
+            n_na += 1
+            continue
+        counts.update(cats)
+
+    new_categories: dict[str, dict] = {}
+    for z, (label, _) in enumerate(counts.most_common(len(KELLYS_PALETTE))):
+        new_categories[label] = {
+            "zOrder": z,
+            "color": KELLYS_PALETTE[z],
+            "shape": "circle",
+        }
+    if n_na > 0:
+        new_categories["__NA__"] = {
+            "zOrder": len(KELLYS_PALETTE),
+            "color": NA_COLOR,
+            "shape": "circle",
+        }
+
+    out = dict(template)
+    out["categories"] = new_categories
+    return out
+
+
+def _restyle_settings(annotations: pa.Table, source_settings: dict) -> dict:
+    """Return a copy of ``source_settings`` with top-9 categories
+    recomputed for ``RESTYLED_ANNOTATIONS`` (others passed through).
+    """
+    new_settings = dict(source_settings)
+    for col in RESTYLED_ANNOTATIONS:
+        if col not in annotations.column_names or col not in source_settings:
+            continue
+        new_settings[col] = _build_top_categories_styling(
+            annotations.column(col), template=source_settings[col]
+        )
+    return new_settings
+
+
 def postprocess_bundle(
     bundle_path: Path,
     mature_lengths: dict[str, int],
     source_settings_bundle: Path,
 ) -> None:
-    """Override the `length` column with mature lengths and patch settings JSON."""
+    """Patch the bundle: mature lengths, column drop+reorder, restyled
+    top-9 categories, and the original ``protein_families`` settings.
+    """
     from protspace.data.io.bundle import read_bundle, write_bundle
 
     if not source_settings_bundle.exists():
@@ -200,9 +328,11 @@ def postprocess_bundle(
 
     existing_type = annotations.column("length").type
     new_col = pa.array(new_lengths).cast(existing_type)
-    new_annotations = annotations.set_column(
+    annotations = annotations.set_column(
         annotations.schema.get_field_index("length"), "length", new_col
     )
+
+    annotations = _drop_and_reorder_columns(annotations)
 
     _, source_settings = read_bundle(source_settings_bundle)
     if source_settings is None:
@@ -210,10 +340,10 @@ def postprocess_bundle(
             f"Source settings bundle has no settings part: {source_settings_bundle}"
         )
 
-    write_bundle(
-        [new_annotations, metadata, data], bundle_path, settings=source_settings
-    )
-    logger.info("Patched bundle %s (length + settings)", bundle_path)
+    new_settings = _restyle_settings(annotations, source_settings)
+
+    write_bundle([annotations, metadata, data], bundle_path, settings=new_settings)
+    logger.info("Patched bundle %s (length, columns, restyled settings)", bundle_path)
 
 
 def main() -> int:

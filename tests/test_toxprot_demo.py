@@ -105,6 +105,8 @@ def _make_synthetic_bundle(path: Path, settings: dict | None = None) -> Path:
             "protein_id": ["P1", "P2"],
             "length": [100, 200],
             "ec": ["3.4.21.-", "__NA__"],
+            "signal_peptide": ["yes", ""],
+            "protein_families": ["fam_a", "fam_b"],
         }
     )
     metadata = pa.table(
@@ -126,7 +128,7 @@ def _make_synthetic_bundle(path: Path, settings: dict | None = None) -> Path:
     return path
 
 
-def test_postprocess_bundle_replaces_length_and_settings(tmp_path):
+def test_postprocess_bundle_replaces_length_drops_extras_and_reorders(tmp_path):
     from protspace.data.io.bundle import read_bundle
 
     target = _make_synthetic_bundle(tmp_path / "target.parquetbundle")
@@ -142,7 +144,115 @@ def test_postprocess_bundle_replaces_length_and_settings(tmp_path):
     )
 
     parts, settings = read_bundle(target)
-    annotations = pq.read_table(io.BytesIO(parts[0])).to_pydict()
-    assert annotations["protein_id"] == ["P1", "P2"]
-    assert annotations["length"] == [50, 150]
+    annotations = pq.read_table(io.BytesIO(parts[0]))
+    pyd = annotations.to_pydict()
+    assert pyd["protein_id"] == ["P1", "P2"]
+    assert pyd["length"] == [50, 150]
+    # Drop list applied: signal_peptide removed.
+    assert "signal_peptide" not in annotations.column_names
+    # Reorder applied: protein_families is the first non-id column.
+    assert annotations.column_names[:2] == ["protein_id", "protein_families"]
+    # Settings preserved when there's nothing to restyle (synthetic bundle has
+    # no `pfam` column).
     assert settings == source_settings
+
+
+def test_drop_and_reorder_columns_filters_and_orders():
+    table = pa.table(
+        {
+            # Out of order, with an unwanted column in the middle.
+            "ec": ["a"],
+            "signal_peptide": ["x"],
+            "length": [1],
+            "protein_id": ["P1"],
+            "protein_families": ["fam"],
+        }
+    )
+    out = toxprot_demo._drop_and_reorder_columns(table)
+    assert out.column_names == [
+        "protein_id",
+        "protein_families",
+        "ec",
+        "length",
+    ]
+
+
+def test_extract_categories_splits_and_cleans():
+    extract = toxprot_demo._extract_categories
+    # Confidence scores after `|` are stripped.
+    assert extract("PF21947 (Toxin_cobra-type)|41.8") == ["PF21947 (Toxin_cobra-type)"]
+    # `;` separates multiple values; each value's `|score` is stripped.
+    assert extract("1.10.405.10|625.3;3.50.50.60 (FAD)|625.3") == [
+        "1.10.405.10",
+        "3.50.50.60 (FAD)",
+    ]
+    # Evidence-code suffix (e.g. "EXP") also stripped.
+    assert extract("1.4.3.2 (L-amino-acid oxidase)|EXP") == [
+        "1.4.3.2 (L-amino-acid oxidase)"
+    ]
+    # Empty / NA cells yield no categories.
+    assert extract("") == []
+    assert extract(None) == []
+    assert extract("__NA__") == []
+
+
+def test_restyle_settings_recomputes_top_categories():
+    # 3× "PF_A", 2× "PF_B", 1× "PF_C", 1 NA.
+    annotations = pa.table(
+        {
+            "protein_id": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+            "pfam": [
+                "PF_A|10",
+                "PF_A|11",
+                "PF_A|12",
+                "PF_B|10",
+                "PF_B|10",
+                "PF_C|10",
+                "",
+            ],
+        }
+    )
+    template = {
+        "sortMode": "manual",
+        "selectedPaletteId": "kellys",
+        "categories": {"old_label": {"zOrder": 0, "color": "#000", "shape": "circle"}},
+    }
+    new = toxprot_demo._restyle_settings(annotations, {"pfam": template})
+    cats = new["pfam"]["categories"]
+
+    # Old categories wiped, new ones in frequency order.
+    assert "old_label" not in cats
+    assert cats["PF_A"]["zOrder"] == 0
+    assert cats["PF_A"]["color"] == toxprot_demo.KELLYS_PALETTE[0]
+    assert cats["PF_B"]["zOrder"] == 1
+    assert cats["PF_C"]["zOrder"] == 2
+    # __NA__ pinned at zOrder 9 because there's at least one empty cell.
+    assert cats["__NA__"]["zOrder"] == len(toxprot_demo.KELLYS_PALETTE)
+    assert cats["__NA__"]["color"] == toxprot_demo.NA_COLOR
+    # Other template metadata passes through.
+    assert new["pfam"]["sortMode"] == "manual"
+    assert new["pfam"]["selectedPaletteId"] == "kellys"
+
+
+def test_restyle_settings_preserves_protein_families():
+    annotations = pa.table(
+        {
+            "protein_id": ["P1"],
+            "protein_families": ["something|else"],
+            "pfam": ["PF_A"],
+        }
+    )
+    pf_settings = {
+        "sortMode": "manual",
+        "categories": {
+            "hand_curated": {"zOrder": 0, "color": "#abc", "shape": "circle"}
+        },
+    }
+    pfam_template = {"sortMode": "manual", "categories": {}}
+    new = toxprot_demo._restyle_settings(
+        annotations, {"protein_families": pf_settings, "pfam": pfam_template}
+    )
+    # protein_families left untouched.
+    assert new["protein_families"] == pf_settings
+    # pfam recomputed.
+    assert "PF_A" in new["pfam"]["categories"]
