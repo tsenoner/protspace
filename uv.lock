@@ -2744,6 +2744,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+benchmark = [
+    { name = "matplotlib" },
+]
 frontend = [
     { name = "dash" },
     { name = "dash-bootstrap-components" },
@@ -2794,6 +2797,7 @@ requires-dist = [
     { name = "gunicorn", marker = "extra == 'frontend'", specifier = ">=23.0.0" },
     { name = "h5py", specifier = ">=3.12.1" },
     { name = "kaleido", marker = "extra == 'frontend'", specifier = ">=0.2.1,!=0.2.1.post1" },
+    { name = "matplotlib", marker = "extra == 'benchmark'", specifier = ">=3.8.0" },
     { name = "numpy", specifier = ">=1.23.0" },
     { name = "pacmap", specifier = ">=0.8.0" },
     { name = "pandas", specifier = ">=2.0.0" },
@@ -2809,7 +2813,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.24.1" },
     { name = "umap-learn", specifier = ">=0.5.10" },
 ]
-provides-extras = ["frontend"]
+provides-extras = ["benchmark", "frontend"]
 
 [package.metadata.requires-dev]
 dev = [

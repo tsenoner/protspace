@@ -3,6 +3,7 @@
 
 # IDE / tools
 /.vscode
+/.uv-bin
 /.claude
 /.playwright-mcp
 /.ruff_cache
