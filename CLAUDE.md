@@ -250,3 +250,4 @@ Located in `notebooks/`:
 - **Versioning:** python-semantic-release via `pyproject.toml`. Version in `pyproject.toml` + `__init__.py`.
 - **Build:** hatchling backend.
 - **Git workflow:** Always create a feature branch and open a PR — never push directly to `main`.
+- **Single-author commits:** Cursor can append `Co-authored-by` via hooks. To commit as yourself only, use `./scripts/git-no-coauthor-commit.sh -m "…"`, or `git -c core.hooksPath=.git/empty-hooks commit …` after `mkdir -p .git/empty-hooks`. In Cursor: Settings → Agent → Attribution → disable commit attribution; CLI: `~/.cursor/cli-config.json` with `"commitAttribution": false`.
