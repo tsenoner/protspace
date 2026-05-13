@@ -30,13 +30,16 @@ export const annotationSelectStyles = [
 
     /* Ensure dropdown-trigger padding matches (inherited from dropdownMixin) */
 
-    /* Override dropdown menu to match projection dropdown exactly */
+    /* Popover sits absolutely positioned, so it can be wider than the
+       trigger without affecting layout. Stay at least as wide as the
+       trigger, grow with content, cap so very long annotation names
+       wrap instead of pushing the menu off-screen. */
     .dropdown-menu {
       overflow-y: auto;
       overflow-x: hidden;
-      /* Match trigger width more closely */
-      width: 100%;
-      max-width: 20rem;
+      min-width: max(100%, 22rem);
+      width: max-content;
+      max-width: 28rem;
     }
 
     .annotation-search-container {
