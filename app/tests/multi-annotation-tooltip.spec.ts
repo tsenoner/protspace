@@ -14,11 +14,9 @@ async function openAnnotationDropdown(page: Page): Promise<void> {
 }
 
 async function getRowForAnnotation(page: Page, annotation: string) {
-  return page
-    .locator('protspace-control-bar protspace-annotation-select .dropdown-item')
-    .filter({
-      has: page.locator('.dropdown-item-label', { hasText: new RegExp(`^${annotation}$`) }),
-    });
+  return page.locator('protspace-control-bar protspace-annotation-select .dropdown-item').filter({
+    has: page.locator('.dropdown-item-label', { hasText: new RegExp(`^${annotation}$`) }),
+  });
 }
 
 test.describe('Multi-annotation hover tooltip', () => {
