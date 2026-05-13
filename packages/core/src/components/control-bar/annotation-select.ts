@@ -14,6 +14,7 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: String, attribute: 'selected-annotation' }) selectedAnnotation: string = '';
+  @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String }) placeholder: string = 'Select annotation';
 
   @state() private open: boolean = false;
@@ -126,6 +127,26 @@ class ProtspaceAnnotationSelect extends LitElement {
     );
   }
 
+  private toggleTooltipAnnotation(annotation: string, event: Event) {
+    event.stopPropagation();
+    event.preventDefault();
+    if (annotation === this.selectedAnnotation) {
+      return;
+    }
+    const isActive = this.tooltipAnnotations.includes(annotation);
+    const next = isActive
+      ? this.tooltipAnnotations.filter((name) => name !== annotation)
+      : [...this.tooltipAnnotations, annotation];
+    this.tooltipAnnotations = next;
+    this.dispatchEvent(
+      new CustomEvent('tooltip-annotation-toggle', {
+        detail: { annotation, active: !isActive, tooltipAnnotations: next },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   /**
    * Categorize annotations using the shared utility.
    */
@@ -219,6 +240,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                 const itemIndex = currentIndex++;
                                 const isHighlighted = itemIndex === this.highlightIndex;
                                 const isSelected = annotation === this.selectedAnnotation;
+                                const isInTooltip = this.tooltipAnnotations.includes(annotation);
                                 return html`
                                   <div
                                     class="dropdown-item ${isHighlighted
@@ -229,7 +251,66 @@ class ProtspaceAnnotationSelect extends LitElement {
                                       this.highlightIndex = itemIndex;
                                     }}
                                   >
-                                    ${annotation}
+                                    <span
+                                      class="primary-indicator"
+                                      aria-hidden="true"
+                                      data-active=${isSelected ? 'true' : 'false'}
+                                    >
+                                      ${isSelected ? html`<span class="primary-dot"></span>` : ''}
+                                    </span>
+                                    <span class="dropdown-item-label">${annotation}</span>
+                                    <span class="tooltip-toggle-slot">
+                                      ${isSelected
+                                        ? ''
+                                        : html`<button
+                                            type="button"
+                                            class="tooltip-toggle-btn ${isInTooltip
+                                              ? 'is-active'
+                                              : ''}"
+                                            title=${isInTooltip
+                                              ? 'Hide from hover tooltip'
+                                              : 'Show in hover tooltip'}
+                                            aria-label=${isInTooltip
+                                              ? `Hide ${annotation} from hover tooltip`
+                                              : `Show ${annotation} in hover tooltip`}
+                                            aria-pressed=${isInTooltip ? 'true' : 'false'}
+                                            @click=${(e: Event) =>
+                                              this.toggleTooltipAnnotation(annotation, e)}
+                                            @mousedown=${(e: Event) => e.stopPropagation()}
+                                          >
+                                            <svg
+                                              viewBox="0 0 24 24"
+                                              width="16"
+                                              height="16"
+                                              aria-hidden="true"
+                                            >
+                                              <circle
+                                                cx="12"
+                                                cy="12"
+                                                r="9"
+                                                fill=${isInTooltip ? 'currentColor' : 'none'}
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                              />
+                                              <path
+                                                d="M12 10v6"
+                                                stroke=${isInTooltip
+                                                  ? 'var(--surface, #fff)'
+                                                  : 'currentColor'}
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                              />
+                                              <circle
+                                                cx="12"
+                                                cy="7.5"
+                                                r="1.25"
+                                                fill=${isInTooltip
+                                                  ? 'var(--surface, #fff)'
+                                                  : 'currentColor'}
+                                              />
+                                            </svg>
+                                          </button>`}
+                                    </span>
                                   </div>
                                 `;
                               })}

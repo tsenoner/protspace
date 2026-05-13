@@ -1,8 +1,8 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, type TemplateResult } from 'lit';
 import { property } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { toDisplayValue, toInternalValue } from '@protspace/utils';
-import type { NumericAnnotationType, TooltipView } from '@protspace/utils';
+import type { AnnotationBlock, NumericAnnotationType, TooltipView } from '@protspace/utils';
 import { proteinTooltipStyles } from './protein-tooltip.styles';
 import {
   getAnnotationHeaderType,
@@ -17,17 +17,17 @@ const ANNOTATION_HEADER_LABELS: Record<'bitscore' | 'evidence', string> = {
 };
 
 const SUPERSCRIPT_DIGITS: Record<string, string> = {
-  '0': '\u2070',
-  '1': '\u00B9',
-  '2': '\u00B2',
-  '3': '\u00B3',
-  '4': '\u2074',
-  '5': '\u2075',
-  '6': '\u2076',
-  '7': '\u2077',
-  '8': '\u2078',
-  '9': '\u2079',
-  '-': '\u207B',
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '-': '⁻',
 };
 
 const RAW_FLOAT_VALUE_FORMATTER = new Intl.NumberFormat('en-US', {
@@ -65,13 +65,53 @@ function formatScore(value: number): string {
   // Strip the leading '+' from the exponent (e.g., e+2 → e2)
   const cleanExp = (exponent ?? '').replace(/^\+/, '');
   const superExp = cleanExp.replace(/[0-9\-]/g, (ch) => SUPERSCRIPT_DIGITS[ch] ?? ch);
-  return `${mantissa}\u00D710${superExp}`;
+  return `${mantissa}×10${superExp}`;
+}
+
+function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
+  const headerType = getAnnotationHeaderType(block.scores, block.evidence);
+  const numericType: NumericAnnotationType = block.numericType;
+  return html`
+    <div class="tooltip-annotations">
+      <div class="tooltip-annotation-header">
+        <span>${block.key}</span>
+        ${headerType ? html`<span>${ANNOTATION_HEADER_LABELS[headerType]}</span>` : ''}
+      </div>
+      ${block.numericValue !== null
+        ? html`<div class="tooltip-annotation tooltip-annotation-raw">
+            <span class="label">Raw value:</span>
+            <span class="tooltip-annotation-score"
+              >${formatRawNumericTooltipValue(block.numericValue, numericType)}</span
+            >
+          </div>`
+        : ''}
+      ${block.displayValues.map((value, idx) => {
+        const scores = block.scores[idx];
+        const evidence = block.evidence[idx];
+        const MAX_VISIBLE_SCORES = 3;
+        let scoreText = '';
+        if (Array.isArray(scores) && scores.length > 0) {
+          const visible = scores.slice(0, MAX_VISIBLE_SCORES).map(formatScore);
+          scoreText =
+            scores.length > MAX_VISIBLE_SCORES ? visible.join(', ') + ', …' : visible.join(', ');
+        }
+        const displayValue = toDisplayValue(toInternalValue(value));
+        return html`<div class="tooltip-annotation">
+          <span class="tooltip-annotation-label" title="${displayValue}">${displayValue}</span
+          >${scoreText
+            ? html`<span class="tooltip-annotation-score">${scoreText}</span>`
+            : evidence
+              ? html`<span class="tooltip-annotation-evidence">${evidence}</span>`
+              : ''}
+        </div>`;
+      })}
+    </div>
+  `;
 }
 
 @customElement('protspace-protein-tooltip')
 class ProtspaceProteinTooltip extends LitElement {
   @property({ type: Object }) view: TooltipView | null = null;
-  @property({ type: String }) selectedAnnotation = '';
 
   static styles = proteinTooltipStyles;
 
@@ -84,12 +124,6 @@ class ProtspaceProteinTooltip extends LitElement {
     const geneName = getGeneName(view.geneName);
     const proteinName = getProteinName(view.proteinName);
     const uniprotKbId = getUniprotKbId(view.uniprotKbId);
-    const tooltipAnnotationValues = view.displayValues;
-    const rawNumericValue = view.numericValue;
-    const rawNumericType: NumericAnnotationType = view.numericType;
-    const tooltipAnnotationScores = view.scores;
-    const tooltipAnnotationEvidence = view.evidence;
-    const headerType = getAnnotationHeaderType(tooltipAnnotationScores, tooltipAnnotationEvidence);
 
     return html`
       <div class="tooltip">
@@ -113,40 +147,7 @@ class ProtspaceProteinTooltip extends LitElement {
                 <span class="label">Gene:</span> ${geneName}
               </div>`
             : ''}
-          ${rawNumericValue !== null
-            ? html`<div class="tooltip-gene-name">
-                <span class="label">Raw value:</span>
-                ${formatRawNumericTooltipValue(rawNumericValue, rawNumericType)}
-              </div>`
-            : ''}
-          <div class="tooltip-annotations">
-            <div class="tooltip-annotation-header">
-              <span>${this.selectedAnnotation}</span>
-              ${headerType ? html`<span>${ANNOTATION_HEADER_LABELS[headerType]}</span>` : ''}
-            </div>
-            ${tooltipAnnotationValues.map((value, idx) => {
-              const scores = tooltipAnnotationScores[idx];
-              const evidence = tooltipAnnotationEvidence[idx];
-              const MAX_VISIBLE_SCORES = 3;
-              let scoreText = '';
-              if (Array.isArray(scores) && scores.length > 0) {
-                const visible = scores.slice(0, MAX_VISIBLE_SCORES).map(formatScore);
-                scoreText =
-                  scores.length > MAX_VISIBLE_SCORES
-                    ? visible.join(', ') + ', \u2026'
-                    : visible.join(', ');
-              }
-              const displayValue = toDisplayValue(toInternalValue(value));
-              return html`<div class="tooltip-annotation">
-                <span class="tooltip-annotation-label" title="${displayValue}">${displayValue}</span
-                >${scoreText
-                  ? html`<span class="tooltip-annotation-score">${scoreText}</span>`
-                  : evidence
-                    ? html`<span class="tooltip-annotation-evidence">${evidence}</span>`
-                    : ''}
-              </div>`;
-            })}
-          </div>
+          ${view.blocks.map((block) => renderAnnotationBlock(block))}
         </div>
       </div>
     `;

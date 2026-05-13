@@ -19,6 +19,7 @@ import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
+import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
@@ -83,6 +84,13 @@ export function createDatasetController({
     },
     setCurrentDatasetIsDemo,
     setCurrentDatasetName,
+  });
+
+  let currentDatasetHash: string | null = null;
+  viewController.subscribeToViewChanges((change) => {
+    if (currentDatasetHash !== null) {
+      writeTooltipAnnotations(currentDatasetHash, change.effective.tooltip);
+    }
   });
 
   const handleDataLoaded = async (event: Event) => {
@@ -151,6 +159,26 @@ export function createDatasetController({
         setCurrentDatasetName(defaultDatasetName);
         setCurrentDatasetIsDemo(true);
       }
+
+      const latestRequest = viewController.getLatestViewRequest();
+      if (!latestRequest.present.tooltip) {
+        const persistedTooltip = readTooltipAnnotations(datasetHash);
+        if (persistedTooltip.length > 0) {
+          viewController.setRequestedView({
+            ...latestRequest,
+            requested: {
+              ...latestRequest.requested,
+              tooltip: persistedTooltip,
+            },
+            present: {
+              ...latestRequest.present,
+              tooltip: true,
+            },
+          });
+        }
+      }
+
+      currentDatasetHash = datasetHash;
 
       viewController.applyLatestViewForDatasetLoad(data);
 

@@ -51,6 +51,7 @@ export interface ScatterplotElementLike extends Element {
   // State properties
   selectedProjectionIndex?: number;
   selectedAnnotation?: string;
+  tooltipAnnotations?: string[];
   selectionMode?: boolean;
   selectionTool?: 'rectangle' | 'lasso';
   selectedProteinIds?: string[];

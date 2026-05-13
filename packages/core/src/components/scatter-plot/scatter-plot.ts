@@ -63,6 +63,7 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Number }) selectedProjectionIndex = 0;
   @property({ type: String }) projectionPlane: 'xy' | 'xz' | 'yz' = 'xy';
   @property({ type: String }) selectedAnnotation = 'family';
+  @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: Array }) highlightedProteinIds: string[] = [];
   @property({ type: Array }) selectedProteinIds: string[] = [];
   @property({ type: Boolean }) selectionMode = false;
@@ -1853,7 +1854,12 @@ export class ProtspaceScatterplot extends LitElement {
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
-    const view = buildTooltipView(this.data, point.originalIndex, this.selectedAnnotation);
+    const view = buildTooltipView(
+      this.data,
+      point.originalIndex,
+      this.selectedAnnotation,
+      this.tooltipAnnotations,
+    );
     this._tooltipData = { x, y, view };
 
     if (this._hoveredProteinId !== point.id) {
@@ -1872,7 +1878,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleClick(event: MouseEvent, point: PlotDataPoint) {
     const view = this.data
-      ? buildTooltipView(this.data, point.originalIndex, this.selectedAnnotation)
+      ? buildTooltipView(
+          this.data,
+          point.originalIndex,
+          this.selectedAnnotation,
+          this.tooltipAnnotations,
+        )
       : null;
     this.dispatchEvent(
       new CustomEvent('protein-click', {
@@ -2134,7 +2145,6 @@ export class ProtspaceScatterplot extends LitElement {
                 class="visible"
                 style="${this._getTooltipStyle()}"
                 .view=${this._tooltipData.view}
-                .selectedAnnotation=${this.selectedAnnotation}
               >
               </protspace-protein-tooltip>
             `
