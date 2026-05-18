@@ -4,7 +4,6 @@ import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import type { NumericCondition, NumericOperator } from './query-types';
 import {
-  computeNumericBounds,
   countNumericMatches,
   isNumericConditionReady,
   numericFieldsFor,
@@ -30,11 +29,9 @@ class ProtspaceQueryNumericInput extends LitElement {
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
 
   @state() private _matchCount: number | null = null;
-  @state() private _dataBounds: { min: number; max: number } | null = null;
   @state() private _minText: string = '';
   @state() private _maxText: string = '';
 
-  private _boundsAnnotation: string | null = null;
   private _countTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -48,7 +45,7 @@ class ProtspaceQueryNumericInput extends LitElement {
   }
 
   willUpdate(changed: Map<string, unknown>) {
-    if (!changed.has('condition') && !changed.has('data')) return;
+    if (!changed.has('condition')) return;
 
     // Adopt prop values into local text unless they already parse to the same
     // number — this preserves an in-progress entry while still picking up
@@ -58,14 +55,6 @@ class ProtspaceQueryNumericInput extends LitElement {
     }
     if (this._parseFieldValue(this._maxText) !== this.condition.max) {
       this._maxText = this.condition.max === null ? '' : String(this.condition.max);
-    }
-
-    // Recompute placeholder bounds only when the annotation changes.
-    if (this.condition.annotation !== this._boundsAnnotation) {
-      this._boundsAnnotation = this.condition.annotation;
-      this._dataBounds = computeNumericBounds(
-        this.data?.numeric_annotation_data?.[this.condition.annotation],
-      );
     }
   }
 
@@ -127,8 +116,6 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   render() {
     const fields = numericFieldsFor(this.condition.operator);
-    const minPlaceholder = this._dataBounds ? `min (${this._dataBounds.min})` : 'min';
-    const maxPlaceholder = this._dataBounds ? `max (${this._dataBounds.max})` : 'max';
 
     return html`
       <div class="numeric-input">
@@ -146,7 +133,7 @@ class ProtspaceQueryNumericInput extends LitElement {
           ? html`<input
               class="numeric-field"
               type="number"
-              placeholder=${minPlaceholder}
+              placeholder="min"
               .value=${this._minText}
               @input=${this._handleMinInput}
             />`
@@ -156,7 +143,7 @@ class ProtspaceQueryNumericInput extends LitElement {
           ? html`<input
               class="numeric-field"
               type="number"
-              placeholder=${maxPlaceholder}
+              placeholder="max"
               .value=${this._maxText}
               @input=${this._handleMaxInput}
             />`

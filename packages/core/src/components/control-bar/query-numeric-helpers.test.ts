@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { ProtspaceData } from './types';
 import type { NumericCondition } from './query-types';
 import {
-  computeNumericBounds,
   countNumericMatches,
   isNumericConditionReady,
   matchesNumericValue,
@@ -85,17 +84,6 @@ describe('matchesNumericValue', () => {
   });
   it('unready condition matches nothing', () => {
     expect(matchesNumericValue(100, numericCondition({ operator: 'gt', min: null }))).toBe(false);
-  });
-});
-
-describe('computeNumericBounds', () => {
-  it('returns min and max ignoring nulls', () => {
-    expect(computeNumericBounds([3, null, 1, 9, 4])).toEqual({ min: 1, max: 9 });
-  });
-  it('returns null for empty or all-null input', () => {
-    expect(computeNumericBounds([])).toBeNull();
-    expect(computeNumericBounds([null, null])).toBeNull();
-    expect(computeNumericBounds(undefined)).toBeNull();
   });
 });
 

@@ -56,25 +56,6 @@ export function matchesNumericValue(value: number | null, condition: NumericCond
 }
 
 /**
- * Min and max of a numeric annotation's raw values, ignoring nulls.
- * Returns null when there are no usable values (used only for input hints).
- */
-export function computeNumericBounds(
-  values: (number | null)[] | undefined,
-): { min: number; max: number } | null {
-  if (!values || values.length === 0) return null;
-  let min = Infinity;
-  let max = -Infinity;
-  for (const v of values) {
-    if (v === null) continue;
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  if (min === Infinity) return null;
-  return { min, max };
-}
-
-/**
  * Count how many proteins match a numeric condition on its own.
  * Returns 0 for an unready condition or a missing annotation.
  */
