@@ -60,7 +60,12 @@ All colors MUST be HSL.
 
   html {
     scroll-behavior: smooth;
-    font-size: clamp(0.75rem, 0.87vw, 1.125rem);
+  }
+
+  @media (min-width: 1380px) {
+    html {
+      font-size: clamp(0.75rem, 0.87vw, 1.125rem);
+    }
   }
 
   body {
