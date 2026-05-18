@@ -102,7 +102,6 @@ import {
   trackedMouseWheel,
   trackedKeyboardDown,
   trackedKeyboardUp,
-  trackedKeyboardPress,
   logAction,
   printActionSummary,
 } from './helpers';
@@ -244,7 +243,7 @@ test.describe('Scatterplot Animation Captures', () => {
     const modifierKey = process.platform === 'darwin' ? 'Meta' : 'Control';
 
     // Get screen coordinates of visible protein points
-    const pointCoords = await page.evaluate((plotBox) => {
+    const pointCoords = await page.evaluate((_plotBox) => {
       const plot = document.querySelector('#myPlot') as any;
       if (!plot?._plotData?.length || !plot._scales) return null;
 
@@ -513,6 +512,264 @@ test.describe('Scatterplot Animation Captures', () => {
     }
     await clickResetButton(page);
     await page.waitForTimeout(1000);
+  });
+
+  test('duplicate-badges.gif - Cross-projection duplicate badge and spiderfy', async ({ page }) => {
+    await initVisualIndicators(page);
+
+    // Pre-enable the duplicate-counts setting so badges render without
+    // animating the cog → checkbox path (keeps the GIF focused on the badge).
+    await page.evaluate(() => {
+      const plot = document.querySelector('#myPlot') as
+        | (HTMLElement & { config?: Record<string, unknown> })
+        | null;
+      if (!plot) return;
+      plot.config = { ...(plot.config ?? {}), enableDuplicateStackUI: true };
+    });
+
+    // Wait for the scatter-plot to (re)compute its duplicate stacks. The
+    // overlay update is debounced behind the config change + a quadtree
+    // rebuild, so poll the private cache until at least one multi-point
+    // stack appears.
+    await page.waitForFunction(
+      () => {
+        const plot = document.querySelector('#myPlot') as
+          | (HTMLElement & {
+              _duplicateStackByKey?: Map<string, { points: unknown[] }>;
+            })
+          | null;
+        const map = plot?._duplicateStackByKey;
+        if (!map || map.size === 0) return false;
+        for (const stack of map.values()) {
+          if (stack.points.length > 1) return true;
+        }
+        return false;
+      },
+      { timeout: 10_000 },
+    );
+
+    await page.waitForTimeout(INITIAL_PAUSE);
+
+    type StackInfo = {
+      key: string;
+      count: number;
+      x: number;
+      y: number;
+    };
+
+    // Snapshot the duplicate-stack candidates so the heuristic can pick one.
+    const collectStacks = async (): Promise<StackInfo[]> =>
+      page.evaluate(() => {
+        const plot = document.querySelector('#myPlot') as
+          | (HTMLElement & {
+              _duplicateStackByKey?: Map<
+                string,
+                { key: string; x: number; y: number; points: unknown[] }
+              >;
+            })
+          | null;
+        const map = plot?._duplicateStackByKey;
+        if (!map) return [];
+        const out: StackInfo[] = [];
+        for (const stack of map.values()) {
+          if (stack.points.length > 1) {
+            out.push({
+              key: stack.key,
+              count: stack.points.length,
+              x: stack.x,
+              y: stack.y,
+            });
+          }
+        }
+        return out;
+      });
+
+    // Pick the most visually compelling stack: largest badge first, then
+    // closest to the median (x, y) of all candidates. Using the median
+    // rather than the mean keeps the anchor near the cluster mass even if
+    // a single duplicate group lives far out on the projection's edge.
+    const pickAnchorStack = (candidates: StackInfo[]): StackInfo | null => {
+      if (candidates.length === 0) return null;
+      if (candidates.length === 1) return candidates[0];
+
+      const sortedX = candidates.map((c) => c.x).sort((a, b) => a - b);
+      const sortedY = candidates.map((c) => c.y).sort((a, b) => a - b);
+      const midX = sortedX[Math.floor(sortedX.length / 2)];
+      const midY = sortedY[Math.floor(sortedY.length / 2)];
+
+      return [...candidates].sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        const da = (a.x - midX) ** 2 + (a.y - midY) ** 2;
+        const db = (b.x - midX) ** 2 + (b.y - midY) ** 2;
+        return da - db;
+      })[0];
+    };
+
+    const initialStacks = await collectStacks();
+    const anchor = pickAnchorStack(initialStacks);
+
+    if (!anchor) {
+      console.warn(
+        `⚠ No duplicate-stack anchor selected (candidates=${initialStacks.length}); ` +
+          'skipping spiderfy scenario.',
+      );
+      await page.waitForTimeout(500);
+      return;
+    }
+
+    // Convert the stack's data-space coords → screen pixels using the plot's
+    // current scales + zoom transform, exactly like select-single.gif does.
+    const stackToScreen = async (stackKey: string) =>
+      page.evaluate((key: string) => {
+        const plot = document.querySelector('#myPlot') as
+          | (HTMLElement & {
+              _duplicateStackByKey?: Map<string, { x: number; y: number; points: unknown[] }>;
+              _scales?: { x: (v: number) => number; y: (v: number) => number };
+              _transform?: { x: number; y: number; k: number };
+            })
+          | null;
+        const stack = plot?._duplicateStackByKey?.get(key);
+        if (!stack || !plot?._scales) return null;
+        const transform = plot._transform ?? { x: 0, y: 0, k: 1 };
+        const rect = plot.getBoundingClientRect();
+        return {
+          screenX: rect.left + plot._scales.x(stack.x) * transform.k + transform.x,
+          screenY: rect.top + plot._scales.y(stack.y) * transform.k + transform.y,
+          count: stack.points.length,
+        };
+      }, stackKey);
+
+    // Smooth, mouse-anchored zoom helper. D3 zoom keys off cursor position,
+    // so the mouse must already be over the anchor before calling this.
+    const ZOOM_DELTA = 50;
+    const ZOOM_STEPS_IN = 14;
+    const zoomBy = async (deltaY: number, steps: number) => {
+      for (let i = 0; i < steps; i++) {
+        await trackedMouseWheel(page, 0, deltaY);
+        await page.waitForTimeout(50);
+      }
+    };
+
+    // Re-wait for the anchor stack to be materialized in the current viewport.
+    // After a zoom/pan, _duplicateStackByKey rebuilds — poll until our
+    // anchor.key reappears with its multi-point membership.
+    const waitForAnchorVisible = async () =>
+      page.waitForFunction(
+        (key: string) => {
+          const plot = document.querySelector('#myPlot') as
+            | (HTMLElement & {
+                _duplicateStackByKey?: Map<string, { points: unknown[] }>;
+              })
+            | null;
+          const stack = plot?._duplicateStackByKey?.get(key);
+          return !!stack && stack.points.length > 1;
+        },
+        anchor.key,
+        { timeout: 8_000 },
+      );
+
+    // After clicking the underlying point, the spider should expand. Poll the
+    // private _expandedDuplicateStackKey to confirm the click landed and the
+    // spider actually opened — without this, a missed click would silently
+    // produce a blank GIF instead of failing the test.
+    const waitForSpiderOpen = async () =>
+      page.waitForFunction(
+        (key: string) => {
+          const plot = document.querySelector('#myPlot') as
+            | (HTMLElement & { _expandedDuplicateStackKey?: string | null })
+            | null;
+          return plot?._expandedDuplicateStackKey === key;
+        },
+        anchor.key,
+        { timeout: 2_000 },
+      );
+
+    // Glide mouse → zoom in (anchored on cursor) → recompute screen coords →
+    // click point to expand → wait until spider is open → click badge to
+    // collapse → zoom back out.
+    const before = await stackToScreen(anchor.key);
+    if (!before) throw new Error(`Stack ${anchor.key} missing before zoom`);
+
+    await trackedMouseMove(page, before.screenX, before.screenY, { steps: 20 });
+    await page.waitForTimeout(550);
+
+    await zoomBy(-ZOOM_DELTA, ZOOM_STEPS_IN);
+    await waitForAnchorVisible();
+    await page.waitForTimeout(450);
+
+    // After zooming, the anchor's screen position has drifted; re-fetch.
+    const target = await stackToScreen(anchor.key);
+    if (!target) throw new Error(`Stack ${anchor.key} dropped during zoom-in`);
+
+    await trackedMouseMove(page, target.screenX, target.screenY, { steps: 8 });
+    await page.waitForTimeout(250);
+    await showClickIndicator(page, target.screenX, target.screenY);
+    await trackedMouseClick(page, target.screenX, target.screenY);
+
+    // Verify the spider actually opened — fails loudly if the click missed.
+    await waitForSpiderOpen();
+    await page.waitForTimeout(1100); // hold spider open so it reads as a fan
+
+    // Pick the spider node visually farthest from the badge (+10, -10 from
+    // the spider center). Reads live SVG rects from the scatter-plot's shadow
+    // DOM, so it's robust to any node count or layout change.
+    const spiderNode = await page.evaluate(
+      ({ offsetX, offsetY }) => {
+        const plot = document.querySelector('#myPlot');
+        const root = (plot as Element | null)?.shadowRoot;
+        const circles = root?.querySelectorAll('.dup-spiderfy-node-circle');
+        if (!circles || circles.length === 0) return null;
+        const rects = Array.from(circles).map((c) => (c as Element).getBoundingClientRect());
+        // Spider center ≈ centroid of node rects.
+        const cx = rects.reduce((s, r) => s + (r.left + r.width / 2), 0) / rects.length;
+        const cy = rects.reduce((s, r) => s + (r.top + r.height / 2), 0) / rects.length;
+        const badgeCx = cx + offsetX;
+        const badgeCy = cy + offsetY;
+        let bestIdx = 0;
+        let bestDist = -Infinity;
+        rects.forEach((r, i) => {
+          const nx = r.left + r.width / 2;
+          const ny = r.top + r.height / 2;
+          const d = (nx - badgeCx) ** 2 + (ny - badgeCy) ** 2;
+          if (d > bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        });
+        const r = rects[bestIdx];
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      },
+      { offsetX: 10, offsetY: -10 },
+    );
+
+    if (!spiderNode) {
+      throw new Error('Spider opened but no .dup-spiderfy-node-circle rendered');
+    }
+
+    // Click a spider node to showcase per-point selection. The node's own
+    // pointerdown/pointerup handlers stopPropagation and call _handleClick,
+    // so the spider stays open — only the selection state changes.
+    await trackedMouseMove(page, spiderNode.x, spiderNode.y, { steps: 10 });
+    await page.waitForTimeout(300);
+    await showClickIndicator(page, spiderNode.x, spiderNode.y);
+    await trackedMouseClick(page, spiderNode.x, spiderNode.y);
+    await page.waitForTimeout(1500); // hold to show the selected state
+
+    // Click the badge to collapse. The badge is drawn at screen offset
+    // (+10, -10) from the stack's transformed center (see
+    // _renderDuplicateBadgesCanvas in scatter-plot.ts). _handleCanvasClick
+    // first nulls _expandedDuplicateStackKey, then runs a quadtree hit-test;
+    // clicking the badge lands outside the underlying point's hit radius,
+    // so the collapse sticks instead of re-toggling.
+    const badgeX = target.screenX + 10;
+    const badgeY = target.screenY - 10;
+    await trackedMouseMove(page, badgeX, badgeY, { steps: 6 });
+    await page.waitForTimeout(250);
+    await showClickIndicator(page, badgeX, badgeY);
+    await trackedMouseClick(page, badgeX, badgeY);
+
+    // End on the collapsed, zoomed-in frame — no zoom-out.
+    await page.waitForTimeout(900);
   });
 });
 

@@ -86,3 +86,5 @@ Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in t
 ### Duplicate Points
 
 When multiple proteins share the exact same coordinates, a **count badge** appears on the point (when enabled in the legend settings). Click a stacked point to expand it into a spider layout showing each individual protein.
+
+![Duplicate-count badges persist across projections](./images/duplicate-badges.gif)

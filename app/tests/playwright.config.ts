@@ -111,6 +111,14 @@ export default defineConfig({
       },
       testMatch: /figure-editor\.spec\.ts/,
     },
+    {
+      name: 'isolation-dataset-swap',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /isolation-dataset-swap\.spec\.ts/,
+    },
   ],
 
   outputDir: '../test-results/',

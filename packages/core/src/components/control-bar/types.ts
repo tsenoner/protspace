@@ -77,6 +77,10 @@ export interface ScatterplotElementLike extends Element {
   isolateSelection?: () => void;
   resetIsolation?: () => void;
 
+  // Duplicate-stack spider expansion
+  hasExpandedDuplicateStack?: () => boolean;
+  closeExpandedDuplicateStack?: () => void;
+
   // Event emitting is through DOM, so we rely on add/removeEventListener from Element
   click?: () => void;
 }
