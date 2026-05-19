@@ -79,8 +79,8 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
       </div>
       ${block.numericValue !== null
         ? html`<div class="tooltip-annotation tooltip-annotation-raw">
-            <span class="label">Raw value:</span>
-            <span class="tooltip-annotation-score"
+            <span class="tooltip-annotation-raw-label">Value:</span>
+            <span class="tooltip-annotation-raw-value"
               >${formatRawNumericTooltipValue(block.numericValue, numericType)}</span
             >
           </div>`

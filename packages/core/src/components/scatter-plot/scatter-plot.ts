@@ -86,6 +86,7 @@ export class ProtspaceScatterplot extends LitElement {
     y: number;
     view: TooltipView;
   } | null = null;
+  @state() private _tooltipHeight: number | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
   @state() private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
@@ -560,6 +561,23 @@ export class ProtspaceScatterplot extends LitElement {
     if (!onlySelectionChanged) {
       this._renderPlot();
       this._updateSelectionOverlays();
+    }
+
+    this._measureTooltipHeight();
+  }
+
+  private _measureTooltipHeight() {
+    if (!this._tooltipData) {
+      if (this._tooltipHeight !== null) {
+        this._tooltipHeight = null;
+      }
+      return;
+    }
+    const el = this.renderRoot.querySelector('protspace-protein-tooltip') as HTMLElement | null;
+    if (!el) return;
+    const height = el.offsetHeight;
+    if (height > 0 && height !== this._tooltipHeight) {
+      this._tooltipHeight = height;
     }
   }
 
@@ -2067,7 +2085,7 @@ export class ProtspaceScatterplot extends LitElement {
     const config = this._mergedConfig;
     const padding = 15;
     const tooltipMaxWidth = 350;
-    const tooltipApproxHeight = 160;
+    const tooltipHeight = this._tooltipHeight ?? 160;
 
     let left = x + 15;
     let top = y - 60;
@@ -2089,11 +2107,13 @@ export class ProtspaceScatterplot extends LitElement {
       left = tooltipMaxWidth + padding;
     }
 
-    // Vertical adjustment: keep within vertical bounds
+    // Vertical adjustment: clamp to viewport using the measured height when
+    // available, so tall multi-annotation tooltips do not run off the bottom.
+    if (top + tooltipHeight > config.height - padding) {
+      top = config.height - tooltipHeight - padding;
+    }
     if (top < padding) {
       top = padding;
-    } else if (top + tooltipApproxHeight > config.height) {
-      top = config.height - tooltipApproxHeight - padding;
     }
 
     return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;

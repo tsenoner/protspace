@@ -278,37 +278,43 @@ class ProtspaceAnnotationSelect extends LitElement {
                                               this.toggleTooltipAnnotation(annotation, e)}
                                             @mousedown=${(e: Event) => e.stopPropagation()}
                                           >
-                                            <svg
-                                              viewBox="0 0 24 24"
-                                              width="16"
-                                              height="16"
-                                              aria-hidden="true"
-                                            >
-                                              <circle
-                                                cx="12"
-                                                cy="12"
-                                                r="9"
-                                                fill=${isInTooltip ? 'currentColor' : 'none'}
-                                                stroke="currentColor"
-                                                stroke-width="2"
-                                              />
-                                              <path
-                                                d="M12 10v6"
-                                                stroke=${isInTooltip
-                                                  ? 'var(--surface, #fff)'
-                                                  : 'currentColor'}
-                                                stroke-width="2"
-                                                stroke-linecap="round"
-                                              />
-                                              <circle
-                                                cx="12"
-                                                cy="7.5"
-                                                r="1.25"
-                                                fill=${isInTooltip
-                                                  ? 'var(--surface, #fff)'
-                                                  : 'currentColor'}
-                                              />
-                                            </svg>
+                                            ${isInTooltip
+                                              ? html`<svg
+                                                  viewBox="0 0 24 24"
+                                                  width="16"
+                                                  height="16"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  stroke-width="2"
+                                                  stroke-linecap="round"
+                                                  stroke-linejoin="round"
+                                                  aria-hidden="true"
+                                                >
+                                                  <path
+                                                    d="M1.5 12s4-7.5 10.5-7.5S22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12z"
+                                                  />
+                                                  <circle cx="12" cy="12" r="3" />
+                                                </svg>`
+                                              : html`<svg
+                                                  viewBox="0 0 24 24"
+                                                  width="16"
+                                                  height="16"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  stroke-width="2"
+                                                  stroke-linecap="round"
+                                                  stroke-linejoin="round"
+                                                  aria-hidden="true"
+                                                >
+                                                  <path d="M3 3l18 18" />
+                                                  <path d="M10.585 10.587a2 2 0 0 0 2.83 2.828" />
+                                                  <path
+                                                    d="M16.681 16.673A8.717 8.717 0 0 1 12 18C6 18 2 12 2 12a13.16 13.16 0 0 1 3.176-3.836"
+                                                  />
+                                                  <path
+                                                    d="M9.88 5.18A8.717 8.717 0 0 1 12 5c6 0 10 7 10 7a13.198 13.198 0 0 1-1.668 2.06"
+                                                  />
+                                                </svg>`}
                                           </button>`}
                                     </span>
                                   </div>

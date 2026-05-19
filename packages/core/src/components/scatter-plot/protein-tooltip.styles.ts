@@ -141,6 +141,20 @@ export const proteinTooltipStyles = css`
     font-variant-numeric: tabular-nums;
   }
 
+  .tooltip-annotation-raw-label {
+    flex-shrink: 0;
+    color: #64748b;
+    font-weight: normal;
+  }
+
+  .tooltip-annotation-raw-value {
+    flex-shrink: 0;
+    white-space: nowrap;
+    color: #64748b;
+    font-weight: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
   .tooltip-annotation-evidence {
     flex-shrink: 0;
     white-space: nowrap;

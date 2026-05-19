@@ -741,15 +741,14 @@ async function readTooltipSummary(page: Page): Promise<{
       | null;
     const root = tooltip?.shadowRoot;
     const rawValueRow = Array.from(root?.querySelectorAll('.tooltip-content > div') ?? []).find(
-      (node) => node.textContent?.includes('Raw value:'),
+      (node) => node.textContent?.includes('Value:'),
     ) as HTMLElement | undefined;
 
     return {
       labels: Array.from(root?.querySelectorAll('.tooltip-annotation-label') ?? []).map(
         (node) => node.textContent?.trim() ?? '',
       ),
-      rawValue:
-        rawValueRow?.textContent?.replace(/\s+/g, ' ').replace('Raw value:', '').trim() ?? null,
+      rawValue: rawValueRow?.textContent?.replace(/\s+/g, ' ').replace('Value:', '').trim() ?? null,
     };
   });
 }
