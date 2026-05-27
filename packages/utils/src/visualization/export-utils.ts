@@ -49,7 +49,6 @@ type LegendExportItem = {
 };
 type LegendExportState = {
   annotation: string;
-  includeShapes: boolean;
   otherItemsCount: number;
   items: LegendExportItem[];
 };
@@ -69,8 +68,6 @@ export interface ExportOptions {
   exportName?: string;
   /** Background color */
   backgroundColor?: string;
-  /** Whether to render per-category shapes in legend */
-  includeShapes?: boolean;
   /** Whether to include the legend panel in the exported image (default: true) */
   includeLegend?: boolean;
 
@@ -128,7 +125,6 @@ export class ProtSpaceExporter {
       targetHeight: options.targetHeight,
       exportName: options.exportName,
       includeSelection: options.includeSelection,
-      includeShapes: options.includeShapes,
       includeLegend: options.includeLegend ?? ProtSpaceExporter.DEFAULT_INCLUDE_LEGEND,
     };
   }
@@ -708,11 +704,6 @@ export class ProtSpaceExporter {
     const colWidth = (canvas.width - padding * 2) / columns;
     const itemsPerCol = Math.ceil(renderItems.length / columns);
 
-    const includeShapes =
-      typeof options.includeShapes === 'boolean'
-        ? options.includeShapes
-        : this.readUseShapesFromScatterplot();
-
     for (let i = 0; i < renderItems.length; i++) {
       const col = Math.floor(i / itemsPerCol);
       const row = i % itemsPerCol;
@@ -723,19 +714,7 @@ export class ProtSpaceExporter {
       const cx = xBase + symbolSize / 2;
       const cy = y + itemHeight / 2;
 
-      if (includeShapes) {
-        this.drawCanvasSymbol(ctx, it.shape, it.color, cx, cy, symbolSize);
-      } else {
-        ctx.save();
-        ctx.fillStyle = it.color || '#888';
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(cx, cy, symbolSize / 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-      }
+      this.drawCanvasSymbol(ctx, it.shape, it.color, cx, cy, symbolSize);
 
       // Draw label (left-aligned)
       ctx.fillStyle = '#1f2937';
@@ -774,20 +753,6 @@ export class ProtSpaceExporter {
 
     ctx.restore();
     return canvas;
-  }
-
-  /**
-   * Read the current `useShapes` flag from the live `protspace-scatterplot` web component.
-   * Defaults to false if not available so exported legends match the common default.
-   */
-  private readUseShapesFromScatterplot(): boolean {
-    const el = document.querySelector('protspace-scatterplot') as
-      | (Element & { useShapes?: boolean })
-      | null;
-    if (el && typeof el.useShapes === 'boolean') {
-      return Boolean(el.useShapes);
-    }
-    return false;
   }
 
   /**

@@ -36,7 +36,6 @@ describe('<protspace-publish-modal> legend reader', () => {
     };
     legend.getLegendExportData = () => ({
       annotation: 'family',
-      includeShapes: true,
       otherItemsCount: 0,
       items: [{ value: 'A', color: '#fff', shape: 'circle', count: 1, isVisible: true }],
     });

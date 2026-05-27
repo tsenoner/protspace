@@ -4,53 +4,40 @@ import { getVisualEncoding, SlotTracker, SPECIAL_SLOTS } from './visual-encoding
 describe('visual-encoding', () => {
   describe('getVisualEncoding', () => {
     it('returns special color for Other category', () => {
-      const encoding = getVisualEncoding(0, true, 'Other');
+      const encoding = getVisualEncoding(0, 'Other');
       expect(encoding.color).toBe('#999999');
       expect(encoding.shape).toBe('circle');
     });
 
     it('treats "N/A" display name like a regular category in slot assignment', () => {
-      const encoding = getVisualEncoding(1, true, 'N/A');
+      const encoding = getVisualEncoding(1, 'N/A');
       // NA no longer has special color logic in getVisualEncoding;
       // the legend processor handles the NA_DEFAULT_COLOR override.
       expect(encoding.color).not.toBe('#DDDDDD');
-      // Shape comes from the regular slot cycle: slot 1 -> 'square'.
-      expect(encoding.shape).toBe('square');
-    });
-
-    it('cycles through colors for regular categories', () => {
-      const encoding0 = getVisualEncoding(0, false);
-      const encoding1 = getVisualEncoding(1, false);
-      expect(encoding0.color).not.toBe(encoding1.color);
-    });
-
-    it('uses circle shape when shapes disabled', () => {
-      const encoding = getVisualEncoding(0, false);
+      // Default shape is always circle.
       expect(encoding.shape).toBe('circle');
     });
 
-    it('cycles through all 6 shapes when enabled', () => {
-      const shapes = new Set<string>();
+    it('cycles through colors for regular categories', () => {
+      const encoding0 = getVisualEncoding(0);
+      const encoding1 = getVisualEncoding(1);
+      expect(encoding0.color).not.toBe(encoding1.color);
+    });
+
+    it('always uses circle as the default shape', () => {
       for (let i = 0; i < 6; i++) {
-        shapes.add(getVisualEncoding(i, true).shape);
+        expect(getVisualEncoding(i).shape).toBe('circle');
       }
-      expect(shapes.size).toBe(6);
     });
 
     it('wraps around colors after palette exhausted', () => {
       const colors: string[] = [];
       for (let i = 0; i < 50; i++) {
-        colors.push(getVisualEncoding(i, false).color);
+        colors.push(getVisualEncoding(i).color);
       }
       const firstColor = colors[0];
       const repeatIndex = colors.findIndex((c, i) => i > 0 && c === firstColor);
       expect(repeatIndex).toBeGreaterThan(0);
-    });
-
-    it('wraps around shapes after 6', () => {
-      const encoding0 = getVisualEncoding(0, true);
-      const encoding6 = getVisualEncoding(6, true);
-      expect(encoding0.shape).toBe(encoding6.shape);
     });
   });
 

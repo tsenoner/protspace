@@ -106,7 +106,6 @@ interface CaptureablePlotElement extends HTMLElement {
 
 interface LegendExportState {
   annotation: string;
-  includeShapes: boolean;
   otherItemsCount: number;
   items: Array<{
     value: string;

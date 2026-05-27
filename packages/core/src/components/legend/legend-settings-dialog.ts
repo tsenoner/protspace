@@ -17,11 +17,9 @@ import {
 export interface SettingsDialogState {
   maxVisibleValues: number;
   shapeSize: number;
-  includeShapes: boolean;
   enableDuplicateStackUI: boolean;
   selectedAnnotation: string;
   annotationSortModes: Record<string, LegendSortMode>;
-  isMultilabelAnnotation: boolean;
   isNumericAnnotation: boolean;
   selectedNumericStrategy: NumericBinningStrategy;
   logBinningAvailable: boolean;
@@ -36,7 +34,6 @@ export interface SettingsDialogState {
 export interface SettingsDialogCallbacks {
   onMaxVisibleValuesChange: (value: number) => void;
   onShapeSizeChange: (value: number) => void;
-  onIncludeShapesChange: (checked: boolean) => void;
   onEnableDuplicateStackUIChange: (checked: boolean) => void;
   onSortModeChange: (annotation: string, mode: LegendSortMode) => void;
   onPaletteChange: (paletteId: string) => void;
@@ -160,17 +157,12 @@ function renderShapeSizeInput(
 }
 
 /**
- * Renders the checkbox options (shapes, duplicate stack)
+ * Renders the checkbox options for the settings dialog.
  */
 function renderCheckboxOptions(
   state: SettingsDialogState,
   callbacks: SettingsDialogCallbacks,
 ): TemplateResult {
-  const shapesDisabled = state.isMultilabelAnnotation || state.isNumericAnnotation;
-  const shapesDisabledNote = state.isNumericAnnotation
-    ? 'Shapes are fixed for numeric annotations.'
-    : 'Shapes are unavailable for multilabel annotations.';
-
   const renderCheckboxCard = (
     label: string,
     checked: boolean,
@@ -206,19 +198,6 @@ function renderCheckboxOptions(
   `;
 
   return html`
-    ${renderCheckboxCard(
-      'Include shapes',
-      state.includeShapes,
-      (checked) => callbacks.onIncludeShapesChange(checked),
-      shapesDisabled
-        ? {
-            disabled: true,
-            describedBy: 'include-shapes-note',
-            note: shapesDisabledNote,
-            noteId: 'include-shapes-note',
-          }
-        : undefined,
-    )}
     ${renderCheckboxCard(
       'Show duplicate counts and spread overlaps',
       state.enableDuplicateStackUI,

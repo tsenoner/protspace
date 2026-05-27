@@ -1101,6 +1101,16 @@ export class ProtspaceControlBar extends LitElement {
     }
 
     if (event.key === 'Escape') {
+      // Top priority: close any open duplicate-badge spider on the scatter plot
+      // before falling through to selection-clearing. Dropdowns still handle
+      // their own Escape (see isAnyDropdownOpen check below).
+      if (this._scatterplotElement?.hasExpandedDuplicateStack?.()) {
+        event.preventDefault();
+        event.stopPropagation();
+        this._scatterplotElement.closeExpandedDuplicateStack?.();
+        return;
+      }
+
       // Don't handle Escape if any dropdown is open (they handle it themselves)
       if (
         isAnyDropdownOpen({

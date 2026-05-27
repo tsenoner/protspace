@@ -22,54 +22,70 @@ export async function dismissProductTour(page: Page): Promise<void> {
 }
 
 /**
- * Wait for the scatterplot to finish loading data.
- * Waits for the data-loaded event and for points to be rendered.
+ * Settle for two animation frames so Lit's update cycle and the next paint
+ * have committed before we proceed. Cheaper and more deterministic than a
+ * fixed `waitForTimeout` since it ties to the actual render loop.
+ */
+async function awaitTwoFrames(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+}
+
+/**
+ * Wait for the scatterplot to finish loading data and for the first render
+ * pass to populate the plot's internal layout state. Also waits for the
+ * `#progressive-loading` overlay (loading-overlay.ts) to fully remove
+ * itself — without this, screenshots can land during the 500 ms fade-out.
  */
 export async function waitForDataLoad(page: Page, timeout = 30000): Promise<void> {
-  // Wait for the scatterplot element to exist
   await page.waitForSelector('#myPlot', { timeout });
 
-  // Wait for data to be loaded by checking the data property on the element
-  // The scatterplot uses canvas rendering, not SVG circles
+  // Wait for the data property AND the post-render derived state used by
+  // the animation tests (`_plotData`, `_scales`). When both are populated
+  // the canvas has rendered at least once.
   await page.waitForFunction(
     () => {
       const plot = document.querySelector('#myPlot') as any;
       if (!plot) return false;
-
-      // Check if the data property is set and has proteins
-      if (plot.data && plot.data.protein_ids && plot.data.protein_ids.length > 0) {
-        return true;
-      }
-
-      return false;
+      if (!plot.data?.protein_ids?.length) return false;
+      if (!Array.isArray(plot._plotData) || plot._plotData.length === 0) return false;
+      if (!plot._scales) return false;
+      return true;
     },
-    { timeout, polling: 1000 },
+    { timeout, polling: 200 },
   );
 
-  // Additional wait for rendering to stabilize
-  await page.waitForTimeout(1000);
+  // The loading overlay fades out (opacity 0.5s) then removes itself ~500 ms
+  // later. Wait for the element to be gone from the DOM.
+  await page.waitForFunction(() => !document.getElementById('progressive-loading'), {
+    timeout,
+    polling: 100,
+  });
+
+  await awaitTwoFrames(page);
 }
 
 /**
- * Wait for the legend to populate with items.
+ * Wait for the legend to populate with items and finish its first paint.
  */
 export async function waitForLegend(page: Page, timeout = 15000): Promise<void> {
   await page.waitForSelector('#myLegend', { timeout });
 
-  // Wait for legend items to be rendered
   await page.waitForFunction(
     () => {
       const legend = document.querySelector('#myLegend');
       if (!legend || !legend.shadowRoot) return false;
-
-      // Check for legend items
       const items = legend.shadowRoot.querySelectorAll('.legend-item');
       return items.length > 0;
     },
-    { timeout, polling: 1000 },
+    { timeout, polling: 200 },
   );
 
-  await page.waitForTimeout(500);
+  await awaitTwoFrames(page);
 }
 
 /**
@@ -390,15 +406,15 @@ export async function panScatterplot(page: Page, deltaX: number, deltaY: number)
  * Toggle a legend item visibility.
  */
 export async function toggleLegendItem(page: Page, index = 0): Promise<void> {
-  // Click on a legend item to toggle it
+  // The @click handler lives on the inner `.legend-item-main` button, not the
+  // wrapper `.legend-item` div — clicking the wrapper would be a no-op.
   await page.evaluate((idx) => {
     const legend = document.querySelector('#myLegend');
     if (!legend || !legend.shadowRoot) return;
 
     const items = legend.shadowRoot.querySelectorAll('.legend-item');
-    if (items[idx]) {
-      (items[idx] as HTMLElement).click();
-    }
+    const button = items[idx]?.querySelector('.legend-item-main') as HTMLElement | null;
+    button?.click();
   }, index);
 
   await logAction(page, 'mouse', 'Toggle Legend Item', `Toggle category ${index}`);
@@ -409,20 +425,23 @@ export async function toggleLegendItem(page: Page, index = 0): Promise<void> {
  * Double-click a legend item to isolate it (show only that category).
  */
 export async function doubleClickLegendItem(page: Page, index = 0): Promise<void> {
-  // Double-click on a legend item to isolate it
+  // Same caveat as toggleLegendItem: the @dblclick handler is on the inner
+  // `.legend-item-main` button. Dispatching on the wrapper does not bubble
+  // down to children, so we must dispatch on the button itself.
   await page.evaluate((idx) => {
     const legend = document.querySelector('#myLegend');
     if (!legend || !legend.shadowRoot) return;
 
     const items = legend.shadowRoot.querySelectorAll('.legend-item');
-    if (items[idx]) {
-      const event = new MouseEvent('dblclick', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      });
-      items[idx].dispatchEvent(event);
-    }
+    const button = items[idx]?.querySelector('.legend-item-main') as HTMLElement | null;
+    if (!button) return;
+
+    const event = new MouseEvent('dblclick', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    });
+    button.dispatchEvent(event);
   }, index);
 
   await logAction(page, 'mouse', 'Double Click Legend Item', `Isolate category ${index}`);
@@ -880,6 +899,70 @@ export async function showKeyboardIndicator(page: Page, key: string): Promise<vo
     indicator.style.display = 'block';
   });
   await logAction(page, 'keyboard', 'Modifier Key', `Hold ${key === 'Meta' ? '⌘ (Cmd)' : 'Ctrl'}`);
+}
+
+/**
+ * Show a transient action label (e.g. "Click", "Double-Click") next to a
+ * click point. The label sits centered above (x, y) and flips below when
+ * (x, y) is near the top of the viewport. Auto-hides after `durationMs`.
+ * Reuses a single DOM node so back-to-back calls replace each other
+ * instead of stacking.
+ */
+export async function showActionLabel(
+  page: Page,
+  label: string,
+  x: number,
+  y: number,
+  durationMs = 700,
+): Promise<void> {
+  await page.evaluate(
+    ({ text, dur, posX, posY }) => {
+      const overlay = document.getElementById('playwright-visual-indicators');
+      if (!overlay) return;
+
+      let badge = document.getElementById('playwright-action-label') as HTMLDivElement | null;
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'playwright-action-label';
+        overlay.appendChild(badge);
+      }
+
+      const margin = 18;
+      const flipBelow = posY < 80;
+      const anchorY = flipBelow ? posY + margin : posY - margin;
+      const transform = flipBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
+
+      badge.style.cssText = `
+        position: fixed;
+        left: ${posX}px;
+        top: ${anchorY}px;
+        transform: ${transform};
+        background: rgba(77, 171, 247, 0.95);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 700;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        z-index: 1000001;
+        pointer-events: none;
+        white-space: nowrap;
+      `;
+      badge.textContent = text;
+      badge.style.display = 'block';
+
+      const prev = (badge as unknown as { _hideTimer?: number })._hideTimer;
+      if (prev) window.clearTimeout(prev);
+      (badge as unknown as { _hideTimer?: number })._hideTimer = window.setTimeout(() => {
+        if (badge) badge.style.display = 'none';
+      }, dur);
+    },
+    { text: label, dur: durationMs, posX: x, posY: y },
+  );
+  await logAction(page, 'mouse', 'Action Label', label);
 }
 
 /**

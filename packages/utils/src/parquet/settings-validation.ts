@@ -61,7 +61,7 @@ export function isValidLegendSettings(obj: unknown): obj is LegendPersistedSetti
 
   // Check required primitive fields
   if (typeof s.maxVisibleValues !== 'number') return false;
-  if (typeof s.includeShapes !== 'boolean') return false;
+  if (s.includeShapes !== undefined && typeof s.includeShapes !== 'boolean') return false;
   if (typeof s.shapeSize !== 'number') return false;
   if (!isValidSortMode(s.sortMode)) return false;
   if (typeof s.enableDuplicateStackUI !== 'boolean') return false;
@@ -198,7 +198,7 @@ function sanitizeLegendSettingsEntry(obj: unknown): LegendPersistedSettings | nu
 
   const s = obj as Record<string, unknown>;
   if (typeof s.maxVisibleValues !== 'number') return null;
-  if (typeof s.includeShapes !== 'boolean') return null;
+  if (s.includeShapes !== undefined && typeof s.includeShapes !== 'boolean') return null;
   if (typeof s.shapeSize !== 'number') return null;
   if (!isValidSortMode(s.sortMode)) return null;
   if (typeof s.enableDuplicateStackUI !== 'boolean') return null;
@@ -250,7 +250,6 @@ function sanitizeLegendSettingsEntry(obj: unknown): LegendPersistedSettings | nu
 
   return {
     maxVisibleValues: s.maxVisibleValues,
-    includeShapes: s.includeShapes,
     shapeSize: s.shapeSize,
     sortMode: s.sortMode,
     hiddenValues: s.hiddenValues,
@@ -261,7 +260,7 @@ function sanitizeLegendSettingsEntry(obj: unknown): LegendPersistedSettings | nu
   };
 }
 
-function sanitizeLegendSettingsMap(obj: unknown): LegendSettingsMap | null {
+export function sanitizeLegendSettingsMap(obj: unknown): LegendSettingsMap | null {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
     return null;
   }

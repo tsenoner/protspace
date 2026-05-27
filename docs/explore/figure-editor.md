@@ -2,6 +2,8 @@
 
 The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization — all in a single interface.
 
+![Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom](./images/figure-editor-overview.png)
+
 ## Opening the Figure Editor
 
 1. Click **Export** in the control bar
@@ -12,6 +14,8 @@ The editor opens as a full-screen modal with a **preview canvas** on the left an
 To export immediately with the last-used settings, use **Quick Export** instead — it skips the editor.
 
 ## Journal Presets
+
+![Journal preset grid in the Figure Editor sidebar — Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets.png)
 
 The presets grid configures dimensions and DPI for specific journals:
 
@@ -134,6 +138,8 @@ While focus is inside an editable input (e.g. a label's text field), Delete/Back
 
 ## Overlay tools
 
+![Figure Editor with three overlays placed: a red circle highlighting a protein cluster, an arrow pointing at the cluster, and a "Cluster A" label — sidebar shows the matching Overlays section](./images/figure-editor-overlays.png)
+
 The toolbar at the bottom of the preview switches between drawing tools.
 
 ### Select tool
@@ -163,6 +169,8 @@ Click to place a text label. Default text is "Label" and can be renamed in the s
 - A rotate handle for rotation around the anchor
 
 ### Zoom-inset tool
+
+![Figure Editor with a zoom inset placed: dashed source rectangle marks the magnified region on the left of the plot, the magnified target rectangle sits in the lower-right with a solid border, sidebar shows Zoom Insets with Dot size and Border controls](./images/figure-editor-zoom-inset.png)
 
 Creates a magnified view of a region. Two-phase workflow:
 

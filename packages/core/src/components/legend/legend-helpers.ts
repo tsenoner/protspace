@@ -94,7 +94,6 @@ export function createDefaultSettings(selectedAnnotation: string): LegendPersist
   void selectedAnnotation;
   return {
     maxVisibleValues: LEGEND_DEFAULTS.maxVisibleValues,
-    includeShapes: LEGEND_DEFAULTS.includeShapes,
     shapeSize: LEGEND_DEFAULTS.symbolSize,
     sortMode: 'size-desc',
     hiddenValues: [],

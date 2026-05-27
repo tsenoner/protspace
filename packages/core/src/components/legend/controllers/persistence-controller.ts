@@ -23,7 +23,6 @@ export interface PersistenceCallbacks {
   isNumericAnnotation?: () => boolean;
   getCurrentSettings: () => {
     maxVisibleValues: number;
-    includeShapes: boolean;
     shapeSize: number;
     sortMode: LegendSortMode;
     enableDuplicateStackUI: boolean;
@@ -81,7 +80,6 @@ export class PersistenceController
   private _stripLegacyFields(settings: LegendPersistedSettings): LegendPersistedSettings {
     return {
       maxVisibleValues: settings.maxVisibleValues,
-      includeShapes: settings.includeShapes,
       shapeSize: settings.shapeSize,
       sortMode: settings.sortMode,
       hiddenValues: settings.hiddenValues,
@@ -137,7 +135,6 @@ export class PersistenceController
 
     const settings: LegendPersistedSettings = {
       maxVisibleValues: currentSettings.maxVisibleValues,
-      includeShapes: currentSettings.includeShapes,
       shapeSize: currentSettings.shapeSize,
       sortMode: currentSettings.sortMode,
       hiddenValues: this.callbacks.getHiddenValues(),
@@ -188,7 +185,6 @@ export class PersistenceController
 
     return {
       maxVisibleValues: currentSettings.maxVisibleValues,
-      includeShapes: currentSettings.includeShapes,
       shapeSize: currentSettings.shapeSize,
       sortMode: currentSettings.sortMode,
       hiddenValues: this.callbacks.getHiddenValues(),

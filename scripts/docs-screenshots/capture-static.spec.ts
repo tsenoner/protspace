@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test, type BrowserContext, type Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
@@ -10,12 +10,121 @@ import {
   clickProteinPoint,
 } from './helpers';
 
-// Ensure output directory exists
-test.beforeAll(async () => {
+// Static screenshots share one page across the whole spec — the dataset is
+// large to load and parse, so we pay that cost once in beforeAll and reset
+// only the per-test mutations in beforeEach.
+let sharedContext: BrowserContext | null = null;
+let sharedPage: Page | null = null;
+
+function getPage(): Page {
+  if (!sharedPage) {
+    throw new Error('sharedPage not initialized — beforeAll did not run');
+  }
+  return sharedPage;
+}
+
+test.beforeAll(async ({ browser }) => {
   if (!fs.existsSync(IMAGES_DIR)) {
     fs.mkdirSync(IMAGES_DIR, { recursive: true });
   }
+
+  sharedContext = await browser.newContext({
+    viewport: { width: 1536, height: 864 },
+  });
+  sharedPage = await sharedContext.newPage();
+
+  await sharedPage.goto('/explore');
+  await dismissProductTour(sharedPage);
+  await waitForDataLoad(sharedPage);
+  await waitForLegend(sharedPage);
+  await waitForControlBar(sharedPage);
 });
+
+test.afterAll(async () => {
+  if (sharedPage) {
+    await sharedPage.close();
+    sharedPage = null;
+  }
+  if (sharedContext) {
+    await sharedContext.close();
+    sharedContext = null;
+  }
+});
+
+/**
+ * Roll back any DOM/state changes a prior test may have left behind, so each
+ * test starts from a known-clean page without paying the goto/load cost again.
+ *
+ * Cleans up: injected callout overlays (control-bar-annotated), the publish
+ * modal (figure-editor tests), the structure viewer (structure-viewer.png),
+ * the filter query (filter-query-builder.png), and any open shadow-DOM
+ * dropdowns / modals (Escape closes them at the Lit/native level).
+ */
+async function resetStaticState(page: Page): Promise<void> {
+  // Close any open dropdown / modal via Escape — handles control-bar-projection,
+  // -annotation, -export, query builder, and the publish modal's outer trap.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  await page.evaluate(() => {
+    // Annotated control bar appends red callout circles to document.body.
+    document.querySelectorAll('div[data-test-callout]').forEach((el) => el.remove());
+
+    // Figure editor leaves a publish modal element behind even after Escape.
+    document.querySelectorAll('protspace-publish-modal').forEach((el) => el.remove());
+
+    // structure-viewer.png unhides the viewer and selects a protein.
+    const sv = document.querySelector('#myStructureViewer') as HTMLElement | null;
+    if (sv) sv.style.display = 'none';
+    const plot = document.querySelector('#myPlot') as
+      | (HTMLElement & { selectedProteinIds?: string[] })
+      | null;
+    if (plot && Array.isArray(plot.selectedProteinIds)) plot.selectedProteinIds = [];
+
+    // filter-query-builder seeds an example query — clear it.
+    const cb = document.querySelector('#myControlBar') as
+      | (HTMLElement & { filterQuery?: unknown[]; requestUpdate?: () => void })
+      | null;
+    if (cb) {
+      cb.filterQuery = [];
+      cb.requestUpdate?.();
+    }
+  });
+
+  // Brief settle for Lit/rAF updates following the resets above.
+  await page.waitForTimeout(150);
+}
+
+/**
+ * Open the Figure Editor and wait for its preview canvas to render.
+ * Dispatches the same event the Export-menu's "Figure Editor" button fires —
+ * skips dropdown timing and viewport clipping.
+ */
+async function openFigureEditor(
+  page: import('@playwright/test').Page,
+  timeout = 10_000,
+): Promise<void> {
+  await page.evaluate(() => {
+    const cb = document.querySelector('protspace-control-bar');
+    cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
+  });
+
+  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), {
+    timeout,
+  });
+  await page.waitForFunction(
+    () => {
+      const m = document.querySelector('protspace-publish-modal') as
+        | (HTMLElement & { shadowRoot: ShadowRoot })
+        | null;
+      const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
+      return !!c && c.width > 0 && c.height > 0;
+    },
+    { timeout, polling: 250 },
+  );
+  // Settle: rAF redraw + font readiness.
+  await page.waitForTimeout(800);
+}
 
 /**
  * Wait for the control bar to be fully rendered with all elements styled.
@@ -51,23 +160,25 @@ async function waitForControlBar(
       // Check that annotation select has annotations loaded
       return annotationSelect.annotations && annotationSelect.annotations.length > 0;
     },
-    { timeout, polling: 500 },
+    { timeout, polling: 200 },
   );
 
-  // Additional wait for CSS transitions to complete
-  await page.waitForTimeout(300);
+  // Settle for two frames so any Lit transition is committed.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 }
 
 test.describe('Interface Overview Screenshots', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await dismissProductTour(page);
-    await waitForDataLoad(page);
-    await waitForLegend(page);
-    await waitForControlBar(page);
+  test.beforeEach(async () => {
+    await resetStaticState(getPage());
   });
 
-  test('interface-overview.png - Full page layout', async ({ page }) => {
+  test('interface-overview.png - Full page layout', async () => {
+    const page = getPage();
     await page.screenshot({
       path: path.join(IMAGES_DIR, 'interface-overview.png'),
       fullPage: false,
@@ -75,7 +186,8 @@ test.describe('Interface Overview Screenshots', () => {
     console.log('📸 Captured: interface-overview.png');
   });
 
-  test('scatterplot-example.png - Scatterplot with colored proteins', async ({ page }) => {
+  test('scatterplot-example.png - Scatterplot with colored proteins', async () => {
+    const page = getPage();
     const plot = page.locator('#myPlot');
     await plot.screenshot({
       path: path.join(IMAGES_DIR, 'scatterplot-example.png'),
@@ -83,7 +195,8 @@ test.describe('Interface Overview Screenshots', () => {
     console.log('📸 Captured: scatterplot-example.png');
   });
 
-  test('legend-panel.png - Legend with categories', async ({ page }) => {
+  test('legend-panel.png - Legend with categories', async () => {
+    const page = getPage();
     const legend = page.locator('#myLegend');
     await legend.screenshot({
       path: path.join(IMAGES_DIR, 'legend-panel.png'),
@@ -91,7 +204,8 @@ test.describe('Interface Overview Screenshots', () => {
     console.log('📸 Captured: legend-panel.png');
   });
 
-  test('structure-viewer.png - 3D structure viewer', async ({ page }) => {
+  test('structure-viewer.png - 3D structure viewer', async () => {
+    const page = getPage();
     // Click on a protein to load it in the structure viewer
     await clickProteinPoint(page);
 
@@ -129,16 +243,12 @@ test.describe('Interface Overview Screenshots', () => {
 });
 
 test.describe('Control Bar Screenshots', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await dismissProductTour(page);
-    await waitForDataLoad(page);
-    await waitForControlBar(page);
+  test.beforeEach(async () => {
+    await resetStaticState(getPage());
   });
 
-  test('control-bar-annotated.png - Annotated control bar with numbered callouts', async ({
-    page,
-  }) => {
+  test('control-bar-annotated.png - Annotated control bar with numbered callouts', async () => {
+    const page = getPage();
     // Inject numbered callout annotations
     await page.evaluate(() => {
       const controlBar = document.querySelector('#myControlBar') as any;
@@ -197,6 +307,7 @@ test.describe('Control Bar Screenshots', () => {
           z-index: 10000;
         `;
         callout.textContent = label;
+        callout.dataset.testCallout = 'true';
         document.body.appendChild(callout);
       });
     });
@@ -226,9 +337,8 @@ test.describe('Control Bar Screenshots', () => {
     console.log('📸 Captured: control-bar-annotated.png');
   });
 
-  test('control-bar-projection.png - Projection dropdown with options overlay', async ({
-    page,
-  }) => {
+  test('control-bar-projection.png - Projection dropdown with options overlay', async () => {
+    const page = getPage();
     // Click the projection trigger to open the real custom dropdown
     await page.evaluate(() => {
       const controlBar = document.querySelector('#myControlBar') as any;
@@ -308,9 +418,8 @@ test.describe('Control Bar Screenshots', () => {
     console.log('📸 Captured: control-bar-projection.png');
   });
 
-  test('control-bar-annotation.png - Annotation dropdown with options overlay', async ({
-    page,
-  }) => {
+  test('control-bar-annotation.png - Annotation dropdown with options overlay', async () => {
+    const page = getPage();
     // Click the annotation select trigger to open the real dropdown
     await page.evaluate(() => {
       const controlBar = document.querySelector('#myControlBar') as any;
@@ -400,7 +509,251 @@ test.describe('Control Bar Screenshots', () => {
     console.log('📸 Captured: control-bar-annotation.png');
   });
 
-  test('control-bar-export.png - Export menu', async ({ page }) => {
+  test('figure-editor-overview.png - Figure Editor modal full layout', async () => {
+    const page = getPage();
+    await openFigureEditor(page);
+    await page.screenshot({
+      path: path.join(IMAGES_DIR, 'figure-editor-overview.png'),
+      fullPage: false,
+    });
+    console.log('📸 Captured: figure-editor-overview.png');
+  });
+
+  test('figure-editor-presets.png - Journal preset grid (sidebar close-up)', async () => {
+    const page = getPage();
+    await openFigureEditor(page);
+
+    const clip = await page.evaluate(() => {
+      const m = document.querySelector('protspace-publish-modal') as
+        | (HTMLElement & { shadowRoot: ShadowRoot })
+        | null;
+      const sidebar = m?.shadowRoot?.querySelector('.publish-sidebar') as HTMLElement | null;
+      if (!sidebar) return null;
+      const r = sidebar.getBoundingClientRect();
+      return { x: r.left, y: r.top, width: r.width, height: Math.min(r.height, 540) };
+    });
+
+    if (clip) {
+      await page.screenshot({
+        path: path.join(IMAGES_DIR, 'figure-editor-presets.png'),
+        clip,
+      });
+    } else {
+      await page.screenshot({ path: path.join(IMAGES_DIR, 'figure-editor-presets.png') });
+    }
+    console.log('📸 Captured: figure-editor-presets.png');
+  });
+
+  test('figure-editor-overlays.png - Editor with circle, arrow, and label overlays', async () => {
+    const page = getPage();
+    await openFigureEditor(page);
+
+    await page.evaluate(() => {
+      const m = document.querySelector('protspace-publish-modal') as
+        | (HTMLElement & {
+            _state: Record<string, unknown>;
+            requestUpdate: () => void;
+          })
+        | null;
+      if (!m) return;
+      const cur = m._state as Record<string, unknown>;
+      // Hand-placed coordinates from a real editor session: a rotated circle
+      // around the PLD cluster (right) with a "PLD" label, plus an arrow
+      // pointing into the Kunitz cluster (upper-left) with its label.
+      m._state = {
+        ...cur,
+        overlays: [
+          {
+            type: 'circle',
+            cx: 0.8737195856124373,
+            cy: 0.6619266620785421,
+            rx: 0.04240957253752543,
+            ry: 0.046662343237108606,
+            rotation: -0.20396168731157882,
+            color: '#000000',
+            strokeWidth: 2,
+          },
+          {
+            type: 'label',
+            x: 0.8490372746852966,
+            y: 0.5941603427694406,
+            text: 'PLD',
+            fontSize: 24,
+            rotation: 0,
+            color: '#000000',
+          },
+          {
+            type: 'label',
+            x: 0.3576617410178119,
+            y: 0.42456087994542974,
+            text: 'Kunitz',
+            fontSize: 24,
+            rotation: 0,
+            color: '#000000',
+          },
+          {
+            type: 'arrow',
+            x1: 0.36300882685603014,
+            y1: 0.40204531889495226,
+            x2: 0.4461934912139551,
+            y2: 0.19846201398362892,
+            color: '#000000',
+            width: 4,
+          },
+        ],
+      };
+      m.requestUpdate();
+    });
+    // Allow rAF redraw and font load to complete.
+    await page.waitForTimeout(600);
+
+    await page.screenshot({
+      path: path.join(IMAGES_DIR, 'figure-editor-overlays.png'),
+      fullPage: false,
+    });
+    console.log('📸 Captured: figure-editor-overlays.png');
+  });
+
+  test('figure-editor-zoom-inset.png - Editor with a zoom inset placed', async () => {
+    const page = getPage();
+    await openFigureEditor(page);
+
+    await page.evaluate(() => {
+      const m = document.querySelector('protspace-publish-modal') as
+        | (HTMLElement & {
+            _state: Record<string, unknown>;
+            requestUpdate: () => void;
+          })
+        | null;
+      if (!m) return;
+      const cur = m._state as Record<string, unknown>;
+      // Hand-placed source/target from a real editor session: source rect
+      // tightly bounds a small mid-plot cluster; target rect drops the
+      // magnified view into the lower-left whitespace.
+      m._state = {
+        ...cur,
+        insets: [
+          {
+            sourceRect: {
+              x: 0.30612982591154486,
+              y: 0.475006394952251,
+              w: 0.0630622977144123,
+              h: 0.04193489938608458,
+            },
+            targetRect: {
+              x: 0.056294980577438314,
+              y: 0.693431318212824,
+              w: 0.279788520581097,
+              h: 0.18605258427284216,
+            },
+            border: 2,
+            connector: 'lines',
+            pointSizeScale: 2.3,
+          },
+        ],
+      };
+      m.requestUpdate();
+    });
+    // Inset re-render is async (WebGL pass); give it room to settle.
+    await page.waitForTimeout(1500);
+
+    await page.screenshot({
+      path: path.join(IMAGES_DIR, 'figure-editor-zoom-inset.png'),
+      fullPage: false,
+    });
+    console.log('📸 Captured: figure-editor-zoom-inset.png');
+  });
+
+  test('filter-query-builder.png - Filter modal with example conditions', async () => {
+    const page = getPage();
+    // Pre-populate the filter query so the modal opens with a meaningful state.
+    // Pick the first annotation and its first two unique non-null values from
+    // the currently loaded data — keeps the test independent of the dataset.
+    await page.evaluate(() => {
+      const cb = document.querySelector('#myControlBar') as
+        | (HTMLElement & {
+            annotations: string[];
+            _currentData?: {
+              annotations?: Record<string, { values: (string | null)[] }>;
+            };
+            filterQuery: unknown[];
+            requestUpdate: () => void;
+          })
+        | null;
+      if (!cb) return;
+      const ann = cb.annotations?.[0];
+      if (!ann) return;
+      const raw = cb._currentData?.annotations?.[ann]?.values ?? [];
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const v of raw) {
+        if (typeof v !== 'string' || !v) continue;
+        if (seen.has(v)) continue;
+        seen.add(v);
+        unique.push(v);
+        if (unique.length === 2) break;
+      }
+      cb.filterQuery = [{ id: 'q-demo-1', annotation: ann, values: unique }];
+      cb.requestUpdate();
+    });
+
+    // Open the filter modal via the same path the user clicks.
+    await page.evaluate(() => {
+      const cb = document.querySelector('#myControlBar') as
+        | (HTMLElement & {
+            shadowRoot: ShadowRoot | null;
+          })
+        | null;
+      const trigger = cb?.shadowRoot?.querySelector(
+        '.filter-container .dropdown-trigger',
+      ) as HTMLElement | null;
+      trigger?.click();
+    });
+
+    await page.waitForFunction(
+      () => {
+        const cb = document.querySelector('#myControlBar') as
+          | (HTMLElement & {
+              shadowRoot: ShadowRoot | null;
+            })
+          | null;
+        return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
+      },
+      { timeout: 5_000, polling: 200 },
+    );
+    // Let the query builder finish first paint and resolve match counts.
+    await page.waitForTimeout(800);
+
+    const clip = await page.evaluate(() => {
+      const cb = document.querySelector('#myControlBar') as
+        | (HTMLElement & {
+            shadowRoot: ShadowRoot | null;
+          })
+        | null;
+      const modal = cb?.shadowRoot?.querySelector('.query-builder-modal') as HTMLElement | null;
+      if (!modal) return null;
+      const r = modal.getBoundingClientRect();
+      return {
+        x: Math.max(0, r.left - 12),
+        y: Math.max(0, r.top - 12),
+        width: r.width + 24,
+        height: r.height + 24,
+      };
+    });
+
+    if (clip) {
+      await page.screenshot({
+        path: path.join(IMAGES_DIR, 'filter-query-builder.png'),
+        clip,
+      });
+    } else {
+      await page.screenshot({ path: path.join(IMAGES_DIR, 'filter-query-builder.png') });
+    }
+    console.log('📸 Captured: filter-query-builder.png');
+  });
+
+  test('control-bar-export.png - Export menu', async () => {
+    const page = getPage();
     // Open export dropdown
     await page.evaluate(() => {
       const controlBar = document.querySelector('#myControlBar') as any;

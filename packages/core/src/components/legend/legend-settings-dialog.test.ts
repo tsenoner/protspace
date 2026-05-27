@@ -24,12 +24,10 @@ type LegendTestElement = HTMLElement & {
   proteinIds: string[];
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
   maxVisibleValues: number;
-  includeShapes: boolean;
   updated: (changedProperties: Map<string, unknown>) => void;
   _showSettingsDialog: boolean;
   _dialogSettings: {
     maxVisibleValues: number;
-    includeShapes: boolean;
     shapeSize: number;
     enableDuplicateStackUI: boolean;
     annotationSortModes: Record<string, LegendSortMode>;
@@ -87,7 +85,6 @@ function renderSettingsDialogToContainer(overrides = {}) {
   const callbacks = {
     onMaxVisibleValuesChange: vi.fn(),
     onShapeSizeChange: vi.fn(),
-    onIncludeShapesChange: vi.fn(),
     onEnableDuplicateStackUIChange: vi.fn(),
     onSortModeChange: vi.fn<(annotation: string, mode: LegendSortMode) => void>(),
     onPaletteChange: vi.fn(),
@@ -107,11 +104,9 @@ function renderSettingsDialogToContainer(overrides = {}) {
       {
         maxVisibleValues: 25,
         shapeSize: 12,
-        includeShapes: true,
         enableDuplicateStackUI: false,
         selectedAnnotation: 'score',
         annotationSortModes: {},
-        isMultilabelAnnotation: false,
         isNumericAnnotation: true,
         selectedNumericStrategy: 'linear',
         logBinningAvailable: true,
@@ -153,7 +148,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
     el._showSettingsDialog = true;
     el._dialogSettings = {
       maxVisibleValues: 5,
-      includeShapes: true,
       shapeSize: 12,
       enableDuplicateStackUI: false,
       annotationSortModes: {},
@@ -190,10 +184,19 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         section.textContent?.trim(),
       ),
     ).toContain('Bin order');
-    expect(
-      container.querySelector<HTMLInputElement>('input[aria-describedby="include-shapes-note"]')
-        ?.disabled,
-    ).toBe(true);
+  });
+
+  it('does not render an "Include shapes" checkbox', () => {
+    const el = createLegend();
+    configureOpenSettingsDialog(el, DEFAULT_NUMERIC_PALETTE_ID);
+    const container = document.createElement('div');
+
+    render(el._renderSettingsDialog(), container);
+
+    const labels = Array.from(container.querySelectorAll('label')).map((l) =>
+      (l.textContent ?? '').trim(),
+    );
+    expect(labels).not.toContain('Include shapes');
   });
 
   it('normalizes palette changes using the inferred numeric annotation type', () => {
@@ -213,7 +216,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
 
     el._handleSettingsSave();
 
-    expect(el.includeShapes).toBe(false);
     expect(el._annotationSortModes.score).toBe('alpha-asc');
     expect(el._selectedPaletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
     expect(el._numericSettingsByAnnotation.score).toMatchObject({
@@ -234,7 +236,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
 
     el._handleSettingsReset();
 
-    expect(el.includeShapes).toBe(false);
     expect(el._annotationSortModes.score).toBe('alpha-asc');
     expect(el._selectedPaletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
     expect(el._numericSettingsByAnnotation.score).toMatchObject({
@@ -286,7 +287,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
 
     el._applyPersistedSettings({
       maxVisibleValues: 5,
-      includeShapes: true,
       shapeSize: 12,
       sortMode: 'size-desc',
       hiddenValues: [],
@@ -296,7 +296,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
       annotationTypeOverride: 'string',
     } as LegendPersistedSettings & { annotationTypeOverride: string });
 
-    expect(el.includeShapes).toBe(false);
     expect(el._annotationSortModes.score).toBe('alpha-asc');
   });
 

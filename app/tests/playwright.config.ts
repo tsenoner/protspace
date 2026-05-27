@@ -131,29 +131,13 @@ export default defineConfig({
       testMatch: /figure-editor\.spec\.ts/,
     },
     {
-      name: 'fasta-prep',
+      name: 'isolation-dataset-swap',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 720 },
       },
-      testMatch: /fasta-prep\.spec\.ts/,
+      testMatch: /isolation-dataset-swap\.spec\.ts/,
     },
-    // Live FASTA prep requires the real backend (caddy + protspace-prep +
-    // Biocentral embedding). Opt-in via RUN_LIVE_E2E=1.
-    ...(process.env.RUN_LIVE_E2E
-      ? [
-          {
-            name: 'fasta-prep-live',
-            use: {
-              ...devices['Desktop Chrome'],
-              viewport: { width: 1280, height: 720 },
-            },
-            testMatch: /fasta-prep\.live\.spec\.ts/,
-            // Real embedding takes ~60s; allow generous headroom for cold starts.
-            timeout: 6 * 60_000,
-          },
-        ]
-      : []),
   ],
 
   outputDir: '../test-results/',

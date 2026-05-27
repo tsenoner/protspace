@@ -57,7 +57,6 @@ describe('round-trip with real data files', () => {
       legendSettings: {
         testAnnotation: {
           maxVisibleValues: 10,
-          includeShapes: true,
           shapeSize: 24,
           sortMode: 'size-desc' as const,
           hiddenValues: [],
@@ -148,7 +147,6 @@ describe('round-trip with real data files', () => {
       legendSettings: {
         length: {
           maxVisibleValues: 5,
-          includeShapes: false,
           shapeSize: 24,
           sortMode: 'alpha-asc' as const,
           hiddenValues: ['10 - <28'],
@@ -173,6 +171,72 @@ describe('round-trip with real data files', () => {
     const extracted = await extractRowsFromParquetBundle(exportedBuffer);
 
     expect(extracted.settings).toEqual(settings);
+  });
+
+  it('drops the legacy includeShapes field when extracting a bundle', async () => {
+    const original = {
+      protein_ids: ['P1', 'P2'],
+      projections: [
+        {
+          name: 'UMAP',
+          data: [
+            [0, 0],
+            [1, 1],
+          ] as Array<[number, number]>,
+        },
+      ],
+      annotations: {
+        family: {
+          kind: 'categorical' as const,
+          values: ['A', 'B'],
+          colors: ['#1F77B4', '#FF7F0E'],
+          shapes: ['circle', 'circle'],
+        },
+      },
+      annotation_data: {
+        family: [[0], [1]],
+      },
+      annotation_scores: {},
+      annotation_evidence: {},
+    };
+
+    // Simulate a bundle authored before issue #252: legendSettings carries the
+    // removed `includeShapes` flag. The extraction path must accept it and
+    // strip it via normalizeBundleSettings, never surfacing it to callers.
+    const legacySettings = {
+      legendSettings: {
+        family: {
+          maxVisibleValues: 10,
+          shapeSize: 24,
+          sortMode: 'size-desc' as const,
+          hiddenValues: [],
+          categories: {
+            A: { zOrder: 0, color: '#1F77B4', shape: 'circle' },
+          },
+          enableDuplicateStackUI: false,
+          selectedPaletteId: 'kellys',
+          includeShapes: true,
+        },
+      },
+      exportOptions: {},
+    };
+
+    const exportedBuffer = createParquetBundle(original, {
+      includeSettings: true,
+      settings: legacySettings,
+    });
+    const extracted = await extractRowsFromParquetBundle(exportedBuffer);
+
+    const familySettings = extracted.settings?.legendSettings?.family;
+    expect(familySettings).toBeDefined();
+    expect(familySettings).not.toHaveProperty('includeShapes');
+    // The rest of the legacy settings survive normalization untouched.
+    expect(familySettings?.selectedPaletteId).toBe('kellys');
+    expect(familySettings?.categories.A).toEqual({
+      zOrder: 0,
+      color: '#1F77B4',
+      shape: 'circle',
+    });
   });
 });
 

@@ -197,8 +197,8 @@ export class LegendRenderer {
     size: number = LEGEND_DEFAULTS.symbolSize,
     onSymbolClick?: (e: MouseEvent) => void,
   ): TemplateResult {
-    // Always show the item's actual shape - custom shapes should be visible
-    // regardless of the global includeShapes setting
+    // Always render the item's stored shape. Categories default to circle;
+    // user-assigned shapes flow through unchanged.
     const symbolContent =
       item.value === LEGEND_VALUES.OTHER
         ? this.renderSymbol('circle', '#888', size)

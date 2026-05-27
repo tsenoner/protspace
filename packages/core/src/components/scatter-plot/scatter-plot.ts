@@ -25,6 +25,7 @@ import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './style-getters';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
+import { getDuplicateStackKey } from './duplicate-stack-helpers';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
@@ -69,7 +70,6 @@ export class ProtspaceScatterplot extends LitElement {
   selectionTool: 'rectangle' | 'lasso' = 'rectangle';
   @property({ type: Array }) hiddenAnnotationValues: string[] = [];
   @property({ type: Array }) otherAnnotationValues: string[] = [];
-  @property({ type: Boolean }) useShapes: boolean = false;
   @property({ type: Object }) numericAnnotationSettings: NumericAnnotationDisplaySettingsMap = {};
   @property({ type: Object }) annotationSortModes: Record<string, LegendSortMode> = {};
   @property({ type: Object }) numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
@@ -153,6 +153,10 @@ export class ProtspaceScatterplot extends LitElement {
   >();
   private _pointIdToDuplicateStackKey = new Map<string, string>();
   private _expandedDuplicateStackKey: string | null = null;
+  // Anchor position the user clicked to open the current spider. Stored separately
+  // from the per-viewport stack object so it survives the rebuild that happens on
+  // every pan/zoom (see _applyExpandedSpiderAnchor).
+  private _expandedSpiderAnchor: { stackKey: string; x: number; y: number } | null = null;
   private _isDuplicateStackUIEnabled(): boolean {
     return !!this._mergedConfig.enableDuplicateStackUI;
   }
@@ -367,6 +371,14 @@ export class ProtspaceScatterplot extends LitElement {
     this._zOrderMapping = customEvent.detail.zOrderMapping;
     // z-order affects GPU depth; force a fresh style getter cache so getDepth sees the new mapping
     this._styleGettersCache = null;
+
+    if (this._plotData.length > 0) {
+      // Z-order mapping changed but coordinates didn't — ask the renderer to
+      // re-sort by depth without invalidating the position cache.
+      this._webglRenderer?.invalidateDepthOrder();
+      this._webglRenderer?.invalidateStyleCache();
+      this._renderPlot();
+    }
   };
 
   private _handleColorMappingChange = (event: Event) => {
@@ -383,8 +395,9 @@ export class ProtspaceScatterplot extends LitElement {
       // For color-only changes, we don't need to invalidate positions or re-sort points
       // Only invalidate style cache to update colors
       if (!colorOnly) {
-        // Z-order changed: need to invalidate positions and re-sort
-        this._webglRenderer?.invalidatePositionCache();
+        // Z-order mapping may have changed; ask the renderer to re-sort by depth
+        // without invalidating the position cache.
+        this._webglRenderer?.invalidateDepthOrder();
         this._invalidateVirtualizationCache();
       }
       this._webglRenderer?.invalidateStyleCache();
@@ -525,8 +538,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
-      changedProperties.has('config') ||
-      changedProperties.has('useShapes')
+      changedProperties.has('config')
     ) {
       this._styleGettersCache = this._buildStyleGetters();
     }
@@ -801,6 +813,10 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _buildQuadtree() {
+    // Cancel any in-flight duplicate stack computation — it uses the old quadtree
+    // and would overwrite cleared state with stale results when it finishes.
+    this._cancelDuplicateStackCompute();
+
     if (!this._plotData.length || !this._scales) {
       this._duplicateStacks = [];
       this._duplicateStackByKey.clear();
@@ -819,6 +835,12 @@ export class ProtspaceScatterplot extends LitElement {
     this._pointIdToDuplicateStackKey.clear();
     this._expandedDuplicateStackKey = null;
     this._duplicateStacksCacheKey = null;
+
+    // Trigger a fresh duplicate overlay update so badges are recomputed for the
+    // new quadtree (e.g. after a projection switch).  Without this, the overlays
+    // rendered synchronously in updated() used a stale cache and nothing would
+    // re-trigger them after the deferred quadtree rebuild.
+    this._scheduleDuplicateOverlayUpdate(true);
   }
 
   private _scheduleQuadtreeRebuild() {
@@ -1379,7 +1401,11 @@ export class ProtspaceScatterplot extends LitElement {
       for (; idx < end; idx++) {
         const p = candidates[idx];
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-        const key = `${p.x}|${p.y}`;
+
+        // Group only points that share coords in the *current* projection
+        // (see duplicate-stack-helpers for the rationale and key contract).
+        const key = getDuplicateStackKey(p);
+
         let stack = stackMap.get(key);
         if (!stack) {
           stack = {
@@ -1432,7 +1458,13 @@ export class ProtspaceScatterplot extends LitElement {
         !this._duplicateStackByKey.has(this._expandedDuplicateStackKey)
       ) {
         this._expandedDuplicateStackKey = null;
+        this._expandedSpiderAnchor = null;
       }
+
+      // Restore the user's spider anchor on the freshly built stack object so
+      // pan/zoom doesn't snap the spider back to whichever group member was
+      // iterated first.
+      this._applyExpandedSpiderAnchor();
 
       this._duplicateStacksCacheKey = viewKey;
       this._duplicateStacksComputing = false;
@@ -1705,10 +1737,37 @@ export class ProtspaceScatterplot extends LitElement {
       });
   }
 
-  private _toggleSpiderfy(stackKey: string) {
+  private _toggleSpiderfy(stackKey: string, anchorPoint?: PlotDataPoint) {
     this._expandedDuplicateStackKey =
       this._expandedDuplicateStackKey === stackKey ? null : stackKey;
+
+    if (this._expandedDuplicateStackKey && anchorPoint) {
+      // Remember where the user clicked so the spider stays anchored to that
+      // point across pan/zoom — _duplicateStackByKey rebuilds with fresh
+      // objects on every viewport recompute and would otherwise drop the anchor.
+      this._expandedSpiderAnchor = {
+        stackKey: this._expandedDuplicateStackKey,
+        x: anchorPoint.x,
+        y: anchorPoint.y,
+      };
+      this._applyExpandedSpiderAnchor();
+    } else {
+      this._expandedSpiderAnchor = null;
+    }
+
     this._updateDuplicateOverlays();
+  }
+
+  private _applyExpandedSpiderAnchor(): void {
+    const anchor = this._expandedSpiderAnchor;
+    if (!anchor || !this._scales) return;
+    if (anchor.stackKey !== this._expandedDuplicateStackKey) return;
+    const stack = this._duplicateStackByKey.get(anchor.stackKey);
+    if (!stack) return;
+    stack.x = anchor.x;
+    stack.y = anchor.y;
+    stack.px = this._scales.x(anchor.x);
+    stack.py = this._scales.y(anchor.y);
   }
 
   private _getPointShape(point: PlotDataPoint): string {
@@ -1759,7 +1818,6 @@ export class ProtspaceScatterplot extends LitElement {
       selectedAnnotation: this.selectedAnnotation,
       hiddenAnnotationValues: this.hiddenAnnotationValues,
       otherAnnotationValues: this.otherAnnotationValues,
-      useShapes: this.useShapes,
       zOrderMapping: this._zOrderMapping,
       colorMapping: this._colorMapping,
       shapeMapping: this._shapeMapping,
@@ -1947,7 +2005,7 @@ export class ProtspaceScatterplot extends LitElement {
           const stackKey = this._pointIdToDuplicateStackKey.get(nearestPoint.id);
           const stack = stackKey ? this._duplicateStackByKey.get(stackKey) : undefined;
           if (stack && stack.points.length > 1) {
-            this._toggleSpiderfy(stack.key);
+            this._toggleSpiderfy(stack.key, nearestPoint);
             return;
           }
         }
@@ -2116,11 +2174,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _updateStyleSignature() {
     const cfg = this._mergedConfig;
-    const parts = [
-      `ps:${cfg.pointSize}`,
-      `annot:${this.selectedAnnotation}`,
-      `sh:${this.useShapes ? 1 : 0}`,
-    ];
+    const parts = [`ps:${cfg.pointSize}`, `annot:${this.selectedAnnotation}`];
     this._styleSig = parts.join('|');
   }
 
@@ -2203,14 +2257,45 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /** Clear isolation state without reprocessing. Use before loading new data. */
-  clearIsolationState(): void {
+  /** True when a duplicate-badge spider is currently expanded. */
+  hasExpandedDuplicateStack(): boolean {
+    return this._expandedDuplicateStackKey !== null;
+  }
+
+  /** Collapse the currently-open duplicate-badge spider, if any. */
+  closeExpandedDuplicateStack(): void {
+    if (this._expandedDuplicateStackKey === null) return;
+    this._expandedDuplicateStackKey = null;
+    this._expandedSpiderAnchor = null;
+    this._updateDuplicateOverlays();
+  }
+
+  /**
+   * Clear isolation state without reprocessing. Use before loading new data.
+   * Dispatches `data-isolation-reset` when state actually changed, so listeners
+   * (e.g. the control bar's Reset chip) stay in sync. Pass `{ silent: true }`
+   * when the caller will dispatch its own reset event with a fuller payload.
+   */
+  clearIsolationState(options?: { silent?: boolean }): void {
+    const wasIsolated = this._isolationMode;
     this._isolationHistory = [];
     this._isolationMode = false;
+    if (wasIsolated && !options?.silent) {
+      this.dispatchEvent(
+        new CustomEvent('data-isolation-reset', {
+          detail: {
+            isolationHistory: this._isolationHistory,
+            isolationMode: this._isolationMode,
+          },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
   }
 
   resetIsolation() {
-    this.clearIsolationState();
+    this.clearIsolationState({ silent: true });
     this.selectedProteinIds = [];
 
     // Invalidate data ref so _processData takes the full rebuild path

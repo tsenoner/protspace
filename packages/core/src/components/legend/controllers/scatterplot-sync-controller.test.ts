@@ -35,7 +35,6 @@ describe('ScatterplotSyncController', () => {
         { value: 'cat1', zOrder: 0, color: '#f00', shape: 'circle' },
         { value: 'cat2', zOrder: 1, color: '#0f0', shape: 'square' },
       ]),
-      getEffectiveIncludeShapes: vi.fn().mockReturnValue(false),
       getOtherConcreteValues: vi.fn().mockReturnValue([]),
     };
 
@@ -269,22 +268,6 @@ describe('ScatterplotSyncController', () => {
       controller.syncOtherValues();
 
       expect(mockScatterplot.otherAnnotationValues).toEqual(['a', 'b', 'c']);
-    });
-  });
-
-  describe('syncShapes', () => {
-    beforeEach(() => {
-      document.body.appendChild(mockScatterplot as unknown as Node);
-      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
-      controller.hostConnected();
-    });
-
-    it('syncs shapes setting to scatterplot', () => {
-      mockCallbacks.getEffectiveIncludeShapes = vi.fn().mockReturnValue(true);
-
-      controller.syncShapes();
-
-      expect(mockScatterplot.useShapes).toBe(true);
     });
   });
 
@@ -543,7 +526,6 @@ function createMockScatterplot(): IScatterplotElement {
 
   element.hiddenAnnotationValues = [];
   element.otherAnnotationValues = [];
-  element.useShapes = false;
   element.config = {};
 
   return element;

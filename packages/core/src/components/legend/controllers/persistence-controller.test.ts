@@ -64,7 +64,6 @@ describe('PersistenceController', () => {
       shouldPersistCategoryEncodings: vi.fn().mockReturnValue(true),
       getCurrentSettings: vi.fn().mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc' as const,
         enableDuplicateStackUI: false,
@@ -87,7 +86,6 @@ describe('PersistenceController', () => {
       controller.updateSelectedAnnotation('annotation1');
       vi.mocked(getStorageItem).mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -113,7 +111,6 @@ describe('PersistenceController', () => {
       controller.updateSelectedAnnotation('annotation1');
       vi.mocked(getStorageItem).mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -141,7 +138,9 @@ describe('PersistenceController', () => {
       expect(getStorageItem).not.toHaveBeenCalled();
     });
 
-    it('loads settings and calls callback', () => {
+    // Backward-compat: bundles written before the includeShapes removal may still
+    // have this field in localStorage. The controller must accept them.
+    it('loads legacy payload containing includeShapes without rejecting it', () => {
       const savedSettings = {
         maxVisibleValues: 15,
         includeShapes: true,
@@ -173,7 +172,6 @@ describe('PersistenceController', () => {
     it('ignores persisted categories when category state should not be restored', () => {
       const savedSettings = {
         maxVisibleValues: 15,
-        includeShapes: true,
         shapeSize: 20,
         sortMode: 'alpha-asc' as const,
         hiddenValues: ['hidden1'],
@@ -212,7 +210,6 @@ describe('PersistenceController', () => {
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1']);
       mockCallbacks.getCurrentSettings = vi.fn().mockReturnValue({
         maxVisibleValues: 15,
-        includeShapes: true,
         shapeSize: 20,
         sortMode: 'alpha-asc' as const,
         enableDuplicateStackUI: true,
@@ -224,7 +221,6 @@ describe('PersistenceController', () => {
       // N/A items are included with __NA__ key, Other is excluded
       expect(setStorageItem).toHaveBeenCalledWith('legend_hash_protein1_annotation1', {
         maxVisibleValues: 15,
-        includeShapes: true,
         shapeSize: 20,
         sortMode: 'alpha-asc',
         hiddenValues: ['hidden1'],
@@ -248,7 +244,6 @@ describe('PersistenceController', () => {
       mockCallbacks.shouldPersistCategoryEncodings = vi.fn().mockReturnValue(false);
       mockCallbacks.getCurrentSettings = vi.fn().mockReturnValue({
         maxVisibleValues: 5,
-        includeShapes: false,
         shapeSize: 20,
         sortMode: 'alpha-asc' as const,
         enableDuplicateStackUI: false,
@@ -265,7 +260,6 @@ describe('PersistenceController', () => {
 
       expect(setStorageItem).toHaveBeenCalledWith('legend_hash_protein1_annotation1', {
         maxVisibleValues: 5,
-        includeShapes: false,
         shapeSize: 20,
         sortMode: 'alpha-asc',
         hiddenValues: [],
@@ -320,7 +314,6 @@ describe('PersistenceController', () => {
 
       expect(setStorageItem).toHaveBeenCalledWith('legend_hash_protein1_annotation1', {
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -398,7 +391,6 @@ describe('PersistenceController', () => {
       controller.updateSelectedAnnotation('annotation1');
       vi.mocked(getStorageItem).mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -424,7 +416,6 @@ describe('PersistenceController', () => {
       controller.updateSelectedAnnotation('annotation1');
       vi.mocked(getStorageItem).mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -440,7 +431,6 @@ describe('PersistenceController', () => {
       controller.updateSelectedAnnotation('annotation1');
       vi.mocked(getStorageItem).mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -474,7 +464,6 @@ describe('PersistenceController', () => {
       controller.updateSelectedAnnotation('annotation1');
       vi.mocked(getStorageItem).mockReturnValue({
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 16,
         sortMode: 'size-desc',
         hiddenValues: [],
@@ -502,7 +491,6 @@ describe('PersistenceController', () => {
     const fileSettings = {
       annotation1: {
         maxVisibleValues: 20,
-        includeShapes: true,
         shapeSize: 28,
         sortMode: 'manual' as const,
         hiddenValues: ['hidden_from_file'],
@@ -514,7 +502,6 @@ describe('PersistenceController', () => {
       },
       annotation2: {
         maxVisibleValues: 5,
-        includeShapes: false,
         shapeSize: 12,
         sortMode: 'alpha-desc' as const,
         hiddenValues: [],
@@ -615,7 +602,6 @@ describe('PersistenceController', () => {
         // localStorage would return different settings
         vi.mocked(getStorageItem).mockReturnValue({
           maxVisibleValues: 10,
-          includeShapes: false,
           shapeSize: 16,
           sortMode: 'size-desc' as const,
           hiddenValues: [],
@@ -629,7 +615,6 @@ describe('PersistenceController', () => {
         expect(mockCallbacks.onSettingsLoaded).toHaveBeenCalledWith(
           expect.objectContaining({
             maxVisibleValues: 20,
-            includeShapes: true,
             sortMode: 'manual',
           }),
         );
@@ -642,7 +627,6 @@ describe('PersistenceController', () => {
 
         const localSettings = {
           maxVisibleValues: 10,
-          includeShapes: false,
           shapeSize: 16,
           sortMode: 'size-desc' as const,
           hiddenValues: [],
@@ -678,7 +662,6 @@ describe('PersistenceController', () => {
         // Simulate a change that triggers reload
         const localSettings = {
           maxVisibleValues: 99,
-          includeShapes: false,
           shapeSize: 16,
           sortMode: 'size-desc' as const,
           hiddenValues: [],
@@ -704,7 +687,6 @@ describe('PersistenceController', () => {
         mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1']);
         mockCallbacks.getCurrentSettings = vi.fn().mockReturnValue({
           maxVisibleValues: 15,
-          includeShapes: true,
           shapeSize: 20,
           sortMode: 'alpha-asc' as const,
           enableDuplicateStackUI: true,
@@ -714,7 +696,8 @@ describe('PersistenceController', () => {
         const settings = controller.getCurrentSettingsForExport();
 
         expect(settings.maxVisibleValues).toBe(15);
-        expect(settings.includeShapes).toBe(true);
+        // includeShapes must not appear in exported settings even if legacy storage carries it.
+        expect(settings.includeShapes).toBeUndefined();
         expect(settings.sortMode).toBe('alpha-asc');
         expect(settings.hiddenValues).toEqual(['hidden1']);
         expect(settings.categories).toEqual({
@@ -742,7 +725,6 @@ describe('PersistenceController', () => {
         controller.updateSelectedAnnotation('selected');
         mockCallbacks.getCurrentSettings = vi.fn().mockReturnValue({
           maxVisibleValues: 10,
-          includeShapes: false,
           shapeSize: 16,
           sortMode: 'size-desc' as const,
           enableDuplicateStackUI: false,
@@ -752,7 +734,6 @@ describe('PersistenceController', () => {
           key === 'legend_hash_protein1_other'
             ? {
                 maxVisibleValues: 5,
-                includeShapes: false,
                 shapeSize: 20,
                 sortMode: 'alpha-asc' as const,
                 hiddenValues: [],
@@ -768,7 +749,6 @@ describe('PersistenceController', () => {
 
         expect(settings.other).toEqual({
           maxVisibleValues: 5,
-          includeShapes: false,
           shapeSize: 20,
           sortMode: 'alpha-asc',
           hiddenValues: [],

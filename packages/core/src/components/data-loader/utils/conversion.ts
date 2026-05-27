@@ -924,9 +924,8 @@ function inferProjectionName(xCol: string, yCol: string): string {
 }
 
 /**
- * Shapes ordered by visual distinctness for optimal category separation.
- * Order must match visual-encoding.ts SHAPES array for legend consistency.
- * These are the only shapes supported by the WebGL renderer.
+ * Shapes supported by the WebGL renderer, ordered by visual distinctness for
+ * optimal category separation when generateColorsAndShapes cycles through pairs.
  */
 const SUPPORTED_SHAPES = [
   'circle',

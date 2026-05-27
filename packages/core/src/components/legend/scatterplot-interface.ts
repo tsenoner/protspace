@@ -16,7 +16,6 @@ export interface IScatterplotElement extends Element {
   // Annotation values (using scatterplot's property names)
   hiddenAnnotationValues: string[];
   otherAnnotationValues: string[];
-  useShapes: boolean;
   numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
   annotationSortModes?: Record<string, LegendSortMode>;
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
@@ -48,13 +47,6 @@ export function supportsHiddenValues(element: IScatterplotElement): boolean {
  */
 export function supportsOtherValues(element: IScatterplotElement): boolean {
   return 'otherAnnotationValues' in element;
-}
-
-/**
- * Type guard to check if scatterplot supports shapes
- */
-export function supportsShapes(element: IScatterplotElement): boolean {
-  return 'useShapes' in element;
 }
 
 /**

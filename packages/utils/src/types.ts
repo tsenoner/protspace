@@ -114,7 +114,8 @@ export interface PersistedCategoryData {
 
 export interface LegendPersistedSettings {
   maxVisibleValues: number;
-  includeShapes: boolean;
+  /** @deprecated Removed in the upcoming release — ignored on read, never emitted on write. */
+  includeShapes?: boolean;
   shapeSize: number;
   sortMode: LegendSortMode;
   hiddenValues: string[];

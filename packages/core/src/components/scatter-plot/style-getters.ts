@@ -13,7 +13,6 @@ export interface StyleConfig {
   selectedAnnotation: string;
   hiddenAnnotationValues: string[];
   otherAnnotationValues: string[];
-  useShapes?: boolean;
   /**
    * Optional legend-driven z-order mapping: annotation value key -> rank (0 = top).
    * Used to break overlap ties deterministically without CPU-sorting.
@@ -28,7 +27,7 @@ export interface StyleConfig {
   /**
    * Optional legend-driven shape mapping: annotation value key -> shape name.
    * When provided, shapes are determined by the legend (frequency-sorted).
-   * When null, falls back to annotation.shapes from the data.
+   * When null, all categories render as circles.
    */
   shapeMapping?: Record<string, string> | null;
   sizes: {
@@ -83,22 +82,9 @@ export function createStyleGetters(data: VisualizationData | null, styleConfig: 
   }
 
   if (shapeMap) {
-    // Use legend-provided shape mapping - always apply custom shapes from legend
-    // regardless of useShapes setting (custom shapes override global setting)
+    // Use legend-provided shape mapping (custom shapes from the legend).
     for (const [key, shape] of Object.entries(shapeMap)) {
       valueToShape.set(key, normalizeShapeName(shape));
-    }
-  } else if (annotation && Array.isArray(annotation.values) && styleConfig.useShapes) {
-    // Fallback to annotation.shapes from data (only when useShapes is enabled).
-    // Use modular indexing because shapes is capped at palette.length × shapeCount.
-    const shapesArr = annotation.shapes;
-    if (shapesArr && shapesArr.length > 0) {
-      for (let i = 0; i < annotation.values.length; i++) {
-        const v = annotation.values[i];
-        const k = toInternalValue(v);
-        const shape = shapesArr[i % shapesArr.length];
-        if (shape) valueToShape.set(k, normalizeShapeName(shape));
-      }
     }
   }
   // Detect if the user has effectively hidden all values for the selected annotation

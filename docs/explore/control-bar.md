@@ -91,6 +91,8 @@ Isolate is useful for examining relationships within a specific protein subset -
 
 ## 7. Filter Button
 
+![Filter Query modal with a single condition: protein_families equal to "phospholipase A2 family" or "three-finger toxin family" — a live counter shows 1082 of 7831 proteins matched](./images/filter-query-builder.png)
+
 **Filter** opens a query builder modal for building complex annotation-based filters:
 
 1. Click **Filter** to open the query builder

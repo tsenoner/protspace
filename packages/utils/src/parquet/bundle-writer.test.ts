@@ -48,7 +48,6 @@ const createMockSettings = (): BundleSettings => ({
   legendSettings: {
     organism: {
       maxVisibleValues: 10,
-      includeShapes: true,
       shapeSize: 24,
       sortMode: 'size-desc',
       hiddenValues: [],
