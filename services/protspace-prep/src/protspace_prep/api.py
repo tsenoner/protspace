@@ -4,7 +4,7 @@ import logging
 import re
 from typing import AsyncIterator
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Path, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -16,6 +16,10 @@ from .validation import FastaValidationError, ValidationCode, parse_and_validate
 logger = logging.getLogger("protspace_prep.api")
 
 _KEEPALIVE_INTERVAL_SECONDS = 15.0
+
+# Job IDs are server-generated uuid4 hex strings; constrain the path param so
+# obviously-invalid IDs are rejected before any lookup (defense in depth).
+_JOB_ID = Path(pattern=r"^[0-9a-f]{32}$")
 
 
 def _safe_download_name(original_name: str) -> str:
@@ -51,17 +55,17 @@ def make_router(registry: JobRegistry, settings: Settings) -> APIRouter:
             )
         try:
             text = body.decode("utf-8")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as exc:
             raise FastaValidationError(
                 ValidationCode.MALFORMED_FASTA,
                 "FASTA must be UTF-8 text.",
-            )
+            ) from exc
         parse_and_validate(text, settings)
         job_id = await registry.submit(body, original_name=file.filename or "input.fasta")
         return {"job_id": job_id}
 
     @router.get("/api/prepare/{job_id}/events")
-    async def events(job_id: str, request: Request):
+    async def events(request: Request, job_id: str = _JOB_ID):
         if registry.get(job_id) is None:
             raise HTTPException(status_code=404, detail="Unknown job_id")
 
@@ -115,7 +119,7 @@ def make_router(registry: JobRegistry, settings: Settings) -> APIRouter:
         return StreamingResponse(stream(), media_type="text/event-stream", headers=headers)
 
     @router.get("/api/prepare/{job_id}/bundle")
-    async def bundle(job_id: str):
+    async def bundle(job_id: str = _JOB_ID):
         state = registry.get(job_id)
         if state is None:
             raise HTTPException(status_code=404, detail="Unknown job_id")

@@ -133,12 +133,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
               }
             } else if (stage === 'embedding' || stage === 'annotating') {
               lastProgress = Math.max(lastProgress, 12);
-              overlayController.update(
-                true,
-                lastProgress,
-                'Preparing FASTA…',
-                'Embedding sequences (~3 min)…',
-              );
+              overlayController.update(true, lastProgress, 'Preparing FASTA…', embeddingLabel);
               startCreep();
             } else if (stage === 'projecting') {
               stopCreep();

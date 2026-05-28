@@ -100,11 +100,22 @@ async def test_failure_surfaces_error_event_and_no_download(app_factory):
 
 async def test_unknown_job_id_returns_404(app_factory):
     app = app_factory()
+    unknown = "0" * 32  # valid uuid4-hex shape, but never issued
+    async with await _client(app) as c:
+        r = await c.get(f"/api/prepare/{unknown}/events")
+        assert r.status_code == 404
+        r = await c.get(f"/api/prepare/{unknown}/bundle")
+        assert r.status_code == 404
+
+
+async def test_malformed_job_id_is_rejected_before_lookup(app_factory):
+    """IDs that don't match the uuid4-hex shape are rejected with 422."""
+    app = app_factory()
     async with await _client(app) as c:
         r = await c.get("/api/prepare/does-not-exist/events")
-        assert r.status_code == 404
+        assert r.status_code == 422
         r = await c.get("/api/prepare/does-not-exist/bundle")
-        assert r.status_code == 404
+        assert r.status_code == 422
 
 
 async def test_healthz_reflects_running_jobs(app_factory):

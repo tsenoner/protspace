@@ -212,6 +212,28 @@ async def test_sweep_removes_expired_directories(tmp_path):
     assert registry.get(job_id) is None
 
 
+async def test_sweep_evicts_consumed_jobs_without_waiting_for_ttl(tmp_job_root):
+    """A downloaded (consumed) job is reclaimed on the next sweep regardless of
+    its directory mtime, freeing intermediate artifacts ahead of the TTL."""
+    registry = JobRegistry(
+        job_root=tmp_job_root,
+        max_concurrent=1,
+        pipeline=_fake_pipeline_success,
+    )
+    job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
+    async for _ in registry.subscribe(job_id):
+        pass
+    job_dir = tmp_job_root / job_id
+    assert job_dir.exists()
+
+    registry.mark_consumed(job_id)
+    # Directory mtime is fresh (within TTL); only the consumed flag drives eviction.
+    removed = registry.sweep_expired(ttl_seconds=3600)
+    assert job_id in removed
+    assert registry.get(job_id) is None
+    assert not job_dir.exists()
+
+
 # ---------------------------------------------------------------------------
 # §2.2 — queue_position + running in queued event
 # ---------------------------------------------------------------------------

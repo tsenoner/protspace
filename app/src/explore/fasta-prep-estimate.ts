@@ -4,11 +4,24 @@ const BASE_OVERHEAD_SECONDS = 10;
 const SECONDS_PER_SEQUENCE = 0.25;
 
 export async function countFastaSequences(file: File): Promise<number> {
-  const text = await file.text();
+  // Stream the file so we never hold the whole upload in memory. '>' (0x3e)
+  // and '\n' (0x0a) are single-byte in UTF-8 and never appear as continuation
+  // bytes, so we can scan raw bytes without decoding.
+  const reader = file.stream().getReader();
   let count = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) !== 0x3e /* '>' */) continue;
-    if (i === 0 || text.charCodeAt(i - 1) === 0x0a /* '\n' */) count++;
+  let atLineStart = true;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (let i = 0; i < value.length; i++) {
+        const byte = value[i];
+        if (atLineStart && byte === 0x3e /* '>' */) count++;
+        atLineStart = byte === 0x0a /* '\n' */;
+      }
+    }
+  } finally {
+    reader.releaseLock();
   }
   return count;
 }

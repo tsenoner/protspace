@@ -246,8 +246,24 @@ class JobRegistry:
             else:
                 self._queued = max(0, self._queued - 1)
 
+    def evict(self, job_id: str) -> None:
+        """Drop all in-memory and on-disk state for a job, unblocking subscribers."""
+        for queue in self._subscribers.pop(job_id, []):
+            JobRegistry._force_put(queue, None)
+        self._tasks.pop(job_id, None)
+        state = self._jobs.pop(job_id, None)
+        if state is not None:
+            shutil.rmtree(state.output_dir, ignore_errors=True)
+
     def sweep_expired(self, ttl_seconds: int) -> list[str]:
         removed: list[str] = []
+        # Reclaim consumed jobs promptly: once the bundle has been downloaded,
+        # the job's state only lingers to serve a (now-complete) download, so
+        # there's no reason to wait the full TTL to free its disk artifacts.
+        for job_id, state in list(self._jobs.items()):
+            if state.consumed:
+                self.evict(job_id)
+                removed.append(job_id)
         if not self._job_root.exists():
             return removed
         cutoff = time.time() - ttl_seconds
