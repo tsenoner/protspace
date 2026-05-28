@@ -11,6 +11,14 @@ from .jobs import JobContext, PipelineFailure
 
 logger = logging.getLogger("protspace_prep.pipeline")
 
+# Human-readable step names for user-facing failure messages.
+_STEP_LABELS = {
+    "embed": "embedding",
+    "annotate": "annotation",
+    "project": "projection",
+    "bundle": "bundling",
+}
+
 EmitFn = Callable[[str, dict], Awaitable[None]]
 
 _BIOCENTRAL_DOWN_PATTERNS = (
@@ -30,8 +38,13 @@ _BIOCENTRAL_FRIENDLY_MESSAGE = (
 
 
 def _classify_failure(exc: PipelineFailure) -> PipelineFailure:
-    """Return a possibly re-tagged PipelineFailure. Pass-through if no match."""
-    haystack = str(exc).lower()
+    """Return a possibly re-tagged PipelineFailure. Pass-through if no match.
+
+    Inspects both the curated message and the raw ``detail`` (subprocess
+    stderr), since the down-patterns originate in subprocess output that is no
+    longer embedded in the user-facing message.
+    """
+    haystack = f"{exc} {exc.detail or ''}".lower()
     if any(p in haystack for p in _BIOCENTRAL_DOWN_PATTERNS):
         return PipelineFailure(_BIOCENTRAL_FRIENDLY_MESSAGE, code="BIOCENTRAL_UNAVAILABLE")
     return exc
@@ -110,15 +123,21 @@ async def run_protspace_prepare(
             await emit("annotating", {})
             try:
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(_run_step(ctx.job_id, "embed", embed_cmd))
-                    tg.create_task(_run_step(ctx.job_id, "annotate", annotate_cmd))
+                    tg.create_task(_run_step("embed", embed_cmd))
+                    tg.create_task(_run_step("annotate", annotate_cmd))
             except ExceptionGroup as eg:
                 failures = [e for e in eg.exceptions if isinstance(e, PipelineFailure)]
                 if failures:
                     classified = [_classify_failure(e) for e in failures]
                     if any(c.code == "BIOCENTRAL_UNAVAILABLE" for c in classified):
                         raise PipelineFailure(_BIOCENTRAL_FRIENDLY_MESSAGE, code="BIOCENTRAL_UNAVAILABLE") from eg
-                    raise PipelineFailure("; ".join(str(e) for e in failures)) from eg
+                    # Preserve the per-step diagnostic detail (subprocess stderr)
+                    # so it stays available for server-side logging; the joined
+                    # message remains the curated, user-facing text.
+                    detail = "; ".join(e.detail for e in failures if e.detail) or None
+                    raise PipelineFailure(
+                        "; ".join(str(e) for e in failures), detail=detail
+                    ) from eg
                 raise
 
             h5_files = sorted(embed_dir.glob("*.h5"))
@@ -136,7 +155,7 @@ async def run_protspace_prepare(
                 "-o",
                 str(project_dir),
             ]
-            await _run_step(ctx.job_id, "project", project_cmd)
+            await _run_step("project", project_cmd)
 
             await emit("bundling", {})
             bundle_cmd = [
@@ -149,7 +168,7 @@ async def run_protspace_prepare(
                 "-o",
                 str(bundle_path),
             ]
-            await _run_step(ctx.job_id, "bundle", bundle_cmd)
+            await _run_step("bundle", bundle_cmd)
     except asyncio.TimeoutError:
         raise PipelineFailure(
             f"protspace pipeline timed out after {settings.pipeline_timeout_seconds}s."
@@ -162,14 +181,16 @@ async def run_protspace_prepare(
     return bundle_path
 
 
-async def _run_step(job_id: str, name: str, cmd: Sequence[str]) -> None:
+async def _run_step(name: str, cmd: Sequence[str]) -> None:
     """Run one protspace subcommand. Raise PipelineFailure on non-zero exit.
 
-    Stderr is consumed line-by-line so the subprocess never blocks on a full
-    pipe; the last 50 lines are kept for failure messages. Cancellation kills
-    the subprocess before propagating.
+    ``job_id`` is not threaded in: it is bound in ``contextvars`` by the job
+    runner and attached to every log line automatically. Stderr is consumed
+    line-by-line so the subprocess never blocks on a full pipe; the last 50
+    lines are kept for the failure log. Cancellation kills the subprocess
+    before propagating.
     """
-    logger.info("job=%s step=%s cmd=%s", job_id, name, " ".join(cmd))
+    logger.info("pipeline step starting", extra={"step": name, "cmd": " ".join(cmd)})
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.DEVNULL,
@@ -204,8 +225,15 @@ async def _run_step(job_id: str, name: str, cmd: Sequence[str]) -> None:
 
     if returncode != 0:
         tail = "\n".join(last_lines[-10:]) or "no output"
+        logger.error(
+            "pipeline step failed",
+            extra={"step": name, "returncode": returncode, "stderr_tail": tail},
+        )
+        label = _STEP_LABELS.get(name, name)
         raise PipelineFailure(
-            f"protspace {name} exited with code {returncode}: {tail}"
+            f"The {label} step failed. Please try again; if it persists, "
+            f"report this with the reference shown below.",
+            detail=f"protspace {name} exited with code {returncode}: {tail}",
         )
 
 

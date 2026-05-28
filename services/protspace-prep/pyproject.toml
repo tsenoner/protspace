@@ -9,6 +9,7 @@ dependencies = [
   "python-multipart>=0.0.20",
   "anyio>=4.6",
   "protspace>=0.6",
+  "structlog>=24.1",
 ]
 
 [project.optional-dependencies]

@@ -121,7 +121,24 @@ describe('prepareFastaBundle', () => {
     expect(error).toBeInstanceOf(FastaPrepError);
     expect((error as FastaPrepError).message).toMatch(/Biocentral 503/);
     expect((error as FastaPrepError).code).toBeUndefined();
+    // Falls back to the job id we already hold when the payload omits it.
+    expect((error as FastaPrepError).jobId).toBe('abc');
     expect(es.closed).toBe(true);
+  });
+
+  it('surfaces the job_id from the error payload as a reportable reference', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '' });
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+    es.emit('error', { message: 'boom', job_id: 'job-from-payload' });
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FastaPrepError);
+    expect((error as FastaPrepError).jobId).toBe('job-from-payload');
   });
 
   it('attaches the error code from the server payload to FastaPrepError', async () => {

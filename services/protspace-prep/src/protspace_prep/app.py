@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from .api import fasta_validation_error_handler, make_router
 from .config import Settings, load_settings
 from .jobs import JobRegistry, PipelineFn
+from .logger import setup_logging
 from .pipeline import run_protspace_prepare
 from .validation import FastaValidationError
 
@@ -18,6 +19,9 @@ logger = logging.getLogger("protspace_prep")
 
 def create_app(*, pipeline: Optional[PipelineFn] = None) -> FastAPI:
     settings = load_settings()
+    # Configure logging before anything else emits a log line so no logger is
+    # cached without the structlog formatter.
+    setup_logging(json_logs=settings.log_json_format, log_level=settings.log_level)
     settings.job_root.mkdir(parents=True, exist_ok=True)
 
     registry = JobRegistry(

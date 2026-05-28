@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+import structlog
 
 from protspace_prep.jobs import (
     JobRegistry,
@@ -58,8 +59,32 @@ async def test_submit_runs_pipeline_and_publishes_terminal_error(tmp_job_root):
     events = [e async for e in registry.subscribe(job_id)]
     assert events[-1].event == "error"
     assert "Biocentral returned 503" in events[-1].data["message"]
+    # The error event is self-describing so the user has a reportable reference.
+    assert events[-1].data["job_id"] == job_id
     state = registry.get(job_id)
     assert state.status is JobStatus.ERROR
+
+
+async def test_pipeline_runs_with_job_id_bound_in_contextvars(tmp_job_root):
+    seen: dict[str, object] = {}
+
+    async def _capture_context_pipeline(ctx, emit):
+        seen.update(structlog.contextvars.get_contextvars())
+        bundle = ctx.output_dir / "data.parquetbundle"
+        bundle.parent.mkdir(parents=True, exist_ok=True)
+        bundle.write_bytes(b"x")
+        return bundle
+
+    registry = JobRegistry(
+        job_root=tmp_job_root,
+        max_concurrent=1,
+        pipeline=_capture_context_pipeline,
+    )
+    job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
+    async for _ in registry.subscribe(job_id):
+        pass
+    # Every log line emitted during the job carries this job_id automatically.
+    assert seen.get("job_id") == job_id
 
 
 async def test_semaphore_caps_active_jobs(tmp_job_root):

@@ -19,6 +19,8 @@ class Settings:
     biocentral_endpoint: str | None
     sweep_interval_seconds: int
     pipeline_timeout_seconds: int
+    log_level: str
+    log_json_format: bool
 
 
 def load_settings() -> Settings:
@@ -36,4 +38,6 @@ def load_settings() -> Settings:
         biocentral_endpoint=os.getenv("PREP_BIOCENTRAL_ENDPOINT") or None,
         sweep_interval_seconds=int(os.getenv("PREP_SWEEP_INTERVAL_SECONDS", "300")),
         pipeline_timeout_seconds=int(os.getenv("PREP_PIPELINE_TIMEOUT_SECONDS", "420")),
+        log_level=os.getenv("PREP_LOG_LEVEL", "INFO"),
+        log_json_format=os.getenv("PREP_LOG_JSON_FORMAT", "false").lower() in {"1", "true", "yes"},
     )

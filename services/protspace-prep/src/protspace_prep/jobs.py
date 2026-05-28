@@ -5,6 +5,8 @@ import logging
 import shutil
 import time
 import uuid
+
+import structlog
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional
@@ -13,11 +15,19 @@ logger = logging.getLogger("protspace_prep.jobs")
 
 
 class PipelineFailure(Exception):
-    """Raised by the pipeline coroutine to surface a user-visible error."""
+    """Raised by the pipeline coroutine to surface a user-visible error.
 
-    def __init__(self, message: str, *, code: str | None = None) -> None:
+    ``str(exc)`` is the curated, user-facing message. ``detail`` holds raw
+    diagnostic output (e.g. subprocess stderr) for server-side logs and failure
+    classification; it is never returned to the user.
+    """
+
+    def __init__(
+        self, message: str, *, code: str | None = None, detail: str | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.detail = detail
 
 
 class JobStatus(str, enum.Enum):
@@ -192,6 +202,13 @@ class JobRegistry:
             JobRegistry._force_put(queue, None)
 
     async def _run(self, job_id: str) -> None:
+        # This task is created inside the submit request and inherits a copy of
+        # that request's context. Clear it and bind job_id so every log line
+        # emitted during the job (including from the protspace library) is
+        # correlated by job_id and not mislabeled with the submitting request.
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(job_id=job_id)
+
         state = self._jobs[job_id]
         acquired = False
         try:
@@ -224,21 +241,30 @@ class JobRegistry:
         except asyncio.CancelledError:
             state.status = JobStatus.ERROR
             state.error_message = "Job cancelled."
-            await self._publish(job_id, Event("error", {"message": "Job cancelled."}))
+            await self._publish(
+                job_id, Event("error", {"message": "Job cancelled.", "job_id": job_id})
+            )
             raise
         except PipelineFailure as exc:
+            # Expected, user-facing failure. The user sees str(exc); raw
+            # diagnostic detail goes to the logs (job_id attached via contextvars).
+            logger.warning(
+                "job failed", extra={"reason": str(exc), "detail": exc.detail}
+            )
             state.status = JobStatus.ERROR
             state.error_message = str(exc)
-            payload = {"message": str(exc)}
-            if getattr(exc, "code", None):
+            payload = {"message": str(exc), "job_id": job_id}
+            if exc.code:
                 payload["code"] = exc.code
             await self._publish(job_id, Event("error", payload))
         except Exception:
-            logger.exception("Unexpected pipeline failure for job %s", job_id)
+            # job_id is bound in contextvars and attached automatically.
+            logger.exception("Unexpected pipeline failure")
             state.status = JobStatus.ERROR
             state.error_message = "Internal server error."
             await self._publish(
-                job_id, Event("error", {"message": "Internal server error."})
+                job_id,
+                Event("error", {"message": "Internal server error.", "job_id": job_id}),
             )
         finally:
             if acquired:

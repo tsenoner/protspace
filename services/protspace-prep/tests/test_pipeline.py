@@ -149,7 +149,11 @@ async def test_embed_failure_raises_pipeline_failure(ctx):
     with patch("asyncio.create_subprocess_exec", new=fake):
         with pytest.raises(PipelineFailure) as exc:
             await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
-    assert "Biocentral returned 503" in str(exc.value)
+    # Raw subprocess stderr is kept in `detail` (for logs), never in the
+    # curated user-facing message.
+    assert "Biocentral returned 503" in (exc.value.detail or "")
+    assert "Biocentral returned 503" not in str(exc.value)
+    assert "embedding step failed" in str(exc.value)
 
 
 async def test_annotate_failure_raises_pipeline_failure(ctx):
@@ -161,7 +165,9 @@ async def test_annotate_failure_raises_pipeline_failure(ctx):
     with patch("asyncio.create_subprocess_exec", new=fake):
         with pytest.raises(PipelineFailure) as exc:
             await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
-    assert "UniProt" in str(exc.value)
+    assert "UniProt" in (exc.value.detail or "")
+    assert "UniProt" not in str(exc.value)
+    assert "annotation step failed" in str(exc.value)
 
 
 async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
@@ -321,7 +327,8 @@ async def test_embed_failure_with_unrelated_error_passes_through(ctx):
         with pytest.raises(PipelineFailure) as exc_info:
             await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
     assert exc_info.value.code is None
-    assert "some random parse error" in str(exc_info.value)
+    assert "some random parse error" in (exc_info.value.detail or "")
+    assert "some random parse error" not in str(exc_info.value)
 
 
 def test_classify_failure_matches_503_service_unavailable():

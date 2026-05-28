@@ -2,10 +2,13 @@ const FASTA_EXT_PATTERN = /\.(fa|fasta|fna)$/i;
 
 export class FastaPrepError extends Error {
   readonly code?: string;
-  constructor(message: string, options?: { code?: string }) {
+  /** Server-side job reference; quote this when reporting a failed preparation. */
+  readonly jobId?: string;
+  constructor(message: string, options?: { code?: string; jobId?: string }) {
     super(message);
     this.name = 'FastaPrepError';
     this.code = options?.code;
+    this.jobId = options?.jobId;
   }
 }
 
@@ -128,24 +131,34 @@ export async function prepareFastaBundle(
     es.addEventListener('error', (ev) => {
       let message = 'Bundle preparation failed.';
       let code: string | undefined;
+      // Fall back to the job id we already hold so even a payload-less
+      // connection error still carries a reportable reference.
+      let errorJobId: string | undefined = jobId;
       const data = (ev as MessageEvent).data;
       if (typeof data === 'string' && data) {
         try {
-          const parsed = JSON.parse(data) as { message?: string; code?: string };
+          const parsed = JSON.parse(data) as {
+            message?: string;
+            code?: string;
+            job_id?: string;
+          };
           if (parsed?.message) message = parsed.message;
           if (parsed?.code) code = parsed.code;
+          if (parsed?.job_id) errorJobId = parsed.job_id;
         } catch {
           /* connection error, no payload */
         }
       }
       cleanup();
-      reject(new FastaPrepError(message, { code }));
+      reject(new FastaPrepError(message, { code, jobId: errorJobId }));
     });
   });
 
   const bundleResponse = await fetch(`${baseUrl}${downloadUrl}`, { signal: options.signal });
   if (!bundleResponse.ok) {
-    throw new FastaPrepError(`Bundle download failed (${bundleResponse.status}).`);
+    throw new FastaPrepError(`Bundle download failed (${bundleResponse.status}).`, {
+      jobId,
+    });
   }
   const blob = await bundleResponse.blob();
   const stem = file.name.replace(FASTA_EXT_PATTERN, '');
