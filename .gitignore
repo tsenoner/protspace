@@ -61,12 +61,12 @@ docs/superpowers/
 /playwright-report
 .playwright-mcp
 
-# Claude
+# Claude (config + CLI-generated OpenSpec skills/commands; run `openspec init` locally)
 CLAUDE.md
 .claude
 
+# Codex (CLI-generated OpenSpec skills; run `openspec init` locally)
+.codex
+
 # Local-only large fixture for the load-reliability Playwright spec
 app/tests/fixtures/sprot_50.parquetbundle
-
-# Claude superpowers - may not be useful for everyone
-docs/superpowers/*
