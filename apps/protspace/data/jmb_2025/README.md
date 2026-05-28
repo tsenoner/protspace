@@ -28,11 +28,8 @@ directory is a frozen archive — do not regenerate it against current UniProt.
 | File | Description |
 |------|-------------|
 | `toxins.json` | ProtSpace JSON — projections (PCA/UMAP/PaCMAP) + features for all 5,181 proteins |
-| `toxins_style.json` | `toxins.json` with manual styling applied |
-| `toxins_seq_sim.json` | Sequence-similarity variant — MDS + UMAP on a BLAST distance matrix |
-| `toxins_seq_sim_style.json` | Styled sequence-similarity variant (carries `visualization_state`) |
+| `toxins_style.json` | `toxins.json` with manual styling applied (carries `visualization_state`) |
 | `toxins.csv` | Per-protein annotations: identifier, Order, Family, Genus, **protein_category** (curated), Protein families |
-| `toxins_all.csv` | Wider table: identifier, Order/Family/Genus, Protein families, **Protein names**, `embeddings_labels` + `blast_labels` (cluster IDs; -1 = noise) |
 | `toxins_full.fasta` | **Reconstructed** full UniProt sequences (signal peptide included) |
 | `toxins_mature.fasta` | **Reconstructed** mature sequences (signal peptide cleaved — the actual embedding input) |
 | `rebuild_mature_fasta.py` | Script that regenerates the FASTAs from the `toxins.csv` accessions |
@@ -43,23 +40,14 @@ The ProtT5 embeddings (`toxins_prott5.h5`, 5,181 × 1024, keyed by accession) ar
 
 ### Dimensionality-reduction parameters (as used in the figures)
 
-Recovered from the projection metadata embedded in the JSON files.
-
-**Embedding-based** (`toxins.json`, on ProtT5 embeddings):
+Recovered from the projection metadata embedded in `toxins.json` (computed on
+the ProtT5 embeddings):
 
 | Method | Parameters |
 |--------|------------|
 | PCA 2D / 3D | `n_components=2` / `3` |
 | UMAP 2D / 3D | `n_neighbors=50`, `min_dist=0.5`, `metric=euclidean` |
 | PaCMAP 2D / 3D | `n_neighbors=50`, `MN_ratio=0.5`, `FP_ratio=2.0` |
-
-**Sequence-similarity-based** (`toxins_seq_sim.json`, on a BLAST distance matrix):
-
-| Method | Parameters |
-|--------|------------|
-| MDS 2D | `n_init=4`, `max_iter=300`, `eps=0.001` |
-| UMAP 2D | `n_neighbors=25`, `min_dist=0.5`, `metric=euclidean` |
-| `bits_umap2` / `evalue_umap2` 2D | `n_neighbors=25`, `min_dist=0.5`, `metric=euclidean` (BLAST bit-score / e-value distances) |
 
 ### Note on the FASTAs
 
@@ -70,7 +58,7 @@ sequences: the `.h5` stores embedding vectors keyed by accession, and the CSVs
 carry annotations only.
 
 `toxins_full.fasta` and `toxins_mature.fasta` are therefore **reconstructions**:
-`rebuild_mature_fasta.py` takes the 5,181 accessions (the `.h5` keys), re-fetches
+`rebuild_mature_fasta.py` takes the 5,181 accessions from `toxins.csv`, re-fetches
 each entry's sequence and signal-peptide annotation from UniProt, and writes both
 the full sequence and the signal-peptide-stripped mature sequence (the latter is
 what was embedded). Because UniProt entries can change over time, these are
