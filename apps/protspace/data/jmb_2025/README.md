@@ -30,13 +30,16 @@ directory is a frozen archive — do not regenerate it against current UniProt.
 | `toxins.json` | ProtSpace JSON — projections (PCA/UMAP/PaCMAP) + features for all 5,181 proteins |
 | `toxins_style.json` | `toxins.json` with manual styling applied |
 | `toxins_seq_sim.json` | Sequence-similarity variant — MDS + UMAP on a BLAST distance matrix |
-| `toxins_seq_sim_style.json` | Styled sequence-similarity variant |
-| `toxins_prott5.h5` | ProtT5 embeddings, keyed by UniProt accession (5,181 × 1024) |
-| `toxins.csv` | Per-protein annotations: identifier, Order, Family, Genus, protein_category, Protein families |
-| `toxins_all.csv` | Wider annotation table incl. protein names and clustering labels |
+| `toxins_seq_sim_style.json` | Styled sequence-similarity variant (carries `visualization_state`) |
+| `toxins.csv` | Per-protein annotations: identifier, Order, Family, Genus, **protein_category** (curated), Protein families |
+| `toxins_all.csv` | Wider table: identifier, Order/Family/Genus, Protein families, **Protein names**, `embeddings_labels` + `blast_labels` (cluster IDs; -1 = noise) |
 | `toxins_full.fasta` | **Reconstructed** full UniProt sequences (signal peptide included) |
 | `toxins_mature.fasta` | **Reconstructed** mature sequences (signal peptide cleaved — the actual embedding input) |
-| `rebuild_mature_fasta.py` | Script that regenerated the FASTAs from the `.h5` accessions |
+| `rebuild_mature_fasta.py` | Script that regenerates the FASTAs from the `toxins.csv` accessions |
+
+The ProtT5 embeddings (`toxins_prott5.h5`, 5,181 × 1024, keyed by accession) are
+**not tracked in git** (`**/*.h5` is ignored). They can be regenerated from
+`toxins_mature.fasta` with `protspace embed -e prot_t5`.
 
 ### Dimensionality-reduction parameters (as used in the figures)
 

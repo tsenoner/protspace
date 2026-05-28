@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Reconstruct the FASTA files for the JMB 2025 toxprot dataset.
 
-The original FASTAs were never committed; the embeddings in ``toxins_prott5.h5``
-were generated from signal-peptide-stripped (mature) sequences. This script
-recovers the 5,181 UniProt accessions from the ``.h5`` keys, re-fetches their
-sequences + signal-peptide annotations from UniProt, and writes two files:
+The original FASTAs were never committed; the embeddings (``toxins_prott5.h5``,
+not tracked in git) were generated from signal-peptide-stripped (mature)
+sequences. This script reads the 5,181 UniProt accessions from ``toxins.csv``,
+re-fetches their sequences + signal-peptide annotations from UniProt, and
+writes two files:
 
   - ``toxins_full.fasta``   — full UniProt sequences (signal peptide included)
   - ``toxins_mature.fasta`` — mature sequences (signal peptide cleaved; the
@@ -17,15 +18,15 @@ Accessions that are now obsolete/merged are reported and skipped.
 
 from __future__ import annotations
 
+import csv
 import re
 import sys
 from pathlib import Path
 
-import h5py
 import requests
 
 HERE = Path(__file__).resolve().parent
-H5_PATH = HERE / "toxins_prott5.h5"
+ACCESSIONS_CSV = HERE / "toxins.csv"
 FULL_OUT = HERE / "toxins_full.fasta"
 MATURE_OUT = HERE / "toxins_mature.fasta"
 
@@ -34,9 +35,14 @@ SIGNAL_RE = re.compile(r"SIGNAL\s+(\d+)\.\.(\d+)")
 BATCH = 100
 
 
-def read_accessions(h5_path: Path) -> list[str]:
-    with h5py.File(h5_path, "r") as f:
-        return sorted(f.keys())
+def read_accessions(csv_path: Path) -> list[str]:
+    """Read the 5,181 UniProt accessions from the tracked annotation CSV.
+
+    The original embeddings .h5 (same keys) is not committed; the `identifier`
+    column here is the authoritative accession list for the dataset.
+    """
+    with csv_path.open(newline="") as f:
+        return sorted(row["identifier"] for row in csv.DictReader(f))
 
 
 def fetch_batch(accessions: list[str]) -> dict[str, tuple[str, str]]:
@@ -73,8 +79,8 @@ def mature(seq: str, signal: str) -> str:
 
 
 def main() -> int:
-    accessions = read_accessions(H5_PATH)
-    print(f"{len(accessions)} accessions from {H5_PATH.name}")
+    accessions = read_accessions(ACCESSIONS_CSV)
+    print(f"{len(accessions)} accessions from {ACCESSIONS_CSV.name}")
 
     records: dict[str, tuple[str, str]] = {}
     for start in range(0, len(accessions), BATCH):

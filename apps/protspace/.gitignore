@@ -21,8 +21,6 @@
 **/pdb/
 **/tmp/
 **/*.h5
-# Exception: the archived JMB 2025 embeddings are kept for reproducibility
-!/data/jmb_2025/**/*.h5
 
 # Python bytecode
 __pycache__/
