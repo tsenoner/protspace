@@ -61,7 +61,8 @@ export function createNumericCondition(overrides?: Partial<NumericCondition>): N
 export function createGroup(overrides?: Partial<FilterGroup>): FilterGroup {
   return {
     id: generateId(),
-    logicalOp: 'AND',
+    // No leading logicalOp by default, mirroring createCondition — the builder
+    // sets one only for a group that is not first (query-builder._addGroup).
     conditions: [createCondition()],
     ...overrides,
   };

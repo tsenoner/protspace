@@ -161,6 +161,36 @@ describe('evaluateQuery', () => {
     });
   });
 
+  describe('operator precedence (flat, left-to-right)', () => {
+    // Conditions are folded strictly left-to-right with no AND-over-OR precedence:
+    // `A OR B AND C` evaluates as `(A OR B) AND C`, not the SQL-conventional
+    // `A OR (B AND C)`. Use groups for the latter. This test pins that behaviour so
+    // it stays an intentional choice rather than an accidental regression.
+    it('folds A OR B AND C as (A OR B) AND C', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'organism', values: ['Zebrafish'] },
+        {
+          id: '2',
+          logicalOp: 'OR',
+          kind: 'categorical',
+          annotation: 'organism',
+          values: ['Mouse'],
+        },
+        {
+          id: '3',
+          logicalOp: 'AND',
+          kind: 'categorical',
+          annotation: 'reviewed',
+          values: ['false'],
+        },
+      ];
+      const result = evaluateQuery(query, createTestData());
+      // (Zebrafish{3} OR Mouse{1,4}) AND reviewed=false{1,4} -> {1,4}
+      // NOT Zebrafish{3} OR (Mouse{1,4} AND reviewed=false{1,4}) -> {1,3,4}
+      expect(result).toEqual(new Set([1, 4]));
+    });
+  });
+
   describe('groups', () => {
     it('evaluates a group as a unit', () => {
       const query: FilterQuery = [

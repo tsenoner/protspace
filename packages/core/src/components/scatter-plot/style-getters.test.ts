@@ -32,7 +32,6 @@ describe('style-getters', () => {
       id,
       x: 0,
       y: 0,
-      z: 0,
       originalIndex,
     });
 
@@ -183,7 +182,6 @@ describe('style-getters', () => {
       id,
       x: 0,
       y: 0,
-      z: 0,
       originalIndex,
     });
 
@@ -323,7 +321,6 @@ describe('style-getters', () => {
       id: 'test_protein',
       x: 0,
       y: 0,
-      z: 0,
       originalIndex,
     });
 
