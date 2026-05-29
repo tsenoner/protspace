@@ -99,7 +99,15 @@ class ProtspaceQueryNumericInput extends LitElement {
 
   private _handleOperatorChange(e: Event) {
     const operator = (e.target as HTMLSelectElement).value as NumericOperator;
-    this._emitChanged({ ...this.condition, operator });
+    // Null out the bound the new operator doesn't use so a hidden value can't
+    // silently linger and reappear (and re-constrain the filter) on switching back.
+    const fields = numericFieldsFor(operator);
+    this._emitChanged({
+      ...this.condition,
+      operator,
+      min: fields.min ? this.condition.min : null,
+      max: fields.max ? this.condition.max : null,
+    });
   }
 
   private _handleMinInput(e: Event) {
@@ -121,6 +129,7 @@ class ProtspaceQueryNumericInput extends LitElement {
       <div class="numeric-input">
         <select
           class="numeric-operator-select"
+          aria-label="Comparison operator"
           .value=${this.condition.operator}
           @change=${this._handleOperatorChange}
         >
@@ -133,6 +142,7 @@ class ProtspaceQueryNumericInput extends LitElement {
           ? html`<input
               class="numeric-field"
               type="number"
+              aria-label="Minimum value"
               placeholder="min"
               .value=${this._minText}
               @input=${this._handleMinInput}
@@ -143,6 +153,7 @@ class ProtspaceQueryNumericInput extends LitElement {
           ? html`<input
               class="numeric-field"
               type="number"
+              aria-label="Maximum value"
               placeholder="max"
               .value=${this._maxText}
               @input=${this._handleMaxInput}

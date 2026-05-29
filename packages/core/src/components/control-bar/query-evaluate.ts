@@ -79,15 +79,17 @@ function evaluateCondition(
 
 /**
  * Evaluate a numeric condition: a protein matches when its raw numeric value
- * satisfies the operator. An unconfigured condition (missing a required bound)
- * matches nothing, so an in-progress filter never produces misleading results.
+ * satisfies the operator. An unconfigured condition (missing a required bound) is
+ * a no-op and matches everything — mirroring an empty categorical condition. This
+ * keeps the two kinds symmetric under NOT: `NOT (unconfigured)` then matches
+ * nothing (and leaves Apply disabled) instead of isolating every protein.
  */
 function evaluateNumericCondition(
   condition: NumericCondition,
   data: ProtspaceData,
   numProteins: number,
 ): Set<number> {
-  if (!isNumericConditionReady(condition)) return new Set();
+  if (!isNumericConditionReady(condition)) return allIndices(numProteins);
 
   const values = data.numeric_annotation_data?.[condition.annotation];
   if (!values) return new Set();

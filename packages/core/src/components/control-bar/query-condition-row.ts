@@ -5,7 +5,7 @@ import type { FilterCondition, LogicalOp, NumericCondition } from './query-types
 import { createCondition, createNumericCondition } from './query-types';
 import type { ProtspaceData } from './types';
 import { groupAnnotations } from './annotation-categories';
-import { NA_VALUE, NA_DISPLAY } from '@protspace/utils';
+import { NA_VALUE, NA_DISPLAY, isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
 import './query-value-picker';
 import './query-numeric-input';
@@ -120,7 +120,11 @@ class ProtspaceQueryConditionRow extends LitElement {
       logicalOp: this.condition.logicalOp,
       annotation,
     };
-    const isNumeric = this.data?.annotations?.[annotation]?.kind === 'numeric';
+    // Use the shared numeric check so that a numeric annotation is still treated as
+    // numeric after materialization bins it to kind:'categorical' (it keeps
+    // sourceKind:'numeric'); otherwise the currently-coloured numeric annotation
+    // would offer a categorical bin picker instead of the numeric range input.
+    const isNumeric = isNumericAnnotation(this.data?.annotations?.[annotation]);
     this._dispatchChanged(isNumeric ? createNumericCondition(base) : createCondition(base));
   }
 

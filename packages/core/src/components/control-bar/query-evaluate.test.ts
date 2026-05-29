@@ -271,9 +271,25 @@ describe('evaluateQuery', () => {
       expect(result).toEqual(new Set([0, 1, 2, 3]));
     });
 
-    it('matches nothing when a required bound is missing', () => {
+    it('is a no-op (matches all) when a required bound is missing, like an empty categorical condition', () => {
       const query: FilterQuery = [
         { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: null, max: null },
+      ];
+      const result = evaluateQuery(query, createTestData());
+      expect(result).toEqual(new Set([0, 1, 2, 3, 4]));
+    });
+
+    it('matches nothing when an unconfigured numeric condition is negated (symmetric with empty categorical)', () => {
+      const query: FilterQuery = [
+        {
+          id: '1',
+          logicalOp: 'NOT',
+          kind: 'numeric',
+          annotation: 'length',
+          operator: 'gt',
+          min: null,
+          max: null,
+        },
       ];
       const result = evaluateQuery(query, createTestData());
       expect(result).toEqual(new Set());
