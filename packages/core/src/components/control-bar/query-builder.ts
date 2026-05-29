@@ -15,7 +15,7 @@ import './query-condition-row';
  *
  * Events:
  * - `query-changed` — dispatched whenever the query changes, detail: `{ query: FilterQuery }`
- * - `query-apply`   — dispatched when "Apply & Isolate" is clicked, detail: `{ matchedIndices: Set<number> }`
+ * - `query-apply`   — dispatched when "Apply Filter" is clicked, detail: `{ matchedIndices: Set<number> }`
  * - `query-reset`   — dispatched when "Reset All" is clicked
  */
 @customElement('protspace-query-builder')
@@ -322,7 +322,7 @@ class ProtspaceQueryBuilder extends LitElement {
             ?disabled=${this._matchedIndices.size === 0 || this.query.length === 0}
             @click=${this._handleApply}
           >
-            Apply &amp; Isolate
+            Apply Filter
           </button>
         </div>
       </div>

@@ -426,6 +426,15 @@ export class ProtspaceScatterplot extends LitElement {
       }
     }
 
+    // A query filter is scoped to the current dataset. On a dataset swap, drop the
+    // filtered-id set before _processData runs below — otherwise a stale set (ids
+    // from the previous dataset) would match nothing and blank the new plot. Set
+    // here (not via a getter) so the synchronous _processData read sees it cleared.
+    if (changedProperties.has('data') && this.filtersActive) {
+      this.filteredProteinIds = [];
+      this.filtersActive = false;
+    }
+
     const numericSettingsChangedOnly =
       changedProperties.has('numericAnnotationSettings') &&
       !changedProperties.has('data') &&
