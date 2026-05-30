@@ -15,8 +15,11 @@ export interface StructureErrorContext {
   proteinId: string;
 }
 
-export interface StructureErrorEventDetail
-  extends HostMessageEventDetail<'structure-viewer', 'error', StructureErrorContext> {}
+export interface StructureErrorEventDetail extends HostMessageEventDetail<
+  'structure-viewer',
+  'error',
+  StructureErrorContext
+> {}
 
 export function createStructureLoadDetail(
   proteinId: string,

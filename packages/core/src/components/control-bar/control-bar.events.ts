@@ -5,8 +5,11 @@ export interface SelectionDisabledNotificationContext {
   dataSize: number;
 }
 
-export interface SelectionDisabledNotificationDetail
-  extends HostMessageEventDetail<'control-bar', 'warning', SelectionDisabledNotificationContext> {}
+export interface SelectionDisabledNotificationDetail extends HostMessageEventDetail<
+  'control-bar',
+  'warning',
+  SelectionDisabledNotificationContext
+> {}
 
 export function createSelectionDisabledNotificationDetail(
   reason: string,
