@@ -26,6 +26,9 @@ async def _fake_failure(ctx: JobContext, emit) -> Path:
 @pytest.fixture
 def app_factory(tmp_path, monkeypatch):
     monkeypatch.setenv("PREP_JOB_ROOT", str(tmp_path / "jobs"))
+    # These tests exercise API plumbing with tiny fixtures, not the product
+    # sequence-count floor; pin the minimum so they stay decoupled from it.
+    monkeypatch.setenv("PREP_SEQUENCE_MIN_COUNT", "1")
 
     def _make(pipeline=_fake_success):
         return create_app(pipeline=pipeline)

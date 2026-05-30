@@ -135,12 +135,19 @@ def make_router(registry: JobRegistry, settings: Settings) -> APIRouter:
             raise HTTPException(status_code=410, detail="Bundle expired.")
 
         download_name = _safe_download_name(state.original_name)
-        registry.mark_consumed(job_id)
+
+        def _finalize() -> None:
+            # Runs only after the response body streams successfully, so a
+            # mid-stream client disconnect leaves the job un-consumed and the
+            # bundle on disk — a retry can still download it.
+            registry.mark_consumed(job_id)
+            path.unlink(missing_ok=True)
+
         return FileResponse(
             path,
             media_type="application/octet-stream",
             filename=download_name,
-            background=BackgroundTask(path.unlink, missing_ok=True),
+            background=BackgroundTask(_finalize),
         )
 
     return router

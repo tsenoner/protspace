@@ -15,6 +15,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def settings(**overrides):
     base = load_settings()
     fields = {k: getattr(base, k) for k in base.__slots__}
+    # These tests use tiny fixtures to exercise gates other than the product
+    # sequence-count floor; default the minimum to 1 unless a test overrides it.
+    fields["sequence_min_count"] = 1
     fields.update(overrides)
     return type(base)(**fields)
 

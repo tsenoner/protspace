@@ -16,7 +16,6 @@ class Settings:
     embedder: str
     methods: str
     annotations: str
-    biocentral_endpoint: str | None
     sweep_interval_seconds: int
     pipeline_timeout_seconds: int
     log_level: str
@@ -31,11 +30,10 @@ def load_settings() -> Settings:
         upload_max_bytes=int(os.getenv("PREP_UPLOAD_MAX_BYTES", str(8 * 1024 * 1024))),
         sequence_max_count=int(os.getenv("PREP_SEQUENCE_MAX_COUNT", "1500")),
         sequence_max_residues=int(os.getenv("PREP_SEQUENCE_MAX_RESIDUES", "2000")),
-        sequence_min_count=int(os.getenv("PREP_SEQUENCE_MIN_COUNT", "1")),
+        sequence_min_count=int(os.getenv("PREP_SEQUENCE_MIN_COUNT", "20")),
         embedder=os.getenv("PREP_EMBEDDER", "prot_t5"),
         methods=os.getenv("PREP_METHODS", "pca2,umap2"),
         annotations=os.getenv("PREP_ANNOTATIONS", "default"),
-        biocentral_endpoint=os.getenv("PREP_BIOCENTRAL_ENDPOINT") or None,
         sweep_interval_seconds=int(os.getenv("PREP_SWEEP_INTERVAL_SECONDS", "300")),
         pipeline_timeout_seconds=int(os.getenv("PREP_PIPELINE_TIMEOUT_SECONDS", "420")),
         log_level=os.getenv("PREP_LOG_LEVEL", "INFO"),
