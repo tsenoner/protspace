@@ -7,6 +7,7 @@ export class DataProcessor {
     projectionIndex: number,
     isolationMode: boolean = false,
     isolationHistory?: string[][],
+    visibleProteinIds?: Set<string> | null,
   ): PlotDataPoint[] {
     if (!data.projections[projectionIndex]) return [];
 
@@ -18,16 +19,26 @@ export class DataProcessor {
       return { id, x: coordinates[0], y: coordinates[1], originalIndex: index };
     });
 
-    if (isolationMode && isolationHistory && isolationHistory.length > 0) {
-      let filteredData = processedData.filter((p) => isolationHistory[0].includes(p.id));
-      for (let i = 1; i < isolationHistory.length; i++) {
-        const splitIds = isolationHistory[i];
-        filteredData = filteredData.filter((p) => splitIds.includes(p.id));
-      }
-      return filteredData;
+    // Apply the query filter (and then isolation) as id-membership filters AFTER
+    // the map, so every kept point keeps its GLOBAL `originalIndex`. Style getters
+    // and tooltips resolve annotation values against the full dataset by that
+    // index, so a slice-local index would mis-resolve points under a non-prefix
+    // filter. This mirrors how isolation has always preserved the global index.
+    let result = processedData;
+
+    if (visibleProteinIds) {
+      result = result.filter((p) => visibleProteinIds.has(p.id));
     }
 
-    return processedData;
+    if (isolationMode && isolationHistory && isolationHistory.length > 0) {
+      result = result.filter((p) => isolationHistory[0].includes(p.id));
+      for (let i = 1; i < isolationHistory.length; i++) {
+        const splitIds = isolationHistory[i];
+        result = result.filter((p) => splitIds.includes(p.id));
+      }
+    }
+
+    return result;
   }
 
   static createScales(

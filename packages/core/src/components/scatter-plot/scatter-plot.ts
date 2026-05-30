@@ -583,14 +583,25 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _processData() {
-    const dataToUse = this._getCurrentDisplayData();
+    // Build _plotData from the FULL materialized data and apply the query filter
+    // as an id-membership filter (see processVisualizationData) rather than from a
+    // pre-sliced display array. This keeps each point's originalIndex a GLOBAL
+    // index into the full dataset, which the style getters and tooltip path
+    // require — a slice-local index would mis-resolve colours/values under any
+    // non-prefix filter. Isolation already worked this way; filtering now matches.
+    const dataToUse = this._getMaterializedData();
     if (!dataToUse) return;
 
-    // Detect whether only the projection changed (same data reference, not in isolation mode).
-    // In this case we take the fast path: update coordinates in-place
-    // instead of rebuilding all PlotDataPoint objects with annotation data (~700MB for 500k proteins).
+    const visibleProteinIds = this._getVisibleProteinIdsSet();
+
+    // Fast path applies only to a projection change on the plain, unfiltered,
+    // non-isolated plot. Whenever a filter or isolation is active we rebuild so
+    // the kept set is recomputed (and originalIndex stays global).
     const onlyProjectionChanged =
-      this._plotData.length > 0 && this._lastDataRef === dataToUse && !this._isolationMode;
+      this._plotData.length > 0 &&
+      this._lastDataRef === dataToUse &&
+      !this._isolationMode &&
+      !this.filtersActive;
 
     if (onlyProjectionChanged) {
       // Fast path: update coordinates in-place from the new projection data.
@@ -610,6 +621,7 @@ export class ProtspaceScatterplot extends LitElement {
         this.selectedProjectionIndex,
         this._isolationMode,
         this._isolationHistory,
+        visibleProteinIds,
       );
     }
 
