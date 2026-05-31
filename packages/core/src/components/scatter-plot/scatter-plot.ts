@@ -127,6 +127,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
   private _quadtreeRebuildRafId: number | null = null;
+  private _hoverRaf: number | null = null;
+  private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _visiblePlotData: PlotDataPoint[] = [];
   private _virtualizationCacheKey: string | null = null;
   private _hoveredProteinId: string | null = null;
@@ -315,6 +317,11 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._zoomRafId);
       this._zoomRafId = null;
     }
+    if (this._hoverRaf !== null) {
+      cancelAnimationFrame(this._hoverRaf);
+      this._hoverRaf = null;
+    }
+    this._pendingHover = null;
     this._cancelDuplicateOverlayDebounce();
     this._cancelDuplicateStackCompute();
     this._clearDuplicateBadgesCanvas();
@@ -1907,12 +1914,30 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Handle mouse move events for canvas rendering
+   * Handle mouse move events for canvas rendering.
+   * Coalesces rapid mousemoves to at most one hover computation per animation frame.
    */
   private _handleCanvasMouseMove(event: MouseEvent): void {
     if (!this._scales) return;
-
+    // d3.pointer must be read synchronously: event.currentTarget is null after dispatch.
     const [mouseX, mouseY] = d3.pointer(event);
+    this._pendingHover = { event, mouseX, mouseY };
+    // Coalesce rapid mousemoves to at most one hover computation per frame (uses latest position).
+    if (this._hoverRaf !== null) return;
+    this._hoverRaf = requestAnimationFrame(() => {
+      this._hoverRaf = null;
+      const pending = this._pendingHover;
+      this._pendingHover = null;
+      if (pending) this._processCanvasHover(pending.event, pending.mouseX, pending.mouseY);
+    });
+  }
+
+  /**
+   * Deferred hover processing — runs inside a rAF scheduled by _handleCanvasMouseMove.
+   * Behaviour is identical to the former per-event body; only the call frequency is throttled.
+   */
+  private _processCanvasHover(event: MouseEvent, mouseX: number, mouseY: number): void {
+    if (!this._scales) return; // may have been cleared between scheduling and the frame
 
     // Transform mouse coordinates to data space
     const dataX = (mouseX - this._transform.x) / this._transform.k;
@@ -2023,6 +2048,11 @@ export class ProtspaceScatterplot extends LitElement {
    * Handle mouse out events for canvas rendering
    */
   private _handleCanvasMouseOut(): void {
+    if (this._hoverRaf !== null) {
+      cancelAnimationFrame(this._hoverRaf);
+      this._hoverRaf = null;
+    }
+    this._pendingHover = null;
     this._clearHoverState();
   }
 
