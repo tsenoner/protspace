@@ -22,6 +22,7 @@ import { resolveColor } from '../color-utils';
 import { createProgramFromSources } from '../shader-utils';
 import { fillLabelColorTexels } from './label-texture-utils';
 import { sortIndicesByDepthDescending } from './depth-sort';
+import { planRendererCapacity } from './capacity-planner';
 
 // ============================================================================
 // Shader Sources
@@ -33,6 +34,7 @@ const MIN_POINT_SIZE = 1;
 const MIN_CAPACITY = 1024;
 const MAX_LABELS = 8;
 const LABEL_TEXTURE_WIDTH = 2048;
+const POINTS_PER_TEXTURE_ROW = LABEL_TEXTURE_WIDTH / MAX_LABELS;
 const DIAMOND_SIZE_SCALE = 1.25;
 
 // Stable reference dimensions for margin scaling at export time. Tying margin
@@ -2013,7 +2015,12 @@ export class WebGLRenderer {
   }
 
   private expandCapacity(minCapacity: number) {
-    const nextCapacity = Math.pow(2, Math.ceil(Math.log2(Math.max(minCapacity, MIN_CAPACITY))));
+    const nextCapacity = planRendererCapacity(
+      minCapacity,
+      this.capacity,
+      MIN_CAPACITY,
+      POINTS_PER_TEXTURE_ROW,
+    );
     this.capacity = nextCapacity;
     this.dataPositions = new Float32Array(nextCapacity * 2);
     this.colors = new Float32Array(nextCapacity * 4);
