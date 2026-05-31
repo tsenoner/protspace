@@ -16,6 +16,21 @@ type PerfSuiteGlobalState = typeof globalThis & {
   __protspaceWebglPerfSuiteConsumed?: boolean;
 };
 
+type HeapSample = {
+  usedBytes: number | null;
+  totalBytes: number | null;
+  limitBytes: number | null;
+};
+
+type LoadMetrics = {
+  datasetId: string;
+  loadDurationMs: number;
+  heapBefore: HeapSample;
+  heapAfterLoad: HeapSample;
+  heapSteady: HeapSample;
+  peakUsedDuringLoadBytes: number | null;
+};
+
 const PERF_OVERLAY_ID = 'webgl-perf-suite-overlay';
 const PERF_OVERLAY_STYLE_ID = 'webgl-perf-suite-overlay-style';
 
@@ -34,6 +49,19 @@ async function waitUntil(
     await sleep(intervalMs);
   }
   throw new Error('perf: timeout');
+}
+
+function readHeap(): HeapSample {
+  const mem = (
+    performance as unknown as {
+      memory?: { usedJSHeapSize?: number; totalJSHeapSize?: number; jsHeapSizeLimit?: number };
+    }
+  ).memory;
+  return {
+    usedBytes: typeof mem?.usedJSHeapSize === 'number' ? mem.usedJSHeapSize : null,
+    totalBytes: typeof mem?.totalJSHeapSize === 'number' ? mem.totalJSHeapSize : null,
+    limitBytes: typeof mem?.jsHeapSizeLimit === 'number' ? mem.jsHeapSizeLimit : null,
+  };
 }
 
 async function readDatasetList(): Promise<string[]> {
@@ -60,6 +88,18 @@ async function readDatasetList(): Promise<string[]> {
   } catch {
     return fallback;
   }
+}
+
+async function resolveDatasetList(params: URLSearchParams): Promise<string[]> {
+  const raw = params.get('webglPerfDatasets');
+  if (raw && raw.length > 0) {
+    const ids = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (ids.length > 0) return ids;
+  }
+  return readDatasetList();
 }
 
 function downloadJson(filename: string, payload: unknown) {
@@ -156,7 +196,7 @@ function hidePerfOverlay() {
   document.getElementById(PERF_OVERLAY_ID)?.remove();
 }
 
-async function loadDataset(args: Args, datasetId: string, timeoutMs: number): Promise<void> {
+async function loadDataset(args: Args, datasetId: string, timeoutMs: number): Promise<LoadMetrics> {
   const url = `/data/${datasetId}.parquetbundle`;
 
   const dataChange = new Promise<void>((resolve) => {
@@ -184,12 +224,52 @@ async function loadDataset(args: Args, datasetId: string, timeoutMs: number): Pr
     type: 'application/octet-stream',
   });
 
+  // Settle briefly then capture baseline heap
+  await sleep(50);
+  const heapBefore = readHeap();
+
+  // Best-effort polling loop to track peak heap during load
+  let polling = true;
+  let peakUsedDuringLoadBytes: number | null = null;
+
+  const pollLoop = (async () => {
+    while (polling) {
+      const sample = readHeap();
+      if (sample.usedBytes !== null) {
+        if (peakUsedDuringLoadBytes === null || sample.usedBytes > peakUsedDuringLoadBytes) {
+          peakUsedDuringLoadBytes = sample.usedBytes;
+        }
+      }
+      await sleep(50);
+    }
+  })();
+
+  const t0 = performance.now();
   await args.dataLoader.loadFromFile(file);
   await loaderDone;
   await dataChange;
 
   await waitUntil(() => !!args.plotElement.data?.protein_ids?.length, timeoutMs);
   await waitUntil(() => !document.getElementById('progressive-loading'), timeoutMs);
+
+  const loadDurationMs = performance.now() - t0;
+
+  // Stop poller and wait for it to finish
+  polling = false;
+  await pollLoop;
+
+  const heapAfterLoad = readHeap();
+  await sleep(300);
+  const heapSteady = readHeap();
+
+  return {
+    datasetId,
+    loadDurationMs,
+    heapBefore,
+    heapAfterLoad,
+    heapSteady,
+    peakUsedDuringLoadBytes,
+  };
 }
 
 export async function maybeRunWebglPerfSuite(args: Args): Promise<boolean> {
@@ -209,13 +289,13 @@ export async function maybeRunWebglPerfSuite(args: Args): Promise<boolean> {
 
   let success = false;
   try {
-    const datasets = await readDatasetList();
+    const datasets = await resolveDatasetList(params);
     const timeoutMs = 12 * 60_000;
     const createdAt = new Date().toISOString();
     const results: unknown[] = [];
 
     for (const datasetId of datasets) {
-      await loadDataset(args, datasetId, timeoutMs);
+      const loadMetrics = await loadDataset(args, datasetId, timeoutMs);
 
       const result = await args.plotElement.runWebGLRenderPerfMeasurements(iterations, {
         download: false,
@@ -224,7 +304,7 @@ export async function maybeRunWebglPerfSuite(args: Args): Promise<boolean> {
       if (!result) {
         throw new Error(`perf: no result for dataset ${datasetId}`);
       }
-      results.push(result);
+      results.push({ ...(result as Record<string, unknown>), load: loadMetrics });
     }
 
     const suite: PerfSuiteResult = {
