@@ -1,6 +1,12 @@
 import type { VisualizationData, PlotDataPoint } from '../types.js';
 import * as d3 from 'd3';
 
+// Memoize x/y extents per plotData array reference. Resizes pass the same array (extents
+// unchanged) and reuse the cached scan; any data/projection/plane change builds a NEW array
+// (fresh point objects), correctly missing the cache. Point x/y are never mutated in place
+// for a given array reference, so cached extents cannot go stale.
+const extentCache = new WeakMap<PlotDataPoint[], { x: [number, number]; y: [number, number] }>();
+
 export class DataProcessor {
   static processVisualizationData(
     data: VisualizationData,
@@ -50,8 +56,16 @@ export class DataProcessor {
   ) {
     if (plotData.length === 0) return null;
 
-    const xExtent = d3.extent(plotData, (d) => d.x) as [number, number];
-    const yExtent = d3.extent(plotData, (d) => d.y) as [number, number];
+    let extents = extentCache.get(plotData);
+    if (!extents) {
+      extents = {
+        x: d3.extent(plotData, (d) => d.x) as [number, number],
+        y: d3.extent(plotData, (d) => d.y) as [number, number],
+      };
+      extentCache.set(plotData, extents);
+    }
+    const xExtent = extents.x;
+    const yExtent = extents.y;
 
     const xPadding = Math.abs(xExtent[1] - xExtent[0]) * 0.05;
     const yPadding = Math.abs(yExtent[1] - yExtent[0]) * 0.05;
