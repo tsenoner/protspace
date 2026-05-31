@@ -10,20 +10,14 @@ const createMockVisualizationData = (): VisualizationData => ({
     {
       name: 'PCA_2',
       metadata: { dimension: 2 },
-      data: [
-        [1.0, 2.0],
-        [3.0, 4.0],
-        [5.0, 6.0],
-      ],
+      data: Float32Array.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+      dimension: 2,
     },
     {
       name: 'UMAP_3',
       metadata: { dimension: 3 },
-      data: [
-        [1.0, 2.0, 3.0],
-        [4.0, 5.0, 6.0],
-        [7.0, 8.0, 9.0],
-      ],
+      data: Float32Array.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0),
+      dimension: 3,
     },
   ],
   annotations: {

@@ -50,14 +50,8 @@ describe('numeric-binning', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-            [3, 3],
-            [4, 4],
-            [5, 5],
-          ],
+          data: Float32Array.of(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5),
+          dimension: 2,
         },
       ],
       annotations: {
@@ -190,11 +184,8 @@ describe('numeric-binning', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-          ],
+          data: Float32Array.of(0, 0, 1, 1, 2, 2),
+          dimension: 2,
         },
       ],
       annotations: {
@@ -232,11 +223,8 @@ describe('numeric-binning', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-          ],
+          data: Float32Array.of(0, 0, 1, 1, 2, 2),
+          dimension: 2,
         },
       ],
       annotations: {
@@ -580,10 +568,8 @@ describe('materializeVisualizationData null-selection gate', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-          ],
+          data: Float32Array.of(0, 0, 1, 1),
+          dimension: 2,
         },
       ],
       annotations: {
@@ -622,10 +608,8 @@ describe('materializeVisualizationData null-selection gate', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-          ],
+          data: Float32Array.of(0, 0, 1, 1),
+          dimension: 2,
         },
       ],
       annotations: {

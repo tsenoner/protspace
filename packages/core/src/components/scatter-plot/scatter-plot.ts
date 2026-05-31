@@ -751,10 +751,18 @@ export class ProtspaceScatterplot extends LitElement {
     return {
       ...materializedData,
       protein_ids: keptIndices.map((index) => materializedData.protein_ids[index]),
-      projections: materializedData.projections.map((projection) => ({
-        ...projection,
-        data: keptIndices.map((index) => projection.data[index]),
-      })),
+      projections: materializedData.projections.map((projection) => {
+        const dim = projection.dimension;
+        const out = new Float32Array(keptIndices.length * dim);
+        for (let k = 0; k < keptIndices.length; k++) {
+          const base = keptIndices[k] * dim;
+          const o = k * dim;
+          out[o] = projection.data[base];
+          out[o + 1] = projection.data[base + 1];
+          if (dim === 3) out[o + 2] = projection.data[base + 2];
+        }
+        return { ...projection, data: out, dimension: dim };
+      }),
       annotation_data: Object.fromEntries(
         Object.entries(materializedData.annotation_data).map(([annotationName, rows]) => [
           annotationName,
@@ -804,22 +812,24 @@ export class ProtspaceScatterplot extends LitElement {
     const { xs, ys, zs } = pd;
     const oi = pd.originalIndices;
 
+    const dim = projection.dimension;
     for (let i = 0; i < pd.length; i++) {
       const origIdx = oi ? oi[i] : i;
-      const coords = (projection.data[origIdx] ?? [0, 0]) as
-        | [number, number]
-        | [number, number, number];
+      const base = origIdx * dim;
+      const c0 = projection.data[base];
+      const c1 = projection.data[base + 1];
 
-      let xVal = coords[0];
-      let yVal = coords[1];
+      let xVal = c0;
+      let yVal = c1;
 
-      if (coords.length === 3) {
-        if (zs) zs[i] = coords[2];
+      if (dim === 3) {
+        const c2 = projection.data[base + 2];
+        if (zs) zs[i] = c2;
         if (this.projectionPlane === 'xz') {
-          yVal = coords[2];
+          yVal = c2;
         } else if (this.projectionPlane === 'yz') {
-          xVal = coords[1];
-          yVal = coords[2];
+          xVal = c1;
+          yVal = c2;
         }
       }
 
@@ -2460,10 +2470,18 @@ export class ProtspaceScatterplot extends LitElement {
         protein_ids: currentProteinIds,
         annotation_data: filteredAnnotationData,
         numeric_annotation_data: filteredNumericAnnotationData,
-        projections: currentDisplayData.projections.map((projection) => ({
-          ...projection,
-          data: keptIndices.map((index) => projection.data[index]),
-        })),
+        projections: currentDisplayData.projections.map((projection) => {
+          const dim = projection.dimension;
+          const out = new Float32Array(keptIndices.length * dim);
+          for (let k = 0; k < keptIndices.length; k++) {
+            const base = keptIndices[k] * dim;
+            const o = k * dim;
+            out[o] = projection.data[base];
+            out[o + 1] = projection.data[base + 1];
+            if (dim === 3) out[o + 2] = projection.data[base + 2];
+          }
+          return { ...projection, data: out, dimension: dim };
+        }),
       };
     }
 

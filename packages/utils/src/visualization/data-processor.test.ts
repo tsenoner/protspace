@@ -22,10 +22,8 @@ describe('DataProcessor.processVisualizationData', () => {
       projections: [
         {
           name: 't',
-          data: [
-            [1, 2],
-            [3, 4],
-          ],
+          data: Float32Array.of(1, 2, 3, 4),
+          dimension: 2,
         },
       ],
       annotations: {},
@@ -43,7 +41,7 @@ describe('DataProcessor.processVisualizationData', () => {
   it('preserves z coordinate for 3D projections', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
-      projections: [{ name: 't', data: [[1, 2, 3]] }],
+      projections: [{ name: 't', data: Float32Array.of(1, 2, 3), dimension: 3 }],
       annotations: {},
       annotation_data: {},
     };
@@ -59,7 +57,7 @@ describe('DataProcessor.processVisualizationData', () => {
   it('maps coordinates to xz plane when projectionPlane is "xz"', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
-      projections: [{ name: 't', data: [[10, 20, 30]] }],
+      projections: [{ name: 't', data: Float32Array.of(10, 20, 30), dimension: 3 }],
       annotations: {},
       annotation_data: {},
     };
@@ -72,7 +70,7 @@ describe('DataProcessor.processVisualizationData', () => {
   it('maps coordinates to yz plane when projectionPlane is "yz"', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
-      projections: [{ name: 't', data: [[10, 20, 30]] }],
+      projections: [{ name: 't', data: Float32Array.of(10, 20, 30), dimension: 3 }],
       annotations: {},
       annotation_data: {},
     };
@@ -97,7 +95,7 @@ describe('DataProcessor.processVisualizationData', () => {
   it('does not materialize annotation Records on slots', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
-      projections: [{ name: 't', data: [[0, 0]] }],
+      projections: [{ name: 't', data: Float32Array.of(0, 0), dimension: 2 }],
       annotations: {
         species: {
           kind: 'categorical',
@@ -122,12 +120,8 @@ describe('DataProcessor.processVisualizationData — isolation (Set-based, MODEL
     projections: [
       {
         name: 't',
-        data: [
-          [1, 2],
-          [3, 4],
-          [5, 6],
-          [7, 8],
-        ],
+        data: Float32Array.of(1, 2, 3, 4, 5, 6, 7, 8),
+        dimension: 2,
       },
     ],
     annotations: {},
@@ -219,10 +213,8 @@ describe('materializePlotDataPoint', () => {
       projections: [
         {
           name: 't',
-          data: [
-            [1, 2],
-            [3, 4],
-          ],
+          data: Float32Array.of(1, 2, 3, 4),
+          dimension: 2,
         },
       ],
       annotations: {},
@@ -242,12 +234,8 @@ describe('materializePlotDataPoint', () => {
       projections: [
         {
           name: 't',
-          data: [
-            [1, 2],
-            [3, 4],
-            [5, 6],
-            [7, 8],
-          ],
+          data: Float32Array.of(1, 2, 3, 4, 5, 6, 7, 8),
+          dimension: 2,
         },
       ],
       annotations: {},
@@ -268,7 +256,7 @@ describe('materializePlotDataPoint', () => {
   it('includes z field for 3D PlotData', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
-      projections: [{ name: 't', data: [[1, 2, 3]] }],
+      projections: [{ name: 't', data: Float32Array.of(1, 2, 3), dimension: 3 }],
       annotations: {},
       annotation_data: {},
     };

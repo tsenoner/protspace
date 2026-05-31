@@ -19,12 +19,12 @@ export class DataProcessor {
       return { ...EMPTY_PLOT_DATA, proteinIds: data.protein_ids };
     }
 
-    const projData = data.projections[projectionIndex].data;
+    const proj = data.projections[projectionIndex];
+    const src = proj.data;
+    const dim = proj.dimension;
+    const is3D = dim === 3;
     const proteinIds = data.protein_ids;
     const n = proteinIds.length;
-
-    // Determine if any point is 3D
-    const is3D = projData.some((c) => c != null && c.length === 3);
 
     if (isolationMode && isolationHistory && isolationHistory.length > 0) {
       // Two-pass isolation: find surviving protein indices (those in EVERY layer set).
@@ -45,18 +45,21 @@ export class DataProcessor {
 
       for (let k = 0; k < count; k++) {
         const origIdx = survivors[k];
-        const coords = (projData[origIdx] ?? [0, 0]) as [number, number] | [number, number, number];
+        const base = origIdx * dim;
+        const c0 = src[base];
+        const c1 = src[base + 1];
+        const c2 = is3D ? src[base + 2] : undefined;
 
-        let xVal = coords[0];
-        let yVal = coords[1];
+        let xVal = c0;
+        let yVal = c1;
 
-        if (coords.length === 3) {
-          if (zs) zs[k] = coords[2];
+        if (is3D && c2 !== undefined) {
+          if (zs) zs[k] = c2;
           if (projectionPlane === 'xz') {
-            yVal = coords[2];
+            yVal = c2;
           } else if (projectionPlane === 'yz') {
-            xVal = coords[1];
-            yVal = coords[2];
+            xVal = c1;
+            yVal = c2;
           }
         }
 
@@ -74,18 +77,21 @@ export class DataProcessor {
     const zs = is3D ? new Float32Array(n) : null;
 
     for (let i = 0; i < n; i++) {
-      const coords = (projData[i] ?? [0, 0]) as [number, number] | [number, number, number];
+      const base = i * dim;
+      const c0 = src[base];
+      const c1 = src[base + 1];
+      const c2 = is3D ? src[base + 2] : undefined;
 
-      let xVal = coords[0];
-      let yVal = coords[1];
+      let xVal = c0;
+      let yVal = c1;
 
-      if (coords.length === 3) {
-        if (zs) zs[i] = coords[2];
+      if (is3D && c2 !== undefined) {
+        if (zs) zs[i] = c2;
         if (projectionPlane === 'xz') {
-          yVal = coords[2];
+          yVal = c2;
         } else if (projectionPlane === 'yz') {
-          xVal = coords[1];
-          yVal = coords[2];
+          xVal = c1;
+          yVal = c2;
         }
       }
 

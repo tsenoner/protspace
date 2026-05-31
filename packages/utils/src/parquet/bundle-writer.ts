@@ -83,7 +83,7 @@ function createProjectionsMetadataParquet(data: VisualizationData): ArrayBuffer 
 
   for (const projection of data.projections) {
     projectionNames.push(projection.name);
-    const dim = projection.metadata?.dimension ?? (projection.data[0]?.length === 3 ? 3 : 2);
+    const dim = projection.dimension;
     dimensions.push(dim);
     infoJsons.push(JSON.stringify(projection.metadata ?? {}, bigIntReplacer));
   }
@@ -114,12 +114,12 @@ function createProjectionsDataParquet(data: VisualizationData): ArrayBuffer {
   let rowIndex = 0;
   for (const projection of data.projections) {
     for (let i = 0; i < data.protein_ids.length; i++) {
-      const point = projection.data[i];
+      const base = i * projection.dimension;
       projectionNames[rowIndex] = projection.name;
       identifiers[rowIndex] = data.protein_ids[i];
-      xValues[rowIndex] = point[0];
-      yValues[rowIndex] = point[1];
-      zValues[rowIndex] = point.length === 3 ? (point as [number, number, number])[2] : null;
+      xValues[rowIndex] = projection.data[base];
+      yValues[rowIndex] = projection.data[base + 1];
+      zValues[rowIndex] = projection.dimension === 3 ? projection.data[base + 2] : null;
       rowIndex++;
     }
   }

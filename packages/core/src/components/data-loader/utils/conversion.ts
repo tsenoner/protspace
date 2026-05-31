@@ -437,19 +437,36 @@ function convertBundleFormatData(
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projectionRows] of projectionGroups.entries()) {
     const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
-    const projectionData = uniqueProteinIds.map((proteinId) => coordMap.get(proteinId) || [0, 0]);
-    const has3D = projectionData.some((p) => p.length === 3);
+    let has3D = false;
+    for (const v of coordMap.values()) {
+      if (v.length === 3) {
+        has3D = true;
+        break;
+      }
+    }
+    const dimension: 2 | 3 = has3D ? 3 : 2;
+    const data = new Float32Array(uniqueProteinIds.length * dimension);
+    for (let i = 0; i < uniqueProteinIds.length; i++) {
+      const c = coordMap.get(uniqueProteinIds[i]);
+      const base = i * dimension;
+      if (c) {
+        data[base] = c[0];
+        data[base + 1] = c[1];
+        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
+      }
+    }
 
     // Merge dimension with existing metadata from projectionsMetadata
     const existingMetadata = metadataMap.get(projectionName) || {};
     const metadata = {
       ...existingMetadata,
-      dimension: (has3D ? 3 : 2) as 2 | 3,
+      dimension,
     };
 
     projections.push({
       name: formatProjectionName(projectionName),
-      data: projectionData as Array<[number, number] | [number, number, number]>,
+      data,
+      dimension,
       metadata,
     });
   }
@@ -601,24 +618,36 @@ async function convertBundleFormatDataOptimized(
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projectionRows] of projectionGroups.entries()) {
     const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
-    const projectionData: Array<[number, number] | [number, number, number]> = new Array(
-      uniqueProteinIds.length,
-    );
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      projectionData[i] = coordMap.get(uniqueProteinIds[i]) || [0, 0];
+    let has3D = false;
+    for (const v of coordMap.values()) {
+      if (v.length === 3) {
+        has3D = true;
+        break;
+      }
     }
-    const has3D = projectionData.some((p) => p.length === 3);
+    const dimension: 2 | 3 = has3D ? 3 : 2;
+    const data = new Float32Array(uniqueProteinIds.length * dimension);
+    for (let i = 0; i < uniqueProteinIds.length; i++) {
+      const c = coordMap.get(uniqueProteinIds[i]);
+      const base = i * dimension;
+      if (c) {
+        data[base] = c[0];
+        data[base + 1] = c[1];
+        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
+      }
+    }
 
     // Merge dimension with existing metadata from projectionsMetadata
     const existingMetadata = metadataMap.get(projectionName) || {};
     const metadata = {
       ...existingMetadata,
-      dimension: (has3D ? 3 : 2) as 2 | 3,
+      dimension,
     };
 
     projections.push({
       name: formatProjectionName(projectionName),
-      data: projectionData,
+      data,
+      dimension,
       metadata,
     });
     // yield
@@ -693,21 +722,33 @@ async function convertBundleFormatDataOptimizedSeparated(
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projRows] of projectionGroups.entries()) {
     const coordMap = buildCoordinateMap(projRows, projectionIdCol);
-    const projectionData: Array<[number, number] | [number, number, number]> = new Array(
-      uniqueProteinIds.length,
-    );
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      projectionData[i] = coordMap.get(uniqueProteinIds[i]) || [0, 0];
+    let has3D = false;
+    for (const v of coordMap.values()) {
+      if (v.length === 3) {
+        has3D = true;
+        break;
+      }
     }
-    const has3D = projectionData.some((p) => p.length === 3);
+    const dimension: 2 | 3 = has3D ? 3 : 2;
+    const data = new Float32Array(uniqueProteinIds.length * dimension);
+    for (let i = 0; i < uniqueProteinIds.length; i++) {
+      const c = coordMap.get(uniqueProteinIds[i]);
+      const base = i * dimension;
+      if (c) {
+        data[base] = c[0];
+        data[base + 1] = c[1];
+        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
+      }
+    }
     const existingMetadata = metadataMap.get(projectionName) || {};
     const metadata = {
       ...existingMetadata,
-      dimension: (has3D ? 3 : 2) as 2 | 3,
+      dimension,
     };
     projections.push({
       name: formatProjectionName(projectionName),
-      data: projectionData,
+      data,
+      dimension,
       metadata,
     });
     await fastYield();
@@ -761,17 +802,22 @@ function convertLegacyFormatData(rows: Rows, columnNames: string[]): Visualizati
   const protein_ids = rows.map((row) => (row[proteinIdCol] ? String(row[proteinIdCol]) : ''));
 
   const projections = projectionPairs.map((pair) => {
-    const projectionData: [number, number][] = rows.map((row, idx) => {
+    const dimension: 2 | 3 = 2;
+    const data = new Float32Array(rows.length * dimension);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       const x = Number(row[pair.xCol]);
       const y = Number(row[pair.yCol]);
       if (Number.isNaN(x) || Number.isNaN(y)) {
-        console.warn(`Invalid coordinates at row ${idx} for projection ${pair.name}`, { x, y });
+        console.warn(`Invalid coordinates at row ${i} for projection ${pair.name}`, { x, y });
       }
-      return [x, y];
-    });
+      data[i * dimension] = x;
+      data[i * dimension + 1] = y;
+    }
     return {
       name: pair.name,
-      data: projectionData,
+      data,
+      dimension,
     } as VisualizationData['projections'][number];
   });
 

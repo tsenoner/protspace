@@ -15,11 +15,8 @@ const baseData = (): VisualizationData => ({
   projections: [
     {
       name: 't',
-      data: [
-        [0, 0],
-        [1, 1],
-        [2, 2],
-      ],
+      data: Float32Array.of(0, 0, 1, 1, 2, 2),
+      dimension: 2,
     },
   ],
   annotations: {
@@ -178,7 +175,7 @@ describe('plot-data-accessors', () => {
     it('falls back to "Gene name" / "Protein name" keys when snake_case keys are absent', () => {
       const data: VisualizationData = {
         protein_ids: ['p0'],
-        projections: [{ name: 't', data: [[0, 0]] }],
+        projections: [{ name: 't', data: Float32Array.of(0, 0), dimension: 2 as const }],
         annotations: {
           'Gene name': {
             kind: 'categorical',
@@ -206,7 +203,7 @@ describe('plot-data-accessors', () => {
     it('prefers gene_name over "Gene name" / protein_name over "Protein name" when both are present', () => {
       const data: VisualizationData = {
         protein_ids: ['p0'],
-        projections: [{ name: 't', data: [[0, 0]] }],
+        projections: [{ name: 't', data: Float32Array.of(0, 0), dimension: 2 as const }],
         annotations: {
           gene_name: {
             kind: 'categorical',

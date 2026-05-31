@@ -45,8 +45,13 @@ export type AnnotationData = Int32Array | readonly (readonly number[])[];
 export interface Projection {
   name: string;
   metadata?: Record<string, unknown> & { dimension?: 2 | 3 };
-  // Each point is either [x, y] or [x, y, z]
-  data: Array<[number, number] | [number, number, number]>;
+  /**
+   * Flat coordinates, length = pointCount * dimension.
+   * data[i*dimension + 0] = x, +1 = y, +2 = z (when dimension === 3).
+   */
+  data: Float32Array;
+  /** Coordinate stride: 2 (xy) or 3 (xyz). Authoritative — never infer from data. */
+  dimension: 2 | 3;
 }
 
 export interface VisualizationData {
