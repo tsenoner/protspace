@@ -9,8 +9,8 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
-import { getShapeIndex } from '@protspace/utils';
+import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
+import { getShapeIndex, EMPTY_PLOT_DATA } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -285,16 +285,19 @@ export class WebGLRenderer {
   private depthOrderDirty = false;
   private buffersInitialized = false;
 
-  // Store last rendered points for off-screen export rendering
-  private lastRenderedPoints: PlotDataPoint[] | null = null;
+  // Store last rendered data for off-screen export rendering
+  private lastRenderedData: PlotData | null = null;
 
   // Reusable index-sort scratch (avoids per-render object staging + a retained mapped array).
-  // `sortOrder[0..currentPointCount)` holds point indices in far->near draw order; it indexes
-  // into `sortedPointsRef` (the points array from the last full rebuild). `sortDepths` is the
-  // per-point depth scratch, indexed by ORIGINAL point index.
+  // `sortOrder[0..currentPointCount)` holds slot indices in far->near draw order; it indexes
+  // into `sortedDataRef` (the PlotData from the last full rebuild). `sortDepths` is the
+  // per-slot depth scratch, indexed by ORIGINAL slot index.
   private sortOrder = new Uint32Array(0);
   private sortDepths = new Float32Array(0);
-  private sortedPointsRef: PlotDataPoint[] | null = null;
+  private sortedDataRef: PlotData | null = null;
+
+  // Single reused scratch point for the hot loop — populated per slot, passed to style getters.
+  private scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
 
   // Selection-aware two-pass rendering
   private selectionActive = false;
@@ -322,10 +325,10 @@ export class WebGLRenderer {
   private readonly handleContextRestored = () => {
     this.contextLost = false;
     this.resetRendererState();
-    if (this.lastRenderedPoints && this.lastRenderedPoints.length > 0) {
+    if (this.lastRenderedData && this.lastRenderedData.length > 0) {
       requestAnimationFrame(() => {
         if (!this.contextLost) {
-          this.render(this.lastRenderedPoints ?? []);
+          this.render(this.lastRenderedData ?? EMPTY_PLOT_DATA);
         }
       });
     }
@@ -436,12 +439,12 @@ export class WebGLRenderer {
   }
 
   /**
-   * Release references to PlotDataPoint arrays so GC can reclaim old data
+   * Release references to PlotData so GC can reclaim old data
    * before a new dataset is allocated. Call before processing a new dataset.
    */
   releaseDataReferences() {
-    this.lastRenderedPoints = null;
-    this.sortedPointsRef = null;
+    this.lastRenderedData = null;
+    this.sortedDataRef = null;
   }
 
   resize(width: number, height: number) {
@@ -587,9 +590,9 @@ export class WebGLRenderer {
     this.currentPointCount = 0;
   }
 
-  render(points: PlotDataPoint[]) {
-    // Store points for potential off-screen export rendering
-    this.lastRenderedPoints = points;
+  render(pd: PlotData) {
+    // Store PlotData for potential off-screen export rendering
+    this.lastRenderedData = pd;
 
     const gl = this.ensureGL();
     const scales = this.getScales();
@@ -602,15 +605,15 @@ export class WebGLRenderer {
 
     const transform = this.getTransform();
 
-    const dataSignature = this.computeDataSignature(points);
-    const styleSignature = this.computeStyleSignature(points);
+    const dataSignature = this.computeDataSignature(pd);
+    const styleSignature = this.computeStyleSignature(pd);
 
     const needsPositionUpdate = this.positionsDirty || dataSignature !== this.lastDataSignature;
     const needsStyleUpdate = this.stylesDirty || styleSignature !== this.lastStyleSignature;
     const needsDepthOrderUpdate = this.depthOrderDirty;
 
     if (needsPositionUpdate || needsStyleUpdate || needsDepthOrderUpdate) {
-      this.populateBuffers(points, scales, needsPositionUpdate, needsStyleUpdate);
+      this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
       this.positionsDirty = false;
@@ -778,14 +781,14 @@ export class WebGLRenderer {
       );
     }
 
-    // Ensure we have points to render
-    const points = this.lastRenderedPoints;
-    if (!points || points.length === 0) {
+    // Ensure we have data to render
+    const pd = this.lastRenderedData;
+    if (!pd || pd.length === 0) {
       throw new Error('No points available to render. Call render() first.');
     }
 
     // Create scales for export dimensions
-    const exportScales = this.createExportScales(points, physicalWidth, physicalHeight, dataDomain);
+    const exportScales = this.createExportScales(pd, physicalWidth, physicalHeight, dataDomain);
     if (!exportScales) {
       throw new Error('Could not create scales for export rendering');
     }
@@ -814,7 +817,7 @@ export class WebGLRenderer {
         gl,
         physicalWidth,
         physicalHeight,
-        points,
+        pd,
         exportScales,
         dpr,
         pointSizeReference,
@@ -847,12 +850,12 @@ export class WebGLRenderer {
    * Scales the margin proportionally to maintain visual consistency.
    */
   private createExportScales(
-    points: PlotDataPoint[],
+    pd: PlotData,
     exportWidth: number,
     exportHeight: number,
     dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number },
   ): ScalePair | null {
-    if (points.length === 0) return null;
+    if (pd.length === 0) return null;
 
     const config = this.getConfig();
 
@@ -893,11 +896,12 @@ export class WebGLRenderer {
         xMax = -Infinity,
         yMin = Infinity,
         yMax = -Infinity;
-      for (const p of points) {
-        if (p.x < xMin) xMin = p.x;
-        if (p.x > xMax) xMax = p.x;
-        if (p.y < yMin) yMin = p.y;
-        if (p.y > yMax) yMax = p.y;
+      const { xs, ys, length } = pd;
+      for (let i = 0; i < length; i++) {
+        if (xs[i] < xMin) xMin = xs[i];
+        if (xs[i] > xMax) xMax = xs[i];
+        if (ys[i] < yMin) yMin = ys[i];
+        if (ys[i] > yMax) yMax = ys[i];
       }
       const padding = 0.05;
       const xPadding = Math.abs(xMax - xMin) * padding;
@@ -951,17 +955,18 @@ export class WebGLRenderer {
    * source rects (in normalized canvas coords) into data-coordinate viewports.
    */
   public getDataExtent(): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
-    const points = this.lastRenderedPoints;
-    if (!points || points.length === 0) return null;
+    const pd = this.lastRenderedData;
+    if (!pd || pd.length === 0) return null;
     let xMin = Infinity,
       xMax = -Infinity,
       yMin = Infinity,
       yMax = -Infinity;
-    for (const p of points) {
-      if (p.x < xMin) xMin = p.x;
-      if (p.x > xMax) xMax = p.x;
-      if (p.y < yMin) yMin = p.y;
-      if (p.y > yMax) yMax = p.y;
+    const { xs, ys, length } = pd;
+    for (let i = 0; i < length; i++) {
+      if (xs[i] < xMin) xMin = xs[i];
+      if (xs[i] > xMax) xMax = xs[i];
+      if (ys[i] < yMin) yMin = ys[i];
+      if (ys[i] > yMax) yMax = ys[i];
     }
     return { xMin, xMax, yMin, yMax };
   }
@@ -973,7 +978,7 @@ export class WebGLRenderer {
     gl: WebGL2RenderingContext,
     width: number,
     height: number,
-    points: PlotDataPoint[],
+    pd: PlotData,
     scales: ScalePair,
     dpr: number,
     pointSizeReference?: { width: number; height: number },
@@ -1031,7 +1036,7 @@ export class WebGLRenderer {
     };
 
     // Prepare point data using existing CPU arrays (reuse from main renderer)
-    const maxPoints = Math.min(points.length, MAX_POINTS_DIRECT_RENDER);
+    const maxPoints = Math.min(pd.length, MAX_POINTS_DIRECT_RENDER);
 
     // Populate buffers for off-screen rendering
     const {
@@ -1043,7 +1048,7 @@ export class WebGLRenderer {
       shapes,
       labelColorData,
       pointCount,
-    } = this.prepareOffscreenBufferData(points, scales, maxPoints, dpr, sizeScaleFactor);
+    } = this.prepareOffscreenBufferData(pd, scales, maxPoints, dpr, sizeScaleFactor);
 
     // Create and upload buffers
     const dataPositionBuffer = gl.createBuffer();
@@ -1224,7 +1229,7 @@ export class WebGLRenderer {
    * Prepare buffer data for off-screen rendering
    */
   private prepareOffscreenBufferData(
-    points: PlotDataPoint[],
+    pd: PlotData,
     scales: ScalePair,
     maxPoints: number,
     dpr: number,
@@ -1250,28 +1255,40 @@ export class WebGLRenderer {
     const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
     const labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
 
-    // Stage and sort points by depth (painter's algorithm)
-    const staged: Array<{ point: PlotDataPoint; opacity: number; depth: number }> = [];
-    for (let i = 0; i < points.length && staged.length < maxPoints; i++) {
-      const point = points[i];
-      const opacity = this.style.getOpacity(point);
+    // Stage slots by depth (painter's algorithm) — use a temp scratch point per slot.
+    const { xs, ys } = pd;
+    const oi = pd.originalIndices;
+    const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
+    const staged: Array<{ slot: number; opacity: number; depth: number }> = [];
+    for (let i = 0; i < pd.length && staged.length < maxPoints; i++) {
+      const origIdx = oi ? oi[i] : i;
+      sp.id = pd.proteinIds[origIdx];
+      sp.x = xs[i];
+      sp.y = ys[i];
+      sp.originalIndex = origIdx;
+      const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
-      const depth = this.style.getDepth(point);
-      staged.push({ point, opacity, depth });
+      const depth = this.style.getDepth(sp);
+      staged.push({ slot: i, opacity, depth });
     }
     staged.sort((a, b) => b.depth - a.depth);
 
     let idx = 0;
     for (let s = 0; s < staged.length; s++) {
-      const { point, opacity, depth } = staged[s];
+      const { slot, opacity, depth } = staged[s];
+      const origIdx = oi ? oi[slot] : slot;
+      sp.id = pd.proteinIds[origIdx];
+      sp.x = xs[slot];
+      sp.y = ys[slot];
+      sp.originalIndex = origIdx;
 
-      dataPositions[idx * 2] = scales.x(point.x);
-      dataPositions[idx * 2 + 1] = scales.y(point.y);
+      dataPositions[idx * 2] = scales.x(xs[slot]);
+      dataPositions[idx * 2 + 1] = scales.y(ys[slot]);
 
-      const pointColors = this.style.getColors(point);
+      const pointColors = this.style.getColors(sp);
       const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-      const size = Math.sqrt(this.style.getPointSize(point)) / POINT_SIZE_DIVISOR;
-      const shapeType = this.style.getShape(point);
+      const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
+      const shapeType = this.style.getShape(sp);
       const shapeIndex = getShapeIndex(shapeType);
 
       colors[idx * 4] = r;
@@ -1573,7 +1590,7 @@ export class WebGLRenderer {
     this.lastDataSignature = null;
     this.lastStyleSignature = null;
     this.renderedPointIds.clear();
-    this.sortedPointsRef = null;
+    this.sortedDataRef = null;
   }
 
   private initializePointShaders(gl: WebGL2RenderingContext): boolean {
@@ -1732,35 +1749,45 @@ export class WebGLRenderer {
   // Buffer Management
   // ============================================================================
 
-  private computeDataSignature(points: PlotDataPoint[]): string {
-    if (points.length === 0) return 'empty';
-    const len = points.length;
-    const s1 = points[0];
-    const s2 = points[Math.floor(len / 2)];
-    const s3 = points[len - 1];
-    return `${len}|${s1.x.toFixed(2)},${s1.y.toFixed(2)}|${s2.x.toFixed(2)},${s2.y.toFixed(2)}|${s3.x.toFixed(2)},${s3.y.toFixed(2)}`;
+  private computeDataSignature(pd: PlotData): string {
+    if (pd.length === 0) return 'empty';
+    const len = pd.length;
+    const s0 = 0;
+    const s1 = Math.floor(len / 2);
+    const s2 = len - 1;
+    return (
+      `${len}|${pd.xs[s0].toFixed(2)},${pd.ys[s0].toFixed(2)}` +
+      `|${pd.xs[s1].toFixed(2)},${pd.ys[s1].toFixed(2)}` +
+      `|${pd.xs[s2].toFixed(2)},${pd.ys[s2].toFixed(2)}`
+    );
   }
 
-  private computeStyleSignature(points: PlotDataPoint[]): string {
-    if (points.length === 0) return 'empty';
+  private computeStyleSignature(pd: PlotData): string {
+    if (pd.length === 0) return 'empty';
 
-    const len = points.length;
+    const len = pd.length;
     const indices = [0, Math.floor(len / 4), Math.floor(len / 2), len - 1];
+    const sp = this.scratchPoint;
+    const oi = pd.originalIndices;
     const parts = indices
       .filter((i) => i < len)
       .map((i) => {
-        const p = points[i];
+        const origIdx = oi ? oi[i] : i;
+        sp.id = pd.proteinIds[origIdx];
+        sp.x = pd.xs[i];
+        sp.y = pd.ys[i];
+        sp.originalIndex = origIdx;
         // Include depth to avoid missing z-order-only updates when we render via painter's algorithm.
-        return `${p.id}:${this.style.getOpacity(p).toFixed(2)}:${this.style
-          .getDepth(p)
-          .toFixed(4)}:${this.style.getColors(p)[0]}`;
+        return `${sp.id}:${this.style.getOpacity(sp).toFixed(2)}:${this.style
+          .getDepth(sp)
+          .toFixed(4)}:${this.style.getColors(sp)[0]}`;
       });
 
     return `${this.styleSignature}|${parts.join('|')}`;
   }
 
   private populateBuffers(
-    points: PlotDataPoint[],
+    pd: PlotData,
     scales: ScalePair,
     updatePositions: boolean,
     updateStyles: boolean,
@@ -1768,7 +1795,7 @@ export class WebGLRenderer {
     if (!this.gl) return;
     const gl = this.gl;
 
-    const maxPoints = Math.min(points.length, MAX_POINTS_DIRECT_RENDER);
+    const maxPoints = Math.min(pd.length, MAX_POINTS_DIRECT_RENDER);
 
     if (maxPoints > this.capacity) {
       this.expandCapacity(maxPoints);
@@ -1781,7 +1808,7 @@ export class WebGLRenderer {
     }
 
     // With depth testing disabled (to ensure overlaps are drawn), we preserve z-order using
-    // the painter's algorithm: draw far -> near. This requires reordering the points, so
+    // the painter's algorithm: draw far -> near. This requires reordering the slots, so
     // whenever styles update we must also update positions to keep all parallel buffers aligned.
     // However, if only colors changed (not depths), we can skip re-sorting and position updates.
     let needsReorder = updatePositions;
@@ -1792,16 +1819,25 @@ export class WebGLRenderer {
       updatePositions = true;
       this.depthOrderDirty = false;
     }
+
+    const sp = this.scratchPoint;
+    const oi = pd.originalIndices;
+    const { xs, ys } = pd;
+
     if (updateStyles && !updatePositions) {
-      // Check if depths have actually changed by sampling first few points
+      // Check if depths have actually changed by sampling first few slots
       // If depths are the same, we can skip re-sorting (color-only update optimization)
-      const sampleSize = Math.min(100, points.length);
+      const sampleSize = Math.min(100, pd.length);
       let depthsChanged = false;
       for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-        const point = points[i];
-        const opacity = this.style.getOpacity(point);
+        const origIdx = oi ? oi[i] : i;
+        sp.id = pd.proteinIds[origIdx];
+        sp.x = xs[i];
+        sp.y = ys[i];
+        sp.originalIndex = origIdx;
+        const opacity = this.style.getOpacity(sp);
         if (opacity === 0) continue;
-        const newDepth = this.style.getDepth(point);
+        const newDepth = this.style.getDepth(sp);
         // Compare with stored depth (note: depths array is in sorted order after last render)
         if (Math.abs(newDepth - this.depths[i]) > 1e-6) {
           depthsChanged = true;
@@ -1824,11 +1860,16 @@ export class WebGLRenderer {
       const order = this.sortOrder;
       const depthScratch = this.sortDepths;
 
-      // Build depth scratch indexed by original point index, then sort indices far -> near.
+      // Build depth scratch indexed by original slot index, then sort indices far -> near.
       // Include hidden points (opacity=0) so sort order is preserved across visibility toggles,
       // enabling the fast color-only update path instead of a full rebuild + re-sort.
       for (let i = 0; i < count; i++) {
-        depthScratch[i] = this.style.getDepth(points[i]);
+        const origIdx = oi ? oi[i] : i;
+        sp.id = pd.proteinIds[origIdx];
+        sp.x = xs[i];
+        sp.y = ys[i];
+        sp.originalIndex = origIdx;
+        depthScratch[i] = this.style.getDepth(sp);
       }
       sortIndicesByDepthDescending(order, depthScratch, count);
 
@@ -1837,26 +1878,30 @@ export class WebGLRenderer {
       let firstSelected = -1;
 
       for (let k = 0; k < count; k++) {
-        const srcIndex = order[k];
-        const point = points[srcIndex];
-        const opacity = this.style.getOpacity(point);
+        const srcSlot = order[k];
+        const origIdx = oi ? oi[srcSlot] : srcSlot;
+        sp.id = pd.proteinIds[origIdx];
+        sp.x = xs[srcSlot];
+        sp.y = ys[srcSlot];
+        sp.originalIndex = origIdx;
+        const opacity = this.style.getOpacity(sp);
 
         if (this.selectionActive && firstSelected === -1 && opacity >= 0.99) {
           firstSelected = k;
         }
 
         if (this.trackRenderedPointIds && opacity > 0) {
-          this.renderedPointIds.add(point.id);
+          this.renderedPointIds.add(sp.id);
         }
 
         // updatePositions is always true here (see above)
-        this.dataPositions[idx * 2] = scales.x(point.x);
-        this.dataPositions[idx * 2 + 1] = scales.y(point.y);
+        this.dataPositions[idx * 2] = scales.x(xs[srcSlot]);
+        this.dataPositions[idx * 2 + 1] = scales.y(ys[srcSlot]);
 
-        const pointColors = this.style.getColors(point);
+        const pointColors = this.style.getColors(sp);
         const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-        const size = Math.sqrt(this.style.getPointSize(point)) / POINT_SIZE_DIVISOR;
-        const shapeType = this.style.getShape(point);
+        const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
+        const shapeType = this.style.getShape(sp);
         const shapeIndex = getShapeIndex(shapeType);
 
         this.colors[idx * 4] = r;
@@ -1865,8 +1910,8 @@ export class WebGLRenderer {
         this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
         const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
         this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-        // Use depthScratch[srcIndex] (indexed by original point index), NOT depthScratch[k].
-        this.depths[idx] = depthScratch[srcIndex];
+        // Use depthScratch[srcSlot] (indexed by original slot), NOT depthScratch[k].
+        this.depths[idx] = depthScratch[srcSlot];
         this.labelCounts[idx] = pointColors.length;
         this.shapes[idx] = shapeIndex;
 
@@ -1881,27 +1926,35 @@ export class WebGLRenderer {
           ? count
           : firstSelected
         : count;
-      // Cache the points reference so color-only / positions-only paths can index via sortOrder.
-      this.sortedPointsRef = points;
+      // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
+      this.sortedDataRef = pd;
     } else if (updateStyles) {
       // Color-only update: no reordering needed, just update color/shape buffers.
-      // Iterate via sortOrder into sortedPointsRef to match the buffer order from the last rebuild.
+      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
       const order = this.sortOrder;
-      const src = this.sortedPointsRef;
+      const src = this.sortedDataRef;
       if (src) {
+        const srcOi = src.originalIndices;
+        const srcXs = src.xs;
+        const srcYs = src.ys;
         for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
-          const point = src[order[i]];
-          const opacity = this.style.getOpacity(point);
+          const slot = order[i];
+          const origIdx = srcOi ? srcOi[slot] : slot;
+          sp.id = src.proteinIds[origIdx];
+          sp.x = srcXs[slot];
+          sp.y = srcYs[slot];
+          sp.originalIndex = origIdx;
+          const opacity = this.style.getOpacity(sp);
 
           if (this.trackRenderedPointIds && opacity > 0) {
-            this.renderedPointIds.add(point.id);
+            this.renderedPointIds.add(sp.id);
           }
 
           // Update only style buffers (colors, shapes, sizes)
-          const pointColors = this.style.getColors(point);
+          const pointColors = this.style.getColors(sp);
           const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-          const size = Math.sqrt(this.style.getPointSize(point)) / POINT_SIZE_DIVISOR;
-          const shapeType = this.style.getShape(point);
+          const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
+          const shapeType = this.style.getShape(sp);
           const shapeIndex = getShapeIndex(shapeType);
 
           this.colors[idx * 4] = r;
@@ -1921,23 +1974,31 @@ export class WebGLRenderer {
       }
     } else {
       // No reordering and no style updates: only update positions if needed.
-      // Iterate via sortOrder into sortedPointsRef to match the buffer order from the last rebuild.
+      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
       const order = this.sortOrder;
-      const src = this.sortedPointsRef;
+      const src = this.sortedDataRef;
       if (src) {
+        const srcOi = src.originalIndices;
+        const srcXs = src.xs;
+        const srcYs = src.ys;
         for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
-          const point = src[order[i]];
+          const slot = order[i];
+          const origIdx = srcOi ? srcOi[slot] : slot;
+          sp.id = src.proteinIds[origIdx];
+          sp.x = srcXs[slot];
+          sp.y = srcYs[slot];
+          sp.originalIndex = origIdx;
 
           if (this.trackRenderedPointIds) {
-            const opacity = this.style.getOpacity(point);
+            const opacity = this.style.getOpacity(sp);
             if (opacity > 0) {
-              this.renderedPointIds.add(point.id);
+              this.renderedPointIds.add(sp.id);
             }
           }
 
           if (updatePositions) {
-            this.dataPositions[idx * 2] = scales.x(point.x);
-            this.dataPositions[idx * 2 + 1] = scales.y(point.y);
+            this.dataPositions[idx * 2] = scales.x(srcXs[slot]);
+            this.dataPositions[idx * 2 + 1] = scales.y(srcYs[slot]);
           }
 
           idx++;

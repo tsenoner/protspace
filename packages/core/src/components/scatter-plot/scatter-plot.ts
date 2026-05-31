@@ -4,6 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import * as d3 from 'd3';
 import type {
   VisualizationData,
+  PlotData,
   PlotDataPoint,
   ScatterplotConfig,
   NumericAnnotationDisplaySettingsMap,
@@ -15,6 +16,11 @@ import {
   buildTooltipView,
   materializeVisualizationData,
   sliceAnnotationData,
+  EMPTY_PLOT_DATA,
+  clonePlotData,
+  plotDataId,
+  materializePlotDataPoint,
+  gatherPlotData,
 } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
 import { scatterplotStyles } from './scatter-plot.styles';
@@ -79,7 +85,7 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
 
   // State
-  @state() private _plotData: PlotDataPoint[] = [];
+  @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
   @state() private _tooltipData: {
     x: number;
     y: number;
@@ -129,7 +135,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _quadtreeRebuildRafId: number | null = null;
   private _hoverRaf: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
-  private _visiblePlotData: PlotDataPoint[] = [];
+  private _visiblePlotData: PlotData = EMPTY_PLOT_DATA;
+  private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
   private _virtualizationCacheKey: string | null = null;
   private _hoveredProteinId: string | null = null;
   private _cachedScales: ScalePair | null = null;
@@ -611,10 +618,10 @@ export class ProtspaceScatterplot extends LitElement {
       this._updatePlotDataCoordinates(dataToUse);
     } else {
       // Release old data references before allocating the new dataset.
-      // Without this, old and new arrays coexist in memory during processing
+      // Without this, old and new PlotData coexist in memory during processing
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
-      this._plotData = [];
-      this._visiblePlotData = [];
+      this._plotData = EMPTY_PLOT_DATA;
+      this._visiblePlotData = EMPTY_PLOT_DATA;
       this._quadtreeIndex.clear();
       this._webglRenderer?.releaseDataReferences();
 
@@ -645,7 +652,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     // Style-getters read annotation values lazily via getProteinAnnotationValues —
     // changing the selected annotation only requires re-render + cache invalidation.
-    this._plotData = [...this._plotData];
+    this._plotData = clonePlotData(this._plotData);
     this._lastDataRef = dataToUse;
     this._styleGettersCache = null;
     this._invalidateVirtualizationCache();
@@ -784,17 +791,22 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Update PlotDataPoint coordinates in-place from a new projection.
+   * Update PlotData coordinates in-place from a new projection.
    * Reads directly from VisualizationData.projections — no intermediate allocation.
-   * This avoids the ~700MB memory spike from rebuilding the full PlotDataPoint array.
+   * This avoids the ~700MB memory spike from rebuilding the full PlotData container.
    */
   private _updatePlotDataCoordinates(data: VisualizationData) {
     const projection = data.projections[this.selectedProjectionIndex];
     if (!projection) return;
 
-    for (let i = 0; i < this._plotData.length; i++) {
-      const point = this._plotData[i];
-      const coords = (projection.data[point.originalIndex] ?? [0, 0]) as
+    const pd = this._plotData;
+    // xs/ys/zs are readonly fields, but the Float32Array contents are mutable.
+    const { xs, ys, zs } = pd;
+    const oi = pd.originalIndices;
+
+    for (let i = 0; i < pd.length; i++) {
+      const origIdx = oi ? oi[i] : i;
+      const coords = (projection.data[origIdx] ?? [0, 0]) as
         | [number, number]
         | [number, number, number];
 
@@ -802,7 +814,7 @@ export class ProtspaceScatterplot extends LitElement {
       let yVal = coords[1];
 
       if (coords.length === 3) {
-        point.z = coords[2];
+        if (zs) zs[i] = coords[2];
         if (this.projectionPlane === 'xz') {
           yVal = coords[2];
         } else if (this.projectionPlane === 'yz') {
@@ -811,12 +823,12 @@ export class ProtspaceScatterplot extends LitElement {
         }
       }
 
-      point.x = xVal;
-      point.y = yVal;
+      xs[i] = xVal;
+      ys[i] = yVal;
     }
 
-    // New array reference so Lit detects the change
-    this._plotData = [...this._plotData];
+    // New container ref so Lit detects the change and extent-cache invalidates.
+    this._plotData = clonePlotData(this._plotData);
   }
 
   private _buildQuadtree() {
@@ -832,9 +844,20 @@ export class ProtspaceScatterplot extends LitElement {
       this._duplicateStacksCacheKey = null;
       return;
     }
-    const visiblePoints = this._plotData.filter((d) => this._getOpacity(d) > 0);
+    const pd = this._plotData;
+    const oi = pd.originalIndices;
+    const sp = this._scratchPoint;
+    const visibleSlots: number[] = [];
+    for (let s = 0; s < pd.length; s++) {
+      const origIdx = oi ? oi[s] : s;
+      sp.id = pd.proteinIds[origIdx];
+      sp.x = pd.xs[s];
+      sp.y = pd.ys[s];
+      sp.originalIndex = origIdx;
+      if (this._getOpacity(sp) > 0) visibleSlots.push(s);
+    }
     this._quadtreeIndex.setScales(this._scales);
-    this._quadtreeIndex.rebuild(visiblePoints);
+    this._quadtreeIndex.rebuild(pd, visibleSlots);
     // Duplicate stacks are computed lazily for the current viewport (see _ensureDuplicateStacksForViewport)
     // to keep quadtree rebuilds fast on large datasets.
     this._duplicateStacks = [];
@@ -1202,8 +1225,8 @@ export class ProtspaceScatterplot extends LitElement {
       this._lassoPath.setAttribute('d', d + ' Z');
     }
 
-    const candidates = this._quadtreeIndex.queryByPolygon(this._lassoVertices);
-    const selectedIds = candidates.filter((d) => this._getOpacity(d) > 0).map((d) => d.id);
+    const slots = this._quadtreeIndex.queryByPolygon(this._lassoVertices);
+    const selectedIds = slots.map((s) => plotDataId(this._plotData, s));
     this._commitSelection(selectedIds, () => this._clearLassoVisual());
   }
 
@@ -1219,8 +1242,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (!event.selection) return;
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
-    const candidates = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
-    const selectedIds = candidates.filter((d) => this._getOpacity(d) > 0).map((d) => d.id);
+    const slots = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
+    const selectedIds = slots.map((s) => plotDataId(this._plotData, s));
     this._commitSelection(selectedIds, () => {
       if (this._brush && this._brushGroup) {
         this._brushGroup.call(this._brush.move, null);
@@ -1271,13 +1294,13 @@ export class ProtspaceScatterplot extends LitElement {
   private _renderWebGL(trigger: RenderWebGLTrigger = 'unknown') {
     const perfToken = this._webglRenderPerf.start(trigger);
 
-    const points = this._getPointsForRendering();
+    const pd = this._getPointsForRendering();
 
-    this._webglRenderer!.setTrackRenderedPointIds(points.length > MAX_POINTS_DIRECT_RENDER);
-    this._webglRenderer!.render(points);
+    this._webglRenderer!.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
+    this._webglRenderer!.render(pd);
     this._mainGroup?.selectAll('.protein-point').remove();
 
-    this._webglRenderPerf.stop(perfToken, points.length);
+    this._webglRenderPerf.stop(perfToken, pd.length);
   }
 
   public async runWebGLRenderPerfMeasurements(
@@ -1287,10 +1310,10 @@ export class ProtspaceScatterplot extends LitElement {
     return this._webglRenderPerf.runWebGLRenderPerfMeasurements(iterations, options);
   }
 
-  private _getPointsForRendering(): PlotDataPoint[] {
+  private _getPointsForRendering(): PlotData {
     if (!this._scales || this._plotData.length === 0) {
-      this._visiblePlotData = [];
-      return [];
+      this._visiblePlotData = EMPTY_PLOT_DATA;
+      return EMPTY_PLOT_DATA;
     }
 
     // For smaller datasets, pass all points - renderer handles display mode
@@ -1316,8 +1339,8 @@ export class ProtspaceScatterplot extends LitElement {
 
     const cacheKey = `${Math.round(transform.x)}|${Math.round(transform.y)}|${transform.k.toFixed(3)}|${config.width}|${config.height}`;
     if (this._virtualizationCacheKey !== cacheKey) {
-      this._visiblePlotData = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
-
+      const slots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
+      this._visiblePlotData = gatherPlotData(this._plotData, slots);
       this._virtualizationCacheKey = cacheKey;
     }
 
@@ -1327,6 +1350,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _invalidateVirtualizationCache() {
     this._virtualizationCacheKey = null;
     this._visiblePlotData = this._plotData;
+    // Reset visible data to full dataset on any invalidation.
   }
 
   private _updateSelectionOverlays(options: { duplicateImmediate?: boolean } = {}) {
@@ -1387,8 +1411,8 @@ export class ProtspaceScatterplot extends LitElement {
     this._duplicateStacksComputing = true;
     const jobId = ++this._duplicateStacksComputeJobId;
 
-    // Query only the points currently in (or near) the viewport. This is the key perf win.
-    const candidates = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
+    // Query only the slots currently in (or near) the viewport. This is the key perf win.
+    const candidateSlots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
     const scales = this._scales;
     if (!scales) {
       this._duplicateStacksComputing = false;
@@ -1404,9 +1428,10 @@ export class ProtspaceScatterplot extends LitElement {
     let idx = 0;
     const step = () => {
       if (jobId !== this._duplicateStacksComputeJobId) return; // cancelled
-      const end = Math.min(candidates.length, idx + DUPLICATE_STACK_COMPUTE_CHUNK_SIZE);
+      const end = Math.min(candidateSlots.length, idx + DUPLICATE_STACK_COMPUTE_CHUNK_SIZE);
       for (; idx < end; idx++) {
-        const p = candidates[idx];
+        const slot = candidateSlots[idx];
+        const p = materializePlotDataPoint(this._plotData, slot);
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
 
         // Group only points that share coords in the *current* projection
@@ -1429,7 +1454,7 @@ export class ProtspaceScatterplot extends LitElement {
         idToKey.set(p.id, key);
       }
 
-      if (idx < candidates.length) {
+      if (idx < candidateSlots.length) {
         requestAnimationFrame(step);
         return;
       }
@@ -1943,11 +1968,13 @@ export class ProtspaceScatterplot extends LitElement {
     const dataX = (mouseX - this._transform.x) / this._transform.k;
     const dataY = (mouseY - this._transform.y) / this._transform.k;
 
-    // Find nearest point using spatial index
+    // Find nearest slot using spatial index
     const searchRadius = 15 / this._transform.k; // Search radius adjusted for zoom
-    const nearestPoint = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
 
-    if (nearestPoint) {
+    if (nearestSlot >= 0) {
+      const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
+
       // Don't hover hidden points (opacity=0)
       if (this._getOpacity(nearestPoint) === 0) {
         this._clearHoverState();
@@ -2003,11 +2030,13 @@ export class ProtspaceScatterplot extends LitElement {
     const dataX = (mouseX - this._transform.x) / this._transform.k;
     const dataY = (mouseY - this._transform.y) / this._transform.k;
 
-    // Find nearest point using spatial index
+    // Find nearest slot using spatial index
     const searchRadius = 15 / this._transform.k;
-    const nearestPoint = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
 
-    if (nearestPoint) {
+    if (nearestSlot >= 0) {
+      const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
+
       // Don't click hidden points (opacity=0)
       if (this._getOpacity(nearestPoint) === 0) {
         return;
@@ -2214,7 +2243,9 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     // Validate selected IDs against current plot data
-    const currentProteinIds = new Set(this._plotData.map((point) => point.id));
+    const currentProteinIds = new Set(
+      Array.from({ length: this._plotData.length }, (_, s) => plotDataId(this._plotData, s)),
+    );
     const validSelectedIds = this.selectedProteinIds.filter((id) => currentProteinIds.has(id));
 
     if (validSelectedIds.length === 0) {
@@ -2392,7 +2423,9 @@ export class ProtspaceScatterplot extends LitElement {
 
     // If we're in isolation mode, return filtered data based on current plot data
     if (this._isolationMode && this._plotData.length > 0) {
-      const currentProteinIds = this._plotData.map((point) => point.id);
+      const currentProteinIds = Array.from({ length: this._plotData.length }, (_, s) =>
+        plotDataId(this._plotData, s),
+      );
       const currentProteinIdsSet = new Set(currentProteinIds);
       const keptIndices: number[] = [];
       currentDisplayData.protein_ids.forEach((proteinId, index) => {

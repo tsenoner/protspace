@@ -1,5 +1,6 @@
 import * as d3 from 'd3';
-import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
+import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
+import { materializePlotDataPoint } from '@protspace/utils';
 
 const PERF_MEASURE_ITERATIONS = 10;
 const PERF_MEASURE_ZOOM_FACTOR = 3;
@@ -552,17 +553,15 @@ export class WebglRenderPerfRunner {
     const height = host._mergedConfig?.height as number;
     const transform = (host._transform as { x: number; y: number; k: number }) ?? d3.zoomIdentity;
 
-    const getPointsForRendering = host._getPointsForRendering as
-      | (() => PlotDataPoint[])
-      | undefined;
-    const candidates = getPointsForRendering
+    const getPointsForRendering = host._getPointsForRendering as (() => PlotData) | undefined;
+    const candidates: PlotData = getPointsForRendering
       ? getPointsForRendering.call(host)
-      : (host._plotData as PlotDataPoint[]);
+      : (host._plotData as PlotData);
     const getOpacity = host._getOpacity as ((p: PlotDataPoint) => number) | undefined;
 
     const clickable: PlotDataPoint[] = [];
     for (let i = 0; i < candidates.length && clickable.length < 2; i++) {
-      const p = candidates[i];
+      const p = materializePlotDataPoint(candidates, i);
       if (getOpacity && getOpacity.call(host, p) === 0) continue;
       const px = scales.x(p.x);
       const py = scales.y(p.y);

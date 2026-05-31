@@ -1,9 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { DataProcessor } from './data-processor';
-import type { VisualizationData, PlotDataPoint } from '../types';
+import { materializePlotDataPoint } from './plot-data';
+import type { VisualizationData, PlotData } from '../types';
+
+// Helper to build a minimal PlotData literal for createScales tests
+function makePlotData(xs: number[], ys: number[], proteinIds?: string[]): PlotData {
+  return {
+    length: xs.length,
+    xs: new Float32Array(xs),
+    ys: new Float32Array(ys),
+    zs: null,
+    originalIndices: null,
+    proteinIds: proteinIds ?? xs.map((_, i) => `p${i}`),
+  };
+}
 
 describe('DataProcessor.processVisualizationData', () => {
-  it('returns one bare PlotDataPoint per protein for 2D coordinates', () => {
+  it('returns correct SoA shape for 2D coordinates', () => {
     const data: VisualizationData = {
       protein_ids: ['p0', 'p1'],
       projections: [
@@ -19,9 +32,12 @@ describe('DataProcessor.processVisualizationData', () => {
       annotation_data: {},
     };
     const result = DataProcessor.processVisualizationData(data, 0);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({ id: 'p0', x: 1, y: 2, originalIndex: 0 });
-    expect(result[1]).toEqual({ id: 'p1', x: 3, y: 4, originalIndex: 1 });
+    expect(result.length).toBe(2);
+    expect(Array.from(result.xs)).toEqual([1, 3]);
+    expect(Array.from(result.ys)).toEqual([2, 4]);
+    expect(result.zs).toBeNull();
+    expect(result.originalIndices).toBeNull();
+    expect(result.proteinIds).toBe(data.protein_ids);
   });
 
   it('preserves z coordinate for 3D projections', () => {
@@ -32,7 +48,12 @@ describe('DataProcessor.processVisualizationData', () => {
       annotation_data: {},
     };
     const result = DataProcessor.processVisualizationData(data, 0);
-    expect(result[0]).toEqual({ id: 'p0', x: 1, y: 2, z: 3, originalIndex: 0 });
+    expect(result.length).toBe(1);
+    expect(result.xs[0]).toBe(1);
+    expect(result.ys[0]).toBe(2);
+    expect(result.zs).not.toBeNull();
+    expect(result.zs![0]).toBe(3);
+    expect(result.originalIndices).toBeNull();
   });
 
   it('maps coordinates to xz plane when projectionPlane is "xz"', () => {
@@ -43,7 +64,9 @@ describe('DataProcessor.processVisualizationData', () => {
       annotation_data: {},
     };
     const result = DataProcessor.processVisualizationData(data, 0, false, undefined, 'xz');
-    expect(result[0]).toEqual({ id: 'p0', x: 10, y: 30, z: 30, originalIndex: 0 });
+    expect(result.xs[0]).toBe(10);
+    expect(result.ys[0]).toBe(30);
+    expect(result.zs![0]).toBe(30);
   });
 
   it('maps coordinates to yz plane when projectionPlane is "yz"', () => {
@@ -54,64 +77,24 @@ describe('DataProcessor.processVisualizationData', () => {
       annotation_data: {},
     };
     const result = DataProcessor.processVisualizationData(data, 0, false, undefined, 'yz');
-    expect(result[0]).toEqual({ id: 'p0', x: 20, y: 30, z: 30, originalIndex: 0 });
+    expect(result.xs[0]).toBe(20);
+    expect(result.ys[0]).toBe(30);
+    expect(result.zs![0]).toBe(30);
   });
 
-  it('returns empty array when projection index is out of range', () => {
+  it('returns empty PlotData when projection index is out of range', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
       projections: [],
       annotations: {},
       annotation_data: {},
     };
-    expect(DataProcessor.processVisualizationData(data, 0)).toEqual([]);
+    const result = DataProcessor.processVisualizationData(data, 0);
+    expect(result.length).toBe(0);
+    expect(result.xs.length).toBe(0);
   });
 
-  it('filters points using isolation history', () => {
-    const data: VisualizationData = {
-      protein_ids: ['p0', 'p1', 'p2'],
-      projections: [
-        {
-          name: 't',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-          ],
-        },
-      ],
-      annotations: {},
-      annotation_data: {},
-    };
-    const result = DataProcessor.processVisualizationData(data, 0, true, [['p0', 'p2']]);
-    expect(result.map((p) => p.id)).toEqual(['p0', 'p2']);
-  });
-
-  it('applies multiple isolation history layers (intersection)', () => {
-    const data: VisualizationData = {
-      protein_ids: ['p0', 'p1', 'p2', 'p3'],
-      projections: [
-        {
-          name: 't',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-            [3, 3],
-          ],
-        },
-      ],
-      annotations: {},
-      annotation_data: {},
-    };
-    const result = DataProcessor.processVisualizationData(data, 0, true, [
-      ['p0', 'p1', 'p2'],
-      ['p1', 'p2', 'p3'],
-    ]);
-    expect(result.map((p) => p.id)).toEqual(['p1', 'p2']);
-  });
-
-  it('does not materialize annotation Records on points', () => {
+  it('does not materialize annotation Records on slots', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
       projections: [{ name: 't', data: [[0, 0]] }],
@@ -126,8 +109,10 @@ describe('DataProcessor.processVisualizationData', () => {
       annotation_data: { species: Int32Array.of(0) },
     };
     const result = DataProcessor.processVisualizationData(data, 0);
-    expect(result).toHaveLength(1);
-    expect(Object.keys(result[0]).sort()).toEqual(['id', 'originalIndex', 'x', 'y']);
+    expect(result.length).toBe(1);
+    // SoA container only has the typed-array fields
+    expect(result.xs[0]).toBe(0);
+    expect(result.ys[0]).toBe(0);
   });
 });
 
@@ -151,13 +136,15 @@ describe('DataProcessor.processVisualizationData — isolation (Set-based, MODEL
 
   it('single-layer isolation keeps only ids present in that layer', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, true, [['a', 'c']]);
-    expect(result.map((p) => p.id)).toEqual(['a', 'c']);
+    expect(result.length).toBe(2);
+    expect(result.proteinIds[result.originalIndices![0]]).toBe('a');
+    expect(result.proteinIds[result.originalIndices![1]]).toBe('c');
   });
 
   it('single-layer isolation excludes ids absent from the layer', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, true, [['b']]);
-    expect(result.map((p) => p.id)).toEqual(['b']);
-    expect(result.find((p) => p.id === 'a')).toBeUndefined();
+    expect(result.length).toBe(1);
+    expect(result.proteinIds[result.originalIndices![0]]).toBe('b');
   });
 
   it('multi-layer isolation returns intersection (points in ALL layers only)', () => {
@@ -166,7 +153,12 @@ describe('DataProcessor.processVisualizationData — isolation (Set-based, MODEL
       ['a', 'b', 'c'],
       ['b', 'c', 'd'],
     ]);
-    expect(result.map((p) => p.id)).toEqual(['b', 'c']);
+    expect(result.length).toBe(2);
+    const ids = Array.from(
+      { length: result.length },
+      (_, k) => result.proteinIds[result.originalIndices![k]],
+    );
+    expect(ids).toEqual(['b', 'c']);
   });
 
   it('point in first layer but not second is removed', () => {
@@ -175,41 +167,114 @@ describe('DataProcessor.processVisualizationData — isolation (Set-based, MODEL
       ['a', 'b'],
       ['b', 'c'],
     ]);
-    expect(result.find((p) => p.id === 'a')).toBeUndefined();
-    expect(result.map((p) => p.id)).toEqual(['b']);
+    expect(result.length).toBe(1);
+    expect(result.proteinIds[result.originalIndices![0]]).toBe('b');
   });
 
   it('empty isolation layer returns empty result', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, true, [[]]);
-    expect(result).toHaveLength(0);
+    expect(result.length).toBe(0);
   });
 
   it('empty isolation layer in second position returns empty result', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, true, [['a', 'b'], []]);
-    expect(result).toHaveLength(0);
+    expect(result.length).toBe(0);
   });
 
   it('isolationMode false returns all processed points unchanged', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, false, [['a']]);
-    expect(result).toHaveLength(4);
+    expect(result.length).toBe(4);
+    expect(result.originalIndices).toBeNull();
   });
 
   it('empty isolationHistory returns all processed points unchanged', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, true, []);
-    expect(result).toHaveLength(4);
+    expect(result.length).toBe(4);
+    expect(result.originalIndices).toBeNull();
   });
 
   it('no isolationHistory argument returns all processed points unchanged', () => {
     const result = DataProcessor.processVisualizationData(fixture, 0, true, undefined);
-    expect(result).toHaveLength(4);
+    expect(result.length).toBe(4);
+    expect(result.originalIndices).toBeNull();
   });
 
-  it('surviving points preserve originalIndex (index in protein_ids, not filtered position)', () => {
+  it('surviving slots preserve originalIndex (protein index in protein_ids)', () => {
     // 'c' is at index 2 and 'd' at index 3 in protein_ids
     const result = DataProcessor.processVisualizationData(fixture, 0, true, [['c', 'd']]);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ id: 'c', originalIndex: 2, x: 5, y: 6 });
-    expect(result[1]).toMatchObject({ id: 'd', originalIndex: 3, x: 7, y: 8 });
+    expect(result.length).toBe(2);
+    expect(result.originalIndices![0]).toBe(2);
+    expect(result.originalIndices![1]).toBe(3);
+    expect(result.xs[0]).toBe(5);
+    expect(result.ys[0]).toBe(6);
+    expect(result.xs[1]).toBe(7);
+    expect(result.ys[1]).toBe(8);
+  });
+});
+
+describe('materializePlotDataPoint', () => {
+  it('reconstructs {id,x,y,originalIndex} for a non-isolated (identity) PlotData', () => {
+    const data: VisualizationData = {
+      protein_ids: ['p0', 'p1'],
+      projections: [
+        {
+          name: 't',
+          data: [
+            [1, 2],
+            [3, 4],
+          ],
+        },
+      ],
+      annotations: {},
+      annotation_data: {},
+    };
+    const pd = DataProcessor.processVisualizationData(data, 0);
+    const p0 = materializePlotDataPoint(pd, 0);
+    expect(p0).toEqual({ id: 'p0', x: 1, y: 2, originalIndex: 0 });
+    const p1 = materializePlotDataPoint(pd, 1);
+    expect(p1).toEqual({ id: 'p1', x: 3, y: 4, originalIndex: 1 });
+  });
+
+  it('reconstructs correct originalIndex for an isolated PlotData', () => {
+    // protein_ids = [a, b, c, d]; isolate [c, d] → slot 0 = protein index 2 (c), slot 1 = protein index 3 (d)
+    const data: VisualizationData = {
+      protein_ids: ['a', 'b', 'c', 'd'],
+      projections: [
+        {
+          name: 't',
+          data: [
+            [1, 2],
+            [3, 4],
+            [5, 6],
+            [7, 8],
+          ],
+        },
+      ],
+      annotations: {},
+      annotation_data: {},
+    };
+    const pd = DataProcessor.processVisualizationData(data, 0, true, [['c', 'd']]);
+    const slot0 = materializePlotDataPoint(pd, 0);
+    expect(slot0.id).toBe('c');
+    expect(slot0.originalIndex).toBe(2);
+    expect(slot0.x).toBe(5);
+    expect(slot0.y).toBe(6);
+
+    const slot1 = materializePlotDataPoint(pd, 1);
+    expect(slot1.id).toBe('d');
+    expect(slot1.originalIndex).toBe(3);
+  });
+
+  it('includes z field for 3D PlotData', () => {
+    const data: VisualizationData = {
+      protein_ids: ['p0'],
+      projections: [{ name: 't', data: [[1, 2, 3]] }],
+      annotations: {},
+      annotation_data: {},
+    };
+    const pd = DataProcessor.processVisualizationData(data, 0);
+    const p = materializePlotDataPoint(pd, 0);
+    expect(p.z).toBe(3);
   });
 });
 
@@ -217,16 +282,13 @@ describe('DataProcessor.createScales', () => {
   const margin = { top: 10, right: 20, bottom: 30, left: 40 };
 
   it('returns null for empty plotData', () => {
-    const result = DataProcessor.createScales([], 800, 600, margin);
+    const result = DataProcessor.createScales(makePlotData([], []), 800, 600, margin);
     expect(result).toBeNull();
   });
 
   it('returns correct domain and range for a known fixture', () => {
     // x in [0, 10], y in [-5, 5]
-    const plotData: PlotDataPoint[] = [
-      { id: 'a', x: 0, y: -5, originalIndex: 0 },
-      { id: 'b', x: 10, y: 5, originalIndex: 1 },
-    ];
+    const plotData = makePlotData([0, 10], [-5, 5]);
     const width = 800;
     const height = 600;
     const scales = DataProcessor.createScales(plotData, width, height, margin);
@@ -256,7 +318,7 @@ describe('DataProcessor.createScales', () => {
   });
 
   it('handles single point (min === max) — zero padding, domain equals the point value', () => {
-    const plotData: PlotDataPoint[] = [{ id: 'only', x: 7, y: 3, originalIndex: 0 }];
+    const plotData = makePlotData([7], [3]);
     const scales = DataProcessor.createScales(plotData, 800, 600, margin);
     expect(scales).not.toBeNull();
     // padding = abs(7 - 7) * 0.05 = 0
@@ -265,11 +327,8 @@ describe('DataProcessor.createScales', () => {
     // construction must not throw — scale still returned
   });
 
-  it('RESIZE path: same array reference → domain identical, range reflects new dimensions', () => {
-    const plotData: PlotDataPoint[] = [
-      { id: 'a', x: 0, y: 0, originalIndex: 0 },
-      { id: 'b', x: 10, y: 10, originalIndex: 1 },
-    ];
+  it('RESIZE path: same PlotData reference → domain identical, range reflects new dimensions', () => {
+    const plotData = makePlotData([0, 10], [0, 10]);
     const margin1 = { top: 10, right: 20, bottom: 30, left: 40 };
 
     // First call: 800×600
@@ -278,7 +337,7 @@ describe('DataProcessor.createScales', () => {
     const domain1X = scales1!.x.domain();
     const domain1Y = scales1!.y.domain();
 
-    // Second call: SAME array, different dimensions (simulates resize)
+    // Second call: SAME PlotData ref, different dimensions (simulates resize)
     const scales2 = DataProcessor.createScales(plotData, 1200, 900, margin1);
     expect(scales2).not.toBeNull();
     const domain2X = scales2!.x.domain();
@@ -295,15 +354,9 @@ describe('DataProcessor.createScales', () => {
     expect(scales2!.y.range()).toEqual([900 - margin1.bottom, margin1.top]);
   });
 
-  it('different plotData arrays with different coordinate ranges → different domains', () => {
-    const plotData1: PlotDataPoint[] = [
-      { id: 'a', x: 0, y: 0, originalIndex: 0 },
-      { id: 'b', x: 10, y: 10, originalIndex: 1 },
-    ];
-    const plotData2: PlotDataPoint[] = [
-      { id: 'c', x: 100, y: 200, originalIndex: 0 },
-      { id: 'd', x: 300, y: 400, originalIndex: 1 },
-    ];
+  it('different PlotData objects with different coordinate ranges → different domains', () => {
+    const plotData1 = makePlotData([0, 10], [0, 10]);
+    const plotData2 = makePlotData([100, 300], [200, 400]);
     const width = 800;
     const height = 600;
 
@@ -313,7 +366,7 @@ describe('DataProcessor.createScales', () => {
     expect(scales1).not.toBeNull();
     expect(scales2).not.toBeNull();
 
-    // Domains must differ — separate arrays, separate cache entries
+    // Domains must differ — separate PlotData objects, separate cache entries
     expect(scales1!.x.domain()).not.toEqual(scales2!.x.domain());
     expect(scales1!.y.domain()).not.toEqual(scales2!.y.domain());
 

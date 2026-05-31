@@ -1,11 +1,11 @@
-import type { VisualizationData, PlotDataPoint } from '../types.js';
+import type { VisualizationData, PlotData } from '../types.js';
+import { EMPTY_PLOT_DATA } from './plot-data.js';
 import * as d3 from 'd3';
 
-// Memoize x/y extents per plotData array reference. Resizes pass the same array (extents
-// unchanged) and reuse the cached scan; any data/projection/plane change builds a NEW array
-// (fresh point objects), correctly missing the cache. Point x/y are never mutated in place
-// for a given array reference, so cached extents cannot go stale.
-const extentCache = new WeakMap<PlotDataPoint[], { x: [number, number]; y: [number, number] }>();
+// Memoize x/y extents per PlotData object reference. Resizes pass the same PlotData
+// (extents unchanged) and reuse the cached scan; any data/projection/plane change builds
+// a NEW PlotData via clonePlotData, correctly missing the cache.
+const extentCache = new WeakMap<PlotData, { x: [number, number]; y: [number, number] }>();
 
 export class DataProcessor {
   static processVisualizationData(
@@ -14,42 +14,90 @@ export class DataProcessor {
     isolationMode: boolean = false,
     isolationHistory?: string[][],
     projectionPlane: 'xy' | 'xz' | 'yz' = 'xy',
-  ): PlotDataPoint[] {
-    if (!data.projections[projectionIndex]) return [];
-
-    const processedData: PlotDataPoint[] = data.protein_ids.map((id, index) => {
-      const coordinates = (data.projections[projectionIndex].data[index] ?? [0, 0]) as
-        | [number, number]
-        | [number, number, number];
-
-      let xVal = coordinates[0];
-      let yVal = coordinates[1];
-      if (coordinates.length === 3) {
-        if (projectionPlane === 'xz') {
-          yVal = coordinates[2];
-        } else if (projectionPlane === 'yz') {
-          xVal = coordinates[1];
-          yVal = coordinates[2];
-        }
-        return { id, x: xVal, y: yVal, z: coordinates[2], originalIndex: index };
-      }
-      return { id, x: xVal, y: yVal, originalIndex: index };
-    });
-
-    if (isolationMode && isolationHistory && isolationHistory.length > 0) {
-      let filteredData = processedData;
-      for (let i = 0; i < isolationHistory.length; i++) {
-        const layerSet = new Set(isolationHistory[i]);
-        filteredData = filteredData.filter((p) => layerSet.has(p.id));
-      }
-      return filteredData;
+  ): PlotData {
+    if (!data.projections[projectionIndex]) {
+      return { ...EMPTY_PLOT_DATA, proteinIds: data.protein_ids };
     }
 
-    return processedData;
+    const projData = data.projections[projectionIndex].data;
+    const proteinIds = data.protein_ids;
+    const n = proteinIds.length;
+
+    // Determine if any point is 3D
+    const is3D = projData.some((c) => c != null && c.length === 3);
+
+    if (isolationMode && isolationHistory && isolationHistory.length > 0) {
+      // Two-pass isolation: find surviving protein indices (those in EVERY layer set).
+      const layerSets = isolationHistory.map((layer) => new Set(layer));
+      const survivors: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const id = proteinIds[i];
+        if (layerSets.every((s) => s.has(id))) {
+          survivors.push(i);
+        }
+      }
+
+      const count = survivors.length;
+      const xs = new Float32Array(count);
+      const ys = new Float32Array(count);
+      const zs = is3D ? new Float32Array(count) : null;
+      const originalIndices = new Int32Array(count);
+
+      for (let k = 0; k < count; k++) {
+        const origIdx = survivors[k];
+        const coords = (projData[origIdx] ?? [0, 0]) as [number, number] | [number, number, number];
+
+        let xVal = coords[0];
+        let yVal = coords[1];
+
+        if (coords.length === 3) {
+          if (zs) zs[k] = coords[2];
+          if (projectionPlane === 'xz') {
+            yVal = coords[2];
+          } else if (projectionPlane === 'yz') {
+            xVal = coords[1];
+            yVal = coords[2];
+          }
+        }
+
+        xs[k] = xVal;
+        ys[k] = yVal;
+        originalIndices[k] = origIdx;
+      }
+
+      return { length: count, xs, ys, zs, originalIndices, proteinIds };
+    }
+
+    // Non-isolated: identity mapping (originalIndices = null).
+    const xs = new Float32Array(n);
+    const ys = new Float32Array(n);
+    const zs = is3D ? new Float32Array(n) : null;
+
+    for (let i = 0; i < n; i++) {
+      const coords = (projData[i] ?? [0, 0]) as [number, number] | [number, number, number];
+
+      let xVal = coords[0];
+      let yVal = coords[1];
+
+      if (coords.length === 3) {
+        if (zs) zs[i] = coords[2];
+        if (projectionPlane === 'xz') {
+          yVal = coords[2];
+        } else if (projectionPlane === 'yz') {
+          xVal = coords[1];
+          yVal = coords[2];
+        }
+      }
+
+      xs[i] = xVal;
+      ys[i] = yVal;
+    }
+
+    return { length: n, xs, ys, zs, originalIndices: null, proteinIds };
   }
 
   static createScales(
-    plotData: PlotDataPoint[],
+    plotData: PlotData,
     width: number,
     height: number,
     margin: { top: number; right: number; bottom: number; left: number },
@@ -58,9 +106,22 @@ export class DataProcessor {
 
     let extents = extentCache.get(plotData);
     if (!extents) {
+      let xMin = Infinity,
+        xMax = -Infinity,
+        yMin = Infinity,
+        yMax = -Infinity;
+      const { xs, ys, length } = plotData;
+      for (let i = 0; i < length; i++) {
+        const x = xs[i];
+        const y = ys[i];
+        if (x < xMin) xMin = x;
+        if (x > xMax) xMax = x;
+        if (y < yMin) yMin = y;
+        if (y > yMax) yMax = y;
+      }
       extents = {
-        x: d3.extent(plotData, (d) => d.x) as [number, number],
-        y: d3.extent(plotData, (d) => d.y) as [number, number],
+        x: [xMin, xMax],
+        y: [yMin, yMax],
       };
       extentCache.set(plotData, extents);
     }

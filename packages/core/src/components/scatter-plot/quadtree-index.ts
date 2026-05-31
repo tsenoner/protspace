@@ -1,14 +1,14 @@
 import * as d3 from 'd3';
-import type { PlotDataPoint } from '@protspace/utils';
+import type { PlotData } from '@protspace/utils';
 
-type IndexedPoint = {
-  point: PlotDataPoint;
+type IndexedSlot = {
+  slot: number;
   px: number;
   py: number;
 };
 
 export class QuadtreeIndex {
-  private qt: d3.Quadtree<IndexedPoint> | null = null;
+  private qt: d3.Quadtree<IndexedSlot> | null = null;
   private scales: {
     x: d3.ScaleLinear<number, number>;
     y: d3.ScaleLinear<number, number>;
@@ -23,33 +23,35 @@ export class QuadtreeIndex {
     this.scales = scales;
   }
 
-  rebuild(plotData: PlotDataPoint[]) {
-    if (!this.scales || plotData.length === 0) {
+  rebuild(pd: PlotData, slots: ArrayLike<number>) {
+    if (!this.scales || slots.length === 0) {
       this.qt = null;
       return;
     }
 
     // Precompute screen-space coordinates once at rebuild time.
     // This makes query/hit-testing significantly cheaper, because we avoid calling
-    // scale functions for every candidate point during interactions.
+    // scale functions for every candidate slot during interactions.
     const sx = this.scales.x;
     const sy = this.scales.y;
-    const indexed: IndexedPoint[] = new Array(plotData.length);
-    for (let i = 0; i < plotData.length; i++) {
-      const p = plotData[i];
-      indexed[i] = { point: p, px: sx(p.x), py: sy(p.y) };
+    const n = slots.length;
+    const indexed: IndexedSlot[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const slot = slots[i];
+      indexed[i] = { slot, px: sx(pd.xs[slot]), py: sy(pd.ys[slot]) };
     }
 
     this.qt = d3
-      .quadtree<IndexedPoint>()
+      .quadtree<IndexedSlot>()
       .x((d) => d.px)
       .y((d) => d.py)
       .addAll(indexed);
   }
 
-  findNearest(screenX: number, screenY: number, radius: number): PlotDataPoint | undefined {
-    if (!this.qt) return undefined;
-    return this.qt.find(screenX, screenY, radius)?.point;
+  findNearest(screenX: number, screenY: number, radius: number): number {
+    if (!this.qt) return -1;
+    const found = this.qt.find(screenX, screenY, radius);
+    return found ? found.slot : -1;
   }
 
   hasTree(): boolean {
@@ -60,21 +62,21 @@ export class QuadtreeIndex {
     this.qt = null;
   }
 
-  queryByPixels(minX: number, minY: number, maxX: number, maxY: number): PlotDataPoint[] {
+  queryByPixels(minX: number, minY: number, maxX: number, maxY: number): number[] {
     if (!this.qt) {
       return [];
     }
 
-    const results: PlotDataPoint[] = [];
+    const results: number[] = [];
     this.qt.visit((node, x0, y0, x1, y1) => {
       if (!node.length) {
-        let leaf: d3.QuadtreeLeaf<IndexedPoint> | undefined = node as d3.QuadtreeLeaf<IndexedPoint>;
+        let leaf: d3.QuadtreeLeaf<IndexedSlot> | undefined = node as d3.QuadtreeLeaf<IndexedSlot>;
         while (leaf) {
           const ip = leaf.data;
           if (ip.px >= minX && ip.px <= maxX && ip.py >= minY && ip.py <= maxY) {
-            results.push(ip.point);
+            results.push(ip.slot);
           }
-          leaf = leaf.next as d3.QuadtreeLeaf<IndexedPoint> | undefined;
+          leaf = leaf.next as d3.QuadtreeLeaf<IndexedSlot> | undefined;
         }
       }
       return x0 > maxX || x1 < minX || y0 > maxY || y1 < minY;
@@ -83,7 +85,7 @@ export class QuadtreeIndex {
     return results;
   }
 
-  queryByPolygon(vertices: ReadonlyArray<[number, number]>): PlotDataPoint[] {
+  queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[] {
     if (!this.qt || vertices.length < 3) return [];
 
     // Compute AABB of polygon for fast quadtree pruning
@@ -98,12 +100,12 @@ export class QuadtreeIndex {
       if (y > maxY) maxY = y;
     }
 
-    const results: PlotDataPoint[] = [];
+    const results: number[] = [];
     this.qt.visit((node, x0, y0, x1, y1) => {
       // Prune quadtree nodes outside the polygon's bounding box
       if (x0 > maxX || x1 < minX || y0 > maxY || y1 < minY) return true;
       if (!node.length) {
-        let leaf: d3.QuadtreeLeaf<IndexedPoint> | undefined = node as d3.QuadtreeLeaf<IndexedPoint>;
+        let leaf: d3.QuadtreeLeaf<IndexedSlot> | undefined = node as d3.QuadtreeLeaf<IndexedSlot>;
         while (leaf) {
           const ip = leaf.data;
           if (
@@ -113,9 +115,9 @@ export class QuadtreeIndex {
             ip.py <= maxY &&
             pointInPolygon(ip.px, ip.py, vertices)
           ) {
-            results.push(ip.point);
+            results.push(ip.slot);
           }
-          leaf = leaf.next as d3.QuadtreeLeaf<IndexedPoint> | undefined;
+          leaf = leaf.next as d3.QuadtreeLeaf<IndexedSlot> | undefined;
         }
       }
       return false;

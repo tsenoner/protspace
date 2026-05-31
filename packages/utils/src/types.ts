@@ -67,6 +67,30 @@ export interface PlotDataPoint {
   originalIndex: number;
 }
 
+/**
+ * Struct-of-Arrays container for the plotted points. Replaces PlotDataPoint[] as the
+ * bulk store — eliminates the per-point boxed { id, x, y, z?, originalIndex } objects.
+ * Individual PlotDataPoint objects are materialized on demand at interaction boundaries
+ * (hover/click/tooltip) via materializePlotDataPoint().
+ */
+export interface PlotData {
+  /** Number of plotted points (slots). */
+  readonly length: number;
+  /** X coordinate per slot (already plane-mapped for 3D projections). */
+  readonly xs: Float32Array;
+  /** Y coordinate per slot (already plane-mapped for 3D projections). */
+  readonly ys: Float32Array;
+  /** Raw z (coords[2]) per slot, or null for 2D projections. */
+  readonly zs: Float32Array | null;
+  /**
+   * Maps slot -> protein index (into proteinIds / VisualizationData.annotation_data).
+   * `null` means identity: slot i is protein i — the common non-isolated case.
+   */
+  readonly originalIndices: Int32Array | null;
+  /** Shared reference to VisualizationData.protein_ids. */
+  readonly proteinIds: readonly string[];
+}
+
 export interface StyleForAnnotation {
   color: string;
   shape: string;
