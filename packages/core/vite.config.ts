@@ -13,6 +13,9 @@ export default defineConfig({
       copyDtsFiles: true,
     }),
   ],
+  worker: {
+    format: 'es',
+  },
   build: {
     lib: {
       entry: {
