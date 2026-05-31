@@ -20,6 +20,7 @@ import {
 } from '../types';
 import { resolveColor } from '../color-utils';
 import { createProgramFromSources } from '../shader-utils';
+import { fillLabelColorTexels } from './label-texture-utils';
 
 // ============================================================================
 // Shader Sources
@@ -270,6 +271,7 @@ export class WebGLRenderer {
 
   // State
   private capacity = 0;
+  private labelTextureInitialized = false;
 
   private currentPointCount = 0;
   private positionsDirty = true;
@@ -1276,19 +1278,8 @@ export class WebGLRenderer {
       labelCounts[idx] = pointColors.length;
       shapes[idx] = shapeIndex;
 
-      // Fill label color texture data
-      for (let j = 0; j < MAX_LABELS; j++) {
-        if (j < pointColors.length) {
-          const [lr, lg, lb] = resolveColor(pointColors[j]);
-          const texIndex = (idx * MAX_LABELS + j) * 4;
-          if (texIndex < labelColorData.length) {
-            labelColorData[texIndex] = Math.round(lr * 255);
-            labelColorData[texIndex + 1] = Math.round(lg * 255);
-            labelColorData[texIndex + 2] = Math.round(lb * 255);
-            labelColorData[texIndex + 3] = 255;
-          }
-        }
-      }
+      // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
+      fillLabelColorTexels(labelColorData, idx, pointColors, MAX_LABELS);
 
       idx++;
     }
@@ -1495,6 +1486,7 @@ export class WebGLRenderer {
     this.shapeBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
+    this.labelTextureInitialized = false;
 
     this.createPointVAO();
 
@@ -1564,6 +1556,7 @@ export class WebGLRenderer {
     this.labelCountBuffer = null;
     this.shapeBuffer = null;
     this.labelColorTexture = null;
+    this.labelTextureInitialized = false;
     this.gammaPipelineAvailable = true;
     this.warnedGammaFallback = false;
     this.buffersInitialized = false;
@@ -1874,20 +1867,8 @@ export class WebGLRenderer {
         this.labelCounts[idx] = pointColors.length;
         this.shapes[idx] = shapeIndex;
 
-        // Fill label color texture data
-        for (let j = 0; j < MAX_LABELS; j++) {
-          if (j < pointColors.length) {
-            const [lr, lg, lb] = resolveColor(pointColors[j]);
-            const texIndex = (idx * MAX_LABELS + j) * 4;
-            if (texIndex < this.labelColorData.length) {
-              // RGBA8 texture: store 0..255 bytes. Sampling returns normalized floats automatically.
-              this.labelColorData[texIndex] = Math.round(lr * 255);
-              this.labelColorData[texIndex + 1] = Math.round(lg * 255);
-              this.labelColorData[texIndex + 2] = Math.round(lb * 255);
-              this.labelColorData[texIndex + 3] = 255;
-            }
-          }
-        }
+        // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
+        fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
 
         idx++;
       }
@@ -1919,19 +1900,8 @@ export class WebGLRenderer {
         this.labelCounts[idx] = pointColors.length;
         this.shapes[idx] = shapeIndex;
 
-        // Fill label color texture data
-        for (let j = 0; j < MAX_LABELS; j++) {
-          if (j < pointColors.length) {
-            const [lr, lg, lb] = resolveColor(pointColors[j]);
-            const texIndex = (idx * MAX_LABELS + j) * 4;
-            if (texIndex < this.labelColorData.length) {
-              this.labelColorData[texIndex] = Math.round(lr * 255);
-              this.labelColorData[texIndex + 1] = Math.round(lg * 255);
-              this.labelColorData[texIndex + 2] = Math.round(lb * 255);
-              this.labelColorData[texIndex + 3] = 255;
-            }
-          }
-        }
+        // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
+        fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
 
         idx++;
       }
@@ -1973,22 +1943,38 @@ export class WebGLRenderer {
       this.updateBuffer(gl, this.labelCountBuffer, this.labelCounts, idx);
       this.updateBuffer(gl, this.shapeBuffer, this.shapes, idx);
 
-      // Update texture
+      // Update label-color texture. Allocate storage once (and whenever capacity grew);
+      // afterwards update in place with texSubImage2D — no 32 MiB reallocation per recolor.
       gl.bindTexture(gl.TEXTURE_2D, this.labelColorTexture);
       const texHeight = this.labelColorData.length / 4 / LABEL_TEXTURE_WIDTH;
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA8,
-        LABEL_TEXTURE_WIDTH,
-        texHeight,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        this.labelColorData,
-      );
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      if (!this.labelTextureInitialized) {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA8,
+          LABEL_TEXTURE_WIDTH,
+          texHeight,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          this.labelColorData,
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        this.labelTextureInitialized = true;
+      } else {
+        gl.texSubImage2D(
+          gl.TEXTURE_2D,
+          0,
+          0,
+          0,
+          LABEL_TEXTURE_WIDTH,
+          texHeight,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          this.labelColorData,
+        );
+      }
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
@@ -2027,6 +2013,7 @@ export class WebGLRenderer {
     const requiredPixels = nextCapacity * MAX_LABELS;
     const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
     this.labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
+    this.labelTextureInitialized = false;
 
     this.buffersInitialized = false;
   }
