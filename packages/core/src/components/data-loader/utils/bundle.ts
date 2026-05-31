@@ -49,12 +49,12 @@ export async function extractRowsFromParquetBundle(
   const hasSettingsPart = delimiterPositions.length === 3;
 
   // Extract the three required parts
-  const part1 = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
-  const part2 = uint8Array
+  let part1: ArrayBuffer | null = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
+  let part2: ArrayBuffer | null = uint8Array
     .subarray(delimiterPositions[0] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[1])
     .slice().buffer;
 
-  let part3: ArrayBuffer;
+  let part3: ArrayBuffer | null;
   let part4: ArrayBuffer | null = null;
 
   if (hasSettingsPart) {
@@ -75,12 +75,17 @@ export async function extractRowsFromParquetBundle(
   assertValidParquetMagic(part2);
   assertValidParquetMagic(part3);
 
-  // Parse the three required parts
-  const [selectedAnnotationsData, projectionsMetadataData, projectionsData] = await Promise.all([
-    parquetReadObjects({ file: part1 }),
-    parquetReadObjects({ file: part2 }),
-    parquetReadObjects({ file: part3 }),
-  ]);
+  // Decode sequentially and release each sliced buffer immediately after its decode completes.
+  // hyparquet is CPU-bound on the single JS thread — Promise.all gives no real parallelism, only
+  // interleaved async continuations that keep all three buffers + decode scratch live simultaneously.
+  // Sequential decode ensures only one part's buffer is live at a time, cutting the transient
+  // load-peak (critical for large datasets such as SwissProt 573 K where peak heap reached ~2.3 GB).
+  const selectedAnnotationsData = await parquetReadObjects({ file: part1 });
+  part1 = null;
+  const projectionsMetadataData = await parquetReadObjects({ file: part2 });
+  part2 = null;
+  const projectionsData = await parquetReadObjects({ file: part3! });
+  part3 = null;
 
   // Parse settings if present
   let settings: BundleSettings | null = null;
