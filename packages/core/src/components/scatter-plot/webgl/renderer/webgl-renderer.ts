@@ -21,6 +21,7 @@ import {
 import { resolveColor } from '../color-utils';
 import { createProgramFromSources } from '../shader-utils';
 import { fillLabelColorTexels } from './label-texture-utils';
+import { sortIndicesByDepthDescending } from './depth-sort';
 
 // ============================================================================
 // Shader Sources
@@ -285,9 +286,13 @@ export class WebGLRenderer {
   // Store last rendered points for off-screen export rendering
   private lastRenderedPoints: PlotDataPoint[] | null = null;
 
-  // Cached sorted point order from last full rebuild. Used by the color-only
-  // update path so it iterates points in the same order as the position buffer.
-  private sortedPoints: PlotDataPoint[] = [];
+  // Reusable index-sort scratch (avoids per-render object staging + a retained mapped array).
+  // `sortOrder[0..currentPointCount)` holds point indices in far->near draw order; it indexes
+  // into `sortedPointsRef` (the points array from the last full rebuild). `sortDepths` is the
+  // per-point depth scratch, indexed by ORIGINAL point index.
+  private sortOrder = new Uint32Array(0);
+  private sortDepths = new Float32Array(0);
+  private sortedPointsRef: PlotDataPoint[] | null = null;
 
   // Selection-aware two-pass rendering
   private selectionActive = false;
@@ -434,7 +439,7 @@ export class WebGLRenderer {
    */
   releaseDataReferences() {
     this.lastRenderedPoints = null;
-    this.sortedPoints = [];
+    this.sortedPointsRef = null;
   }
 
   resize(width: number, height: number) {
@@ -1566,7 +1571,7 @@ export class WebGLRenderer {
     this.lastDataSignature = null;
     this.lastStyleSignature = null;
     this.renderedPointIds.clear();
-    this.sortedPoints = [];
+    this.sortedPointsRef = null;
   }
 
   private initializePointShaders(gl: WebGL2RenderingContext): boolean {
@@ -1813,35 +1818,30 @@ export class WebGLRenderer {
     let idx = 0;
 
     if (needsReorder) {
-      const staged: Array<{ point: PlotDataPoint; opacity: number; depth: number }> = [];
-      for (let i = 0; i < points.length && staged.length < maxPoints; i++) {
-        const point = points[i];
-        const opacity = this.style.getOpacity(point);
-        // Include hidden points (opacity=0) in the buffer with alpha=0.
-        // This preserves sort order across visibility toggles, enabling the
-        // fast color-only update path instead of a full rebuild + re-sort.
-        const depth = this.style.getDepth(point);
-        staged.push({ point, opacity, depth });
-      }
+      const count = maxPoints;
+      const order = this.sortOrder;
+      const depthScratch = this.sortDepths;
 
-      // Draw far -> near, so near points end up on top.
-      // NOTE: `getDepth` is defined such that smaller depth is "closer" (wins in LESS mode).
-      staged.sort((a, b) => b.depth - a.depth);
+      // Build depth scratch indexed by original point index, then sort indices far -> near.
+      // Include hidden points (opacity=0) so sort order is preserved across visibility toggles,
+      // enabling the fast color-only update path instead of a full rebuild + re-sort.
+      for (let i = 0; i < count; i++) {
+        depthScratch[i] = this.style.getDepth(points[i]);
+      }
+      sortIndicesByDepthDescending(order, depthScratch, count);
 
       // Find where selected points start (opacity ≈ 1.0, contiguous at the end after sort).
       // Used for two-pass rendering: unselected without blend, selected with blend.
-      if (this.selectionActive) {
-        const idx = staged.findIndex((s) => s.opacity >= 0.99);
-        this.selectedStartIndex = idx === -1 ? staged.length : idx;
-      } else {
-        this.selectedStartIndex = staged.length;
-      }
+      let firstSelected = -1;
 
-      // Cache sorted point order for the color-only update path
-      this.sortedPoints = staged.map((s) => s.point);
+      for (let k = 0; k < count; k++) {
+        const srcIndex = order[k];
+        const point = points[srcIndex];
+        const opacity = this.style.getOpacity(point);
 
-      for (let s = 0; s < staged.length; s++) {
-        const { point, opacity, depth } = staged[s];
+        if (this.selectionActive && firstSelected === -1 && opacity >= 0.99) {
+          firstSelected = k;
+        }
 
         if (this.trackRenderedPointIds && opacity > 0) {
           this.renderedPointIds.add(point.id);
@@ -1863,7 +1863,8 @@ export class WebGLRenderer {
         this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
         const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
         this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-        this.depths[idx] = depth;
+        // Use depthScratch[srcIndex] (indexed by original point index), NOT depthScratch[k].
+        this.depths[idx] = depthScratch[srcIndex];
         this.labelCounts[idx] = pointColors.length;
         this.shapes[idx] = shapeIndex;
 
@@ -1872,59 +1873,73 @@ export class WebGLRenderer {
 
         idx++;
       }
+
+      this.selectedStartIndex = this.selectionActive
+        ? firstSelected === -1
+          ? count
+          : firstSelected
+        : count;
+      // Cache the points reference so color-only / positions-only paths can index via sortOrder.
+      this.sortedPointsRef = points;
     } else if (updateStyles) {
       // Color-only update: no reordering needed, just update color/shape buffers.
-      // Iterate sortedPoints to match the buffer order from the last full rebuild.
-      const source = this.sortedPoints;
-      for (let i = 0; i < source.length && idx < maxPoints; i++) {
-        const point = source[i];
-        const opacity = this.style.getOpacity(point);
+      // Iterate via sortOrder into sortedPointsRef to match the buffer order from the last rebuild.
+      const order = this.sortOrder;
+      const src = this.sortedPointsRef;
+      if (src) {
+        for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
+          const point = src[order[i]];
+          const opacity = this.style.getOpacity(point);
 
-        if (this.trackRenderedPointIds && opacity > 0) {
-          this.renderedPointIds.add(point.id);
+          if (this.trackRenderedPointIds && opacity > 0) {
+            this.renderedPointIds.add(point.id);
+          }
+
+          // Update only style buffers (colors, shapes, sizes)
+          const pointColors = this.style.getColors(point);
+          const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
+          const size = Math.sqrt(this.style.getPointSize(point)) / POINT_SIZE_DIVISOR;
+          const shapeType = this.style.getShape(point);
+          const shapeIndex = getShapeIndex(shapeType);
+
+          this.colors[idx * 4] = r;
+          this.colors[idx * 4 + 1] = g;
+          this.colors[idx * 4 + 2] = b;
+          this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
+          const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
+          this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
+          this.labelCounts[idx] = pointColors.length;
+          this.shapes[idx] = shapeIndex;
+
+          // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
+          fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
+
+          idx++;
         }
-
-        // Update only style buffers (colors, shapes, sizes)
-        const pointColors = this.style.getColors(point);
-        const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-        const size = Math.sqrt(this.style.getPointSize(point)) / POINT_SIZE_DIVISOR;
-        const shapeType = this.style.getShape(point);
-        const shapeIndex = getShapeIndex(shapeType);
-
-        this.colors[idx * 4] = r;
-        this.colors[idx * 4 + 1] = g;
-        this.colors[idx * 4 + 2] = b;
-        this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
-        const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
-        this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-        this.labelCounts[idx] = pointColors.length;
-        this.shapes[idx] = shapeIndex;
-
-        // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
-        fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
-
-        idx++;
       }
     } else {
       // No reordering and no style updates: only update positions if needed.
-      // Iterate sortedPoints to match the buffer order from the last full rebuild.
-      const source = this.sortedPoints;
-      for (let i = 0; i < source.length && idx < maxPoints; i++) {
-        const point = source[i];
+      // Iterate via sortOrder into sortedPointsRef to match the buffer order from the last rebuild.
+      const order = this.sortOrder;
+      const src = this.sortedPointsRef;
+      if (src) {
+        for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
+          const point = src[order[i]];
 
-        if (this.trackRenderedPointIds) {
-          const opacity = this.style.getOpacity(point);
-          if (opacity > 0) {
-            this.renderedPointIds.add(point.id);
+          if (this.trackRenderedPointIds) {
+            const opacity = this.style.getOpacity(point);
+            if (opacity > 0) {
+              this.renderedPointIds.add(point.id);
+            }
           }
-        }
 
-        if (updatePositions) {
-          this.dataPositions[idx * 2] = scales.x(point.x);
-          this.dataPositions[idx * 2 + 1] = scales.y(point.y);
-        }
+          if (updatePositions) {
+            this.dataPositions[idx * 2] = scales.x(point.x);
+            this.dataPositions[idx * 2 + 1] = scales.y(point.y);
+          }
 
-        idx++;
+          idx++;
+        }
       }
     }
 
@@ -2006,6 +2021,8 @@ export class WebGLRenderer {
     this.depths = new Float32Array(nextCapacity);
     this.labelCounts = new Float32Array(nextCapacity);
     this.shapes = new Float32Array(nextCapacity);
+    this.sortOrder = new Uint32Array(nextCapacity);
+    this.sortDepths = new Float32Array(nextCapacity);
     // Align texture height to next power of 2 or just simple expansion
     // Total pixels needed = nextCapacity * MAX_LABELS
     // Texture Width = LABEL_TEXTURE_WIDTH
