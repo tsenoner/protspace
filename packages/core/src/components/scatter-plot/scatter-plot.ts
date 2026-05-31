@@ -2433,16 +2433,27 @@ export class ProtspaceScatterplot extends LitElement {
 
     // If we're in isolation mode, return filtered data based on current plot data
     if (this._isolationMode && this._plotData.length > 0) {
-      const currentProteinIds = Array.from({ length: this._plotData.length }, (_, s) =>
-        plotDataId(this._plotData, s),
-      );
-      const currentProteinIdsSet = new Set(currentProteinIds);
-      const keptIndices: number[] = [];
-      currentDisplayData.protein_ids.forEach((proteinId, index) => {
-        if (currentProteinIdsSet.has(proteinId)) {
-          keptIndices.push(index);
-        }
-      });
+      const pd = this._plotData;
+      const currentProteinIds = Array.from({ length: pd.length }, (_, s) => plotDataId(pd, s));
+
+      // `keptIndices` are the ascending positions in currentDisplayData.protein_ids to keep.
+      // _plotData.originalIndices is the ascending list of surviving indices into
+      // pd.proteinIds (the full source id array). When no view filter is active,
+      // currentDisplayData.protein_ids IS that same full array in the same order, so
+      // originalIndices already equals keptIndices — reuse it instead of re-scanning all
+      // ~573K ids and building a throwaway Set. The length-equality check detects that
+      // unfiltered case (a filtered display is always a strict subset, so its length
+      // differs); otherwise fall back to the membership scan.
+      let keptIndices: number[];
+      if (pd.originalIndices && currentDisplayData.protein_ids.length === pd.proteinIds.length) {
+        keptIndices = Array.from(pd.originalIndices);
+      } else {
+        const currentProteinIdsSet = new Set(currentProteinIds);
+        keptIndices = [];
+        currentDisplayData.protein_ids.forEach((proteinId, index) => {
+          if (currentProteinIdsSet.has(proteinId)) keptIndices.push(index);
+        });
+      }
 
       // Filter annotation data to match current protein IDs
       const filteredAnnotationData: Record<string, AnnotationData> = {};
@@ -2457,12 +2468,11 @@ export class ProtspaceScatterplot extends LitElement {
       for (const [annotationName, annotationValues] of Object.entries(
         currentDisplayData.numeric_annotation_data ?? {},
       )) {
-        filteredNumericAnnotationData[annotationName] = [];
-        currentDisplayData.protein_ids.forEach((proteinId, originalIndex) => {
-          if (currentProteinIdsSet.has(proteinId)) {
-            filteredNumericAnnotationData[annotationName].push(annotationValues[originalIndex]);
-          }
-        });
+        const sliced: (number | null)[] = new Array(keptIndices.length);
+        for (let k = 0; k < keptIndices.length; k++) {
+          sliced[k] = annotationValues[keptIndices[k]];
+        }
+        filteredNumericAnnotationData[annotationName] = sliced;
       }
 
       return {
