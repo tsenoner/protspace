@@ -3,6 +3,9 @@ import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { searchStyles } from './search.styles';
 import { isMacOrIos } from '@protspace/utils';
+import { computeSearchSuggestions } from './search-suggestions';
+
+const SEARCH_DEBOUNCE_MS = 120;
 
 /**
  * Protein search component with autocomplete suggestions and multi-select state (no chips UI)
@@ -18,6 +21,8 @@ class ProtspaceProteinSearch extends LitElement {
   @state() private searchSuggestions: string[] = [];
   @state() private highlightedSuggestionIndex: number = -1;
   @state() private isInputFocused: boolean = false;
+
+  private _suggestionDebounceId: ReturnType<typeof setTimeout> | null = null;
 
   render() {
     return html`
@@ -78,6 +83,7 @@ class ProtspaceProteinSearch extends LitElement {
     window.addEventListener('keydown', this._handleBodyKeydown);
     // Listen for parent-initiated close
     this.addEventListener('close-search', () => {
+      this._clearSuggestionDebounce();
       this.searchSuggestions = [];
       this.highlightedSuggestionIndex = -1;
       this.searchQuery = '';
@@ -93,6 +99,7 @@ class ProtspaceProteinSearch extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener('keydown', this._handleBodyKeydown);
+    this._clearSuggestionDebounce();
   }
 
   private _handleBodyKeydown = (event: KeyboardEvent) => {
@@ -122,10 +129,17 @@ class ProtspaceProteinSearch extends LitElement {
   private _onSearchInput(event: Event) {
     const target = event.target as HTMLInputElement;
     this.searchQuery = target.value;
-    this._updateSuggestions();
+    this._clearSuggestionDebounce();
+    this._suggestionDebounceId = setTimeout(() => {
+      this._suggestionDebounceId = null;
+      this._updateSuggestions();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   private _onSearchKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      this._flushSuggestions();
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       if (
@@ -154,6 +168,7 @@ class ProtspaceProteinSearch extends LitElement {
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
+      this._clearSuggestionDebounce();
       this.searchSuggestions = [];
       this.highlightedSuggestionIndex = -1;
       this.searchQuery = '';
@@ -162,6 +177,7 @@ class ProtspaceProteinSearch extends LitElement {
 
   private _onInputFocus() {
     this.isInputFocused = true;
+    this._clearSuggestionDebounce();
     this._updateSuggestions();
     // Notify parent to close other dropdowns
     this.dispatchEvent(
@@ -174,6 +190,7 @@ class ProtspaceProteinSearch extends LitElement {
 
   private _onInputBlur() {
     this.isInputFocused = false;
+    this._clearSuggestionDebounce();
     // Delay clearing suggestions to allow mousedown to fire on suggestions
     setTimeout(() => {
       this.searchSuggestions = [];
@@ -181,28 +198,25 @@ class ProtspaceProteinSearch extends LitElement {
     }, 200);
   }
 
-  private _updateSuggestions() {
-    const q = this.searchQuery.trim().toLowerCase();
-
-    if (!q) {
-      // If no query but input is focused, show all available proteins (not already selected)
-      if (this.isInputFocused) {
-        const selectedSet = new Set(this.selectedProteinIds);
-        this.searchSuggestions = this.availableProteinIds.filter((id) => !selectedSet.has(id));
-        this.highlightedSuggestionIndex = this.searchSuggestions.length > 0 ? 0 : -1;
-      } else {
-        this.searchSuggestions = [];
-        this.highlightedSuggestionIndex = -1;
-      }
-      return;
+  private _clearSuggestionDebounce() {
+    if (this._suggestionDebounceId !== null) {
+      clearTimeout(this._suggestionDebounceId);
+      this._suggestionDebounceId = null;
     }
+  }
 
-    const selectedSet = new Set(this.selectedProteinIds);
+  private _flushSuggestions() {
+    this._clearSuggestionDebounce();
+    this._updateSuggestions();
+  }
 
-    this.searchSuggestions = this.availableProteinIds.filter(
-      (id) => !selectedSet.has(id) && id.toLowerCase().startsWith(q),
+  private _updateSuggestions() {
+    this.searchSuggestions = computeSearchSuggestions(
+      this.availableProteinIds,
+      this.selectedProteinIds,
+      this.searchQuery,
+      this.isInputFocused,
     );
-
     this.highlightedSuggestionIndex = this.searchSuggestions.length > 0 ? 0 : -1;
   }
 
@@ -218,6 +232,7 @@ class ProtspaceProteinSearch extends LitElement {
         validId = exact;
       } else {
         // ID not found in available proteins - ignore
+        this._clearSuggestionDebounce();
         this.searchQuery = '';
         this.searchSuggestions = [];
         this.highlightedSuggestionIndex = -1;
@@ -227,6 +242,7 @@ class ProtspaceProteinSearch extends LitElement {
 
     // Check if already selected
     if (this.selectedProteinIds.includes(validId)) {
+      this._clearSuggestionDebounce();
       this.searchQuery = '';
       this.searchSuggestions = [];
       this.highlightedSuggestionIndex = -1;
@@ -234,6 +250,7 @@ class ProtspaceProteinSearch extends LitElement {
     }
 
     // Clear search state
+    this._clearSuggestionDebounce();
     this.searchQuery = '';
     this.searchSuggestions = [];
     this.highlightedSuggestionIndex = -1;
@@ -281,6 +298,7 @@ class ProtspaceProteinSearch extends LitElement {
       );
     }
 
+    this._clearSuggestionDebounce();
     this.searchQuery = '';
     this.searchSuggestions = [];
     this.highlightedSuggestionIndex = -1;
