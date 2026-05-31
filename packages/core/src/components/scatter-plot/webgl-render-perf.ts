@@ -215,10 +215,13 @@ export class WebglRenderPerfRunner {
       await (this._hostAny().updateComplete ?? Promise.resolve());
       await this._sleep(16);
       const host = this._hostAny();
-      const plotData = host._plotData as unknown[] | undefined;
+      // _plotData is a PlotData SoA container (not an array since MODEL-O1); its
+      // `length` field is the populated point count.
+      const plotData = host._plotData as { length?: number } | undefined;
       if (
         host.data &&
-        Array.isArray(plotData) &&
+        !!plotData &&
+        typeof plotData.length === 'number' &&
         plotData.length > 0 &&
         host._svg &&
         host._svgSelection &&
