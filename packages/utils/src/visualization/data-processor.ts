@@ -31,10 +31,10 @@ export class DataProcessor {
     });
 
     if (isolationMode && isolationHistory && isolationHistory.length > 0) {
-      let filteredData = processedData.filter((p) => isolationHistory[0].includes(p.id));
-      for (let i = 1; i < isolationHistory.length; i++) {
-        const splitIds = isolationHistory[i];
-        filteredData = filteredData.filter((p) => splitIds.includes(p.id));
+      let filteredData = processedData;
+      for (let i = 0; i < isolationHistory.length; i++) {
+        const layerSet = new Set(isolationHistory[i]);
+        filteredData = filteredData.filter((p) => layerSet.has(p.id));
       }
       return filteredData;
     }

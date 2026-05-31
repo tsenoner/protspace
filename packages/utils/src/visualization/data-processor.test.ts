@@ -130,3 +130,85 @@ describe('DataProcessor.processVisualizationData', () => {
     expect(Object.keys(result[0]).sort()).toEqual(['id', 'originalIndex', 'x', 'y']);
   });
 });
+
+describe('DataProcessor.processVisualizationData — isolation (Set-based, MODEL-O5b)', () => {
+  const fixture: VisualizationData = {
+    protein_ids: ['a', 'b', 'c', 'd'],
+    projections: [
+      {
+        name: 't',
+        data: [
+          [1, 2],
+          [3, 4],
+          [5, 6],
+          [7, 8],
+        ],
+      },
+    ],
+    annotations: {},
+    annotation_data: {},
+  };
+
+  it('single-layer isolation keeps only ids present in that layer', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [['a', 'c']]);
+    expect(result.map((p) => p.id)).toEqual(['a', 'c']);
+  });
+
+  it('single-layer isolation excludes ids absent from the layer', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [['b']]);
+    expect(result.map((p) => p.id)).toEqual(['b']);
+    expect(result.find((p) => p.id === 'a')).toBeUndefined();
+  });
+
+  it('multi-layer isolation returns intersection (points in ALL layers only)', () => {
+    // layer0 = {a,b,c}, layer1 = {b,c,d} → intersection = {b,c}
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [
+      ['a', 'b', 'c'],
+      ['b', 'c', 'd'],
+    ]);
+    expect(result.map((p) => p.id)).toEqual(['b', 'c']);
+  });
+
+  it('point in first layer but not second is removed', () => {
+    // 'a' is in layer0 but absent from layer1 → must not appear
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [
+      ['a', 'b'],
+      ['b', 'c'],
+    ]);
+    expect(result.find((p) => p.id === 'a')).toBeUndefined();
+    expect(result.map((p) => p.id)).toEqual(['b']);
+  });
+
+  it('empty isolation layer returns empty result', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [[]]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('empty isolation layer in second position returns empty result', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [['a', 'b'], []]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('isolationMode false returns all processed points unchanged', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, false, [['a']]);
+    expect(result).toHaveLength(4);
+  });
+
+  it('empty isolationHistory returns all processed points unchanged', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, []);
+    expect(result).toHaveLength(4);
+  });
+
+  it('no isolationHistory argument returns all processed points unchanged', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, undefined);
+    expect(result).toHaveLength(4);
+  });
+
+  it('surviving points preserve originalIndex (index in protein_ids, not filtered position)', () => {
+    // 'c' is at index 2 and 'd' at index 3 in protein_ids
+    const result = DataProcessor.processVisualizationData(fixture, 0, true, [['c', 'd']]);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ id: 'c', originalIndex: 2, x: 5, y: 6 });
+    expect(result[1]).toMatchObject({ id: 'd', originalIndex: 3, x: 7, y: 8 });
+  });
+});
