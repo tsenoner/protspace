@@ -602,6 +602,42 @@ describe('annotation_data storage shape', () => {
     expect(pfamData[p2Idx]).toHaveLength(1);
     expect(values[pfamData[p2Idx][0]]).toBe('PF03');
   });
+
+  it('round-trips heterogeneous per-value scores and evidence through the optimized path', async () => {
+    // Each protein's cell mixes a scored value, an evidence-coded value, and a
+    // plain value — exercises the single-parse cache reconstruction in Pass 2.
+    const rows = Array.from({ length: 10000 }, (_, i) => ({
+      projection_name: 'UMAP',
+      identifier: `P${i + 1}`,
+      x: i,
+      y: i,
+      // value 0: scored, value 1: evidence code, value 2: plain
+      site: 'Active|1.5e-10;Bind|ECO:0000269;Other',
+    }));
+
+    const result = await convertParquetToVisualizationDataOptimized(rows, [
+      { projection_name: 'UMAP', dimensions: 2 },
+    ]);
+
+    expect(Array.isArray(result.annotation_data.site)).toBe(true);
+    const siteData = result.annotation_data.site as readonly (readonly number[])[];
+    const values = result.annotations.site.values;
+
+    const p1 = result.protein_ids.indexOf('P1');
+    // Three labels resolved
+    expect(siteData[p1]).toHaveLength(3);
+    expect(siteData[p1].map((i) => values[i])).toEqual(['Active', 'Bind', 'Other']);
+
+    // Scores: value 0 has [1.5e-10], values 1 and 2 are null
+    const scores = result.annotation_scores?.site;
+    expect(scores).toBeDefined();
+    expect(scores![p1]).toEqual([[1.5e-10], null, null]);
+
+    // Evidence: value 1 has 'ECO:0000269', values 0 and 2 are null
+    const evidence = result.annotation_evidence?.site;
+    expect(evidence).toBeDefined();
+    expect(evidence![p1]).toEqual([null, 'ECO:0000269', null]);
+  });
 });
 
 import { generateColorsAndShapes } from './conversion';

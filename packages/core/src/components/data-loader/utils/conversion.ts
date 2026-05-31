@@ -1078,25 +1078,54 @@ async function extractAnnotationsByProtein(
       continue;
     }
 
-    // === Pass 1: Collect unique values, frequency counts, detect scores/evidence ===
+    // === Pass 1: split + parse every cell EXACTLY ONCE. Collect unique-value
+    //     frequencies, detect scores/evidence, track the max arity, and CACHE
+    //     the parse output per protein so Pass 2 is a pure index-mapping pass.
+    //     Previously Pass 2 re-split + re-parsed every cell — ~2x the parse work
+    //     across ~22 columns at 573K. Caching halves it; output is byte-identical.
+    //     The caches are block-scoped and reclaimed between columns.
     const valueCountMap = new Map<string, number>();
     let columnHasScores = false;
     let columnHasEvidence = false;
     let maxValuesPerProtein = 0;
 
+    // `labelsByProtein[p] === undefined` ⇒ protein had no values for this column.
+    // scores/evidence caches stay sparse: a protein's slot is only set when at
+    // least one of its values carried a score / evidence code. When set, the
+    // cached array length equals labelsByProtein[p].length.
+    const labelsByProtein = new Array<string[] | undefined>(numProteins);
+    const scoresByProtein = new Array<(number[] | null)[] | undefined>(numProteins);
+    const evidenceByProtein = new Array<(string | null)[] | undefined>(numProteins);
+
     for (let i = 0; i < numProteins; i += chunkSize) {
       const end = Math.min(i + chunkSize, numProteins);
       for (let p = i; p < end; p++) {
         const rawValues = splitCategoricalAnnotationValues(rowByProteinIdx[p]?.[annotationCol]);
-        if (rawValues.length > maxValuesPerProtein) {
-          maxValuesPerProtein = rawValues.length;
-        }
-        for (const raw of rawValues) {
-          const parsed = parseAnnotationValue(raw);
+        const n = rawValues.length;
+        if (n > maxValuesPerProtein) maxValuesPerProtein = n;
+        if (n === 0) continue;
+
+        const labels = new Array<string>(n);
+        let scores: (number[] | null)[] | null = null;
+        let evidences: (string | null)[] | null = null;
+        for (let k = 0; k < n; k++) {
+          const parsed = parseAnnotationValue(rawValues[k]);
+          labels[k] = parsed.label;
           valueCountMap.set(parsed.label, (valueCountMap.get(parsed.label) || 0) + 1);
-          if (parsed.scores.length > 0) columnHasScores = true;
-          if (parsed.evidence) columnHasEvidence = true;
+          if (parsed.scores.length > 0) {
+            columnHasScores = true;
+            if (!scores) scores = new Array<number[] | null>(n).fill(null);
+            scores[k] = parsed.scores;
+          }
+          if (parsed.evidence) {
+            columnHasEvidence = true;
+            if (!evidences) evidences = new Array<string | null>(n).fill(null);
+            evidences[k] = parsed.evidence;
+          }
         }
+        labelsByProtein[p] = labels;
+        if (scores) scoresByProtein[p] = scores;
+        if (evidences) evidenceByProtein[p] = evidences;
       }
       await fastYield();
     }
@@ -1111,8 +1140,8 @@ async function extractAnnotationsByProtein(
 
     const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
 
-    // === Pass 2: Build output arrays. Use Int32Array for strict single-valued
-    //     columns to avoid the per-protein number[] allocation cliff. ===
+    // === Pass 2: map cached labels → dictionary indices. Use Int32Array for
+    //     strict single-valued columns to avoid the per-protein number[] cliff. ===
     const useTypedStorage = maxValuesPerProtein <= 1 && !columnHasScores && !columnHasEvidence;
 
     const annotationDataTyped = useTypedStorage ? new Int32Array(numProteins).fill(-1) : null;
@@ -1123,28 +1152,26 @@ async function extractAnnotationsByProtein(
     for (let i = 0; i < numProteins; i += chunkSize) {
       const end = Math.min(i + chunkSize, numProteins);
       for (let p = i; p < end; p++) {
-        const rawValues = splitCategoricalAnnotationValues(rowByProteinIdx[p]?.[annotationCol]);
-        if (rawValues.length === 0) continue;
+        const labels = labelsByProtein[p];
+        if (labels === undefined) continue;
 
         if (annotationDataTyped) {
           // Single-valued: write the one index directly into the typed array.
-          const parsed = parseAnnotationValue(rawValues[0]);
-          annotationDataTyped[p] = valueToIndex.get(parsed.label) ?? -1;
+          annotationDataTyped[p] = valueToIndex.get(labels[0]) ?? -1;
         } else {
-          const indices: number[] = [];
-          const scores: (number[] | null)[] | null = scoresArray ? [] : null;
-          const evidences: (string | null)[] | null = evidenceArray ? [] : null;
-
-          for (const raw of rawValues) {
-            const parsed = parseAnnotationValue(raw);
-            indices.push(valueToIndex.get(parsed.label) ?? -1);
-            if (scores) scores.push(parsed.scores.length > 0 ? parsed.scores : null);
-            if (evidences) evidences.push(parsed.evidence);
+          const indices = new Array<number>(labels.length);
+          for (let k = 0; k < labels.length; k++) {
+            indices[k] = valueToIndex.get(labels[k]) ?? -1;
           }
-
           annotationDataArray![p] = indices;
-          if (scoresArray && scores) scoresArray[p] = scores;
-          if (evidenceArray && evidences) evidenceArray[p] = evidences;
+          if (scoresArray) {
+            scoresArray[p] =
+              scoresByProtein[p] ?? new Array<number[] | null>(labels.length).fill(null);
+          }
+          if (evidenceArray) {
+            evidenceArray[p] =
+              evidenceByProtein[p] ?? new Array<string | null>(labels.length).fill(null);
+          }
         }
       }
       await fastYield();
