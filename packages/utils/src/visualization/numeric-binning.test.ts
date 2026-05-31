@@ -40,7 +40,8 @@ describe('numeric-binning', () => {
     expect(result.annotation.numericMetadata?.bins.map((bin) => bin.count)).toEqual([
       2, 2, 2, 2, 2,
     ]);
-    expect(result.annotationData).toEqual([[0], [0], [1], [1], [2], [2], [3], [3], [4], [4]]);
+    expect(result.annotationData).toBeInstanceOf(Int32Array);
+    expect(Array.from(result.annotationData)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4]);
   });
 
   it('uses quantile settings when materializing visualization data', () => {
@@ -92,7 +93,10 @@ describe('numeric-binning', () => {
     expect(materialized.annotations.length.numericMetadata?.bins.map((bin) => bin.count)).toEqual([
       2, 2, 2,
     ]);
-    expect(materialized.annotation_data.length).toEqual([[0], [0], [1], [1], [2], [2]]);
+    expect(materialized.annotation_data.length).toBeInstanceOf(Int32Array);
+    expect(Array.from(materialized.annotation_data.length as Int32Array)).toEqual([
+      0, 0, 1, 1, 2, 2,
+    ]);
   });
 
   it('formats int labels without grouping or decimals and preserves numeric type metadata', () => {
@@ -264,7 +268,8 @@ describe('numeric-binning', () => {
     expect(materialized.annotations.weight.sourceKind).toBe('numeric');
     expect(materialized.annotations.weight.numericMetadata?.strategy).toBe('quantile');
     expect(materialized.annotation_data.length).toEqual([[], [], []]);
-    expect(materialized.annotation_data.weight).toEqual([[0], [1], [1]]);
+    expect(materialized.annotation_data.weight).toBeInstanceOf(Int32Array);
+    expect(Array.from(materialized.annotation_data.weight as Int32Array)).toEqual([0, 1, 1]);
   });
 
   it('falls back from logarithmic binning when non-positive values are present', () => {
@@ -304,7 +309,8 @@ describe('numeric-binning', () => {
       0, 0.375, 0.625, 1,
     ]);
     expect(result.annotation.numericMetadata?.bins.map((bin) => bin.count)).toEqual([1, 1, 1, 1]);
-    expect(result.annotationData).toEqual([[0], [1], [2], [3]]);
+    expect(result.annotationData).toBeInstanceOf(Int32Array);
+    expect(Array.from(result.annotationData)).toEqual([0, 1, 2, 3]);
   });
 
   it('uses the midpoint color when only one realized bin remains', () => {
@@ -350,7 +356,7 @@ describe('numeric-binning', () => {
       forward.annotation.numericMetadata?.signature,
     );
     expect(reversed.annotation.colors).toEqual([...forward.annotation.colors].reverse());
-    expect(reversed.annotationData).toEqual(forward.annotationData);
+    expect(Array.from(reversed.annotationData)).toEqual(Array.from(forward.annotationData));
   });
 
   it('changes the compatibility signature when bin counts change inside the same topology', () => {
@@ -383,7 +389,7 @@ describe('numeric-binning', () => {
     expect(result.annotation.numericMetadata?.binCount).toBe(result.annotation.values.length);
     expect(result.annotation.numericMetadata?.binCount).toBeLessThan(12);
     expect(result.annotation.numericMetadata?.bins.every((bin) => bin.count > 0)).toBe(true);
-    expect(Math.max(...result.annotationData.map((row) => row[0] ?? -1))).toBe(
+    expect(Math.max(...Array.from(result.annotationData))).toBe(
       (result.annotation.numericMetadata?.binCount ?? 1) - 1,
     );
   });
@@ -415,7 +421,8 @@ describe('numeric-binning', () => {
       '5 - 10',
     ]);
     expect(result.annotation.numericMetadata?.bins.map((bin) => bin.count)).toEqual([1, 2]);
-    expect(result.annotationData).toEqual([[0], [1], [1]]);
+    expect(result.annotationData).toBeInstanceOf(Int32Array);
+    expect(Array.from(result.annotationData)).toEqual([0, 1, 1]);
   });
 
   it('resolves persisted numeric settings with shared precedence rules', () => {
@@ -467,14 +474,14 @@ describe('numeric-binning', () => {
     expect(result.annotation.colors[1]).toBe('#FDE725'); // viridis end
 
     // Missing-value proteins assigned to N/A index
-    expect(result.annotationData[1]).toEqual([naIndex]);
-    expect(result.annotationData[3]).toEqual([naIndex]);
+    expect(result.annotationData[1]).toBe(naIndex);
+    expect(result.annotationData[3]).toBe(naIndex);
 
     // Non-missing proteins assigned to numeric bins
-    expect(result.annotationData[0].length).toBe(1);
-    expect(result.annotationData[0][0]).not.toBe(naIndex);
-    expect(result.annotationData[4].length).toBe(1);
-    expect(result.annotationData[4][0]).not.toBe(naIndex);
+    expect(result.annotationData[0]).toBeGreaterThanOrEqual(0);
+    expect(result.annotationData[0]).not.toBe(naIndex);
+    expect(result.annotationData[4]).toBeGreaterThanOrEqual(0);
+    expect(result.annotationData[4]).not.toBe(naIndex);
   });
 
   it('does not append N/A bin when there are no missing values', () => {
@@ -525,14 +532,14 @@ describe('numeric-binning', () => {
     expect(result.annotation.values).toHaveLength(binCount);
     expect(result.annotation.values).toContain(NA_VALUE);
 
-    // Every data point must be assigned to a bin (no empty annotationData)
+    // Every data point must be assigned to a bin (no missing annotationData)
     for (let i = 0; i < values.length; i++) {
-      expect(result.annotationData[i].length).toBe(1);
+      expect(result.annotationData[i]).toBeGreaterThanOrEqual(0);
     }
 
     // The highest value (49.5) must be in one of the numeric bins, not lost
     const lastDataIndex = 99; // index of value 49.5
-    const lastBinIdx = result.annotationData[lastDataIndex][0];
+    const lastBinIdx = result.annotationData[lastDataIndex];
     expect(result.annotation.values[lastBinIdx]).not.toBe(NA_VALUE);
 
     // The gradient must use the full color spectrum
@@ -560,8 +567,8 @@ describe('numeric-binning', () => {
     expect(numericBins).toHaveLength(1);
 
     // All data points still assigned
-    for (const data of result.annotationData) {
-      expect(data.length).toBe(1);
+    for (let i = 0; i < result.annotationData.length; i++) {
+      expect(result.annotationData[i]).toBeGreaterThanOrEqual(0);
     }
   });
 });
