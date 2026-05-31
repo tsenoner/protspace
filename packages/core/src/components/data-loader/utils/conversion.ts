@@ -1078,54 +1078,82 @@ async function extractAnnotationsByProtein(
       continue;
     }
 
-    // === Pass 1: split + parse every cell EXACTLY ONCE. Collect unique-value
-    //     frequencies, detect scores/evidence, track the max arity, and CACHE
-    //     the parse output per protein so Pass 2 is a pure index-mapping pass.
-    //     Previously Pass 2 re-split + re-parsed every cell — ~2x the parse work
-    //     across ~22 columns at 573K. Caching halves it; output is byte-identical.
-    //     The caches are block-scoped and reclaimed between columns.
+    // === Pass 1: split + parse each DISTINCT cell value ONCE (memoized), then
+    //     reuse the parse across every protein that shares it. The annotation
+    //     columns are dictionary-encoded, so distinct cell values << protein
+    //     count for most columns (e.g. kingdom: 22 distinct over 573K rows) —
+    //     this turns the parse cost from O(proteins) into O(distinct cells).
+    //     Output is byte-identical: frequency counting, arity, and score/evidence
+    //     detection all stay PER-PROTEIN-OCCURRENCE below; only the split+parse
+    //     is shared. Caches are block-scoped and reclaimed between columns.
+    interface ParsedCell {
+      // null ⇒ empty cell (no values). Otherwise the parsed labels in cell order.
+      labels: string[] | null;
+      // Sparse: non-null only when at least one value carried a score / evidence
+      // code. When set, length === labels.length. SHARED by reference across
+      // proteins with identical cells — safe because the result is read-only and
+      // is deep-copied by structured-clone on worker transfer.
+      scores: (number[] | null)[] | null;
+      evidence: (string | null)[] | null;
+    }
+    const EMPTY_CELL: ParsedCell = { labels: null, scores: null, evidence: null };
+
     const valueCountMap = new Map<string, number>();
     let columnHasScores = false;
     let columnHasEvidence = false;
     let maxValuesPerProtein = 0;
 
-    // `labelsByProtein[p] === undefined` ⇒ protein had no values for this column.
-    // scores/evidence caches stay sparse: a protein's slot is only set when at
-    // least one of its values carried a score / evidence code. When set, the
-    // cached array length equals labelsByProtein[p].length.
-    const labelsByProtein = new Array<string[] | undefined>(numProteins);
-    const scoresByProtein = new Array<(number[] | null)[] | undefined>(numProteins);
-    const evidenceByProtein = new Array<(string | null)[] | undefined>(numProteins);
+    // Memoize split+parse keyed by the raw cell value (deterministic). parquet
+    // decodes these columns as strings, so the key is the cell string itself;
+    // distinct raw values are always parsed independently (never collapsed).
+    const parseCache = new Map<unknown, ParsedCell>();
+    const parseCell = (raw: unknown): ParsedCell => {
+      const cached = parseCache.get(raw);
+      if (cached !== undefined) return cached;
+      const rawValues = splitCategoricalAnnotationValues(raw);
+      const n = rawValues.length;
+      if (n === 0) {
+        parseCache.set(raw, EMPTY_CELL);
+        return EMPTY_CELL;
+      }
+      const labels = new Array<string>(n);
+      let scores: (number[] | null)[] | null = null;
+      let evidence: (string | null)[] | null = null;
+      for (let k = 0; k < n; k++) {
+        const parsed = parseAnnotationValue(rawValues[k]);
+        labels[k] = parsed.label;
+        if (parsed.scores.length > 0) {
+          if (!scores) scores = new Array<number[] | null>(n).fill(null);
+          scores[k] = parsed.scores;
+        }
+        if (parsed.evidence) {
+          if (!evidence) evidence = new Array<string | null>(n).fill(null);
+          evidence[k] = parsed.evidence;
+        }
+      }
+      const cell: ParsedCell = { labels, scores, evidence };
+      parseCache.set(raw, cell);
+      return cell;
+    };
+
+    // Per-protein parse (cache hit for repeated cells). Counting + flags + arity
+    // are accumulated PER PROTEIN so they match the non-memoized version exactly.
+    const parsedByProtein = new Array<ParsedCell>(numProteins);
 
     for (let i = 0; i < numProteins; i += chunkSize) {
       const end = Math.min(i + chunkSize, numProteins);
       for (let p = i; p < end; p++) {
-        const rawValues = splitCategoricalAnnotationValues(rowByProteinIdx[p]?.[annotationCol]);
-        const n = rawValues.length;
+        const cell = parseCell(rowByProteinIdx[p]?.[annotationCol]);
+        parsedByProtein[p] = cell;
+        const labels = cell.labels;
+        if (labels === null) continue;
+        const n = labels.length;
         if (n > maxValuesPerProtein) maxValuesPerProtein = n;
-        if (n === 0) continue;
-
-        const labels = new Array<string>(n);
-        let scores: (number[] | null)[] | null = null;
-        let evidences: (string | null)[] | null = null;
         for (let k = 0; k < n; k++) {
-          const parsed = parseAnnotationValue(rawValues[k]);
-          labels[k] = parsed.label;
-          valueCountMap.set(parsed.label, (valueCountMap.get(parsed.label) || 0) + 1);
-          if (parsed.scores.length > 0) {
-            columnHasScores = true;
-            if (!scores) scores = new Array<number[] | null>(n).fill(null);
-            scores[k] = parsed.scores;
-          }
-          if (parsed.evidence) {
-            columnHasEvidence = true;
-            if (!evidences) evidences = new Array<string | null>(n).fill(null);
-            evidences[k] = parsed.evidence;
-          }
+          valueCountMap.set(labels[k], (valueCountMap.get(labels[k]) || 0) + 1);
         }
-        labelsByProtein[p] = labels;
-        if (scores) scoresByProtein[p] = scores;
-        if (evidences) evidenceByProtein[p] = evidences;
+        if (cell.scores) columnHasScores = true;
+        if (cell.evidence) columnHasEvidence = true;
       }
       await fastYield();
     }
@@ -1152,25 +1180,25 @@ async function extractAnnotationsByProtein(
     for (let i = 0; i < numProteins; i += chunkSize) {
       const end = Math.min(i + chunkSize, numProteins);
       for (let p = i; p < end; p++) {
-        const labels = labelsByProtein[p];
-        if (labels === undefined) continue;
+        const cell = parsedByProtein[p];
+        const labels = cell.labels;
+        if (labels === null) continue;
 
         if (annotationDataTyped) {
           // Single-valued: write the one index directly into the typed array.
           annotationDataTyped[p] = valueToIndex.get(labels[0]) ?? -1;
         } else {
+          // Fresh index array per protein (NOT shared) to match prior behavior.
           const indices = new Array<number>(labels.length);
           for (let k = 0; k < labels.length; k++) {
             indices[k] = valueToIndex.get(labels[k]) ?? -1;
           }
           annotationDataArray![p] = indices;
           if (scoresArray) {
-            scoresArray[p] =
-              scoresByProtein[p] ?? new Array<number[] | null>(labels.length).fill(null);
+            scoresArray[p] = cell.scores ?? new Array<number[] | null>(labels.length).fill(null);
           }
           if (evidenceArray) {
-            evidenceArray[p] =
-              evidenceByProtein[p] ?? new Array<string | null>(labels.length).fill(null);
+            evidenceArray[p] = cell.evidence ?? new Array<string | null>(labels.length).fill(null);
           }
         }
       }

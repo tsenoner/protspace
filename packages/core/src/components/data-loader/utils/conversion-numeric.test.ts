@@ -638,6 +638,45 @@ describe('annotation_data storage shape', () => {
     expect(evidence).toBeDefined();
     expect(evidence![p1]).toEqual([null, 'ECO:0000269', null]);
   });
+
+  it('memoizes repeated cells without cross-contaminating per-protein output', async () => {
+    // Many proteins share the SAME multi-valued scored+evidence cell (cache hits),
+    // interleaved with a distinct plain cell — guards the parse memoization.
+    const shared = 'Active|1.5e-10;Bind|ECO:0000269';
+    const rows = Array.from({ length: 10000 }, (_, i) => ({
+      projection_name: 'UMAP',
+      identifier: `P${i + 1}`,
+      x: i,
+      y: i,
+      site: i % 4 === 0 ? 'Solo' : shared,
+    }));
+
+    const result = await convertParquetToVisualizationDataOptimized(rows, [
+      { projection_name: 'UMAP', dimensions: 2 },
+    ]);
+
+    const siteData = result.annotation_data.site as readonly (readonly number[])[];
+    const values = result.annotations.site.values;
+    const scores = result.annotation_scores?.site;
+    const evidence = result.annotation_evidence?.site;
+    expect(scores).toBeDefined();
+    expect(evidence).toBeDefined();
+
+    // Every shared-cell protein resolves to ['Active','Bind'] with the right score/evidence,
+    // and the distinct 'Solo' proteins are unaffected (no cross-contamination).
+    const pShared = result.protein_ids.indexOf('P2'); // i=1 -> shared
+    const pSolo = result.protein_ids.indexOf('P1'); // i=0 -> 'Solo'
+    expect(siteData[pShared].map((ix) => values[ix])).toEqual(['Active', 'Bind']);
+    expect(scores![pShared]).toEqual([[1.5e-10], null]);
+    expect(evidence![pShared]).toEqual([null, 'ECO:0000269']);
+    expect(siteData[pSolo].map((ix) => values[ix])).toEqual(['Solo']);
+    expect(scores![pSolo]).toEqual([null]);
+    expect(evidence![pSolo]).toEqual([null]);
+
+    // Frequency-based ordering is unaffected by memoization: 'Active' and 'Bind'
+    // each occur 7500 times (3/4 of 10000), 'Solo' 2500 — so Solo sorts last.
+    expect(values.indexOf('Solo')).toBeGreaterThan(values.indexOf('Active'));
+  });
 });
 
 import { generateColorsAndShapes } from './conversion';
