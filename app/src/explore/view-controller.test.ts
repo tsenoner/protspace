@@ -21,6 +21,7 @@ function createMockElements() {
   const plotElement = {
     selectedProjectionIndex: 0,
     selectedAnnotation: 'ec',
+    tooltipAnnotations: [] as string[],
     getCurrentData: () => ({
       annotations: { ec: {}, pfam: {}, go: {} },
       projections: [{ name: 'UMAP' }, { name: 'PCA' }, { name: 't-SNE' }],
@@ -31,6 +32,7 @@ function createMockElements() {
   const controlBar = {
     selectedProjection: 'UMAP',
     selectedAnnotation: 'ec',
+    tooltipAnnotations: [] as string[],
     applyProjectionSelection: vi.fn((projection: string) => {
       controlBar.selectedProjection = projection;
       // Simulate the real control-bar updating the plot
@@ -43,19 +45,28 @@ function createMockElements() {
       controlBar.selectedAnnotation = annotation;
       plotElement.selectedAnnotation = annotation;
     }),
+    applyTooltipAnnotationsSelection: vi.fn((tooltip: string[]) => {
+      controlBar.tooltipAnnotations = [...tooltip];
+      plotElement.tooltipAnnotations = [...tooltip];
+    }),
   };
 
   return { plotElement, controlBar };
 }
 
-function makeRequest(annotation?: string, projection?: string): ExploreViewRequestState {
+function makeRequest(
+  annotation?: string,
+  projection?: string,
+  tooltip?: string[],
+): ExploreViewRequestState {
   return {
-    requested: { annotation, projection },
+    requested: { annotation, projection, tooltip },
     present: {
       annotation: annotation !== undefined,
       projection: projection !== undefined,
+      tooltip: tooltip !== undefined,
     },
-    normalize: { annotation: false, projection: false },
+    normalize: { annotation: false, projection: false, tooltip: false },
   };
 }
 
@@ -73,7 +84,7 @@ describe('createViewController', () => {
     const { viewController } = setup();
     const view = viewController.getCurrentEffectiveView();
 
-    expect(view).toEqual({ annotation: 'ec', projection: 'UMAP' });
+    expect(view).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
   });
 
   it('returns null when no data is available', () => {
@@ -95,7 +106,7 @@ describe('createViewController', () => {
     const request = makeRequest('pfam', 'PCA');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'pfam', projection: 'PCA' });
+    expect(result).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
     expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
     expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
   });
@@ -105,7 +116,7 @@ describe('createViewController', () => {
     const request = makeRequest('NONEXISTENT', 'UNKNOWN');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'ec', projection: 'UMAP' });
+    expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
   });
 
   it('returns null from applyViewSelection when dataset has no options', () => {
@@ -131,7 +142,7 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'user');
 
     expect(changes).toHaveLength(1);
-    expect(changes[0].effective).toEqual({ annotation: 'pfam', projection: 'PCA' });
+    expect(changes[0].effective).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
     expect(changes[0].source).toBe('user');
   });
 
@@ -163,7 +174,7 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('pfam', 'PCA'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'pfam', projection: 'PCA' });
+    expect(resolved).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
   });
 
   it('resolveLatestView falls back for invalid requests', () => {
@@ -171,7 +182,7 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('NONEXISTENT', 'UNKNOWN'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'ec', projection: 'UMAP' });
+    expect(resolved).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
   });
 
   it('applyLatestViewForDatasetLoad uses dataset-load source', () => {

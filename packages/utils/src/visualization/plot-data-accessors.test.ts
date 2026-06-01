@@ -172,7 +172,9 @@ describe('plot-data-accessors', () => {
       expect(view.geneName).toEqual(['BRCA1']);
       expect(view.proteinName).toEqual(['BRCA1 protein']);
       expect(view.uniprotKbId).toEqual(['P00001']);
-      expect(view.displayValues).toEqual(['human']);
+      expect(view.blocks).toHaveLength(1);
+      expect(view.blocks[0].key).toBe('species');
+      expect(view.blocks[0].displayValues).toEqual(['human']);
     });
 
     it('falls back to "Gene name" / "Protein name" keys when snake_case keys are absent', () => {
@@ -245,13 +247,9 @@ describe('plot-data-accessors', () => {
       expect(view.proteinName).toEqual(['BRCA1 protein']);
     });
 
-    it('returns empty selected-annotation fields when selectedAnnotation is null', () => {
+    it('returns no annotation blocks when primaryAnnotation is null and no extras provided', () => {
       const view = buildTooltipView(baseData(), 0, null);
-      expect(view.displayValues).toEqual([]);
-      expect(view.numericValue).toBeNull();
-      expect(view.numericType).toBe('float');
-      expect(view.scores).toEqual([]);
-      expect(view.evidence).toEqual([]);
+      expect(view.blocks).toEqual([]);
     });
 
     it('returns empty header arrays when the named annotations are absent', () => {
@@ -260,6 +258,34 @@ describe('plot-data-accessors', () => {
       // No protein_name / uniprot_kb_id in baseData
       expect(view.proteinName).toEqual([]);
       expect(view.uniprotKbId).toEqual([]);
+    });
+
+    it('returns extra annotation blocks after the primary, in given order', () => {
+      const view = buildTooltipView(baseData(), 0, 'species', ['gene_name']);
+      expect(view.blocks.map((b) => b.key)).toEqual(['species', 'gene_name']);
+      expect(view.blocks[0].displayValues).toEqual(['human']);
+      expect(view.blocks[1].displayValues).toEqual(['BRCA1']);
+    });
+
+    it('deduplicates extras against the primary', () => {
+      const view = buildTooltipView(baseData(), 0, 'species', ['species', 'gene_name']);
+      expect(view.blocks.map((b) => b.key)).toEqual(['species', 'gene_name']);
+    });
+
+    it('deduplicates repeated extras', () => {
+      const view = buildTooltipView(baseData(), 0, 'species', ['gene_name', 'gene_name']);
+      expect(view.blocks.map((b) => b.key)).toEqual(['species', 'gene_name']);
+    });
+
+    it('drops extras whose annotation is missing from the dataset', () => {
+      const view = buildTooltipView(baseData(), 0, 'species', ['nonexistent', 'gene_name']);
+      expect(view.blocks.map((b) => b.key)).toEqual(['species', 'gene_name']);
+    });
+
+    it('returns only extra blocks when primary is null', () => {
+      const view = buildTooltipView(baseData(), 0, null, ['gene_name']);
+      expect(view.blocks.map((b) => b.key)).toEqual(['gene_name']);
+      expect(view.blocks[0].displayValues).toEqual(['BRCA1']);
     });
   });
 });

@@ -26,6 +26,7 @@ import { createStyleGetters } from './style-getters';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
 import { getDuplicateStackKey } from './duplicate-stack-helpers';
+import { estimateTooltipHeight } from './tooltip-height-estimate';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
@@ -63,6 +64,7 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Number }) selectedProjectionIndex = 0;
   @property({ type: String }) projectionPlane: 'xy' | 'xz' | 'yz' = 'xy';
   @property({ type: String }) selectedAnnotation = 'family';
+  @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: Array }) highlightedProteinIds: string[] = [];
   @property({ type: Array }) selectedProteinIds: string[] = [];
   @property({ type: Boolean }) selectionMode = false;
@@ -85,6 +87,7 @@ export class ProtspaceScatterplot extends LitElement {
     y: number;
     view: TooltipView;
   } | null = null;
+  @state() private _tooltipHeight: number | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
   @state() private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
@@ -169,6 +172,11 @@ export class ProtspaceScatterplot extends LitElement {
   private _spiderfyPressByPointerId = new Map<number, { x: number; y: number; t: number }>();
 
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
+
+  // Monotonically-increasing token used to invalidate a pending async tooltip-height
+  // measurement when a newer hover or a tooltip-clear supersedes it before the child
+  // LitElement has finished rendering.
+  private _tooltipMeasureToken = 0;
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
@@ -560,6 +568,51 @@ export class ProtspaceScatterplot extends LitElement {
       this._renderPlot();
       this._updateSelectionOverlays();
     }
+
+    // Only measure tooltip height when the tooltip data itself changes. The rendered
+    // height is derived purely from _tooltipData.view, so there is no reason to
+    // read offsetHeight (which forces a synchronous layout reflow) on unrelated
+    // updates such as zoom/pan (_transform), selection overlays, or the self-triggered
+    // _tooltipHeight update. Clearing _tooltipData to null IS a _tooltipData change,
+    // so the null-reset path in _measureTooltipHeight still fires correctly.
+    if (changedProperties.has('_tooltipData')) {
+      this._measureTooltipHeight();
+    }
+  }
+
+  private _measureTooltipHeight() {
+    if (!this._tooltipData) {
+      this._tooltipMeasureToken++; // invalidate any in-flight async measurement
+      if (this._tooltipHeight !== null) {
+        this._tooltipHeight = null;
+      }
+      return;
+    }
+    const el = this.renderRoot.querySelector('protspace-protein-tooltip') as
+      | (HTMLElement & { updateComplete?: Promise<unknown> })
+      | null;
+    if (!el) return;
+
+    // The <protspace-protein-tooltip> child LitElement renders its updated content
+    // one microtask AFTER this parent's updated() runs. Reading offsetHeight here
+    // would return the previous (or empty, on first hover) content height. Instead
+    // we wait for the child's own render cycle to complete before measuring.
+    const token = ++this._tooltipMeasureToken;
+    const childReady: Promise<unknown> = el.updateComplete ?? Promise.resolve();
+    void childReady.then(
+      () => {
+        // Guard against: (a) a newer hover that bumped the token while we were
+        // waiting, or (b) the tooltip being cleared while we were waiting.
+        if (token !== this._tooltipMeasureToken || !this._tooltipData) return;
+        const height = el.offsetHeight;
+        if (height > 0 && height !== this._tooltipHeight) {
+          this._tooltipHeight = height;
+        }
+      },
+      // The child's updateComplete rejects only if its render throws; swallow it
+      // so this measurement never surfaces an unhandled promise rejection.
+      () => {},
+    );
   }
 
   firstUpdated() {
@@ -1853,7 +1906,12 @@ export class ProtspaceScatterplot extends LitElement {
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
-    const view = buildTooltipView(this.data, point.originalIndex, this.selectedAnnotation);
+    const view = buildTooltipView(
+      this.data,
+      point.originalIndex,
+      this.selectedAnnotation,
+      this.tooltipAnnotations,
+    );
     this._tooltipData = { x, y, view };
 
     if (this._hoveredProteinId !== point.id) {
@@ -1872,7 +1930,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleClick(event: MouseEvent, point: PlotDataPoint) {
     const view = this.data
-      ? buildTooltipView(this.data, point.originalIndex, this.selectedAnnotation)
+      ? buildTooltipView(
+          this.data,
+          point.originalIndex,
+          this.selectedAnnotation,
+          this.tooltipAnnotations,
+        )
       : null;
     this.dispatchEvent(
       new CustomEvent('protein-click', {
@@ -2049,6 +2112,17 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
+  /**
+   * Content-scaled fallback height derived from the tooltip view model.
+   * Used when the async DOM measurement has not yet resolved (first hover or
+   * hover that changed data). Delegates to the pure `estimateTooltipHeight`
+   * helper so the logic is unit-testable without a DOM.
+   */
+  private _estimateTooltipHeight(): number {
+    if (!this._tooltipData) return 160;
+    return estimateTooltipHeight(this._tooltipData.view);
+  }
+
   private _getTooltipStyle() {
     if (!this._tooltipData) return '';
 
@@ -2056,7 +2130,7 @@ export class ProtspaceScatterplot extends LitElement {
     const config = this._mergedConfig;
     const padding = 15;
     const tooltipMaxWidth = 350;
-    const tooltipApproxHeight = 160;
+    const tooltipHeight = this._tooltipHeight ?? this._estimateTooltipHeight();
 
     let left = x + 15;
     let top = y - 60;
@@ -2078,11 +2152,13 @@ export class ProtspaceScatterplot extends LitElement {
       left = tooltipMaxWidth + padding;
     }
 
-    // Vertical adjustment: keep within vertical bounds
+    // Vertical adjustment: clamp to viewport using the measured height when
+    // available, so tall multi-annotation tooltips do not run off the bottom.
+    if (top + tooltipHeight > config.height - padding) {
+      top = config.height - tooltipHeight - padding;
+    }
     if (top < padding) {
       top = padding;
-    } else if (top + tooltipApproxHeight > config.height) {
-      top = config.height - tooltipApproxHeight - padding;
     }
 
     return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;
@@ -2134,7 +2210,6 @@ export class ProtspaceScatterplot extends LitElement {
                 class="visible"
                 style="${this._getTooltipStyle()}"
                 .view=${this._tooltipData.view}
-                .selectedAnnotation=${this.selectedAnnotation}
               >
               </protspace-protein-tooltip>
             `

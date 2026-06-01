@@ -42,6 +42,7 @@ export class ProtspaceControlBar extends LitElement {
   selectedProjection: string = '';
   @property({ type: String, attribute: 'selected-annotation' })
   selectedAnnotation: string = '';
+  @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String, attribute: 'projection-plane' })
   projectionPlane: 'xy' | 'xz' | 'yz' = 'xy';
   @property({ type: Boolean, attribute: 'selection-mode' })
@@ -295,6 +296,14 @@ export class ProtspaceControlBar extends LitElement {
       }
     }
 
+    // The new primary is implicitly in the tooltip; drop it from the extras
+    // so the dropdown does not also show an active toggle for it.
+    if (this.tooltipAnnotations.includes(annotation)) {
+      this.applyTooltipAnnotationsSelection(
+        this.tooltipAnnotations.filter((name) => name !== annotation),
+      );
+    }
+
     const customEvent = new CustomEvent('annotation-change', {
       detail: { annotation },
       bubbles: true,
@@ -305,6 +314,37 @@ export class ProtspaceControlBar extends LitElement {
 
   private handleAnnotationSelected(event: CustomEvent<{ annotation: string }>) {
     this.applyAnnotationSelection(event.detail.annotation);
+  }
+
+  applyTooltipAnnotationsSelection(tooltipAnnotations: string[]) {
+    const sanitized = Array.from(
+      new Set(tooltipAnnotations.filter((name) => name !== this.selectedAnnotation)),
+    );
+    this.tooltipAnnotations = sanitized;
+
+    if (this.autoSync && this._scatterplotElement) {
+      if ('tooltipAnnotations' in this._scatterplotElement) {
+        (this._scatterplotElement as ScatterplotElementLike).tooltipAnnotations = [...sanitized];
+      }
+    }
+
+    this.dispatchEvent(
+      new CustomEvent('tooltip-annotations-change', {
+        detail: { tooltipAnnotations: [...sanitized] },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private handleTooltipAnnotationToggle(
+    event: CustomEvent<{
+      annotation: string;
+      active: boolean;
+      tooltipAnnotations: string[];
+    }>,
+  ) {
+    this.applyTooltipAnnotationsSelection(event.detail.tooltipAnnotations);
   }
 
   private handleToggleSelectionMode() {
@@ -603,7 +643,9 @@ export class ProtspaceControlBar extends LitElement {
               id="annotation-select"
               .annotations=${this.annotations}
               .selectedAnnotation=${this.selectedAnnotation}
+              .tooltipAnnotations=${this.tooltipAnnotations}
               @annotation-select=${this.handleAnnotationSelected}
+              @tooltip-annotation-toggle=${this.handleTooltipAnnotationToggle}
             ></protspace-annotation-select>
           </div>
         </div>

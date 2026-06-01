@@ -1,11 +1,18 @@
 export interface RequestedExploreView {
   annotation?: string;
   projection?: string;
+  /**
+   * Extra annotations the user has opted into the hover tooltip.
+   * `undefined` means the URL didn't request a value; `[]` means it
+   * requested an explicitly empty set.
+   */
+  tooltip?: string[];
 }
 
 export interface ExploreViewNormalization {
   annotation: boolean;
   projection: boolean;
+  tooltip: boolean;
 }
 
 export interface ExploreViewRequestState {
@@ -13,6 +20,7 @@ export interface ExploreViewRequestState {
   present: {
     annotation: boolean;
     projection: boolean;
+    tooltip: boolean;
   };
   normalize: ExploreViewNormalization;
 }
@@ -20,6 +28,7 @@ export interface ExploreViewRequestState {
 export interface EffectiveExploreView {
   annotation: string;
   projection: string;
+  tooltip: string[];
 }
 
 export interface ResolvedExploreView {
@@ -27,6 +36,7 @@ export interface ResolvedExploreView {
   matchesRequested: {
     annotation: boolean;
     projection: boolean;
+    tooltip: boolean;
   };
 }
 

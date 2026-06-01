@@ -25,6 +25,7 @@ interface ResolvedInitialView {
   annotation: string;
   projectionIndex: number;
   projectionName: string;
+  tooltip: string[];
 }
 
 function resolveRenderableView(
@@ -37,11 +38,24 @@ function resolveRenderableView(
     newData.projections.findIndex((projection) => projection.name === projectionName),
   );
   const firstAnnotationKey = Object.keys(newData.annotations)[0] || '';
+  const annotation = initialView?.annotation ?? firstAnnotationKey;
+
+  const availableAnnotations = new Set(Object.keys(newData.annotations));
+  const seenTooltip = new Set<string>();
+  const tooltip: string[] = [];
+  for (const name of initialView?.tooltip ?? []) {
+    if (name === annotation) continue;
+    if (!availableAnnotations.has(name)) continue;
+    if (seenTooltip.has(name)) continue;
+    seenTooltip.add(name);
+    tooltip.push(name);
+  }
 
   return {
-    annotation: initialView?.annotation ?? firstAnnotationKey,
+    annotation,
     projectionIndex,
     projectionName,
+    tooltip,
   };
 }
 
@@ -69,6 +83,7 @@ function applyPlotState(
   plotElement.data = newData;
   plotElement.selectedProjectionIndex = initialView.projectionIndex;
   plotElement.selectedAnnotation = initialView.annotation;
+  plotElement.tooltipAnnotations = [...initialView.tooltip];
   plotElement.selectedProteinIds = [];
   plotElement.selectionMode = false;
   plotElement.hiddenAnnotationValues = [];
@@ -78,6 +93,7 @@ function applyPlotState(
 function applyControlBarState(controlBar: ProtspaceControlBar, initialView: ResolvedInitialView) {
   controlBar.selectedProjection = initialView.projectionName;
   controlBar.selectedAnnotation = initialView.annotation;
+  controlBar.tooltipAnnotations = [...initialView.tooltip];
   controlBar.selectionMode = false;
   controlBar.selectedProteinsCount = 0;
   controlBar.requestUpdate();
@@ -229,6 +245,7 @@ export function createDataRenderer({
       return {
         annotation: resolvedInitialView.annotation,
         projection: resolvedInitialView.projectionName,
+        tooltip: [...resolvedInitialView.tooltip],
       };
     } finally {
       if (isLargeDataset && !getIsDisposed()) {

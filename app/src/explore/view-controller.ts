@@ -31,6 +31,7 @@ export interface ViewController {
   setRequestedView(viewRequest: ExploreViewRequestState): void;
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
+  handleUserTooltipAnnotationsChange(): void;
   subscribeToViewChanges(callback: (change: ExploreViewChange) => void): () => void;
   dispose(): void;
 }
@@ -95,9 +96,21 @@ export function createViewController({
           ? controlBar.selectedAnnotation
           : availableAnnotations[0];
 
+    const rawTooltip = plotElement.tooltipAnnotations ?? controlBar.tooltipAnnotations ?? [];
+    const tooltipSeen = new Set<string>();
+    const tooltip: string[] = [];
+    for (const name of rawTooltip) {
+      if (name === annotation) continue;
+      if (!availableAnnotations.includes(name)) continue;
+      if (tooltipSeen.has(name)) continue;
+      tooltipSeen.add(name);
+      tooltip.push(name);
+    }
+
     return {
       annotation,
       projection,
+      tooltip,
     };
   };
 
@@ -107,6 +120,18 @@ export function createViewController({
 
   const selectAnnotation = (annotation: string) => {
     controlBar.applyAnnotationSelection(annotation);
+  };
+
+  const selectTooltipAnnotations = (tooltipAnnotations: string[]) => {
+    controlBar.applyTooltipAnnotationsSelection?.(tooltipAnnotations);
+  };
+
+  const arraysEqual = (a: readonly string[], b: readonly string[]) => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   };
 
   const resolveLatestView = (dataOverride?: VisualizationData) => {
@@ -143,6 +168,7 @@ export function createViewController({
     const effective = resolved.effective;
     const projectionChanged = currentView?.projection !== effective.projection;
     const annotationChanged = currentView?.annotation !== effective.annotation;
+    const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
 
     activeViewChangeSource = source;
     if (projectionChanged) {
@@ -150,6 +176,9 @@ export function createViewController({
     }
     if (annotationChanged) {
       selectAnnotation(effective.annotation);
+    }
+    if (tooltipChanged) {
+      selectTooltipAnnotations(effective.tooltip);
     }
     scheduleActiveViewChangeSourceReset(source);
 
@@ -178,6 +207,7 @@ export function createViewController({
       normalize: {
         annotation: false,
         projection: false,
+        tooltip: false,
       },
     });
   };
@@ -198,6 +228,9 @@ export function createViewController({
       emitCurrentUserViewChange();
     },
     handleUserProjectionChange() {
+      emitCurrentUserViewChange();
+    },
+    handleUserTooltipAnnotationsChange() {
       emitCurrentUserViewChange();
     },
     subscribeToViewChanges(callback: (change: ExploreViewChange) => void) {

@@ -40,6 +40,10 @@ export function bindControlBarEvents({
 
   addControlBarListener('projection-change', viewController.handleUserProjectionChange);
 
+  addControlBarListener('tooltip-annotations-change', () => {
+    viewController.handleUserTooltipAnnotationsChange();
+  });
+
   addControlBarListener('selection-disabled-notification', (event: Event) => {
     const customEvent = event as CustomEvent<SelectionDisabledNotificationDetail>;
     notify.warning(getSelectionDisabledNotification(customEvent.detail));

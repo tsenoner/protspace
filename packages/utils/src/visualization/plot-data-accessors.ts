@@ -77,17 +77,24 @@ export function getProteinEvidence(
 
 /**
  * Tooltip view — assembled once per hover, never per-protein.
+ * `blocks` is ordered: the primary annotation is first (when provided),
+ * followed by any extra annotations the user has opted into.
  */
-export interface TooltipView {
-  proteinId: string;
-  geneName: string[];
-  proteinName: string[];
-  uniprotKbId: string[];
+export interface AnnotationBlock {
+  key: string;
   displayValues: string[];
   numericValue: number | null;
   numericType: NumericAnnotationType;
   scores: (number[] | null)[];
   evidence: (string | null)[];
+}
+
+export interface TooltipView {
+  proteinId: string;
+  geneName: string[];
+  proteinName: string[];
+  uniprotKbId: string[];
+  blocks: AnnotationBlock[];
 }
 
 function getHeaderValues(
@@ -105,10 +112,26 @@ function getHeaderValues(
   return [];
 }
 
+function buildAnnotationBlock(
+  data: VisualizationData,
+  proteinIdx: number,
+  key: string,
+): AnnotationBlock {
+  return {
+    key,
+    displayValues: getProteinDisplayValues(data, proteinIdx, key),
+    numericValue: getProteinNumericValue(data, proteinIdx, key),
+    numericType: getProteinNumericType(data, key),
+    scores: getProteinScores(data, proteinIdx, key),
+    evidence: getProteinEvidence(data, proteinIdx, key),
+  };
+}
+
 export function buildTooltipView(
   data: VisualizationData,
   proteinIdx: number,
-  selectedAnnotation: string | null,
+  primaryAnnotation: string | null,
+  extraAnnotations: readonly string[] = [],
 ): TooltipView {
   const proteinId = data.protein_ids[proteinIdx] ?? '';
   const geneName = getHeaderValues(data, proteinIdx, 'gene_name', 'Gene name');
@@ -117,18 +140,17 @@ export function buildTooltipView(
     ? getProteinAnnotationValues(data, proteinIdx, 'uniprot_kb_id')
     : [];
 
-  if (!selectedAnnotation) {
-    return {
-      proteinId,
-      geneName,
-      proteinName,
-      uniprotKbId,
-      displayValues: [],
-      numericValue: null,
-      numericType: 'float',
-      scores: [],
-      evidence: [],
-    };
+  const blocks: AnnotationBlock[] = [];
+  const seen = new Set<string>();
+  if (primaryAnnotation && data.annotations[primaryAnnotation]) {
+    blocks.push(buildAnnotationBlock(data, proteinIdx, primaryAnnotation));
+    seen.add(primaryAnnotation);
+  }
+  for (const key of extraAnnotations) {
+    if (seen.has(key)) continue;
+    if (!data.annotations[key]) continue;
+    blocks.push(buildAnnotationBlock(data, proteinIdx, key));
+    seen.add(key);
   }
 
   return {
@@ -136,10 +158,6 @@ export function buildTooltipView(
     geneName,
     proteinName,
     uniprotKbId,
-    displayValues: getProteinDisplayValues(data, proteinIdx, selectedAnnotation),
-    numericValue: getProteinNumericValue(data, proteinIdx, selectedAnnotation),
-    numericType: getProteinNumericType(data, selectedAnnotation),
-    scores: getProteinScores(data, proteinIdx, selectedAnnotation),
-    evidence: getProteinEvidence(data, proteinIdx, selectedAnnotation),
+    blocks,
   };
 }
