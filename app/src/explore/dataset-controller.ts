@@ -160,6 +160,11 @@ export function createDatasetController({
         setCurrentDatasetIsDemo(true);
       }
 
+      // Must be set before the restore block so that any view-change emitted by
+      // setRequestedView below is persisted under the new dataset's key, not the
+      // previous dataset's key.
+      currentDatasetHash = datasetHash;
+
       const latestRequest = viewController.getLatestViewRequest();
       if (!latestRequest.present.tooltip) {
         const persistedTooltip = readTooltipAnnotations(datasetHash);
@@ -177,8 +182,6 @@ export function createDatasetController({
           });
         }
       }
-
-      currentDatasetHash = datasetHash;
 
       viewController.applyLatestViewForDatasetLoad(data);
 
