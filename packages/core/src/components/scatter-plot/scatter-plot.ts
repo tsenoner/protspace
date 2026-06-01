@@ -563,7 +563,15 @@ export class ProtspaceScatterplot extends LitElement {
       this._updateSelectionOverlays();
     }
 
-    this._measureTooltipHeight();
+    // Only measure tooltip height when the tooltip data itself changes. The rendered
+    // height is derived purely from _tooltipData.view, so there is no reason to
+    // read offsetHeight (which forces a synchronous layout reflow) on unrelated
+    // updates such as zoom/pan (_transform), selection overlays, or the self-triggered
+    // _tooltipHeight update. Clearing _tooltipData to null IS a _tooltipData change,
+    // so the null-reset path in _measureTooltipHeight still fires correctly.
+    if (changedProperties.has('_tooltipData')) {
+      this._measureTooltipHeight();
+    }
   }
 
   private _measureTooltipHeight() {
