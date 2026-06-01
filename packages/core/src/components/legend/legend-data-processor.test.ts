@@ -565,7 +565,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        true,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -587,7 +586,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         {},
@@ -638,7 +636,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -657,7 +654,7 @@ describe('legend-data-processor', () => {
         ['category1', 10],
         ['category2', 5],
       ];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, [], false);
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, []);
       expect(items).toHaveLength(2);
       expect(items[0].value).toBe('category1');
       expect(items[0].count).toBe(10);
@@ -668,13 +665,13 @@ describe('legend-data-processor', () => {
 
     it('adds Other item when otherCount > 0', () => {
       const topItems: Array<[string, number]> = [['category1', 10]];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, [], false);
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
       expect(items.some((i) => i.value === 'Other')).toBe(true);
     });
 
     it('sets correct count on Other item', () => {
       const topItems: Array<[string, number]> = [['category1', 10]];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, [], false);
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
       expect(items.find((i) => i.value === 'Other')?.count).toBe(5);
     });
 
@@ -694,14 +691,7 @@ describe('legend-data-processor', () => {
         },
       ];
       // In manual mode, existing zOrders should be preserved
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        existing,
-        false,
-        'manual',
-      );
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, existing, 'manual');
       const cat2 = items.find((i) => i.value === 'category2');
       expect(cat2?.zOrder).toBe(99);
     });
@@ -722,14 +712,7 @@ describe('legend-data-processor', () => {
         },
       ];
       // In size mode, zOrder should be based on sorted index, not existing
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        existing,
-        false,
-        'size-desc',
-      );
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, existing, 'size-desc');
       const cat1 = items.find((i) => i.value === 'category1');
       const cat2 = items.find((i) => i.value === 'category2');
       expect(cat1?.zOrder).toBe(0); // First in sorted order
@@ -766,7 +749,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         existing,
-        false,
         'manual-reverse',
       );
       const cat1 = items.find((i) => i.value === 'category1');
@@ -775,14 +757,13 @@ describe('legend-data-processor', () => {
       expect(cat1?.zOrder).toBe(1); // Second in reversed order
     });
 
-    it('includes shapes when shapesEnabled', () => {
+    it('uses circle as the default shape for every item', () => {
       const topItems: Array<[string, number]> = [
         ['category1', 10],
         ['category2', 5],
       ];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, [], true);
-      const shapes = new Set(items.map((i) => i.shape));
-      expect(shapes.size).toBeGreaterThan(1);
+      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, []);
+      expect(items.every((i) => i.shape === 'circle')).toBe(true);
     });
 
     it('applies colors from persistedCategories', () => {
@@ -799,7 +780,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -828,7 +808,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         existing,
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -846,7 +825,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -871,7 +849,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         existing,
-        false,
         'size-desc',
         new Map(),
         {}, // empty persisted
@@ -893,7 +870,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        true,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -919,7 +895,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -945,22 +920,19 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         existing,
-        false,
         'size-desc',
         new Map(),
         {}, // empty persisted
       );
-      // When shapesEnabled=false, computed shape is always 'circle'
-      // regardless of what existing items had
+      // Computed shape is always 'circle' regardless of what existing items had.
       expect(items[0].shape).toBe('circle');
     });
 
-    it('assigns diverse shapes when shapesEnabled toggles from false to true', () => {
+    it('keeps every default shape as circle even with prior items', () => {
       const topItems: Array<[string, number]> = [
         ['cat1', 30],
         ['cat2', 20],
       ];
-      // Existing items have 'circle' from when shapes were disabled
       const existing: LegendItem[] = [
         { value: 'cat1', color: '#F3C300', shape: 'circle', count: 30, isVisible: true, zOrder: 0 },
         { value: 'cat2', color: '#875692', shape: 'circle', count: 20, isVisible: true, zOrder: 1 },
@@ -970,13 +942,12 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         existing,
-        true, // shapesEnabled = true
         'size-desc',
         new Map(),
         {}, // empty persisted — simulates cleared pending categories
       );
-      expect(items[0].shape).toBe('circle'); // slot 0
-      expect(items[1].shape).toBe('square'); // slot 1
+      expect(items[0].shape).toBe('circle');
+      expect(items[1].shape).toBe('circle');
     });
 
     it('prefers persisted shapes over existing shapes', () => {
@@ -999,7 +970,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         existing,
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -1017,7 +987,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -1030,7 +999,7 @@ describe('legend-data-processor', () => {
     it('resolves color conflict when new item default color matches a persisted color', () => {
       // Scenario: itemB has persisted color = slot 1's color (#875692)
       // itemA gets slot 1 by default -> conflict -> should get a different color
-      const slot1Color = getVisualEncoding(1, false, 'itemA').color; // #875692
+      const slot1Color = getVisualEncoding(1, 'itemA').color; // #875692
       const topItems: Array<[string, number]> = [
         ['itemB', 10],
         ['itemA', 5],
@@ -1043,7 +1012,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -1057,9 +1025,9 @@ describe('legend-data-processor', () => {
     it('resolves cascading color conflicts when multiple persisted colors block defaults', () => {
       // Scenario: two items have persisted colors matching slots 0 and 1
       // A new third item at slot 0 should skip both and land on slot 2's color
-      const slot0Color = getVisualEncoding(0, false, 'x').color; // #F3C300
-      const slot1Color = getVisualEncoding(1, false, 'x').color; // #875692
-      const slot2Color = getVisualEncoding(2, false, 'x').color; // #F38400
+      const slot0Color = getVisualEncoding(0, 'x').color; // #F3C300
+      const slot1Color = getVisualEncoding(1, 'x').color; // #875692
+      const slot2Color = getVisualEncoding(2, 'x').color; // #F38400
       const topItems: Array<[string, number]> = [
         ['persistedA', 10],
         ['persistedB', 8],
@@ -1074,7 +1042,6 @@ describe('legend-data-processor', () => {
         topItems,
         0,
         [],
-        false,
         'size-desc',
         new Map(),
         persistedCategories,
@@ -1085,85 +1052,6 @@ describe('legend-data-processor', () => {
       expect(items[2].color).not.toBe(slot0Color);
       expect(items[2].color).not.toBe(slot1Color);
       expect(items[2].color).toBe(slot2Color);
-    });
-
-    it('resolves shape conflict when new item default shape matches a persisted shape', () => {
-      // Shapes cycle: circle(0), square(1), diamond(2), plus(3), triangle-up(4), triangle-down(5)
-      // itemB persists with square (slot 1's shape). itemA gets slot 1 by default -> conflict
-      const slot1Shape = getVisualEncoding(1, true, 'itemA').shape; // square
-      const topItems: Array<[string, number]> = [
-        ['itemB', 10],
-        ['itemA', 5],
-      ];
-      const persistedCategories = {
-        itemB: { zOrder: 0, color: '#custom', shape: slot1Shape },
-      };
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        [],
-        true, // shapesEnabled
-        'size-desc',
-        new Map(),
-        persistedCategories,
-      );
-      expect(items[0].shape).toBe(slot1Shape);
-      expect(items[1].shape).not.toBe(slot1Shape);
-    });
-
-    it('resolves cascading shape conflicts when multiple persisted shapes block defaults', () => {
-      const slot0Shape = getVisualEncoding(0, true, 'x').shape; // circle
-      const slot1Shape = getVisualEncoding(1, true, 'x').shape; // square
-      const slot2Shape = getVisualEncoding(2, true, 'x').shape; // diamond
-      const topItems: Array<[string, number]> = [
-        ['persistedA', 10],
-        ['persistedB', 8],
-        ['newItem', 5],
-      ];
-      const persistedCategories = {
-        persistedA: { zOrder: 0, color: '#c1', shape: slot0Shape },
-        persistedB: { zOrder: 1, color: '#c2', shape: slot1Shape },
-      };
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        [],
-        true, // shapesEnabled
-        'size-desc',
-        new Map(),
-        persistedCategories,
-      );
-      expect(items[0].shape).toBe(slot0Shape);
-      expect(items[1].shape).toBe(slot1Shape);
-      expect(items[2].shape).not.toBe(slot0Shape);
-      expect(items[2].shape).not.toBe(slot1Shape);
-      expect(items[2].shape).toBe(slot2Shape);
-    });
-
-    it('does not resolve shape conflicts when shapes are disabled', () => {
-      // When shapesEnabled=false, all items get 'circle' — no conflict resolution needed
-      const topItems: Array<[string, number]> = [
-        ['itemB', 10],
-        ['itemA', 5],
-      ];
-      const persistedCategories = {
-        itemB: { zOrder: 0, color: '#custom', shape: 'circle' },
-      };
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        [],
-        false, // shapesEnabled = false
-        'size-desc',
-        new Map(),
-        persistedCategories,
-      );
-      // Both should be circle when shapes are disabled
-      expect(items[0].shape).toBe('circle');
-      expect(items[1].shape).toBe('circle');
     });
   });
 
@@ -1179,7 +1067,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
       );
       expect(result.legendItems.length).toBeGreaterThan(0);
       expect(result.legendItems.find((i) => i.value === 'a')?.count).toBe(3);
@@ -1196,7 +1083,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
       );
       expect(ctx.currentAnnotation).toBe('annotation1');
 
@@ -1210,7 +1096,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
       );
       expect(ctx.currentAnnotation).toBe('annotation2');
     });
@@ -1227,7 +1112,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
       );
       expect(result.legendItems.some((i) => i.value === 'Other')).toBe(true);
       expect(result.otherItems.length).toBeGreaterThan(0);
@@ -1246,7 +1130,6 @@ describe('legend-data-processor', () => {
         [['p1', 'p3']],
         [],
         'size-desc',
-        false,
       );
       // Only p1 and p3 are in isolation, both have value 'a'
       expect(result.legendItems.find((i) => i.value === 'a')?.count).toBe(2);
@@ -1263,7 +1146,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'alpha-asc',
-        false,
         {},
         new Set(),
         new Map([
@@ -1297,7 +1179,6 @@ describe('legend-data-processor', () => {
         [proteinIds], // all proteins in isolation history
         [],
         'size-desc',
-        false,
       );
       // Should still have Other with the 4 overflow items
       expect(result.legendItems.some((i) => i.value === 'Other')).toBe(true);
@@ -1328,7 +1209,6 @@ describe('legend-data-processor', () => {
         [],
         existing,
         'manual',
-        false,
       );
       expect(result.legendItems.find((i) => i.value === 'a')?.zOrder).toBe(99);
     });
@@ -1356,7 +1236,6 @@ describe('legend-data-processor', () => {
         [],
         existing,
         'size-desc',
-        false,
       );
       // All items have count 1, so they're equal in size; order depends on implementation
       const itemA = result.legendItems.find((i) => i.value === 'a');
@@ -1380,7 +1259,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
         persistedCategories,
       );
       const itemA = result.legendItems.find((i) => i.value === 'a');
@@ -1402,7 +1280,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
         {},
         visibleValues,
       );
@@ -1427,7 +1304,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
         {},
         visibleValues,
         new Map(),
@@ -1452,7 +1328,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
         {},
         visibleValues,
         new Map(),
@@ -1479,7 +1354,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
       );
       const naItem = result.legendItems.find((i) => i.value === NA_VALUE);
       expect(naItem).toBeDefined();
@@ -1498,7 +1372,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
       );
       const otherItem = result.legendItems.find((i) => i.value === 'Other');
       expect(otherItem).toBeUndefined();
@@ -1518,7 +1391,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
         {},
         visibleValues,
       );
@@ -1549,7 +1421,6 @@ describe('legend-data-processor', () => {
         [['p1', 'p7']],
         [],
         'size-desc',
-        false,
         {},
         preIsolationVisibleValues,
       );
@@ -1575,7 +1446,6 @@ describe('legend-data-processor', () => {
         [],
         isolated.legendItems,
         'size-desc',
-        false,
         {},
         visibleAfterIsolation,
       );
@@ -1608,7 +1478,6 @@ describe('legend-data-processor', () => {
         [['p1', 'p4', 'p7']],
         [],
         'size-desc',
-        false,
         {},
         preIsolationVisibleValues,
       );
@@ -1629,7 +1498,6 @@ describe('legend-data-processor', () => {
         [['p1', 'p4', 'p7'], ['p1']],
         firstIsolation.legendItems,
         'size-desc',
-        false,
         {},
         preIsolationVisibleValues, // same pre-isolation values throughout
       );
@@ -1658,7 +1526,6 @@ describe('legend-data-processor', () => {
         [['p7', 'p8']],
         [],
         'size-desc',
-        false,
         {},
         preIsolationVisibleValues,
       );
@@ -1686,7 +1553,6 @@ describe('legend-data-processor', () => {
         [],
         [],
         'size-desc',
-        false,
         {},
         visibleValues,
       );

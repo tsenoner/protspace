@@ -19,6 +19,7 @@ import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
+import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
@@ -83,6 +84,13 @@ export function createDatasetController({
     },
     setCurrentDatasetIsDemo,
     setCurrentDatasetName,
+  });
+
+  let currentDatasetHash: string | null = null;
+  viewController.subscribeToViewChanges((change) => {
+    if (currentDatasetHash !== null) {
+      writeTooltipAnnotations(currentDatasetHash, change.effective.tooltip);
+    }
   });
 
   const handleDataLoaded = async (event: Event) => {
@@ -150,6 +158,76 @@ export function createDatasetController({
       } else if (loadMeta.kind === 'default') {
         setCurrentDatasetName(defaultDatasetName);
         setCurrentDatasetIsDemo(true);
+      }
+
+      // Must be set before the restore block so that any view-change emitted by
+      // setRequestedView below is persisted under the new dataset's key, not the
+      // previous dataset's key.
+      const hadPreviousDataset = currentDatasetHash !== null;
+      currentDatasetHash = datasetHash;
+
+      const latestRequest = viewController.getLatestViewRequest();
+      // A first-ever load (no previous dataset) that happens to be a user file drop
+      // is NOT a stale-URL situation — there is no previous dataset whose tooltip
+      // param could be carried over — so honor the URL like annotation/projection do.
+      const isUserImport = loadMeta.kind === 'user' && hadPreviousDataset;
+
+      // Read the persisted tooltip set once; used in both branches below.
+      const savedTooltip = readTooltipAnnotations(datasetHash);
+
+      if (isUserImport) {
+        // The URL may still carry a tooltip= param that was set for the PREVIOUSLY
+        // loaded dataset (A). That param is stale for the newly imported dataset (B)
+        // and must be ignored. We always restore B's own persisted tooltip set and,
+        // when the URL had a stale tooltip param, we force a URL rewrite so the URL
+        // reflects B's state rather than A's.
+        //
+        // Only emit a view change when there is something to do:
+        //   - saved has entries (need to restore them), OR
+        //   - URL had a stale param (need to erase it from the URL).
+        const staleUrlHadTooltip = latestRequest.present.tooltip;
+        if (savedTooltip.length > 0 || staleUrlHadTooltip) {
+          viewController.setRequestedView({
+            ...latestRequest,
+            requested: {
+              ...latestRequest.requested,
+              tooltip: savedTooltip.length > 0 ? savedTooltip : undefined,
+            },
+            present: {
+              ...latestRequest.present,
+              tooltip: savedTooltip.length > 0,
+            },
+            normalize: {
+              ...latestRequest.normalize,
+              // Setting normalize.tooltip=true forces the URL-sync handler to
+              // rewrite (or delete) the tooltip param so the URL matches B's
+              // effective tooltip instead of carrying A's stale value.
+              // This is needed for both the "saved non-empty" case (case 1, sets
+              // tooltip=<saved>) and the "saved empty" case (case 2, removes the
+              // param). When the URL had no stale param and saved is non-empty
+              // (case 3), this stays false so the URL is left silent as expected.
+              tooltip: staleUrlHadTooltip || latestRequest.normalize.tooltip,
+            },
+          });
+        }
+      } else {
+        // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
+        // is authoritative. Only restore the persisted set when the URL is silent.
+        if (!latestRequest.present.tooltip) {
+          if (savedTooltip.length > 0) {
+            viewController.setRequestedView({
+              ...latestRequest,
+              requested: {
+                ...latestRequest.requested,
+                tooltip: savedTooltip,
+              },
+              present: {
+                ...latestRequest.present,
+                tooltip: true,
+              },
+            });
+          }
+        }
       }
 
       viewController.applyLatestViewForDatasetLoad(data);

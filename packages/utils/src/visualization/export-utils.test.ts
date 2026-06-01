@@ -178,14 +178,6 @@ describe('Export options validation', () => {
     expect(options.exportName).toBe('my_custom_export.png');
   });
 
-  it('accepts include shapes option', () => {
-    const withShapes: ExportOptions = { includeShapes: true };
-    const withoutShapes: ExportOptions = { includeShapes: false };
-
-    expect(withShapes.includeShapes).toBe(true);
-    expect(withoutShapes.includeShapes).toBe(false);
-  });
-
   it('accepts includeLegend option', () => {
     const withLegend: ExportOptions = { includeLegend: true };
     const withoutLegend: ExportOptions = { includeLegend: false };

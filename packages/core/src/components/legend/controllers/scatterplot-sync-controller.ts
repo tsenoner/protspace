@@ -6,7 +6,6 @@ import {
   isScatterplotElement,
   supportsHiddenValues,
   supportsOtherValues,
-  supportsShapes,
   supportsConfig,
   supportsIsolationMode,
   supportsIsolationHistory,
@@ -30,7 +29,6 @@ export interface ScatterplotSyncCallbacks {
   getHiddenValues: () => string[];
   getOtherItems: () => OtherItem[];
   getLegendItems: () => LegendItem[];
-  getEffectiveIncludeShapes: () => boolean;
   getOtherConcreteValues: () => string[];
   getNumericAnnotationSettings?: () => NumericAnnotationDisplaySettingsMap;
   getAnnotationSortModes?: () => Record<string, LegendSortMode>;
@@ -129,15 +127,6 @@ export class ScatterplotSyncController implements ReactiveController {
     if (!this._scatterplotElement || !supportsOtherValues(this._scatterplotElement)) return;
 
     this._scatterplotElement.otherAnnotationValues = this.callbacks.getOtherConcreteValues();
-  }
-
-  /**
-   * Sync shapes setting to scatterplot
-   */
-  syncShapes(): void {
-    if (!this._scatterplotElement || !supportsShapes(this._scatterplotElement)) return;
-
-    this._scatterplotElement.useShapes = this.callbacks.getEffectiveIncludeShapes();
   }
 
   syncNumericAnnotationSettings(): void {

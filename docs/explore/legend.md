@@ -43,7 +43,6 @@ Click the cog icon in the top-right corner of the legend for advanced options.
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins. |
 | **Shape size / Point size** | Adjusts marker size in the scatterplot. Numeric annotations use the label `Point size` because numeric legends always render circles.       |
-| **Include shapes**          | Enables per-category shapes for categorical annotations. Disabled for multi-label and numeric annotations.                                  |
 | **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                           |
 | **Color palette**           | Picks the active palette for the selected annotation.                                                                                       |
 
@@ -154,16 +153,9 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 ### Shapes
 
-When shapes are enabled for categorical data, categories cycle through:
+Every category renders as a circle by default. To assign a different shape (square, diamond, plus, triangle-up, triangle-down) to an individual category, click the category's color/shape swatch in the legend — the popover has a Shape section underneath the color picker.
 
-1. Circle
-2. Square
-3. Diamond
-4. Plus
-5. Triangle-up
-6. Triangle-down
-
-Shapes are disabled for multi-label annotations and numeric annotations.
+Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 
 ## Saved Settings
 

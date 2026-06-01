@@ -140,6 +140,7 @@ describe('BundleSettings type', () => {
       legendSettings: {
         organism: {
           maxVisibleValues: 10,
+          // Legacy field — kept to verify backward-compat parsing.
           includeShapes: true,
           shapeSize: 24,
           sortMode: 'size-desc',
@@ -186,7 +187,6 @@ describe('BundleSettings type', () => {
       legendSettings: {
         organism: {
           maxVisibleValues: 10,
-          includeShapes: true,
           shapeSize: 24,
           sortMode: 'size-desc',
           hiddenValues: [],
@@ -210,7 +210,6 @@ describe('BundleSettings type', () => {
       legendSettings: {
         organism: {
           maxVisibleValues: 10,
-          includeShapes: true,
           shapeSize: 24,
           sortMode: 'size-desc',
           hiddenValues: ['unknown'],
@@ -222,7 +221,6 @@ describe('BundleSettings type', () => {
         },
         family: {
           maxVisibleValues: 5,
-          includeShapes: false,
           shapeSize: 16,
           sortMode: 'alpha-asc',
           hiddenValues: [],

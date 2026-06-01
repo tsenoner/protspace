@@ -30,13 +30,16 @@ export const annotationSelectStyles = [
 
     /* Ensure dropdown-trigger padding matches (inherited from dropdownMixin) */
 
-    /* Override dropdown menu to match projection dropdown exactly */
+    /* Popover sits absolutely positioned, so it can be wider than the
+       trigger without affecting layout. Stay at least as wide as the
+       trigger, grow with content, cap so very long annotation names
+       wrap instead of pushing the menu off-screen. */
     .dropdown-menu {
       overflow-y: auto;
       overflow-x: hidden;
-      /* Match trigger width more closely */
-      width: 100%;
-      max-width: 20rem;
+      min-width: max(100%, 22rem);
+      width: max-content;
+      max-width: 28rem;
     }
 
     .annotation-search-container {
@@ -102,6 +105,72 @@ export const annotationSelectStyles = [
       width: 100%;
       box-sizing: border-box;
       margin: 0;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .primary-indicator {
+      flex: 0 0 0.85rem;
+      width: 0.85rem;
+      height: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .primary-dot {
+      display: block;
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+
+    .dropdown-item-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tooltip-toggle-slot {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+    }
+
+    .tooltip-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
+      background: none;
+      border: none;
+      border-radius: 0.25rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .tooltip-toggle-btn:hover {
+      color: var(--primary);
+      background: var(--primary-alpha-10);
+    }
+
+    .tooltip-toggle-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--focus-ring-bg);
+    }
+
+    .tooltip-toggle-btn.is-active {
+      color: var(--primary);
     }
 
     .no-results {

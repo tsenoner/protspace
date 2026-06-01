@@ -15,7 +15,6 @@ import { COLOR_SCHEMES } from '@protspace/utils';
 import { LEGEND_VALUES } from './config';
 
 const KELLYS_COLORS = COLOR_SCHEMES.kellys;
-const SHAPES = ['circle', 'square', 'diamond', 'plus', 'triangle-up', 'triangle-down'] as const;
 
 /** Special slot values for reserved categories */
 export const SPECIAL_SLOTS = {
@@ -33,22 +32,19 @@ interface VisualEncoding {
 /**
  * Get visual encoding for a category based on its slot.
  *
+ * The default shape is always `circle`. Users assign per-category shapes
+ * through the per-item shape picker; those persist via `PersistedCategoryData.shape`.
+ *
  * NA color is NOT special-cased here — that's the legend processor's job.
  * This function only knows about "Other" (fixed) vs slot-indexed regulars.
  */
-export function getVisualEncoding(
-  slot: number,
-  shapesEnabled: boolean,
-  categoryName?: string,
-): VisualEncoding {
+export function getVisualEncoding(slot: number, categoryName?: string): VisualEncoding {
   if (categoryName === LEGEND_VALUES.OTHER) {
     return { color: OTHER_COLOR, shape: 'circle' };
   }
 
   const color = KELLYS_COLORS[slot % KELLYS_COLORS.length];
-  const shape = shapesEnabled ? SHAPES[slot % SHAPES.length] : 'circle';
-
-  return { color, shape };
+  return { color, shape: 'circle' };
 }
 
 /**

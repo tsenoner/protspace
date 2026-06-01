@@ -117,8 +117,6 @@ export class ProtspaceLegend extends LitElement {
   @property({ type: Array }) isolationHistory: string[][] = [];
   @property({ type: Object }) data: LegendDataInput | null = null;
   @property({ type: String, reflect: true }) selectedAnnotation = '';
-  @property({ type: Boolean, reflect: true }) includeShapes: boolean =
-    LEGEND_DEFAULTS.includeShapes;
   @property({ type: Number, reflect: true }) shapeSize: number = LEGEND_DEFAULTS.symbolSize;
 
   @property({ type: String, attribute: 'scatterplot-selector' })
@@ -167,7 +165,6 @@ export class ProtspaceLegend extends LitElement {
   // Settings dialog temporary state (consolidated into single object)
   @state() private _dialogSettings: {
     maxVisibleValues: number;
-    includeShapes: boolean;
     shapeSize: number;
     enableDuplicateStackUI: boolean;
     annotationSortModes: Record<string, LegendSortMode>;
@@ -176,7 +173,6 @@ export class ProtspaceLegend extends LitElement {
     reverseGradient: boolean;
   } = {
     maxVisibleValues: LEGEND_DEFAULTS.maxVisibleValues,
-    includeShapes: LEGEND_DEFAULTS.includeShapes,
     shapeSize: LEGEND_DEFAULTS.symbolSize,
     enableDuplicateStackUI: false,
     annotationSortModes: {},
@@ -215,7 +211,6 @@ export class ProtspaceLegend extends LitElement {
     getHiddenValues: () => this._hiddenValues,
     getOtherItems: () => this._otherItems,
     getLegendItems: () => this._legendItems,
-    getEffectiveIncludeShapes: () => this._effectiveIncludeShapes,
     getOtherConcreteValues: () => computeOtherConcreteValues(this._otherItems),
     getNumericAnnotationSettings: () => this._numericSettingsByAnnotation,
     getAnnotationSortModes: () => this._annotationSortModes,
@@ -233,7 +228,6 @@ export class ProtspaceLegend extends LitElement {
       const isNumericAnnotation = this._isCurrentAnnotationNumeric();
       return {
         maxVisibleValues: this.maxVisibleValues,
-        includeShapes: this.includeShapes,
         shapeSize: this.shapeSize,
         sortMode: this._normalizeSortModeForEffectiveType(
           this._annotationSortModes[this.selectedAnnotation],
@@ -647,12 +641,6 @@ export class ProtspaceLegend extends LitElement {
   // Computed Properties
   // ─────────────────────────────────────────────────────────────────
 
-  private get _effectiveIncludeShapes(): boolean {
-    return this._isMultilabelAnnotation() || this._isCurrentAnnotationNumeric()
-      ? false
-      : this.includeShapes;
-  }
-
   private get _currentSortMode(): LegendSortMode {
     return this._normalizeSortModeForAnnotation(
       this.selectedAnnotation,
@@ -861,7 +849,6 @@ export class ProtspaceLegend extends LitElement {
       changedProperties.has('annotationValues') ||
       changedProperties.has('proteinIds') ||
       changedProperties.has('maxVisibleValues') ||
-      changedProperties.has('includeShapes') ||
       changedProperties.has('isolationMode') ||
       changedProperties.has('isolationHistory')
     ) {
@@ -896,13 +883,11 @@ export class ProtspaceLegend extends LitElement {
    */
   public getLegendExportData(): {
     annotation: string;
-    includeShapes: boolean;
     otherItemsCount: number;
     items: LegendItem[];
   } {
     return {
       annotation: this.annotationData.name || this.annotationName || 'Legend',
-      includeShapes: this._effectiveIncludeShapes,
       otherItemsCount: this._otherItems.length,
       items: this._sortedLegendItems.map((i) => ({ ...i })),
     };
@@ -1293,7 +1278,6 @@ export class ProtspaceLegend extends LitElement {
         this.isolationHistory,
         existingLegendItems,
         this._currentSortMode,
-        this._effectiveIncludeShapes,
         persistedCategories,
         visibleValues,
         numericOrderValues,
@@ -1334,7 +1318,6 @@ export class ProtspaceLegend extends LitElement {
       this._scatterplotController.dispatchZOrderChange();
       this._scatterplotController.dispatchColorMappingChange();
       this._scatterplotController.syncOtherValues();
-      this._scatterplotController.syncShapes();
       this._scatterplotController.syncHiddenValues();
     } catch (error) {
       this._dispatchError(
@@ -1390,7 +1373,6 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this.includeShapes = isNumericAnnotation ? false : settings.includeShapes;
       this.shapeSize = settings.shapeSize;
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
@@ -1765,7 +1747,6 @@ export class ProtspaceLegend extends LitElement {
       : this._normalizeCategoricalPaletteId(this._selectedPaletteId);
     this._dialogSettings = {
       maxVisibleValues: this.maxVisibleValues,
-      includeShapes: this.includeShapes,
       shapeSize: this.shapeSize,
       annotationSortModes: this._annotationSortModes,
       enableDuplicateStackUI: Boolean(
@@ -1818,7 +1799,6 @@ export class ProtspaceLegend extends LitElement {
 
   private _handleSettingsSave(): void {
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const nextIncludeShapes = isNumericAnnotation ? false : this._dialogSettings.includeShapes;
     const nextSelectedPaletteId = isNumericAnnotation
       ? normalizeNumericPaletteId(this._dialogSettings.selectedPaletteId)
       : this._normalizeCategoricalPaletteId(this._dialogSettings.selectedPaletteId);
@@ -1829,10 +1809,8 @@ export class ProtspaceLegend extends LitElement {
         isNumericAnnotation,
       ),
     };
-    const shapesSettingChanged = this.includeShapes !== nextIncludeShapes;
 
     this.maxVisibleValues = this._dialogSettings.maxVisibleValues;
-    this.includeShapes = nextIncludeShapes;
     this.shapeSize = this._dialogSettings.shapeSize;
     this._annotationSortModes = nextAnnotationSortModes;
     if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
@@ -1851,17 +1829,6 @@ export class ProtspaceLegend extends LitElement {
       };
     }
     this._showSettingsDialog = false;
-
-    // When includeShapes changes, clear stale shape data from pending categories
-    // so persisted 'circle' shapes don't override freshly computed shapes.
-    if (shapesSettingChanged) {
-      const pending = this._persistenceController.pendingCategories;
-      const cleared: Record<string, PersistedCategoryData> = {};
-      for (const [key, data] of Object.entries(pending)) {
-        cleared[key] = { ...data, shape: '' };
-      }
-      this._persistenceController.setPendingCategories(cleared);
-    }
 
     // Don't clear _legendItems - we want to preserve current zOrders when switching sort modes.
     // This ensures switching to manual mode keeps the current display order.
@@ -1925,7 +1892,6 @@ export class ProtspaceLegend extends LitElement {
 
     // Update scatterplot and save (shape change, no z-order change)
     this._scatterplotController.dispatchColorMappingChange(true);
-    this._scatterplotController.syncShapes();
     this._persistenceController.saveSettings();
     this.requestUpdate();
   }
@@ -1986,7 +1952,6 @@ export class ProtspaceLegend extends LitElement {
 
     // Reset all settings to defaults
     this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
-    this.includeShapes = LEGEND_DEFAULTS.includeShapes;
     this.shapeSize = LEGEND_DEFAULTS.symbolSize;
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
@@ -2178,18 +2143,15 @@ export class ProtspaceLegend extends LitElement {
       : initializedSortModes;
     this._dialogSettings = {
       ...this._dialogSettings,
-      includeShapes: isNumericAnnotation ? false : this._dialogSettings.includeShapes,
       annotationSortModes,
     };
 
     const state: SettingsDialogState = {
       maxVisibleValues: this._dialogSettings.maxVisibleValues,
       shapeSize: this._dialogSettings.shapeSize,
-      includeShapes: this._dialogSettings.includeShapes,
       enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
       selectedAnnotation: this.selectedAnnotation,
       annotationSortModes: this._dialogSettings.annotationSortModes,
-      isMultilabelAnnotation: this._isMultilabelAnnotation(),
       isNumericAnnotation,
       selectedNumericStrategy: this._dialogSettings.numericStrategy,
       reverseGradient: this._dialogSettings.reverseGradient,
@@ -2204,9 +2166,6 @@ export class ProtspaceLegend extends LitElement {
       },
       onShapeSizeChange: (v) => {
         this._dialogSettings = { ...this._dialogSettings, shapeSize: v };
-      },
-      onIncludeShapesChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, includeShapes: v };
       },
       onEnableDuplicateStackUIChange: (v) => {
         this._dialogSettings = { ...this._dialogSettings, enableDuplicateStackUI: v };

@@ -62,6 +62,12 @@ All colors MUST be HSL.
     scroll-behavior: smooth;
   }
 
+  @media (min-width: 1380px) {
+    html {
+      font-size: clamp(0.75rem, 0.87vw, 1.125rem);
+    }
+  }
+
   body {
     @apply bg-background text-foreground;
   }

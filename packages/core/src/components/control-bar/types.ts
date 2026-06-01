@@ -51,6 +51,7 @@ export interface ScatterplotElementLike extends Element {
   // State properties
   selectedProjectionIndex?: number;
   selectedAnnotation?: string;
+  tooltipAnnotations?: string[];
   selectionMode?: boolean;
   selectionTool?: 'rectangle' | 'lasso';
   selectedProteinIds?: string[];
@@ -75,6 +76,10 @@ export interface ScatterplotElementLike extends Element {
   getIsolationHistory?: () => string[][];
   isolateSelection?: () => void;
   resetIsolation?: () => void;
+
+  // Duplicate-stack spider expansion
+  hasExpandedDuplicateStack?: () => boolean;
+  closeExpandedDuplicateStack?: () => void;
 
   // Event emitting is through DOM, so we rely on add/removeEventListener from Element
   click?: () => void;

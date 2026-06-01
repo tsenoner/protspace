@@ -35,6 +35,7 @@ You can also run these commands individually if needed.
 - `zoom.gif` - Zooming and panning
 - `select-single.gif` - Single protein selection
 - `select-box.gif` - Box selection
+- `duplicate-badges.gif` - Duplicate count badge: spiderfy and per-point selection
 
 ### Legend (`legend.md`)
 

@@ -8,6 +8,7 @@ import {
   isValidPersistedExportOptions,
   isValidSortMode,
   normalizeBundleSettings,
+  sanitizeLegendSettingsMap,
 } from './settings-validation';
 import type {
   BundleSettings,
@@ -153,15 +154,22 @@ describe('settings-validation', () => {
         organism: createValidLegendSettings(),
       };
 
+      // `normalizeBundleSettings` runs the sanitiser, which drops `includeShapes`.
+      const { includeShapes: _ignore, ...sanitisedOrganism } = createValidLegendSettings();
       expect(normalizeBundleSettings(legacy)).toEqual({
-        legendSettings: legacy,
+        legendSettings: { organism: sanitisedOrganism },
         exportOptions: {},
       });
     });
 
     it('returns normalized settings unchanged', () => {
       const settings = createNormalizedBundleSettings();
-      expect(normalizeBundleSettings(settings)).toEqual(settings);
+      // `normalizeBundleSettings` runs the sanitiser, which drops `includeShapes`.
+      const { includeShapes: _ignore, ...sanitisedOrganism } = createValidLegendSettings();
+      expect(normalizeBundleSettings(settings)).toEqual({
+        ...settings,
+        legendSettings: { organism: sanitisedOrganism },
+      });
     });
 
     it('returns empty normalized settings for malformed settings objects', () => {
@@ -173,6 +181,8 @@ describe('settings-validation', () => {
     });
 
     it('drops invalid numeric settings but preserves the rest of the annotation settings', () => {
+      // `normalizeBundleSettings` runs the sanitiser, which drops `includeShapes`.
+      const { includeShapes: _ignore, ...sanitisedBase } = createValidLegendSettings();
       expect(
         normalizeBundleSettings({
           legendSettings: {
@@ -190,7 +200,7 @@ describe('settings-validation', () => {
       ).toEqual({
         legendSettings: {
           length: {
-            ...createValidLegendSettings(),
+            ...sanitisedBase,
             selectedPaletteId: 'viridis',
           },
         },
@@ -288,5 +298,52 @@ describe('settings-validation', () => {
       const result = normalizeBundleSettings(obj);
       expect(result?.publishState).toEqual({ raw: 1 });
     });
+  });
+});
+
+describe('LegendPersistedSettings — includeShapes backward compat', () => {
+  it('isValidLegendSettings accepts a settings object missing includeShapes', () => {
+    const legacyMinusFlag = {
+      maxVisibleValues: 10,
+      shapeSize: 5,
+      sortMode: 'size-desc',
+      hiddenValues: [],
+      categories: {},
+      enableDuplicateStackUI: false,
+      selectedPaletteId: 'kellys',
+    };
+    expect(isValidLegendSettings(legacyMinusFlag)).toBe(true);
+  });
+
+  it('isValidLegendSettings accepts a settings object with includeShapes: true', () => {
+    const legacyWithFlag = {
+      maxVisibleValues: 10,
+      includeShapes: true,
+      shapeSize: 5,
+      sortMode: 'size-desc',
+      hiddenValues: [],
+      categories: {},
+      enableDuplicateStackUI: false,
+      selectedPaletteId: 'kellys',
+    };
+    expect(isValidLegendSettings(legacyWithFlag)).toBe(true);
+  });
+
+  it('sanitizeLegendSettingsMap drops includeShapes from the sanitised output', () => {
+    const input = {
+      annotation: {
+        maxVisibleValues: 10,
+        includeShapes: true,
+        shapeSize: 5,
+        sortMode: 'size-desc',
+        hiddenValues: [],
+        categories: {},
+        enableDuplicateStackUI: false,
+        selectedPaletteId: 'kellys',
+      },
+    };
+    const sanitised = sanitizeLegendSettingsMap(input);
+    expect(sanitised).not.toBeNull();
+    expect(sanitised!.annotation).not.toHaveProperty('includeShapes');
   });
 });

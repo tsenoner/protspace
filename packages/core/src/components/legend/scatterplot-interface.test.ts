@@ -6,7 +6,6 @@ import {
   isScatterplotElement,
   supportsHiddenValues,
   supportsOtherValues,
-  supportsShapes,
   supportsConfig,
   supportsIsolationMode,
   supportsIsolationHistory,
@@ -69,19 +68,6 @@ describe('scatterplot-interface', () => {
       const element = createMockScatterplot();
       delete (element as Partial<IScatterplotElement>).otherAnnotationValues;
       expect(supportsOtherValues(element)).toBe(false);
-    });
-  });
-
-  describe('supportsShapes', () => {
-    it('returns true when useShapes property exists', () => {
-      const element = createMockScatterplot({ useShapes: false });
-      expect(supportsShapes(element)).toBe(true);
-    });
-
-    it('returns false when useShapes property is missing', () => {
-      const element = createMockScatterplot();
-      delete (element as Partial<IScatterplotElement>).useShapes;
-      expect(supportsShapes(element)).toBe(false);
     });
   });
 
@@ -152,7 +138,6 @@ function createMockScatterplot(overrides: Partial<IScatterplotElement> = {}): IS
   // Default optional properties
   element.hiddenAnnotationValues = [];
   element.otherAnnotationValues = [];
-  element.useShapes = false;
   element.config = {};
 
   // Apply overrides

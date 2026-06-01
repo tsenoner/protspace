@@ -187,7 +187,6 @@ describe('legend extract methods', () => {
       el._showSettingsDialog = true;
       el._dialogSettings = {
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 1,
         enableDuplicateStackUI: false,
         annotationSortModes: {},
@@ -203,7 +202,6 @@ describe('legend extract methods', () => {
       el._showSettingsDialog = false;
       const original = {
         maxVisibleValues: 10,
-        includeShapes: false,
         shapeSize: 1,
         enableDuplicateStackUI: false,
         annotationSortModes: {},

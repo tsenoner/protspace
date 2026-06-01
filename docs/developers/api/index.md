@@ -94,7 +94,6 @@ Category filtering and color mapping with automatic settings persistence.
 | `show-counts`          | boolean | false   | Show protein counts                     |
 | `auto-hide`            | boolean | true    | Hide when no data                       |
 | `max-visible-values`   | number  | 10      | Max categories before "Others" grouping |
-| `include-shapes`       | boolean | true    | Enable different shapes per category    |
 | `shape-size`           | number  | 40      | Size of legend symbols                  |
 
 ### Events

@@ -274,6 +274,10 @@ export class WebGLRenderer {
   private currentPointCount = 0;
   private positionsDirty = true;
   private stylesDirty = true;
+  // Depth-order dirtiness is tracked separately from positionsDirty so callers
+  // can signal "re-sort by depth on next render" without lying about positions.
+  // Cleared inside populateBuffers once the re-sort runs.
+  private depthOrderDirty = false;
   private buffersInitialized = false;
 
   // Store last rendered points for off-screen export rendering
@@ -403,6 +407,23 @@ export class WebGLRenderer {
 
   invalidatePositionCache() {
     this.positionsDirty = true;
+  }
+
+  /**
+   * Force a depth-order re-sort on the next render without invalidating the
+   * position cache. Use when only the depth mapping changes (e.g. z-order
+   * remap) and coordinates are unchanged.
+   *
+   * Why this exists: the renderer uses painter's algorithm — points are sorted
+   * once by depth, then position/style buffers are written in sorted order. A
+   * pure depth change (same points, same coords, new depth values) leaves the
+   * sample-based depth-changed detection unable to compare like-for-like
+   * (sampled point[i] is read from the input order; this.depths[i] is from the
+   * sorted order). Without an explicit signal, the renderer can keep the stale
+   * sort. This API is that signal.
+   */
+  invalidateDepthOrder() {
+    this.depthOrderDirty = true;
   }
 
   /**
@@ -577,13 +598,15 @@ export class WebGLRenderer {
 
     const needsPositionUpdate = this.positionsDirty || dataSignature !== this.lastDataSignature;
     const needsStyleUpdate = this.stylesDirty || styleSignature !== this.lastStyleSignature;
+    const needsDepthOrderUpdate = this.depthOrderDirty;
 
-    if (needsPositionUpdate || needsStyleUpdate) {
+    if (needsPositionUpdate || needsStyleUpdate || needsDepthOrderUpdate) {
       this.populateBuffers(points, scales, needsPositionUpdate, needsStyleUpdate);
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
       this.positionsDirty = false;
       this.stylesDirty = false;
+      // depthOrderDirty is cleared inside populateBuffers once the re-sort runs.
     }
 
     // Render with gamma-correct pipeline
@@ -1762,6 +1785,13 @@ export class WebGLRenderer {
     // whenever styles update we must also update positions to keep all parallel buffers aligned.
     // However, if only colors changed (not depths), we can skip re-sorting and position updates.
     let needsReorder = updatePositions;
+    if (this.depthOrderDirty) {
+      // Caller signalled the depth mapping changed — re-sort regardless of the
+      // sample-based check (which can't reliably detect category-level swaps).
+      needsReorder = true;
+      updatePositions = true;
+      this.depthOrderDirty = false;
+    }
     if (updateStyles && !updatePositions) {
       // Check if depths have actually changed by sampling first few points
       // If depths are the same, we can skip re-sorting (color-only update optimization)

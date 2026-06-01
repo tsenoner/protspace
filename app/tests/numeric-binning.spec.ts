@@ -372,9 +372,10 @@ async function readLegendSettingsDialog(page: Page) {
       shadowRoot: ShadowRoot;
     };
     const root = legend?.shadowRoot;
-    const includeShapes = Array.from(root?.querySelectorAll('label') ?? [])
-      .find((label) => label.textContent?.includes('Include shapes'))
-      ?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    const labels = Array.from(root?.querySelectorAll('label') ?? []);
+    const includeShapesPresent = labels.some(
+      (l) => (l.textContent ?? '').trim() === 'Include shapes',
+    );
     const palette = root?.querySelector('.color-palette-select') as HTMLSelectElement | null;
     const distribution = root?.querySelector(
       '#numeric-distribution-select',
@@ -411,7 +412,7 @@ async function readLegendSettingsDialog(page: Page) {
 
     return {
       title: dialogTitle?.textContent?.trim() ?? '',
-      includeShapesDisabled: includeShapes?.disabled ?? false,
+      includeShapesAbsent: !includeShapesPresent,
       palette: palette?.value ?? null,
       paletteOptions: Array.from(palette?.options ?? []).map((option) => option.value),
       paletteOptionTexts,
@@ -740,15 +741,14 @@ async function readTooltipSummary(page: Page): Promise<{
       | null;
     const root = tooltip?.shadowRoot;
     const rawValueRow = Array.from(root?.querySelectorAll('.tooltip-content > div') ?? []).find(
-      (node) => node.textContent?.includes('Raw value:'),
+      (node) => node.textContent?.includes('Value:'),
     ) as HTMLElement | undefined;
 
     return {
       labels: Array.from(root?.querySelectorAll('.tooltip-annotation-label') ?? []).map(
         (node) => node.textContent?.trim() ?? '',
       ),
-      rawValue:
-        rawValueRow?.textContent?.replace(/\s+/g, ' ').replace('Raw value:', '').trim() ?? null,
+      rawValue: rawValueRow?.textContent?.replace(/\s+/g, ' ').replace('Value:', '').trim() ?? null,
     };
   });
 }
@@ -839,7 +839,7 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   await expect(
     page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: length' }),
   ).toBeVisible();
-  expect(initialDialog.includeShapesDisabled).toBe(true);
+  expect(initialDialog.includeShapesAbsent).toBe(true);
   expect(initialDialog.palette).toBe('batlow');
   expect(initialDialog.distribution).toBe('quantile');
   expect(initialDialog.hasDistributionSelect).toBe(true);

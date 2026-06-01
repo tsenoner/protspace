@@ -37,6 +37,8 @@ const VIDEO_TO_GIF_MAP: Record<string, string> = {
   'legend-reorder': 'legend-reorder.gif',
   'legend-others-gif---expanding-and-collapsing-others-group': 'legend-others.gif',
   'legend-others': 'legend-others.gif',
+  'duplicate-badges-gif---cross-projection-duplicate-badge-and-spiderfy': 'duplicate-badges.gif',
+  'duplicate-badges': 'duplicate-badges.gif',
 };
 
 // Mapping for videos that need trimming (remove loading screen from start)
@@ -62,6 +64,26 @@ const VIDEO_TRIM_MAP: Record<string, number> = {
   // Legend others animation
   'legend-others-gif---expanding-and-collapsing-others-group': 2.5,
   'legend-others': 2.5,
+  // Duplicate-badges animation
+  'duplicate-badges-gif---cross-projection-duplicate-badge-and-spiderfy': 2.5,
+  'duplicate-badges': 2.5,
+};
+
+// Per-video frame-rate override (falls back to GIF_FPS).
+// Use this for animations whose content is too long for 30 fps to fit a
+// reasonable file size — duplicate-badges runs ~21s after trim and includes
+// two zoom passes, which inflate the GIF to 20 MB at 30 fps.
+const VIDEO_FPS_MAP: Record<string, number> = {
+  'duplicate-badges-gif---cross-projection-duplicate-badge-and-spiderfy': 20,
+  'duplicate-badges': 20,
+};
+
+// Per-video pixel-width override (falls back to GIF_WIDTH).
+// GIF size scales quadratically with width; lowering this is the most
+// effective lever for animations dominated by full-canvas redraws (zoom).
+const VIDEO_WIDTH_MAP: Record<string, number> = {
+  'duplicate-badges-gif---cross-projection-duplicate-badge-and-spiderfy': 800,
+  'duplicate-badges': 800,
 };
 
 /**
@@ -84,6 +106,8 @@ async function convertToGif(
   inputPath: string,
   outputPath: string,
   trimStart: number = 0,
+  fps: number = GIF_FPS,
+  width: number = GIF_WIDTH,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const palettePath = inputPath.replace('.webm', '-palette.png');
@@ -93,15 +117,16 @@ async function convertToGif(
     // 2. Use that palette to create the GIF (trimmed if needed)
 
     console.log(
-      `  Generating palette...${trimStart > 0 ? ` (trimming ${trimStart}s from start)` : ''}`,
+      `  Generating palette...${trimStart > 0 ? ` (trimming ${trimStart}s from start)` : ''}` +
+        ` @ ${fps} fps, width ${width}`,
     );
 
     // Pass 1: Generate palette
     // Use trim filter in the filter chain for accurate trimming
     const paletteFilter =
       trimStart > 0
-        ? `trim=start=${trimStart},fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,palettegen=stats_mode=diff`
-        : `fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,palettegen=stats_mode=diff`;
+        ? `trim=start=${trimStart},fps=${fps},scale=${width}:-1:flags=lanczos,palettegen=stats_mode=diff`
+        : `fps=${fps},scale=${width}:-1:flags=lanczos,palettegen=stats_mode=diff`;
 
     const paletteCmd = ['ffmpeg', '-y', '-i', inputPath, '-vf', paletteFilter, palettePath];
 
@@ -118,8 +143,8 @@ async function convertToGif(
       console.log(`  Palette generation failed, using single-pass conversion...`);
       const singlePassFilter =
         trimStart > 0
-          ? `trim=start=${trimStart},fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos`
-          : `fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos`;
+          ? `trim=start=${trimStart},fps=${fps},scale=${width}:-1:flags=lanczos`
+          : `fps=${fps},scale=${width}:-1:flags=lanczos`;
 
       const singlePassCmd = [
         'ffmpeg',
@@ -156,8 +181,8 @@ async function convertToGif(
     // Use trim filter in the filter chain for accurate trimming
     const gifFilter =
       trimStart > 0
-        ? `[0:v]trim=start=${trimStart},fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`
-        : `fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
+        ? `[0:v]trim=start=${trimStart},fps=${fps},scale=${width}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`
+        : `fps=${fps},scale=${width}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
 
     const gifCmd = [
       'ffmpeg',
@@ -229,6 +254,22 @@ function getTrimDuration(videoFilename: string): number {
 }
 
 /**
+ * Get the target frame rate for a video file. Falls back to GIF_FPS.
+ */
+function getFps(videoFilename: string): number {
+  const baseName = path.basename(videoFilename, '.webm');
+  return VIDEO_FPS_MAP[baseName] ?? GIF_FPS;
+}
+
+/**
+ * Get the target pixel width for a video file. Falls back to GIF_WIDTH.
+ */
+function getWidth(videoFilename: string): number {
+  const baseName = path.basename(videoFilename, '.webm');
+  return VIDEO_WIDTH_MAP[baseName] ?? GIF_WIDTH;
+}
+
+/**
  * Main function to convert all videos
  */
 async function main() {
@@ -292,9 +333,17 @@ async function main() {
     if (trimDuration > 0) {
       console.log(`   ⏱️  Trimming ${trimDuration}s from start to remove loading screen`);
     }
+    const fps = getFps(videoFile);
+    if (fps !== GIF_FPS) {
+      console.log(`   🎞️  Using ${fps} fps (override; default is ${GIF_FPS})`);
+    }
+    const width = getWidth(videoFile);
+    if (width !== GIF_WIDTH) {
+      console.log(`   📐 Using ${width}px width (override; default is ${GIF_WIDTH})`);
+    }
 
     try {
-      await convertToGif(inputPath, outputPath, trimDuration);
+      await convertToGif(inputPath, outputPath, trimDuration, fps, width);
 
       // Report file sizes
       const inputSize = stats.size;

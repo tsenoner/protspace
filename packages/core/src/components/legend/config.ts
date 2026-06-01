@@ -19,7 +19,6 @@ export const LEGEND_DEFAULTS = {
   dragTimeout: 100,
   scatterplotSelector: 'protspace-scatterplot',
   autoSyncDelay: 100,
-  includeShapes: false,
   enableDuplicateStackUI: false,
 } as const;
 

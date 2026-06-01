@@ -25,6 +25,8 @@ import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './style-getters';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
+import { getDuplicateStackKey } from './duplicate-stack-helpers';
+import { estimateTooltipHeight } from './tooltip-height-estimate';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
@@ -61,6 +63,7 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Object }) data: VisualizationData | null = null;
   @property({ type: Number }) selectedProjectionIndex = 0;
   @property({ type: String }) selectedAnnotation = 'family';
+  @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: Array }) highlightedProteinIds: string[] = [];
   @property({ type: Array }) selectedProteinIds: string[] = [];
   @property({ type: Boolean }) selectionMode = false;
@@ -68,7 +71,6 @@ export class ProtspaceScatterplot extends LitElement {
   selectionTool: 'rectangle' | 'lasso' = 'rectangle';
   @property({ type: Array }) hiddenAnnotationValues: string[] = [];
   @property({ type: Array }) otherAnnotationValues: string[] = [];
-  @property({ type: Boolean }) useShapes: boolean = false;
   @property({ type: Object }) numericAnnotationSettings: NumericAnnotationDisplaySettingsMap = {};
   @property({ type: Object }) annotationSortModes: Record<string, LegendSortMode> = {};
   @property({ type: Object }) numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
@@ -84,6 +86,7 @@ export class ProtspaceScatterplot extends LitElement {
     y: number;
     view: TooltipView;
   } | null = null;
+  @state() private _tooltipHeight: number | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
   @state() private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
@@ -152,6 +155,10 @@ export class ProtspaceScatterplot extends LitElement {
   >();
   private _pointIdToDuplicateStackKey = new Map<string, string>();
   private _expandedDuplicateStackKey: string | null = null;
+  // Anchor position the user clicked to open the current spider. Stored separately
+  // from the per-viewport stack object so it survives the rebuild that happens on
+  // every pan/zoom (see _applyExpandedSpiderAnchor).
+  private _expandedSpiderAnchor: { stackKey: string; x: number; y: number } | null = null;
   private _isDuplicateStackUIEnabled(): boolean {
     return !!this._mergedConfig.enableDuplicateStackUI;
   }
@@ -164,6 +171,11 @@ export class ProtspaceScatterplot extends LitElement {
   private _spiderfyPressByPointerId = new Map<number, { x: number; y: number; t: number }>();
 
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
+
+  // Monotonically-increasing token used to invalidate a pending async tooltip-height
+  // measurement when a newer hover or a tooltip-clear supersedes it before the child
+  // LitElement has finished rendering.
+  private _tooltipMeasureToken = 0;
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
@@ -366,6 +378,14 @@ export class ProtspaceScatterplot extends LitElement {
     this._zOrderMapping = customEvent.detail.zOrderMapping;
     // z-order affects GPU depth; force a fresh style getter cache so getDepth sees the new mapping
     this._styleGettersCache = null;
+
+    if (this._plotData.length > 0) {
+      // Z-order mapping changed but coordinates didn't — ask the renderer to
+      // re-sort by depth without invalidating the position cache.
+      this._webglRenderer?.invalidateDepthOrder();
+      this._webglRenderer?.invalidateStyleCache();
+      this._renderPlot();
+    }
   };
 
   private _handleColorMappingChange = (event: Event) => {
@@ -382,8 +402,9 @@ export class ProtspaceScatterplot extends LitElement {
       // For color-only changes, we don't need to invalidate positions or re-sort points
       // Only invalidate style cache to update colors
       if (!colorOnly) {
-        // Z-order changed: need to invalidate positions and re-sort
-        this._webglRenderer?.invalidatePositionCache();
+        // Z-order mapping may have changed; ask the renderer to re-sort by depth
+        // without invalidating the position cache.
+        this._webglRenderer?.invalidateDepthOrder();
         this._invalidateVirtualizationCache();
       }
       this._webglRenderer?.invalidateStyleCache();
@@ -531,8 +552,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
-      changedProperties.has('config') ||
-      changedProperties.has('useShapes')
+      changedProperties.has('config')
     ) {
       this._styleGettersCache = this._buildStyleGetters();
     }
@@ -554,6 +574,51 @@ export class ProtspaceScatterplot extends LitElement {
       this._renderPlot();
       this._updateSelectionOverlays();
     }
+
+    // Only measure tooltip height when the tooltip data itself changes. The rendered
+    // height is derived purely from _tooltipData.view, so there is no reason to
+    // read offsetHeight (which forces a synchronous layout reflow) on unrelated
+    // updates such as zoom/pan (_transform), selection overlays, or the self-triggered
+    // _tooltipHeight update. Clearing _tooltipData to null IS a _tooltipData change,
+    // so the null-reset path in _measureTooltipHeight still fires correctly.
+    if (changedProperties.has('_tooltipData')) {
+      this._measureTooltipHeight();
+    }
+  }
+
+  private _measureTooltipHeight() {
+    if (!this._tooltipData) {
+      this._tooltipMeasureToken++; // invalidate any in-flight async measurement
+      if (this._tooltipHeight !== null) {
+        this._tooltipHeight = null;
+      }
+      return;
+    }
+    const el = this.renderRoot.querySelector('protspace-protein-tooltip') as
+      | (HTMLElement & { updateComplete?: Promise<unknown> })
+      | null;
+    if (!el) return;
+
+    // The <protspace-protein-tooltip> child LitElement renders its updated content
+    // one microtask AFTER this parent's updated() runs. Reading offsetHeight here
+    // would return the previous (or empty, on first hover) content height. Instead
+    // we wait for the child's own render cycle to complete before measuring.
+    const token = ++this._tooltipMeasureToken;
+    const childReady: Promise<unknown> = el.updateComplete ?? Promise.resolve();
+    void childReady.then(
+      () => {
+        // Guard against: (a) a newer hover that bumped the token while we were
+        // waiting, or (b) the tooltip being cleared while we were waiting.
+        if (token !== this._tooltipMeasureToken || !this._tooltipData) return;
+        const height = el.offsetHeight;
+        if (height > 0 && height !== this._tooltipHeight) {
+          this._tooltipHeight = height;
+        }
+      },
+      // The child's updateComplete rejects only if its render throws; swallow it
+      // so this measurement never surfaces an unhandled promise rejection.
+      () => {},
+    );
   }
 
   firstUpdated() {
@@ -808,6 +873,10 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _buildQuadtree() {
+    // Cancel any in-flight duplicate stack computation — it uses the old quadtree
+    // and would overwrite cleared state with stale results when it finishes.
+    this._cancelDuplicateStackCompute();
+
     if (!this._plotData.length || !this._scales) {
       this._duplicateStacks = [];
       this._duplicateStackByKey.clear();
@@ -826,6 +895,12 @@ export class ProtspaceScatterplot extends LitElement {
     this._pointIdToDuplicateStackKey.clear();
     this._expandedDuplicateStackKey = null;
     this._duplicateStacksCacheKey = null;
+
+    // Trigger a fresh duplicate overlay update so badges are recomputed for the
+    // new quadtree (e.g. after a projection switch).  Without this, the overlays
+    // rendered synchronously in updated() used a stale cache and nothing would
+    // re-trigger them after the deferred quadtree rebuild.
+    this._scheduleDuplicateOverlayUpdate(true);
   }
 
   private _scheduleQuadtreeRebuild() {
@@ -1386,7 +1461,11 @@ export class ProtspaceScatterplot extends LitElement {
       for (; idx < end; idx++) {
         const p = candidates[idx];
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-        const key = `${p.x}|${p.y}`;
+
+        // Group only points that share coords in the *current* projection
+        // (see duplicate-stack-helpers for the rationale and key contract).
+        const key = getDuplicateStackKey(p);
+
         let stack = stackMap.get(key);
         if (!stack) {
           stack = {
@@ -1439,7 +1518,13 @@ export class ProtspaceScatterplot extends LitElement {
         !this._duplicateStackByKey.has(this._expandedDuplicateStackKey)
       ) {
         this._expandedDuplicateStackKey = null;
+        this._expandedSpiderAnchor = null;
       }
+
+      // Restore the user's spider anchor on the freshly built stack object so
+      // pan/zoom doesn't snap the spider back to whichever group member was
+      // iterated first.
+      this._applyExpandedSpiderAnchor();
 
       this._duplicateStacksCacheKey = viewKey;
       this._duplicateStacksComputing = false;
@@ -1712,10 +1797,37 @@ export class ProtspaceScatterplot extends LitElement {
       });
   }
 
-  private _toggleSpiderfy(stackKey: string) {
+  private _toggleSpiderfy(stackKey: string, anchorPoint?: PlotDataPoint) {
     this._expandedDuplicateStackKey =
       this._expandedDuplicateStackKey === stackKey ? null : stackKey;
+
+    if (this._expandedDuplicateStackKey && anchorPoint) {
+      // Remember where the user clicked so the spider stays anchored to that
+      // point across pan/zoom — _duplicateStackByKey rebuilds with fresh
+      // objects on every viewport recompute and would otherwise drop the anchor.
+      this._expandedSpiderAnchor = {
+        stackKey: this._expandedDuplicateStackKey,
+        x: anchorPoint.x,
+        y: anchorPoint.y,
+      };
+      this._applyExpandedSpiderAnchor();
+    } else {
+      this._expandedSpiderAnchor = null;
+    }
+
     this._updateDuplicateOverlays();
+  }
+
+  private _applyExpandedSpiderAnchor(): void {
+    const anchor = this._expandedSpiderAnchor;
+    if (!anchor || !this._scales) return;
+    if (anchor.stackKey !== this._expandedDuplicateStackKey) return;
+    const stack = this._duplicateStackByKey.get(anchor.stackKey);
+    if (!stack) return;
+    stack.x = anchor.x;
+    stack.y = anchor.y;
+    stack.px = this._scales.x(anchor.x);
+    stack.py = this._scales.y(anchor.y);
   }
 
   private _getPointShape(point: PlotDataPoint): string {
@@ -1766,7 +1878,6 @@ export class ProtspaceScatterplot extends LitElement {
       selectedAnnotation: this.selectedAnnotation,
       hiddenAnnotationValues: this.hiddenAnnotationValues,
       otherAnnotationValues: this.otherAnnotationValues,
-      useShapes: this.useShapes,
       zOrderMapping: this._zOrderMapping,
       colorMapping: this._colorMapping,
       shapeMapping: this._shapeMapping,
@@ -1802,7 +1913,12 @@ export class ProtspaceScatterplot extends LitElement {
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
-    const view = buildTooltipView(this.data, point.originalIndex, this.selectedAnnotation);
+    const view = buildTooltipView(
+      this.data,
+      point.originalIndex,
+      this.selectedAnnotation,
+      this.tooltipAnnotations,
+    );
     this._tooltipData = { x, y, view };
 
     if (this._hoveredProteinId !== point.id) {
@@ -1821,7 +1937,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleClick(event: MouseEvent, point: PlotDataPoint) {
     const view = this.data
-      ? buildTooltipView(this.data, point.originalIndex, this.selectedAnnotation)
+      ? buildTooltipView(
+          this.data,
+          point.originalIndex,
+          this.selectedAnnotation,
+          this.tooltipAnnotations,
+        )
       : null;
     this.dispatchEvent(
       new CustomEvent('protein-click', {
@@ -1954,7 +2075,7 @@ export class ProtspaceScatterplot extends LitElement {
           const stackKey = this._pointIdToDuplicateStackKey.get(nearestPoint.id);
           const stack = stackKey ? this._duplicateStackByKey.get(stackKey) : undefined;
           if (stack && stack.points.length > 1) {
-            this._toggleSpiderfy(stack.key);
+            this._toggleSpiderfy(stack.key, nearestPoint);
             return;
           }
         }
@@ -1998,6 +2119,17 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
+  /**
+   * Content-scaled fallback height derived from the tooltip view model.
+   * Used when the async DOM measurement has not yet resolved (first hover or
+   * hover that changed data). Delegates to the pure `estimateTooltipHeight`
+   * helper so the logic is unit-testable without a DOM.
+   */
+  private _estimateTooltipHeight(): number {
+    if (!this._tooltipData) return 160;
+    return estimateTooltipHeight(this._tooltipData.view);
+  }
+
   private _getTooltipStyle() {
     if (!this._tooltipData) return '';
 
@@ -2005,7 +2137,7 @@ export class ProtspaceScatterplot extends LitElement {
     const config = this._mergedConfig;
     const padding = 15;
     const tooltipMaxWidth = 350;
-    const tooltipApproxHeight = 160;
+    const tooltipHeight = this._tooltipHeight ?? this._estimateTooltipHeight();
 
     let left = x + 15;
     let top = y - 60;
@@ -2027,11 +2159,13 @@ export class ProtspaceScatterplot extends LitElement {
       left = tooltipMaxWidth + padding;
     }
 
-    // Vertical adjustment: keep within vertical bounds
+    // Vertical adjustment: clamp to viewport using the measured height when
+    // available, so tall multi-annotation tooltips do not run off the bottom.
+    if (top + tooltipHeight > config.height - padding) {
+      top = config.height - tooltipHeight - padding;
+    }
     if (top < padding) {
       top = padding;
-    } else if (top + tooltipApproxHeight > config.height) {
-      top = config.height - tooltipApproxHeight - padding;
     }
 
     return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;
@@ -2083,7 +2217,6 @@ export class ProtspaceScatterplot extends LitElement {
                 class="visible"
                 style="${this._getTooltipStyle()}"
                 .view=${this._tooltipData.view}
-                .selectedAnnotation=${this.selectedAnnotation}
               >
               </protspace-protein-tooltip>
             `
@@ -2123,11 +2256,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _updateStyleSignature() {
     const cfg = this._mergedConfig;
-    const parts = [
-      `ps:${cfg.pointSize}`,
-      `annot:${this.selectedAnnotation}`,
-      `sh:${this.useShapes ? 1 : 0}`,
-    ];
+    const parts = [`ps:${cfg.pointSize}`, `annot:${this.selectedAnnotation}`];
     this._styleSig = parts.join('|');
   }
 
@@ -2208,6 +2337,19 @@ export class ProtspaceScatterplot extends LitElement {
         }),
       );
     }
+  }
+
+  /** True when a duplicate-badge spider is currently expanded. */
+  hasExpandedDuplicateStack(): boolean {
+    return this._expandedDuplicateStackKey !== null;
+  }
+
+  /** Collapse the currently-open duplicate-badge spider, if any. */
+  closeExpandedDuplicateStack(): void {
+    if (this._expandedDuplicateStackKey === null) return;
+    this._expandedDuplicateStackKey = null;
+    this._expandedSpiderAnchor = null;
+    this._updateDuplicateOverlays();
   }
 
   /**
