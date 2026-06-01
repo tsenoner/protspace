@@ -26,6 +26,7 @@ import { createStyleGetters } from './style-getters';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
 import { getDuplicateStackKey } from './duplicate-stack-helpers';
+import { estimateTooltipHeight } from './tooltip-height-estimate';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
@@ -171,6 +172,11 @@ export class ProtspaceScatterplot extends LitElement {
   private _spiderfyPressByPointerId = new Map<number, { x: number; y: number; t: number }>();
 
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
+
+  // Monotonically-increasing token used to invalidate a pending async tooltip-height
+  // measurement when a newer hover or a tooltip-clear supersedes it before the child
+  // LitElement has finished rendering.
+  private _tooltipMeasureToken = 0;
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
@@ -576,17 +582,37 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _measureTooltipHeight() {
     if (!this._tooltipData) {
+      this._tooltipMeasureToken++; // invalidate any in-flight async measurement
       if (this._tooltipHeight !== null) {
         this._tooltipHeight = null;
       }
       return;
     }
-    const el = this.renderRoot.querySelector('protspace-protein-tooltip') as HTMLElement | null;
+    const el = this.renderRoot.querySelector('protspace-protein-tooltip') as
+      | (HTMLElement & { updateComplete?: Promise<unknown> })
+      | null;
     if (!el) return;
-    const height = el.offsetHeight;
-    if (height > 0 && height !== this._tooltipHeight) {
-      this._tooltipHeight = height;
-    }
+
+    // The <protspace-protein-tooltip> child LitElement renders its updated content
+    // one microtask AFTER this parent's updated() runs. Reading offsetHeight here
+    // would return the previous (or empty, on first hover) content height. Instead
+    // we wait for the child's own render cycle to complete before measuring.
+    const token = ++this._tooltipMeasureToken;
+    const childReady: Promise<unknown> = el.updateComplete ?? Promise.resolve();
+    void childReady.then(
+      () => {
+        // Guard against: (a) a newer hover that bumped the token while we were
+        // waiting, or (b) the tooltip being cleared while we were waiting.
+        if (token !== this._tooltipMeasureToken || !this._tooltipData) return;
+        const height = el.offsetHeight;
+        if (height > 0 && height !== this._tooltipHeight) {
+          this._tooltipHeight = height;
+        }
+      },
+      // The child's updateComplete rejects only if its render throws; swallow it
+      // so this measurement never surfaces an unhandled promise rejection.
+      () => {},
+    );
   }
 
   firstUpdated() {
@@ -2086,6 +2112,17 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
+  /**
+   * Content-scaled fallback height derived from the tooltip view model.
+   * Used when the async DOM measurement has not yet resolved (first hover or
+   * hover that changed data). Delegates to the pure `estimateTooltipHeight`
+   * helper so the logic is unit-testable without a DOM.
+   */
+  private _estimateTooltipHeight(): number {
+    if (!this._tooltipData) return 160;
+    return estimateTooltipHeight(this._tooltipData.view);
+  }
+
   private _getTooltipStyle() {
     if (!this._tooltipData) return '';
 
@@ -2093,7 +2130,7 @@ export class ProtspaceScatterplot extends LitElement {
     const config = this._mergedConfig;
     const padding = 15;
     const tooltipMaxWidth = 350;
-    const tooltipHeight = this._tooltipHeight ?? 160;
+    const tooltipHeight = this._tooltipHeight ?? this._estimateTooltipHeight();
 
     let left = x + 15;
     let top = y - 60;
