@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "FASTA → .parquetbundle preparation service for ProtSpace"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115",
+  "fastapi[standard]>=0.115",
   "uvicorn[standard]>=0.32",
   "python-multipart>=0.0.20",
   "anyio>=4.6",
