@@ -6,6 +6,7 @@ from typing import AsyncIterator
 
 from fastapi import APIRouter, File, HTTPException, Path, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from slowapi import Limiter
 from starlette.background import BackgroundTask
 
 from .config import Settings
@@ -42,11 +43,12 @@ def fasta_validation_error_handler(request: Request, exc: FastaValidationError) 
     )
 
 
-def make_router(registry: JobRegistry, settings: Settings) -> APIRouter:
+def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/prepare", status_code=status.HTTP_202_ACCEPTED)
-    async def submit(file: UploadFile = File(...)):
+    @limiter.limit(settings.rate_limit)
+    async def submit(request: Request, file: UploadFile = File(...)):
         body = await file.read(settings.upload_max_bytes + 1)
         if len(body) > settings.upload_max_bytes:
             raise FastaValidationError(

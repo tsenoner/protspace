@@ -6,12 +6,16 @@ from functools import partial
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from .api import fasta_validation_error_handler, make_router
 from .config import Settings, load_settings
 from .jobs import JobRegistry, PipelineFn
 from .logger import setup_logging
 from .pipeline import run_protspace_prepare
+from .ratelimit import make_limiter
 from .validation import FastaValidationError
 
 logger = logging.getLogger("protspace_prep")
@@ -56,13 +60,26 @@ def create_app(*, pipeline: Optional[PipelineFn] = None) -> FastAPI:
     app.state.registry = registry
     app.state.settings = settings
 
+    limiter = make_limiter()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    if settings.cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.cors_allowed_origins),
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Content-Type"],
+            max_age=86400,
+        )
+
     app.add_exception_handler(FastaValidationError, fasta_validation_error_handler)
 
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"ok": True, "jobs": registry.counts()}
 
-    app.include_router(make_router(registry, settings))
+    app.include_router(make_router(registry, settings, limiter))
     return app
 
 
