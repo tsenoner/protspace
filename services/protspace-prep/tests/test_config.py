@@ -25,3 +25,8 @@ def test_rate_limit_default_and_override(monkeypatch):
 def test_cors_origins_trailing_comma(monkeypatch):
     monkeypatch.setenv("CORS_ALLOWED_ORIGIN", "https://a.com,")
     assert load_settings().cors_allowed_origins == ("https://a.com",)
+
+
+def test_rate_limit_blank_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("PREP_RATE_LIMIT", "   ")
+    assert load_settings().rate_limit == "5/15minutes"

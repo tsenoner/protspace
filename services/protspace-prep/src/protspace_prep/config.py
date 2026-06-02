@@ -45,5 +45,5 @@ def load_settings() -> Settings:
         log_level=os.getenv("PREP_LOG_LEVEL", "INFO"),
         log_json_format=os.getenv("PREP_LOG_JSON_FORMAT", "false").lower() in {"1", "true", "yes"},
         cors_allowed_origins=_parse_origins(os.getenv("CORS_ALLOWED_ORIGIN", "")),
-        rate_limit=os.getenv("PREP_RATE_LIMIT", "5/15minutes"),
+        rate_limit=(os.getenv("PREP_RATE_LIMIT", "").strip() or "5/15minutes"),
     )
