@@ -8,6 +8,7 @@ from protspace_prep.jobs import (
     JobRegistry,
     JobStatus,
     PipelineFailure,
+    QueueFull,
 )
 
 
@@ -119,6 +120,41 @@ async def test_semaphore_caps_active_jobs(tmp_job_root):
         async for _ in registry.subscribe(job_id):
             pass
     assert peak == 2
+
+
+async def test_submit_rejects_when_pending_at_cap(tmp_job_root):
+    """Once queued + running reaches max_pending, submit() raises QueueFull
+    before writing any bytes or creating in-memory state."""
+    release = asyncio.Event()
+
+    async def gated(ctx, emit):
+        await release.wait()
+        bundle = ctx.output_dir / "data.parquetbundle"
+        bundle.parent.mkdir(parents=True, exist_ok=True)
+        bundle.write_bytes(b"x")
+        return bundle
+
+    # max_concurrent=1 so the second job stays queued; cap of 2 fills with
+    # one running + one queued, and the third must be rejected.
+    registry = JobRegistry(
+        job_root=tmp_job_root,
+        max_concurrent=1,
+        max_pending=2,
+        pipeline=gated,
+    )
+    a = await registry.submit(b">a\nM\n", original_name="t.fasta")
+    b = await registry.submit(b">b\nM\n", original_name="t.fasta")
+    await asyncio.sleep(0.05)
+    assert registry.counts() == {"running": 1, "queued": 1}
+
+    with pytest.raises(QueueFull):
+        await registry.submit(b">c\nM\n", original_name="t.fasta")
+    # No job dir created for the rejected submission.
+    assert len(list(tmp_job_root.iterdir())) == 2
+
+    release.set()
+    async for _ in registry.subscribe(a): pass
+    async for _ in registry.subscribe(b): pass
 
 
 async def test_multiple_concurrent_subscribers_each_receive_full_stream(tmp_job_root):

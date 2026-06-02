@@ -62,6 +62,20 @@ def test_rejects_duplicate_identifiers():
     assert exc.value.code is ValidationCode.DUPLICATE_IDENTIFIERS
 
 
+def test_rejects_duplicate_after_identifier_normalization():
+    text = ">sp|P12345|A\nMKT\n>P12345\nMKQ\n"
+    with pytest.raises(FastaValidationError) as exc:
+        parse_and_validate(text, settings())
+    assert exc.value.code is ValidationCode.DUPLICATE_IDENTIFIERS
+
+
+def test_rejects_total_residues_over_cap():
+    text = ">a\n" + ("A" * 30) + "\n>b\n" + ("A" * 30) + "\n"
+    with pytest.raises(FastaValidationError) as exc:
+        parse_and_validate(text, settings(sequence_max_total_residues=50))
+    assert exc.value.code is ValidationCode.TOTAL_RESIDUES_EXCEEDED
+
+
 def test_rejects_malformed_no_header():
     text = "MKTAYIAK\n"
     with pytest.raises(FastaValidationError) as exc:

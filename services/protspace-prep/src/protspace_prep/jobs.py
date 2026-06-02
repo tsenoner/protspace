@@ -30,6 +30,15 @@ class PipelineFailure(Exception):
         self.detail = detail
 
 
+class QueueFull(Exception):
+    """Raised by ``submit()`` when pending jobs are at the configured ceiling.
+
+    Caps *submission* (not just execution): every accepted upload writes to disk
+    and creates permanent in-memory state, so an unbounded enqueue is a DoS vector
+    even though the semaphore caps concurrency.
+    """
+
+
 class JobStatus(str, enum.Enum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -80,9 +89,11 @@ class JobRegistry:
         job_root: Path,
         max_concurrent: int,
         pipeline: PipelineFn,
+        max_pending: int = 50,
     ) -> None:
         self._job_root = job_root
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._max_pending = max_pending
         self._pipeline = pipeline
         self._jobs: dict[str, JobState] = {}
         self._subscribers: dict[str, list[asyncio.Queue[Optional[Event]]]] = {}
@@ -97,6 +108,10 @@ class JobRegistry:
         return {"running": self._running, "queued": self._queued}
 
     async def submit(self, fasta_bytes: bytes, *, original_name: str) -> str:
+        # Reject before touching disk or creating in-memory state, so a flood of
+        # submissions can't accumulate artifacts past the configured ceiling.
+        if self._queued + self._running >= self._max_pending:
+            raise QueueFull()
         job_id = uuid.uuid4().hex
         job_dir = self._job_root / job_id
         job_dir.mkdir(parents=True, exist_ok=True)

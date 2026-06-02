@@ -31,6 +31,7 @@ def create_app(*, pipeline: Optional[PipelineFn] = None) -> FastAPI:
     registry = JobRegistry(
         job_root=settings.job_root,
         max_concurrent=settings.max_concurrent_jobs,
+        max_pending=settings.max_pending_jobs,
         pipeline=pipeline or partial(run_protspace_prepare, settings=settings),
     )
 
@@ -72,6 +73,10 @@ def create_app(*, pipeline: Optional[PipelineFn] = None) -> FastAPI:
             allow_headers=["Content-Type"],
             max_age=86400,
         )
+    else:
+        # A blank/empty CORS_ALLOWED_ORIGIN silently disables CORS. Surface it so
+        # an accidentally-blanked secret shows up in logs rather than failing mute.
+        logger.warning("CORS disabled: no allowed origins configured.")
 
     app.add_exception_handler(FastaValidationError, fasta_validation_error_handler)
 

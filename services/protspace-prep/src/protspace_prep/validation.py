@@ -3,6 +3,8 @@ import enum
 from dataclasses import dataclass
 from typing import Iterable
 
+from protspace.data.loaders.h5 import parse_identifier
+
 from .config import Settings
 
 
@@ -13,6 +15,7 @@ class ValidationCode(str, enum.Enum):
     MALFORMED_FASTA = "MALFORMED_FASTA"
     DUPLICATE_IDENTIFIERS = "DUPLICATE_IDENTIFIERS"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    TOTAL_RESIDUES_EXCEEDED = "TOTAL_RESIDUES_EXCEEDED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,13 +95,19 @@ def parse_and_validate(text: str, settings: Settings) -> list[FastaRecord]:
         )
 
     seen: set[str] = set()
+    total_residues = 0
     for record in records:
-        if record.identifier in seen:
+        # Dedup on the parsed identifier (what pipeline.py rewrites headers to),
+        # so e.g. `sp|P12345|A` and bare `P12345` collide as the downstream join
+        # sees them — but report the original identifier for user clarity.
+        normalized = parse_identifier(record.identifier)
+        if normalized in seen:
             raise FastaValidationError(
                 ValidationCode.DUPLICATE_IDENTIFIERS,
                 f"Duplicate identifier: {record.identifier!r}.",
             )
-        seen.add(record.identifier)
+        seen.add(normalized)
+        total_residues += len(record.sequence)
         if len(record.sequence) > settings.sequence_max_residues:
             raise FastaValidationError(
                 ValidationCode.SEQUENCE_TOO_LONG,
@@ -114,5 +123,11 @@ def parse_and_validate(text: str, settings: Settings) -> list[FastaRecord]:
                 ValidationCode.MALFORMED_FASTA,
                 f"Sequence {record.identifier!r} appears to be nucleotide; protein input required.",
             )
+
+    if total_residues > settings.sequence_max_total_residues:
+        raise FastaValidationError(
+            ValidationCode.TOTAL_RESIDUES_EXCEEDED,
+            f"Total residues {total_residues} exceed the {settings.sequence_max_total_residues} limit.",
+        )
 
     return records

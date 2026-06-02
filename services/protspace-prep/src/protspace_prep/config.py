@@ -8,10 +8,12 @@ from pathlib import Path
 class Settings:
     job_root: Path
     max_concurrent_jobs: int
+    max_pending_jobs: int
     bundle_ttl_seconds: int
     upload_max_bytes: int
     sequence_max_count: int
     sequence_max_residues: int
+    sequence_max_total_residues: int
     sequence_min_count: int
     embedder: str
     methods: str
@@ -32,10 +34,14 @@ def load_settings() -> Settings:
     return Settings(
         job_root=Path(os.getenv("PREP_JOB_ROOT", "/var/lib/protspace-prep/jobs")),
         max_concurrent_jobs=int(os.getenv("PREP_MAX_CONCURRENT_JOBS", "5")),
+        max_pending_jobs=int(os.getenv("PREP_MAX_PENDING_JOBS", "50")),
         bundle_ttl_seconds=int(os.getenv("PREP_BUNDLE_TTL_SECONDS", "3600")),
         upload_max_bytes=int(os.getenv("PREP_UPLOAD_MAX_BYTES", str(8 * 1024 * 1024))),
         sequence_max_count=int(os.getenv("PREP_SEQUENCE_MAX_COUNT", "1500")),
         sequence_max_residues=int(os.getenv("PREP_SEQUENCE_MAX_RESIDUES", "2000")),
+        sequence_max_total_residues=int(
+            os.getenv("PREP_SEQUENCE_MAX_TOTAL_RESIDUES", str(1_500_000))
+        ),
         sequence_min_count=int(os.getenv("PREP_SEQUENCE_MIN_COUNT", "20")),
         embedder=os.getenv("PREP_EMBEDDER", "prot_t5"),
         methods=os.getenv("PREP_METHODS", "pca2,umap2"),

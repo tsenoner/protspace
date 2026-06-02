@@ -10,7 +10,7 @@ from slowapi import Limiter
 from starlette.background import BackgroundTask
 
 from .config import Settings
-from .jobs import JobRegistry, JobStatus
+from .jobs import JobRegistry, JobStatus, QueueFull
 from .sse import KEEPALIVE_FRAME, format_event
 from .validation import FastaValidationError, ValidationCode, parse_and_validate
 
@@ -65,7 +65,14 @@ def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> 
                 "FASTA must be UTF-8 text.",
             ) from exc
         parse_and_validate(text, settings)
-        job_id = await registry.submit(body, original_name=file.filename or "input.fasta")
+        try:
+            job_id = await registry.submit(body, original_name=file.filename or "input.fasta")
+        except QueueFull:
+            raise HTTPException(
+                status_code=503,
+                detail="Server is busy; too many pending jobs. Try again shortly.",
+                headers={"Retry-After": "30"},
+            )
         return {"job_id": job_id}
 
     @router.get("/api/prepare/{job_id}/events")

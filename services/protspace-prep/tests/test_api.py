@@ -129,6 +129,32 @@ async def test_healthz_reflects_running_jobs(app_factory):
         assert r.json()["jobs"] == {"running": 0, "queued": 0}
 
 
+async def test_post_prepare_returns_503_when_queue_full(app_factory, monkeypatch):
+    """When pending jobs hit the cap, the endpoint rejects with 503 + Retry-After."""
+    import asyncio
+
+    monkeypatch.setenv("PREP_MAX_CONCURRENT_JOBS", "1")
+    monkeypatch.setenv("PREP_MAX_PENDING_JOBS", "1")
+    gate = asyncio.Event()
+
+    async def gated(ctx, emit):
+        await gate.wait()
+        out = ctx.output_dir / "data.parquetbundle"
+        out.write_bytes(b"BUNDLE")
+        return out
+
+    app = app_factory(pipeline=gated)
+    async with await _client(app) as c:
+        files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
+        r1 = await c.post("/api/prepare", files=files)
+        assert r1.status_code == 202
+        # First job occupies the single pending slot (running); second is over cap.
+        r2 = await c.post("/api/prepare", files=files)
+    assert r2.status_code == 503
+    assert r2.headers.get("retry-after") == "30"
+    gate.set()
+
+
 # ---------------------------------------------------------------------------
 # Fix 1 — Content-Disposition header injection
 # ---------------------------------------------------------------------------
