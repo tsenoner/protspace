@@ -10,6 +10,7 @@ dependencies = [
   "anyio>=4.6",
   "protspace>=0.6",
   "structlog>=24.1",
+  "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
