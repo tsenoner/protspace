@@ -7,7 +7,6 @@ on:
   pull_request:
     paths:
       - 'services/protspace-prep/**'
-      - 'config/Caddy.Dockerfile'
       - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
@@ -25,9 +24,6 @@ jobs:
           - name: protspace-prep
             context: services/protspace-prep
             dockerfile: services/protspace-prep/Dockerfile
-          - name: caddy-ratelimit
-            context: config
-            dockerfile: config/Caddy.Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
