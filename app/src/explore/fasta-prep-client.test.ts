@@ -6,10 +6,14 @@ const flushPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0
 
 class MockEventSource {
   static instances: MockEventSource[] = [];
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   url: string;
   onmessage: ((ev: MessageEvent) => void) | null = null;
   readonly handlers = new Map<string, Array<(ev: MessageEvent) => void>>();
   closed = false;
+  readyState = MockEventSource.OPEN;
   constructor(url: string) {
     this.url = url;
     MockEventSource.instances.push(this);
@@ -22,8 +26,20 @@ class MockEventSource {
     const ev = new MessageEvent(type, { data: JSON.stringify(data) });
     for (const h of this.handlers.get(type) ?? []) h(ev);
   }
+  /** Emit a raw frame whose `.data` is set verbatim (e.g. malformed JSON). */
+  emitRaw(type: string, data: string | undefined) {
+    const ev = new MessageEvent(type, { data });
+    for (const h of this.handlers.get(type) ?? []) h(ev);
+  }
+  /** Simulate a payload-less connection error at a given readyState. */
+  emitConnectionError(readyState: number) {
+    this.readyState = readyState;
+    const ev = new MessageEvent('error', {});
+    for (const h of this.handlers.get('error') ?? []) h(ev);
+  }
   close() {
     this.closed = true;
+    this.readyState = MockEventSource.CLOSED;
   }
 }
 
@@ -206,5 +222,191 @@ describe('prepareFastaBundle', () => {
     );
     const file = new File([new Uint8Array([0])], 'seq.fasta');
     await expect(prepareFastaBundle(file, { baseUrl: '' })).rejects.toThrow(/too big/);
+  });
+
+  // --- B1: transient SSE errors must not kill a still-running job ---
+
+  it('does NOT reject on a transient connection drop while the browser reconnects', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (init?.method === 'POST' && url.endsWith('/api/prepare')) {
+        return new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 });
+      }
+      if (url.endsWith('/api/prepare/abc/bundle')) {
+        return new Response(new Blob([new Uint8Array([1])]), { status: 200 });
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    let settled = false;
+    const promise = prepareFastaBundle(file, { baseUrl: '' }).then(
+      (v) => {
+        settled = true;
+        return v;
+      },
+      (e) => {
+        settled = true;
+        throw e;
+      },
+    );
+
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+
+    // Transient drops: browser is auto-reconnecting (CONNECTING), no payload.
+    es.emitConnectionError(MockEventSource.CONNECTING);
+    es.emitConnectionError(MockEventSource.CONNECTING);
+    await flushPromises();
+    expect(settled).toBe(false);
+    expect(es.closed).toBe(false);
+
+    // Recovery: a real frame arrives and resets the budget, then completes.
+    es.emit('progress', { stage: 'embedding' });
+    es.emit('done', { download_url: '/api/prepare/abc/bundle' });
+
+    const bundle = await promise;
+    expect(bundle.name).toBe('seq.parquetbundle');
+  });
+
+  it('rejects once the reconnect budget is exhausted', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '' });
+
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+
+    // 5 attempts are tolerated; the 6th exhausts the budget.
+    for (let i = 0; i < 6; i++) {
+      es.emitConnectionError(MockEventSource.CONNECTING);
+    }
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FastaPrepError);
+    expect((error as FastaPrepError).message).toMatch(/lost connection/i);
+    expect((error as FastaPrepError).jobId).toBe('abc');
+    expect(es.closed).toBe(true);
+  });
+
+  it('rejects immediately when the connection closes permanently (no payload)', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '' });
+
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+    es.emitConnectionError(MockEventSource.CLOSED);
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FastaPrepError);
+    expect((error as FastaPrepError).message).toMatch(/lost connection/i);
+    expect((error as FastaPrepError).jobId).toBe('abc');
+    expect(es.closed).toBe(true);
+  });
+
+  // --- B2: harden frame parsing ---
+
+  it('ignores malformed progress/queued frames instead of hanging the job', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (init?.method === 'POST' && url.endsWith('/api/prepare')) {
+        return new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 });
+      }
+      if (url.endsWith('/api/prepare/abc/bundle')) {
+        return new Response(new Blob([new Uint8Array([1])]), { status: 200 });
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const stages: string[] = [];
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '', onProgress: (s) => stages.push(s) });
+
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+    es.emitRaw('queued', '{not json');
+    es.emitRaw('progress', 'garbage');
+    es.emit('progress', { stage: 'embedding' });
+    es.emit('done', { download_url: '/api/prepare/abc/bundle' });
+
+    const bundle = await promise;
+    expect(bundle.name).toBe('seq.parquetbundle');
+    // Only the well-formed frame produced a progress callback.
+    expect(stages).toEqual(['embedding']);
+  });
+
+  it('rejects with a protocol error when done carries no download_url', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '' });
+
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+    es.emit('done', { download_url: '' });
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FastaPrepError);
+    expect((error as FastaPrepError).message).toMatch(/protocol error/i);
+    expect((error as FastaPrepError).jobId).toBe('abc');
+    expect(es.closed).toBe(true);
+  });
+
+  // --- B3: bundle-download status code mapping ---
+
+  it('maps a 410 bundle download to an expired/consumed message', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (init?.method === 'POST' && url.endsWith('/api/prepare')) {
+        return new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 });
+      }
+      return new Response('gone', { status: 410 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '' });
+    await flushPromises();
+    MockEventSource.instances[0].emit('done', { download_url: '/api/prepare/abc/bundle' });
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FastaPrepError);
+    expect((error as FastaPrepError).message).toMatch(/expired or was already downloaded/i);
+    expect((error as FastaPrepError).jobId).toBe('abc');
+  });
+
+  it('maps a 409 bundle download to a not-finished-yet message', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (init?.method === 'POST' && url.endsWith('/api/prepare')) {
+        return new Response(JSON.stringify({ job_id: 'abc' }), { status: 202 });
+      }
+      return new Response('not ready', { status: 409 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '' });
+    await flushPromises();
+    MockEventSource.instances[0].emit('done', { download_url: '/api/prepare/abc/bundle' });
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FastaPrepError);
+    expect((error as FastaPrepError).message).toMatch(/isn't finished yet/i);
+    expect((error as FastaPrepError).jobId).toBe('abc');
   });
 });
