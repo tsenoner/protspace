@@ -66,3 +66,51 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    name: Pin digest in deploy repo
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint deploy-repo token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DEPLOY_APP_ID }}
+          private-key: ${{ secrets.DEPLOY_APP_PRIVATE_KEY }}
+          owner: Rostlab
+          repositories: deploy-protspace-backend
+
+      - name: Checkout deploy repo
+        uses: actions/checkout@v4
+        with:
+          repository: Rostlab/deploy-protspace-backend
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Pin image digest and push
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          test -n "$DIGEST" || { echo "no digest from build job" >&2; exit 1; }
+
+          user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+          ./scripts/set-image-digest.sh "$DIGEST"
+
+          # No-op guard. Keep this as an `if`: under `set -e`, `git diff --quiet`
+          # exits 1 when there ARE changes, so `git diff --quiet || exit 0` would
+          # abort the step on every real update. The `if` form suppresses `set -e`.
+          if git diff --quiet; then
+            echo "Digest unchanged; nothing to deploy."
+            exit 0
+          fi
+          git add compose.yaml
+          git commit -m "deploy: protspace-prep @${DIGEST}"
+          git push origin main
