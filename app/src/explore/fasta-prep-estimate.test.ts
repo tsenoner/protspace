@@ -5,6 +5,12 @@ import {
   formatEmbeddingLabel,
   formatEstimate,
 } from './fasta-prep-estimate';
+import {
+  MAX_SEQUENCES,
+  MAX_UPLOAD_BYTES,
+  MIN_SEQUENCES,
+  PIPELINE_TIMEOUT_SECONDS,
+} from './fasta-prep-limits';
 
 describe('countFastaSequences', () => {
   it('counts > markers at line starts', async () => {
@@ -74,5 +80,20 @@ describe('formatEmbeddingLabel', () => {
     expect(formatEmbeddingLabel(700)).toBe('Embedding sequences (~3 min)…');
     expect(formatEmbeddingLabel(1500)).toBe('Embedding sequences (~6.5 min)…');
     expect(formatEmbeddingLabel(50)).toBe('Embedding sequences (~20 sec)…');
+  });
+});
+
+describe('prep limits', () => {
+  it('mirror the backend deploy configuration exactly', () => {
+    expect(MAX_UPLOAD_BYTES).toBe(8_388_608);
+    expect(MIN_SEQUENCES).toBe(20);
+    expect(MAX_SEQUENCES).toBe(1500);
+    expect(PIPELINE_TIMEOUT_SECONDS).toBe(420);
+  });
+
+  it('keep the max-sequence estimate just under the hard timeout', () => {
+    // The estimate for a full job must stay below the server timeout so the
+    // UI never silently runs past the point where the server gives up.
+    expect(estimateEmbedSeconds(MAX_SEQUENCES)).toBeLessThan(PIPELINE_TIMEOUT_SECONDS);
   });
 });

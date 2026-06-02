@@ -4,6 +4,33 @@ import type {
   SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
+import { FastaPrepError } from './fasta-prep-client';
+import { MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
+
+/**
+ * Friendly, actionable copy for the prep backend's known error codes. When a
+ * code is absent or unknown we fall back to the raw server message.
+ */
+const FASTA_PREP_CODE_MESSAGES: Record<string, string> = {
+  FILE_TOO_LARGE: `The FASTA file is larger than the ${MAX_UPLOAD_LABEL} upload limit. Trim it or split it into smaller batches.`,
+  TOO_MANY_SEQUENCES: `That FASTA has more than ${MAX_SEQUENCES} sequences. Reduce it to ${MAX_SEQUENCES} or fewer, or use the Colab notebook for larger datasets.`,
+  SEQUENCE_TOO_LONG:
+    'At least one sequence exceeds the 2000-residue limit. Shorten or remove the long sequences and try again.',
+  MALFORMED_FASTA:
+    'The file could not be parsed as FASTA. Check that every record starts with a ">" header followed by sequence lines.',
+  DUPLICATE_IDENTIFIERS:
+    'The FASTA contains duplicate sequence identifiers. Make each header unique and try again.',
+  EMPTY_FASTA: 'The FASTA file appears to be empty. Add at least one sequence and try again.',
+  TOTAL_RESIDUES_EXCEEDED:
+    'The combined sequence length is too large for the prep backend. Reduce the number or length of sequences.',
+  BIOCENTRAL_UNAVAILABLE:
+    'The embedding service is temporarily unavailable. Please wait a moment and try again.',
+};
+
+function asFastaPrepError(detail: DataErrorEventDetail): FastaPrepError | null {
+  const original = detail.originalError;
+  return original instanceof FastaPrepError ? original : null;
+}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -62,11 +89,23 @@ export function getCorruptedPersistedDatasetNotification(context: string): Notif
 }
 
 export function getDataLoadFailureNotification(detail: DataErrorEventDetail): NotifyOptions {
+  const prepError = asFastaPrepError(detail);
+  const code = prepError?.code;
+  const jobId = prepError?.jobId;
+
+  // Prefer actionable copy for known backend codes; otherwise show the raw
+  // server message so we never hide useful detail.
+  const baseDescription = (code ? FASTA_PREP_CODE_MESSAGES[code] : undefined) ?? detail.message;
+  const description = jobId ? `${baseDescription} (Reference: ${jobId})` : baseDescription;
+
+  // Dedupe on the most specific stable identifier available.
+  const dedupeKey = `data-error:${code ?? detail.message}`;
+
   return {
     title: 'Dataset import failed.',
-    description: detail.message,
+    description,
     durationMs: 10_000,
-    dedupeKey: `data-error:${detail.message}`,
+    dedupeKey,
   };
 }
 

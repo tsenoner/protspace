@@ -11,7 +11,14 @@ import {
   estimateEmbedSeconds,
   formatEmbeddingLabel,
 } from './fasta-prep-estimate';
-import { isFastaFile, prepareFastaBundle } from './fasta-prep-client';
+import { FastaPrepError, isFastaFile, prepareFastaBundle } from './fasta-prep-client';
+import {
+  MAX_SEQUENCES,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  MIN_SEQUENCES,
+  PIPELINE_TIMEOUT_SECONDS,
+} from './fasta-prep-limits';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
 import { createPersistedLegendController } from './persisted-legend';
@@ -70,15 +77,44 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         return next(queuedFile, queuedOptions);
       }
 
-      const colabNote = {
-        text: 'Got a larger dataset?',
-        href: 'https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb',
-        linkText: 'Open in Colab ↗',
-      };
+      // Advisory client-side pre-check: the backend remains the source of
+      // truth, but failing fast here saves a wasted upload + a rate-limit token.
+      if (queuedFile.size > MAX_UPLOAD_BYTES) {
+        throw new FastaPrepError(
+          `This FASTA file is larger than the ${MAX_UPLOAD_LABEL} upload limit. Trim it or split it into smaller batches.`,
+          { code: 'FILE_TOO_LARGE' },
+        );
+      }
 
       const seqCount = await countFastaSequences(queuedFile).catch(() => 0);
       const estimateSeconds = estimateEmbedSeconds(seqCount);
       const embeddingLabel = formatEmbeddingLabel(seqCount);
+
+      // Surface count-based limits early too (only when we actually counted).
+      if (seqCount > MAX_SEQUENCES) {
+        throw new FastaPrepError(
+          `This FASTA has ${seqCount} sequences, more than the ${MAX_SEQUENCES} limit. Reduce it, or use the Colab notebook for larger datasets.`,
+          { code: 'TOO_MANY_SEQUENCES' },
+        );
+      }
+      if (seqCount > 0 && seqCount < MIN_SEQUENCES) {
+        throw new FastaPrepError(
+          `This FASTA has only ${seqCount} sequence${seqCount === 1 ? '' : 's'}; the prep backend needs at least ${MIN_SEQUENCES}.`,
+          { code: 'EMPTY_FASTA' },
+        );
+      }
+
+      // Only nudge toward Colab when the dataset is genuinely too large to run
+      // here (the pre-check above already rejects strictly-over-limit files, so
+      // this surfaces for borderline counts approaching the cap).
+      const colabNote =
+        seqCount >= MAX_SEQUENCES
+          ? {
+              text: 'Got a larger dataset?',
+              href: 'https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb',
+              linkText: 'Open in Colab ↗',
+            }
+          : undefined;
 
       const abortController = new AbortController();
       overlayController.update(true, 5, 'Preparing FASTA…', 'Uploading…', colabNote);
@@ -86,20 +122,35 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       let lastProgress = 5;
       let creep = 0;
 
+      // For large jobs the estimate sits close to the backend's hard timeout,
+      // so a high creep cap would imply near-completion exactly when the server
+      // might still time out. Cap lower for big jobs to keep the bar honest.
+      const isLargeJob = seqCount > MAX_SEQUENCES / 2;
+      const creepCap = isLargeJob ? 50 : 65;
+      // Show the "still working" note once we pass the estimate, but never
+      // later than ~80% of the hard timeout so it always appears before a
+      // server-side timeout could land.
+      const overdueThresholdSeconds = Math.min(estimateSeconds, PIPELINE_TIMEOUT_SECONDS * 0.8);
+
       const startCreep = () => {
         if (creep) return;
         const startedAt = performance.now();
-        // Asymptotic curve toward the 65% cap, scaled to the per-job estimate.
-        // tau = estimate/2 (in ms) puts the bar at ~58% when the estimated
+        // Asymptotic curve toward the cap, scaled to the per-job estimate.
+        // tau = estimate/2 (in ms) puts the bar partway up when the estimated
         // wall-clock elapses, so it always advances but slows as it approaches.
         const tau = Math.max(15_000, estimateSeconds * 500);
-        const cap = 65;
         const floor = 12;
         creep = window.setInterval(() => {
           const elapsed = performance.now() - startedAt;
-          const target = floor + (cap - floor) * (1 - Math.exp(-elapsed / tau));
+          const target = floor + (creepCap - floor) * (1 - Math.exp(-elapsed / tau));
           lastProgress = Math.max(lastProgress, target);
-          overlayController.update(true, lastProgress, 'Preparing FASTA…', embeddingLabel);
+          // Past the estimate the job is running long; tell the user it is
+          // still working rather than implying it is nearly done.
+          const overdue = elapsed > overdueThresholdSeconds * 1000;
+          const subMessage = overdue
+            ? 'Still working — large jobs can take a few minutes…'
+            : embeddingLabel;
+          overlayController.update(true, lastProgress, 'Preparing FASTA…', subMessage);
         }, 250);
       };
 
