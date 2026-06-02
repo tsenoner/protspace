@@ -38,7 +38,7 @@ async function describeSubmitFailure(response: Response): Promise<string> {
     const body = await response.json();
     if (body?.error) serverMessage = String(body.error);
   } catch {
-    /* non-JSON body (e.g. Caddy plain-text 429) */
+    /* non-JSON body (e.g. plain-text 429 from the rate limiter) */
   }
 
   switch (response.status) {

@@ -4,13 +4,13 @@ import { test, expect } from '@playwright/test';
 
 /**
  * Live end-to-end test for the FASTA prep flow. No `page.route` mocks: the
- * SPA hits the real backend Caddy, which fronts protspace-prep, which calls
- * the real Biocentral embedding service.
+ * SPA hits protspace-prep directly, which calls the real Biocentral
+ * embedding service.
  *
  * Prerequisites:
- *   - `docker compose up -d caddy protspace-prep`
+ *   - `docker compose up -d protspace-prep`
  *   - `pnpm --filter @protspace/app dev` (vite on http://localhost:8080)
- *   - `app/.env.development` sets VITE_PREP_API_BASE=http://localhost:9090
+ *   - `app/.env.development` sets VITE_PREP_API_BASE=http://localhost:8000
  *
  * Run:
  *   cd app && npx playwright test --config=tests/playwright.config.ts \
