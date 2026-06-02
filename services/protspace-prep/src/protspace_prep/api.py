@@ -4,7 +4,7 @@ import logging
 import re
 from typing import AsyncIterator
 
-from fastapi import APIRouter, File, HTTPException, Path, Request, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Path, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from slowapi import Limiter
 from starlette.background import BackgroundTask
@@ -48,7 +48,9 @@ def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> 
 
     @router.post("/api/prepare", status_code=status.HTTP_202_ACCEPTED)
     @limiter.limit(settings.rate_limit)
-    async def submit(request: Request, file: UploadFile = File(...)):
+    async def submit(request: Request, response: Response, file: UploadFile = File(...)):
+        # `response` is unused here; slowapi reads it via kwargs to inject
+        # rate-limit headers (X-RateLimit-*, Retry-After) when headers_enabled=True.
         body = await file.read(settings.upload_max_bytes + 1)
         if len(body) > settings.upload_max_bytes:
             raise FastaValidationError(

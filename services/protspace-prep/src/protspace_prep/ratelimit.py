@@ -26,4 +26,4 @@ def client_key(request: Request) -> str:
 
 
 def make_limiter() -> Limiter:
-    return Limiter(key_func=client_key, default_limits=[])
+    return Limiter(key_func=client_key, default_limits=[], headers_enabled=True)

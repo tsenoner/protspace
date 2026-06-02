@@ -12,6 +12,8 @@ async def _fake_success(ctx, emit):
 
 @pytest.fixture
 def make_client(tmp_path, monkeypatch):
+    # Env vars (PREP_RATE_LIMIT, CORS_ALLOWED_ORIGIN) must be set by each test
+    # BEFORE calling _build(), because load_settings() reads env at create_app time.
     monkeypatch.setenv("PREP_JOB_ROOT", str(tmp_path / "jobs"))
     monkeypatch.setenv("PREP_SEQUENCE_MIN_COUNT", "1")
 
@@ -23,7 +25,7 @@ def make_client(tmp_path, monkeypatch):
 
 
 async def test_rate_limit_returns_429_after_threshold(make_client, monkeypatch):
-    monkeypatch.setenv("PREP_RATE_LIMIT", "2/minute")
+    monkeypatch.setenv("PREP_RATE_LIMIT", "2/hour")
     files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
     headers = {"X-Forwarded-For": "203.0.113.99"}
     async with make_client() as c:
@@ -36,7 +38,7 @@ async def test_rate_limit_returns_429_after_threshold(make_client, monkeypatch):
 
 
 async def test_rate_limit_is_per_client_ip(make_client, monkeypatch):
-    monkeypatch.setenv("PREP_RATE_LIMIT", "1/minute")
+    monkeypatch.setenv("PREP_RATE_LIMIT", "1/hour")
     files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
     async with make_client() as c:
         a1 = await c.post("/api/prepare", files=files, headers={"X-Forwarded-For": "198.51.100.1"})
@@ -65,3 +67,14 @@ async def test_cors_absent_for_unconfigured_origin(make_client, monkeypatch):
             headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
         )
     assert r.headers.get("access-control-allow-origin") is None
+
+
+async def test_rate_limit_429_carries_retry_after(make_client, monkeypatch):
+    monkeypatch.setenv("PREP_RATE_LIMIT", "1/hour")
+    files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
+    headers = {"X-Forwarded-For": "203.0.113.1"}
+    async with make_client() as c:
+        await c.post("/api/prepare", files=files, headers=headers)
+        r = await c.post("/api/prepare", files=files, headers=headers)
+    assert r.status_code == 429
+    assert r.headers.get("retry-after") is not None
