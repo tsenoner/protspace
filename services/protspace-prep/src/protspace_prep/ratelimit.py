@@ -5,21 +5,17 @@ from starlette.requests import Request
 
 
 def client_key(request: Request) -> str:
-    """Rate-limit bucket key: the real client IP behind the Caddy gateway.
+    """Rate-limit bucket key: the real client IP as resolved by uvicorn.
 
-    Prefers the first hop of X-Forwarded-For (the original client), since the
-    socket peer is the gateway. Falls back to the peer, then a constant.
-
-    SECURITY: this trusts X-Forwarded-For unconditionally. That is safe ONLY
-    because the backend port is published on a private LAN IP and firewalled
-    to the gateway nodes - untrusted clients cannot reach it to spoof the
-    header. See the deployment plan's security invariant.
+    We rely entirely on uvicorn's ProxyHeaders middleware to resolve the real
+    client. It is gated by ``FORWARDED_ALLOW_IPS`` (set to the trusted private
+    LAN subnet), so for a trusted peer ``request.client.host`` is already the
+    original client (rewritten from ``X-Forwarded-For``), and for an untrusted
+    peer it is that peer's own socket address. We no longer parse the raw
+    ``X-Forwarded-For`` header ourselves — doing so would bypass that trust
+    gate and let any client spoof the header. The trust boundary is the
+    firewalled private LAN subnet that only the gateway nodes can reach.
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
     if request.client is not None:
         return request.client.host
     return "unknown"
