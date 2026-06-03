@@ -104,15 +104,14 @@ jobs:
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
 
-          ./scripts/set-image-digest.sh "$DIGEST"
+          printf 'PREP_IMAGE_DIGEST=%s\n' "$DIGEST" > image.env
 
-          # No-op guard. Keep this as an `if`: under `set -e`, `git diff --quiet`
-          # exits 1 when there ARE changes, so `git diff --quiet || exit 0` would
-          # abort the step on every real update. The `if` form suppresses `set -e`.
+          # Under `set -e`, `git diff --quiet` exits 1 when there ARE changes, so
+          # the `if` form (not `|| exit 0`) is required to not abort on every update.
           if git diff --quiet; then
             echo "Digest unchanged; nothing to deploy."
             exit 0
           fi
-          git add compose.yaml
+          git add image.env
           git commit -m "deploy: protspace-prep @${DIGEST}"
           git push origin main
