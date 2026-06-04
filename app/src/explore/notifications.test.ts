@@ -14,6 +14,17 @@ import {
   getLegendErrorNotification,
   getSelectionDisabledNotification,
 } from './notifications';
+import { FastaPrepError } from './fasta-prep-client';
+
+function dataError(message: string, originalError?: Error): DataErrorEventDetail {
+  return {
+    message,
+    severity: 'error',
+    source: 'data-loader',
+    context: { operation: 'load' },
+    originalError,
+  };
+}
 
 describe('explore notifications', () => {
   it('classifies OPFS SecurityError failures with private browsing guidance', () => {
@@ -66,6 +77,52 @@ describe('explore notifications', () => {
       title: 'Dataset import failed.',
       description: 'Invalid parquet bundle',
     });
+  });
+
+  it('maps a known FastaPrepError code to actionable copy and appends the job reference', () => {
+    const detail = dataError(
+      'too many sequences',
+      new FastaPrepError('too many sequences', {
+        code: 'TOO_MANY_SEQUENCES',
+        jobId: 'job-123',
+      }),
+    );
+
+    const notification = getDataLoadFailureNotification(detail);
+    expect(notification.title).toBe('Dataset import failed.');
+    // Friendly mapped copy, not the raw server English.
+    expect(notification.description).not.toBe('too many sequences');
+    expect(notification.description).toMatch(/1500/);
+    expect(notification.description).toMatch(/Reference: job-123/);
+    expect(notification.dedupeKey).toBe('data-error:TOO_MANY_SEQUENCES');
+  });
+
+  it('falls back to the server message for an unknown FastaPrepError code', () => {
+    const detail = dataError(
+      'something obscure failed',
+      new FastaPrepError('something obscure failed', { code: 'WEIRD_NEW_CODE' }),
+    );
+
+    const notification = getDataLoadFailureNotification(detail);
+    expect(notification.description).toBe('something obscure failed');
+    expect(notification.dedupeKey).toBe('data-error:WEIRD_NEW_CODE');
+  });
+
+  it('includes the job reference even when there is no code', () => {
+    const detail = dataError(
+      'Lost connection to the prep backend.',
+      new FastaPrepError('Lost connection to the prep backend.', { jobId: 'job-xyz' }),
+    );
+
+    const notification = getDataLoadFailureNotification(detail);
+    expect(notification.description).toMatch(/Lost connection to the prep backend\./);
+    expect(notification.description).toMatch(/Reference: job-xyz/);
+  });
+
+  it('leaves non-FastaPrepError data errors unchanged', () => {
+    const notification = getDataLoadFailureNotification(dataError('Invalid parquet bundle'));
+    expect(notification.description).toBe('Invalid parquet bundle');
+    expect(notification.dedupeKey).toBe('data-error:Invalid parquet bundle');
   });
 
   it('maps legend errors to host notifications without exposing a structure toast mapper', () => {

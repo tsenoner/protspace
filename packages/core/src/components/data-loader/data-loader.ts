@@ -96,7 +96,7 @@ export class DataLoader extends LitElement {
       <input
         type="file"
         class="hidden-input"
-        accept=".parquetbundle"
+        accept=".parquetbundle,.fasta,.fa,.fna"
         @change=${this.handleFileSelect}
         style="display:none"
       />
@@ -158,7 +158,14 @@ export class DataLoader extends LitElement {
    */
   async loadFromFile(file: File, options?: DataLoaderFileLoadOptions) {
     if (this.loadFromFileHandler) {
-      return this.loadFromFileHandler(file, options, this.loadFromFileDirect.bind(this));
+      try {
+        await this.loadFromFileHandler(file, options, this.loadFromFileDirect.bind(this));
+      } catch (error) {
+        const originalError = error instanceof Error ? error : new Error(String(error));
+        this.error = originalError.message;
+        this.dispatchError(this.error, originalError);
+      }
+      return;
     }
 
     return this.loadFromFileDirect(file, options);

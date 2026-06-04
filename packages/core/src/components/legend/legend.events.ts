@@ -10,8 +10,11 @@ export interface LegendErrorContext {
   annotation?: string;
 }
 
-export interface LegendErrorEventDetail
-  extends HostMessageEventDetail<LegendErrorSource, 'error', LegendErrorContext> {}
+export interface LegendErrorEventDetail extends HostMessageEventDetail<
+  LegendErrorSource,
+  'error',
+  LegendErrorContext
+> {}
 
 export function createLegendErrorEventDetail(
   message: string,
