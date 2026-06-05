@@ -21,6 +21,8 @@ import { scatterplotStyles } from './scatter-plot.styles';
 import './projection-metadata';
 import './protspace-tips';
 import './protein-tooltip';
+import './context-menu';
+import { resolveMenuItems, type MenuItem, type ContextMenuAction } from './context-menu';
 import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './style-getters';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
@@ -81,6 +83,10 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
 
   // State
+  @state() private _contextMenuOpen = false;
+  @state() private _contextMenuX = 0;
+  @state() private _contextMenuY = 0;
+  @state() private _contextMenuItems: MenuItem[] = [];
   @state() private _plotData: PlotDataPoint[] = [];
   @state() private _tooltipData: {
     x: number;
@@ -2164,12 +2170,66 @@ export class ProtspaceScatterplot extends LitElement {
     return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;
   }
 
+  private _hitTestAtClient(
+    clientX: number,
+    clientY: number,
+  ): { proteinId: string; dataCoords: [number, number] } | null {
+    if (!this._svg || !this._scales) return null;
+    const rect = this._svg.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    const dataX = (localX - this._transform.x) / this._transform.k;
+    const dataY = (localY - this._transform.y) / this._transform.k;
+    const searchRadius = 15 / this._transform.k;
+    const nearest = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    if (!nearest) return null;
+    if (this._getOpacity(nearest) === 0) return null;
+    if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearest.id)) return null;
+    return { proteinId: nearest.id, dataCoords: [nearest.x, nearest.y] };
+  }
+
+  private _handleContextMenu(e: MouseEvent) {
+    const hit = this._hitTestAtClient(e.clientX, e.clientY);
+    if (!hit) {
+      this._contextMenuOpen = false;
+      return;
+    }
+    e.preventDefault();
+    const hasAccession = /^[A-Z][0-9][A-Z0-9]{3}[0-9]|^[A-Z]{2}_\d+/.test(hit.proteinId);
+    this._contextMenuItems = resolveMenuItems({ ...hit, hasAccession });
+    const rect = this.getBoundingClientRect();
+    this._contextMenuX = e.clientX - rect.left;
+    this._contextMenuY = e.clientY - rect.top;
+    this._contextMenuOpen = true;
+  }
+
+  private _handleContextMenuAction(e: CustomEvent<ContextMenuAction>) {
+    e.stopPropagation();
+    const { type, proteinId } = e.detail;
+    if (type === 'copy-id') {
+      void navigator.clipboard?.writeText(proteinId);
+    } else if (type === 'view-uniprot') {
+      window.open(`https://www.uniprot.org/uniprotkb/${proteinId}/entry`, '_blank', 'noopener');
+    }
+    this.dispatchEvent(
+      new CustomEvent('context-menu-action', {
+        detail: e.detail,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _handleContextMenuClose() {
+    this._contextMenuOpen = false;
+  }
+
   render() {
     const config = this._mergedConfig;
     const useAltCanvas = this._canvasKey % 2 === 1;
 
     return html`
-      <div class="container">
+      <div class="container" @contextmenu="${this._handleContextMenu}">
         <!-- Canvas for high-performance rendering (always visible for better performance) -->
         ${useAltCanvas
           ? html`<canvas
@@ -2243,6 +2303,14 @@ export class ProtspaceScatterplot extends LitElement {
               </div>
             `
           : ''}
+        <protspace-context-menu
+          style="position: absolute; left:${this._contextMenuX}px; top:${this
+            ._contextMenuY}px; z-index: 20;"
+          .open="${this._contextMenuOpen}"
+          .items="${this._contextMenuItems}"
+          @context-menu-action="${this._handleContextMenuAction}"
+          @context-menu-close="${this._handleContextMenuClose}"
+        ></protspace-context-menu>
       </div>
     `;
   }
