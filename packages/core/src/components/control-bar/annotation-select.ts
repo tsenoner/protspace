@@ -273,6 +273,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                     ${hasDocs
                                       ? html`<protspace-info-popover
                                           class="annotation-info"
+                                          align="right"
                                           .description=${meta.description}
                                           docs-url=${meta.docsUrl ?? ''}
                                           label=${annotationLabel(annotation)}

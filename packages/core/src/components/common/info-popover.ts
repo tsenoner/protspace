@@ -50,7 +50,7 @@ class ProtspaceInfoPopover extends LitElement {
       left: 0;
       z-index: 1000;
       width: max-content;
-      max-width: 260px;
+      max-width: min(260px, calc(100vw - 24px));
       padding: 0.55rem 0.65rem;
       border-radius: 8px;
       background: var(--surface-color, #ffffff);
@@ -61,6 +61,13 @@ class ProtspaceInfoPopover extends LitElement {
       line-height: 1.35;
       text-align: left;
       white-space: normal;
+    }
+
+    /* Open leftward (align right edge to the icon) when there isn't room on the right,
+       e.g. the info icon sits near the right edge of the annotation dropdown. */
+    .popover.flip-left {
+      left: auto;
+      right: 0;
     }
 
     .popover-description {
@@ -86,14 +93,32 @@ class ProtspaceInfoPopover extends LitElement {
   @property({ type: String, attribute: 'docs-url' }) docsUrl = '';
   /** Human-readable annotation label, used for accessible button labelling. */
   @property({ type: String }) label = '';
+  /**
+   * Preferred horizontal open direction. `'left'` (default) opens the popover rightward from the
+   * icon; `'right'` opens it leftward (align its right edge to the icon) — use this when the icon
+   * sits near the right edge of a container, e.g. the annotation dropdown's action column. A
+   * viewport overflow check still flips it as a safety net regardless of this setting.
+   */
+  @property({ type: String }) align: 'left' | 'right' = 'left';
 
   @state() private open = false;
+  @state() private flipLeft = false;
 
   private _onDocumentClick = (event: MouseEvent) => {
     if (!event.composedPath().includes(this)) {
       this.open = false;
     }
   };
+
+  updated() {
+    // After the popover renders, flip it leftward if it would overflow the right edge of the
+    // viewport (safety net on top of the `align` preference).
+    if (!this.open || this.flipLeft || this.align === 'right') return;
+    const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
+    if (popover && popover.getBoundingClientRect().right > window.innerWidth - 8) {
+      this.flipLeft = true;
+    }
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -105,6 +130,7 @@ class ProtspaceInfoPopover extends LitElement {
     event.preventDefault();
     this.open = !this.open;
     if (this.open) {
+      this.flipLeft = false; // recomputed in updated() once measured
       document.addEventListener('click', this._onDocumentClick, true);
     } else {
       document.removeEventListener('click', this._onDocumentClick, true);
@@ -153,7 +179,11 @@ class ProtspaceInfoPopover extends LitElement {
         </svg>
       </button>
       ${this.open
-        ? html`<div class="popover" role="dialog" @keydown=${this._onKeydown}>
+        ? html`<div
+            class="popover ${this.align === 'right' || this.flipLeft ? 'flip-left' : ''}"
+            role="dialog"
+            @keydown=${this._onKeydown}
+          >
             ${this.description
               ? html`<p class="popover-description">${this.description}</p>`
               : nothing}

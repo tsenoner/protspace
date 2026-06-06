@@ -29,7 +29,9 @@ export interface AnnotationMeta {
 /** Prefix marking ML-predicted annotation columns (backend convention). */
 export const PREDICTED_PREFIX = 'predicted_';
 
-const docs = (anchor: string): string => `/guide/annotations#${anchor}`;
+// The VitePress docs site is mounted under `/docs/` (see config/urls.ts), so links must include
+// that base. Anchors use the exact column name (the generated page emits matching {#column} ids).
+const docs = (anchor: string): string => `/docs/guide/annotations#${anchor}`;
 
 /**
  * Registry keyed by exact annotation column name. Seeded from the backend
