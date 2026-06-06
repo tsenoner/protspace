@@ -36,7 +36,14 @@ test.describe('WebGL render perf benchmark (headed)', () => {
       predicate: (dl) => dl.suggestedFilename().includes('webgl-perf-suite'),
     });
 
-    await page.goto(`/explore?webglPerf=1&webglPerfIterations=${ITERATIONS}`);
+    // Build the goto URL, optionally scoping to specific datasets
+    const rawDatasets = process.env.PERF_DATASETS;
+    const datasetsParam =
+      rawDatasets && rawDatasets.trim().length > 0
+        ? `&webglPerfDatasets=${encodeURIComponent(rawDatasets.trim())}`
+        : '';
+
+    await page.goto(`/explore?webglPerf=1&webglPerfIterations=${ITERATIONS}${datasetsParam}`);
     await page.bringToFront();
 
     await Promise.race([
@@ -52,6 +59,39 @@ test.describe('WebGL render perf benchmark (headed)', () => {
       }),
     ]);
 
+    // Best-effort CDP peak-heap poller (Chrome only)
+    let polling = true;
+    let maxBytes: number | null = null;
+    const samples: Array<{ t: number; bytes: number }> = [];
+    let cdpPollLoop: Promise<void> = Promise.resolve();
+
+    if (testInfo.project.name === 'chrome') {
+      try {
+        const client = await page.context().newCDPSession(page);
+        await client.send('Performance.enable');
+
+        cdpPollLoop = (async () => {
+          while (polling) {
+            try {
+              const { metrics } = await client.send('Performance.getMetrics');
+              const heapUsed = (metrics as Array<{ name: string; value: number }>).find(
+                (m) => m.name === 'JSHeapUsedSize',
+              )?.value;
+              if (typeof heapUsed === 'number') {
+                if (maxBytes === null || heapUsed > maxBytes) maxBytes = heapUsed;
+                samples.push({ t: Date.now(), bytes: heapUsed });
+              }
+            } catch {
+              // ignore individual poll errors
+            }
+            await new Promise<void>((resolve) => setTimeout(resolve, 200));
+          }
+        })();
+      } catch {
+        // CDP not available — skip silently
+      }
+    }
+
     const dl = await Promise.race([
       downloadPromise,
       firstPageError.then((err) => {
@@ -61,14 +101,41 @@ test.describe('WebGL render perf benchmark (headed)', () => {
     const savedTo = testInfo.outputPath(`webgl-perf-suite-${testInfo.project.name}.json`);
     await dl.saveAs(savedTo);
 
-    const suite = JSON.parse(fs.readFileSync(savedTo, 'utf-8')) as any;
+    // Stop CDP poller and write sidecar
+    polling = false;
+    try {
+      await cdpPollLoop;
+    } catch {
+      // ignore
+    }
+    if (testInfo.project.name === 'chrome' && maxBytes !== null) {
+      try {
+        const cdpPath = testInfo.outputPath(`webgl-perf-suite-${testInfo.project.name}-cdp.json`);
+        fs.writeFileSync(
+          cdpPath,
+          JSON.stringify({ peakJSHeapUsedBytes: maxBytes, samples }, null, 2),
+        );
+        console.log('CDP peak JSHeapUsedSize bytes:', maxBytes);
+      } catch {
+        // best-effort — never fail the test
+      }
+    }
+
+    const suite = JSON.parse(fs.readFileSync(savedTo, 'utf-8')) as {
+      createdAt: string;
+      iterations: number;
+      results: Array<{
+        dataset: { id: string };
+        scenarios: Array<{ name: string }>;
+      }>;
+    };
     expect(suite).toBeTruthy();
     expect(typeof suite.createdAt).toBe('string');
     expect(suite.iterations).toBe(ITERATIONS);
     expect(Array.isArray(suite.results)).toBeTruthy();
     expect((suite.results as unknown[]).length).toBeGreaterThan(0);
 
-    const results = suite.results as any[];
+    const results = suite.results;
     const datasetIds = results.map((r) => r?.dataset?.id);
     for (const id of datasetIds) {
       expect(typeof id).toBe('string');
@@ -80,7 +147,7 @@ test.describe('WebGL render perf benchmark (headed)', () => {
       expect(r).toBeTruthy();
       expect(Array.isArray(r.scenarios)).toBeTruthy();
 
-      const scenarioNames = (r.scenarios as any[]).map((s) => s?.name).filter(Boolean);
+      const scenarioNames = r.scenarios.map((s) => s?.name).filter(Boolean);
       for (const expected of EXPECTED_SCENARIOS) {
         expect(scenarioNames).toContain(expected);
       }

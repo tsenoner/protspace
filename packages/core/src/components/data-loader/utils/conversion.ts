@@ -437,19 +437,36 @@ function convertBundleFormatData(
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projectionRows] of projectionGroups.entries()) {
     const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
-    const projectionData = uniqueProteinIds.map((proteinId) => coordMap.get(proteinId) || [0, 0]);
-    const has3D = projectionData.some((p) => p.length === 3);
+    let has3D = false;
+    for (const v of coordMap.values()) {
+      if (v.length === 3) {
+        has3D = true;
+        break;
+      }
+    }
+    const dimension: 2 | 3 = has3D ? 3 : 2;
+    const data = new Float32Array(uniqueProteinIds.length * dimension);
+    for (let i = 0; i < uniqueProteinIds.length; i++) {
+      const c = coordMap.get(uniqueProteinIds[i]);
+      const base = i * dimension;
+      if (c) {
+        data[base] = c[0];
+        data[base + 1] = c[1];
+        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
+      }
+    }
 
     // Merge dimension with existing metadata from projectionsMetadata
     const existingMetadata = metadataMap.get(projectionName) || {};
     const metadata = {
       ...existingMetadata,
-      dimension: (has3D ? 3 : 2) as 2 | 3,
+      dimension,
     };
 
     projections.push({
       name: formatProjectionName(projectionName),
-      data: projectionData as Array<[number, number] | [number, number, number]>,
+      data,
+      dimension,
       metadata,
     });
   }
@@ -601,24 +618,36 @@ async function convertBundleFormatDataOptimized(
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projectionRows] of projectionGroups.entries()) {
     const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
-    const projectionData: Array<[number, number] | [number, number, number]> = new Array(
-      uniqueProteinIds.length,
-    );
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      projectionData[i] = coordMap.get(uniqueProteinIds[i]) || [0, 0];
+    let has3D = false;
+    for (const v of coordMap.values()) {
+      if (v.length === 3) {
+        has3D = true;
+        break;
+      }
     }
-    const has3D = projectionData.some((p) => p.length === 3);
+    const dimension: 2 | 3 = has3D ? 3 : 2;
+    const data = new Float32Array(uniqueProteinIds.length * dimension);
+    for (let i = 0; i < uniqueProteinIds.length; i++) {
+      const c = coordMap.get(uniqueProteinIds[i]);
+      const base = i * dimension;
+      if (c) {
+        data[base] = c[0];
+        data[base + 1] = c[1];
+        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
+      }
+    }
 
     // Merge dimension with existing metadata from projectionsMetadata
     const existingMetadata = metadataMap.get(projectionName) || {};
     const metadata = {
       ...existingMetadata,
-      dimension: (has3D ? 3 : 2) as 2 | 3,
+      dimension,
     };
 
     projections.push({
       name: formatProjectionName(projectionName),
-      data: projectionData,
+      data,
+      dimension,
       metadata,
     });
     // yield
@@ -693,21 +722,33 @@ async function convertBundleFormatDataOptimizedSeparated(
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projRows] of projectionGroups.entries()) {
     const coordMap = buildCoordinateMap(projRows, projectionIdCol);
-    const projectionData: Array<[number, number] | [number, number, number]> = new Array(
-      uniqueProteinIds.length,
-    );
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      projectionData[i] = coordMap.get(uniqueProteinIds[i]) || [0, 0];
+    let has3D = false;
+    for (const v of coordMap.values()) {
+      if (v.length === 3) {
+        has3D = true;
+        break;
+      }
     }
-    const has3D = projectionData.some((p) => p.length === 3);
+    const dimension: 2 | 3 = has3D ? 3 : 2;
+    const data = new Float32Array(uniqueProteinIds.length * dimension);
+    for (let i = 0; i < uniqueProteinIds.length; i++) {
+      const c = coordMap.get(uniqueProteinIds[i]);
+      const base = i * dimension;
+      if (c) {
+        data[base] = c[0];
+        data[base + 1] = c[1];
+        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
+      }
+    }
     const existingMetadata = metadataMap.get(projectionName) || {};
     const metadata = {
       ...existingMetadata,
-      dimension: (has3D ? 3 : 2) as 2 | 3,
+      dimension,
     };
     projections.push({
       name: formatProjectionName(projectionName),
-      data: projectionData,
+      data,
+      dimension,
       metadata,
     });
     await fastYield();
@@ -761,17 +802,22 @@ function convertLegacyFormatData(rows: Rows, columnNames: string[]): Visualizati
   const protein_ids = rows.map((row) => (row[proteinIdCol] ? String(row[proteinIdCol]) : ''));
 
   const projections = projectionPairs.map((pair) => {
-    const projectionData: [number, number][] = rows.map((row, idx) => {
+    const dimension: 2 | 3 = 2;
+    const data = new Float32Array(rows.length * dimension);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       const x = Number(row[pair.xCol]);
       const y = Number(row[pair.yCol]);
       if (Number.isNaN(x) || Number.isNaN(y)) {
-        console.warn(`Invalid coordinates at row ${idx} for projection ${pair.name}`, { x, y });
+        console.warn(`Invalid coordinates at row ${i} for projection ${pair.name}`, { x, y });
       }
-      return [x, y];
-    });
+      data[i * dimension] = x;
+      data[i * dimension + 1] = y;
+    }
     return {
       name: pair.name,
-      data: projectionData,
+      data,
+      dimension,
     } as VisualizationData['projections'][number];
   });
 
@@ -1032,25 +1078,82 @@ async function extractAnnotationsByProtein(
       continue;
     }
 
-    // === Pass 1: Collect unique values, frequency counts, detect scores/evidence ===
+    // === Pass 1: split + parse each DISTINCT cell value ONCE (memoized), then
+    //     reuse the parse across every protein that shares it. The annotation
+    //     columns are dictionary-encoded, so distinct cell values << protein
+    //     count for most columns (e.g. kingdom: 22 distinct over 573K rows) —
+    //     this turns the parse cost from O(proteins) into O(distinct cells).
+    //     Output is byte-identical: frequency counting, arity, and score/evidence
+    //     detection all stay PER-PROTEIN-OCCURRENCE below; only the split+parse
+    //     is shared. Caches are block-scoped and reclaimed between columns.
+    interface ParsedCell {
+      // null ⇒ empty cell (no values). Otherwise the parsed labels in cell order.
+      labels: string[] | null;
+      // Sparse: non-null only when at least one value carried a score / evidence
+      // code. When set, length === labels.length. SHARED by reference across
+      // proteins with identical cells — safe because the result is read-only and
+      // is deep-copied by structured-clone on worker transfer.
+      scores: (number[] | null)[] | null;
+      evidence: (string | null)[] | null;
+    }
+    const EMPTY_CELL: ParsedCell = { labels: null, scores: null, evidence: null };
+
     const valueCountMap = new Map<string, number>();
     let columnHasScores = false;
     let columnHasEvidence = false;
     let maxValuesPerProtein = 0;
 
+    // Memoize split+parse keyed by the raw cell value (deterministic). parquet
+    // decodes these columns as strings, so the key is the cell string itself;
+    // distinct raw values are always parsed independently (never collapsed).
+    const parseCache = new Map<unknown, ParsedCell>();
+    const parseCell = (raw: unknown): ParsedCell => {
+      const cached = parseCache.get(raw);
+      if (cached !== undefined) return cached;
+      const rawValues = splitCategoricalAnnotationValues(raw);
+      const n = rawValues.length;
+      if (n === 0) {
+        parseCache.set(raw, EMPTY_CELL);
+        return EMPTY_CELL;
+      }
+      const labels = new Array<string>(n);
+      let scores: (number[] | null)[] | null = null;
+      let evidence: (string | null)[] | null = null;
+      for (let k = 0; k < n; k++) {
+        const parsed = parseAnnotationValue(rawValues[k]);
+        labels[k] = parsed.label;
+        if (parsed.scores.length > 0) {
+          if (!scores) scores = new Array<number[] | null>(n).fill(null);
+          scores[k] = parsed.scores;
+        }
+        if (parsed.evidence) {
+          if (!evidence) evidence = new Array<string | null>(n).fill(null);
+          evidence[k] = parsed.evidence;
+        }
+      }
+      const cell: ParsedCell = { labels, scores, evidence };
+      parseCache.set(raw, cell);
+      return cell;
+    };
+
+    // Per-protein parse (cache hit for repeated cells). Counting + flags + arity
+    // are accumulated PER PROTEIN so they match the non-memoized version exactly.
+    const parsedByProtein = new Array<ParsedCell>(numProteins);
+
     for (let i = 0; i < numProteins; i += chunkSize) {
       const end = Math.min(i + chunkSize, numProteins);
       for (let p = i; p < end; p++) {
-        const rawValues = splitCategoricalAnnotationValues(rowByProteinIdx[p]?.[annotationCol]);
-        if (rawValues.length > maxValuesPerProtein) {
-          maxValuesPerProtein = rawValues.length;
+        const cell = parseCell(rowByProteinIdx[p]?.[annotationCol]);
+        parsedByProtein[p] = cell;
+        const labels = cell.labels;
+        if (labels === null) continue;
+        const n = labels.length;
+        if (n > maxValuesPerProtein) maxValuesPerProtein = n;
+        for (let k = 0; k < n; k++) {
+          valueCountMap.set(labels[k], (valueCountMap.get(labels[k]) || 0) + 1);
         }
-        for (const raw of rawValues) {
-          const parsed = parseAnnotationValue(raw);
-          valueCountMap.set(parsed.label, (valueCountMap.get(parsed.label) || 0) + 1);
-          if (parsed.scores.length > 0) columnHasScores = true;
-          if (parsed.evidence) columnHasEvidence = true;
-        }
+        if (cell.scores) columnHasScores = true;
+        if (cell.evidence) columnHasEvidence = true;
       }
       await fastYield();
     }
@@ -1065,8 +1168,8 @@ async function extractAnnotationsByProtein(
 
     const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
 
-    // === Pass 2: Build output arrays. Use Int32Array for strict single-valued
-    //     columns to avoid the per-protein number[] allocation cliff. ===
+    // === Pass 2: map cached labels → dictionary indices. Use Int32Array for
+    //     strict single-valued columns to avoid the per-protein number[] cliff. ===
     const useTypedStorage = maxValuesPerProtein <= 1 && !columnHasScores && !columnHasEvidence;
 
     const annotationDataTyped = useTypedStorage ? new Int32Array(numProteins).fill(-1) : null;
@@ -1077,28 +1180,26 @@ async function extractAnnotationsByProtein(
     for (let i = 0; i < numProteins; i += chunkSize) {
       const end = Math.min(i + chunkSize, numProteins);
       for (let p = i; p < end; p++) {
-        const rawValues = splitCategoricalAnnotationValues(rowByProteinIdx[p]?.[annotationCol]);
-        if (rawValues.length === 0) continue;
+        const cell = parsedByProtein[p];
+        const labels = cell.labels;
+        if (labels === null) continue;
 
         if (annotationDataTyped) {
           // Single-valued: write the one index directly into the typed array.
-          const parsed = parseAnnotationValue(rawValues[0]);
-          annotationDataTyped[p] = valueToIndex.get(parsed.label) ?? -1;
+          annotationDataTyped[p] = valueToIndex.get(labels[0]) ?? -1;
         } else {
-          const indices: number[] = [];
-          const scores: (number[] | null)[] | null = scoresArray ? [] : null;
-          const evidences: (string | null)[] | null = evidenceArray ? [] : null;
-
-          for (const raw of rawValues) {
-            const parsed = parseAnnotationValue(raw);
-            indices.push(valueToIndex.get(parsed.label) ?? -1);
-            if (scores) scores.push(parsed.scores.length > 0 ? parsed.scores : null);
-            if (evidences) evidences.push(parsed.evidence);
+          // Fresh index array per protein (NOT shared) to match prior behavior.
+          const indices = new Array<number>(labels.length);
+          for (let k = 0; k < labels.length; k++) {
+            indices[k] = valueToIndex.get(labels[k]) ?? -1;
           }
-
           annotationDataArray![p] = indices;
-          if (scoresArray && scores) scoresArray[p] = scores;
-          if (evidenceArray && evidences) evidenceArray[p] = evidences;
+          if (scoresArray) {
+            scoresArray[p] = cell.scores ?? new Array<number[] | null>(labels.length).fill(null);
+          }
+          if (evidenceArray) {
+            evidenceArray[p] = cell.evidence ?? new Array<string | null>(labels.length).fill(null);
+          }
         }
       }
       await fastYield();

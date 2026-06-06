@@ -588,7 +588,7 @@ export function materializeNumericAnnotation(
   numericType?: NumericAnnotationType,
 ): {
   annotation: Annotation;
-  annotationData: number[][];
+  annotationData: Int32Array;
 } {
   const summary = createSummary(values, {
     includeSortedValues: settings.strategy === 'quantile',
@@ -627,7 +627,7 @@ export function materializeNumericAnnotation(
           bins: [],
         },
       },
-      annotationData: values.map(() => []),
+      annotationData: new Int32Array(values.length).fill(-1),
     };
   }
 
@@ -686,11 +686,16 @@ export function materializeNumericAnnotation(
     }
   }
 
-  const annotationData = rawBinIndices.map((binIndex) => {
-    if (binIndex < 0) return [];
-    const realizedIndex = originalToRealizedIndex.get(binIndex);
-    return realizedIndex == null ? [] : [realizedIndex];
-  });
+  const annotationData = new Int32Array(rawBinIndices.length);
+  for (let i = 0; i < rawBinIndices.length; i++) {
+    const binIndex = rawBinIndices[i];
+    if (binIndex < 0) {
+      annotationData[i] = -1;
+    } else {
+      const realizedIndex = originalToRealizedIndex.get(binIndex);
+      annotationData[i] = realizedIndex == null ? -1 : realizedIndex;
+    }
+  }
 
   const colorPositions = createColorPositions(effectiveSettings.strategy, bins, summary);
   const colors = createBinColors(
@@ -733,9 +738,7 @@ export function materializeNumericAnnotation(
     finalShapes.push('circle');
 
     for (let i = 0; i < annotationData.length; i++) {
-      if (annotationData[i].length === 0) {
-        annotationData[i] = [naIndex];
-      }
+      if (annotationData[i] < 0) annotationData[i] = naIndex;
     }
   }
 

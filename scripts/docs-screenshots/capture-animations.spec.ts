@@ -45,11 +45,12 @@ async function collectClusterScreenPoints(
     };
 
     const targetPoints: Array<{ sx: number; sy: number }> = [];
-    for (const point of plotData) {
-      const values = readValuesAt(point.originalIndex);
-      if (values.some((v) => v?.includes(needle))) {
-        const sx = plotRect.left + scales.x(point.x) * transform.k + transform.x;
-        const sy = plotRect.top + scales.y(point.y) * transform.k + transform.y;
+    for (let i = 0; i < plotData.length; i++) {
+      const origIdx = plotData.originalIndices ? plotData.originalIndices[i] : i;
+      const values = readValuesAt(origIdx);
+      if (values.some((v: string | null) => v?.includes(needle))) {
+        const sx = plotRect.left + scales.x(plotData.xs[i]) * transform.k + transform.x;
+        const sy = plotRect.top + scales.y(plotData.ys[i]) * transform.k + transform.y;
         targetPoints.push({ sx, sy });
       }
     }

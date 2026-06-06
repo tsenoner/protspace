@@ -602,6 +602,81 @@ describe('annotation_data storage shape', () => {
     expect(pfamData[p2Idx]).toHaveLength(1);
     expect(values[pfamData[p2Idx][0]]).toBe('PF03');
   });
+
+  it('round-trips heterogeneous per-value scores and evidence through the optimized path', async () => {
+    // Each protein's cell mixes a scored value, an evidence-coded value, and a
+    // plain value — exercises the single-parse cache reconstruction in Pass 2.
+    const rows = Array.from({ length: 10000 }, (_, i) => ({
+      projection_name: 'UMAP',
+      identifier: `P${i + 1}`,
+      x: i,
+      y: i,
+      // value 0: scored, value 1: evidence code, value 2: plain
+      site: 'Active|1.5e-10;Bind|ECO:0000269;Other',
+    }));
+
+    const result = await convertParquetToVisualizationDataOptimized(rows, [
+      { projection_name: 'UMAP', dimensions: 2 },
+    ]);
+
+    expect(Array.isArray(result.annotation_data.site)).toBe(true);
+    const siteData = result.annotation_data.site as readonly (readonly number[])[];
+    const values = result.annotations.site.values;
+
+    const p1 = result.protein_ids.indexOf('P1');
+    // Three labels resolved
+    expect(siteData[p1]).toHaveLength(3);
+    expect(siteData[p1].map((i) => values[i])).toEqual(['Active', 'Bind', 'Other']);
+
+    // Scores: value 0 has [1.5e-10], values 1 and 2 are null
+    const scores = result.annotation_scores?.site;
+    expect(scores).toBeDefined();
+    expect(scores![p1]).toEqual([[1.5e-10], null, null]);
+
+    // Evidence: value 1 has 'ECO:0000269', values 0 and 2 are null
+    const evidence = result.annotation_evidence?.site;
+    expect(evidence).toBeDefined();
+    expect(evidence![p1]).toEqual([null, 'ECO:0000269', null]);
+  });
+
+  it('memoizes repeated cells without cross-contaminating per-protein output', async () => {
+    // Many proteins share the SAME multi-valued scored+evidence cell (cache hits),
+    // interleaved with a distinct plain cell — guards the parse memoization.
+    const shared = 'Active|1.5e-10;Bind|ECO:0000269';
+    const rows = Array.from({ length: 10000 }, (_, i) => ({
+      projection_name: 'UMAP',
+      identifier: `P${i + 1}`,
+      x: i,
+      y: i,
+      site: i % 4 === 0 ? 'Solo' : shared,
+    }));
+
+    const result = await convertParquetToVisualizationDataOptimized(rows, [
+      { projection_name: 'UMAP', dimensions: 2 },
+    ]);
+
+    const siteData = result.annotation_data.site as readonly (readonly number[])[];
+    const values = result.annotations.site.values;
+    const scores = result.annotation_scores?.site;
+    const evidence = result.annotation_evidence?.site;
+    expect(scores).toBeDefined();
+    expect(evidence).toBeDefined();
+
+    // Every shared-cell protein resolves to ['Active','Bind'] with the right score/evidence,
+    // and the distinct 'Solo' proteins are unaffected (no cross-contamination).
+    const pShared = result.protein_ids.indexOf('P2'); // i=1 -> shared
+    const pSolo = result.protein_ids.indexOf('P1'); // i=0 -> 'Solo'
+    expect(siteData[pShared].map((ix) => values[ix])).toEqual(['Active', 'Bind']);
+    expect(scores![pShared]).toEqual([[1.5e-10], null]);
+    expect(evidence![pShared]).toEqual([null, 'ECO:0000269']);
+    expect(siteData[pSolo].map((ix) => values[ix])).toEqual(['Solo']);
+    expect(scores![pSolo]).toEqual([null]);
+    expect(evidence![pSolo]).toEqual([null]);
+
+    // Frequency-based ordering is unaffected by memoization: 'Active' and 'Bind'
+    // each occur 7500 times (3/4 of 10000), 'Solo' 2500 — so Solo sorts last.
+    expect(values.indexOf('Solo')).toBeGreaterThan(values.indexOf('Active'));
+  });
 });
 
 import { generateColorsAndShapes } from './conversion';

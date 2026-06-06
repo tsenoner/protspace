@@ -36,6 +36,8 @@ export default defineConfig({
             '--disable-renderer-backgrounding',
             '--disable-features=CalculateNativeWinOcclusion',
             '--disable-frame-rate-limit',
+            // Memory — make performance.memory byte-accurate instead of bucketed
+            '--enable-precise-memory-info',
           ],
         },
       },
