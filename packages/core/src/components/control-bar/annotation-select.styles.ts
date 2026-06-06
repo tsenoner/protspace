@@ -135,6 +135,11 @@ export const annotationSelectStyles = [
       white-space: nowrap;
     }
 
+    .annotation-info {
+      flex: 0 0 auto;
+      align-items: center;
+    }
+
     .tooltip-toggle-slot {
       flex: 0 0 auto;
       display: inline-flex;

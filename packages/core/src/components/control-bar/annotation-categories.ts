@@ -1,34 +1,8 @@
-export const ANNOTATION_CATEGORIES = {
-  UniProt: [
-    'annotation_score',
-    'cc_subcellular_location',
-    'ec',
-    'fragment',
-    'gene_name',
-    'go_bp',
-    'go_cc',
-    'go_mf',
-    'keyword',
-    'length',
-    'protein_existence',
-    'protein_families',
-    'reviewed',
-    'xref_pdb',
-  ],
-  InterPro: [
-    'cath',
-    'cdd',
-    'panther',
-    'pfam',
-    'prints',
-    'prosite',
-    'signal_peptide',
-    'smart',
-    'superfamily',
-  ],
-  Taxonomy: ['root', 'domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species'],
-} as const;
+import { annotationSource, isPredictedAnnotation } from '@protspace/utils';
 
+/**
+ * Canonical taxonomy rank order (used to sort the Taxonomy group hierarchically).
+ */
 export const TAXONOMY_ORDER = [
   'root',
   'domain',
@@ -41,7 +15,7 @@ export const TAXONOMY_ORDER = [
   'species',
 ] as const;
 
-export type CategoryName = 'UniProt' | 'InterPro' | 'Taxonomy' | 'Other';
+export type CategoryName = 'Predicted' | 'UniProt' | 'InterPro' | 'Taxonomy' | 'Other';
 
 export interface GroupedAnnotation {
   category: CategoryName;
@@ -50,10 +24,15 @@ export interface GroupedAnnotation {
 
 /**
  * Categorize and sort annotations into grouped categories.
- * Shared by annotation-select and query-condition-row.
+ *
+ * Grouping is derived from the shared annotation-metadata registry in `@protspace/utils`:
+ * predicted annotations (registry flag or `predicted_` prefix) go into a dedicated "Predicted"
+ * group regardless of their source; everything else falls under its source (UniProt, InterPro,
+ * Taxonomy) or "Other". Shared by annotation-select and query-condition-row.
  */
 export function groupAnnotations(annotations: string[]): GroupedAnnotation[] {
   const categorized: Record<CategoryName, string[]> = {
+    Predicted: [],
     UniProt: [],
     InterPro: [],
     Taxonomy: [],
@@ -61,19 +40,28 @@ export function groupAnnotations(annotations: string[]): GroupedAnnotation[] {
   };
 
   for (const annotation of annotations) {
-    let found = false;
-    for (const [category, categoryAnnotations] of Object.entries(ANNOTATION_CATEGORIES)) {
-      if ((categoryAnnotations as readonly string[]).includes(annotation)) {
-        categorized[category as CategoryName].push(annotation);
-        found = true;
-        break;
-      }
+    if (isPredictedAnnotation(annotation)) {
+      categorized.Predicted.push(annotation);
+      continue;
     }
-    if (!found) {
-      categorized.Other.push(annotation);
+    const source = annotationSource(annotation);
+    switch (source) {
+      case 'UniProt':
+        categorized.UniProt.push(annotation);
+        break;
+      case 'InterPro':
+        categorized.InterPro.push(annotation);
+        break;
+      case 'Taxonomy':
+        categorized.Taxonomy.push(annotation);
+        break;
+      default:
+        categorized.Other.push(annotation);
+        break;
     }
   }
 
+  categorized.Predicted.sort((a, b) => a.localeCompare(b));
   categorized.UniProt.sort((a, b) => a.localeCompare(b));
   categorized.InterPro.sort((a, b) => a.localeCompare(b));
   categorized.Other.sort((a, b) => a.localeCompare(b));
@@ -87,7 +75,7 @@ export function groupAnnotations(annotations: string[]): GroupedAnnotation[] {
   });
 
   const groups: GroupedAnnotation[] = [];
-  const categoryOrder: CategoryName[] = ['InterPro', 'Taxonomy', 'UniProt', 'Other'];
+  const categoryOrder: CategoryName[] = ['Predicted', 'InterPro', 'Taxonomy', 'UniProt', 'Other'];
   for (const category of categoryOrder) {
     if (categorized[category].length > 0) {
       groups.push({ category, annotations: categorized[category] });
