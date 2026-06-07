@@ -1,7 +1,21 @@
 import { test, expect } from '@playwright/test';
 
-const FASTA = '>P12345\nMKTAYIAKQRQ\n';
+// The prep flow rejects FASTA files with fewer than MIN_SEQUENCES (20) before
+// it ever calls /api/prepare, so use 25 sequences to exercise the real path.
+const FASTA = Array.from({ length: 25 }, (_, i) => `>P${10000 + i}\nMKTAYIAKQRQ`).join('\n') + '\n';
 const FAKE_BUNDLE_BYTES = new Uint8Array([0x50, 0x41, 0x52, 0x51]); // "PARQ"
+
+// Suppress the first-run product tour: its driver.js popover overlays /explore
+// and intercepts pointer events (e.g. the loading-overlay cancel button).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('driver.overviewTour', 'true');
+    } catch {
+      /* localStorage unavailable */
+    }
+  });
+});
 
 test('FASTA prep can be cancelled from the loading overlay', async ({ page }) => {
   await page.route('**/api/prepare', async (route) => {
@@ -19,20 +33,17 @@ test('FASTA prep can be cancelled from the loading overlay', async ({ page }) =>
     await route.abort();
   });
 
-  // Hold the SSE stream open: emit only the queued event, never finish.
-  // Playwright treats the body as the full response, so we just send
-  // the queued event and the request stays pending until the client closes.
+  // Keep the SSE request genuinely pending: the prep must stay "in progress" so
+  // the overlay and its cancel button remain until we click cancel. Fulfilling
+  // with a body would close the stream, end the prep early, and remove the
+  // overlay before we can interact with it. The pending promise is abandoned
+  // when the client aborts this request on cancel.
   let sseAborted = false;
-  await page.route('**/api/prepare/cancel-job/events', async (route) => {
-    try {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/event-stream',
-        body: 'event: queued\ndata: {"job_id":"cancel-job"}\n\n',
-      });
-    } catch {
-      sseAborted = true;
-    }
+  await page.route('**/api/prepare/cancel-job/events', async () => {
+    sseAborted = false;
+    await new Promise<void>(() => {
+      /* never resolves */
+    });
   });
 
   await page.goto('/explore');

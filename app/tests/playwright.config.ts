@@ -146,6 +146,15 @@ export default defineConfig({
       },
       testMatch: /multi-annotation-tooltip\.spec\.ts/,
     },
+    {
+      // Mocked prep API (no backend); the live variant below is opt-in.
+      name: 'fasta-prep',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /fasta-prep\.spec\.ts/,
+    },
   ],
 
   outputDir: '../test-results/',

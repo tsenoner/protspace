@@ -124,10 +124,13 @@ async function writeUnreadablePersistedDataset(page: Page): Promise<void> {
 
 async function openImportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-  await expect(
-    page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]'),
-  ).toBeVisible();
+  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
+  // Importing a custom dataset leaves the menu open (nothing closes it), so only
+  // click the trigger when the menu is closed — re-clicking would toggle it shut.
+  if (!(await ownDataset.isVisible().catch(() => false))) {
+    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+  }
+  await expect(ownDataset).toBeVisible();
 }
 
 async function loadCustomDatasetFromImportMenu(page: Page, datasetPath: string): Promise<void> {
