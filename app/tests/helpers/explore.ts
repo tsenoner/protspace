@@ -140,12 +140,32 @@ export async function waitForPersistedExploreDataset(page: Page, timeout = 30_00
 }
 
 export async function supportsExplorePersistedDataset(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const storageWithDirectory = navigator.storage as StorageManager & {
       getDirectory?: () => Promise<FileSystemDirectoryHandle>;
     };
 
-    return typeof storageWithDirectory.getDirectory === 'function';
+    // navigator.storage is undefined on about:blank (before any navigation),
+    // so guard before reading getDirectory.
+    if (typeof storageWithDirectory?.getDirectory !== 'function') {
+      return false;
+    }
+
+    // WebKit exposes getDirectory but its OPFS operations can fail with a
+    // transient UnknownError, so verify a real write/read/delete round-trip
+    // works before relying on persistence.
+    try {
+      const root = await storageWithDirectory.getDirectory();
+      const probe = '.protspace-opfs-probe';
+      const handle = await root.getFileHandle(probe, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(new Uint8Array([1]));
+      await writable.close();
+      await root.removeEntry(probe);
+      return true;
+    } catch {
+      return false;
+    }
   });
 }
 
