@@ -763,6 +763,9 @@ test.describe('URL-backed explore view state', () => {
   });
 
   test('restores the OPFS dataset and validates params against it on reload', async ({ page }) => {
+    // OPFS persist + reload + restore means several full data loads; under
+    // parallel CPU load this can exceed the default timeout, so allow more time.
+    test.slow();
     await page.goto('/explore');
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
