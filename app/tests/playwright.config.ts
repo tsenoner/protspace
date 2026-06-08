@@ -19,13 +19,19 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
 export default defineConfig({
   testDir: TEST_DIR,
 
-  fullyParallel: false,
+  // Run tests in parallel (each test gets an isolated browser context). The
+  // suite is otherwise a ~35-40 min serial run; parallelism cuts it to a few
+  // minutes. Override with `--workers=N` (use `--workers=1` to debug ordering).
+  fullyParallel: true,
 
   forbidOnly: !!process.env.CI,
 
-  retries: process.env.CI ? 1 : 0,
+  // One retry locally absorbs the occasional WebGL/OPFS flake under parallel load.
+  retries: 1,
 
-  workers: 1,
+  // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the dev
+  // server and OS; 50% of cores is a good balance. CI runners are smaller.
+  workers: process.env.CI ? 2 : '50%',
 
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
 
