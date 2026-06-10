@@ -7,7 +7,7 @@
     "build": "turbo build",
     "dev": "concurrently \"pnpm dev:app\" \"pnpm dev:docs\" --names \"app,docs\" --prefix-colors \"cyan,magenta\"",
     "dev:app": "turbo run --filter @protspace/app dev",
-    "dev:docs": "vitepress dev docs --port 5174",
+    "dev:docs": "vitepress dev docs",
     "docs:annotations": "node docs/scripts/generate-annotations.mts",
     "docs:annotations:check": "node docs/scripts/generate-annotations.mts --check",
     "docs:build": "NODE_ENV=production vitepress build docs",

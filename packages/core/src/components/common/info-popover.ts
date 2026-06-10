@@ -5,8 +5,17 @@ import { handleDropdownEscape } from '../../utils/dropdown-helpers';
 
 /**
  * Small reusable "ⓘ" information control that opens a popover with an annotation description and an
- * optional "Learn more" link. Click to toggle; Escape or an outside click closes it. Renders
- * nothing when there is neither a description nor a docs URL.
+ * optional "Learn more" link.
+ *
+ * Interaction model:
+ * - Opens on **hover** (pointer over the icon) and on **keyboard focus**, so the brief summary is
+ *   one hover away while scanning the annotation dropdown.
+ * - The popover is **hoverable**: it stays open while the pointer is over the icon *or* the popover
+ *   itself (a short grace period bridges the small gap between them), so you can move into it to
+ *   click "Learn more ↗" without it disappearing.
+ * - **Click** still toggles a pinned state (keeps it open after the pointer leaves; primary path on
+ *   touch where there is no hover). Escape or an outside click closes it.
+ * - Renders nothing when there is neither a description nor a docs URL.
  *
  * Used by the annotation dropdown (per item) and the legend header (active annotation).
  */
@@ -101,47 +110,146 @@ class ProtspaceInfoPopover extends LitElement {
    */
   @property({ type: String }) align: 'left' | 'right' = 'left';
 
-  @state() private open = false;
+  /** Pointer is over the icon or the popover. */
+  @state() private hovering = false;
+  /** Click-pinned open (survives pointer leave; primary path on touch). */
+  @state() private pinned = false;
+  /** Opened via keyboard focus (not a pointer click). */
+  @state() private kbFocused = false;
   @state() private flipLeft = false;
 
-  private _onDocumentClick = (event: MouseEvent) => {
-    if (!event.composedPath().includes(this)) {
-      this.open = false;
+  /** Whether the popover is currently visible (any of the three triggers). */
+  private get isOpen(): boolean {
+    return this.hovering || this.pinned || this.kbFocused;
+  }
+
+  private closeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True briefly around a pointerdown so the ensuing focus is not treated as keyboard focus. */
+  private pointerInitiatedFocus = false;
+  private docListenerAttached = false;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener('pointerenter', this._onPointerEnter);
+    this.addEventListener('pointerleave', this._onPointerLeave);
+    this.addEventListener('focusout', this._onFocusOut);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener('pointerenter', this._onPointerEnter);
+    this.removeEventListener('pointerleave', this._onPointerLeave);
+    this.removeEventListener('focusout', this._onFocusOut);
+    this._clearCloseTimer();
+    this._detachDocListener();
+  }
+
+  private _onPointerEnter = () => {
+    this._clearCloseTimer();
+    this.hovering = true;
+  };
+
+  private _onPointerLeave = () => {
+    this._clearCloseTimer();
+    // Grace period so the pointer can cross the small gap between the icon and the popover without
+    // the popover closing out from under it.
+    this.closeTimer = setTimeout(() => {
+      this.hovering = false;
+      this.closeTimer = null;
+    }, 140);
+  };
+
+  private _onFocusOut = (event: FocusEvent) => {
+    const next = event.relatedTarget as Node | null;
+    // Only drop keyboard-open state when focus leaves the whole component (icon + popover link).
+    if (!next || !this.contains(next)) {
+      this.kbFocused = false;
     }
   };
 
+  private _clearCloseTimer() {
+    if (this.closeTimer !== null) {
+      clearTimeout(this.closeTimer);
+      this.closeTimer = null;
+    }
+  }
+
+  private _onDocumentClick = (event: MouseEvent) => {
+    if (!event.composedPath().includes(this)) {
+      this._closeAll();
+    }
+  };
+
+  private _attachDocListener() {
+    if (this.docListenerAttached) return;
+    document.addEventListener('click', this._onDocumentClick, true);
+    this.docListenerAttached = true;
+  }
+
+  private _detachDocListener() {
+    if (!this.docListenerAttached) return;
+    document.removeEventListener('click', this._onDocumentClick, true);
+    this.docListenerAttached = false;
+  }
+
+  private _closeAll() {
+    this._clearCloseTimer();
+    this.hovering = false;
+    this.pinned = false;
+    this.kbFocused = false;
+  }
+
   updated() {
+    // Keep the outside-click listener attached only while open.
+    if (this.isOpen) {
+      this._attachDocListener();
+    } else {
+      this._detachDocListener();
+      if (this.flipLeft) this.flipLeft = false;
+      return;
+    }
+
     // After the popover renders, flip it leftward if it would overflow the right edge of the
     // viewport (safety net on top of the `align` preference).
-    if (!this.open || this.flipLeft || this.align === 'right') return;
+    if (this.flipLeft || this.align === 'right') return;
     const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
     if (popover && popover.getBoundingClientRect().right > window.innerWidth - 8) {
       this.flipLeft = true;
     }
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener('click', this._onDocumentClick, true);
-  }
+  private _onPointerDown = () => {
+    // A focus that immediately follows a pointerdown is a mouse/touch focus, not keyboard tabbing —
+    // don't open via `kbFocused` in that case (click handles the pinned state instead).
+    this.pointerInitiatedFocus = true;
+    setTimeout(() => {
+      this.pointerInitiatedFocus = false;
+    }, 0);
+  };
 
-  private _toggle(event: Event) {
+  private _onFocus = () => {
+    if (!this.pointerInitiatedFocus) {
+      this.kbFocused = true;
+    }
+  };
+
+  private _onClick = (event: Event) => {
     event.stopPropagation();
     event.preventDefault();
-    this.open = !this.open;
-    if (this.open) {
-      this.flipLeft = false; // recomputed in updated() once measured
-      document.addEventListener('click', this._onDocumentClick, true);
-    } else {
-      document.removeEventListener('click', this._onDocumentClick, true);
+    this.pinned = !this.pinned;
+    if (!this.pinned) {
+      // Explicit dismiss: also drop hover so it hides even while the pointer is still over the icon.
+      this.hovering = false;
+      this._clearCloseTimer();
     }
-  }
+  };
 
   private _onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && this.open) {
+    if (event.key === 'Escape' && this.isOpen) {
       handleDropdownEscape(event, () => {
-        this.open = false;
-        document.removeEventListener('click', this._onDocumentClick, true);
+        this._closeAll();
+        const button = this.shadowRoot?.querySelector('.info-button') as HTMLElement | null;
+        button?.blur();
       });
     }
   }
@@ -151,15 +259,18 @@ class ProtspaceInfoPopover extends LitElement {
     if (!hasContent) return nothing;
 
     const ariaLabel = this.label ? `Information about ${this.label}` : 'Annotation information';
+    const open = this.isOpen;
 
     return html`
       <button
         type="button"
-        class="info-button ${this.open ? 'open' : ''}"
+        class="info-button ${open ? 'open' : ''}"
         aria-label=${ariaLabel}
-        aria-expanded=${this.open}
+        aria-expanded=${open}
         title=${ariaLabel}
-        @click=${this._toggle}
+        @pointerdown=${this._onPointerDown}
+        @focus=${this._onFocus}
+        @click=${this._onClick}
         @keydown=${this._onKeydown}
       >
         <svg
@@ -178,7 +289,7 @@ class ProtspaceInfoPopover extends LitElement {
           <path d="M12 8h.01" />
         </svg>
       </button>
-      ${this.open
+      ${open
         ? html`<div
             class="popover ${this.align === 'right' || this.flipLeft ? 'flip-left' : ''}"
             role="dialog"
