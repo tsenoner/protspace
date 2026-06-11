@@ -450,4 +450,171 @@ describe('style-getters', () => {
       expect(depthA).toBeLessThanOrEqual(1);
     });
   });
+
+  describe('hidden vs selection/fading/highlight precedence', () => {
+    // Each protein maps 1-to-1 to a value at the same index.
+    const makeData = (values: string[]): VisualizationData => ({
+      protein_ids: values.map((_, i) => `p${i}`),
+      projections: [{ name: 'test', data: values.map(() => [0, 0, 0]) }],
+      annotations: {
+        test_annotation: {
+          kind: 'categorical',
+          values,
+          colors: values.map(() => '#ff0000'),
+          shapes: values.map(() => 'circle'),
+        },
+      },
+      annotation_data: {
+        test_annotation: values.map((_, i) => [i]),
+      },
+    });
+
+    const mkPoint = (id: string, originalIndex: number): PlotDataPoint => ({
+      id,
+      x: 0,
+      y: 0,
+      originalIndex,
+    });
+
+    const mkConfig = (overrides: Partial<StyleConfig> = {}): StyleConfig => ({
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'test_annotation',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: null,
+      colorMapping: null,
+      shapeMapping: null,
+      sizes: { base: 10 },
+      opacities: { base: 0.8, selected: 1.0, faded: 0.2 },
+      ...overrides,
+    });
+
+    it('T1.1 hidden-beats-selected: selected point whose value is hidden returns 0, not opacities.selected', () => {
+      // p0 is selected AND its annotation value ('hiddenVal') is hidden.
+      // The hidden-check fires before getBaseOpacity, so 0 wins over opacities.selected.
+      const data = makeData(['hiddenVal', 'visibleVal']);
+      const cfg = mkConfig({
+        selectedProteinIds: ['p0'],
+        hiddenAnnotationValues: ['hiddenVal'],
+      });
+      const { getOpacity } = createStyleGetters(data, cfg);
+      expect(getOpacity(mkPoint('p0', 0))).toBe(0);
+    });
+
+    it('T1.2 selection-fading × hidden: non-selected visible → faded; non-selected hidden → 0; selected visible → selected', () => {
+      // Three proteins with distinct values; one hidden category; p0 is selected.
+      const data = makeData(['visibleA', 'visibleB', 'hiddenC']);
+      const cfg = mkConfig({
+        selectedProteinIds: ['p0'],
+        hiddenAnnotationValues: ['hiddenC'],
+      });
+      const { getOpacity } = createStyleGetters(data, cfg);
+      // p1: non-selected, visible value → faded
+      expect(getOpacity(mkPoint('p1', 1))).toBe(cfg.opacities.faded);
+      // p2: non-selected, hidden value → 0 (hidden overrides faded)
+      expect(getOpacity(mkPoint('p2', 2))).toBe(0);
+      // p0: selected, visible value → selected
+      expect(getOpacity(mkPoint('p0', 0))).toBe(cfg.opacities.selected);
+    });
+
+    it('T1.3 vacuous-truth: Int32Array sentinel -1 (zero annotation values) returns opacity 0 even with empty hiddenAnnotationValues', () => {
+      // Int32Array sentinel -1 → getProteinAnnotationIndices returns [] → annotationValue = [].
+      // [].every(...) is vacuously true, so the hidden-check short-circuits to 0.
+      const data: VisualizationData = {
+        protein_ids: ['p0', 'p1'],
+        projections: [
+          {
+            name: 'test',
+            data: [
+              [0, 0, 0],
+              [1, 1, 0],
+            ],
+          },
+        ],
+        annotations: {
+          test_annotation: {
+            kind: 'categorical',
+            values: ['categoryA', 'categoryB'],
+            colors: ['#ff0000', '#00ff00'],
+            shapes: ['circle', 'circle'],
+          },
+        },
+        annotation_data: {
+          test_annotation: Int32Array.of(0, -1), // p1 has no annotation value
+        },
+      };
+      const cfg = mkConfig({ hiddenAnnotationValues: [] });
+      const { getOpacity } = createStyleGetters(data, cfg);
+      expect(getOpacity(mkPoint('p1', 1))).toBe(0);
+    });
+
+    it('T1.5 highlight-only: highlighted point gets opacities.selected; non-highlighted point keeps opacities.base (no fading)', () => {
+      // With selectedProteinIds empty, hasSelection is false so non-highlighted
+      // points are NOT faded — they stay at opacities.base.
+      const data = makeData(['catA', 'catB']);
+      const cfg = mkConfig({
+        highlightedProteinIds: ['p0'],
+        selectedProteinIds: [],
+      });
+      const { getOpacity } = createStyleGetters(data, cfg);
+      expect(getOpacity(mkPoint('p0', 0))).toBe(cfg.opacities.selected);
+      expect(getOpacity(mkPoint('p1', 1))).toBe(cfg.opacities.base);
+    });
+  });
+
+  describe('all-hidden escape hatch', () => {
+    const makeData = (values: string[]): VisualizationData => ({
+      protein_ids: values.map((_, i) => `p${i}`),
+      projections: [{ name: 'test', data: values.map(() => [0, 0, 0]) }],
+      annotations: {
+        test_annotation: {
+          kind: 'categorical',
+          values,
+          colors: values.map(() => '#ff0000'),
+          shapes: values.map(() => 'circle'),
+        },
+      },
+      annotation_data: {
+        test_annotation: values.map((_, i) => [i]),
+      },
+    });
+
+    const mkPoint = (id: string, originalIndex: number): PlotDataPoint => ({
+      id,
+      x: 0,
+      y: 0,
+      originalIndex,
+    });
+
+    const mkConfig = (overrides: Partial<StyleConfig> = {}): StyleConfig => ({
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'test_annotation',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: null,
+      colorMapping: null,
+      shapeMapping: null,
+      sizes: { base: 10 },
+      opacities: { base: 0.8, selected: 1.0, faded: 0.2 },
+      ...overrides,
+    });
+
+    it('T1.4 all-hidden: getOpacity returns base-tier opacity (hatch rescues it); getColors returns [] for non-Other point (colors are NOT rescued)', () => {
+      // When every annotation value is hidden, computeAllHidden() returns true.
+      // getOpacity skips the hidden-check and falls through to getBaseOpacity.
+      // getColors has no all-hidden guard: hidden values are filtered to undefined,
+      // so the result is [].
+      const data = makeData(['catA', 'catB']);
+      const cfg = mkConfig({
+        hiddenAnnotationValues: ['catA', 'catB'],
+        colorMapping: { catA: '#aabbcc', catB: '#ddeeff' },
+      });
+      const { getOpacity, getColors } = createStyleGetters(data, cfg);
+      const point = mkPoint('p0', 0);
+      expect(getOpacity(point)).toBe(cfg.opacities.base);
+      expect(getColors(point)).toEqual([]);
+    });
+  });
 });
