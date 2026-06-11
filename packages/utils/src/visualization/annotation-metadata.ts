@@ -4,11 +4,15 @@
  * docs link). It drives the annotation dropdown grouping, the legend "Predicted" badge, and the
  * documentation popover, and it is the input for the generated `docs/guide/annotations.md` page.
  *
- * CONTRACT with the backend: column names and the set of predicted annotations mirror the
- * `protspace` Python package's `docs/annotations.md`. Predicted (ML) annotations use the
- * `predicted_` prefix; any column whose name starts with `predicted_` is treated as a prediction
- * even if it is not listed here. Keep this registry in sync with the backend reference when the
- * annotation set changes.
+ * CONTRACT with the backend: column names mirror the `protspace` Python package's
+ * `docs/annotations.md`, which splits annotations purely by API source. The `isPredicted` flag,
+ * by contrast, marks *computational predictions* — de-novo machine-learning, topology, and
+ * structure-based predictors (the Biocentral `predicted_*` models, the Phobius `signal_peptide`,
+ * and TED `ted_domains`) — so the app can caveat them with a ⚡ Predicted badge. This is
+ * intentionally broader than the backend's `predicted_` naming: reference signature-database
+ * matches (Pfam, CATH-Gene3D, SUPERFAMILY, …) and curated/factual data (UniProt, Taxonomy) are
+ * NOT flagged. Any unknown column starting with `predicted_` is still treated as a prediction.
+ * Keep this registry in sync with the backend reference when the annotation set changes.
  */
 
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
@@ -18,7 +22,11 @@ export interface AnnotationMeta {
   label: string;
   /** Origin of the annotation; drives dropdown grouping. */
   source: AnnotationSource;
-  /** Whether the values are produced by an ML model rather than curation/experiment. */
+  /**
+   * Whether the values are a computational prediction — de-novo ML, topology, or structure-based —
+   * rather than curated/experimental data or a reference signature-database match. Drives the
+   * ⚡ Predicted badge in the legend, dropdown, and docs.
+   */
   isPredicted: boolean;
   /** Short human-readable description for the documentation popover. */
   description: string;
@@ -28,6 +36,36 @@ export interface AnnotationMeta {
 
 /** Prefix marking ML-predicted annotation columns (backend convention). */
 export const PREDICTED_PREFIX = 'predicted_';
+
+/**
+ * Canonical taxonomy rank order, general → specific (the root of the tree of life down to species).
+ * Taxonomy ranks are described by depth rather than alphabetically; shared by the dropdown grouping
+ * and the generated docs page so both order the ranks the same way.
+ */
+export const TAXONOMY_RANK_ORDER = [
+  'root',
+  'domain',
+  'kingdom',
+  'phylum',
+  'class',
+  'order',
+  'family',
+  'genus',
+  'species',
+] as const;
+
+/**
+ * Comparator ordering taxonomy ranks general → specific. Columns not in {@link TAXONOMY_RANK_ORDER}
+ * sort last, alphabetically among themselves.
+ */
+export function compareTaxonomyRank(a: string, b: string): number {
+  const ai = (TAXONOMY_RANK_ORDER as readonly string[]).indexOf(a);
+  const bi = (TAXONOMY_RANK_ORDER as readonly string[]).indexOf(b);
+  if (ai === -1 && bi === -1) return a.localeCompare(b);
+  if (ai === -1) return 1;
+  if (bi === -1) return -1;
+  return ai - bi;
+}
 
 // The VitePress docs site is mounted under `/docs/` (see config/urls.ts), so links must include
 // that base. Anchors use the exact column name (the generated page emits matching {#column} ids).
@@ -170,7 +208,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
   signal_peptide: {
     label: 'Signal peptide (Phobius)',
     source: 'InterPro',
-    isPredicted: false,
+    // De-novo topology predictor (unlike the reference signature DBs in this source group).
+    isPredicted: true,
     description: 'Signal peptide prediction from Phobius.',
     docsUrl: docs('signal_peptide'),
   },
@@ -279,7 +318,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
   ted_domains: {
     label: 'TED domains',
     source: 'TED',
-    isPredicted: false,
+    // Domains parsed de-novo from predicted AlphaFold structures — a structure-based prediction.
+    isPredicted: true,
     description:
       'Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).',
     docsUrl: docs('ted_domains'),

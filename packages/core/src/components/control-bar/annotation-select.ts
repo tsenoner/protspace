@@ -4,7 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
 import { handleDropdownEscape } from '../../utils/dropdown-helpers';
 import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
-import { annotationLabel, getAnnotationMeta } from '@protspace/utils';
+import { annotationLabel, getAnnotationMeta, isPredictedAnnotation } from '@protspace/utils';
 import '../common/info-popover';
 
 /**
@@ -270,6 +270,14 @@ class ProtspaceAnnotationSelect extends LitElement {
                                     <span class="dropdown-item-label"
                                       >${annotationLabel(annotation)}</span
                                     >
+                                    ${isPredictedAnnotation(annotation)
+                                      ? html`<span
+                                          class="predicted-badge"
+                                          title="Predicted — computational, not experimentally curated"
+                                          aria-label="Predicted"
+                                          >⚡</span
+                                        >`
+                                      : ''}
                                     ${hasDocs
                                       ? html`<protspace-info-popover
                                           class="annotation-info"

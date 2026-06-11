@@ -2064,7 +2064,9 @@ export class ProtspaceLegend extends LitElement {
           },
           {
             predicted,
-            predictedNote: predicted ? 'Values predicted by a model, not curated.' : undefined,
+            predictedNote: predicted
+              ? 'Computationally predicted, not experimentally curated.'
+              : undefined,
             info:
               meta && hasDocs
                 ? html`<protspace-info-popover

@@ -135,6 +135,16 @@ export const annotationSelectStyles = [
       white-space: nowrap;
     }
 
+    .predicted-badge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.8rem;
+      line-height: 1;
+      cursor: default;
+      user-select: none;
+    }
+
     .annotation-info {
       flex: 0 0 auto;
       align-items: center;

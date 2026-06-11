@@ -100,7 +100,9 @@ export class LegendRenderer {
         <div class="legend-title-row">
           <h3 class="legend-title">${title}</h3>
           ${predicted
-            ? html`<span class="legend-predicted-badge" title="Predicted by a model, not curated"
+            ? html`<span
+                class="legend-predicted-badge"
+                title="Computationally predicted, not experimentally curated"
                 >⚡ Predicted</span
               >`
             : nothing}

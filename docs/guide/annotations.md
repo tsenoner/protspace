@@ -7,7 +7,7 @@
 
 # Annotation Reference
 
-ProtSpace annotations come from several sources. Predicted (machine-learning) annotations are flagged with a ⚡ Predicted badge in the app; everything else is experimental or curated. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation — what the value means, how it is produced, and what it looks like — with a link to the authoritative source.
+ProtSpace annotations come from several sources. **Computational predictions** — from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation — what the value means, how it is produced, and what it looks like — with a link to the authoritative source.
 
 ## Predicted (Biocentral)
 
@@ -163,7 +163,7 @@ This flag reflects whether the entry has at least one cross-reference to the [Pr
 
 ## InterPro
 
-[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases.
+[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.
 
 ### `cath` {#cath}
 
@@ -223,7 +223,7 @@ This column reports PROSITE pattern matches: short regular-expression motifs (ty
 
 ### `signal_peptide` {#signal_peptide}
 
-**Signal peptide (Phobius)**
+**Signal peptide (Phobius)** · ⚡ Predicted
 
 Signal peptide prediction from Phobius.
 
@@ -247,7 +247,39 @@ SUPERFAMILY uses a library of profile HMMs based on the SCOP classification, wit
 
 ## Taxonomy
 
-ProtSpace traces the source organism up the standard Linnaean / NCBI rank ladder: it takes each entry's `organism_id` and queries the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) (backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy)) to resolve the root, the biological domain, and the kingdom→species ranks. Intermediate ranks are not defined for every lineage, so a given column can be empty for some organisms. Colouring by a rank is a quick way to see how organism provenance maps onto an embedding.
+The nine taxonomy columns trace the source organism up the standard Linnaean / NCBI rank ladder, from most general to most specific: **root → domain → kingdom → phylum → class → order → family → genus → species** (they are listed below in that rank order rather than alphabetically). ProtSpace takes each entry's `organism_id` and queries the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) (backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy)) to resolve them; `root` is the cellular/acellular split and `domain` the Bacteria/Archaea/Eukaryota level. Intermediate ranks are not defined for every lineage, so a given column can be empty for some organisms. Colouring by a rank is a quick way to see how organism provenance maps onto an embedding.
+
+### `root` {#root}
+
+**Root**
+
+Cellular / acellular classification at the root of the taxonomy.
+
+The root sits above the three-domain system and separates cellular life (organisms with a cell — Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
+
+### `domain` {#domain}
+
+**Domain**
+
+Top-level biological domain (e.g. Bacteria, Archaea, Eukaryota).
+
+This is the highest rank of the three-domain system proposed by Woese, Kandler and Wheelis (1990), dividing cellular life into Bacteria, Archaea, and Eukaryota; NCBI Taxonomy now records this as a formal `domain` rank (renamed from `superkingdom` in 2025). It is a small, well-defined categorical set, which makes it a robust way to colour large embeddings by deep evolutionary lineage. Values come from [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy) via the UniProt Taxonomy API.
+
+### `kingdom` {#kingdom}
+
+**Kingdom**
+
+Taxonomic kingdom of the source organism.
+
+Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage — many bacterial and archaeal entries have no formal kingdom — so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.
+
+### `phylum` {#phylum}
+
+**Phylum**
+
+Taxonomic phylum of the source organism.
+
+Phylum groups organisms by broad body plan or major lineage (e.g. Chordata, Pseudomonadota, Ascomycota), one rank below kingdom. It is a free-text categorical column whose value set scales with the taxonomic breadth of the dataset. The value is the phylum-rank ancestor of the entry's organism in [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
 
 ### `class` {#class}
 
@@ -257,13 +289,13 @@ Taxonomic class of the source organism.
 
 Class is the rank between phylum and order (e.g. Mammalia, Gammaproteobacteria, Insecta). As with the other intermediate Linnaean ranks, NCBI does not guarantee a class node for every lineage, so the value may be absent. It is resolved as the class-rank ancestor of the organism via the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy).
 
-### `domain` {#domain}
+### `order` {#order}
 
-**Domain**
+**Order**
 
-Top-level biological domain (e.g. Bacteria, Archaea, Eukaryota).
+Taxonomic order of the source organism.
 
-This is the highest rank of the three-domain system proposed by Woese, Kandler and Wheelis (1990), dividing cellular life into Bacteria, Archaea, and Eukaryota; NCBI Taxonomy now records this as a formal `domain` rank (renamed from `superkingdom` in 2025). It is a small, well-defined categorical set, which makes it a robust way to colour large embeddings by deep evolutionary lineage. Values come from [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy) via the UniProt Taxonomy API.
+Order groups related families one level below class (e.g. Primates, Enterobacterales). It is a categorical string column drawn from the standard Linnaean ladder. The value is the order-rank ancestor of the entry's source organism in [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy), retrieved through the UniProt Taxonomy API.
 
 ### `family` {#family}
 
@@ -281,38 +313,6 @@ Taxonomic genus of the source organism.
 
 Genus is the first part of the binomial name and groups closely related species (e.g. _Homo_, _Escherichia_). Together with species it gives the most fine-grained taxonomic colouring ProtSpace provides. The value is the genus-rank node for the entry's organism resolved through the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy), backed by NCBI Taxonomy.
 
-### `kingdom` {#kingdom}
-
-**Kingdom**
-
-Taxonomic kingdom of the source organism.
-
-Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage — many bacterial and archaeal entries have no formal kingdom — so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.
-
-### `order` {#order}
-
-**Order**
-
-Taxonomic order of the source organism.
-
-Order groups related families one level below class (e.g. Primates, Enterobacterales). It is a categorical string column drawn from the standard Linnaean ladder. The value is the order-rank ancestor of the entry's source organism in [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy), retrieved through the UniProt Taxonomy API.
-
-### `phylum` {#phylum}
-
-**Phylum**
-
-Taxonomic phylum of the source organism.
-
-Phylum groups organisms by broad body plan or major lineage (e.g. Chordata, Pseudomonadota, Ascomycota), one rank below kingdom. It is a free-text categorical column whose value set scales with the taxonomic breadth of the dataset. The value is the phylum-rank ancestor of the entry's organism in [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
-
-### `root` {#root}
-
-**Root**
-
-Cellular / acellular classification at the root of the taxonomy.
-
-The root sits above the three-domain system and separates cellular life (organisms with a cell — Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
-
 ### `species` {#species}
 
 **Species**
@@ -327,7 +327,7 @@ TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) provides structure
 
 ### `ted_domains` {#ted_domains}
 
-**TED domains**
+**TED domains** · ⚡ Predicted
 
 Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).
 

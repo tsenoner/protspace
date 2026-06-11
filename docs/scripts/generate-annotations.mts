@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   ANNOTATION_METADATA,
+  compareTaxonomyRank,
   type AnnotationSource,
 } from '../../packages/utils/src/visualization/annotation-metadata.ts';
 import { ANNOTATION_DETAILS, SOURCE_INTROS } from './annotation-details.ts';
@@ -88,9 +89,11 @@ function build(): string {
   lines.push('# Annotation Reference');
   lines.push('');
   lines.push(
-    'ProtSpace annotations come from several sources. Predicted (machine-learning) annotations ' +
-      'are flagged with a ⚡ Predicted badge in the app; everything else is experimental or ' +
-      'curated. For each annotation, the **bold lead line** is the same short summary shown in the ' +
+    'ProtSpace annotations come from several sources. **Computational predictions** — from a ' +
+      'machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius ' +
+      '`signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference ' +
+      'signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) ' +
+      'are not. For each annotation, the **bold lead line** is the same short summary shown in the ' +
       "app's info popover, and the paragraph beneath it is a fuller explanation — what the value " +
       'means, how it is produced, and what it looks like — with a link to the authoritative source.',
   );
@@ -99,9 +102,10 @@ function build(): string {
   const entries = Object.entries(ANNOTATION_METADATA);
 
   for (const source of SOURCE_ORDER) {
+    // Taxonomy reads best by rank depth (general → specific); every other source is alphabetical.
     const inSource = entries
       .filter(([, meta]) => meta.source === source)
-      .sort(([a], [b]) => a.localeCompare(b));
+      .sort(([a], [b]) => (source === 'Taxonomy' ? compareTaxonomyRank(a, b) : a.localeCompare(b)));
     if (inSource.length === 0) continue;
 
     lines.push(`## ${SOURCE_HEADINGS[source]}`);

@@ -67,39 +67,54 @@ describe('annotation-select', () => {
       ]);
     });
 
-    it('groups predicted annotations into a dedicated Predicted group', () => {
+    it('groups Biocentral predictions under their source (not a separate Predicted group)', () => {
       const result = groupAnnotations([
         'predicted_membrane',
         'predicted_transmembrane',
         'gene_name',
       ]);
 
-      const predicted = result.find((g) => g.category === 'Predicted');
-      expect(predicted).toBeDefined();
-      expect(predicted?.annotations).toEqual(['predicted_membrane', 'predicted_transmembrane']);
-      // Predicted items must not also appear in a source group
+      // No longer a "Predicted" group — predictions stay under their source, badged per-row.
+      expect(result.find((g) => g.category === 'Predicted')).toBeUndefined();
+      const biocentral = result.find((g) => g.category === 'Biocentral');
+      expect(biocentral?.annotations).toEqual(['predicted_membrane', 'predicted_transmembrane']);
       expect(result.find((g) => g.category === 'UniProt')?.annotations).toEqual(['gene_name']);
     });
 
-    it('treats unknown predicted_ columns as predictions (prefix fallback)', () => {
-      const result = groupAnnotations(['predicted_custom_thing', 'gene_name']);
-
-      const predicted = result.find((g) => g.category === 'Predicted');
-      expect(predicted?.annotations).toEqual(['predicted_custom_thing']);
+    it('keeps de-novo InterPro predictors (signal_peptide) in the InterPro group', () => {
+      const result = groupAnnotations(['pfam', 'signal_peptide', 'cath']);
+      // signal_peptide is marked predicted (⚡ per-row) but its source is still InterPro.
+      const interpro = result.find((g) => g.category === 'InterPro');
+      expect(interpro?.annotations).toEqual(['cath', 'pfam', 'signal_peptide']);
     });
 
-    it('places Predicted group first', () => {
+    it('groups TED domains under a TED section', () => {
+      const result = groupAnnotations(['ted_domains', 'gene_name']);
+      expect(result.find((g) => g.category === 'TED')?.annotations).toEqual(['ted_domains']);
+    });
+
+    it('puts unknown predicted_ columns under Other (grouped by source, badged per-row)', () => {
+      const result = groupAnnotations(['predicted_custom_thing', 'gene_name']);
+
+      expect(result.find((g) => g.category === 'Other')?.annotations).toEqual([
+        'predicted_custom_thing',
+      ]);
+    });
+
+    it('orders sections Biocentral, InterPro, TED, Taxonomy, UniProt, Other', () => {
       const result = groupAnnotations([
         'custom',
         'species',
         'pfam',
         'gene_name',
         'predicted_membrane',
+        'ted_domains',
       ]);
 
       expect(result.map((g) => g.category)).toEqual([
-        'Predicted',
+        'Biocentral',
         'InterPro',
+        'TED',
         'Taxonomy',
         'UniProt',
         'Other',

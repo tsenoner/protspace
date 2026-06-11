@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   ANNOTATION_METADATA,
   PREDICTED_PREFIX,
+  TAXONOMY_RANK_ORDER,
+  compareTaxonomyRank,
   getAnnotationMeta,
   isPredictedAnnotation,
   annotationLabel,
@@ -30,12 +32,64 @@ describe('annotation-metadata registry', () => {
     }
   });
 
-  it('marks every predicted entry with the predicted_ prefix', () => {
-    for (const [column, meta] of Object.entries(ANNOTATION_METADATA)) {
-      if (meta.isPredicted) {
-        expect(column.startsWith(PREDICTED_PREFIX)).toBe(true);
-      }
+  it('also flags the de-novo / structure-based predictors that lack the prefix', () => {
+    // Phobius signal_peptide (topology) and TED ted_domains (AlphaFold structure) are computational
+    // predictions even though their column names do not use the backend `predicted_` convention.
+    expect(ANNOTATION_METADATA.signal_peptide?.isPredicted).toBe(true);
+    expect(ANNOTATION_METADATA.ted_domains?.isPredicted).toBe(true);
+  });
+
+  it('marks exactly the computational predictors, not reference signatures or curated data', () => {
+    const predicted = Object.entries(ANNOTATION_METADATA)
+      .filter(([, meta]) => meta.isPredicted)
+      .map(([column]) => column)
+      .sort();
+    expect(predicted).toEqual(
+      [
+        'predicted_membrane',
+        'predicted_signal_peptide',
+        'predicted_subcellular_location',
+        'predicted_transmembrane',
+        'signal_peptide',
+        'ted_domains',
+      ].sort(),
+    );
+    // Reference signature databases stay unflagged.
+    for (const column of ['pfam', 'cath', 'superfamily', 'panther', 'prosite', 'prints']) {
+      expect(ANNOTATION_METADATA[column]?.isPredicted).toBe(false);
     }
+  });
+
+  it('keeps the predicted_ prefix on the Biocentral ML columns', () => {
+    for (const column of [
+      'predicted_subcellular_location',
+      'predicted_membrane',
+      'predicted_signal_peptide',
+      'predicted_transmembrane',
+    ]) {
+      expect(column.startsWith(PREDICTED_PREFIX)).toBe(true);
+    }
+  });
+});
+
+describe('taxonomy rank order', () => {
+  it('orders ranks general → specific and sorts unknown columns last', () => {
+    const shuffled = ['species', 'root', 'genus', 'domain', 'phylum', 'mystery'];
+    expect([...shuffled].sort(compareTaxonomyRank)).toEqual([
+      'root',
+      'domain',
+      'phylum',
+      'genus',
+      'species',
+      'mystery',
+    ]);
+  });
+
+  it('covers the nine taxonomy registry columns', () => {
+    const taxonomyColumns = Object.entries(ANNOTATION_METADATA)
+      .filter(([, meta]) => meta.source === 'Taxonomy')
+      .map(([column]) => column);
+    expect([...taxonomyColumns].sort()).toEqual([...TAXONOMY_RANK_ORDER].sort());
   });
 });
 
