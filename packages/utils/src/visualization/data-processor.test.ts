@@ -177,4 +177,30 @@ describe('DataProcessor.processVisualizationData', () => {
     expect(result).toHaveLength(1);
     expect(Object.keys(result[0]).sort()).toEqual(['id', 'originalIndex', 'x', 'y']);
   });
+
+  it('null/undefined visibleProteinIds skips cull; empty Set culls to zero', () => {
+    const data: VisualizationData = {
+      protein_ids: ['p0', 'p1'],
+      projections: [
+        {
+          name: 't',
+          data: [
+            [0, 0],
+            [1, 1],
+          ],
+        },
+      ],
+      annotations: {},
+      annotation_data: {},
+    };
+    // null/undefined → guard `if (visibleProteinIds)` is falsy → no filtering
+    expect(
+      DataProcessor.processVisualizationData(data, 0, false, undefined, undefined),
+    ).toHaveLength(2);
+    expect(DataProcessor.processVisualizationData(data, 0, false, undefined, null)).toHaveLength(2);
+    // empty Set is truthy → filter runs → zero matches → empty result
+    expect(
+      DataProcessor.processVisualizationData(data, 0, false, undefined, new Set<string>()),
+    ).toHaveLength(0);
+  });
 });
