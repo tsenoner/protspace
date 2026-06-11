@@ -50,6 +50,12 @@ def run_transfer(
     )
     embedded = annotations.filter(has_emb)
 
+    if embedded.num_rows == 0:
+        raise ValueError(
+            "No proteins in the bundle have a matching embedding "
+            "(check that the --embeddings ids match the bundle identifiers)."
+        )
+
     query_idx, ref_idx = classify(embedded, query_rule, reference_rule)
     rows = embedded.to_pylist()
 
@@ -181,6 +187,19 @@ def transfer(
     parts, _settings = read_bundle(bundle)
     annotations = pq.read_table(io.BytesIO(parts[0]))
 
+    # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
+    id_col = "protein_id" if "protein_id" in annotations.column_names else "identifier"
+    if id_col != "identifier":
+        annotations = annotations.rename_columns(
+            ["identifier" if n == id_col else n for n in annotations.column_names]
+        )
+
+    for col in transfer_columns:
+        if col not in annotations.column_names:
+            raise typer.BadParameter(
+                f"--transfer column {col!r} not found in the bundle annotations"
+            )
+
     augmented = run_transfer(
         annotations=annotations,
         embeddings=emb_map,
@@ -190,6 +209,13 @@ def transfer(
         k=k,
         metric=metric,
     )
+
+    # Rename id column back so the written bundle keeps its original name
+    # (the web frontend expects "protein_id").
+    if id_col != "identifier":
+        augmented = augmented.rename_columns(
+            [id_col if n == "identifier" else n for n in augmented.column_names]
+        )
 
     replace_annotations_in_bundle(bundle, output, augmented)
     logger.info("Wrote transferred bundle to %s", output)
