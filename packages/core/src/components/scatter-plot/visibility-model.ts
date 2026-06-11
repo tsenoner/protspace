@@ -193,8 +193,9 @@ export function computeVisibilityModel(inputs: VisibilityInputs): VisibilityMode
     if (hiddenMode === 'all') return true;
     const idx = point.originalIndex;
     // Out-of-range index → accessor returns [] → vacuously hidden.
-    if (idx < 0 || idx >= hiddenMask!.length) return true;
-    return hiddenMask![idx] === 1;
+    // The mask is sized to protein_ids.length, which equals annotationRows.length under the materialized-data invariant.
+    if (idx < 0 || idx >= hiddenMask!.length) return true; // hiddenMode === 'mask' guarantees non-null
+    return hiddenMask![idx] === 1; // hiddenMode === 'mask' guarantees non-null
   };
 
   const baseOpacityOf = (point: PlotDataPoint): number => {

@@ -25,7 +25,7 @@ function makeData(
   rows: AnnotationData,
   annotationKey = 'annot',
 ): VisualizationData {
-  const n = rows instanceof Int32Array ? rows.length : rows.length;
+  const n = rows.length;
   return {
     protein_ids: Array.from({ length: n }, (_, i) => `p${i}`),
     projections: [{ name: 'proj', data: Array.from({ length: n }, () => [0, 0, 0]) }],
@@ -67,7 +67,6 @@ describe('computeVisibilityModel', () => {
       const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: ['A'] }));
       const op = model.opacityOf(point('p0', 0));
       expect(op).toBe(0);
-      expect(Object.is(op, 0)).toBe(true);
     });
 
     it('nested array: hidden value yields exactly 0', () => {
@@ -112,19 +111,23 @@ describe('computeVisibilityModel', () => {
     });
 
     it('fully hidden multilabel point → opacity 0', () => {
-      const data = makeData(['A', 'B'], [[0, 1], [1]]);
-      const model = computeVisibilityModel(
-        baseInputs({ data, hiddenAnnotationValues: ['A', 'B'] }),
-      );
-      // Hiding both A and B = every annotation value hidden → all-hidden hatch
-      // rescues opacity (covered in rule 5). Use a third value so the hatch
-      // does NOT fire here: hide only A and B, keep C visible.
+      // Use a third value C so the all-hidden hatch does NOT fire:
+      // hide only A and B while C stays visible → p0 (values [A, B]) is fully hidden.
       const data3 = makeData(['A', 'B', 'C'], [[0, 1], [2]]);
       const model3 = computeVisibilityModel(
         baseInputs({ data: data3, hiddenAnnotationValues: ['A', 'B'] }),
       );
       expect(model3.opacityOf(point('p0', 0))).toBe(0);
-      // sanity: the original two-value data triggers the hatch instead
+    });
+
+    it('two-value multilabel with all values hidden triggers all-hidden escape hatch', () => {
+      // Hiding both A and B = every annotation value hidden → all-hidden hatch
+      // rescues opacity (covered in rule 5).
+      const data = makeData(['A', 'B'], [[0, 1], [1]]);
+      const model = computeVisibilityModel(
+        baseInputs({ data, hiddenAnnotationValues: ['A', 'B'] }),
+      );
+      // sanity: the two-value data triggers the hatch instead
       expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
     });
   });
