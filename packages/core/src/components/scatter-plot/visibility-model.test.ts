@@ -432,4 +432,58 @@ describe('computeVisibilityModel', () => {
     expect(typeof model.isInteractive(point('p0', 0))).toBe('boolean');
     expect(typeof model.allHidden).toBe('boolean');
   });
+
+  // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──
+  // when the mask-relevant inputs (data, selectedAnnotation, hidden ref) are
+  // reference-equal, so a selection-only change never redoes the pass.
+  describe('mask reuse via the optional `previous` argument', () => {
+    it('reuses the prior mask on a selection-only change (data + hidden refs unchanged)', () => {
+      const rows = Int32Array.of(0, 1); // p0 → 'A' (hidden), p1 → 'B'
+      const data = makeData(['A', 'B'], rows);
+      const hiddenRef = ['A'];
+      const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: hiddenRef }));
+      expect(first.opacityOf(point('p0', 0))).toBe(0);
+
+      // Mutate the mask source IN PLACE (same array reference). A reused mask
+      // must ignore this; a rebuilt mask would reflect it.
+      rows[0] = 1; // p0 would map to 'B' (not hidden) if the mask were rebuilt
+
+      const second = computeVisibilityModel(
+        baseInputs({ data, hiddenAnnotationValues: hiddenRef, selectedProteinIds: ['p0'] }),
+        first,
+      );
+      // Reused mask → p0 still hidden → opacity 0 (hidden beats selected).
+      expect(second.opacityOf(point('p0', 0))).toBe(0);
+    });
+
+    it('rebuilds the mask when the hidden-values reference changes', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: ['A'] }));
+      expect(first.opacityOf(point('p0', 0))).toBe(0);
+
+      // New hidden array reference (different content) → mask must rebuild.
+      const second = computeVisibilityModel(
+        baseInputs({ data, hiddenAnnotationValues: ['B'] }),
+        first,
+      );
+      expect(second.opacityOf(point('p0', 0))).toBe(OPACITIES.base); // 'A' no longer hidden
+      expect(second.opacityOf(point('p1', 1))).toBe(0); // 'B' now hidden
+    });
+
+    it('rebuilds the mask when the data reference changes', () => {
+      const dataA = makeData(['A', 'B'], Int32Array.of(0, 1));
+      const first = computeVisibilityModel(
+        baseInputs({ data: dataA, hiddenAnnotationValues: ['A'] }),
+      );
+      expect(first.opacityOf(point('p0', 0))).toBe(0);
+
+      const dataB = makeData(['A', 'B'], Int32Array.of(1, 0)); // bins swapped
+      const second = computeVisibilityModel(
+        baseInputs({ data: dataB, hiddenAnnotationValues: ['A'] }),
+        first,
+      );
+      expect(second.opacityOf(point('p0', 0))).toBe(OPACITIES.base); // p0 → 'B'
+      expect(second.opacityOf(point('p1', 1))).toBe(0); // p1 → 'A' (hidden)
+    });
+  });
 });

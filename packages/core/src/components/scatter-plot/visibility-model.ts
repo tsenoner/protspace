@@ -153,7 +153,35 @@ function buildHiddenMask(
   return mask;
 }
 
-export function computeVisibilityModel(inputs: VisibilityInputs): VisibilityModel {
+/**
+ * The hidden mask is the only O(N) part of the model. It depends solely on
+ * (data, selectedAnnotation, hiddenAnnotationValues) — NOT on selection,
+ * highlight, or opacities. To let callers reuse it across selection-only
+ * changes, `computeVisibilityModel` accepts a `previous` model and stashes the
+ * mask-relevant inputs + the computed mask on the returned model under a
+ * non-enumerable symbol (no module-level mutable state, so the module stays
+ * pure). When `previous`'s stash matches the new mask-relevant inputs by
+ * reference, the prior mask is reused and the O(N) pass is skipped.
+ */
+const MASK_CACHE: unique symbol = Symbol('visibilityMaskCache');
+
+interface MaskCache {
+  data: VisualizationData | null;
+  selectedAnnotation: string;
+  hiddenAnnotationValues: string[];
+  allHidden: boolean;
+  hiddenMode: 'none' | 'all' | 'mask';
+  hiddenMask: Uint8Array | null;
+}
+
+interface InternalVisibilityModel extends VisibilityModel {
+  [MASK_CACHE]: MaskCache;
+}
+
+export function computeVisibilityModel(
+  inputs: VisibilityInputs,
+  previous?: VisibilityModel,
+): VisibilityModel {
   const {
     data,
     selectedAnnotation,
@@ -167,24 +195,42 @@ export function computeVisibilityModel(inputs: VisibilityInputs): VisibilityMode
   const highlightedIdsSet = new Set(highlightedProteinIds);
   const hasSelection = selectedProteinIds.length > 0;
 
-  const allHidden = computeAllHidden(data, selectedAnnotation, hiddenAnnotationValues);
-
+  // Reuse the prior hidden mask iff the mask-relevant inputs are reference-equal.
+  let allHidden: boolean;
   // Hidden enforcement mode:
   //   'none' → no hidden filter (no data/annotation, or all-hidden hatch active)
   //   'all'  → every point vacuously hidden (annotation/rows/values invalid)
   //   'mask' → per-point Uint8Array lookup
-  let hiddenMode: 'none' | 'all' | 'mask' = 'none';
-  let hiddenMask: Uint8Array | null = null;
+  let hiddenMode: 'none' | 'all' | 'mask';
+  let hiddenMask: Uint8Array | null;
 
-  if (data && selectedAnnotation && !allHidden) {
-    const annotation = data.annotations[selectedAnnotation];
-    const annotationRows = data.annotation_data?.[selectedAnnotation];
-    if (!annotation || !annotationRows || !Array.isArray(annotation.values)) {
-      // getProteinAnnotationValues returns [] for every point → vacuously hidden.
-      hiddenMode = 'all';
-    } else {
-      hiddenMode = 'mask';
-      hiddenMask = buildHiddenMask(data, annotation, annotationRows, hiddenAnnotationValues);
+  const prevCache = previous
+    ? (previous as Partial<InternalVisibilityModel>)[MASK_CACHE]
+    : undefined;
+  const canReuse =
+    !!prevCache &&
+    prevCache.data === data &&
+    prevCache.selectedAnnotation === selectedAnnotation &&
+    prevCache.hiddenAnnotationValues === hiddenAnnotationValues;
+
+  if (canReuse) {
+    allHidden = prevCache.allHidden;
+    hiddenMode = prevCache.hiddenMode;
+    hiddenMask = prevCache.hiddenMask;
+  } else {
+    allHidden = computeAllHidden(data, selectedAnnotation, hiddenAnnotationValues);
+    hiddenMode = 'none';
+    hiddenMask = null;
+    if (data && selectedAnnotation && !allHidden) {
+      const annotation = data.annotations[selectedAnnotation];
+      const annotationRows = data.annotation_data?.[selectedAnnotation];
+      if (!annotation || !annotationRows || !Array.isArray(annotation.values)) {
+        // getProteinAnnotationValues returns [] for every point → vacuously hidden.
+        hiddenMode = 'all';
+      } else {
+        hiddenMode = 'mask';
+        hiddenMask = buildHiddenMask(data, annotation, annotationRows, hiddenAnnotationValues);
+      }
     }
   }
 
@@ -221,11 +267,29 @@ export function computeVisibilityModel(inputs: VisibilityInputs): VisibilityMode
 
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
 
-  return {
+  const model: VisibilityModel = {
     allHidden,
     tierOf,
     opacityOf,
     baseOpacityOf,
     isInteractive,
   };
+
+  // Stash mask-relevant inputs + the mask non-enumerably so a later call can
+  // reuse the O(N) pass on selection/highlight/opacity-only changes.
+  Object.defineProperty(model, MASK_CACHE, {
+    value: {
+      data,
+      selectedAnnotation,
+      hiddenAnnotationValues,
+      allHidden,
+      hiddenMode,
+      hiddenMask,
+    } satisfies MaskCache,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+
+  return model;
 }

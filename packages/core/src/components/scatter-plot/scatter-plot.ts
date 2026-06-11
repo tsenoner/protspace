@@ -23,6 +23,8 @@ import './protspace-tips';
 import './protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './style-getters';
+import { computeVisibilityModel } from './visibility-model';
+import type { VisibilityModel } from './visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
 import { getDuplicateStackKey } from './duplicate-stack-helpers';
@@ -128,6 +130,17 @@ export class ProtspaceScatterplot extends LitElement {
   private _zoomRafId: number | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
+  private _visibilityModelCache: VisibilityModel | null = null;
+  private _visibilityModelKey: {
+    data: VisualizationData | null;
+    selectedAnnotation: string;
+    hiddenAnnotationValues: string[];
+    selectedProteinIds: string[];
+    highlightedProteinIds: string[];
+    baseOpacity: number;
+    selectedOpacity: number;
+    fadedOpacity: number;
+  } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   private _visiblePlotData: PlotDataPoint[] = [];
   private _virtualizationCacheKey: string | null = null;
@@ -885,7 +898,8 @@ export class ProtspaceScatterplot extends LitElement {
       this._duplicateStacksCacheKey = null;
       return;
     }
-    const visiblePoints = this._plotData.filter((d) => this._getOpacity(d) > 0);
+    const visibilityModel = this._getVisibilityModel();
+    const visiblePoints = this._plotData.filter((d) => visibilityModel.isInteractive(d));
     this._quadtreeIndex.setScales(this._scales);
     this._quadtreeIndex.rebuild(visiblePoints);
     // Duplicate stacks are computed lazily for the current viewport (see _ensureDuplicateStacksForViewport)
@@ -1256,7 +1270,8 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     const candidates = this._quadtreeIndex.queryByPolygon(this._lassoVertices);
-    const selectedIds = candidates.filter((d) => this._getOpacity(d) > 0).map((d) => d.id);
+    const visibilityModel = this._getVisibilityModel();
+    const selectedIds = candidates.filter((d) => visibilityModel.isInteractive(d)).map((d) => d.id);
     this._commitSelection(selectedIds, () => this._clearLassoVisual());
   }
 
@@ -1273,7 +1288,8 @@ export class ProtspaceScatterplot extends LitElement {
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
     const candidates = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
-    const selectedIds = candidates.filter((d) => this._getOpacity(d) > 0).map((d) => d.id);
+    const visibilityModel = this._getVisibilityModel();
+    const selectedIds = candidates.filter((d) => visibilityModel.isInteractive(d)).map((d) => d.id);
     this._commitSelection(selectedIds, () => {
       if (this._brush && this._brushGroup) {
         this._brushGroup.call(this._brush.move, null);
@@ -1846,8 +1862,87 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _getOpacity(point: PlotDataPoint): number {
-    const getters = this._getStyleGetters();
-    return getters.getOpacity(point);
+    // Facade: external consumers (webgl-render-perf.ts, brush-selection.spec.ts)
+    // reach into this private member. Delegates to the shared visibility model,
+    // which is the single opacity authority.
+    return this._getVisibilityModel().opacityOf(point);
+  }
+
+  /**
+   * Pull-based, memoized accessor for the shared point-visibility model.
+   *
+   * PULL-BASED on purpose (design D1): there is no `willUpdate`; isolation,
+   * reset, and numeric-rebin rAF all call `_processData`/`_buildQuadtree`
+   * imperatively outside the Lit cycle; and pinned tests drive unattached
+   * elements where lifecycle never runs. A lifecycle-recomputed model would be
+   * stale at those sites. So the model is computed lazily and memoized purely on
+   * input identity — no lifecycle hooks, no version counters, no invalidation
+   * plumbing.
+   *
+   * Keys (all reference/strict-equality): the materialized display data (same
+   * source `_buildStyleGetters` uses — `_getCurrentDisplayData` returns the
+   * cached materialized object by reference when filtered ids are excluded, so
+   * it is reference-stable until materialization is rebuilt), `selectedAnnotation`,
+   * `hiddenAnnotationValues` ref, selection/highlight refs, and the three opacity
+   * numbers from the merged config.
+   *
+   * Two-level: on a miss we pass the previous model to `computeVisibilityModel`,
+   * which reuses the O(N) hidden mask when (data, selectedAnnotation, hidden ref)
+   * are unchanged — so selection/highlight/opacity-only changes never redo the
+   * mask pass. Isolation is NOT an input: it is physical culling upstream; the
+   * model sees only the materialized data + alpha-layer inputs.
+   */
+  private _getVisibilityModel(): VisibilityModel {
+    // Same data expression `_buildStyleGetters` uses, so the component path and
+    // the hit-test path share one model instance over one data reference.
+    const data =
+      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
+      this._getMaterializedData() ??
+      this.data;
+    const baseOpacity = this._mergedConfig.baseOpacity;
+    const selectedOpacity = this._mergedConfig.selectedOpacity;
+    const fadedOpacity = this._mergedConfig.fadedOpacity;
+
+    const key = this._visibilityModelKey;
+    if (
+      this._visibilityModelCache &&
+      key &&
+      key.data === data &&
+      key.selectedAnnotation === this.selectedAnnotation &&
+      key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
+      key.selectedProteinIds === this.selectedProteinIds &&
+      key.highlightedProteinIds === this.highlightedProteinIds &&
+      key.baseOpacity === baseOpacity &&
+      key.selectedOpacity === selectedOpacity &&
+      key.fadedOpacity === fadedOpacity
+    ) {
+      return this._visibilityModelCache;
+    }
+
+    const model = computeVisibilityModel(
+      {
+        data,
+        selectedAnnotation: this.selectedAnnotation,
+        hiddenAnnotationValues: this.hiddenAnnotationValues,
+        selectedProteinIds: this.selectedProteinIds,
+        highlightedProteinIds: this.highlightedProteinIds,
+        opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
+      },
+      this._visibilityModelCache ?? undefined,
+    );
+
+    this._visibilityModelCache = model;
+    this._visibilityModelKey = {
+      data,
+      selectedAnnotation: this.selectedAnnotation,
+      hiddenAnnotationValues: this.hiddenAnnotationValues,
+      selectedProteinIds: this.selectedProteinIds,
+      highlightedProteinIds: this.highlightedProteinIds,
+      baseOpacity,
+      selectedOpacity,
+      fadedOpacity,
+    };
+    return model;
   }
 
   private _getDepth(point: PlotDataPoint): number {
@@ -1872,24 +1967,28 @@ export class ProtspaceScatterplot extends LitElement {
       this._getMaterializedData() ??
       this.data;
 
-    return createStyleGetters(styleData, {
-      selectedProteinIds: this.selectedProteinIds,
-      highlightedProteinIds: this.highlightedProteinIds,
-      selectedAnnotation: this.selectedAnnotation,
-      hiddenAnnotationValues: this.hiddenAnnotationValues,
-      otherAnnotationValues: this.otherAnnotationValues,
-      zOrderMapping: this._zOrderMapping,
-      colorMapping: this._colorMapping,
-      shapeMapping: this._shapeMapping,
-      sizes: {
-        base: this._mergedConfig.pointSize,
+    return createStyleGetters(
+      styleData,
+      {
+        selectedProteinIds: this.selectedProteinIds,
+        highlightedProteinIds: this.highlightedProteinIds,
+        selectedAnnotation: this.selectedAnnotation,
+        hiddenAnnotationValues: this.hiddenAnnotationValues,
+        otherAnnotationValues: this.otherAnnotationValues,
+        zOrderMapping: this._zOrderMapping,
+        colorMapping: this._colorMapping,
+        shapeMapping: this._shapeMapping,
+        sizes: {
+          base: this._mergedConfig.pointSize,
+        },
+        opacities: {
+          base: this._mergedConfig.baseOpacity,
+          selected: this._mergedConfig.selectedOpacity,
+          faded: this._mergedConfig.fadedOpacity,
+        },
       },
-      opacities: {
-        base: this._mergedConfig.baseOpacity,
-        selected: this._mergedConfig.selectedOpacity,
-        faded: this._mergedConfig.fadedOpacity,
-      },
-    });
+      this._getVisibilityModel(),
+    );
   }
 
   private _getStyleGetters() {
@@ -1993,8 +2092,8 @@ export class ProtspaceScatterplot extends LitElement {
     const nearestPoint = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
 
     if (nearestPoint) {
-      // Don't hover hidden points (opacity=0)
-      if (this._getOpacity(nearestPoint) === 0) {
+      // Don't hover non-interactive points (hidden/faded-to-0 → opacity 0)
+      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
         this._clearHoverState();
         return;
       }
@@ -2053,8 +2152,8 @@ export class ProtspaceScatterplot extends LitElement {
     const nearestPoint = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
 
     if (nearestPoint) {
-      // Don't click hidden points (opacity=0)
-      if (this._getOpacity(nearestPoint) === 0) {
+      // Don't click non-interactive points (hidden/faded-to-0 → opacity 0)
+      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
         return;
       }
 
