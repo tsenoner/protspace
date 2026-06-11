@@ -52,3 +52,20 @@ def test_missing_where_column_raises():
     r = Rule(id_prefixes=["P0"])
     with pytest.raises(KeyError):
         classify(_table(), q, r)
+
+
+def test_protein_matching_neither_rule_is_excluded():
+    # P00002 / enzyme matches neither rule -> absent from both lists.
+    q = Rule(id_prefixes=["TRINITY_"])
+    r = Rule(where=[("protein_category", "neurotoxin")])
+    qi, ri = classify(_table(), q, r)
+    assert 3 not in qi
+    assert 3 not in ri
+
+
+def test_multiple_id_prefixes_use_or_semantics():
+    q = Rule(id_prefixes=["TRINITY_", "P00001"])
+    r = Rule(id_prefixes=["P00002"])
+    qi, ri = classify(_table(), q, r)
+    assert qi == [0, 1, 2]
+    assert ri == [3]
