@@ -77,3 +77,15 @@ def test_empty_references_raises():
             [],
             k=1,
         )
+
+
+def test_source_is_nearest_neighbour_with_winning_label():
+    # Two neighbours share the winning label at distinct distances; the source
+    # must be the closer one.
+    ref_emb = np.array([[0.0, 0.0], [0.5, 0.0], [10.0, 0.0]], dtype=np.float32)
+    ref_ids = ["R_far", "R_near", "R_other"]
+    ref_labels = ["toxin", "toxin", "enzyme"]
+    query_emb = np.array([[0.4, 0.0]], dtype=np.float32)  # R_near at 0.1, R_far at 0.4
+    preds = eat(query_emb, ["Q"], ref_emb, ref_ids, ref_labels, k=2)
+    assert preds[0].label == "toxin"
+    assert preds[0].source_id == "R_near"

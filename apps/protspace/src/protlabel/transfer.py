@@ -64,6 +64,9 @@ def eat(
             if lab not in nearest_src or d < nearest_src[lab][0]:
                 nearest_src[lab] = (d, ref_ids[ref_i])
         # Normalise by k (the goPredSim 1/k term).
+        # Tie-break: max() over the insertion-ordered dict returns the first label
+        # seen while iterating neighbours (which are in ascending distance order),
+        # so for distinct distances the nearest neighbour's label wins a tie.
         best_label = max(ri_by_label, key=lambda p: ri_by_label[p])
         ri = ri_by_label[best_label] / eff_k
         src_dist, src_id = nearest_src[best_label]
