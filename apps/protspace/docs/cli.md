@@ -9,6 +9,7 @@
 | `protspace bundle`   | Combine projections + annotations into .parquetbundle |
 | `protspace serve`    | Launch interactive Dash web frontend                  |
 | `protspace style`    | Add/inspect annotation styles in existing files       |
+| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT) |
 
 Run `protspace <command> -h` for detailed help.
 
@@ -182,6 +183,37 @@ protspace style data.parquetbundle --generate-template > styles.json
 protspace style input.parquetbundle output.parquetbundle --annotation-styles styles.json
 protspace style data.parquetbundle --dump-settings
 ```
+
+## `protspace transfer`
+
+Embedding Annotation Transfer (EAT): fills missing annotation values for query proteins by transferring the annotation of the nearest annotated reference protein in pLM embedding space. For each query protein that lacks a value in the requested annotation column, the command finds the closest reference (by Euclidean distance in the original high-dimensional embedding space — not in the 2-D/3-D projection) and assigns that reference's label along with a reliability index adapted from goPredSim (`confidence = 0.5 / (0.5 + distance)`), yielding a score in [0, 1] where 1 means identical embeddings. The curated source column (`COL`) is left untouched; results are written as three new columns: `COL__pred_value` (string), `COL__pred_confidence` (float), and `COL__pred_source` (the nearest reference protein ID). The method is a direct application of the approach introduced by Littmann et al., Sci Rep 2021 ([DOI 10.1038/s41598-020-80786-0](https://doi.org/10.1038/s41598-020-80786-0)) and extended by Heinzinger et al., NAR Genom Bioinform 2022 ([DOI 10.1093/nargab/lqac043](https://doi.org/10.1093/nargab/lqac043)).
+
+```bash
+protspace transfer \
+  -b results.parquetbundle \
+  -e embeddings.h5:prot_t5 \
+  -t protein_category \
+  -o results.parquetbundle \
+  --query-id-prefix TRINITY_ \
+  --reference-where 'protein_category~neurotoxin'
+```
+
+**Key options:**
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-b, --bundle` | Input `.parquetbundle` file | — |
+| `-e, --embeddings` | HDF5 embeddings file (use `:name` suffix for external files) | — |
+| `-t, --transfer` | Annotation column to transfer (repeatable) | — |
+| `-o, --output` | Output `.parquetbundle` (may overwrite input) | — |
+| `--query-id-prefix` | Restrict query proteins to IDs starting with this prefix | — |
+| `--query-where` | Filter query proteins by annotation value (`col~substr`) | — |
+| `--reference-id-prefix` | Restrict reference proteins to IDs starting with this prefix | — |
+| `--reference-where` | Filter reference proteins by annotation value (`col~substr`) | — |
+| `--k` | Number of nearest neighbours | `1` |
+| `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`) | `euclidean` |
+
+Distances are computed in the original embedding space (HDF5), not in the 2-D/3-D projection.
 
 ## Combining Multiple Inputs (`-i`)
 

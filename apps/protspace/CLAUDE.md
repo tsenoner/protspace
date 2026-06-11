@@ -49,6 +49,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace bundle` | Combine projections + annotations → .parquetbundle |
 | `protspace serve` | Launch Dash web frontend |
 | `protspace style` | Add annotation colors/styles |
+| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT) |
 
 ### protspace prepare Usage
 

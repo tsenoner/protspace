@@ -183,3 +183,17 @@ Per-protein predictions from the [Biocentral API](https://biocentral.rostlab.org
 | Pfam clans     | `~/.cache/protspace/pfam_clans/`  | 30 days  | Pfam family → clan mapping                        |
 
 The `default` group only requires the UniProt REST API (+ ExPASy for EC names). For `--keep-tmp` annotation caching, see [CLI Reference](cli.md#annotation-caching---keep-tmp).
+
+## Prediction Overlay Columns (EAT Transfer)
+
+Running `protspace transfer` appends three new columns to the bundle's annotations table for each requested column `COL`. The curated `COL` column is never modified.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `COL__pred_value` | string | The transferred label from the nearest annotated reference protein |
+| `COL__pred_confidence` | float | Reliability index in [0, 1]: `0.5 / (0.5 + distance)` — 1 = identical embeddings |
+| `COL__pred_source` | string | UniProt accession (or ID) of the nearest reference protein |
+
+A protein is considered "predicted" for `COL` when `COL` is empty but `COL__pred_value` is present. Use `COL__pred_confidence` to threshold low-reliability transfers.
+
+See [`protspace transfer`](cli.md#protspace-transfer) for usage and option details.
