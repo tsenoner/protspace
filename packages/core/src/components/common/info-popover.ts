@@ -3,6 +3,16 @@ import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { handleDropdownEscape } from '../../utils/dropdown-helpers';
 
+/** Computed viewport coordinates for a `placement="side"` popover (escapes overflow clipping). */
+interface SideCoords {
+  left: number;
+  top: number;
+  /** Vertical offset of the arrow within the popover, so it points at the icon. */
+  arrowTop: number;
+  /** True when there was no room on the preferred side and the popover flipped to the other side. */
+  flipped: boolean;
+}
+
 /**
  * Small reusable "ⓘ" information control that opens a popover with an annotation description and an
  * optional "Learn more" link.
@@ -13,11 +23,16 @@ import { handleDropdownEscape } from '../../utils/dropdown-helpers';
  * - The popover is **hoverable**: it stays open while the pointer is over the icon *or* the popover
  *   itself (a short grace period bridges the small gap between them), so you can move into it to
  *   click "Learn more ↗" without it disappearing.
- * - **Click** still toggles a pinned state (keeps it open after the pointer leaves; primary path on
- *   touch where there is no hover). Escape or an outside click closes it.
- * - Renders nothing when there is neither a description nor a docs URL.
+ * - **Click** still toggles a pinned state. Escape or an outside click closes it.
  *
- * Used by the annotation dropdown (per item) and the legend header (active annotation).
+ * Placement:
+ * - `"bottom"` (default) drops the popover below the icon — used by the legend header.
+ * - `"side"` floats it to the side of the icon (left by default, flipping right near the viewport
+ *   edge) with an arrow pointing back at the icon, rendered `position: fixed` so it escapes the
+ *   annotation dropdown's `overflow` clipping. This keeps the popover out of the vertical list, so
+ *   moving the pointer down to the next row lands on the row, not the bubble.
+ *
+ * Renders nothing when there is neither a description nor a docs URL.
  */
 @customElement('protspace-info-popover')
 class ProtspaceInfoPopover extends LitElement {
@@ -79,6 +94,47 @@ class ProtspaceInfoPopover extends LitElement {
       right: 0;
     }
 
+    /* Side placement: positioned via fixed viewport coordinates (set inline) so it escapes the
+       dropdown's overflow clipping and sits beside the row instead of over the list. */
+    .popover.placement-side {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 2000;
+    }
+
+    /* Hidden until measured, to avoid a one-frame flash at the default (0,0) position. */
+    .popover.placement-side.measuring {
+      visibility: hidden;
+    }
+
+    /* Caret: a rotated square sharing the popover's surface + border, half-poking out the edge. */
+    .popover-arrow {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: var(--surface-color, #ffffff);
+      border: 1px solid var(--border-color, #e5e7eb);
+      transform: rotate(45deg);
+    }
+
+    /* Left placement → caret on the right edge pointing toward the icon. */
+    .popover.placement-side .popover-arrow {
+      right: -6px;
+      border-left: none;
+      border-bottom: none;
+    }
+
+    /* Flipped to the right → caret on the left edge. */
+    .popover.placement-side.flipped .popover-arrow {
+      right: auto;
+      left: -6px;
+      border-left: 1px solid var(--border-color, #e5e7eb);
+      border-bottom: 1px solid var(--border-color, #e5e7eb);
+      border-right: none;
+      border-top: none;
+    }
+
     .popover-description {
       margin: 0;
     }
@@ -103,12 +159,16 @@ class ProtspaceInfoPopover extends LitElement {
   /** Human-readable annotation label, used for accessible button labelling. */
   @property({ type: String }) label = '';
   /**
-   * Preferred horizontal open direction. `'left'` (default) opens the popover rightward from the
-   * icon; `'right'` opens it leftward (align its right edge to the icon) — use this when the icon
-   * sits near the right edge of a container, e.g. the annotation dropdown's action column. A
-   * viewport overflow check still flips it as a safety net regardless of this setting.
+   * Preferred horizontal open direction for `placement="bottom"`. `'left'` (default) opens the
+   * popover rightward from the icon; `'right'` opens it leftward (align its right edge to the icon).
+   * A viewport overflow check still flips it as a safety net. Ignored for `placement="side"`.
    */
   @property({ type: String }) align: 'left' | 'right' = 'left';
+  /**
+   * Where the popover opens. `'bottom'` drops it below the icon (legend); `'side'` floats it beside
+   * the icon with an arrow (annotation dropdown), so it never covers the row below.
+   */
+  @property({ type: String }) placement: 'bottom' | 'side' = 'bottom';
 
   /** Pointer is over the icon or the popover. */
   @state() private hovering = false;
@@ -117,6 +177,8 @@ class ProtspaceInfoPopover extends LitElement {
   /** Opened via keyboard focus (not a pointer click). */
   @state() private kbFocused = false;
   @state() private flipLeft = false;
+  /** Computed fixed coordinates for side placement (null until measured). */
+  @state() private sideCoords: SideCoords | null = null;
 
   /** Whether the popover is currently visible (any of the three triggers). */
   private get isOpen(): boolean {
@@ -127,6 +189,7 @@ class ProtspaceInfoPopover extends LitElement {
   /** True briefly around a pointerdown so the ensuing focus is not treated as keyboard focus. */
   private pointerInitiatedFocus = false;
   private docListenerAttached = false;
+  private repositionListenerAttached = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -142,6 +205,7 @@ class ProtspaceInfoPopover extends LitElement {
     this.removeEventListener('focusout', this._onFocusOut);
     this._clearCloseTimer();
     this._detachDocListener();
+    this._detachRepositionListener();
   }
 
   private _onPointerEnter = () => {
@@ -192,6 +256,26 @@ class ProtspaceInfoPopover extends LitElement {
     this.docListenerAttached = false;
   }
 
+  // Reposition the side popover when the dropdown list scrolls or the window resizes (its fixed
+  // coordinates are viewport-relative, so the icon can move out from under it otherwise).
+  private _onScrollOrResize = () => {
+    if (this.isOpen && this.placement === 'side') this._computeSidePosition();
+  };
+
+  private _attachRepositionListener() {
+    if (this.repositionListenerAttached) return;
+    window.addEventListener('scroll', this._onScrollOrResize, true);
+    window.addEventListener('resize', this._onScrollOrResize);
+    this.repositionListenerAttached = true;
+  }
+
+  private _detachRepositionListener() {
+    if (!this.repositionListenerAttached) return;
+    window.removeEventListener('scroll', this._onScrollOrResize, true);
+    window.removeEventListener('resize', this._onScrollOrResize);
+    this.repositionListenerAttached = false;
+  }
+
   private _closeAll() {
     this._clearCloseTimer();
     this.hovering = false;
@@ -199,18 +283,70 @@ class ProtspaceInfoPopover extends LitElement {
     this.kbFocused = false;
   }
 
+  /** Measure the icon + popover and place the popover beside the icon, flipping/clamping to fit. */
+  private _computeSidePosition() {
+    const button = this.shadowRoot?.querySelector('.info-button') as HTMLElement | null;
+    const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
+    if (!button || !popover) return;
+
+    const icon = button.getBoundingClientRect();
+    const w = popover.offsetWidth;
+    const h = popover.offsetHeight;
+    const GAP = 12; // space between icon and bubble (room for the arrow)
+    const MARGIN = 8; // keep clear of the viewport edge
+    const HALF_ARROW = 5;
+    const iconCenterY = icon.top + icon.height / 2;
+
+    // Prefer the left of the icon; flip to the right only if there's no room.
+    let left = icon.left - GAP - w;
+    let flipped = false;
+    if (left < MARGIN) {
+      left = icon.right + GAP;
+      flipped = true;
+      if (left + w > window.innerWidth - MARGIN) {
+        left = Math.max(MARGIN, window.innerWidth - MARGIN - w);
+      }
+    }
+
+    let top = iconCenterY - h / 2;
+    top = Math.min(Math.max(MARGIN, top), Math.max(MARGIN, window.innerHeight - h - MARGIN));
+
+    const arrowTop = Math.min(
+      Math.max(HALF_ARROW + 2, iconCenterY - top - HALF_ARROW),
+      Math.max(HALF_ARROW + 2, h - 2 * HALF_ARROW - 2),
+    );
+
+    const cur = this.sideCoords;
+    if (
+      !cur ||
+      cur.left !== left ||
+      cur.top !== top ||
+      cur.arrowTop !== arrowTop ||
+      cur.flipped !== flipped
+    ) {
+      this.sideCoords = { left, top, arrowTop, flipped };
+    }
+  }
+
   updated() {
     // Keep the outside-click listener attached only while open.
-    if (this.isOpen) {
-      this._attachDocListener();
-    } else {
+    if (!this.isOpen) {
       this._detachDocListener();
+      this._detachRepositionListener();
       if (this.flipLeft) this.flipLeft = false;
+      if (this.sideCoords) this.sideCoords = null;
+      return;
+    }
+    this._attachDocListener();
+
+    if (this.placement === 'side') {
+      this._attachRepositionListener();
+      if (!this.sideCoords) this._computeSidePosition();
       return;
     }
 
-    // After the popover renders, flip it leftward if it would overflow the right edge of the
-    // viewport (safety net on top of the `align` preference).
+    // Bottom placement: flip leftward if it would overflow the right edge of the viewport
+    // (safety net on top of the `align` preference).
     if (this.flipLeft || this.align === 'right') return;
     const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
     if (popover && popover.getBoundingClientRect().right > window.innerWidth - 8) {
@@ -260,6 +396,15 @@ class ProtspaceInfoPopover extends LitElement {
 
     const ariaLabel = this.label ? `Information about ${this.label}` : 'Annotation information';
     const open = this.isOpen;
+    const side = this.placement === 'side';
+
+    const popoverClass = side
+      ? `popover placement-side ${this.sideCoords ? '' : 'measuring'} ${
+          this.sideCoords?.flipped ? 'flipped' : ''
+        }`
+      : `popover ${this.align === 'right' || this.flipLeft ? 'flip-left' : ''}`;
+    const popoverStyle =
+      side && this.sideCoords ? `left:${this.sideCoords.left}px;top:${this.sideCoords.top}px;` : '';
 
     return html`
       <button
@@ -291,10 +436,17 @@ class ProtspaceInfoPopover extends LitElement {
       </button>
       ${open
         ? html`<div
-            class="popover ${this.align === 'right' || this.flipLeft ? 'flip-left' : ''}"
+            class=${popoverClass}
+            style=${popoverStyle}
             role="dialog"
             @keydown=${this._onKeydown}
           >
+            ${side
+              ? html`<span
+                  class="popover-arrow"
+                  style=${this.sideCoords ? `top:${this.sideCoords.arrowTop}px` : ''}
+                ></span>`
+              : nothing}
             ${this.description
               ? html`<p class="popover-description">${this.description}</p>`
               : nothing}

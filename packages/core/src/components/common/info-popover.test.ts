@@ -9,6 +9,7 @@ type PopoverEl = HTMLElement & {
   docsUrl: string;
   label: string;
   align: 'left' | 'right';
+  placement: 'bottom' | 'side';
   updateComplete: Promise<unknown>;
 };
 
@@ -18,6 +19,7 @@ async function setup(props: Partial<PopoverEl> = {}): Promise<PopoverEl> {
   if (props.docsUrl !== undefined) el.docsUrl = props.docsUrl;
   el.label = props.label ?? 'Test annotation';
   if (props.align) el.align = props.align;
+  if (props.placement) el.placement = props.placement;
   document.body.appendChild(el);
   await el.updateComplete;
   return el;
@@ -113,6 +115,24 @@ describe('protspace-info-popover', () => {
     popover(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await el.updateComplete;
     expect(popover(el)).toBeNull();
+  });
+
+  it('side placement floats the popover beside the icon with an arrow', async () => {
+    const el = await setup({ placement: 'side' });
+    el.dispatchEvent(new Event('pointerenter'));
+    await el.updateComplete;
+    const pop = popover(el);
+    expect(pop).not.toBeNull();
+    expect(pop?.classList.contains('placement-side')).toBe(true);
+    expect(el.shadowRoot!.querySelector('.popover-arrow')).not.toBeNull();
+  });
+
+  it('bottom placement (default) has no arrow', async () => {
+    const el = await setup();
+    el.dispatchEvent(new Event('pointerenter'));
+    await el.updateComplete;
+    expect(popover(el)?.classList.contains('placement-side')).toBe(false);
+    expect(el.shadowRoot!.querySelector('.popover-arrow')).toBeNull();
   });
 
   it('renders the docs link with the provided URL', async () => {
