@@ -90,6 +90,75 @@ describe('DataProcessor.processVisualizationData', () => {
     expect(result.map((p) => p.id)).toEqual(['p1', 'p2']);
   });
 
+  it('combines query-filter and isolation: result is intersection with global originalIndex on non-prefix subset', () => {
+    const data: VisualizationData = {
+      protein_ids: ['p0', 'p1', 'p2', 'p3'],
+      projections: [
+        {
+          name: 't',
+          data: [
+            [0, 0],
+            [1, 1],
+            [2, 2],
+            [3, 3],
+          ],
+        },
+      ],
+      annotations: {},
+      annotation_data: {},
+    };
+    // query filter retains p1,p2,p3; isolation retains p0,p1,p2 → intersection = {p1, p2}
+    const result = DataProcessor.processVisualizationData(
+      data,
+      0,
+      true,
+      [['p0', 'p1', 'p2']],
+      new Set(['p1', 'p2', 'p3']),
+    );
+    expect(result).toHaveLength(2);
+    // originalIndex must be the GLOBAL index into protein_ids, not a slice-local index
+    expect(result[0]).toEqual({ id: 'p1', x: 1, y: 1, originalIndex: 1 });
+    expect(result[1]).toEqual({ id: 'p2', x: 2, y: 2, originalIndex: 2 });
+    // bare shape: no extra keys beyond {id, originalIndex, x, y}
+    expect(Object.keys(result[0]).sort()).toEqual(['id', 'originalIndex', 'x', 'y']);
+  });
+
+  it('combines query-filter and multi-layer isolation: query-filter applied before all isolation layers', () => {
+    const data: VisualizationData = {
+      protein_ids: ['p0', 'p1', 'p2', 'p3', 'p4'],
+      projections: [
+        {
+          name: 't',
+          data: [
+            [0, 0],
+            [1, 1],
+            [2, 2],
+            [3, 3],
+            [4, 4],
+          ],
+        },
+      ],
+      annotations: {},
+      annotation_data: {},
+    };
+    // query filter retains p1,p2,p3,p4
+    // isolation layer 0 retains p0,p1,p2,p3 → after intersect: p1,p2,p3
+    // isolation layer 1 retains p2,p3,p4   → after intersect: p2,p3
+    const result = DataProcessor.processVisualizationData(
+      data,
+      0,
+      true,
+      [
+        ['p0', 'p1', 'p2', 'p3'],
+        ['p2', 'p3', 'p4'],
+      ],
+      new Set(['p1', 'p2', 'p3', 'p4']),
+    );
+    expect(result.map((p) => p.id)).toEqual(['p2', 'p3']);
+    expect(result[0].originalIndex).toBe(2);
+    expect(result[1].originalIndex).toBe(3);
+  });
+
   it('does not materialize annotation Records on points', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
