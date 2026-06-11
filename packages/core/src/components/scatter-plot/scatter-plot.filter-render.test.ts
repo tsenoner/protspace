@@ -38,9 +38,14 @@ type ScatterplotInternals = HTMLElement & {
   selectedAnnotation: string;
   filteredProteinIds: string[];
   filtersActive: boolean;
+  hiddenAnnotationValues: string[];
   _plotData: PlotDataPoint[];
   _processData(): void;
-  _buildStyleGetters(): { getColors(point: PlotDataPoint): string[] };
+  _buildStyleGetters(): {
+    getColors(point: PlotDataPoint): string[];
+    getOpacity(point: PlotDataPoint): number;
+  };
+  updated(changedProperties: Map<string, unknown>): void;
 };
 
 /**
@@ -75,8 +80,31 @@ function makeScatter(): ScatterplotInternals {
   return sp;
 }
 
+/**
+ * Dataset 2 for swap tests. Protein ids are 'q*' so they cannot overlap a
+ * stale filter that references 'p1' / 'p3'. The 'fam' annotation is preserved
+ * so selectedAnnotation stays valid across the swap.
+ */
+function makeDataset2(): VisualizationData {
+  const families = ['C', 'C', 'C', 'D', 'D', 'D'];
+  return {
+    protein_ids: families.map((_, i) => `q${i}`),
+    projections: [{ name: 'umap', data: families.map((_, i) => [i * 2, i * 2]) }],
+    annotations: {
+      fam: {
+        values: families,
+        colors: families.map((v) => (v === 'C' ? '#0000ff' : '#ffff00')),
+        shapes: families.map(() => 'circle'),
+      },
+    },
+    annotation_data: {
+      fam: families.map((v) => [families.indexOf(v)]),
+    },
+  } as unknown as VisualizationData;
+}
+
 describe('scatter-plot query-filter rendering integrity', () => {
-  it('colours a non-prefix filtered subset by each point’s OWN value', () => {
+  it("colours a non-prefix filtered subset by each point's OWN value", () => {
     const sp = makeScatter();
     // Keep only family B — a non-prefix subset (drops p0–p2).
     sp.filteredProteinIds = ['p3', 'p4', 'p5'];
@@ -113,5 +141,118 @@ describe('scatter-plot query-filter rendering integrity', () => {
     const colorById = new Map(full._plotData.map((p) => [p.id, fullGetters.getColors(p)]));
     expect(colorById.get('p0')).toEqual([RED]);
     expect(colorById.get('p5')).toEqual([GREEN]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 1.7 — Order-independence of query filter × legend hide
+//
+// The filter channel (_processData / filteredProteinIds) and the legend hide
+// channel (hiddenAnnotationValues / _buildStyleGetters) are orthogonal:
+//   • filter determines which points land in _plotData
+//   • hide sets opacity to 0 for matching points but never culls them
+//
+// The final _plotData ids and per-point opacities must be identical regardless
+// of which channel is configured first.
+// ---------------------------------------------------------------------------
+describe('scatter-plot filter × hide order-independence', () => {
+  // p1 = family A (red, visible), p3 = family B (green, will be hidden)
+  const FILTER_IDS = ['p1', 'p3'];
+  const HIDDEN_VALUES = ['B'];
+
+  /**
+   * Returns _plotData and style-getters after bringing the element to the
+   * same end state via two different assignment orderings.
+   */
+  function buildFinalState(order: 'filter-first' | 'hide-first') {
+    const sp = makeScatter(); // data + selectedAnnotation already set
+    if (order === 'filter-first') {
+      // Scenario A: establish filter → process → then hide
+      sp.filteredProteinIds = [...FILTER_IDS];
+      sp.filtersActive = true;
+      sp._processData();
+      sp.hiddenAnnotationValues = [...HIDDEN_VALUES];
+    } else {
+      // Scenario B: hide first → then establish filter → process
+      sp.hiddenAnnotationValues = [...HIDDEN_VALUES];
+      sp.filteredProteinIds = [...FILTER_IDS];
+      sp.filtersActive = true;
+      sp._processData();
+    }
+    const getters = sp._buildStyleGetters();
+    return { sp, getters };
+  }
+
+  it('_plotData contains exactly the query-matched ids; hidden-value points are NOT culled', () => {
+    const { sp } = buildFinalState('filter-first');
+    // Both p1 (A) and p3 (B) must appear — hiding B does not remove it from _plotData.
+    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p1', 'p3']);
+  });
+
+  it('hidden-value point (family B) has opacity 0; visible-value point (family A) has opacity > 0', () => {
+    const { sp, getters } = buildFinalState('filter-first');
+    const byId = new Map(sp._plotData.map((p) => [p.id, p]));
+    // p3 is family B which is hidden → opacity must be 0
+    expect(getters.getOpacity(byId.get('p3')!)).toBe(0);
+    // p1 is family A which is not hidden → opacity must be positive
+    expect(getters.getOpacity(byId.get('p1')!)).toBeGreaterThan(0);
+  });
+
+  it('end-state _plotData ids are identical regardless of assignment order', () => {
+    const { sp: spA } = buildFinalState('filter-first');
+    const { sp: spB } = buildFinalState('hide-first');
+    expect(spA._plotData.map((p) => p.id).sort()).toEqual(spB._plotData.map((p) => p.id).sort());
+  });
+
+  it('end-state per-point opacities are identical regardless of assignment order', () => {
+    const { sp: spA, getters: gA } = buildFinalState('filter-first');
+    const { sp: spB, getters: gB } = buildFinalState('hide-first');
+
+    const idsA = spA._plotData.map((p) => p.id).sort();
+    for (const id of idsA) {
+      const pA = spA._plotData.find((p) => p.id === id)!;
+      const pB = spB._plotData.find((p) => p.id === id)!;
+      expect(gA.getOpacity(pA)).toBe(gB.getOpacity(pB));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 1.8 — Dataset swap clears the filter channel before _processData runs
+//
+// updated() lines 454-457: when changedProperties has 'data' and filtersActive
+// is true, it synchronously clears filteredProteinIds / filtersActive BEFORE
+// _processData runs. This prevents a stale id-set from the previous dataset
+// from blanking the new plot.
+//
+// On an unattached element the Lit lifecycle never auto-runs, so we simulate
+// the lifecycle by calling updated() directly.
+// ---------------------------------------------------------------------------
+describe('scatter-plot dataset-swap clears stale query filter', () => {
+  it('updated() on data swap resets filtersActive and filteredProteinIds before _processData', () => {
+    const sp = makeScatter(); // dataset 1 (p0–p5), fam annotation
+
+    // Establish an active filter on dataset 1.
+    sp.filteredProteinIds = ['p1', 'p3'];
+    sp.filtersActive = true;
+    sp._processData();
+    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p1', 'p3']);
+
+    // Swap to dataset 2 (q0–q5). None of its ids overlap the stale filter.
+    const oldData = sp.data;
+    const dataset2 = makeDataset2();
+    sp.data = dataset2;
+
+    // Simulate the Lit updated() lifecycle pass with 'data' in changedProperties.
+    // updated() must clear filteredProteinIds / filtersActive synchronously, then
+    // call _processData() so the new _plotData covers all of dataset 2.
+    sp.updated(new Map([['data', oldData]]));
+
+    // Filter channel must be cleared.
+    expect(sp.filtersActive).toBe(false);
+    expect(sp.filteredProteinIds).toEqual([]);
+
+    // All dataset-2 proteins must appear — stale filter must not blank the plot.
+    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
   });
 });
