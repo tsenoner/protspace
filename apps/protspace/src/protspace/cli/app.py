@@ -70,6 +70,7 @@ def _register_commands() -> None:
         project,
         serve,
         style,
+        transfer,
     )
 
 
