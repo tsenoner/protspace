@@ -267,6 +267,16 @@ class ProtspaceAnnotationSelect extends LitElement {
                                     >
                                       ${isSelected ? html`<span class="primary-dot"></span>` : ''}
                                     </span>
+                                    ${hasDocs
+                                      ? html`<protspace-info-popover
+                                          class="annotation-info"
+                                          placement="side"
+                                          .description=${meta.description}
+                                          docs-url=${meta.docsUrl ?? ''}
+                                          label=${annotationLabel(annotation)}
+                                          @click=${(e: Event) => e.stopPropagation()}
+                                        ></protspace-info-popover>`
+                                      : ''}
                                     <span class="dropdown-item-label"
                                       >${annotationLabel(annotation)}</span
                                     >
@@ -277,16 +287,6 @@ class ProtspaceAnnotationSelect extends LitElement {
                                           aria-label="Predicted"
                                           >⚡</span
                                         >`
-                                      : ''}
-                                    ${hasDocs
-                                      ? html`<protspace-info-popover
-                                          class="annotation-info"
-                                          placement="side"
-                                          .description=${meta.description}
-                                          docs-url=${meta.docsUrl ?? ''}
-                                          label=${annotationLabel(annotation)}
-                                          @click=${(e: Event) => e.stopPropagation()}
-                                        ></protspace-info-popover>`
                                       : ''}
                                     <span class="tooltip-toggle-slot">
                                       ${isSelected
