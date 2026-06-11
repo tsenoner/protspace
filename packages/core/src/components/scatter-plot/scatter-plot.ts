@@ -51,6 +51,24 @@ type ScalePair = {
   y: d3.ScaleLinear<number, number>;
 };
 
+/**
+ * Memoization key for `_getVisibilityModel`. Stored as a plain struct so each
+ * field is compared by strict equality (===) in the guard in that method.
+ * An identity-compared object or array ref cannot go into a string hash —
+ * the coercion loses identity and causes spurious cache hits — so the struct
+ * approach is the correct trade-off here.
+ */
+type VisibilityModelMemoKey = {
+  data: VisualizationData | null;
+  selectedAnnotation: string;
+  hiddenAnnotationValues: string[];
+  selectedProteinIds: string[];
+  highlightedProteinIds: string[];
+  baseOpacity: number;
+  selectedOpacity: number;
+  fadedOpacity: number;
+};
+
 // Default configuration moved to config.ts
 
 /**
@@ -130,17 +148,16 @@ export class ProtspaceScatterplot extends LitElement {
   private _zoomRafId: number | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
+  // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
+  // which is nulled out on color/shape mapping changes). The key comparison in
+  // _getVisibilityModel covers every visibility-relevant input exhaustively:
+  // data, selectedAnnotation, hiddenAnnotationValues, selectedProteinIds,
+  // highlightedProteinIds, and the three opacity numbers. There are no deps on
+  // colorMapping, zOrderMapping, otherAnnotationValues, or sizes that would
+  // require event-handler invalidation — those inputs do not feed into the
+  // visibility model.
   private _visibilityModelCache: VisibilityModel | null = null;
-  private _visibilityModelKey: {
-    data: VisualizationData | null;
-    selectedAnnotation: string;
-    hiddenAnnotationValues: string[];
-    selectedProteinIds: string[];
-    highlightedProteinIds: string[];
-    baseOpacity: number;
-    selectedOpacity: number;
-    fadedOpacity: number;
-  } | null = null;
+  private _visibilityModelKey: VisibilityModelMemoKey | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   private _visiblePlotData: PlotDataPoint[] = [];
   private _virtualizationCacheKey: string | null = null;
@@ -1862,9 +1879,12 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _getOpacity(point: PlotDataPoint): number {
-    // Facade: external consumers (webgl-render-perf.ts, brush-selection.spec.ts)
-    // reach into this private member. Delegates to the shared visibility model,
-    // which is the single opacity authority.
+    // Facade: two external consumers reach into this private member —
+    // webgl-render-perf.ts (via a privacy cast, acknowledged debt) and
+    // app/tests/brush-selection.spec.ts:323. Do not rename or remove this
+    // method without migrating those callers first.
+    // Delegates to the shared visibility model, which is the single opacity
+    // authority.
     return this._getVisibilityModel().opacityOf(point);
   }
 
@@ -1884,7 +1904,10 @@ export class ProtspaceScatterplot extends LitElement {
    * cached materialized object by reference when filtered ids are excluded, so
    * it is reference-stable until materialization is rebuilt), `selectedAnnotation`,
    * `hiddenAnnotationValues` ref, selection/highlight refs, and the three opacity
-   * numbers from the merged config.
+   * numbers from the merged config. (Opacities are extracted as three plain
+   * numbers rather than keying on `_mergedConfig` itself: `_mergedConfig` is
+   * rebuilt as a new object on unrelated changes such as width/height/margin, so
+   * its reference is never stable as a cache key.)
    *
    * Two-level: on a miss we pass the previous model to `computeVisibilityModel`,
    * which reuses the O(N) hidden mask when (data, selectedAnnotation, hidden ref)

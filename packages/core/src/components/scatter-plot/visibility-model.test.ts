@@ -444,8 +444,12 @@ describe('computeVisibilityModel', () => {
       const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: hiddenRef }));
       expect(first.opacityOf(point('p0', 0))).toBe(0);
 
-      // Mutate the mask source IN PLACE (same array reference). A reused mask
-      // must ignore this; a rebuilt mask would reflect it.
+      // Mutate the mask source IN PLACE (same array reference). makeData stores
+      // `rows` into annotation_data by reference without copying, so the
+      // in-place write reaches the live data the mask was built from. A reused
+      // mask ignores this (it was already computed); a rebuilt mask would see
+      // the new value and disagree. If makeData ever starts copying `rows`, this
+      // test becomes vacuous — the mutation would no longer reach the mask source.
       rows[0] = 1; // p0 would map to 'B' (not hidden) if the mask were rebuilt
 
       const second = computeVisibilityModel(
