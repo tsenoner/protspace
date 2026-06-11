@@ -148,6 +148,36 @@ def replace_settings_in_bundle(
         f.write(new_content)
 
 
+def replace_annotations_in_bundle(
+    input_path: Path,
+    output_path: Path,
+    annotations_table: pa.Table,
+) -> None:
+    """Replace the annotations (1st) part of a bundle, preserving the rest.
+
+    Projection parts (2nd, 3rd) are kept byte-for-byte; an existing settings
+    (4th) part is carried over unchanged.
+    """
+    with open(input_path, "rb") as f:
+        content = f.read()
+
+    parts = content.split(PARQUET_BUNDLE_DELIMITER)
+    if len(parts) < 3 or len(parts) > 4:
+        raise ValueError(f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}")
+
+    buf = io.BytesIO()
+    pq.write_table(annotations_table, buf)
+    new_parts = [buf.getvalue(), parts[1], parts[2]]
+    if len(parts) == 4:
+        new_parts.append(parts[3])
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as f:
+        f.write(PARQUET_BUNDLE_DELIMITER.join(new_parts))
+
+    logger.info(f"Wrote bundle with updated annotations to: {output_path}")
+
+
 def create_settings_parquet(settings_dict: dict) -> bytes:
     """Serialize a settings dict into parquet bytes.
 
