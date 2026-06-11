@@ -60,6 +60,7 @@ def run_transfer(
     rows = embedded.to_pylist()
 
     out = annotations
+    total_transferred = 0
     for column in transfer_columns:
         if column not in annotations.column_names:
             raise KeyError(f"Transfer column {column!r} not in annotations table")
@@ -98,8 +99,14 @@ def run_transfer(
             metric=metric,
         )
         out = add_overlay_columns(out, column, preds)
+        total_transferred += len(preds)
         logger.info("Transferred %r to %d quer(ies)", column, len(preds))
 
+    if total_transferred == 0:
+        logger.warning(
+            "No annotations were transferred. Check the --reference-* rules and "
+            "that query proteins have missing values in the target column(s)."
+        )
     return out
 
 
@@ -175,6 +182,11 @@ def transfer(
     reference_rule = Rule(
         id_prefixes=reference_id_prefix or [], where=_parse_where(reference_where)
     )
+
+    if metric not in ("euclidean", "cosine"):
+        raise typer.BadParameter("--metric must be 'euclidean' or 'cosine'")
+    if k < 1:
+        raise typer.BadParameter("--k must be >= 1")
 
     # Load embeddings (name override after ':').
     h5_spec = embeddings.split(":", 1)
