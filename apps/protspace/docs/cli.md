@@ -211,7 +211,7 @@ protspace transfer \
 | `--reference-id-prefix` | Restrict reference proteins to IDs starting with this prefix | — |
 | `--reference-where` | Filter reference proteins by annotation value (`col~substr`) | — |
 | `--k` | Number of nearest neighbours | `1` |
-| `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`) | `euclidean` |
+| `--metric` | Distance metric (`euclidean`, `cosine`) | `euclidean` |
 
 Distances are computed in the original embedding space (HDF5), not in the 2-D/3-D projection.
 
