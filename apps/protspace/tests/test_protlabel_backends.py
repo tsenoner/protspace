@@ -45,6 +45,8 @@ def test_k_capped_to_num_refs():
     queries, refs = _toy()
     idx, dist = nearest(queries, refs, k=10, metric="euclidean")
     assert idx.shape == (2, 3)  # only 3 refs available
+    assert np.all(np.diff(dist, axis=1) >= -1e-6)
+    assert idx[0, 0] == 0 and idx[1, 0] == 2
 
 
 def test_chunking_matches_unchunked():
@@ -61,3 +63,19 @@ def test_unknown_metric_raises():
     queries, refs = _toy()
     with pytest.raises(ValueError):
         nearest(queries, refs, k=1, metric="manhattan")
+
+
+def test_tiny_memory_budget_matches_default():
+    rng = np.random.default_rng(1)
+    refs = rng.standard_normal((40, 6)).astype(np.float32)
+    queries = rng.standard_normal((9, 6)).astype(np.float32)
+    a_idx, a_dist = nearest(queries, refs, k=3, metric="euclidean")
+    b_idx, b_dist = nearest(queries, refs, k=3, metric="euclidean", max_block_bytes=1)
+    assert np.array_equal(a_idx, b_idx)
+    assert np.allclose(a_dist, b_dist, atol=1e-5)
+
+
+def test_k_less_than_one_raises():
+    queries, refs = _toy()
+    with pytest.raises(ValueError):
+        nearest(queries, refs, k=0, metric="euclidean")
