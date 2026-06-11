@@ -127,6 +127,33 @@ describe('protspace-info-popover', () => {
     expect(el.shadowRoot!.querySelector('.popover-arrow')).not.toBeNull();
   });
 
+  it('side placement stays open until the pointer leaves the whole row', async () => {
+    vi.useFakeTimers();
+    const row = document.createElement('div');
+    document.body.appendChild(row);
+    const el = document.createElement('protspace-info-popover') as PopoverEl;
+    el.description = 'Brief summary.';
+    el.placement = 'side';
+    row.appendChild(el);
+    await el.updateComplete; // firstUpdated attaches the row keep-open listener
+
+    el.dispatchEvent(new Event('pointerenter')); // open via the icon
+    await el.updateComplete;
+    expect(popover(el)).not.toBeNull();
+
+    // Leaving just the icon must NOT close it — the keep-open region is the whole row.
+    el.dispatchEvent(new Event('pointerleave'));
+    vi.advanceTimersByTime(300);
+    await el.updateComplete;
+    expect(popover(el)).not.toBeNull();
+
+    // Leaving the row closes it after the grace period.
+    row.dispatchEvent(new Event('pointerleave'));
+    vi.advanceTimersByTime(300);
+    await el.updateComplete;
+    expect(popover(el)).toBeNull();
+  });
+
   it('bottom placement (default) has no arrow', async () => {
     const el = await setup();
     el.dispatchEvent(new Event('pointerenter'));

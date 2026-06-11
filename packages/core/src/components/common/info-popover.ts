@@ -27,10 +27,11 @@ interface SideCoords {
  *
  * Placement:
  * - `"bottom"` (default) drops the popover below the icon — used by the legend header.
- * - `"side"` floats it to the side of the icon (left by default, flipping right near the viewport
- *   edge) with an arrow pointing back at the icon, rendered `position: fixed` so it escapes the
- *   annotation dropdown's `overflow` clipping. This keeps the popover out of the vertical list, so
- *   moving the pointer down to the next row lands on the row, not the bubble.
+ * - `"side"` floats it beside the dropdown *panel* (left by default, flipping right near the
+ *   viewport edge), level with the hovered row and with an arrow pointing at it, rendered
+ *   `position: fixed` so it escapes the dropdown's `overflow` clipping. Anchoring to the panel
+ *   edge keeps the bubble out of the list entirely, so every row's label stays visible while you
+ *   move the pointer up and down the column of ⓘ icons.
  *
  * Renders nothing when there is neither a description nor a docs URL.
  */
@@ -190,6 +191,8 @@ class ProtspaceInfoPopover extends LitElement {
   private pointerInitiatedFocus = false;
   private docListenerAttached = false;
   private repositionListenerAttached = false;
+  /** Parent row used as the keep-open region for side placement (see `firstUpdated`). */
+  private _row: HTMLElement | null = null;
 
   connectedCallback() {
     super.connectedCallback();
@@ -198,29 +201,57 @@ class ProtspaceInfoPopover extends LitElement {
     this.addEventListener('focusout', this._onFocusOut);
   }
 
+  firstUpdated() {
+    // In side placement the bubble floats outside the dropdown panel, so the path from the icon to
+    // the bubble crosses the row. Treat the whole row (this popover's parent) as the keep-open
+    // region — the bubble is a DOM descendant of it — so the user can glide from the ⓘ into the
+    // bubble to click "Learn more" without it closing, while only the tiny panel↔bubble gap relies
+    // on the grace period.
+    if (this.placement === 'side' && this.parentElement) {
+      this._row = this.parentElement;
+      this._row.addEventListener('pointerleave', this._onRowPointerLeave);
+    }
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
     this.removeEventListener('pointerenter', this._onPointerEnter);
     this.removeEventListener('pointerleave', this._onPointerLeave);
     this.removeEventListener('focusout', this._onFocusOut);
+    this._row?.removeEventListener('pointerleave', this._onRowPointerLeave);
+    this._row = null;
     this._clearCloseTimer();
     this._detachDocListener();
     this._detachRepositionListener();
   }
 
   private _onPointerEnter = () => {
+    // Fires for the icon and (since the bubble is a descendant of the host) when the pointer
+    // re-enters the bubble after crossing the panel↔bubble gap.
     this._clearCloseTimer();
     this.hovering = true;
   };
 
-  private _onPointerLeave = () => {
+  /** Start the close grace period: long enough to bridge the gap between the trigger and the bubble. */
+  private _scheduleClose() {
     this._clearCloseTimer();
-    // Grace period so the pointer can cross the small gap between the icon and the popover without
-    // the popover closing out from under it.
     this.closeTimer = setTimeout(() => {
       this.hovering = false;
       this.closeTimer = null;
     }, 140);
+  }
+
+  private _onPointerLeave = () => {
+    // For side placement, closing is driven by leaving the whole row (see `_onRowPointerLeave`), so
+    // leaving just the icon must not start the close timer — otherwise crossing the row toward the
+    // bubble would dismiss it.
+    if (this.placement === 'side') return;
+    this._scheduleClose();
+  };
+
+  /** Side placement only: the pointer left the row (and the bubble), so begin closing. */
+  private _onRowPointerLeave = () => {
+    this._scheduleClose();
   };
 
   private _onFocusOut = (event: FocusEvent) => {
@@ -283,25 +314,58 @@ class ProtspaceInfoPopover extends LitElement {
     this.kbFocused = false;
   }
 
-  /** Measure the icon + popover and place the popover beside the icon, flipping/clamping to fit. */
+  /**
+   * Walk the composed ancestry from the icon to the nearest clipping container (the dropdown
+   * panel). Its left/right edges are the anchor for the side popover, so the bubble sits beside the
+   * whole list instead of over a row's label.
+   */
+  private _nearestClipRect(start: Element): DOMRect | null {
+    let node: Node | null = start.parentNode;
+    while (node) {
+      if (node instanceof ShadowRoot) {
+        node = node.host;
+        continue;
+      }
+      if (node instanceof Element) {
+        const s = getComputedStyle(node);
+        const clips = /(auto|scroll|hidden|clip)/;
+        if (clips.test(s.overflowX) || clips.test(s.overflowY)) {
+          return node.getBoundingClientRect();
+        }
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  /**
+   * Place the popover beside the dropdown panel (not the icon), vertically level with the hovered
+   * row, flipping/clamping to fit. Anchoring to the panel's edge keeps every row's label visible
+   * while you move the pointer up and down the column of ⓘ icons.
+   */
   private _computeSidePosition() {
     const button = this.shadowRoot?.querySelector('.info-button') as HTMLElement | null;
     const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
     if (!button || !popover) return;
 
     const icon = button.getBoundingClientRect();
+    // Anchor to the panel's left edge (its clipping container); fall back to the icon if there
+    // isn't one (e.g. when used outside a scrolling list).
+    const clip = this._nearestClipRect(button);
+    const boundaryLeft = clip ? clip.left : icon.left;
+    const boundaryRight = clip ? clip.right : icon.right;
     const w = popover.offsetWidth;
     const h = popover.offsetHeight;
-    const GAP = 12; // space between icon and bubble (room for the arrow)
+    const GAP = 12; // space between the panel and the bubble (room for the arrow)
     const MARGIN = 8; // keep clear of the viewport edge
     const HALF_ARROW = 5;
     const iconCenterY = icon.top + icon.height / 2;
 
-    // Prefer the left of the icon; flip to the right only if there's no room.
-    let left = icon.left - GAP - w;
+    // Prefer the left of the panel; flip to the right only if there's no room.
+    let left = boundaryLeft - GAP - w;
     let flipped = false;
     if (left < MARGIN) {
-      left = icon.right + GAP;
+      left = boundaryRight + GAP;
       flipped = true;
       if (left + w > window.innerWidth - MARGIN) {
         left = Math.max(MARGIN, window.innerWidth - MARGIN - w);
