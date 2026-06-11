@@ -50,3 +50,20 @@ def test_confidence_column_is_float():
     out = add_overlay_columns(_table(), "protein_category", preds)
     field = out.schema.field("protein_category__pred_confidence")
     assert pa.types.is_floating(field.type)
+
+
+def test_empty_predictions_appends_all_null_columns():
+    out = add_overlay_columns(_table(), "protein_category", [])
+    assert "protein_category__pred_value" in out.column_names
+    assert out.column("protein_category__pred_value").to_pylist() == [None, None, None]
+    assert out.column("protein_category__pred_confidence").to_pylist() == [
+        None,
+        None,
+        None,
+    ]
+
+
+def test_prediction_for_unknown_identifier_is_ignored():
+    preds = [Prediction("NOT_IN_TABLE", "x", "R0", 0.1, 0.9, 1, "euclidean")]
+    out = add_overlay_columns(_table(), "protein_category", preds).to_pylist()
+    assert all(r["protein_category__pred_value"] is None for r in out)
