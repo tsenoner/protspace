@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Date:** 2026-06-11
-**Supersedes:** `2026-05-27-neighbors-subcommand-design.md` (the earlier "neighbors-subcommand" draft — this expands its scope, reconciles it with GitHub issue #54 and frontend PR #272, and corrects two defaults).
+**Supersedes:** an earlier "neighbors-subcommand" draft (since removed) — this expanded its scope, reconciled it with GitHub issue #54 and frontend PR #272, and corrected two defaults (cosine→Euclidean, and the reliability aggregation).
 **Trigger:** Conference feedback (`Conference_feedback/ProtSpaceExtractor_v1.7.4_mod 1.py`) + GitHub issue [#54 "EAT — Embedding Annotation Transfer (protlabel lookup table)"](https://github.com/tsenoner/protspace/issues/54) + frontend PR [protspace_web #272 "mark predictions and surface per-annotation docs"](https://github.com/tsenoner/protspace_web/pull/272).
 **Research backing:** Literature + codebase fan-out (8 agents) with adversarial verification of the storage/compute math and the EAT algorithm against primary sources. Citations in §15.
 
