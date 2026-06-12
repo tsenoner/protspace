@@ -39,8 +39,10 @@ type ScatterplotInternals = HTMLElement & {
   filteredProteinIds: string[];
   filtersActive: boolean;
   hiddenAnnotationValues: string[];
+  selectedProteinIds: string[];
   _plotData: PlotDataPoint[];
   _processData(): void;
+  _getVisiblePointCount(): number;
   _buildStyleGetters(): {
     getColors(point: PlotDataPoint): string[];
     getOpacity(point: PlotDataPoint): number;
@@ -265,6 +267,67 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
 
     // The full dataset must be back in _plotData — not just the old subset.
     expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bottom-left point-count indicator — _getVisiblePointCount
+//
+// The indicator must always show the number of points actually visible in the
+// chart, across ALL visibility channels combined:
+//   • query filter / isolation physically cull _plotData
+//   • legend hide leaves points in _plotData at opacity 0 (alpha layer)
+// So the count is |non-hidden points of _plotData| per the visibility model.
+// Selection only fades points (they stay visible) — it must NOT change the count.
+// ---------------------------------------------------------------------------
+describe('scatter-plot visible point count', () => {
+  it('counts the full dataset when nothing is filtered or hidden', () => {
+    const sp = makeScatter();
+    sp._processData();
+    expect(sp._getVisiblePointCount()).toBe(6);
+  });
+
+  it('excludes legend-hidden values from the count', () => {
+    const sp = makeScatter();
+    sp._processData();
+    sp.hiddenAnnotationValues = ['B']; // p3–p5 hidden, alpha=0, still in _plotData
+    expect(sp._plotData).toHaveLength(6);
+    expect(sp._getVisiblePointCount()).toBe(3);
+  });
+
+  it('combines query filter (physical cull) with legend hide (alpha)', () => {
+    const sp = makeScatter();
+    sp.filteredProteinIds = ['p1', 'p3'];
+    sp.filtersActive = true;
+    sp._processData(); // _plotData = [p1 (A), p3 (B)]
+    expect(sp._getVisiblePointCount()).toBe(2);
+    sp.hiddenAnnotationValues = ['B']; // p3 hidden
+    expect(sp._getVisiblePointCount()).toBe(1);
+  });
+
+  it('matches the all-hidden escape hatch: hiding every value shows everything', () => {
+    const sp = makeScatter();
+    sp._processData();
+    sp.hiddenAnnotationValues = ['A', 'B'];
+    // computeAllHidden fires → no hidden filter → all 6 points render.
+    expect(sp._getVisiblePointCount()).toBe(6);
+  });
+
+  it('does not change when points are merely faded by a selection', () => {
+    const sp = makeScatter();
+    sp._processData();
+    sp.selectedProteinIds = ['p0'];
+    expect(sp._getVisiblePointCount()).toBe(6);
+  });
+
+  it('recounts after the hidden set changes (memo invalidation)', () => {
+    const sp = makeScatter();
+    sp._processData();
+    expect(sp._getVisiblePointCount()).toBe(6);
+    sp.hiddenAnnotationValues = ['A'];
+    expect(sp._getVisiblePointCount()).toBe(3);
+    sp.hiddenAnnotationValues = [];
+    expect(sp._getVisiblePointCount()).toBe(6);
   });
 });
 

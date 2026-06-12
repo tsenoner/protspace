@@ -158,6 +158,17 @@ export class ProtspaceScatterplot extends LitElement {
   // visibility model.
   private _visibilityModelCache: VisibilityModel | null = null;
   private _visibilityModelKey: VisibilityModelMemoKey | null = null;
+  // Memoized count of non-hidden plot points for the bottom-left indicator.
+  // Keyed on the mask-relevant visibility inputs only (NOT selection/highlight:
+  // fading never removes a point from view, so recounting on selection changes
+  // would be wasted O(N) work).
+  private _visiblePointCountCache: number | null = null;
+  private _visiblePointCountKey: {
+    plotData: PlotDataPoint[];
+    data: VisualizationData | null;
+    selectedAnnotation: string;
+    hiddenAnnotationValues: string[];
+  } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   private _visiblePlotData: PlotDataPoint[] = [];
   private _virtualizationCacheKey: string | null = null;
@@ -1978,6 +1989,45 @@ export class ProtspaceScatterplot extends LitElement {
     return model;
   }
 
+  /**
+   * Number of plot points actually visible in the chart: `_plotData` (already
+   * physically culled by isolation and query filters) minus legend-hidden
+   * points (the visibility model's alpha layer). Memo key mirrors the model's
+   * mask-relevant inputs — same data expression as `_getVisibilityModel` —
+   * because hidden-ness is independent of selection/highlight/opacity.
+   */
+  private _getVisiblePointCount(): number {
+    const data =
+      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
+      this._getMaterializedData() ??
+      this.data;
+    const key = this._visiblePointCountKey;
+    if (
+      this._visiblePointCountCache !== null &&
+      key &&
+      key.plotData === this._plotData &&
+      key.data === data &&
+      key.selectedAnnotation === this.selectedAnnotation &&
+      key.hiddenAnnotationValues === this.hiddenAnnotationValues
+    ) {
+      return this._visiblePointCountCache;
+    }
+
+    const model = this._getVisibilityModel();
+    let count = 0;
+    for (const point of this._plotData) {
+      if (model.tierOf(point) !== 'hidden') count++;
+    }
+    this._visiblePointCountCache = count;
+    this._visiblePointCountKey = {
+      plotData: this._plotData,
+      data,
+      selectedAnnotation: this.selectedAnnotation,
+      hiddenAnnotationValues: this.hiddenAnnotationValues,
+    };
+    return count;
+  }
+
   private _getDepth(point: PlotDataPoint): number {
     const getters = this._getStyleGetters();
     return getters.getDepth(point);
@@ -2372,12 +2422,12 @@ export class ProtspaceScatterplot extends LitElement {
               </div>
             `
           : ''}
-        ${this._isolationMode
-          ? html` <div class="isolation-indicator">${this._plotData.length} points</div> `
+        ${this.data
+          ? html` <div class="plot-indicator">${this._getVisiblePointCount()} points</div> `
           : ''}
         ${this._numericRecomputeState.running
           ? html`
-              <div class="isolation-indicator" style="left: auto; right: 0.5rem;">
+              <div class="plot-indicator" style="left: auto; right: 0.5rem;">
                 Recalculating bins for ${this._numericRecomputeState.annotation ?? 'annotation'}...
               </div>
             `
