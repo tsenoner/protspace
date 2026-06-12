@@ -35,10 +35,10 @@ The query builder SHALL evaluate the query and, on `Apply & Isolate`, isolate th
 - **THEN** `getCurrentData().protein_ids` contains exactly the proteins in that bin
 - **AND** the `Filter Query Builder` dialog closes
 
-#### Scenario: Zero-match query keeps the view empty
+#### Scenario: Zero-match query disables Apply & Isolate and leaves the view unchanged
 
-- **WHEN** the applied query matches no proteins (e.g. two conjoined conditions with no overlap)
-- **THEN** `getCurrentData().protein_ids` is empty and the view does not fall back to the full dataset
+- **WHEN** a query matches no proteins (e.g. two conjoined conditions with no overlap)
+- **THEN** the match count reads `0 of N`, `Apply & Isolate` is disabled, and the view stays on the full dataset (it cannot be applied, so it neither isolates to empty nor falls back via a stale filter)
 
 ### Requirement: Reset All clears isolation
 

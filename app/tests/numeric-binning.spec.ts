@@ -2376,7 +2376,9 @@ test('long categorical legend labels wrap instead of clipping', async ({ page })
   );
 });
 
-test('numeric tooltip shows the current display label after rebinning', async ({ page }) => {
+test('numeric tooltip shows the raw value within the current bin range after rebinning', async ({
+  page,
+}) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   await openLegendSettings(page);
@@ -2412,7 +2414,7 @@ test('numeric tooltip shows the current display label after rebinning', async ({
   expect(rawValue).toBeLessThanOrEqual(globalMax + tolerance);
 });
 
-test('zero-match filters keep the numeric view empty instead of falling back to full data', async ({
+test('zero-match query disables Apply & Isolate and leaves the view unchanged (no fall-back to full data)', async ({
   page,
 }) => {
   await loadDataset(page);

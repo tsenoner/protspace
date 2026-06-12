@@ -161,6 +161,21 @@ export default defineConfig({
       },
       testMatch: /fasta-prep\.spec\.ts/,
     },
+    // Live FASTA-prep flow against a real backend — opt-in via RUN_LIVE_E2E=1
+    // (requires `docker compose up -d protspace-prep`; see fasta-prep.live.spec.ts
+    // for the full prerequisites). Excluded from the default suite.
+    ...(process.env.RUN_LIVE_E2E
+      ? [
+          {
+            name: 'fasta-prep-live',
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1280, height: 720 },
+            },
+            testMatch: /fasta-prep\.live\.spec\.ts/,
+          },
+        ]
+      : []),
   ],
 
   outputDir: '../test-results/',
