@@ -1735,8 +1735,8 @@ export class ProtspaceLegend extends LitElement {
       annotationSortModes: this._annotationSortModes,
       enableDuplicateStackUI: Boolean(
         scatterplot &&
-          'config' in scatterplot &&
-          (scatterplot as { config?: Record<string, unknown> }).config?.enableDuplicateStackUI,
+        'config' in scatterplot &&
+        (scatterplot as { config?: Record<string, unknown> }).config?.enableDuplicateStackUI,
       ),
       selectedPaletteId,
       numericStrategy: numericSettings?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
