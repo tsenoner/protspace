@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { ProtspaceData } from './types';
 import type { FilterQuery } from './query-types';
-import { evaluateQuery, evaluateQueryExcluding, resolveAnnotationValue } from './query-evaluate';
+import {
+  evaluateQuery,
+  evaluateQueryExcluding,
+  hasConfiguredCondition,
+  resolveAnnotationValue,
+  resolveAnnotationInternalValues,
+} from './query-evaluate';
 
 /** Minimal test data: 5 proteins with categorical and numeric annotations */
 function createTestData(): ProtspaceData {
@@ -388,6 +394,76 @@ describe('evaluateQuery', () => {
   });
 });
 
+describe('hasConfiguredCondition', () => {
+  it('is false for an empty query', () => {
+    expect(hasConfiguredCondition([])).toBe(false);
+  });
+
+  it('is false for the seeded unconfigured categorical condition', () => {
+    const query: FilterQuery = [{ id: '1', kind: 'categorical', annotation: '', values: [] }];
+    expect(hasConfiguredCondition(query)).toBe(false);
+  });
+
+  it('is false when an annotation is picked but no values are selected (still a no-op)', () => {
+    const query: FilterQuery = [
+      { id: '1', kind: 'categorical', annotation: 'organism', values: [] },
+    ];
+    expect(hasConfiguredCondition(query)).toBe(false);
+  });
+
+  it('is true for a categorical condition with at least one value', () => {
+    const query: FilterQuery = [
+      { id: '1', kind: 'categorical', annotation: 'organism', values: ['Human'] },
+    ];
+    expect(hasConfiguredCondition(query)).toBe(true);
+  });
+
+  it('is false for a numeric condition missing its required bound', () => {
+    const query: FilterQuery = [
+      { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: null, max: null },
+    ];
+    expect(hasConfiguredCondition(query)).toBe(false);
+  });
+
+  it('is true for a numeric condition with its required bound set', () => {
+    const query: FilterQuery = [
+      { id: '1', kind: 'numeric', annotation: 'length', operator: 'gt', min: 250, max: null },
+    ];
+    expect(hasConfiguredCondition(query)).toBe(true);
+  });
+
+  it('is false for a group containing only unconfigured conditions', () => {
+    const query: FilterQuery = [
+      {
+        id: 'g1',
+        conditions: [{ id: '1', kind: 'categorical', annotation: '', values: [] }],
+      },
+    ];
+    expect(hasConfiguredCondition(query)).toBe(false);
+  });
+
+  it('is true when a group contains one configured condition among unconfigured ones', () => {
+    const query: FilterQuery = [
+      { id: '1', kind: 'categorical', annotation: '', values: [] },
+      {
+        id: 'g1',
+        logicalOp: 'AND',
+        conditions: [
+          { id: '2', kind: 'categorical', annotation: '', values: [] },
+          {
+            id: '3',
+            logicalOp: 'AND',
+            kind: 'categorical',
+            annotation: 'organism',
+            values: ['Human'],
+          },
+        ],
+      },
+    ];
+    expect(hasConfiguredCondition(query)).toBe(true);
+  });
+});
+
 describe('evaluateQueryExcluding', () => {
   it('returns all indices when excluding single condition from single-condition query', () => {
     const data = createTestData();
@@ -462,5 +538,103 @@ describe('evaluateQueryExcluding', () => {
   it('returns all indices for empty data', () => {
     const result = evaluateQueryExcluding([], {}, '1');
     expect(result).toEqual(new Set());
+  });
+});
+
+describe('multi-label annotations', () => {
+  /** P1=[A,B], P2=[A], P3=[B,C], P4=[] (no labels) */
+  function createMultilabelData(): ProtspaceData {
+    return {
+      protein_ids: ['P1', 'P2', 'P3', 'P4'],
+      annotations: {
+        domain: { values: ['A', 'B', 'C'] },
+      },
+      annotation_data: {
+        domain: [[0, 1], [0], [1, 2], []],
+      },
+    };
+  }
+
+  describe('resolveAnnotationInternalValues', () => {
+    it('returns every label for a multi-label protein', () => {
+      const data = createMultilabelData();
+      expect(resolveAnnotationInternalValues(0, 'domain', data)).toEqual(['A', 'B']);
+      expect(resolveAnnotationInternalValues(1, 'domain', data)).toEqual(['A']);
+    });
+
+    it('resolves a protein with no labels to [__NA__]', () => {
+      const data = createMultilabelData();
+      expect(resolveAnnotationInternalValues(3, 'domain', data)).toEqual(['__NA__']);
+    });
+
+    it('resolves a missing annotation column to [__NA__]', () => {
+      const data = createMultilabelData();
+      expect(resolveAnnotationInternalValues(0, 'nonexistent', data)).toEqual(['__NA__']);
+    });
+
+    it('deduplicates repeated labels', () => {
+      const data: ProtspaceData = {
+        protein_ids: ['P1'],
+        annotations: { domain: { values: ['A'] } },
+        annotation_data: { domain: [[0, 0]] },
+      };
+      expect(resolveAnnotationInternalValues(0, 'domain', data)).toEqual(['A']);
+    });
+
+    it('handles Int32Array single-valued storage', () => {
+      const data: ProtspaceData = {
+        protein_ids: ['P1', 'P2'],
+        annotations: { domain: { values: ['A', 'B'] } },
+        annotation_data: { domain: Int32Array.from([1, -1]) },
+      };
+      expect(resolveAnnotationInternalValues(0, 'domain', data)).toEqual(['B']);
+      expect(resolveAnnotationInternalValues(1, 'domain', data)).toEqual(['__NA__']);
+    });
+  });
+
+  describe('evaluateQuery with multi-label data', () => {
+    it('matches a protein when ANY of its labels is selected', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'domain', values: ['B'] },
+      ];
+      // P1=[A,B] and P3=[B,C] both carry B — not just proteins whose FIRST label is B.
+      const result = evaluateQuery(query, createMultilabelData());
+      expect(result).toEqual(new Set([0, 2]));
+    });
+
+    it('AND of two values on the same annotation matches proteins carrying both', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'domain', values: ['A'] },
+        { id: '2', logicalOp: 'AND', kind: 'categorical', annotation: 'domain', values: ['B'] },
+      ];
+      // Only P1 carries both A and B.
+      const result = evaluateQuery(query, createMultilabelData());
+      expect(result).toEqual(new Set([0]));
+    });
+
+    it('multiple selected values act as any-label OR', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'domain', values: ['A', 'C'] },
+      ];
+      const result = evaluateQuery(query, createMultilabelData());
+      expect(result).toEqual(new Set([0, 1, 2]));
+    });
+
+    it('NOT excludes proteins carrying the value among ANY label', () => {
+      const query: FilterQuery = [
+        { id: '1', logicalOp: 'NOT', kind: 'categorical', annotation: 'domain', values: ['B'] },
+      ];
+      // P1 and P3 carry B somewhere in their label list, so only P2 and P4 remain.
+      const result = evaluateQuery(query, createMultilabelData());
+      expect(result).toEqual(new Set([1, 3]));
+    });
+
+    it('matches unlabeled proteins via __NA__', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'domain', values: ['__NA__'] },
+      ];
+      const result = evaluateQuery(query, createMultilabelData());
+      expect(result).toEqual(new Set([3]));
+    });
   });
 });
