@@ -209,6 +209,11 @@ export class ProtspaceScatterplot extends LitElement {
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
+  // Whether the current _plotData was built with a cull (filter or isolation).
+  // The coordinate-only fast path must not run over a culled build: it can never
+  // restore removed points, so clearing a filter would leave the canvas showing
+  // the old subset while the legend (fed from getCurrentData()) shows everything.
+  private _plotDataWasCulled = false;
   private _lastMaterializedSource: VisualizationData | null = null;
   private _lastMaterializedNumericValues: Array<number | null> | null = null;
   private _materializedDataCacheKey: string | null = null;
@@ -691,12 +696,16 @@ export class ProtspaceScatterplot extends LitElement {
 
     // Fast path applies only to a projection change on the plain, unfiltered,
     // non-isolated plot. Whenever a filter or isolation is active we rebuild so
-    // the kept set is recomputed (and originalIndex stays global).
+    // the kept set is recomputed (and originalIndex stays global). The current
+    // build must also have been un-culled: a culled _plotData is missing points
+    // that only a full rebuild can restore (e.g. right after Reset All flips
+    // filtersActive back to false).
     const onlyProjectionChanged =
       this._plotData.length > 0 &&
       this._lastDataRef === dataToUse &&
       !this._isolationMode &&
-      !this.filtersActive;
+      !this.filtersActive &&
+      !this._plotDataWasCulled;
 
     if (onlyProjectionChanged) {
       // Fast path: update coordinates in-place from the new projection data.
@@ -718,6 +727,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._isolationHistory,
         visibleProteinIds,
       );
+      this._plotDataWasCulled = this._isolationMode || visibleProteinIds !== null;
     }
 
     this._lastDataRef = dataToUse;

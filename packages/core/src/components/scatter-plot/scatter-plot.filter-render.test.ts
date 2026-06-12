@@ -228,6 +228,46 @@ describe('scatter-plot filter × hide order-independence', () => {
 // On an unattached element the Lit lifecycle never auto-runs, so we simulate
 // the lifecycle by calling updated() directly.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Reset All regression — clearing an active filter must rebuild _plotData
+//
+// Bug: "Reset All" in the query builder clears filteredProteinIds/filtersActive,
+// and the updated() pass re-runs _processData. But the coordinate-only fast
+// path's guard reads the NEW filtersActive (already false) instead of asking
+// whether the current _plotData was BUILT culled, so the culled points were
+// never restored: the legend (fed from getCurrentData()) showed everything
+// while the canvas kept rendering the filtered subset.
+// ---------------------------------------------------------------------------
+describe('scatter-plot query-filter clear restores the full plot', () => {
+  it('clearing an active filter via updated() rebuilds _plotData with all proteins', () => {
+    const sp = makeScatter();
+
+    // Apply a filter (control-bar query-apply path) and run the lifecycle.
+    sp.filteredProteinIds = ['p3', 'p4', 'p5'];
+    sp.filtersActive = true;
+    sp.updated(
+      new Map<string, unknown>([
+        ['filteredProteinIds', []],
+        ['filtersActive', false],
+      ]),
+    );
+    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p3', 'p4', 'p5']);
+
+    // Reset All (control-bar query-reset path): clear the channel, lifecycle runs.
+    sp.filteredProteinIds = [];
+    sp.filtersActive = false;
+    sp.updated(
+      new Map<string, unknown>([
+        ['filteredProteinIds', ['p3', 'p4', 'p5']],
+        ['filtersActive', true],
+      ]),
+    );
+
+    // The full dataset must be back in _plotData — not just the old subset.
+    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+  });
+});
+
 describe('scatter-plot dataset-swap clears stale query filter', () => {
   it('updated() on data swap resets filtersActive and filteredProteinIds before _processData', () => {
     const sp = makeScatter(); // dataset 1 (p0–p5), fam annotation
