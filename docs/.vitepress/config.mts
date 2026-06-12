@@ -13,6 +13,9 @@ export default defineConfig({
 
   base: urls.docs,
 
+  // Internal planning/spec notes — not part of the user-facing docs site.
+  srcExclude: ['superpowers/**'],
+
   head: [['link', { rel: 'icon', href: '/docs/favicon.svg' }]],
 
   themeConfig: {

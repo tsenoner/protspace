@@ -28,7 +28,7 @@ function makeData(
   const n = rows.length;
   return {
     protein_ids: Array.from({ length: n }, (_, i) => `p${i}`),
-    projections: [{ name: 'proj', data: Array.from({ length: n }, () => [0, 0, 0]) }],
+    projections: [{ name: 'proj', data: new Float32Array(n * 3), dimension: 3 }],
     annotations: {
       [annotationKey]: {
         kind: 'categorical',
@@ -346,10 +346,8 @@ describe('computeVisibilityModel', () => {
         projections: [
           {
             name: 'proj',
-            data: [
-              [0, 0, 0],
-              [1, 1, 0],
-            ],
+            data: Float32Array.of(0, 0, 0, 1, 1, 0),
+            dimension: 3,
           },
         ],
         annotations: {
@@ -374,10 +372,8 @@ describe('computeVisibilityModel', () => {
         projections: [
           {
             name: 'proj',
-            data: [
-              [0, 0, 0],
-              [1, 1, 0],
-            ],
+            data: Float32Array.of(0, 0, 0, 1, 1, 0),
+            dimension: 3,
           },
         ],
         annotations: {}, // no 'annot' annotation
@@ -396,10 +392,8 @@ describe('computeVisibilityModel', () => {
         projections: [
           {
             name: 'proj',
-            data: [
-              [0, 0, 0],
-              [1, 1, 0],
-            ],
+            data: Float32Array.of(0, 0, 0, 1, 1, 0),
+            dimension: 3,
           },
         ],
         annotations: {

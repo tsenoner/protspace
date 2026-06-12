@@ -250,9 +250,18 @@ export function createDatasetController({
 
   const handleDataError = async (event: Event) => {
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
-    console.error('❌ Data loading error:', customEvent.detail.message);
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
     const loadSequence = runningLoadMeta?.sequence ?? null;
+
+    if (customEvent.detail.originalError?.name === 'AbortError') {
+      console.log('Data load cancelled by user');
+      if (loadSequence !== null) {
+        loadQueue.resolvePendingLoadFinalization(loadSequence);
+      }
+      return;
+    }
+
+    console.error('❌ Data loading error:', customEvent.detail.message);
 
     if (runningLoadMeta?.kind === 'user' || runningLoadMeta?.kind === 'opfs') {
       try {

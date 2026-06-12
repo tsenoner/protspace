@@ -13,6 +13,18 @@ The Colab notebook converts protein embeddings into a visualization-ready `.parq
 3. Retrieves annotations from UniProt, InterPro, and NCBI Taxonomy
 4. Creates the `.parquetbundle` file ready for ProtSpace
 
+## Quickest path: drop a FASTA
+
+If your ProtSpace deployment runs the prep backend, you can skip the notebook
+entirely: drag a `.fasta` / `.fa` / `.fna` file (≤ 1500 sequences,
+≤ 2000 residues each) onto the Explore drop zone. The server will embed,
+project, annotate, and bundle, and the visualization opens automatically.
+
+Behind the scenes this is the same pipeline as `protspace prepare -i seqs.fasta -e prot_t5 -m pca2,umap2`,
+with sensible defaults baked in. Use the notebook or the CLI for any non-default
+configuration (different embedder, additional projections, advanced annotation
+sources).
+
 ## Step 1: Get Protein Embeddings
 
 You need an HDF5 file (.h5) containing protein embeddings. There are three ways to obtain this:

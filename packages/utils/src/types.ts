@@ -45,8 +45,13 @@ export type AnnotationData = Int32Array | readonly (readonly number[])[];
 export interface Projection {
   name: string;
   metadata?: Record<string, unknown> & { dimension?: 2 | 3 };
-  // Each point is either [x, y] or [x, y, z]
-  data: Array<[number, number] | [number, number, number]>;
+  /**
+   * Flat coordinates, length = pointCount * dimension.
+   * data[i*dimension + 0] = x, +1 = y, +2 = z (when dimension === 3).
+   */
+  data: Float32Array;
+  /** Coordinate stride: 2 (xy) or 3 (xyz). Authoritative — never infer from data. */
+  dimension: 2 | 3;
 }
 
 export interface VisualizationData {
@@ -63,7 +68,32 @@ export interface PlotDataPoint {
   id: string;
   x: number;
   y: number;
+  z?: number;
   originalIndex: number;
+}
+
+/**
+ * Struct-of-Arrays container for the plotted points. Replaces PlotDataPoint[] as the
+ * bulk store — eliminates the per-point boxed { id, x, y, z?, originalIndex } objects.
+ * Individual PlotDataPoint objects are materialized on demand at interaction boundaries
+ * (hover/click/tooltip) via materializePlotDataPoint().
+ */
+export interface PlotData {
+  /** Number of plotted points (slots). */
+  readonly length: number;
+  /** X coordinate per slot (already plane-mapped for 3D projections). */
+  readonly xs: Float32Array;
+  /** Y coordinate per slot (already plane-mapped for 3D projections). */
+  readonly ys: Float32Array;
+  /** Raw z (coords[2]) per slot, or null for 2D projections. */
+  readonly zs: Float32Array | null;
+  /**
+   * Maps slot -> protein index (into proteinIds / VisualizationData.annotation_data).
+   * `null` means identity: slot i is protein i — the common non-isolated case.
+   */
+  readonly originalIndices: Int32Array | null;
+  /** Shared reference to VisualizationData.protein_ids. */
+  readonly proteinIds: readonly string[];
 }
 
 export interface StyleForAnnotation {

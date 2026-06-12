@@ -125,11 +125,8 @@ describe('round-trip with real data files', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-          ] as Array<[number, number]>,
+          data: Float32Array.of(0, 0, 1, 1, 2, 2),
+          dimension: 2 as const,
         },
       ],
       annotations: {
@@ -179,10 +176,8 @@ describe('round-trip with real data files', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-          ] as Array<[number, number]>,
+          data: Float32Array.of(0, 0, 1, 1),
+          dimension: 2 as const,
         },
       ],
       annotations: {
@@ -346,11 +341,8 @@ describe('numeric annotation round-trip', () => {
       projections: [
         {
           name: 'UMAP',
-          data: [
-            [0, 0],
-            [1, 1],
-            [2, 2],
-          ] as Array<[number, number]>,
+          data: Float32Array.of(0, 0, 1, 1, 2, 2),
+          dimension: 2 as const,
         },
       ],
       annotations: {

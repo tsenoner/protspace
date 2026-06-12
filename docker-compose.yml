@@ -1,0 +1,35 @@
+# Local development only. Production is deployed via the GitOps repo
+# Rostlab/deploy-protspace-backend (doco-cd) behind the Caddy gateway.
+# CORS and rate limiting are handled in-app, so there is no Caddy here.
+services:
+  protspace-prep:
+    build:
+      context: ./services/protspace-prep
+    image: protspace-prep:local
+    restart: unless-stopped
+    environment:
+      PREP_JOB_ROOT: /var/lib/protspace-prep/jobs
+      PREP_MAX_CONCURRENT_JOBS: '5'
+      PREP_BUNDLE_TTL_SECONDS: '3600'
+      PREP_UPLOAD_MAX_BYTES: '8388608'
+      PREP_SEQUENCE_MIN_COUNT: '20'
+      PREP_SEQUENCE_MAX_COUNT: '1500'
+      PREP_SEQUENCE_MAX_RESIDUES: '2000'
+      PREP_EMBEDDER: prot_t5
+      PREP_METHODS: pca2,umap2
+      PREP_ANNOTATIONS: default
+      PREP_PIPELINE_TIMEOUT_SECONDS: '420'
+      CORS_ALLOWED_ORIGIN: http://localhost:8080
+    volumes:
+      - prep-jobs:/var/lib/protspace-prep/jobs
+    ports:
+      - '127.0.0.1:8000:8000'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8000/healthz']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  prep-jobs:

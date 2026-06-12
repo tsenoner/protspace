@@ -30,6 +30,11 @@
       // Keep the runtime graph rooted from App and layer Playwright specs on top.
       "entry": ["src/App.tsx", "tests/**/*.spec.ts"],
       "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"],
+      // Playwright 1.57.0 crashes when loaded via jiti (knip's config loader)
+      // due to a __dirname usage bug in playwright/lib/index.js:51.
+      // The specs are already captured via the entry glob above, so disabling
+      // this plugin loses nothing.
+      "playwright": false,
       "ignore": [
         "src/custom-elements.d.ts",
         // shadcn/ui components export complete sets by convention

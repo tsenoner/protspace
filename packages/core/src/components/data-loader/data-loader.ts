@@ -15,6 +15,11 @@ import {
   assertValidParquetMagic,
   validateRowsBasic,
 } from './utils/validation';
+import {
+  decodeBundleInWorker,
+  isWorkerDecodeSupported,
+  type WorkerDecodeResult,
+} from './decode-worker-client';
 
 /** Whether data was loaded by user action or automatically (e.g. page reload) */
 export type DataLoadSource = 'user' | 'auto';
@@ -96,7 +101,7 @@ export class DataLoader extends LitElement {
       <input
         type="file"
         class="hidden-input"
-        accept=".parquetbundle"
+        accept=".parquetbundle,.fasta,.fa,.fna"
         @change=${this.handleFileSelect}
         style="display:none"
       />
@@ -158,7 +163,14 @@ export class DataLoader extends LitElement {
    */
   async loadFromFile(file: File, options?: DataLoaderFileLoadOptions) {
     if (this.loadFromFileHandler) {
-      return this.loadFromFileHandler(file, options, this.loadFromFileDirect.bind(this));
+      try {
+        await this.loadFromFileHandler(file, options, this.loadFromFileDirect.bind(this));
+      } catch (error) {
+        const originalError = error instanceof Error ? error : new Error(String(error));
+        this.error = originalError.message;
+        this.dispatchError(this.error, originalError);
+      }
+      return;
     }
 
     return this.loadFromFileDirect(file, options);
@@ -195,15 +207,31 @@ export class DataLoader extends LitElement {
 
       // Branch-specific steps
       if (file.name.endsWith('.parquetbundle') || isParquetBundle(arrayBuffer)) {
-        // For bundles: extract -> validate -> convert
-        this.addSteps(3);
-        const extraction = await extractRowsFromParquetBundle(arrayBuffer);
+        // For bundles: decode+convert in worker (or main-thread fallback)
+        this.addSteps(1);
+        let visualizationData: VisualizationData;
+        let settings: BundleSettings | null;
+        if (isWorkerDecodeSupported()) {
+          try {
+            const result: WorkerDecodeResult = await decodeBundleInWorker(arrayBuffer);
+            visualizationData = result.data;
+            settings = result.settings;
+          } catch (workerError) {
+            // Fallback: main-thread decode (worker unsupported / runtime failure).
+            console.warn('Worker decode failed, falling back to main thread:', workerError);
+            const extraction = await extractRowsFromParquetBundle(arrayBuffer);
+            validateRowsBasic(extraction.projections);
+            visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
+            settings = extraction.settings;
+          }
+        } else {
+          const extraction = await extractRowsFromParquetBundle(arrayBuffer);
+          validateRowsBasic(extraction.projections);
+          visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
+          settings = extraction.settings;
+        }
         this.completeStep();
-        validateRowsBasic(extraction.projections);
-        this.completeStep();
-        const visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
-        this.completeStep();
-        this.dispatchDataLoaded(visualizationData, extraction.settings, source, file);
+        this.dispatchDataLoaded(visualizationData, settings, source, file);
       } else {
         // For regular parquet: validate magic -> parse -> validate rows -> convert
         this.addSteps(4);

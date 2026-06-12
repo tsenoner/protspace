@@ -58,9 +58,15 @@ export class LegendDataProcessor {
     const filtered = new Set<number>();
     if (!isolationMode || !isolationHistory?.length || !proteinIds) return filtered;
 
+    // Build a Set per isolation layer once so membership is O(1). The previous
+    // `history.includes(id)` was a linear scan run for every protein, making this
+    // O(N × layerSize): on the 573K dataset an isolate triggered a ~18s main-thread
+    // freeze here. Mirrors the Set-based intersection in
+    // DataProcessor.processVisualizationData.
+    const layerSets = isolationHistory.map((layer) => new Set(layer));
+
     proteinIds.forEach((id, index) => {
-      const isIncluded = isolationHistory.every((history) => history.includes(id));
-      if (isIncluded) filtered.add(index);
+      if (layerSets.every((set) => set.has(id))) filtered.add(index);
     });
 
     return filtered;

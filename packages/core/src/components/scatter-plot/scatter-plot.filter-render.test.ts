@@ -16,7 +16,8 @@
  * scatter-plot.isolation.test.ts) and drive _processData directly.
  */
 import { vi, describe, it, expect } from 'vitest';
-import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
+import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
+import { plotDataId, materializePlotDataPoint } from '@protspace/utils';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -33,6 +34,16 @@ import './scatter-plot';
 const RED = '#ff0000';
 const GREEN = '#00ff00';
 
+/** Slot-materialized ids of a SoA PlotData container. */
+function plotIds(pd: PlotData): string[] {
+  return Array.from({ length: pd.length }, (_, s) => plotDataId(pd, s));
+}
+
+/** Slot-materialized PlotDataPoints of a SoA PlotData container. */
+function plotPoints(pd: PlotData): PlotDataPoint[] {
+  return Array.from({ length: pd.length }, (_, s) => materializePlotDataPoint(pd, s));
+}
+
 type ScatterplotInternals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
@@ -40,7 +51,7 @@ type ScatterplotInternals = HTMLElement & {
   filtersActive: boolean;
   hiddenAnnotationValues: string[];
   selectedProteinIds: string[];
-  _plotData: PlotDataPoint[];
+  _plotData: PlotData;
   _processData(): void;
   _getVisiblePointCount(): number;
   _buildStyleGetters(): {
@@ -58,9 +69,14 @@ type ScatterplotInternals = HTMLElement & {
 function makeFamilyData(): VisualizationData {
   const families = ['A', 'A', 'A', 'B', 'B', 'B'];
   const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
+  const coords = new Float32Array(families.length * 2);
+  families.forEach((_, i) => {
+    coords[i * 2] = i;
+    coords[i * 2 + 1] = i;
+  });
   return {
     protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: families.map((_, i) => [i, i]) }],
+    projections: [{ name: 'umap', data: coords, dimension: 2 }],
     annotations: {
       fam: {
         values: families,
@@ -89,9 +105,14 @@ function makeScatter(): ScatterplotInternals {
  */
 function makeDataset2(): VisualizationData {
   const families = ['C', 'C', 'C', 'D', 'D', 'D'];
+  const coords = new Float32Array(families.length * 2);
+  families.forEach((_, i) => {
+    coords[i * 2] = i * 2;
+    coords[i * 2 + 1] = i * 2;
+  });
   return {
     protein_ids: families.map((_, i) => `q${i}`),
-    projections: [{ name: 'umap', data: families.map((_, i) => [i * 2, i * 2]) }],
+    projections: [{ name: 'umap', data: coords, dimension: 2 }],
     annotations: {
       fam: {
         values: families,
@@ -115,11 +136,11 @@ describe('scatter-plot query-filter rendering integrity', () => {
     sp._processData();
     const getters = sp._buildStyleGetters();
 
-    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p3', 'p4', 'p5']);
+    expect(plotIds(sp._plotData).sort()).toEqual(['p3', 'p4', 'p5']);
 
     // Every kept point is family B → must be green, not the colour of the
     // protein sitting at the same slice-local position in the full dataset.
-    for (const point of sp._plotData) {
+    for (const point of plotPoints(sp._plotData)) {
       expect(getters.getColors(point)).toEqual([GREEN]);
     }
   });
@@ -132,7 +153,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     prefix.filtersActive = true;
     prefix._processData();
     const prefixGetters = prefix._buildStyleGetters();
-    for (const point of prefix._plotData) {
+    for (const point of plotPoints(prefix._plotData)) {
       expect(prefixGetters.getColors(point)).toEqual([RED]);
     }
 
@@ -140,7 +161,9 @@ describe('scatter-plot query-filter rendering integrity', () => {
     const full = makeScatter();
     full._processData();
     const fullGetters = full._buildStyleGetters();
-    const colorById = new Map(full._plotData.map((p) => [p.id, fullGetters.getColors(p)]));
+    const colorById = new Map(
+      plotPoints(full._plotData).map((p) => [p.id, fullGetters.getColors(p)]),
+    );
     expect(colorById.get('p0')).toEqual([RED]);
     expect(colorById.get('p5')).toEqual([GREEN]);
   });
@@ -188,12 +211,12 @@ describe('scatter-plot filter × hide order-independence', () => {
   it('_plotData contains exactly the query-matched ids; hidden-value points are NOT culled', () => {
     const { sp } = buildFinalState('filter-first');
     // Both p1 (A) and p3 (B) must appear — hiding B does not remove it from _plotData.
-    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p1', 'p3']);
+    expect(plotIds(sp._plotData).sort()).toEqual(['p1', 'p3']);
   });
 
   it('hidden-value point (family B) has opacity 0; visible-value point (family A) has opacity > 0', () => {
     const { sp, getters } = buildFinalState('filter-first');
-    const byId = new Map(sp._plotData.map((p) => [p.id, p]));
+    const byId = new Map(plotPoints(sp._plotData).map((p) => [p.id, p]));
     // p3 is family B which is hidden → opacity must be 0
     expect(getters.getOpacity(byId.get('p3')!)).toBe(0);
     // p1 is family A which is not hidden → opacity must be positive
@@ -203,17 +226,17 @@ describe('scatter-plot filter × hide order-independence', () => {
   it('end-state _plotData ids are identical regardless of assignment order', () => {
     const { sp: spA } = buildFinalState('filter-first');
     const { sp: spB } = buildFinalState('hide-first');
-    expect(spA._plotData.map((p) => p.id).sort()).toEqual(spB._plotData.map((p) => p.id).sort());
+    expect(plotIds(spA._plotData).sort()).toEqual(plotIds(spB._plotData).sort());
   });
 
   it('end-state per-point opacities are identical regardless of assignment order', () => {
     const { sp: spA, getters: gA } = buildFinalState('filter-first');
     const { sp: spB, getters: gB } = buildFinalState('hide-first');
 
-    const idsA = spA._plotData.map((p) => p.id).sort();
-    for (const id of idsA) {
-      const pA = spA._plotData.find((p) => p.id === id)!;
-      const pB = spB._plotData.find((p) => p.id === id)!;
+    const pointsA = plotPoints(spA._plotData);
+    const pointsB = plotPoints(spB._plotData);
+    for (const pA of pointsA) {
+      const pB = pointsB.find((p) => p.id === pA.id)!;
       expect(gA.getOpacity(pA)).toBe(gB.getOpacity(pB));
     }
   });
@@ -253,7 +276,7 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
         ['filtersActive', false],
       ]),
     );
-    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p3', 'p4', 'p5']);
+    expect(plotIds(sp._plotData).sort()).toEqual(['p3', 'p4', 'p5']);
 
     // Reset All (control-bar query-reset path): clear the channel, lifecycle runs.
     sp.filteredProteinIds = [];
@@ -266,7 +289,7 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
     );
 
     // The full dataset must be back in _plotData — not just the old subset.
-    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+    expect(plotIds(sp._plotData).sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
   });
 });
 
@@ -291,7 +314,7 @@ describe('scatter-plot visible point count', () => {
     const sp = makeScatter();
     sp._processData();
     sp.hiddenAnnotationValues = ['B']; // p3–p5 hidden, alpha=0, still in _plotData
-    expect(sp._plotData).toHaveLength(6);
+    expect(sp._plotData.length).toBe(6);
     expect(sp._getVisiblePointCount()).toBe(3);
   });
 
@@ -339,7 +362,7 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
     sp.filteredProteinIds = ['p1', 'p3'];
     sp.filtersActive = true;
     sp._processData();
-    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['p1', 'p3']);
+    expect(plotIds(sp._plotData).sort()).toEqual(['p1', 'p3']);
 
     // Swap to dataset 2 (q0–q5). None of its ids overlap the stale filter.
     const oldData = sp.data;
@@ -356,6 +379,6 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
     expect(sp.filteredProteinIds).toEqual([]);
 
     // All dataset-2 proteins must appear — stale filter must not blank the plot.
-    expect(sp._plotData.map((p) => p.id).sort()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+    expect(plotIds(sp._plotData).sort()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
   });
 });

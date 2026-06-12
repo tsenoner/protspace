@@ -2,9 +2,8 @@ name: CI - Code Quality
 
 on:
   push:
-    branches: ['**']
-  pull_request:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:

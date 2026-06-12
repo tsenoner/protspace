@@ -15,7 +15,13 @@ describe('style-getters', () => {
   describe('N/A value handling', () => {
     const createMockData = (annotationValues: (string | null)[]): VisualizationData => ({
       protein_ids: annotationValues.map((_, i) => `protein_${i}`),
-      projections: [{ name: 'test', data: annotationValues.map(() => [0, 0, 0]) }],
+      projections: [
+        {
+          name: 'test',
+          data: new Float32Array(annotationValues.length * 3),
+          dimension: 3,
+        },
+      ],
       annotations: {
         test_annotation: {
           values: annotationValues,
@@ -164,7 +170,13 @@ describe('style-getters', () => {
   describe('depth stability across visibility toggles', () => {
     const createMockData = (annotationValues: string[]): VisualizationData => ({
       protein_ids: annotationValues.map((_, i) => `protein_${i}`),
-      projections: [{ name: 'test', data: annotationValues.map(() => [0, 0, 0]) }],
+      projections: [
+        {
+          name: 'test',
+          data: new Float32Array(annotationValues.length * 3),
+          dimension: 3,
+        },
+      ],
       annotations: {
         test_annotation: {
           values: annotationValues,
@@ -267,11 +279,8 @@ describe('style-getters', () => {
         projections: [
           {
             name: 'test',
-            data: [
-              [0, 0, 0],
-              [1, 1, 0],
-              [2, 2, 0],
-            ],
+            data: Float32Array.of(0, 0, 0, 1, 1, 0, 2, 2, 0),
+            dimension: 3,
           },
         ],
         annotations: {
@@ -302,7 +311,13 @@ describe('style-getters', () => {
   describe('z-order change consistency', () => {
     const createMockData = (annotationValues: string[]): VisualizationData => ({
       protein_ids: annotationValues.map((_, i) => `protein_${i}`),
-      projections: [{ name: 'test', data: annotationValues.map(() => [0, 0, 0]) }],
+      projections: [
+        {
+          name: 'test',
+          data: new Float32Array(annotationValues.length * 3),
+          dimension: 3,
+        },
+      ],
       annotations: {
         test_annotation: {
           values: annotationValues,
@@ -456,7 +471,7 @@ describe('style-getters', () => {
     // NOTE: produces array-of-arrays annotation_data only; Int32Array/sentinel paths (used inline by T1.3) are not covered by this helper.
     const createMockData = (values: string[]): VisualizationData => ({
       protein_ids: values.map((_, i) => `p${i}`),
-      projections: [{ name: 'test', data: values.map(() => [0, 0, 0]) }],
+      projections: [{ name: 'test', data: new Float32Array(values.length * 3), dimension: 3 }],
       annotations: {
         test_annotation: {
           kind: 'categorical',
@@ -527,10 +542,8 @@ describe('style-getters', () => {
         projections: [
           {
             name: 'test',
-            data: [
-              [0, 0, 0],
-              [1, 1, 0],
-            ],
+            data: Float32Array.of(0, 0, 0, 1, 1, 0),
+            dimension: 3,
           },
         ],
         annotations: {

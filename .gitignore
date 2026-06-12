@@ -49,6 +49,9 @@ next-env.d.ts
 docs/.vitepress/cache
 docs/.vitepress/dist
 
+# Internal planning/spec notes — kept local, never committed
+docs/superpowers/
+
 # publication data
 /publication
 
