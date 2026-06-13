@@ -59,7 +59,7 @@ jobs:
       - name: Run build
         run: pnpm build
         env:
-          VITE_PREP_API_BASE: https://prep.protspace.app
+          VITE_PREP_API_BASE: https://backend.protspace.app
 
       - name: Build documentation
         run: pnpm docs:build
