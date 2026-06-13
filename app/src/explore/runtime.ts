@@ -13,6 +13,7 @@ import {
 } from './fasta-prep-estimate';
 import { FastaPrepError, isFastaFile, prepareFastaBundle } from './fasta-prep-client';
 import {
+  COLAB_NOTEBOOK_URL,
   MAX_SEQUENCES,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
@@ -111,7 +112,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         seqCount >= MAX_SEQUENCES
           ? {
               text: 'Got a larger dataset?',
-              href: 'https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb',
+              href: COLAB_NOTEBOOK_URL,
               linkText: 'Open in Colab ↗',
             }
           : undefined;

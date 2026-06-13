@@ -316,6 +316,20 @@ async def test_embed_failure_with_connection_refused_is_classified_as_biocentral
     assert "Biocentral embedding service is unavailable" in str(exc_info.value)
 
 
+async def test_embed_failure_with_no_healthy_service_timeout_is_classified_as_biocentral_unavailable(ctx):
+    settings = load_settings()
+    fake = _make_step_router(
+        ctx,
+        fail_step="embed",
+        fail_stderr=[b"TimeoutError: No healthy biocentral service became available in time\n"],
+    )
+    with patch("asyncio.create_subprocess_exec", new=fake):
+        with pytest.raises(PipelineFailure) as exc_info:
+            await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+    assert exc_info.value.code == "BIOCENTRAL_UNAVAILABLE"
+    assert "Biocentral embedding service is unavailable" in str(exc_info.value)
+
+
 async def test_embed_failure_with_unrelated_error_passes_through(ctx):
     settings = load_settings()
     fake = _make_step_router(

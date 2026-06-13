@@ -15,6 +15,7 @@ import {
   getSelectionDisabledNotification,
 } from './notifications';
 import { FastaPrepError } from './fasta-prep-client';
+import { COLAB_NOTEBOOK_URL } from './fasta-prep-limits';
 
 function dataError(message: string, originalError?: Error): DataErrorEventDetail {
   return {
@@ -95,6 +96,20 @@ describe('explore notifications', () => {
     expect(notification.description).toMatch(/1500/);
     expect(notification.description).toMatch(/Reference: job-123/);
     expect(notification.dedupeKey).toBe('data-error:TOO_MANY_SEQUENCES');
+  });
+
+  it('routes a BIOCENTRAL_UNAVAILABLE failure to Colab with copy and an action', () => {
+    const detail = dataError(
+      'biocentral down',
+      new FastaPrepError('biocentral down', { code: 'BIOCENTRAL_UNAVAILABLE' }),
+    );
+
+    const notification = getDataLoadFailureNotification(detail);
+    expect(notification.description).toMatch(/Colab/);
+    expect(notification.action).toEqual({
+      label: 'Open in Colab ↗',
+      href: COLAB_NOTEBOOK_URL,
+    });
   });
 
   it('falls back to the server message for an unknown FastaPrepError code', () => {

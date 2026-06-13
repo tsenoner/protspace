@@ -16,3 +16,7 @@ export const PIPELINE_TIMEOUT_SECONDS = 420;
 
 /** Human-readable rendering of {@link MAX_UPLOAD_BYTES} for UI messages. */
 export const MAX_UPLOAD_LABEL = '8 MB';
+
+/** Google Colab notebook that runs the same preparation pipeline in-browser. */
+export const COLAB_NOTEBOOK_URL =
+  'https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb';

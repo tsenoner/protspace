@@ -6,7 +6,7 @@ import type {
 import type { NotifyOptions } from '../lib/notify';
 import { buildBugContext, buildMailto, clientContext } from '../lib/support';
 import { FastaPrepError } from './fasta-prep-client';
-import { MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
+import { COLAB_NOTEBOOK_URL, MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
 
 /**
  * Build a "Report this" toast action that opens a prefilled support email
@@ -39,7 +39,7 @@ const FASTA_PREP_CODE_MESSAGES: Record<string, string> = {
   TOTAL_RESIDUES_EXCEEDED:
     'The combined sequence length is too large for the prep backend. Reduce the number or length of sequences.',
   BIOCENTRAL_UNAVAILABLE:
-    'The embedding service is temporarily unavailable. Please wait a moment and try again.',
+    'The embedding service is currently unavailable. You can run the same preparation in Google Colab.',
 };
 
 function asFastaPrepError(detail: DataErrorEventDetail): FastaPrepError | null {
@@ -121,7 +121,13 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
     description,
     durationMs: 10_000,
     dedupeKey,
-    action: buildReportAction('Dataset import', prepError ?? detail.message),
+    // A Biocentral outage is a known, routine condition with a clear next step
+    // (Colab), so it takes the single action slot; every other failure offers
+    // the "Report this" bug-report action instead.
+    action:
+      code === 'BIOCENTRAL_UNAVAILABLE'
+        ? { label: 'Open in Colab ↗', href: COLAB_NOTEBOOK_URL }
+        : buildReportAction('Dataset import', prepError ?? detail.message),
   };
 }
 
