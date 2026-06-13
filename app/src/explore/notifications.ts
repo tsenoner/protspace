@@ -4,8 +4,23 @@ import type {
   SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
+import { buildBugContext, buildMailto, clientContext } from '../lib/support';
 import { FastaPrepError } from './fasta-prep-client';
 import { MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
+
+/**
+ * Build a "Report this" toast action that opens a prefilled support email
+ * describing the failing operation and its error.
+ */
+function buildReportAction(operation: string, error: unknown): NotifyOptions['action'] {
+  return {
+    label: 'Report this',
+    href: buildMailto({
+      subject: `[Bug] ${operation} failed`,
+      body: buildBugContext({ operation, error, ...clientContext() }),
+    }),
+  };
+}
 
 /**
  * Friendly, actionable copy for the prep backend's known error codes. When a
@@ -106,6 +121,7 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
     description,
     durationMs: 10_000,
     dedupeKey,
+    action: buildReportAction('Dataset import', prepError ?? detail.message),
   };
 }
 
@@ -123,6 +139,7 @@ export function getExportFailureNotification(error: unknown): NotifyOptions {
     description: getErrorMessage(error),
     durationMs: 10_000,
     dedupeKey: `export-error:${getErrorMessage(error)}`,
+    action: buildReportAction('Export', error),
   };
 }
 

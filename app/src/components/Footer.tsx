@@ -1,5 +1,6 @@
 import { GitHubIcon } from '@/components/icons/brand-icons';
 import { DOCS_URL } from '@/config';
+import { buildMailto } from '@/lib/support';
 import { Link } from 'react-router-dom';
 
 const Footer = () => {
@@ -28,6 +29,12 @@ const Footer = () => {
               className="text-sm text-muted-foreground hover:text-primary transition-colors"
             >
               Documentation
+            </a>
+            <a
+              href={buildMailto({ subject: 'ProtSpace contact' })}
+              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+            >
+              Contact
             </a>
             <Link
               to="/privacy"

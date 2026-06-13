@@ -47,4 +47,24 @@ describe('notify', () => {
 
     expect(mockedToast.error).toHaveBeenCalledTimes(2);
   });
+
+  it('forwards an action to sonner as a label and onClick handler', () => {
+    notify.error({
+      title: 'Export failed.',
+      action: { label: 'Report this', href: 'mailto:hello@protspace.app?subject=x' },
+    });
+
+    const [, payload] = mockedToast.error.mock.calls[0];
+    expect(payload.action).toEqual({
+      label: 'Report this',
+      onClick: expect.any(Function),
+    });
+  });
+
+  it('omits the action key when no action is provided', () => {
+    notify.success({ title: 'Export ready.' });
+
+    const [, payload] = mockedToast.success.mock.calls[0];
+    expect(payload).not.toHaveProperty('action');
+  });
 });

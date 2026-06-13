@@ -1,10 +1,19 @@
 import { toast } from '../components/ui/sonner';
 
+export interface NotifyAction {
+  /** Button label shown on the toast. */
+  label: string;
+  /** Link the action opens — a `mailto:` or an `http(s)` URL. */
+  href: string;
+}
+
 export interface NotifyOptions {
   title: string;
   description?: string;
   durationMs?: number;
   dedupeKey?: string;
+  /** Optional action button (e.g. a "Report this" bug-report link). */
+  action?: NotifyAction;
 }
 
 type NotifyLevel = 'success' | 'info' | 'warning' | 'error';
@@ -44,6 +53,16 @@ function shouldSkipNotification(dedupeKey?: string): boolean {
   return false;
 }
 
+function openHref(href: string): void {
+  // A `mailto:` should hand off to the mail client in place; web links open
+  // in a new tab so the user keeps their ProtSpace session.
+  if (href.startsWith('mailto:')) {
+    window.location.href = href;
+  } else {
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
+}
+
 function emitNotification(level: NotifyLevel, options: NotifyOptions): void {
   if (shouldSkipNotification(options.dedupeKey)) {
     return;
@@ -51,10 +70,17 @@ function emitNotification(level: NotifyLevel, options: NotifyOptions): void {
 
   const description = options.description?.trim();
   const duration = options.durationMs ?? DEFAULT_DURATIONS_MS[level];
+  const action = options.action;
 
   toast[level](options.title, {
     description,
     duration,
+    ...(action && {
+      action: {
+        label: action.label,
+        onClick: () => openHref(action.href),
+      },
+    }),
   });
 }
 
