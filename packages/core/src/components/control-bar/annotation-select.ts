@@ -4,6 +4,8 @@ import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
 import { handleDropdownEscape } from '../../utils/dropdown-helpers';
 import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
+import { annotationLabel, getAnnotationMeta, isPredictedAnnotation } from '@protspace/utils';
+import '../common/info-popover';
 
 /**
  * Custom dropdown component for annotation selection with section headers and search
@@ -165,12 +167,14 @@ class ProtspaceAnnotationSelect extends LitElement {
       return grouped;
     }
 
-    // Filter each category's annotations
+    // Filter each category's annotations by column name or friendly label
     return grouped
       .map((group) => ({
         ...group,
-        annotations: group.annotations.filter((annotation) =>
-          annotation.toLowerCase().includes(queryLower),
+        annotations: group.annotations.filter(
+          (annotation) =>
+            annotation.toLowerCase().includes(queryLower) ||
+            annotationLabel(annotation).toLowerCase().includes(queryLower),
         ),
       }))
       .filter((group) => group.annotations.length > 0); // Remove empty categories
@@ -189,7 +193,9 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   render() {
     const filtered = this.getFilteredGroupedAnnotations();
-    const displayText = this.selectedAnnotation || this.placeholder;
+    const displayText = this.selectedAnnotation
+      ? annotationLabel(this.selectedAnnotation)
+      : this.placeholder;
 
     return html`
       <div class="annotation-select-container">
@@ -241,11 +247,14 @@ class ProtspaceAnnotationSelect extends LitElement {
                                 const isHighlighted = itemIndex === this.highlightIndex;
                                 const isSelected = annotation === this.selectedAnnotation;
                                 const isInTooltip = this.tooltipAnnotations.includes(annotation);
+                                const meta = getAnnotationMeta(annotation);
+                                const hasDocs = meta.description.length > 0 || !!meta.docsUrl;
                                 return html`
                                   <div
                                     class="dropdown-item ${isHighlighted
                                       ? 'highlighted'
                                       : ''} ${isSelected ? 'selected' : ''}"
+                                    data-annotation=${annotation}
                                     @click=${(e: Event) => this.selectAnnotation(annotation, e)}
                                     @mouseenter=${() => {
                                       this.highlightIndex = itemIndex;
@@ -258,7 +267,27 @@ class ProtspaceAnnotationSelect extends LitElement {
                                     >
                                       ${isSelected ? html`<span class="primary-dot"></span>` : ''}
                                     </span>
-                                    <span class="dropdown-item-label">${annotation}</span>
+                                    ${hasDocs
+                                      ? html`<protspace-info-popover
+                                          class="annotation-info"
+                                          placement="side"
+                                          .description=${meta.description}
+                                          docs-url=${meta.docsUrl ?? ''}
+                                          label=${annotationLabel(annotation)}
+                                          @click=${(e: Event) => e.stopPropagation()}
+                                        ></protspace-info-popover>`
+                                      : ''}
+                                    <span class="dropdown-item-label"
+                                      >${annotationLabel(annotation)}</span
+                                    >
+                                    ${isPredictedAnnotation(annotation)
+                                      ? html`<span
+                                          class="predicted-badge"
+                                          title="Predicted — computational, not experimentally curated"
+                                          aria-label="Predicted"
+                                          >⚡</span
+                                        >`
+                                      : ''}
                                     <span class="tooltip-toggle-slot">
                                       ${isSelected
                                         ? ''

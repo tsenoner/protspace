@@ -29,9 +29,7 @@ async function openDropdown(el: AnnotationSelectElement): Promise<void> {
 
 function getRowFor(el: AnnotationSelectElement, annotation: string): HTMLElement {
   const items = Array.from(el.shadowRoot!.querySelectorAll('.dropdown-item')) as HTMLElement[];
-  const row = items.find(
-    (item) => item.querySelector('.dropdown-item-label')?.textContent?.trim() === annotation,
-  );
+  const row = items.find((item) => item.getAttribute('data-annotation') === annotation);
   if (!row) {
     throw new Error(`row for annotation "${annotation}" not found`);
   }

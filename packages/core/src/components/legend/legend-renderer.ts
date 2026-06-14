@@ -74,7 +74,11 @@ export class LegendRenderer {
   }
 
   /**
-   * Render the legend header with title and customize button
+   * Render the legend header with title and customize button.
+   *
+   * When `meta.predicted` is set, a "⚡ Predicted" badge is shown next to the title and an
+   * optional note line is rendered beneath the header. `meta.info` may carry a documentation
+   * popover template (rendered in the header actions area).
    */
   static renderHeader(
     title: string,
@@ -83,10 +87,27 @@ export class LegendRenderer {
       reverseLabel: string;
       onCustomize: () => void;
     },
+    meta?: {
+      predicted?: boolean;
+      predictedNote?: string;
+      info?: TemplateResult;
+    },
   ): TemplateResult {
+    const predicted = meta?.predicted ?? false;
+    const note = predicted ? meta?.predictedNote : undefined;
     return html`
       <div class="legend-header" part="header">
-        <h3 class="legend-title">${title}</h3>
+        <div class="legend-title-row">
+          <h3 class="legend-title">${title}</h3>
+          ${predicted
+            ? html`<span
+                class="legend-predicted-badge"
+                title="Computationally predicted, not experimentally curated"
+                >⚡ Predicted</span
+              >`
+            : nothing}
+          ${meta?.info ?? nothing}
+        </div>
         <div class="legend-header-actions">
           <button
             class="btn-icon customize-button reverse-button"
@@ -126,6 +147,7 @@ export class LegendRenderer {
           </button>
         </div>
       </div>
+      ${note ? html`<p class="legend-predicted-note" part="predicted-note">${note}</p>` : nothing}
     `;
   }
 

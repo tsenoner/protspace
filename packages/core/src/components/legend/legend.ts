@@ -13,6 +13,9 @@ import {
   materializeNumericAnnotation,
   normalizeNumericPaletteId,
   resolveNumericAnnotationDisplaySettings,
+  annotationLabel,
+  isPredictedAnnotation,
+  getAnnotationMeta,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
 } from '@protspace/utils';
@@ -32,6 +35,7 @@ import {
 
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
+import '../common/info-popover';
 
 // Controllers
 import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
@@ -2026,7 +2030,11 @@ export class ProtspaceLegend extends LitElement {
   // ─────────────────────────────────────────────────────────────────
 
   render() {
-    const title = this.annotationData.name || this.annotationName || 'Legend';
+    const activeName = this.annotationName || this.annotationData.name || '';
+    const title = activeName ? annotationLabel(activeName) : 'Legend';
+    const predicted = activeName ? isPredictedAnnotation(activeName) : false;
+    const meta = activeName ? getAnnotationMeta(activeName) : undefined;
+    const hasDocs = !!meta && (meta.description.length > 0 || !!meta.docsUrl);
 
     return html`
       <div
@@ -2041,17 +2049,34 @@ export class ProtspaceLegend extends LitElement {
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
-        ${LegendRenderer.renderHeader(title, {
-          onReverse: () => this._toggleLegendOrderDirection(),
-          reverseLabel: this._isNumericAnnotation()
-            ? this._currentSortMode.startsWith('manual')
-              ? 'Reverse manual order'
-              : this._currentSortMode === 'alpha-desc'
-                ? 'Show low to high'
-                : 'Show high to low'
-            : 'Reverse z-order (keep Other last)',
-          onCustomize: () => this._handleCustomize(),
-        })}
+        ${LegendRenderer.renderHeader(
+          title,
+          {
+            onReverse: () => this._toggleLegendOrderDirection(),
+            reverseLabel: this._isNumericAnnotation()
+              ? this._currentSortMode.startsWith('manual')
+                ? 'Reverse manual order'
+                : this._currentSortMode === 'alpha-desc'
+                  ? 'Show low to high'
+                  : 'Show high to low'
+              : 'Reverse z-order (keep Other last)',
+            onCustomize: () => this._handleCustomize(),
+          },
+          {
+            predicted,
+            predictedNote: predicted
+              ? 'Computationally predicted, not experimentally curated.'
+              : undefined,
+            info:
+              meta && hasDocs
+                ? html`<protspace-info-popover
+                    .description=${meta.description}
+                    docs-url=${meta.docsUrl ?? ''}
+                    label=${title}
+                  ></protspace-info-popover>`
+                : undefined,
+          },
+        )}
         ${LegendRenderer.renderLegendContent(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
