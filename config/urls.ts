@@ -8,6 +8,7 @@
 export const PORTS = {
   app: 8080,
   docs: 5174, // Note: must match package.json "dev:docs" script port
+  prep: 8000,
 } as const;
 
 // Production domain

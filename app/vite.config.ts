@@ -11,11 +11,13 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: '::',
     port: PORTS.app,
-    // Proxy /docs requests to the VitePress dev server in development
-    // This makes dev behavior match production (both use relative paths)
     proxy: {
       '/docs': {
         target: `http://localhost:${PORTS.docs}`,
+        changeOrigin: true,
+      },
+      '/api': {
+        target: `http://localhost:${PORTS.prep}`,
         changeOrigin: true,
       },
     },
