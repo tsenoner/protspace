@@ -1,9 +1,13 @@
-import { Menu, X, ChevronDown } from 'lucide-react';
+import { Menu, X, ChevronDown, MessageSquareText } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GitHubIcon } from '@/components/icons/brand-icons';
+import { Button } from '@/components/ui/button';
+import { buildMailto } from '@/lib/support';
 import { cn } from '@/lib/utils';
 import { getNavigation } from '../../../config/navigation';
+
+const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
 const navItems = getNavigation(mode);
@@ -121,6 +125,14 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
                 </a>
               );
             })}
+
+            {/* Feedback CTA */}
+            <Button asChild size="sm">
+              <a href={FEEDBACK_HREF}>
+                <MessageSquareText />
+                Feedback
+              </a>
+            </Button>
           </nav>
 
           {/* Mobile Menu Button */}
@@ -218,6 +230,14 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
                 </a>
               );
             })}
+
+            {/* Feedback CTA */}
+            <Button asChild size="sm" className="w-full mt-2">
+              <a href={FEEDBACK_HREF} onClick={() => setIsMenuOpen(false)}>
+                <MessageSquareText />
+                Feedback
+              </a>
+            </Button>
           </nav>
         )}
       </div>

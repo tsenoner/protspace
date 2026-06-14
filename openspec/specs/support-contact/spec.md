@@ -49,6 +49,15 @@ The site footer SHALL present a Contact link that opens a `mailto:` to the suppo
 - **WHEN** a page that renders the footer is displayed
 - **THEN** a "Contact" link is shown alongside the existing footer links, and its target is a `mailto:` to `hello@protspace.app`
 
+### Requirement: Feedback action in header
+
+The site header SHALL present a prominent Feedback button that opens a `mailto:` to the support inbox, available on both desktop and mobile navigation.
+
+#### Scenario: Header feedback button present
+
+- **WHEN** a page that renders the header is displayed
+- **THEN** a "Feedback" button is shown in the navigation, and its target is a `mailto:` to `hello@protspace.app` whose subject identifies feedback
+
 ### Requirement: Privacy contact section
 
 The Privacy page SHALL provide a contact path for privacy and data requests.
