@@ -201,7 +201,16 @@ export class ScatterplotSyncController implements ReactiveController {
   }
 
   /**
-   * Get isolation mode state from scatterplot
+   * Get the legend's constrained-view state from the scatterplot.
+   *
+   * Both manual isolation AND an active query filter are constrained views: the
+   * plot shows a kept subset of proteins. The legend treats them identically —
+   * counts reflect the kept set while the visible-category structure is preserved
+   * (see legend `_handleScatterplotDataChange` / `processLegendItems`). So an active
+   * query filter is reported here as `isolationMode: true` with the kept id set
+   * appended as an extra history layer; when isolation is ALSO active the layers
+   * intersect, matching the plot's own combined cull. This does NOT couple the
+   * scatterplot's own isolation state to filtering — it only shapes the legend view.
    */
   getIsolationState(): { isolationMode: boolean; isolationHistory: string[][] } {
     if (!this._scatterplotElement) {
@@ -215,6 +224,11 @@ export class ScatterplotSyncController implements ReactiveController {
     const isolationHistory = supportsIsolationHistory(this._scatterplotElement)
       ? this._scatterplotElement.getIsolationHistory()
       : [];
+
+    if (this._scatterplotElement.filtersActive) {
+      const filteredProteinIds = this._scatterplotElement.filteredProteinIds ?? [];
+      return { isolationMode: true, isolationHistory: [...isolationHistory, filteredProteinIds] };
+    }
 
     return { isolationMode, isolationHistory };
   }

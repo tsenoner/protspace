@@ -87,6 +87,10 @@ function applyPlotState(
   plotElement.selectedProteinIds = [];
   plotElement.selectionMode = false;
   plotElement.hiddenAnnotationValues = [];
+  // A query filter is scoped to the previous dataset — clear it so it can't carry
+  // stale protein ids onto the new dataset.
+  plotElement.filteredProteinIds = [];
+  plotElement.filtersActive = false;
   plotElement.requestUpdate('data', previousData);
 }
 

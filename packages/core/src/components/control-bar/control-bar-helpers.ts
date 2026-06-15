@@ -20,27 +20,6 @@ export const EXPORT_DEFAULTS = {
 };
 
 /**
- * Check if projection is 3D based on metadata
- */
-export function isProjection3D(
-  projectionName: string,
-  projectionsMeta: Array<{ name: string; metadata?: { dimension?: 2 | 3 } }>,
-): boolean {
-  const meta = projectionsMeta.find((p) => p.name === projectionName);
-  return meta?.metadata?.dimension === 3;
-}
-
-/**
- * Get appropriate plane for projection
- */
-export function getProjectionPlane(
-  is3D: boolean,
-  currentPlane: 'xy' | 'xz' | 'yz',
-): 'xy' | 'xz' | 'yz' {
-  return is3D ? currentPlane : 'xy';
-}
-
-/**
  * Validate selection mode based on data size
  */
 export function shouldDisableSelection(dataSize: number): boolean {

@@ -14,6 +14,7 @@ export class DataProcessor {
     isolationMode: boolean = false,
     isolationHistory?: string[][],
     projectionPlane: 'xy' | 'xz' | 'yz' = 'xy',
+    visibleProteinIds?: Set<string> | null,
   ): PlotData {
     if (!data.projections[projectionIndex]) {
       return { ...EMPTY_PLOT_DATA, proteinIds: data.protein_ids };
@@ -26,15 +27,22 @@ export class DataProcessor {
     const proteinIds = data.protein_ids;
     const n = proteinIds.length;
 
-    if (isolationMode && isolationHistory && isolationHistory.length > 0) {
-      // Two-pass isolation: find surviving protein indices (those in EVERY layer set).
-      const layerSets = isolationHistory.map((layer) => new Set(layer));
+    const isolating = isolationMode && !!isolationHistory && isolationHistory.length > 0;
+
+    if (visibleProteinIds || isolating) {
+      // Two-pass cull: find surviving protein indices. A survivor must pass the
+      // query filter (visibleProteinIds, when present) AND appear in EVERY
+      // isolation layer set. Both are id-membership intersections, so each kept
+      // slot records its GLOBAL index into protein_ids (originalIndices) — style
+      // getters and tooltips resolve annotation values by that index, and a
+      // slice-local index would mis-resolve points under a non-prefix filter.
+      const layerSets = isolating ? isolationHistory.map((layer) => new Set(layer)) : null;
       const survivors: number[] = [];
       for (let i = 0; i < n; i++) {
         const id = proteinIds[i];
-        if (layerSets.every((s) => s.has(id))) {
-          survivors.push(i);
-        }
+        if (visibleProteinIds && !visibleProteinIds.has(id)) continue;
+        if (layerSets && !layerSets.every((s) => s.has(id))) continue;
+        survivors.push(i);
       }
 
       const count = survivors.length;
@@ -71,7 +79,7 @@ export class DataProcessor {
       return { length: count, xs, ys, zs, originalIndices, proteinIds };
     }
 
-    // Non-isolated: identity mapping (originalIndices = null).
+    // No query filter, no isolation: identity mapping (originalIndices = null).
     const xs = new Float32Array(n);
     const ys = new Float32Array(n);
     const zs = is3D ? new Float32Array(n) : null;
