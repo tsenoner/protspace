@@ -38,9 +38,20 @@ export function isNumericConditionReady(condition: NumericCondition): boolean {
  * Test a single raw numeric value against the condition.
  * `>` and `<` are exclusive; `between` is inclusive on both ends.
  *
- * TODO: sequence length is the only numeric annotation today and is always
- * present. When other numeric annotations are added, decide how a null value
- * should behave under each operator (and under a NOT-wrapped condition).
+ * Null semantics (deliberate, current rule): a null value is treated as
+ * OUTSIDE the numeric domain, so every positive operator returns false for it.
+ * Asymmetry to be aware of: the NOT operator is applied as an index-based
+ * complement over all proteins (see `complement()` in query-evaluate.ts), NOT
+ * by inverting this predicate. A null-valued protein is excluded by a positive
+ * op but RE-INCLUDED by `NOT <op>`. This has no effect on shipped data today:
+ * the only numeric annotation is sequence length, which is always present (no
+ * nulls). Categorical filters already expose `__NA__` as the supported way to
+ * match/negate missing values; there is no numeric equivalent yet.
+ *
+ * TODO: when a nullable numeric annotation ships, decide the null rule per
+ * operator AND under NOT (e.g. add an explicit "is missing" affordance, or make
+ * NOT invert this predicate so nulls stay excluded), and add evaluate-layer
+ * tests for the NOT + null + numeric combination.
  */
 export function matchesNumericValue(value: number | null, condition: NumericCondition): boolean {
   if (value === null) return false;

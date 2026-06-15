@@ -240,6 +240,32 @@ describe('evaluateQuery', () => {
       const result = evaluateQuery(query, createTestData());
       expect(result).toEqual(new Set([1, 3, 4]));
     });
+
+    it('treats an empty group as a match-all no-op (does not zero out the query)', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'organism', values: ['Human'] },
+        { id: 'g1', logicalOp: 'AND', conditions: [] },
+      ];
+      const result = evaluateQuery(query, createTestData());
+      // The empty group contributes nothing; the result equals the configured
+      // condition's matches (Human → {0,2}), NOT the empty set.
+      expect(result).toEqual(new Set([0, 2]));
+    });
+
+    it('treats a leading empty group as a no-op', () => {
+      const query: FilterQuery = [
+        { id: 'g1', conditions: [] },
+        {
+          id: '2',
+          logicalOp: 'AND',
+          kind: 'categorical',
+          annotation: 'organism',
+          values: ['Human'],
+        },
+      ];
+      const result = evaluateQuery(query, createTestData());
+      expect(result).toEqual(new Set([0, 2]));
+    });
   });
 
   describe('null value handling', () => {

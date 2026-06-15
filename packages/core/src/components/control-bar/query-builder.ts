@@ -2,7 +2,13 @@ import { LitElement, html, css } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
-import type { FilterQuery, FilterCondition, FilterGroup, LogicalOp } from './query-types';
+import type {
+  FilterQuery,
+  FilterQueryItem,
+  FilterCondition,
+  FilterGroup,
+  LogicalOp,
+} from './query-types';
 import { createCondition, createGroup, isFilterGroup } from './query-types';
 import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
 import { queryBuilderStyles } from './query-builder.styles';
@@ -166,16 +172,38 @@ class ProtspaceQueryBuilder extends LitElement {
     }
   }
 
+  /**
+   * Clears a leftover leading 'AND'/'OR' from an item that has become the
+   * new first item (top-level, or first condition of a group). The first-row
+   * operator <select> offers only blank/NOT, so a stale 'AND'/'OR' would render
+   * blank while the data disagrees. 'NOT' stays (it is displayable and
+   * meaningfully complements the first item); 'undefined' is already correct.
+   * Pure: returns a new object only when a change is needed.
+   */
+  private _clearLeadingOp(item: FilterQueryItem): FilterQueryItem {
+    if (item.logicalOp === 'AND' || item.logicalOp === 'OR') {
+      return { ...item, logicalOp: undefined };
+    }
+    return item;
+  }
+
   private _handleConditionRemoved(e: CustomEvent<{ id: string }>, groupId: string | null) {
     e.stopPropagation();
     const removedId = e.detail.id;
     if (groupId === null) {
-      const newQuery = this.query.filter((item) => item.id !== removedId);
+      const filtered = this.query.filter((item) => item.id !== removedId);
+      const newQuery =
+        filtered.length > 0 ? [this._clearLeadingOp(filtered[0]), ...filtered.slice(1)] : filtered;
       this._dispatchQueryChanged(newQuery);
     } else {
       const newQuery = this.query.map((item) => {
         if (isFilterGroup(item) && item.id === groupId) {
-          return { ...item, conditions: item.conditions.filter((c) => c.id !== removedId) };
+          const conditions = item.conditions.filter((c) => c.id !== removedId);
+          const normalized =
+            conditions.length > 0
+              ? [this._clearLeadingOp(conditions[0]), ...conditions.slice(1)]
+              : conditions;
+          return { ...item, conditions: normalized };
         }
         return item;
       });
@@ -204,6 +232,11 @@ class ProtspaceQueryBuilder extends LitElement {
     // Apply button for callers that bypass the click path).
     if (!hasConfiguredCondition(this.query)) return;
     const result = evaluateQuery(this.query, this.data);
+    // A result that matches EVERY protein also filters nothing — e.g. a
+    // configured condition OR'd with an empty (match-all) condition. Treat it as
+    // a no-op too, so it can't light up the filter-active badge with no effect.
+    const numProteins = this.data.protein_ids?.length ?? 0;
+    if (numProteins > 0 && result.size === numProteins) return;
     this.dispatchEvent(
       new CustomEvent('query-apply', {
         detail: { matchedIndices: result },
@@ -323,7 +356,9 @@ class ProtspaceQueryBuilder extends LitElement {
           <button class="btn-secondary" @click=${this._handleClose}>Cancel</button>
           <button
             class="btn-primary"
-            ?disabled=${this._matchedIndices.size === 0 || !hasConfiguredCondition(this.query)}
+            ?disabled=${this._matchedIndices.size === 0 ||
+            this._matchedIndices.size === this._totalCount ||
+            !hasConfiguredCondition(this.query)}
             @click=${this._handleApply}
           >
             Apply Filter

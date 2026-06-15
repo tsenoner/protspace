@@ -22,6 +22,7 @@ interface QueryBuilderInternals extends HTMLElement {
   data: ProtspaceData | undefined;
   query: FilterQuery;
   _handleApply(): void;
+  _handleConditionRemoved(e: CustomEvent<{ id: string }>, groupId: string | null): void;
   updateComplete: Promise<unknown>;
 }
 
@@ -86,5 +87,103 @@ describe('query-builder Apply gating', () => {
     builder._handleApply();
 
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('keeps Apply disabled for a configured condition OR a match-all empty condition (result is all proteins)', async () => {
+    builder.query = [
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createCondition({ logicalOp: 'OR' }),
+    ];
+    await settle();
+
+    // Human{2} OR empty{all} = all 5 → filters nothing → Apply disabled.
+    expect(applyButton().disabled).toBe(true);
+  });
+
+  it('does not dispatch query-apply when the result matches every protein (defense for non-click paths)', async () => {
+    builder.query = [
+      createCondition({ annotation: 'organism', values: ['Human'] }),
+      createCondition({ logicalOp: 'OR' }),
+    ];
+    await settle();
+
+    const onApply = vi.fn();
+    builder.addEventListener('query-apply', onApply);
+    builder._handleApply();
+
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('dispatches query-apply for a genuine partial filter (match-all gate is not over-broad)', async () => {
+    builder.query = [createCondition({ annotation: 'organism', values: ['Human'] })];
+    await settle();
+
+    // Human → 2 of 5 → a real filter.
+    expect(applyButton().disabled).toBe(false);
+
+    const onApply = vi.fn();
+    builder.addEventListener('query-apply', onApply);
+    builder._handleApply();
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('query-builder removal normalizes the new first item operator', () => {
+  let builder: QueryBuilderInternals;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    builder = document.createElement('protspace-query-builder') as QueryBuilderInternals;
+    builder.annotations = ['organism'];
+    builder.data = makeData();
+    document.body.appendChild(builder);
+  });
+
+  function removeAndCaptureQuery(removeId: string): FilterQuery {
+    let captured: FilterQuery | undefined;
+    builder.addEventListener('query-changed', (e: Event) => {
+      captured = (e as CustomEvent<{ query: FilterQuery }>).detail.query;
+    });
+    builder._handleConditionRemoved(
+      new CustomEvent('condition-removed', { detail: { id: removeId } }),
+      null,
+    );
+    if (!captured) throw new Error('query-changed not dispatched');
+    return captured;
+  }
+
+  it("clears a leftover 'OR' on the new first item after removing the original first", () => {
+    const a = createCondition();
+    const b = createCondition({ logicalOp: 'OR' });
+    builder.query = [a, b];
+
+    const result = removeAndCaptureQuery(a.id);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(b.id);
+    expect(result[0].logicalOp).toBeUndefined();
+  });
+
+  it("clears a leftover 'AND' on the new first item after removing the original first", () => {
+    const a = createCondition();
+    const b = createCondition({ logicalOp: 'AND' });
+    builder.query = [a, b];
+
+    const result = removeAndCaptureQuery(a.id);
+
+    expect(result[0].id).toBe(b.id);
+    expect(result[0].logicalOp).toBeUndefined();
+  });
+
+  it("preserves a leftover 'NOT' on the new first item (displayable and meaningful)", () => {
+    const a = createCondition();
+    const b = createCondition({ logicalOp: 'NOT' });
+    builder.query = [a, b];
+
+    const result = removeAndCaptureQuery(a.id);
+
+    expect(result[0].id).toBe(b.id);
+    expect(result[0].logicalOp).toBe('NOT');
   });
 });

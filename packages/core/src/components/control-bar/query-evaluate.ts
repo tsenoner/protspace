@@ -208,6 +208,13 @@ function evaluateItems(
   data: ProtspaceData,
   numProteins: number,
 ): Set<number> {
+  // An empty item list (e.g. a group whose last condition was removed) is a
+  // match-all no-op, symmetric with an empty top-level query (evaluateQuery)
+  // and an empty/unconfigured condition (evaluateCondition). Without this an
+  // empty group would return ∅ and AND-kill the whole query (count 0, Apply
+  // disabled). Apply is still gated separately by hasConfiguredCondition.
+  if (items.length === 0) return allIndices(numProteins);
+
   let accumulated: Set<number> | null = null;
 
   for (const item of items) {
