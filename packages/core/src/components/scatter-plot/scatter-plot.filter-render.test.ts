@@ -15,9 +15,10 @@
  * connectedCallback / WebGL init never runs — same approach as
  * scatter-plot.isolation.test.ts) and drive _processData directly.
  */
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
-import { plotDataId, materializePlotDataPoint } from '@protspace/utils';
+import { plotDataId, materializePlotDataPoint, clonePlotData } from '@protspace/utils';
+import { buildAnnotationValueList } from '../legend/annotation-values';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -47,13 +48,26 @@ function plotPoints(pd: PlotData): PlotDataPoint[] {
 type ScatterplotInternals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
+  selectedProjectionIndex: number;
   filteredProteinIds: string[];
   filtersActive: boolean;
   hiddenAnnotationValues: string[];
   selectedProteinIds: string[];
+  highlightedProteinIds: string[];
   _plotData: PlotData;
+  _mergedConfig: {
+    baseOpacity: number;
+    selectedOpacity: number;
+    fadedOpacity: number;
+    [k: string]: unknown;
+  };
   _processData(): void;
   _getVisiblePointCount(): number;
+  _scheduleNumericAnnotationRefresh(): void;
+  _getCurrentDisplayData(options?: {
+    includeFilteredProteinIds?: boolean;
+  }): VisualizationData | null;
+  getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null;
   _buildStyleGetters(): {
     getColors(point: PlotDataPoint): string[];
     getOpacity(point: PlotDataPoint): number;
@@ -296,12 +310,14 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
 // ---------------------------------------------------------------------------
 // Bottom-left point-count indicator — _getVisiblePointCount
 //
-// The indicator must always show the number of points actually visible in the
+// The indicator shows the number of INTERACTIVE points (opacityOf > 0) in the
 // chart, across ALL visibility channels combined:
 //   • query filter / isolation physically cull _plotData
 //   • legend hide leaves points in _plotData at opacity 0 (alpha layer)
-// So the count is |non-hidden points of _plotData| per the visibility model.
-// Selection only fades points (they stay visible) — it must NOT change the count.
+//   • selection fades non-selected points; with the DEFAULT fadedOpacity
+//     (0.15 > 0) they stay interactive, but a configured fadedOpacity of 0
+//     makes them non-interactive and they drop from the count.
+// So the count is |interactive points of _plotData| per the visibility model.
 // ---------------------------------------------------------------------------
 describe('scatter-plot visible point count', () => {
   it('counts the full dataset when nothing is filtered or hidden', () => {
@@ -352,6 +368,30 @@ describe('scatter-plot visible point count', () => {
     sp.hiddenAnnotationValues = [];
     expect(sp._getVisiblePointCount()).toBe(6);
   });
+
+  it('excludes selection-faded points when fadedOpacity is 0', () => {
+    const sp = makeScatter();
+    // Bypass the Lit lifecycle: set the merged config directly so non-selected
+    // points fade to opacity 0 (non-interactive) instead of 0.15.
+    sp._mergedConfig = { ...sp._mergedConfig, fadedOpacity: 0 };
+    sp._processData();
+    expect(sp._getVisiblePointCount()).toBe(6); // nothing selected → all interactive
+    sp.selectedProteinIds = ['p0', 'p1']; // p2–p5 fade to opacity 0 → non-interactive
+    expect(sp._getVisiblePointCount()).toBe(2);
+  });
+
+  it('keeps the count stable across a plot-data clone (projection switch shares originalIndices)', () => {
+    const sp = makeScatter();
+    sp._processData();
+    expect(sp._getVisiblePointCount()).toBe(6);
+
+    const before = sp._plotData;
+    sp._plotData = clonePlotData(before); // new container, same originalIndices+length
+    expect(sp._plotData).not.toBe(before);
+    expect(sp._plotData.originalIndices).toBe(before.originalIndices);
+
+    expect(sp._getVisiblePointCount()).toBe(6); // cache reused, same answer
+  });
 });
 
 describe('scatter-plot dataset-swap clears stale query filter', () => {
@@ -380,5 +420,167 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
 
     // All dataset-2 proteins must appear — stale filter must not blank the plot.
     expect(plotIds(sp._plotData).sort()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legend dispatch under an active query filter — the lifecycle data-change
+// payload carries the CURRENT (filtered/isolated) view, so the legend reflects
+// what is shown, exactly as isolation does (counts update to the kept set). The
+// legend preserves its visible-category structure separately, via the constrained
+// state reported by the sync controller's getIsolationState() (covered in
+// scatterplot-sync-controller.test.ts) — not by dispatching the full set.
+// ---------------------------------------------------------------------------
+describe('scatter-plot data-change dispatch reflects the filtered view', () => {
+  it('dispatches the query-filtered subset (length 3), not the full set', () => {
+    const sp = makeScatter();
+    sp.selectedProjectionIndex = 0;
+
+    let captured: VisualizationData | null = null;
+    sp.addEventListener('data-change', (e) => {
+      captured = (e as CustomEvent).detail.data as VisualizationData;
+    });
+
+    // Active query filter keeps ONLY family A (p0–p2); family B is filtered out.
+    sp.filteredProteinIds = ['p0', 'p1', 'p2'];
+    sp.filtersActive = true;
+    sp.updated(
+      new Map<string, unknown>([
+        ['filteredProteinIds', []],
+        ['filtersActive', false],
+      ]),
+    );
+
+    expect(captured).not.toBeNull();
+    const payload = captured as unknown as VisualizationData;
+    // Sliced to the 3 filtered ids — the legend reflects what is shown.
+    expect(payload.protein_ids).toEqual(['p0', 'p1', 'p2']);
+
+    // The dispatched value list reflects the filtered view: only 'A' remains.
+    const values = buildAnnotationValueList(
+      payload.annotation_data.fam,
+      payload.annotations.fam.values,
+      payload.protein_ids.length,
+    );
+    expect(values).toContain('A');
+    expect(values).not.toContain('B');
+  });
+
+  it('still slices the dispatched payload to the isolated survivors (isolation unaffected)', () => {
+    const sp = makeScatter();
+    sp.selectedProjectionIndex = 0;
+
+    // Isolate p1 and p3 (original indices 1 and 3). Mirror the survivor view
+    // shape used in scatter-plot.isolation.test.ts.
+    (sp as unknown as { _isolationMode: boolean })._isolationMode = true;
+    (sp as unknown as { _isolationHistory: string[][] })._isolationHistory = [['p1', 'p3']];
+    sp._plotData = {
+      length: 2,
+      xs: new Float32Array([1, 3]),
+      ys: new Float32Array([1, 3]),
+      zs: null,
+      originalIndices: new Int32Array([1, 3]),
+      proteinIds: sp.data.protein_ids,
+    } as unknown as PlotData;
+
+    let captured: VisualizationData | null = null;
+    sp.addEventListener('data-change', (e) => {
+      captured = (e as CustomEvent).detail.data as VisualizationData;
+    });
+
+    // Drive the dispatch via a filter-channel change (not a data swap, which
+    // would clear isolation).
+    sp.updated(
+      new Map<string, unknown>([
+        ['filteredProteinIds', []],
+        ['filtersActive', false],
+      ]),
+    );
+
+    expect(captured).not.toBeNull();
+    const payload = captured as unknown as VisualizationData;
+    // The payload is sliced to the isolated survivors, not the full set.
+    expect(payload.protein_ids).toEqual(['p1', 'p3']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Numeric recompute uses reference-stable display data under an active filter.
+//
+// _scheduleNumericAnnotationRefresh's rAF resolves `displayData` via
+// _getCurrentDisplayData({ includeFilteredProteinIds: false }) — returning the
+// cached materialized object by reference rather than building a full deep-slice
+// of the filtered subset (which the only consumer,
+// _refreshSelectedAnnotationValues, never reads). The data-change payload (built
+// from getCurrentData() with no options) still carries the filtered subset.
+// ---------------------------------------------------------------------------
+describe('scatter-plot numeric recompute display data', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves displayData with includeFilteredProteinIds:false (no filtered deep-slice)', () => {
+    const sp = makeScatter();
+    sp.filteredProteinIds = ['p3', 'p4', 'p5'];
+    sp.filtersActive = true;
+    sp._processData(); // prime _plotData so the recompute takes the refresh branch
+
+    // Run the recompute's rAF synchronously.
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+
+    const spy = vi.spyOn(sp, '_getCurrentDisplayData');
+    sp._scheduleNumericAnnotationRefresh();
+
+    // The FIRST _getCurrentDisplayData call in the rAF body is the `displayData`
+    // resolution — it must use { includeFilteredProteinIds: false } (under the
+    // old code it was called with no args, which deep-slices the filtered subset).
+    // (Later calls from getCurrentData() for the data-change payload deliberately
+    // pass no options; those are the event-payload path, not the displayData path.)
+    expect(spy.mock.calls.length).toBeGreaterThan(0);
+    expect(spy.mock.calls[0][0]).toEqual({ includeFilteredProteinIds: false });
+  });
+
+  it('annotation values still resolve correctly after recompute under a non-prefix filter', () => {
+    const sp = makeScatter();
+    sp.filteredProteinIds = ['p3', 'p4', 'p5']; // all family B → GREEN
+    sp.filtersActive = true;
+    sp._processData();
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    sp._scheduleNumericAnnotationRefresh();
+
+    const getters = sp._buildStyleGetters();
+    for (const point of plotPoints(sp._plotData)) {
+      expect(getters.getColors(point)).toEqual([GREEN]);
+      expect(getters.getOpacity(point)).toBeGreaterThan(0);
+    }
+  });
+
+  it('data-change payload still carries the filtered subset', () => {
+    const sp = makeScatter();
+    sp.filteredProteinIds = ['p3', 'p4', 'p5'];
+    sp.filtersActive = true;
+    sp._processData();
+
+    let captured: VisualizationData | null = null;
+    sp.addEventListener('data-change', (e) => {
+      captured = (e as CustomEvent).detail.data as VisualizationData;
+    });
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    sp._scheduleNumericAnnotationRefresh();
+
+    expect(captured).not.toBeNull();
+    const payload = captured as unknown as VisualizationData;
+    expect(payload.protein_ids).toEqual(['p3', 'p4', 'p5']);
   });
 });
