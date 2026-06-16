@@ -219,14 +219,51 @@ export const parseAnnotationValue = (
   return { label, scores, evidence: null };
 };
 
-function splitCategoricalAnnotationValues(rawValue: unknown): string[] {
+/**
+ * Split a categorical annotation cell on the top-level hit separator ';'.
+ *
+ * Multi-hit values are encoded as `accession (name)|score;accession2 (name2)|score`,
+ * but a name can legitimately contain ';' — e.g. CATH-Gene3D names such as
+ * "Ribosomal Protein L15; Chain: K; domain 2". A naive `split(';')` shatters one hit
+ * into bogus categories ("Chain: K", "domain 2)"). Splitting only on ';' at parenthesis
+ * depth 0 keeps each `(name)` intact while still separating distinct hits.
+ *
+ * If a name contains an unbalanced '(' (depth never returns to 0), fall back to a plain
+ * split so two distinct hits are not merged — at the cost of re-splitting that one rare
+ * value. Sanitizing names at the source is tracked in tsenoner/protspace#56.
+ */
+function splitOnTopLevelSemicolons(value: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let depth = 0;
+
+  for (const ch of value) {
+    if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      if (depth > 0) depth -= 1; // clamp at 0 so a stray ')' can't go negative
+    } else if (ch === ';' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+
+  if (depth !== 0) {
+    return value.split(';');
+  }
+  return parts;
+}
+
+export function splitCategoricalAnnotationValues(rawValue: unknown): string[] {
   // First-level: normalize the whole cell. Returns null if the entire cell is missing.
   const cellNormalized = normalizeMissingValue(rawValue);
   if (cellNormalized == null) return [];
 
-  // Split, trim, drop empty tokens, and drop tokens that normalize to missing.
-  return String(cellNormalized)
-    .split(';')
+  // Split on top-level ';' (paren-aware), trim, drop empty/missing tokens.
+  return splitOnTopLevelSemicolons(String(cellNormalized))
     .map((part) => part.trim())
     .filter((part) => part !== '' && normalizeMissingValue(part) !== null);
 }
