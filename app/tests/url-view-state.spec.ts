@@ -83,18 +83,16 @@ async function waitForView(
       .toBe(expected.projection);
   }
 
-  const annotationTriggerText = page.locator(
-    'protspace-control-bar protspace-annotation-select .dropdown-trigger-text',
-  );
-  const projectionTriggerText = page.locator(
-    'protspace-control-bar #projection-trigger .dropdown-trigger-text',
-  );
-
-  if (expected.annotation) {
-    await expect(annotationTriggerText).toHaveText(expected.annotation, { timeout });
-  }
-
+  // Note: we don't assert the annotation trigger's rendered text. It shows the
+  // friendly display label (e.g. "EC number"), not the raw key the URL and the
+  // selectedAnnotation property use; the property poll above already verifies the
+  // selected annotation by key, and deriving the label here would couple the test
+  // to @protspace/utils' annotation-metadata map (which doesn't import cleanly
+  // under Playwright's ESM loader).
   if (expected.projection) {
+    const projectionTriggerText = page.locator(
+      'protspace-control-bar #projection-trigger .dropdown-trigger-text',
+    );
     await expect(projectionTriggerText).toHaveText(expected.projection, { timeout });
   }
 }
@@ -107,7 +105,10 @@ async function selectAnnotation(page: Page, annotation: string): Promise<void> {
     .locator('protspace-annotation-select');
 
   await annotationSelect.locator('.dropdown-trigger').click();
-  await annotationSelect.getByText(annotation, { exact: true }).click();
+  // Items are labelled with the friendly display name (e.g. "EC number"), but
+  // carry the raw annotation key on data-annotation — click by key so the helper
+  // stays label-agnostic.
+  await annotationSelect.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
 }
 
 async function selectProjection(page: Page, projection: string): Promise<void> {
