@@ -209,9 +209,12 @@ async function waitForLegendAnnotation(page: Page, annotation: string): Promise<
           shadowRoot?: ShadowRoot;
         })
       | null;
+    // The legend title now renders the friendly display label (e.g. "Sequence
+    // length"), not the raw key, so gate on the selectedAnnotation property
+    // (the key) and only require the title to have rendered.
     const title = legend?.shadowRoot?.querySelector('.legend-title')?.textContent?.trim() ?? '';
 
-    return legend?.selectedAnnotation === nextAnnotation && title === nextAnnotation;
+    return legend?.selectedAnnotation === nextAnnotation && title.length > 0;
   }, annotation);
 }
 
@@ -349,13 +352,13 @@ async function openLegendSettings(page: Page): Promise<void> {
 async function selectAnnotation(page: Page, annotation: string): Promise<void> {
   await dismissTourIfPresent(page);
   await page.locator('protspace-control-bar protspace-annotation-select .dropdown-trigger').click();
-  // Anchored regex with surrounding-whitespace tolerance. A bare `hasText: 'ec'`
-  // is a substring match and would land on e.g. "species"; a tight `^ec$` won't
-  // match because Lit templates introduce whitespace around the interpolation.
-  const escaped = annotation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Items render the friendly display label (e.g. "Sequence length") but carry
+  // the raw annotation key on data-annotation; click by key so this stays
+  // label-agnostic.
   await page
-    .locator('protspace-control-bar protspace-annotation-select .dropdown-item')
-    .filter({ hasText: new RegExp(`^\\s*${escaped}\\s*$`) })
+    .locator(
+      `protspace-control-bar protspace-annotation-select .dropdown-item[data-annotation="${annotation}"]`,
+    )
     .first()
     .click();
 
