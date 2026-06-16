@@ -1,12 +1,20 @@
 import type { ProtspaceData } from './types';
-import type { FilterQuery, FilterQueryItem, FilterCondition } from './query-types';
+import type {
+  FilterQuery,
+  FilterQueryItem,
+  FilterCondition,
+  NumericCondition,
+} from './query-types';
 import { isFilterGroup } from './query-types';
+import { isNumericConditionReady, matchesNumericValue } from './query-numeric-helpers';
 import { toInternalValue } from '../legend/config';
-import { getFirstAnnotationIndex } from '@protspace/utils';
+import { getFirstAnnotationIndex, getProteinAnnotationIndices } from '@protspace/utils';
 
 /**
- * Resolve the string annotation value for a protein at the given index.
+ * Resolve the FIRST string annotation value for a protein at the given index.
  * Handles both Int32Array and number[][] formats in annotation_data.
+ * Multi-label-aware callers (matching, counting) must use
+ * resolveAnnotationInternalValues instead — this sees only the primary label.
  */
 export function resolveAnnotationValue(
   proteinIndex: number,
@@ -34,16 +42,56 @@ function normalizeValue(value: string | null): string {
 }
 
 /**
+ * Resolve ALL normalized annotation values for a protein (multi-label aware),
+ * deduplicated. A protein with no labels — or a missing annotation column —
+ * resolves to ['__NA__'], mirroring how the single-value path normalizes a
+ * missing value, so N/A can still be selected and counted as a filter value.
+ *
+ * Matching semantics match the legend/visibility model: a multi-label protein
+ * carries every one of its values, so it satisfies "annotation is X" when ANY
+ * of its labels is X.
+ */
+export function resolveAnnotationInternalValues(
+  proteinIndex: number,
+  annotation: string,
+  data: ProtspaceData,
+): string[] {
+  const idxData = data.annotation_data?.[annotation];
+  const valuesArr = data.annotations?.[annotation]?.values;
+
+  if (!idxData || !valuesArr) return [normalizeValue(null)];
+
+  const indices = getProteinAnnotationIndices(idxData, proteinIndex);
+  if (indices.length === 0) return [normalizeValue(null)];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const idx of indices) {
+    const raw = idx >= 0 && idx < valuesArr.length ? (valuesArr[idx] ?? null) : null;
+    const normalized = normalizeValue(raw);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  }
+  return out;
+}
+
+/**
  * Evaluate a single condition against all proteins, returning a Set of matching indices.
- * Always uses "is" semantics: a protein matches if its normalized annotation value
- * is among the condition's selected values. Negation is handled at the combining
- * level via the NOT logical operator.
+ * Categorical conditions use "is" semantics (value is among the selected set);
+ * numeric conditions apply a comparison operator. Negation is handled at the
+ * combining level via the NOT logical operator.
  */
 function evaluateCondition(
   condition: FilterCondition,
   data: ProtspaceData,
   numProteins: number,
 ): Set<number> {
+  if (condition.kind === 'numeric') {
+    return evaluateNumericCondition(condition, data, numProteins);
+  }
+
   if (condition.values.length === 0) {
     return allIndices(numProteins);
   }
@@ -56,15 +104,55 @@ function evaluateCondition(
   const matches = new Set<number>();
 
   for (let i = 0; i < numProteins; i++) {
-    const resolved = resolveAnnotationValue(i, condition.annotation, data);
-    const normalized = normalizeValue(resolved);
+    const resolved = resolveAnnotationInternalValues(i, condition.annotation, data);
 
-    if (valuesSet.has(normalized)) {
+    if (resolved.some((value) => valuesSet.has(value))) {
       matches.add(i);
     }
   }
 
   return matches;
+}
+
+/**
+ * Evaluate a numeric condition: a protein matches when its raw numeric value
+ * satisfies the operator. An unconfigured condition (missing a required bound) is
+ * a no-op and matches everything — mirroring an empty categorical condition. This
+ * keeps the two kinds symmetric under NOT: `NOT (unconfigured)` then matches
+ * nothing (and leaves Apply disabled) instead of isolating every protein.
+ */
+function evaluateNumericCondition(
+  condition: NumericCondition,
+  data: ProtspaceData,
+  numProteins: number,
+): Set<number> {
+  if (!isNumericConditionReady(condition)) return allIndices(numProteins);
+
+  const values = data.numeric_annotation_data?.[condition.annotation];
+  if (!values) return new Set();
+
+  const matches = new Set<number>();
+  for (let i = 0; i < numProteins; i++) {
+    if (matchesNumericValue(values[i] ?? null, condition)) {
+      matches.add(i);
+    }
+  }
+  return matches;
+}
+
+/**
+ * True when the query constrains the result at all — i.e. at least one
+ * condition (at any group depth) is configured. Unconfigured conditions are
+ * match-all no-ops (see evaluateCondition), so a query without a single
+ * configured condition matches every protein; Apply gates on this so such a
+ * query can't be applied as if it were a real filter.
+ */
+export function hasConfiguredCondition(items: FilterQueryItem[]): boolean {
+  return items.some((item) => {
+    if (isFilterGroup(item)) return hasConfiguredCondition(item.conditions);
+    if (item.kind === 'numeric') return isNumericConditionReady(item);
+    return item.values.length > 0;
+  });
 }
 
 /**
@@ -120,6 +208,13 @@ function evaluateItems(
   data: ProtspaceData,
   numProteins: number,
 ): Set<number> {
+  // An empty item list (e.g. a group whose last condition was removed) is a
+  // match-all no-op, symmetric with an empty top-level query (evaluateQuery)
+  // and an empty/unconfigured condition (evaluateCondition). Without this an
+  // empty group would return ∅ and AND-kill the whole query (count 0, Apply
+  // disabled). Apply is still gated separately by hasConfiguredCondition.
+  if (items.length === 0) return allIndices(numProteins);
+
   let accumulated: Set<number> | null = null;
 
   for (const item of items) {

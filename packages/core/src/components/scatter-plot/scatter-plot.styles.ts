@@ -130,15 +130,23 @@ const scatterplotStylesCore = css`
     gap: 0.25rem;
   }
 
-  .isolation-indicator {
+  /* Small status chips overlaid on the plot (visible point count bottom-left,
+     numeric recompute notice bottom-right). Same card look as the top-left
+     hover buttons (projection-metadata / protspace-tips triggers). */
+  .plot-indicator {
     position: absolute;
     bottom: 0.5rem;
     left: 0.5rem;
     z-index: var(--z-overlay);
-    padding: 0.375rem 0.625rem;
-    background: rgba(15, 23, 42, 0.75);
-    backdrop-filter: blur(4px);
-    color: rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    height: 2rem;
+    padding: 0 0.625rem;
+    box-sizing: border-box;
+    background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
+    border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
+    box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
+    color: #475569;
     font-size: 0.6875rem;
     font-weight: var(--font-medium);
     letter-spacing: 0.01em;

@@ -433,6 +433,45 @@ describe('ScatterplotSyncController', () => {
 
       expect(state.isolationMode).toBe(false);
     });
+
+    it('reports an active query filter as a constrained view (isolationMode true)', () => {
+      mockScatterplot.isIsolationMode = () => false;
+      mockScatterplot.getIsolationHistory = () => [];
+      mockScatterplot.filtersActive = true;
+      mockScatterplot.filteredProteinIds = ['p0', 'p1', 'p2'];
+
+      document.body.appendChild(mockScatterplot as unknown as Node);
+      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
+      controller.hostConnected();
+
+      // A query filter is shown to the legend exactly like isolation: the kept id
+      // set becomes the (only) history layer so counts reflect the filtered subset.
+      expect(controller.getIsolationState()).toEqual({
+        isolationMode: true,
+        isolationHistory: [['p0', 'p1', 'p2']],
+      });
+    });
+
+    it('intersects the filter layer with real isolation history when both are active', () => {
+      mockScatterplot.isIsolationMode = () => true;
+      mockScatterplot.getIsolationHistory = () => [['p0', 'p1', 'p2', 'p3']];
+      mockScatterplot.filtersActive = true;
+      mockScatterplot.filteredProteinIds = ['p2', 'p3', 'p9'];
+
+      document.body.appendChild(mockScatterplot as unknown as Node);
+      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
+      controller.hostConnected();
+
+      // Both layers are kept so the legend's index intersection matches the plot's
+      // combined isolation + filter cull.
+      expect(controller.getIsolationState()).toEqual({
+        isolationMode: true,
+        isolationHistory: [
+          ['p0', 'p1', 'p2', 'p3'],
+          ['p2', 'p3', 'p9'],
+        ],
+      });
+    });
   });
 
   describe('event handling', () => {

@@ -68,11 +68,41 @@ export const layoutStyles = css`
     gap: 0.25rem;
   }
 
+  .legend-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
   .legend-title {
     font-weight: 500;
     font-size: 1rem;
     color: var(--legend-text-color);
     margin: 0;
+  }
+
+  .legend-predicted-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.15rem 0.4rem;
+    border-radius: 999px;
+    color: var(--legend-text-color);
+    background: color-mix(in srgb, var(--legend-text-color) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--legend-text-color) 25%, transparent);
+    white-space: nowrap;
+  }
+
+  .legend-predicted-note {
+    margin: 0 0 0.35rem;
+    padding: 0 6px 0 1.2rem;
+    font-size: 0.72rem;
+    color: var(--legend-text-secondary);
+    box-sizing: border-box;
   }
 
   .legend-items {

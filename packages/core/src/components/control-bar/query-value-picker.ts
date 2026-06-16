@@ -4,7 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import type { LogicalOp } from './query-types';
 import { toInternalValue } from '../legend/config';
-import { resolveAnnotationValue } from './query-evaluate';
+import { resolveAnnotationInternalValues } from './query-evaluate';
 import { NA_VALUE, NA_DISPLAY } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
 
@@ -69,24 +69,25 @@ class ProtspaceQueryValuePicker extends LitElement {
   /**
    * Build a map from internal value → count of proteins that have this value.
    * When `indices` is provided, only count within that set; otherwise count all proteins.
+   * Multi-label proteins count once toward EACH distinct value they carry, so
+   * counts agree with the any-label matching semantics in query-evaluate.
    */
   private _buildCountMap(indices?: Set<number>): Map<string, number> {
     const counts = new Map<string, number>();
     if (!this.data || !this.annotation) return counts;
 
-    if (indices) {
-      for (const idx of indices) {
-        const resolved = resolveAnnotationValue(idx, this.annotation, this.data);
-        const internal = toInternalValue(resolved);
+    const countProtein = (idx: number) => {
+      const resolved = resolveAnnotationInternalValues(idx, this.annotation, this.data!);
+      for (const internal of resolved) {
         counts.set(internal, (counts.get(internal) ?? 0) + 1);
       }
+    };
+
+    if (indices) {
+      for (const idx of indices) countProtein(idx);
     } else {
       const numProteins = this.data.protein_ids?.length ?? 0;
-      for (let i = 0; i < numProteins; i++) {
-        const resolved = resolveAnnotationValue(i, this.annotation, this.data);
-        const internal = toInternalValue(resolved);
-        counts.set(internal, (counts.get(internal) ?? 0) + 1);
-      }
+      for (let i = 0; i < numProteins; i++) countProtein(i);
     }
 
     return counts;

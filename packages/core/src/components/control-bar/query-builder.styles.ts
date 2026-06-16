@@ -485,6 +485,62 @@ export const queryBuilderStyles = css`
   }
 
   /* ==========================================
+     NUMERIC INPUT
+     ========================================== */
+
+  .numeric-input {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+  }
+
+  .numeric-operator-select {
+    padding: var(--input-padding-y) 18px var(--input-padding-y) var(--spacing-xs);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--surface);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235b6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    background-size: 12px;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .numeric-field {
+    width: 90px;
+    padding: var(--input-padding-y) var(--input-padding-x);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-size: var(--text-base);
+    color: var(--text-primary);
+    box-sizing: border-box;
+  }
+
+  .numeric-field:focus-visible {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow:
+      0 0 0 1px var(--primary),
+      0 0 0 3px var(--focus-ring-bg);
+  }
+
+  .numeric-dash {
+    color: var(--text-secondary);
+  }
+
+  .numeric-match-count {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  /* ==========================================
      RESPONSIVE
      ========================================== */
 

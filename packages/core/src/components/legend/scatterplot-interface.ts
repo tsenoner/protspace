@@ -26,6 +26,12 @@ export interface IScatterplotElement extends Element {
   // Isolation mode (optional - may not exist on all implementations)
   isIsolationMode?(): boolean;
   getIsolationHistory?(): string[][];
+
+  // Query filter (optional). A query filter is a constrained view, like isolation:
+  // the legend treats it the same way (see getIsolationState) so counts reflect the
+  // kept set while the visible-category structure is preserved.
+  filtersActive?: boolean;
+  filteredProteinIds?: string[];
 }
 
 /**

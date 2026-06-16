@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   EXPORT_DEFAULTS,
-  isProjection3D,
-  getProjectionPlane,
   shouldDisableSelection,
   getSelectionDisabledMessage,
   toggleProteinSelection,
@@ -89,48 +87,6 @@ describe('control-bar-helpers', () => {
           EXPORT_DEFAULTS.MAX_LEGEND_FONT_SIZE_PX / EXPORT_DEFAULTS.BASE_FONT_SIZE;
         expect(scaleFactor).toBe(5.0); // 120 / 24 = 5.0
       });
-    });
-  });
-
-  describe('isProjection3D', () => {
-    const projectionsMeta = [
-      { name: 'projection2D', metadata: { dimension: 2 as const } },
-      { name: 'projection3D', metadata: { dimension: 3 as const } },
-      { name: 'projectionNoMeta' },
-    ];
-
-    it('returns true for 3D projection', () => {
-      expect(isProjection3D('projection3D', projectionsMeta)).toBe(true);
-    });
-
-    it('returns false for 2D projection', () => {
-      expect(isProjection3D('projection2D', projectionsMeta)).toBe(false);
-    });
-
-    it('returns false for projection without metadata', () => {
-      expect(isProjection3D('projectionNoMeta', projectionsMeta)).toBe(false);
-    });
-
-    it('returns false for non-existent projection', () => {
-      expect(isProjection3D('nonExistent', projectionsMeta)).toBe(false);
-    });
-
-    it('returns false for empty projections array', () => {
-      expect(isProjection3D('projection3D', [])).toBe(false);
-    });
-  });
-
-  describe('getProjectionPlane', () => {
-    it('returns current plane for 3D projection', () => {
-      expect(getProjectionPlane(true, 'xz')).toBe('xz');
-      expect(getProjectionPlane(true, 'yz')).toBe('yz');
-      expect(getProjectionPlane(true, 'xy')).toBe('xy');
-    });
-
-    it('returns xy for 2D projection regardless of current plane', () => {
-      expect(getProjectionPlane(false, 'xz')).toBe('xy');
-      expect(getProjectionPlane(false, 'yz')).toBe('xy');
-      expect(getProjectionPlane(false, 'xy')).toBe('xy');
     });
   });
 
