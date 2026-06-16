@@ -80,7 +80,7 @@ export function showRecoveryBanner(params: ShowRecoveryBannerParams): void {
   closeButton.className =
     'shrink-0 inline-flex items-center justify-center rounded-md w-7 h-7 ' +
     'text-muted-foreground hover:text-foreground hover:bg-foreground/10 ' +
-    'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring';
   closeButton.setAttribute('aria-label', 'Dismiss');
   closeButton.innerHTML = X_SVG;
   closeButton.addEventListener('click', () => {
@@ -104,7 +104,7 @@ export function showRecoveryBanner(params: ShowRecoveryBannerParams): void {
   retryButton.type = 'button';
   retryButton.className =
     'inline-flex items-center justify-center h-9 px-3 rounded-md text-sm font-medium ' +
-    'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ' +
+    'transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary ' +
     (blocking
       ? 'border border-primary/30 text-primary/50 cursor-not-allowed'
       : 'border border-primary/50 bg-background text-primary hover:bg-primary/10 hover:text-primary');
@@ -127,7 +127,7 @@ export function showRecoveryBanner(params: ShowRecoveryBannerParams): void {
     'inline-flex items-center justify-center h-9 px-3 rounded-md text-sm font-medium ' +
     'border border-foreground/50 bg-background text-foreground ' +
     'hover:bg-foreground/10 ' +
-    'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring';
   defaultButton.textContent = copy.loadDefaultLabel;
   defaultButton.addEventListener('click', () => {
     void params.handlers.onLoadDefault();
@@ -143,7 +143,7 @@ export function showRecoveryBanner(params: ShowRecoveryBannerParams): void {
     'inline-flex items-center justify-center h-9 px-3 rounded-md text-sm font-medium ' +
     'border border-destructive/50 bg-background text-destructive ' +
     'hover:bg-destructive/10 hover:text-destructive ' +
-    'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive';
+    'transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-destructive';
   clearButton.textContent = copy.clearLabel;
   clearButton.addEventListener('click', () => {
     void params.handlers.onClear();

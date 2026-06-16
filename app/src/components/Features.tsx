@@ -60,7 +60,7 @@ const Features = () => {
             return (
               <Card
                 key={index}
-                className="group relative p-6 bg-gradient-card backdrop-blur-sm border-border/40 hover:border-primary/50 transition-all duration-300 hover:shadow-card hover:-translate-y-1"
+                className="group relative p-6 bg-gradient-card backdrop-blur-xs border-border/40 hover:border-primary/50 transition-all duration-300 hover:shadow-card hover:-translate-y-1"
               >
                 {/* Icon */}
                 <div className="mb-4 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">

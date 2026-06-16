@@ -35,6 +35,10 @@
       // The specs are already captured via the entry glob above, so disabling
       // this plugin loses nothing.
       "playwright": false,
+      // Tailwind v4 is CSS-first: `tailwindcss` and `tailwindcss-animate`
+      // are referenced via `@import`/`@plugin` in src/index.css, which Knip
+      // does not scan, so it wrongly reports them as unused.
+      "ignoreDependencies": ["tailwindcss", "tailwindcss-animate"],
       "ignore": [
         "src/custom-elements.d.ts",
         // shadcn/ui components export complete sets by convention

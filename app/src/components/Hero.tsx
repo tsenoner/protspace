@@ -80,13 +80,13 @@ const Hero = () => {
 
           {/* Badges */}
           <div className="flex flex-wrap gap-3 justify-center pt-8">
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-sm border border-border/40 text-sm">
+            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
               Open Source
             </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-sm border border-border/40 text-sm">
+            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
               Apache-2.0 License
             </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-sm border border-border/40 text-sm">
+            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
               3D-Beacons API
             </span>
           </div>
