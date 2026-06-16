@@ -809,6 +809,30 @@ async function setFilterValues(page: Page, annotation: string, values: string[])
 }
 
 /**
+ * Drive the numeric range filter for `annotation`. Numeric annotations now render
+ * an operator dropdown (`>`, `<`, `between`) + one or two number fields instead of
+ * a bin value picker, and filter on raw values (not bins). Sets the operator and
+ * the relevant bound(s); the live match count / Apply-enabled state update after
+ * the builder's debounced re-evaluation, which the callers wait on.
+ */
+async function setNumericFilter(
+  page: Page,
+  annotation: string,
+  operator: 'gt' | 'lt' | 'between',
+  bounds: { min?: number; max?: number },
+): Promise<void> {
+  const rowIndex = await ensureCondition(page, annotation);
+  const numeric = conditionRow(page, rowIndex).locator('protspace-query-numeric-input');
+  await numeric.locator('.numeric-operator-select').selectOption(operator);
+  if (bounds.min !== undefined) {
+    await numeric.locator('input.numeric-field[placeholder="min"]').fill(String(bounds.min));
+  }
+  if (bounds.max !== undefined) {
+    await numeric.locator('input.numeric-field[placeholder="max"]').fill(String(bounds.max));
+  }
+}
+
+/**
  * Clear the active filter and isolation entirely via "Reset All". Leaves the
  * builder open (matching the component behaviour). The single caller that filters
  * one annotation uses this to return to the unfiltered view.
@@ -825,10 +849,6 @@ async function applyFiltersFromMenu(page: Page): Promise<void> {
   await expect(apply).toBeEnabled();
   await apply.click();
   await expect(page.getByRole('dialog', FILTER_DIALOG)).toBeHidden();
-}
-
-async function countOpenFilterValues(page: Page, annotation: string): Promise<number> {
-  return (await readOpenFilterLabels(page, annotation)).length;
 }
 
 /**
@@ -1768,23 +1788,11 @@ test('numeric header toggle reverses rendered bin order without changing color a
   expect(Object.fromEntries(reversedLegend.items.map((item) => [item.value, item.color]))).toEqual(
     Object.fromEntries(initialLegend.items.map((item) => [item.value, item.color])),
   );
-
-  await openFilterValueMenu(page, 'length');
-  const filterLabels = await readOpenFilterLabels(page, 'length');
-  // The value picker lists the current bins in a stable order independent of the
-  // legend's reversed display order, so compare as sets rather than by position.
-  expect([...filterLabels].sort()).toEqual(
-    [...reversedLegend.items.map((item) => item.label)].sort(),
-  );
-  await page
-    .getByRole('dialog', { name: 'Filter Query Builder' })
-    .getByRole('button', { name: 'Cancel' })
-    .click();
+  // (Numeric filtering is now a raw-value range input with no per-bin list, so
+  // there is no longer a "filter order mirrors legend order" assertion here.)
 });
 
-test('linear numeric bins can realize fewer values than requested and filter stays aligned', async ({
-  page,
-}) => {
+test('linear numeric bins can realize fewer values than requested', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   await openLegendSettings(page);
@@ -1798,9 +1806,8 @@ test('linear numeric bins can realize fewer values than requested and filter sta
 
   const realizedState = await getNumericState(page);
   expect(realizedState.binCount).toBeLessThan(20);
-
-  await openFilterValueMenu(page, 'length');
-  expect(await countOpenFilterValues(page, 'length')).toBe(realizedState.binCount);
+  // (Bins are a legend/coloring concern only; numeric filtering is a raw-value
+  // range input, so there is no per-bin filter list to count against here.)
 });
 
 test('numeric legend labels are display summaries without comparison markers', async ({ page }) => {
@@ -1889,47 +1896,53 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
   await waitForDialogClosed(page);
 });
 
-test('numeric filters reuse the shared unfiltered bin view when switching bins', async ({
+test('numeric range filters isolate to the matching subset and reset restores the full view', async ({
   page,
 }) => {
   await loadDataset(page);
 
-  const numericBins = await page.evaluate(() => {
+  // Numeric filtering now matches raw values via an operator + min/max range, not
+  // bins. Read the raw length values so we can compute the exact expected count
+  // for a `between min,max` filter (inclusive on both ends).
+  const lengths = await page.evaluate(() => {
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & {
           getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => {
-            annotations?: Record<
-              string,
-              {
-                numericMetadata?: { bins?: Array<{ label: string; count: number }> };
-              }
-            >;
+            numeric_annotation_data?: Record<string, (number | null)[]>;
           };
         })
       | null;
     if (!plot) {
       throw new Error('ProtSpace components were not found');
     }
-
     const fullData = plot.getCurrentData?.({ includeFilteredProteinIds: false });
-    return {
-      labels: fullData?.annotations?.length?.numericMetadata?.bins?.map((bin) => bin.label) ?? [],
-      counts: fullData?.annotations?.length?.numericMetadata?.bins?.map((bin) => bin.count) ?? [],
-    };
+    return (fullData?.numeric_annotation_data?.length ?? []).filter(
+      (value): value is number => value != null && Number.isFinite(value),
+    );
   });
+  expect(lengths.length).toBeGreaterThan(0);
 
-  // Isolation stacks, so reset between applies to compare each bin against the
-  // full (unfiltered) data — the shared unfiltered bin view.
+  const sorted = [...lengths].sort((a, b) => a - b);
+  const lo = sorted[0]!;
+  const hi = sorted[sorted.length - 1]!;
+  const mid = sorted[Math.floor(sorted.length / 2)]!;
+  const countInRange = (min: number, max: number) =>
+    lengths.filter((value) => value >= min && value <= max).length;
+
   const fullCount = await isolatedCount(page);
 
-  await setFilterValues(page, 'length', [numericBins.labels[0]]);
+  // Range A — lower portion [lo, mid].
+  await setNumericFilter(page, 'length', 'between', { min: lo, max: mid });
   await applyFiltersFromMenu(page);
   const firstCount = await isolatedCount(page);
 
+  // Filtering stacks via the dedicated filter channel, so reset between applies
+  // to compare each range against the full (unfiltered) data.
   await disableFilter(page, 'length');
   await expect.poll(async () => isolatedCount(page)).toBe(fullCount);
 
-  await setFilterValues(page, 'length', [numericBins.labels[1]]);
+  // Range B — upper portion [mid, hi].
+  await setNumericFilter(page, 'length', 'between', { min: mid, max: hi });
   await applyFiltersFromMenu(page);
   const secondCount = await isolatedCount(page);
 
@@ -1937,8 +1950,10 @@ test('numeric filters reuse the shared unfiltered bin view when switching bins',
   await expect.poll(async () => isolatedCount(page)).toBe(fullCount);
   const resetCount = await isolatedCount(page);
 
-  expect(firstCount).toBe(numericBins.counts[0]);
-  expect(secondCount).toBe(numericBins.counts[1]);
+  expect(firstCount).toBe(countInRange(lo, mid));
+  expect(secondCount).toBe(countInRange(mid, hi));
+  expect(firstCount).toBeGreaterThan(0);
+  expect(firstCount).toBeLessThan(fullCount);
   expect(resetCount).toBe(fullCount);
 });
 
@@ -2117,9 +2132,7 @@ test('keyboard escape after moving restores numeric order and value sorting', as
   await waitForDialogClosed(page);
 });
 
-test('numeric keyboard reordering persists and refreshes filter order immediately', async ({
-  page,
-}) => {
+test('numeric keyboard reordering persists across reload', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   const initialLegend = await readLegendDisplay(page);
@@ -2162,18 +2175,9 @@ test('numeric keyboard reordering persists and refreshes filter order immediatel
   await clickDialogButton(page, 'Cancel');
   await waitForDialogClosed(page);
 
-  await openFilterValueMenu(page, 'length');
-  const filterLabels = await readOpenFilterLabels(page, 'length');
-  // The value picker lists the current bins (set), independent of the manual
-  // legend reorder; the reload below verifies the manual order itself persists.
-  expect([...filterLabels].sort()).toEqual(
-    [...reorderedLegend.items.map((item) => item.label)].sort(),
-  );
-  await page
-    .getByRole('dialog', { name: 'Filter Query Builder' })
-    .getByRole('button', { name: 'Cancel' })
-    .click();
-
+  // (Numeric filtering no longer mirrors legend order — it is a raw-value range
+  // input — so the former filter-order assertion is dropped; the reload below
+  // verifies the manual legend order itself persists.)
   await loadBundleFromBytes(
     page,
     Array.from(fs.readFileSync(RAW_NUMERIC_BUNDLE_FIXTURE_PATH)),
@@ -2420,8 +2424,8 @@ test('numeric tooltip shows the raw value within the current bin range after reb
   expect(numericBin, 'no numeric bin with a parseable range was found').toBeTruthy();
   const [binMin, binMax] = numericBin!.bounds;
 
-  // Isolate to the chosen bin so the hovered point is guaranteed to be in it.
-  await setFilterValues(page, 'length', [numericBin!.label]);
+  // Filter to the chosen bin's value range so every visible point is in it.
+  await setNumericFilter(page, 'length', 'between', { min: binMin, max: binMax });
   await applyFiltersFromMenu(page);
   expect(await isolatedCount(page)).toBeGreaterThan(0);
 
@@ -2442,69 +2446,25 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
-  const zeroMatchLengthBin = await page.evaluate(() => {
+  // A numeric range above every length matches nothing — the simplest zero-match
+  // query under the range-input model.
+  const maxLength = await page.evaluate(() => {
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & {
           getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => {
-            protein_ids?: string[];
-            annotations?: Record<
-              string,
-              {
-                values?: string[];
-                numericMetadata?: { bins?: Array<{ id: string; label: string }> };
-              }
-            >;
-            annotation_data?: Record<string, number[] | number[][]>;
+            numeric_annotation_data?: Record<string, (number | null)[]>;
           };
         })
       | null;
-
-    if (!plot) {
-      throw new Error('ProtSpace components were not found');
-    }
-
-    const fullData = plot.getCurrentData?.({ includeFilteredProteinIds: false });
-    const lengthValues = fullData?.annotations?.length?.values ?? [];
-    const familyValues = fullData?.annotations?.family?.values ?? [];
-    const familyRows = fullData?.annotation_data?.family as number[][] | number[] | undefined;
-    const lengthRows = fullData?.annotation_data?.length as number[][] | number[] | undefined;
-
-    const lengthBinsUsedByFamilyA = new Set<string>();
-    lengthValues.forEach((_, index) => {
-      void index;
-    });
-
-    for (let index = 0; index < (fullData?.protein_ids?.length ?? 0); index += 1) {
-      const familyIndex = Array.isArray(familyRows?.[index])
-        ? (familyRows?.[index] as number[])[0]
-        : (familyRows as number[] | undefined)?.[index];
-      const lengthIndex = Array.isArray(lengthRows?.[index])
-        ? (lengthRows?.[index] as number[])[0]
-        : (lengthRows as number[] | undefined)?.[index];
-
-      if (
-        familyIndex != null &&
-        familyValues[familyIndex] === 'A' &&
-        lengthIndex != null &&
-        lengthValues[lengthIndex]
-      ) {
-        lengthBinsUsedByFamilyA.add(lengthValues[lengthIndex] as string);
-      }
-    }
-
-    const zeroMatchLengthBinId = lengthValues.find((value) => !lengthBinsUsedByFamilyA.has(value));
-    const zeroMatchLengthBin = fullData?.annotations?.length?.numericMetadata?.bins?.find(
-      (bin) => bin.id === zeroMatchLengthBinId,
-    )?.label;
-    if (!zeroMatchLengthBin) {
-      throw new Error('Could not derive a zero-match numeric filter combination');
-    }
-    return zeroMatchLengthBin;
+    const data = plot?.getCurrentData?.({ includeFilteredProteinIds: false });
+    const lengths = (data?.numeric_annotation_data?.length ?? []).filter(
+      (value): value is number => value != null && Number.isFinite(value),
+    );
+    return lengths.length ? Math.max(...lengths) : 0;
   });
 
   const fullCount = await isolatedCount(page);
-  await setFilterValues(page, 'family', ['A']);
-  await setFilterValues(page, 'length', [zeroMatchLengthBin]);
+  await setNumericFilter(page, 'length', 'gt', { min: maxLength + 1 });
 
   // A zero-match query cannot be isolated: the builder reports zero matches and
   // keeps "Apply & Isolate" disabled, so the view never collapses to empty or
@@ -2539,7 +2499,7 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
   expect(legend.items.every((item) => item.value.length > 0)).toBe(true);
 });
 
-test('stale numeric filter labels are pruned when bins change', async ({ page }) => {
+test('rebinning replaces the numeric bins (stale bin labels are gone)', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -2567,14 +2527,6 @@ test('stale numeric filter labels are pruned when bins change', async ({ page })
     }
     return staleValue;
   });
-
-  const fullCount = await isolatedCount(page);
-  await setFilterValues(page, 'length', [staleValue]);
-  await applyFiltersFromMenu(page);
-  const initialFilterCount = await isolatedCount(page);
-
-  expect(initialFilterCount).toBeGreaterThan(0);
-  expect(initialFilterCount).toBeLessThan(fullCount);
 
   await openLegendSettings(page);
   await updateLegendSettings(page, {
@@ -2605,20 +2557,21 @@ test('loading a new dataset clears active filters before rendering the replaceme
   await setFilterValues(page, 'family', ['A']);
   await applyFiltersFromMenu(page);
 
-  // Applying isolates the view to the six family-A proteins.
+  // Applying filters the view to the six family-A proteins (the query builder
+  // drives the dedicated filteredProteinIds channel, marking filterActive).
   await expect.poll(async () => isolatedCount(page)).toBe(6);
   expect(
     await page.evaluate(() => {
       const cb = document.querySelector('protspace-control-bar') as
-        | (Element & { isolationMode?: boolean })
+        | (Element & { filterActive?: boolean })
         | null;
-      return cb?.isolationMode ?? false;
+      return cb?.filterActive ?? false;
     }),
   ).toBe(true);
 
   await loadBundleFromBytes(page, replacementBundleBytes, '5K.parquetbundle');
 
-  // Loading a new dataset clears the active isolation and renders the full
+  // Loading a new dataset clears the active filter and renders the full
   // replacement data.
   await page.waitForFunction(() => {
     const plot = document.querySelector('protspace-scatterplot') as
@@ -2632,14 +2585,14 @@ test('loading a new dataset clears active filters before rendering the replaceme
       | (Element & { getCurrentData?: () => { protein_ids?: string[] } })
       | null;
     const cb = document.querySelector('protspace-control-bar') as
-      | (Element & { isolationMode?: boolean })
+      | (Element & { filterActive?: boolean })
       | null;
     return {
-      isolationMode: cb?.isolationMode ?? false,
+      filterActive: cb?.filterActive ?? false,
       visibleCount: plot?.getCurrentData?.()?.protein_ids?.length ?? 0,
     };
   });
 
-  expect(replacementState.isolationMode).toBe(false);
+  expect(replacementState.filterActive).toBe(false);
   expect(replacementState.visibleCount).toBeGreaterThan(1000);
 });
