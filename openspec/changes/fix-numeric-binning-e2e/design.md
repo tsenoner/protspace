@@ -88,3 +88,14 @@ The control-bar/query-builder refactor and any UX polish (friendly numeric label
 ## Open Questions
 
 - Is Cluster C (`keyboard escape after moving restores numeric order`) a flake or a real escape-handling regression? (Triage with a trace during apply.)
+
+## Update — merged `main` (range-input query-builder)
+
+`main` was later merged into this branch, bringing the `refactor/control-bar-and-filtering` work (PR #259) plus three other features this branch's e2e specs touch. The shipped behavior the tests assert against changed substantially, so the helpers/specs were repaired to the **new** reality (the `spec.md` in this change now describes that reality):
+
+- **Numeric filtering is no longer a bin value-picker.** A numeric annotation renders `protspace-query-numeric-input` — an operator dropdown (`>`/`<`/`between`) + min/max number fields — and filters on **raw values**, not bins. The value picker remains for **categorical** annotations only. Tests use a new `setNumericFilter()` helper; the numeric tests that asserted on the bin value-picker (filter-order mirrors legend, per-bin filter counts/labels, stale bin-label pruning) were re-expressed or dropped.
+- **Apply drives a dedicated filter channel, not isolation.** `_handleQueryApply` now sets `scatter-plot.filteredProteinIds` / `filtersActive` and control-bar `filterActive` (isolation is a separate feature). The observable is still `getCurrentData().protein_ids` (the plot data is culled to the matched set); the `loading clears filters` test asserts `filterActive` (not `isolationMode`).
+- **Annotation display labels changed** (`organize-predicted-annotations`): the annotation-select and legend title render a friendly label (e.g. `"EC number"`, `"Sequence length"`) instead of the raw key. Helpers that selected annotations or waited on the legend title by key were switched to the `[data-annotation]` key / `selectedAnnotation` property (affecting `numeric-binning`, `url-view-state`, and `multi-annotation-tooltip`).
+- **Unified visibility model** decoupled the legend hide from its persistence trigger, so `dataset-reload`'s legend-localStorage assertion now polls across all `protspace:legend:*` keys instead of reading the first one once.
+
+The change remains **test-only** (plus these spec/design doc updates); no production code was edited.

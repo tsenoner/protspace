@@ -33,3 +33,13 @@
 - [x] 5.2 Smoked neighbours: `multi-annotation-tooltip` green; `dataset-reload` has one PRE-EXISTING failure (`reset to demo clears the persisted custom dataset`, #176) caused by the same control-bar refactor (stale `[data-driver-id="import-own-dataset"]` selector) — out of scope for #237, file unchanged vs main.
 - [x] 5.3 `pnpm precommit` clean; unit suite green (`pnpm test:ci`: 1302 passed, 1 skipped).
 - [x] 5.4 Committed on `fix/numeric-binning-query-builder-e2e` as `1b812bd` (Angular-style `test(...)`); not pushed.
+
+## 6. Repair after merging `main` (range-input query-builder + label/visibility refactors)
+
+- [x] 6.1 Merged `main` (incl. PR #259); rebuilt `@protspace/utils` + `@protspace/core` dist. Measured blast radius: `numeric-binning` 41, `url-view-state` 13, `multi-annotation-tooltip` 3, `dataset-reload` 1 (others green).
+- [x] 6.2 Annotation display labels: switched `selectAnnotation` / dropdown-row matching to `[data-annotation]` key and `waitForLegendAnnotation` / `waitForView` to the `selectedAnnotation` property across `numeric-binning`, `url-view-state`, `multi-annotation-tooltip`.
+- [x] 6.3 Numeric filtering retarget: added `setNumericFilter()` (operator + min/max); rewrote bin-switching → raw-value ranges, tooltip → between-range, zero-match → `gt` above max; dropped obsolete value-picker assertions; repurposed stale-labels → rebinning-replaces-bins.
+- [x] 6.4 Filter model: `loading clears filters` asserts control-bar `filterActive` (the dedicated `filteredProteinIds` channel), not `isolationMode`.
+- [x] 6.5 `dataset-reload` legend localStorage: poll across all `protspace:legend:*` keys (unified-visibility-model decoupled the hide from persistence).
+- [x] 6.6 Updated `spec.md` + `design.md` to the shipped range-input / filter-channel model.
+- [x] 6.7 Full `pnpm test:e2e` green: 130 passed on chromium projects; `url-view-state` firefox+webkit variants 33 passed / 1 skipped (OPFS-unavailable) once those browsers were installed; chromium OPFS test (`:780`) flaky-but-passes on retry. `pnpm precommit` clean.
