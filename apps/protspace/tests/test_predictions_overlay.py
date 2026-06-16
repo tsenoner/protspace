@@ -18,14 +18,16 @@ def _table():
     )
 
 
-def test_adds_three_overlay_columns():
+def test_adds_value_and_confidence_overlay_columns():
     preds = [
         Prediction("Q0", "neurotoxin", "R0", 0.3, 0.62, 1, "euclidean"),
     ]
     out = add_overlay_columns(_table(), "protein_category", preds)
     assert "protein_category__pred_value" in out.column_names
     assert "protein_category__pred_confidence" in out.column_names
-    assert "protein_category__pred_source" in out.column_names
+    # The source column is intentionally not emitted (provenance is not a useful
+    # per-cell overlay; confidence carries the signal users threshold on).
+    assert "protein_category__pred_source" not in out.column_names
 
 
 def test_overlay_values_aligned_by_identifier():
@@ -34,7 +36,6 @@ def test_overlay_values_aligned_by_identifier():
     by_id = {r["identifier"]: r for r in out}
     assert by_id["Q1"]["protein_category__pred_value"] == "enzyme"
     assert by_id["Q1"]["protein_category__pred_confidence"] == 0.5
-    assert by_id["Q1"]["protein_category__pred_source"] == "R9"
     # Non-predicted rows are null in the overlay columns.
     assert by_id["Q0"]["protein_category__pred_value"] is None
     assert by_id["R0"]["protein_category__pred_confidence"] is None
@@ -82,7 +83,7 @@ def test_reapplying_overlay_replaces_not_duplicates():
 
     assert twice.column_names.count("protein_category__pred_value") == 1
     assert twice.column_names.count("protein_category__pred_confidence") == 1
-    assert twice.column_names.count("protein_category__pred_source") == 1
+    assert "protein_category__pred_source" not in twice.column_names
 
     by_id = {r["identifier"]: r for r in twice.to_pylist()}
     assert by_id["Q0"]["protein_category__pred_value"] == "new"
@@ -92,3 +93,17 @@ def test_reapplying_overlay_replaces_not_duplicates():
     pq.write_table(twice, buf)
     reread = pq.read_table(io.BytesIO(buf.getvalue()))
     assert reread.column("protein_category__pred_value").to_pylist()[0] == "new"
+
+
+def test_legacy_source_column_is_removed_on_rerun():
+    # A bundle written by an older version may carry a __pred_source column;
+    # re-running must drop it rather than leave it orphaned/stale.
+    legacy = _table().append_column(
+        "protein_category__pred_source", pa.array(["R0", None, None], pa.string())
+    )
+    out = add_overlay_columns(
+        legacy,
+        "protein_category",
+        [Prediction("Q0", "neurotoxin", "R0", 0.1, 0.8, 1, "euclidean")],
+    )
+    assert "protein_category__pred_source" not in out.column_names

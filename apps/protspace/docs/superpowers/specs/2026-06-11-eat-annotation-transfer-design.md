@@ -10,7 +10,7 @@
 >
 > **Shipped in PR #55** (`protspace transfer`, see `src/protspace/cli/transfer.py`):
 > - Flags: `-b/--bundle`, `-e/--embeddings`, `-t/--transfer`, `-o/--output`, `--query-id-prefix`, `--query-where`, `--reference-id-prefix`, `--reference-where`, `--k`, `--metric` (`euclidean` | `cosine`).
-> - Wide overlay columns appended to the bundle annotations table (`src/protspace/data/io/predictions.py`): `<col>__pred_value`, `<col>__pred_confidence`, `<col>__pred_source`.
+> - Wide overlay columns appended to the bundle annotations table (`src/protspace/data/io/predictions.py`): `<col>__pred_value`, `<col>__pred_confidence`.
 > - Brute-force nearest-neighbour search and the goPredSim reliability index.
 >
 > **Deferred / not yet implemented (future work):**

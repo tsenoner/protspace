@@ -81,8 +81,8 @@ def test_run_transfer_predicts_for_query_with_missing_value():
     )
     by_id = {r["identifier"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
-    assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
     assert by_id["TRINITY_1"]["protein_category__pred_confidence"] > 0.9
+    assert "protein_category__pred_source" not in out.column_names
 
 
 def test_run_transfer_skips_proteins_without_embeddings():
@@ -155,7 +155,7 @@ def test_run_transfer_cosine_metric():
     )
     by_id = {r["identifier"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
-    assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+    assert "protein_category__pred_source" not in out.column_names
 
 
 def test_run_transfer_warns_when_nothing_transferred(caplog):
@@ -371,4 +371,4 @@ def test_cli_end_to_end_protein_id_bundle(tmp_path):
     assert "protein_id" in table.column_names  # id column preserved for the web reader
     rows = {r["protein_id"]: r for r in table.to_pylist()}
     assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
-    assert rows["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+    assert "protein_category__pred_source" not in table.column_names
