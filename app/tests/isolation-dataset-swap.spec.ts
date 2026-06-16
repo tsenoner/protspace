@@ -76,13 +76,25 @@ async function engageIsolation(page: Page, sampleSize = 100): Promise<void> {
   await page.evaluate((n) => {
     const sp = document.querySelector('protspace-scatterplot') as
       | (HTMLElement & {
-          _plotData?: Array<{ id: string }>;
+          // _plotData is a columnar PlotData ({ length, proteinIds, originalIndices, ... }),
+          // not an array of point objects.
+          _plotData?: {
+            length: number;
+            proteinIds: string[];
+            originalIndices: ArrayLike<number> | null;
+          };
           selectedProteinIds: string[];
           isolateSelection(): void;
         })
       | null;
     if (!sp) throw new Error('scatterplot element not found');
-    const ids = (sp._plotData ?? []).slice(0, n).map((p) => p.id);
+    const pd = sp._plotData;
+    const len = Math.min(n, pd?.length ?? 0);
+    const ids: string[] = [];
+    for (let slot = 0; slot < len; slot += 1) {
+      const originalIndex = pd!.originalIndices ? pd!.originalIndices[slot] : slot;
+      ids.push(pd!.proteinIds[originalIndex]);
+    }
     if (ids.length === 0) throw new Error('no plot data points available to isolate');
     sp.selectedProteinIds = ids;
     sp.isolateSelection();

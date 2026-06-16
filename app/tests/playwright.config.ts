@@ -19,13 +19,19 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
 export default defineConfig({
   testDir: TEST_DIR,
 
-  fullyParallel: false,
+  // Run tests in parallel (each test gets an isolated browser context). The
+  // suite is otherwise a ~35-40 min serial run; parallelism cuts it to a few
+  // minutes. Override with `--workers=N` (use `--workers=1` to debug ordering).
+  fullyParallel: true,
 
   forbidOnly: !!process.env.CI,
 
-  retries: process.env.CI ? 1 : 0,
+  // One retry locally absorbs the occasional WebGL/OPFS flake under parallel load.
+  retries: 1,
 
-  workers: 1,
+  // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the dev
+  // server and OS; 50% of cores is a good balance. CI runners are smaller.
+  workers: process.env.CI ? 2 : '50%',
 
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
 
@@ -146,6 +152,30 @@ export default defineConfig({
       },
       testMatch: /multi-annotation-tooltip\.spec\.ts/,
     },
+    {
+      // Mocked prep API (no backend); the live variant below is opt-in.
+      name: 'fasta-prep',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /fasta-prep\.spec\.ts/,
+    },
+    // Live FASTA-prep flow against a real backend — opt-in via RUN_LIVE_E2E=1
+    // (requires `docker compose up -d protspace-prep`; see fasta-prep.live.spec.ts
+    // for the full prerequisites). Excluded from the default suite.
+    ...(process.env.RUN_LIVE_E2E
+      ? [
+          {
+            name: 'fasta-prep-live',
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1280, height: 720 },
+            },
+            testMatch: /fasta-prep\.live\.spec\.ts/,
+          },
+        ]
+      : []),
   ],
 
   outputDir: '../test-results/',

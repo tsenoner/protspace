@@ -19,7 +19,17 @@ const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
   'fixtures',
   'raw_numeric_test.parquetbundle',
 );
-const DEMO_EC_PROJECTION = 'UMAP_2';
+// The default demo dataset (its annotation/projection names) changes over time,
+// and names can contain spaces/em-dashes (e.g. "ProtT5 — UMAP 2") that get
+// URL-encoded. Discover the demo's view at runtime and derive non-default
+// targets, so the tests don't hardcode names and survive demo swaps.
+let demoAnnotations: string[] = [];
+let demoDefaultAnnotation = '';
+let demoDefaultProjection = '';
+let targetAnnotation = '';
+let targetProjection = '';
+let secondAnnotation = '';
+let secondProjection = '';
 
 async function getCurrentView(page: Page) {
   return page.evaluate(() => {
@@ -73,18 +83,16 @@ async function waitForView(
       .toBe(expected.projection);
   }
 
-  const annotationTriggerText = page.locator(
-    'protspace-control-bar protspace-annotation-select .dropdown-trigger-text',
-  );
-  const projectionTriggerText = page.locator(
-    'protspace-control-bar #projection-trigger .dropdown-trigger-text',
-  );
-
-  if (expected.annotation) {
-    await expect(annotationTriggerText).toHaveText(expected.annotation, { timeout });
-  }
-
+  // Note: we don't assert the annotation trigger's rendered text. It shows the
+  // friendly display label (e.g. "EC number"), not the raw key the URL and the
+  // selectedAnnotation property use; the property poll above already verifies the
+  // selected annotation by key, and deriving the label here would couple the test
+  // to @protspace/utils' annotation-metadata map (which doesn't import cleanly
+  // under Playwright's ESM loader).
   if (expected.projection) {
+    const projectionTriggerText = page.locator(
+      'protspace-control-bar #projection-trigger .dropdown-trigger-text',
+    );
     await expect(projectionTriggerText).toHaveText(expected.projection, { timeout });
   }
 }
@@ -97,7 +105,10 @@ async function selectAnnotation(page: Page, annotation: string): Promise<void> {
     .locator('protspace-annotation-select');
 
   await annotationSelect.locator('.dropdown-trigger').click();
-  await annotationSelect.getByText(annotation, { exact: true }).click();
+  // Items are labelled with the friendly display name (e.g. "EC number"), but
+  // carry the raw annotation key on data-annotation — click by key so the helper
+  // stays label-agnostic.
+  await annotationSelect.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
 }
 
 async function selectProjection(page: Page, projection: string): Promise<void> {
@@ -252,6 +263,67 @@ async function dropBundleOnScatterplot(
   );
 }
 
+/** Assert a single URL query param decodes to `expected` (robust to +/%20/em-dash encoding). */
+async function expectUrlParam(
+  page: Page,
+  key: 'annotation' | 'projection' | 'foo',
+  expected: string,
+): Promise<void> {
+  await expect
+    .poll(() => page.evaluate((k) => new URL(window.location.href).searchParams.get(k), key))
+    .toBe(expected);
+}
+
+// Discover the default demo's annotations/projections once per worker. Names can
+// contain spaces/em-dashes and change with demo swaps, so tests derive
+// non-default targets at runtime instead of hardcoding them.
+test.beforeAll(async ({ browser }) => {
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  try {
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('driver.overviewTour', 'true');
+      } catch {
+        /* ignore */
+      }
+    });
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    // getCurrentView reads the control-bar's annotations/projections, which the
+    // app wires separately from the scatter-plot data and can lag the
+    // plot-data-ready signal under parallel load. Poll until both expose at
+    // least two entries — the deep-link / canonicalization tests below derive a
+    // non-default `target` and a distinct `second` from these, so an empty or
+    // single-value view would silently collapse those to the default and make
+    // the later `not.toContain(demoDefault…)` assertions self-contradictory.
+    // Failing here instead surfaces a slow/degenerate demo as a clear setup error.
+    await expect
+      .poll(async () => {
+        const v = await getCurrentView(page);
+        return Math.min(v.annotations.length, v.projections.length);
+      })
+      .toBeGreaterThanOrEqual(2);
+    const view = await getCurrentView(page);
+    demoAnnotations = view.annotations;
+    demoDefaultAnnotation = view.annotation ?? view.annotations[0] ?? '';
+    demoDefaultProjection = view.projection ?? view.projections[0] ?? '';
+    targetAnnotation =
+      view.annotations.find((a) => a !== demoDefaultAnnotation) ?? demoDefaultAnnotation;
+    targetProjection =
+      view.projections.find((p) => p !== demoDefaultProjection) ?? demoDefaultProjection;
+    secondAnnotation =
+      view.annotations.find((a) => a !== demoDefaultAnnotation && a !== targetAnnotation) ??
+      targetAnnotation;
+    secondProjection =
+      view.projections.find((p) => p !== demoDefaultProjection && p !== targetProjection) ??
+      targetProjection;
+  } finally {
+    await context.close();
+  }
+});
+
 test.describe('URL-backed explore view state', () => {
   test('keeps a bare explore URL unchanged on first load', async ({ page }) => {
     await page.goto('/explore');
@@ -268,19 +340,21 @@ test.describe('URL-backed explore view state', () => {
   });
 
   test('applies a valid deep link and preserves it across refresh', async ({ page }) => {
-    await page.goto(`/explore?annotation=ec&projection=${DEMO_EC_PROJECTION}&foo=1`);
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=${encodeURIComponent(targetProjection)}&foo=1`,
+    );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
 
-    await expect(page).toHaveURL(/annotation=ec/);
-    await expect(page).toHaveURL(new RegExp(`projection=${DEMO_EC_PROJECTION}`));
+    await expectUrlParam(page, 'annotation', targetAnnotation);
+    await expectUrlParam(page, 'projection', targetProjection);
     await expect(page).toHaveURL(/foo=1/);
 
     await page.reload();
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
   });
 
   test('deep links render the requested view directly without an initial default swap', async ({
@@ -370,10 +444,12 @@ test.describe('URL-backed explore view state', () => {
       };
     });
 
-    await page.goto('/explore?annotation=ec&projection=PCA_2');
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=${encodeURIComponent(targetProjection)}`,
+    );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec', projection: 'PCA_2' });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
 
     const assignments = await page.evaluate(() => {
       const win = window as Window & {
@@ -389,10 +465,10 @@ test.describe('URL-backed explore view state', () => {
 
     expect(assignments.annotations.length).toBeGreaterThan(0);
     expect(assignments.projections.length).toBeGreaterThan(0);
-    expect(assignments.annotations[0]).toBe('ec');
-    expect(assignments.projections[0]).toBe('PCA_2');
-    expect(assignments.annotations).not.toContain('protein_families');
-    expect(assignments.projections).not.toContain('UMAP_2');
+    expect(assignments.annotations[0]).toBe(targetAnnotation);
+    expect(assignments.projections[0]).toBe(targetProjection);
+    expect(assignments.annotations).not.toContain(demoDefaultAnnotation);
+    expect(assignments.projections).not.toContain(demoDefaultProjection);
   });
 
   test('canonicalizes duplicate view params to a single effective pair', async ({ page }) => {
@@ -402,11 +478,11 @@ test.describe('URL-backed explore view state', () => {
     const baselineHistoryLength = await page.evaluate(() => history.length);
 
     await page.goto(
-      `/explore?annotation=ec&annotation=pfam&projection=${DEMO_EC_PROJECTION}&projection=PCA&foo=1`,
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&annotation=${encodeURIComponent(secondAnnotation)}&projection=${encodeURIComponent(targetProjection)}&projection=${encodeURIComponent(secondProjection)}&foo=1`,
     );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
 
     const params = await page.evaluate(() => {
       const searchParams = new URL(window.location.href).searchParams;
@@ -416,8 +492,8 @@ test.describe('URL-backed explore view state', () => {
       };
     });
 
-    expect(params.annotations).toEqual(['ec']);
-    expect(params.projections).toEqual([DEMO_EC_PROJECTION]);
+    expect(params.annotations).toEqual([targetAnnotation]);
+    expect(params.projections).toEqual([targetProjection]);
     await expect(page).toHaveURL(/foo=1/);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
 
@@ -438,8 +514,8 @@ test.describe('URL-backed explore view state', () => {
     const currentView = await getCurrentView(page);
     expect(currentView.annotation).not.toBe('bad_value');
     expect(currentView.projection).not.toBe('bad_projection');
-    await expect(page).toHaveURL(new RegExp(`annotation=${currentView.annotation}`));
-    await expect(page).toHaveURL(new RegExp(`projection=${currentView.projection}`));
+    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
+    await expectUrlParam(page, 'projection', currentView.projection ?? '');
     await expect(page).toHaveURL(/foo=1/);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
 
@@ -460,8 +536,8 @@ test.describe('URL-backed explore view state', () => {
     await waitForExploreDataLoad(page);
 
     const currentView = await getCurrentView(page);
-    await expect(page).toHaveURL(new RegExp(`annotation=${currentView.annotation}`));
-    await expect(page).toHaveURL(new RegExp(`projection=${currentView.projection}`));
+    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
+    await expectUrlParam(page, 'projection', currentView.projection ?? '');
     await expect(page).toHaveURL(/foo=1/);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
 
@@ -470,16 +546,18 @@ test.describe('URL-backed explore view state', () => {
   });
 
   test('preserves valid keys when only one param is invalid', async ({ page }) => {
-    await page.goto('/explore?annotation=ec&projection=bad_projection');
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=bad_projection`,
+    );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec' });
+    await waitForView(page, { annotation: targetAnnotation });
 
     const currentView = await getCurrentView(page);
-    expect(currentView.annotation).toBe('ec');
+    expect(currentView.annotation).toBe(targetAnnotation);
     expect(currentView.projection).not.toBe('bad_projection');
-    await expect(page).toHaveURL(/annotation=ec/);
-    await expect(page).toHaveURL(new RegExp(`projection=${currentView.projection}`));
+    await expectUrlParam(page, 'annotation', targetAnnotation);
+    await expectUrlParam(page, 'projection', currentView.projection ?? '');
   });
 
   test('pushes one history entry for a user change and back/forward restores in one step', async ({
@@ -543,7 +621,7 @@ test.describe('URL-backed explore view state', () => {
     const initialHistoryLength = await page.evaluate(() => history.length);
     await selectProjection(page, nextProjection!);
     await waitForView(page, { projection: nextProjection! });
-    await expect(page).toHaveURL(new RegExp(`projection=${nextProjection}`));
+    await expectUrlParam(page, 'projection', nextProjection!);
     const afterChangeHistoryLength = await page.evaluate(() => history.length);
     expect(afterChangeHistoryLength).toBe(initialHistoryLength + 1);
 
@@ -571,8 +649,8 @@ test.describe('URL-backed explore view state', () => {
 
     const currentView = await getCurrentView(page);
     await expect(page).toHaveURL(/foo=1/);
-    await expect(page).toHaveURL(new RegExp(`annotation=${currentView.annotation}`));
-    await expect(page).toHaveURL(new RegExp(`projection=${currentView.projection}`));
+    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
+    await expectUrlParam(page, 'projection', currentView.projection ?? '');
   });
 
   test('annotation changes update history without reloading the page instance', async ({
@@ -637,10 +715,12 @@ test.describe('URL-backed explore view state', () => {
   test('normalizes stale params after switching to a dataset with different annotations', async ({
     page,
   }) => {
-    await page.goto(`/explore?annotation=ec&projection=${DEMO_EC_PROJECTION}`);
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=${encodeURIComponent(targetProjection)}`,
+    );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
     const historyLengthBeforeDatasetSwitch = await page.evaluate(() => history.length);
 
     await loadBundleFromPath(
@@ -653,7 +733,7 @@ test.describe('URL-backed explore view state', () => {
     const currentView = await getCurrentView(page);
     expect(currentView.annotation).toBe('length');
     await expect(page).toHaveURL(/annotation=length/);
-    await expect(page).toHaveURL(new RegExp(`projection=${currentView.projection}`));
+    await expectUrlParam(page, 'projection', currentView.projection ?? '');
     await expect
       .poll(() => page.evaluate(() => history.length))
       .toBe(historyLengthBeforeDatasetSwitch);
@@ -665,13 +745,17 @@ test.describe('URL-backed explore view state', () => {
     await waitForExploreDataLoad(page);
 
     await queueUserLoads(page, RAW_NUMERIC_BUNDLE_FIXTURE_PATH, 'raw_numeric_test.parquetbundle');
-    await waitForView(page, { annotation: 'protein_families', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, {
+      annotation: demoDefaultAnnotation,
+      projection: demoDefaultProjection,
+    });
 
     const currentView = await getCurrentView(page);
-    expect(currentView.annotation).toBe('protein_families');
-    expect(currentView.projection).toBe(DEMO_EC_PROJECTION);
-    expect(currentView.annotations).toContain('protein_families');
-    expect(currentView.annotations).not.toContain('length');
+    expect(currentView.annotation).toBe(demoDefaultAnnotation);
+    expect(currentView.projection).toBe(demoDefaultProjection);
+    // The later (demo) load wins: the view exposes the demo's exact annotation
+    // set, not the queued fixture's.
+    expect(currentView.annotations).toEqual(demoAnnotations);
     await expect(page).toHaveURL(/\/explore$/);
   });
 
@@ -690,18 +774,21 @@ test.describe('URL-backed explore view state', () => {
     const currentView = await getCurrentView(page);
     expect(currentView.annotation).toBe('length');
     expect(currentView.annotations).toContain('length');
-    expect(currentView.annotations).not.toContain('protein_families');
+    expect(currentView.annotations).not.toContain(demoDefaultAnnotation);
   });
 
   test('restores the OPFS dataset and validates params against it on reload', async ({ page }) => {
+    // OPFS persist + reload + restore means several full data loads; under
+    // parallel CPU load this can exceed the default timeout, so allow more time.
+    test.slow();
+    await page.goto('/explore');
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+    // navigator.storage only exists after navigation, so check OPFS support here.
     test.skip(
       !(await supportsExplorePersistedDataset(page)),
       'OPFS is unavailable in this browser.',
     );
-
-    await page.goto('/explore');
-    await dismissTourIfPresent(page);
-    await waitForExploreDataLoad(page);
 
     await loadBundleFromPath(
       page,
@@ -712,7 +799,9 @@ test.describe('URL-backed explore view state', () => {
     await waitForPersistedExploreDataset(page);
 
     const importedView = await getCurrentView(page);
-    await page.goto(`/explore?annotation=length&projection=${importedView.projection}&foo=1`);
+    await page.goto(
+      `/explore?annotation=length&projection=${encodeURIComponent(importedView.projection ?? '')}&foo=1`,
+    );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
     await waitForView(page, {
@@ -727,13 +816,17 @@ test.describe('URL-backed explore view state', () => {
   test('resets hidden legend state when back navigation changes annotation via URL', async ({
     page,
   }) => {
-    await page.goto(`/explore?annotation=ec&projection=${DEMO_EC_PROJECTION}`);
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=${encodeURIComponent(targetProjection)}`,
+    );
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
-    await waitForView(page, { annotation: 'ec', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
 
     const currentView = await getCurrentView(page);
-    const nextAnnotation = currentView.annotations.find((annotation) => annotation !== 'ec');
+    const nextAnnotation = currentView.annotations.find(
+      (annotation) => annotation !== targetAnnotation,
+    );
     expect(nextAnnotation).toBeTruthy();
 
     const firstLegendValue = await getFirstLegendItemValue(page);
@@ -744,7 +837,7 @@ test.describe('URL-backed explore view state', () => {
     await waitForView(page, { annotation: nextAnnotation! });
 
     await page.goBack();
-    await waitForView(page, { annotation: 'ec', projection: DEMO_EC_PROJECTION });
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
     await expect.poll(() => isLegendItemHidden(page, firstLegendValue)).toBe(false);
   });
 });

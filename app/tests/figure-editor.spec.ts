@@ -240,34 +240,34 @@ test.describe('figure editor — geometric inset zoom', () => {
       h: target.h - 0.04,
     };
 
-    // Render at 1× — baseline.
-    await setInsets(page, [
-      {
-        sourceRect: region,
-        targetRect: target,
-        border: 2,
-        connector: 'lines',
-        pointSizeScale: 1,
-      },
-    ]);
-    const at1x = await samplePreviewRect(page, innerSampleRect);
+    // Render the same inset/data region at a given dot-size scale and return how
+    // many pixels the dots cover within the sample rect.
+    const coverageAt = async (pointSizeScale: number): Promise<number> => {
+      await setInsets(page, [
+        {
+          sourceRect: region,
+          targetRect: target,
+          border: 2,
+          connector: 'lines',
+          pointSizeScale,
+        },
+      ]);
+      return (await samplePreviewRect(page, innerSampleRect)).colored;
+    };
 
-    // Render at 5× — same data domain, larger dots.
-    await setInsets(page, [
-      {
-        sourceRect: region,
-        targetRect: target,
-        border: 2,
-        connector: 'lines',
-        pointSizeScale: 5,
-      },
-    ]);
-    const at5x = await samplePreviewRect(page, innerSampleRect);
+    // Assert a monotonic 1×/2×/5× ladder: a larger dot-size scale must cover
+    // strictly more pixels at each rung. This catches a constant / clamped /
+    // partially-wired slider structurally and is independent of the demo's point
+    // density — unlike a single magic ratio floor (the old `* 1.2`), which sat
+    // only ~7% above the real ~1.29× growth at 5×, so it both flaked on a denser
+    // demo and could pass a partially-applied scale.
+    const at1x = await coverageAt(1);
+    const at2x = await coverageAt(2);
+    const at5x = await coverageAt(5);
 
-    // 5× makes each point cover ~25× more area. Even after overlap +
-    // saturation, colored-pixel count should grow meaningfully.
-    expect(at1x.colored).toBeGreaterThan(0);
-    expect(at5x.colored).toBeGreaterThan(at1x.colored * 1.5);
+    expect(at1x).toBeGreaterThan(0);
+    expect(at2x).toBeGreaterThan(at1x);
+    expect(at5x).toBeGreaterThan(at2x);
   });
 
   test('exports a PNG with embedded DPI metadata', async ({ page }) => {

@@ -116,13 +116,30 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
         const tooltipText = await page.evaluate(() => {
           const plot = document.querySelector('protspace-scatterplot') as
             | (HTMLElement & {
-                _plotData?: Array<{ originalIndex: number; id: string }>;
+                // _plotData is a columnar PlotData; build a boxed PlotDataPoint for slot 0.
+                _plotData?: {
+                  length: number;
+                  xs: ArrayLike<number>;
+                  ys: ArrayLike<number>;
+                  zs: ArrayLike<number> | null;
+                  originalIndices: ArrayLike<number> | null;
+                  proteinIds: string[];
+                };
                 _handleMouseOver?: (evt: MouseEvent, point: unknown) => void;
                 shadowRoot: ShadowRoot | null;
               })
             | null;
-          if (!plot?._plotData?.length) return null;
-          const point = plot._plotData[0];
+          const pd = plot?._plotData;
+          if (!pd?.length) return null;
+          const slot = 0;
+          const originalIndex = pd.originalIndices ? pd.originalIndices[slot] : slot;
+          const point: { id: string; x: number; y: number; originalIndex: number; z?: number } = {
+            id: pd.proteinIds[originalIndex],
+            x: pd.xs[slot],
+            y: pd.ys[slot],
+            originalIndex,
+          };
+          if (pd.zs) point.z = pd.zs[slot];
           const rect = plot.getBoundingClientRect();
           const evt = new MouseEvent('mouseover', {
             clientX: rect.left + rect.width / 2,
