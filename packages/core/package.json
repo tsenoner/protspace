@@ -50,7 +50,7 @@
     "@types/sortablejs": "^1.15.9",
     "eslint": "^10.5.0",
     "jsdom": "^27.4.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "vite": "^6.3.5",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.1.9"
