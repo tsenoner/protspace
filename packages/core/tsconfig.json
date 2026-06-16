@@ -5,12 +5,7 @@
     "declaration": true,
     "declarationMap": true,
     "composite": true,
-    "target": "ES2020",
-    "downlevelIteration": true,
-    // Override root path aliases so TypeScript uses the workspace package
-    // reference for '@protspace/utils' instead of the source path mapping.
-    // This prevents TS6305 errors during declaration emit.
-    "baseUrl": "."
+    "target": "ES2020"
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules", "**/*.test.ts"],

@@ -8,7 +8,6 @@
     { "path": "./tsconfig.e2e.json" }
   ],
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },

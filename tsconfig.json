@@ -15,8 +15,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "experimentalDecorators": true,
-    "useDefineForClassFields": false,
-    "baseUrl": "."
+    "useDefineForClassFields": false
   },
   "files": [],
   "include": [],
