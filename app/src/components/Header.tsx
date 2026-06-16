@@ -9,6 +9,11 @@ import { getNavigation } from '../../../config/navigation';
 
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
+// Ghost-style Feedback CTA: transparent, canonical ProtSpace blue (#00a3e0) text/icon,
+// faint blue hover. De-emphasized and on-brand vs. the app-shell primary (#3c83f6).
+const FEEDBACK_BUTTON_CLASS =
+  'text-[#00a3e0] hover:bg-[#00a3e0]/10 hover:text-[#00a3e0] focus-visible:ring-[#00a3e0]';
+
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
 const navItems = getNavigation(mode);
 
@@ -127,7 +132,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
             })}
 
             {/* Feedback CTA */}
-            <Button asChild size="sm">
+            <Button asChild variant="ghost" size="sm" className={FEEDBACK_BUTTON_CLASS}>
               <a href={FEEDBACK_HREF}>
                 <MessageSquareText />
                 Feedback
@@ -232,7 +237,12 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
             })}
 
             {/* Feedback CTA */}
-            <Button asChild size="sm" className="w-full mt-2">
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className={cn(FEEDBACK_BUTTON_CLASS, 'w-full mt-2')}
+            >
               <a href={FEEDBACK_HREF} onClick={() => setIsMenuOpen(false)}>
                 <MessageSquareText />
                 Feedback
