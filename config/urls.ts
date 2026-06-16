@@ -4,10 +4,13 @@
  * Single source of truth for all URLs, ports, and deployment settings.
  */
 
-// Development server ports
+// Development server ports.
+// Single source of truth: the app's Vite proxy (app/vite.config.ts) forwards `/docs` here, and the
+// VitePress dev server reads `docs` from this constant (docs/.vitepress/config.mts) with
+// `strictPort` so it fails loudly instead of silently bumping to a port the proxy can't reach.
 export const PORTS = {
   app: 8080,
-  docs: 5174, // Note: must match package.json "dev:docs" script port
+  docs: 5174,
 } as const;
 
 // Production domain

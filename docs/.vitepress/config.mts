@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitepress';
-import { getUrls } from '../../config/urls';
+import { getUrls, PORTS } from '../../config/urls';
 import { getNavigation } from '../../config/navigation';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -12,6 +12,16 @@ export default defineConfig({
   description: 'Interactive visualization for protein language model embeddings',
 
   base: urls.docs,
+
+  // Dev server port comes from the single source of truth in config/urls.ts, and `strictPort`
+  // makes VitePress exit if that port is taken instead of silently bumping to the next one — a
+  // silent bump would break the app's `/docs` proxy and 404 the in-app "Learn more" links.
+  vite: {
+    server: {
+      port: PORTS.docs,
+      strictPort: true,
+    },
+  },
 
   // Internal planning/spec notes — not part of the user-facing docs site.
   srcExclude: ['superpowers/**'],
@@ -66,6 +76,7 @@ export default defineConfig({
           { text: 'Using Google Colab', link: '/guide/data-preparation' },
           { text: 'Using Python CLI', link: '/guide/python-cli' },
           { text: 'Data Format Reference', link: '/guide/data-format' },
+          { text: 'Annotation Reference', link: '/guide/annotations' },
         ],
       },
       {

@@ -192,7 +192,7 @@ export class ProtSpaceExporter {
     const ignoredClasses = [
       'projection-metadata',
       'mode-indicator',
-      'isolation-indicator',
+      'plot-indicator',
       'tooltip',
       'duplicate-spiderfy-layer',
       'dup-spiderfy',

@@ -25,7 +25,7 @@ Your current projection is reflected in the page URL, so refresh, browser back/f
 :::
 
 ::: tip 3D Projections
-When a 3D projection is available, a **plane selector** (XY / XZ / YZ) appears, letting you view different 2D slices of the 3D space.
+3D projections load normally and are shown as their X/Y view; the third (Z) dimension is not rendered in the web viewer.
 :::
 
 ## 2. Annotation Selector

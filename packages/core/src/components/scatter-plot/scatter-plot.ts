@@ -29,6 +29,8 @@ import './protspace-tips';
 import './protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './style-getters';
+import { computeVisibilityModel } from './visibility-model';
+import type { VisibilityModel } from './visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
 import { getDuplicateStackKey } from './duplicate-stack-helpers';
@@ -53,6 +55,24 @@ const DUPLICATE_STACK_COMPUTE_CHUNK_SIZE = 25_000;
 type ScalePair = {
   x: d3.ScaleLinear<number, number>;
   y: d3.ScaleLinear<number, number>;
+};
+
+/**
+ * Memoization key for `_getVisibilityModel`. Stored as a plain struct so each
+ * field is compared by strict equality (===) in the guard in that method.
+ * An identity-compared object or array ref cannot go into a string hash —
+ * the coercion loses identity and causes spurious cache hits — so the struct
+ * approach is the correct trade-off here.
+ */
+type VisibilityModelMemoKey = {
+  data: VisualizationData | null;
+  selectedAnnotation: string;
+  hiddenAnnotationValues: string[];
+  selectedProteinIds: string[];
+  highlightedProteinIds: string[];
+  baseOpacity: number;
+  selectedOpacity: number;
+  fadedOpacity: number;
 };
 
 // Default configuration moved to config.ts
@@ -135,6 +155,39 @@ export class ProtspaceScatterplot extends LitElement {
   private _zoomRafId: number | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
+  // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
+  // which is nulled out on color/shape mapping changes). The key comparison in
+  // _getVisibilityModel covers every visibility-relevant input exhaustively:
+  // data, selectedAnnotation, hiddenAnnotationValues, selectedProteinIds,
+  // highlightedProteinIds, and the three opacity numbers. There are no deps on
+  // colorMapping, zOrderMapping, otherAnnotationValues, or sizes that would
+  // require event-handler invalidation — those inputs do not feed into the
+  // visibility model.
+  private _visibilityModelCache: VisibilityModel | null = null;
+  private _visibilityModelKey: VisibilityModelMemoKey | null = null;
+  // Memoized count of INTERACTIVE plot points (opacityOf > 0) for the
+  // bottom-left indicator — the points the user can actually see/interact
+  // with. Keyed on the visibility inputs that affect interactivity: the
+  // hidden-mask inputs (data, selectedAnnotation, hiddenAnnotationValues)
+  // AND selection/highlight + the three opacities, because a configured
+  // fadedOpacity of 0 makes non-selected points non-interactive, so a
+  // selection change CAN change the count. Plot-data is keyed by
+  // (originalIndices ref + length), NOT the container ref: a projection
+  // switch clones _plotData (new container, same originalIndices) and must
+  // reuse the cache since interactivity is independent of x/y coordinates.
+  private _visiblePointCountCache: number | null = null;
+  private _visiblePointCountKey: {
+    originalIndices: Int32Array | null;
+    plotLength: number;
+    data: VisualizationData | null;
+    selectedAnnotation: string;
+    hiddenAnnotationValues: string[];
+    selectedProteinIds: string[];
+    highlightedProteinIds: string[];
+    baseOpacity: number;
+    selectedOpacity: number;
+    fadedOpacity: number;
+  } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   private _hoverRaf: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
@@ -189,10 +242,25 @@ export class ProtspaceScatterplot extends LitElement {
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
+  // Whether the current _plotData was built with a cull (filter or isolation).
+  // The coordinate-only fast path must not run over a culled build: it can never
+  // restore removed points, so clearing a filter would leave the canvas showing
+  // the old subset while the legend (fed from getCurrentData()) shows everything.
+  private _plotDataWasCulled = false;
   private _lastMaterializedSource: VisualizationData | null = null;
   private _lastMaterializedNumericValues: Array<number | null> | null = null;
   private _materializedDataCacheKey: string | null = null;
   private _materializedDataCache: VisualizationData | null = null;
+  // Fast-path keys for _getMaterializedData: avoid JSON.stringify on the hot
+  // per-point path (getOpacity -> visibility model -> materialized data). These
+  // mirror the JSON cacheKey's reference/primitive inputs so a hit can return
+  // the cached object before serializing. numericAnnotationSettings is replaced
+  // wholesale, so comparing the selected annotation's settings ref is sound
+  // (a numeric rebin yields a new ref -> fast-path miss -> JSON path re-materializes).
+  private _lastMaterializedSelectedAnnotation: string | null = null;
+  private _lastMaterializedSelectedSettings:
+    | NumericAnnotationDisplaySettingsMap[string]
+    | undefined = undefined;
   private _numericRecomputeJobId = 0;
 
   // Computed properties with caching
@@ -248,6 +316,22 @@ export class ProtspaceScatterplot extends LitElement {
     const selectedNumericSettings = this.selectedAnnotation
       ? this.numericAnnotationSettings?.[this.selectedAnnotation]
       : undefined;
+
+    // Cheap reference/primitive fast-path: on a hit, return the cached object
+    // without the JSON.stringify below. Keyed on the same reference/primitive
+    // inputs the JSON cacheKey uses (selectedNumericType and
+    // selectedNumericValuesLength are derived from data + selectedAnnotation,
+    // both covered here). Reached per-point from the WebGL staging loops.
+    if (
+      this._materializedDataCache &&
+      this._lastMaterializedSource === this.data &&
+      this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
+      this._lastMaterializedSelectedAnnotation === this.selectedAnnotation &&
+      this._lastMaterializedSelectedSettings === selectedNumericSettings
+    ) {
+      return this._materializedDataCache;
+    }
+
     const selectedNumericAnnotation = this.selectedAnnotation
       ? sourceData.annotations[this.selectedAnnotation]
       : undefined;
@@ -282,6 +366,8 @@ export class ProtspaceScatterplot extends LitElement {
     );
     this._lastMaterializedSource = this.data;
     this._lastMaterializedNumericValues = selectedNumericValuesCacheRef;
+    this._lastMaterializedSelectedAnnotation = this.selectedAnnotation ?? null;
+    this._lastMaterializedSelectedSettings = selectedNumericSettings;
     this._materializedDataCacheKey = cacheKey;
     return this._materializedDataCache;
   }
@@ -462,6 +548,15 @@ export class ProtspaceScatterplot extends LitElement {
       }
     }
 
+    // A query filter is scoped to the current dataset. On a dataset swap, drop the
+    // filtered-id set before _processData runs below — otherwise a stale set (ids
+    // from the previous dataset) would match nothing and blank the new plot. Set
+    // here (not via a getter) so the synchronous _processData read sees it cleared.
+    if (changedProperties.has('data') && this.filtersActive) {
+      this.filteredProteinIds = [];
+      this.filtersActive = false;
+    }
+
     const numericSettingsChangedOnly =
       changedProperties.has('numericAnnotationSettings') &&
       !changedProperties.has('data') &&
@@ -498,6 +593,10 @@ export class ProtspaceScatterplot extends LitElement {
       ) {
         this.dispatchEvent(
           new CustomEvent('data-change', {
+            // Send the CURRENT (filtered/isolated) view so the legend reflects what
+            // is shown — counts update to the kept set, exactly as isolation does.
+            // The legend preserves its visible-category structure via the constrained
+            // state reported by the sync controller's getIsolationState().
             detail: { data: this.getCurrentData() ?? this._getMaterializedData() ?? this.data },
             bubbles: true,
             composed: true,
@@ -656,18 +755,33 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _processData() {
-    const dataToUse = this._getCurrentDisplayData();
+    // Build _plotData from the FULL materialized data and apply the query filter
+    // as an id-membership filter (see processVisualizationData) rather than from a
+    // pre-sliced display array. This keeps each point's originalIndex a GLOBAL
+    // index into the full dataset, which the style getters and tooltip path
+    // require — a slice-local index would mis-resolve colours/values under any
+    // non-prefix filter. Isolation already worked this way; filtering now matches.
+    const dataToUse = this._getMaterializedData();
     if (!dataToUse) return;
 
-    // Detect whether only the projection changed (same data reference, not in isolation mode).
-    // In this case we take the fast path: update coordinates in-place
-    // instead of rebuilding all PlotDataPoint objects with annotation data (~700MB for 500k proteins).
+    const visibleProteinIds = this._getVisibleProteinIdsSet();
+
+    // Fast path applies only to a projection change on the plain, unfiltered,
+    // non-isolated plot. Whenever a filter or isolation is active we rebuild so
+    // the kept set is recomputed (and originalIndex stays global). The current
+    // build must also have been un-culled: a culled _plotData is missing points
+    // that only a full rebuild can restore (e.g. right after Reset All flips
+    // filtersActive back to false).
     const onlyProjectionChanged =
-      this._plotData.length > 0 && this._lastDataRef === dataToUse && !this._isolationMode;
+      this._plotData.length > 0 &&
+      this._lastDataRef === dataToUse &&
+      !this._isolationMode &&
+      !this.filtersActive &&
+      !this._plotDataWasCulled;
 
     if (onlyProjectionChanged) {
       // Fast path: update coordinates in-place from the new projection data.
-      // No new object allocation — just overwrite x/y/z on existing PlotDataPoints.
+      // No new object allocation — just overwrite x/y on existing PlotDataPoints.
       this._updatePlotDataCoordinates(dataToUse);
     } else {
       // Release old data references before allocating the new dataset.
@@ -684,7 +798,9 @@ export class ProtspaceScatterplot extends LitElement {
         this._isolationMode,
         this._isolationHistory,
         this.projectionPlane,
+        visibleProteinIds,
       );
+      this._plotDataWasCulled = this._isolationMode || visibleProteinIds !== null;
     }
 
     this._lastDataRef = dataToUse;
@@ -738,7 +854,14 @@ export class ProtspaceScatterplot extends LitElement {
         return;
       }
 
-      const displayData = this._getCurrentDisplayData() ?? materializedData;
+      // _refreshSelectedAnnotationValues only reads annotations / annotation_data
+      // (both present on the materialized object) and then triggers a lazy
+      // style-getter rebuild that itself uses includeFilteredProteinIds:false.
+      // Excluding filtered ids returns the cached materialized object by
+      // reference (no per-point deep-slice of projections/numeric/scores/evidence),
+      // matching the pattern at _getVisibilityModel / _buildStyleGetters.
+      const displayData =
+        this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
 
       if (this._plotData.length > 0) {
         this._refreshSelectedAnnotationValues(displayData);
@@ -910,6 +1033,7 @@ export class ProtspaceScatterplot extends LitElement {
     const pd = this._plotData;
     const oi = pd.originalIndices;
     const sp = this._scratchPoint;
+    const visibilityModel = this._getVisibilityModel();
     const visibleSlots: number[] = [];
     for (let s = 0; s < pd.length; s++) {
       const origIdx = oi ? oi[s] : s;
@@ -917,7 +1041,7 @@ export class ProtspaceScatterplot extends LitElement {
       sp.x = pd.xs[s];
       sp.y = pd.ys[s];
       sp.originalIndex = origIdx;
-      if (this._getOpacity(sp) > 0) visibleSlots.push(s);
+      if (visibilityModel.isInteractive(sp)) visibleSlots.push(s);
     }
     this._quadtreeIndex.setScales(this._scales);
     this._quadtreeIndex.rebuild(pd, visibleSlots);
@@ -1269,6 +1393,35 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
+  /**
+   * Resolve a list of quadtree slots to the protein ids of the interactive
+   * points among them, in a single allocation-free pass.
+   *
+   * Shared by lasso and brush selection. Reuses `_scratchPoint` and the cached
+   * visibility model so that selecting from the ~573K-point flagship dataset
+   * does not allocate a PlotDataPoint per hit plus two intermediate arrays.
+   * `isInteractive` reads only `id`/`originalIndex`, so the scratch point's
+   * x/y (and absent z) are irrelevant here — behavior matches the prior
+   * `slots.map(materialize).filter(isInteractive).map(p => p.id)` chain.
+   */
+  private _slotsToInteractiveIds(slots: number[]): string[] {
+    const pd = this._plotData;
+    const oi = pd.originalIndices;
+    const sp = this._scratchPoint;
+    const model = this._getVisibilityModel();
+    const ids: string[] = [];
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const origIdx = oi ? oi[s] : s;
+      sp.id = pd.proteinIds[origIdx];
+      sp.x = pd.xs[s];
+      sp.y = pd.ys[s];
+      sp.originalIndex = origIdx;
+      if (model.isInteractive(sp)) ids.push(sp.id);
+    }
+    return ids;
+  }
+
   private _handleLassoEnd(event: PointerEvent) {
     if (!this._isLassoing) return;
     event.preventDefault();
@@ -1289,7 +1442,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     const slots = this._quadtreeIndex.queryByPolygon(this._lassoVertices);
-    const selectedIds = slots.map((s) => plotDataId(this._plotData, s));
+    const selectedIds = this._slotsToInteractiveIds(slots);
     this._commitSelection(selectedIds, () => this._clearLassoVisual());
   }
 
@@ -1306,7 +1459,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
     const slots = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
-    const selectedIds = slots.map((s) => plotDataId(this._plotData, s));
+    const selectedIds = this._slotsToInteractiveIds(slots);
     this._commitSelection(selectedIds, () => {
       if (this._brush && this._brushGroup) {
         this._brushGroup.call(this._brush.move, null);
@@ -1881,8 +2034,162 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _getOpacity(point: PlotDataPoint): number {
-    const getters = this._getStyleGetters();
-    return getters.getOpacity(point);
+    // Facade: two external consumers reach into this private member —
+    // webgl-render-perf.ts (via a privacy cast, acknowledged debt) and
+    // app/tests/brush-selection.spec.ts:323. Do not rename or remove this
+    // method without migrating those callers first.
+    // Delegates to the shared visibility model, which is the single opacity
+    // authority.
+    return this._getVisibilityModel().opacityOf(point);
+  }
+
+  /**
+   * Pull-based, memoized accessor for the shared point-visibility model.
+   *
+   * PULL-BASED on purpose (design D1): there is no `willUpdate`; isolation,
+   * reset, and numeric-rebin rAF all call `_processData`/`_buildQuadtree`
+   * imperatively outside the Lit cycle; and pinned tests drive unattached
+   * elements where lifecycle never runs. A lifecycle-recomputed model would be
+   * stale at those sites. So the model is computed lazily and memoized purely on
+   * input identity — no lifecycle hooks, no version counters, no invalidation
+   * plumbing.
+   *
+   * Keys (all reference/strict-equality): the materialized display data (same
+   * source `_buildStyleGetters` uses — `_getCurrentDisplayData` returns the
+   * cached materialized object by reference when filtered ids are excluded, so
+   * it is reference-stable until materialization is rebuilt), `selectedAnnotation`,
+   * `hiddenAnnotationValues` ref, selection/highlight refs, and the three opacity
+   * numbers from the merged config. (Opacities are extracted as three plain
+   * numbers rather than keying on `_mergedConfig` itself: `_mergedConfig` is
+   * rebuilt as a new object on unrelated changes such as width/height/margin, so
+   * its reference is never stable as a cache key.)
+   *
+   * Two-level: on a miss we pass the previous model to `computeVisibilityModel`,
+   * which reuses the O(N) hidden mask when (data, selectedAnnotation, hidden ref)
+   * are unchanged — so selection/highlight/opacity-only changes never redo the
+   * mask pass. Isolation is NOT an input: it is physical culling upstream; the
+   * model sees only the materialized data + alpha-layer inputs.
+   */
+  private _getVisibilityModel(): VisibilityModel {
+    // Same data expression `_buildStyleGetters` uses, so the component path and
+    // the hit-test path share one model instance over one data reference.
+    const data =
+      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
+      this._getMaterializedData() ??
+      this.data;
+    const baseOpacity = this._mergedConfig.baseOpacity;
+    const selectedOpacity = this._mergedConfig.selectedOpacity;
+    const fadedOpacity = this._mergedConfig.fadedOpacity;
+
+    const key = this._visibilityModelKey;
+    if (
+      this._visibilityModelCache &&
+      key &&
+      key.data === data &&
+      key.selectedAnnotation === this.selectedAnnotation &&
+      key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
+      key.selectedProteinIds === this.selectedProteinIds &&
+      key.highlightedProteinIds === this.highlightedProteinIds &&
+      key.baseOpacity === baseOpacity &&
+      key.selectedOpacity === selectedOpacity &&
+      key.fadedOpacity === fadedOpacity
+    ) {
+      return this._visibilityModelCache;
+    }
+
+    const model = computeVisibilityModel(
+      {
+        data,
+        selectedAnnotation: this.selectedAnnotation,
+        hiddenAnnotationValues: this.hiddenAnnotationValues,
+        selectedProteinIds: this.selectedProteinIds,
+        highlightedProteinIds: this.highlightedProteinIds,
+        opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
+      },
+      this._visibilityModelCache ?? undefined,
+    );
+
+    this._visibilityModelCache = model;
+    this._visibilityModelKey = {
+      data,
+      selectedAnnotation: this.selectedAnnotation,
+      hiddenAnnotationValues: this.hiddenAnnotationValues,
+      selectedProteinIds: this.selectedProteinIds,
+      highlightedProteinIds: this.highlightedProteinIds,
+      baseOpacity,
+      selectedOpacity,
+      fadedOpacity,
+    };
+    return model;
+  }
+
+  /**
+   * Number of INTERACTIVE plot points in the chart (opacityOf > 0): the points
+   * the user can actually see and interact with. `_plotData` is already
+   * physically culled by isolation and query filters; this further drops
+   * legend-hidden points AND selection-faded points whose configured
+   * fadedOpacity is 0 (faded-to-0 == invisible, exactly what the WebGL renderer
+   * and hit-test treat as non-interactive). The memo key therefore includes
+   * selection/highlight + the three opacities (fadedOpacity-0 makes selection
+   * affect interactivity), and keys plot-data on (originalIndices ref + length)
+   * rather than the `_plotData` container ref so a pure projection switch
+   * (which clonePlotData()s a new container sharing the same originalIndices)
+   * reuses the cache — interactivity is independent of x/y coordinates.
+   */
+  private _getVisiblePointCount(): number {
+    const data =
+      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
+      this._getMaterializedData() ??
+      this.data;
+    const pd = this._plotData;
+    const baseOpacity = this._mergedConfig.baseOpacity;
+    const selectedOpacity = this._mergedConfig.selectedOpacity;
+    const fadedOpacity = this._mergedConfig.fadedOpacity;
+
+    const key = this._visiblePointCountKey;
+    if (
+      this._visiblePointCountCache !== null &&
+      key &&
+      key.originalIndices === pd.originalIndices &&
+      key.plotLength === pd.length &&
+      key.data === data &&
+      key.selectedAnnotation === this.selectedAnnotation &&
+      key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
+      key.selectedProteinIds === this.selectedProteinIds &&
+      key.highlightedProteinIds === this.highlightedProteinIds &&
+      key.baseOpacity === baseOpacity &&
+      key.selectedOpacity === selectedOpacity &&
+      key.fadedOpacity === fadedOpacity
+    ) {
+      return this._visiblePointCountCache;
+    }
+
+    const model = this._getVisibilityModel();
+    const oi = pd.originalIndices;
+    const sp = this._scratchPoint;
+    let count = 0;
+    for (let s = 0; s < pd.length; s++) {
+      const origIdx = oi ? oi[s] : s;
+      sp.id = pd.proteinIds[origIdx];
+      sp.originalIndex = origIdx;
+      // x/y intentionally NOT set: isInteractive → opacityOf → isHidden /
+      // baseOpacityOf read only id + originalIndex, never coordinates.
+      if (model.isInteractive(sp)) count++;
+    }
+    this._visiblePointCountCache = count;
+    this._visiblePointCountKey = {
+      originalIndices: pd.originalIndices,
+      plotLength: pd.length,
+      data,
+      selectedAnnotation: this.selectedAnnotation,
+      hiddenAnnotationValues: this.hiddenAnnotationValues,
+      selectedProteinIds: this.selectedProteinIds,
+      highlightedProteinIds: this.highlightedProteinIds,
+      baseOpacity,
+      selectedOpacity,
+      fadedOpacity,
+    };
+    return count;
   }
 
   private _getDepth(point: PlotDataPoint): number {
@@ -1907,24 +2214,28 @@ export class ProtspaceScatterplot extends LitElement {
       this._getMaterializedData() ??
       this.data;
 
-    return createStyleGetters(styleData, {
-      selectedProteinIds: this.selectedProteinIds,
-      highlightedProteinIds: this.highlightedProteinIds,
-      selectedAnnotation: this.selectedAnnotation,
-      hiddenAnnotationValues: this.hiddenAnnotationValues,
-      otherAnnotationValues: this.otherAnnotationValues,
-      zOrderMapping: this._zOrderMapping,
-      colorMapping: this._colorMapping,
-      shapeMapping: this._shapeMapping,
-      sizes: {
-        base: this._mergedConfig.pointSize,
+    return createStyleGetters(
+      styleData,
+      {
+        selectedProteinIds: this.selectedProteinIds,
+        highlightedProteinIds: this.highlightedProteinIds,
+        selectedAnnotation: this.selectedAnnotation,
+        hiddenAnnotationValues: this.hiddenAnnotationValues,
+        otherAnnotationValues: this.otherAnnotationValues,
+        zOrderMapping: this._zOrderMapping,
+        colorMapping: this._colorMapping,
+        shapeMapping: this._shapeMapping,
+        sizes: {
+          base: this._mergedConfig.pointSize,
+        },
+        opacities: {
+          base: this._mergedConfig.baseOpacity,
+          selected: this._mergedConfig.selectedOpacity,
+          faded: this._mergedConfig.fadedOpacity,
+        },
       },
-      opacities: {
-        base: this._mergedConfig.baseOpacity,
-        selected: this._mergedConfig.selectedOpacity,
-        faded: this._mergedConfig.fadedOpacity,
-      },
-    });
+      this._getVisibilityModel(),
+    );
   }
 
   private _getStyleGetters() {
@@ -2048,8 +2359,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (nearestSlot >= 0) {
       const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
 
-      // Don't hover hidden points (opacity=0)
-      if (this._getOpacity(nearestPoint) === 0) {
+      // Don't hover non-interactive points (hidden/faded-to-0 → opacity 0)
+      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
         this._clearHoverState();
         return;
       }
@@ -2110,8 +2421,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (nearestSlot >= 0) {
       const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
 
-      // Don't click hidden points (opacity=0)
-      if (this._getOpacity(nearestPoint) === 0) {
+      // Don't click non-interactive points (hidden/faded-to-0 → opacity 0)
+      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
         return;
       }
 
@@ -2302,12 +2613,12 @@ export class ProtspaceScatterplot extends LitElement {
               </div>
             `
           : ''}
-        ${this._isolationMode
-          ? html` <div class="isolation-indicator">${this._plotData.length} points</div> `
+        ${this.data
+          ? html` <div class="plot-indicator">${this._getVisiblePointCount()} points</div> `
           : ''}
         ${this._numericRecomputeState.running
           ? html`
-              <div class="isolation-indicator" style="left: auto; right: 0.5rem;">
+              <div class="plot-indicator" style="left: auto; right: 0.5rem;">
                 Recalculating bins for ${this._numericRecomputeState.annotation ?? 'annotation'}...
               </div>
             `

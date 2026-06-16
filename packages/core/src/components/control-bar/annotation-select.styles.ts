@@ -30,16 +30,21 @@ export const annotationSelectStyles = [
 
     /* Ensure dropdown-trigger padding matches (inherited from dropdownMixin) */
 
-    /* Popover sits absolutely positioned, so it can be wider than the
-       trigger without affecting layout. Stay at least as wide as the
-       trigger, grow with content, cap so very long annotation names
-       wrap instead of pushing the menu off-screen. */
     .dropdown-menu {
       overflow-y: auto;
       overflow-x: hidden;
-      min-width: max(100%, 22rem);
+    }
+
+    /* Hug the content (the widest annotation row) rather than stretching to the trigger button's
+       full width — matching the button left a large empty gap on short labels once the row's
+       flex-grow label pushed the visibility toggle to the far edge. The floor keeps the search box
+       comfortable; the cap stops very long names from over-widening the menu or running off-screen.
+       Uses the .align-left specificity (0,2,0) to beat the shared dropdown mixin, which otherwise
+       stretches the menu to the trigger width. The popover is fixed, so it is unaffected. */
+    .dropdown-menu.align-left {
+      min-width: 16rem;
       width: max-content;
-      max-width: 28rem;
+      max-width: min(28rem, calc(100vw - 2rem));
     }
 
     .annotation-search-container {
@@ -133,6 +138,21 @@ export const annotationSelectStyles = [
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .predicted-badge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.8rem;
+      line-height: 1;
+      cursor: default;
+      user-select: none;
+    }
+
+    .annotation-info {
+      flex: 0 0 auto;
+      align-items: center;
     }
 
     .tooltip-toggle-slot {

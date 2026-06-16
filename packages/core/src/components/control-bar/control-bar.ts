@@ -12,8 +12,6 @@ import type {
 import { handleDropdownEscape, isAnyDropdownOpen } from '../../utils/dropdown-helpers';
 import {
   EXPORT_DEFAULTS,
-  isProjection3D,
-  getProjectionPlane,
   toggleProteinSelection,
   mergeProteinSelections,
 } from './control-bar-helpers';
@@ -43,8 +41,6 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: String, attribute: 'selected-annotation' })
   selectedAnnotation: string = '';
   @property({ type: Array }) tooltipAnnotations: string[] = [];
-  @property({ type: String, attribute: 'projection-plane' })
-  projectionPlane: 'xy' | 'xz' | 'yz' = 'xy';
   @property({ type: Boolean, attribute: 'selection-mode' })
   selectionMode: boolean = false;
   @property({ type: String, attribute: 'selection-tool' })
@@ -142,13 +138,6 @@ export class ProtspaceControlBar extends LitElement {
       if (projectionIndex !== -1 && 'selectedProjectionIndex' in this._scatterplotElement) {
         (this._scatterplotElement as ScatterplotElementLike).selectedProjectionIndex =
           projectionIndex;
-
-        const is3D = isProjection3D(this.selectedProjection, this.projectionsMeta);
-        const nextPlane = getProjectionPlane(is3D, this.projectionPlane);
-        if ('projectionPlane' in this._scatterplotElement) {
-          (this._scatterplotElement as ScatterplotElementLike).projectionPlane = nextPlane;
-        }
-        this.projectionPlane = nextPlane;
       }
     }
 
@@ -265,25 +254,6 @@ export class ProtspaceControlBar extends LitElement {
         highlighted.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     });
-  }
-
-  private handlePlaneChange(event: Event) {
-    const target = event.target as HTMLSelectElement;
-    const plane = target.value as 'xy' | 'xz' | 'yz';
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'projectionPlane' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).projectionPlane = plane;
-      this.projectionPlane = plane;
-    }
-    const customEvent = new CustomEvent('projection-plane-change', {
-      detail: { plane },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(customEvent);
   }
 
   applyAnnotationSelection(annotation: string) {
@@ -537,6 +507,11 @@ export class ProtspaceControlBar extends LitElement {
 
   public clearForNewDataset(_datasetHash: string, _clearPersistedState: boolean = true): void {
     this.exportFormat = EXPORT_DEFAULTS.FORMAT;
+    // A new dataset has different protein ids, so any active filter is stale. Clear
+    // the badge/query here (the canonical per-dataset reset hook); the scatter plot's
+    // filter channel is reset in parallel by applyPlotState.
+    this.filterQuery = [];
+    this.filterActive = false;
   }
 
   private openFileDialog() {
@@ -616,25 +591,6 @@ export class ProtspaceControlBar extends LitElement {
                 : ''}
             </div>
           </div>
-
-          ${(() => {
-            return isProjection3D(this.selectedProjection, this.projectionsMeta)
-              ? html`
-                  <div class="control-group">
-                    <label for="plane-select">Plane:</label>
-                    <select
-                      id="plane-select"
-                      .value=${this.projectionPlane}
-                      @change=${this.handlePlaneChange}
-                    >
-                      <option value="xy">XY</option>
-                      <option value="xz">XZ</option>
-                      <option value="yz">YZ</option>
-                    </select>
-                  </div>
-                `
-              : null;
-          })()}
 
           <!-- Annotation selection -->
           <div class="control-group">
@@ -1613,19 +1569,22 @@ export class ProtspaceControlBar extends LitElement {
   private _handleQueryApply(e: CustomEvent<{ matchedIndices: Set<number> }>) {
     if (!this._scatterplotElement) return;
     const sp = this._scatterplotElement as ScatterplotElementLike;
-    const data = sp.getCurrentData?.();
-    const proteinIds = data?.protein_ids;
+    // matchedIndices are positions in the exact array the query was evaluated
+    // against — `_currentData`, the full materialized snapshot handed to the query
+    // builder. Mapping through any other array (e.g. getCurrentData(), the isolated
+    // subset) mis-resolves the indices and shrank the result on every re-apply (#257).
+    const proteinIds = this._currentData?.protein_ids;
     if (!proteinIds) return;
 
-    // Convert indices to protein IDs
-    const matchedIds = Array.from(e.detail.matchedIndices).map((i) => proteinIds[i]);
+    const matchedIds = Array.from(e.detail.matchedIndices)
+      .map((i) => proteinIds[i])
+      .filter((id): id is string => id !== undefined);
 
-    // Set selection and isolate (dispatch event for downstream listeners)
-    sp.selectedProteinIds = matchedIds;
-    this.dispatchEvent(
-      new CustomEvent('isolate-data', { detail: {}, bubbles: true, composed: true }),
-    );
-    sp.isolateSelection?.();
+    // A filter is not a selection and not an isolation: route it through the
+    // dedicated, idempotent filteredProteinIds channel on the scatter plot so that
+    // re-applying the same query is a no-op rather than stacking isolation layers.
+    sp.filteredProteinIds = matchedIds;
+    sp.filtersActive = true;
 
     this.filterActive = true;
     this.showFilterMenu = false;
@@ -1634,15 +1593,13 @@ export class ProtspaceControlBar extends LitElement {
   private _handleQueryReset() {
     if (!this._scatterplotElement) return;
     const sp = this._scatterplotElement as ScatterplotElementLike;
-    this.dispatchEvent(
-      new CustomEvent('reset-isolation', { detail: {}, bubbles: true, composed: true }),
-    );
-    sp.resetIsolation?.();
+    // Clear only the filter channel; any manual isolation the user created
+    // independently of the filter is left untouched.
+    sp.filteredProteinIds = [];
+    sp.filtersActive = false;
 
     this.filterQuery = [createCondition()];
     this.filterActive = false;
-    this.isolationMode = false;
-    this.isolationHistory = [];
     // Do NOT close popover -- user may want to start a new query
   }
 }

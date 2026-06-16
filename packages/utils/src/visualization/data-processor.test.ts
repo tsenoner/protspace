@@ -38,7 +38,7 @@ describe('DataProcessor.processVisualizationData', () => {
     expect(result.proteinIds).toBe(data.protein_ids);
   });
 
-  it('preserves z coordinate for 3D projections', () => {
+  it('preserves z coordinate (in zs) for 3D projections', () => {
     const data: VisualizationData = {
       protein_ids: ['p0'],
       projections: [{ name: 't', data: Float32Array.of(1, 2, 3), dimension: 3 }],
@@ -203,6 +203,83 @@ describe('DataProcessor.processVisualizationData — isolation (Set-based, MODEL
     expect(result.ys[0]).toBe(6);
     expect(result.xs[1]).toBe(7);
     expect(result.ys[1]).toBe(8);
+  });
+});
+
+describe('DataProcessor.processVisualizationData — query filter (visibleProteinIds)', () => {
+  const fixture: VisualizationData = {
+    protein_ids: ['p0', 'p1', 'p2', 'p3', 'p4'],
+    projections: [
+      {
+        name: 't',
+        data: Float32Array.of(0, 0, 1, 1, 2, 2, 3, 3, 4, 4),
+        dimension: 2,
+      },
+    ],
+    annotations: {},
+    annotation_data: {},
+  };
+
+  it('null/undefined visibleProteinIds skips the cull; empty Set culls to zero', () => {
+    expect(
+      DataProcessor.processVisualizationData(fixture, 0, false, undefined, 'xy', undefined).length,
+    ).toBe(5);
+    expect(
+      DataProcessor.processVisualizationData(fixture, 0, false, undefined, 'xy', null).length,
+    ).toBe(5);
+    // empty Set is truthy → cull runs → zero matches → empty result
+    expect(
+      DataProcessor.processVisualizationData(fixture, 0, false, undefined, 'xy', new Set<string>())
+        .length,
+    ).toBe(0);
+  });
+
+  it('query filter keeps GLOBAL originalIndices on a non-prefix subset', () => {
+    const result = DataProcessor.processVisualizationData(
+      fixture,
+      0,
+      false,
+      undefined,
+      'xy',
+      new Set(['p1', 'p3']),
+    );
+    expect(result.length).toBe(2);
+    // originalIndices must be GLOBAL indices into protein_ids, not slice-local —
+    // style getters and tooltips resolve annotation values by that index.
+    expect(Array.from(result.originalIndices!)).toEqual([1, 3]);
+    expect(Array.from(result.xs)).toEqual([1, 3]);
+    expect(Array.from(result.ys)).toEqual([1, 3]);
+  });
+
+  it('combines query-filter and isolation: intersection with global originalIndices', () => {
+    // query filter retains p1,p2,p3; isolation retains p0,p1,p2 → intersection = {p1, p2}
+    const result = DataProcessor.processVisualizationData(
+      fixture,
+      0,
+      true,
+      [['p0', 'p1', 'p2']],
+      'xy',
+      new Set(['p1', 'p2', 'p3']),
+    );
+    expect(result.length).toBe(2);
+    expect(Array.from(result.originalIndices!)).toEqual([1, 2]);
+  });
+
+  it('combines query-filter and multi-layer isolation (intersection across all layers)', () => {
+    // query filter retains p1..p4; layer0 retains p0..p3; layer1 retains p2,p3,p4 → {p2, p3}
+    const result = DataProcessor.processVisualizationData(
+      fixture,
+      0,
+      true,
+      [
+        ['p0', 'p1', 'p2', 'p3'],
+        ['p2', 'p3', 'p4'],
+      ],
+      'xy',
+      new Set(['p1', 'p2', 'p3', 'p4']),
+    );
+    expect(result.length).toBe(2);
+    expect(Array.from(result.originalIndices!)).toEqual([2, 3]);
   });
 });
 

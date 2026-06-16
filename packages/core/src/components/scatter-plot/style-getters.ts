@@ -6,6 +6,8 @@ import {
   normalizeShapeName,
   toInternalValue,
 } from '@protspace/utils';
+import { computeVisibilityModel } from './visibility-model';
+import type { VisibilityModel } from './visibility-model';
 
 export interface StyleConfig {
   selectedProteinIds: string[];
@@ -40,10 +42,27 @@ export interface StyleConfig {
   };
 }
 
-export function createStyleGetters(data: VisualizationData | null, styleConfig: StyleConfig) {
-  // Precompute fast lookup structures
-  const selectedIdsSet = new Set(styleConfig.selectedProteinIds);
-  const highlightedIdsSet = new Set(styleConfig.highlightedProteinIds);
+export function createStyleGetters(
+  data: VisualizationData | null,
+  styleConfig: StyleConfig,
+  model?: VisibilityModel,
+) {
+  // Single authority for per-point opacity semantics. The component passes a
+  // shared, memoized model; direct callers (tests included) omit it and one is
+  // computed from the existing style-config inputs.
+  const visibility =
+    model ??
+    computeVisibilityModel({
+      data,
+      selectedAnnotation: styleConfig.selectedAnnotation,
+      hiddenAnnotationValues: styleConfig.hiddenAnnotationValues,
+      selectedProteinIds: styleConfig.selectedProteinIds,
+      highlightedProteinIds: styleConfig.highlightedProteinIds,
+      opacities: styleConfig.opacities,
+    });
+
+  // Precompute fast lookup structures. `hiddenKeysSet` is a COLOR semantic
+  // (getColors drops hidden values' colors), not an opacity one.
   const hiddenKeysSet = new Set(
     (styleConfig.hiddenAnnotationValues || []).map((v) => toInternalValue(v)),
   );
@@ -87,20 +106,6 @@ export function createStyleGetters(data: VisualizationData | null, styleConfig: 
       valueToShape.set(key, normalizeShapeName(shape));
     }
   }
-  // Detect if the user has effectively hidden all values for the selected annotation
-  // In that case, we ignore the hidden filter to avoid rendering an empty plot.
-  const computeAllHidden = (): boolean => {
-    if (!data || !styleConfig.selectedAnnotation) return false;
-    const annotation = data.annotations[styleConfig.selectedAnnotation];
-    if (!annotation || !Array.isArray(annotation.values)) return false;
-    const hidden = new Set(styleConfig.hiddenAnnotationValues);
-    if (hidden.size === 0) return false;
-    const normalizedKeys = annotation.values.map((v) => toInternalValue(v));
-    return normalizedKeys.length > 0 && normalizedKeys.every((k) => hidden.has(k));
-  };
-
-  const allHidden = computeAllHidden();
-
   const getPointSize = (_point: PlotDataPoint): number => {
     return styleConfig.sizes.base;
   };
@@ -164,36 +169,11 @@ export function createStyleGetters(data: VisualizationData | null, styleConfig: 
    * Compute the "base" opacity for a point, ignoring the hidden-annotation filter.
    * Used by getDepth so that depth (and thus sort order) is stable across
    * visibility toggles — only the alpha channel changes, not the draw order.
+   * Thin delegation to the visibility model (the single opacity authority).
    */
-  const getBaseOpacity = (point: PlotDataPoint): number => {
-    const isSelected = selectedIdsSet.has(point.id);
-    const isHighlighted = highlightedIdsSet.has(point.id);
-    const hasSelection = styleConfig.selectedProteinIds.length > 0;
+  const getBaseOpacity = (point: PlotDataPoint): number => visibility.baseOpacityOf(point);
 
-    if (isSelected || isHighlighted) {
-      return styleConfig.opacities.selected;
-    }
-    if (hasSelection && !isSelected) {
-      return styleConfig.opacities.faded;
-    }
-    return styleConfig.opacities.base;
-  };
-
-  const getOpacity = (point: PlotDataPoint): number => {
-    if (!data || !styleConfig.selectedAnnotation) return getBaseOpacity(point);
-
-    const annotationValue = getProteinAnnotationValues(
-      data,
-      point.originalIndex,
-      styleConfig.selectedAnnotation,
-    );
-
-    if (!allHidden && annotationValue) {
-      if (annotationValue.every((f) => hiddenKeysSet.has(toInternalValue(f)))) return 0;
-    }
-
-    return getBaseOpacity(point);
-  };
+  const getOpacity = (point: PlotDataPoint): number => visibility.opacityOf(point);
 
   // Precompute normalization for z-order mapping so getDepth is cheap.
   const zMap = styleConfig.zOrderMapping ?? null;
