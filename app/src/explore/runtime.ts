@@ -21,7 +21,6 @@ import {
 } from './fasta-prep-limits';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
-import { createPersistedLegendController } from './persisted-legend';
 import { startInitialExploreLoad } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
@@ -217,16 +216,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => viewController.dispose());
 
-  const persistedLegendController = createPersistedLegendController({
-    plotElement,
-  });
-
   const interactionController = createInteractionController({
     legendElement,
     plotElement,
     selectedProteinElement,
     structureViewer,
-    clearPersistedLegendHiddenValues: persistedLegendController.clearPersistedLegendHiddenValues,
   });
 
   const datasetController = createDatasetController({
@@ -321,11 +315,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     addControlBarListener(type, listener, options) {
       addTrackedEventListener(lifecycle, controlBar, type, listener, options);
     },
-    controlBar,
     datasetController,
     handleExport,
     interactionController,
-    plotElement,
     viewController,
   });
 

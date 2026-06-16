@@ -6,7 +6,6 @@ import type {
   StructureErrorEventDetail,
   StructureLoadEvent,
 } from '@protspace/core';
-import type { VisualizationData } from '@protspace/utils';
 import { getProteinAnnotationIndices } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getLegendErrorNotification } from './notifications';
@@ -16,14 +15,12 @@ interface InteractionControllerOptions {
   plotElement: ProtspaceScatterplot;
   selectedProteinElement: HTMLElement | null;
   structureViewer: ProtspaceStructureViewer;
-  clearPersistedLegendHiddenValues: (annotation: string, dataOverride?: VisualizationData) => void;
 }
 
 export interface InteractionController {
   updateLegend(): void;
   updateSelectedProteinDisplay(proteinId: string | null): void;
   getSelectedProteins(): string[];
-  setLastKnownAnnotation(annotation: string): void;
   handleSelectionChange(event: Event): void;
   handlePlotDataChange(): void;
   handleLegendItemClick(event: Event): void;
@@ -31,7 +28,7 @@ export interface InteractionController {
   handleStructureLoad(event: Event): void;
   handleStructureError(event: Event): void;
   handleStructureClose(event: Event): void;
-  handleAnnotationChange(nextAnnotation: string): void;
+  handleAnnotationChange(): void;
 }
 
 export function createInteractionController({
@@ -39,11 +36,9 @@ export function createInteractionController({
   plotElement,
   selectedProteinElement,
   structureViewer,
-  clearPersistedLegendHiddenValues,
 }: InteractionControllerOptions): InteractionController {
   let hiddenValues: string[] = [];
   let selectedProteins: string[] = [];
-  let lastKnownAnnotation = '';
 
   const updateSelectedProteinDisplay = (proteinId: string | null) => {
     if (!selectedProteinElement) {
@@ -95,9 +90,6 @@ export function createInteractionController({
     updateSelectedProteinDisplay,
     getSelectedProteins() {
       return selectedProteins;
-    },
-    setLastKnownAnnotation(annotation) {
-      lastKnownAnnotation = annotation;
     },
     handleSelectionChange(event) {
       const customEvent = event as CustomEvent<{ proteinIds?: string[] }>;
@@ -152,15 +144,14 @@ export function createInteractionController({
       console.log('Structure viewer should now be hidden');
       updateSelectedProteinDisplay(null);
     },
-    handleAnnotationChange(nextAnnotation) {
-      if (lastKnownAnnotation && lastKnownAnnotation !== nextAnnotation) {
-        clearPersistedLegendHiddenValues(lastKnownAnnotation);
-      }
-
+    handleAnnotationChange() {
+      // Reset only the in-memory hidden set for the newly selected annotation.
+      // Per-annotation visibility is persisted by the core legend
+      // (saveSettings/loadSettings, keyed by datasetHash + annotation), so
+      // switching away and back restores the previously hidden categories.
       hiddenValues = [];
       plotElement.hiddenAnnotationValues = hiddenValues;
       updateLegend();
-      lastKnownAnnotation = nextAnnotation;
     },
   };
 }

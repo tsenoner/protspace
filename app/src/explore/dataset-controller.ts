@@ -138,11 +138,7 @@ export function createDatasetController({
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
 
-      const initialViewFallback = Object.keys(data.annotations)[0] ?? '';
-      interactionController.setLastKnownAnnotation(initialViewFallback);
-
-      const initialView = await loadData(data);
-      interactionController.setLastKnownAnnotation(initialView?.annotation ?? initialViewFallback);
+      await loadData(data);
 
       const shouldApplyEmbeddedFileSettings = settings && loadMeta.kind !== 'opfs';
       if (shouldApplyEmbeddedFileSettings) {

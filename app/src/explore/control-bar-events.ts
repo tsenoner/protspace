@@ -1,8 +1,4 @@
-import type {
-  ProtspaceControlBar,
-  ProtspaceScatterplot,
-  SelectionDisabledNotificationDetail,
-} from '@protspace/core';
+import type { SelectionDisabledNotificationDetail } from '@protspace/core';
 import { notify } from '../lib/notify';
 import { getSelectionDisabledNotification } from './notifications';
 import type { DatasetController } from './dataset-controller';
@@ -15,26 +11,21 @@ interface ControlBarEventsOptions {
     listener: EventListenerOrEventListenerObject,
     options?: boolean | AddEventListenerOptions,
   ): void;
-  controlBar: ProtspaceControlBar;
   datasetController: DatasetController;
   handleExport(event: Event): Promise<void>;
   interactionController: InteractionController;
-  plotElement: ProtspaceScatterplot;
   viewController: ViewController;
 }
 
 export function bindControlBarEvents({
   addControlBarListener,
-  controlBar,
   datasetController,
   handleExport,
   interactionController,
-  plotElement,
   viewController,
 }: ControlBarEventsOptions): void {
   addControlBarListener('annotation-change', () => {
-    const nextAnnotation = controlBar.selectedAnnotation || plotElement.selectedAnnotation || '';
-    interactionController.handleAnnotationChange(nextAnnotation);
+    interactionController.handleAnnotationChange();
     viewController.handleUserAnnotationChange();
   });
 
