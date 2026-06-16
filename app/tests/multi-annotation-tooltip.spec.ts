@@ -14,9 +14,12 @@ async function openAnnotationDropdown(page: Page): Promise<void> {
 }
 
 async function getRowForAnnotation(page: Page, annotation: string) {
-  return page.locator('protspace-control-bar protspace-annotation-select .dropdown-item').filter({
-    has: page.locator('.dropdown-item-label', { hasText: new RegExp(`^${annotation}$`) }),
-  });
+  // Dropdown items show the friendly display label (e.g. "EC number") but carry
+  // the raw annotation key on data-annotation; match by key so this stays
+  // label-agnostic.
+  return page.locator(
+    `protspace-control-bar protspace-annotation-select .dropdown-item[data-annotation="${annotation}"]`,
+  );
 }
 
 test.describe('Multi-annotation hover tooltip', () => {
