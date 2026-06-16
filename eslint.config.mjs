@@ -25,7 +25,10 @@ export default [
     rules: {
       // Code quality rules (not formatting)
       '@typescript-eslint/consistent-type-imports': ['error'],
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
       '@typescript-eslint/no-explicit-any': ['error'], // Enforce strict typing
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },

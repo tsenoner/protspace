@@ -242,7 +242,6 @@ describe('metadata preservation through round-trip', () => {
    */
   function normalizeMetadata(metadata: Record<string, unknown> | undefined) {
     if (!metadata) return {};
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { dimension, dimensions, ...rest } = metadata;
     return rest;
   }

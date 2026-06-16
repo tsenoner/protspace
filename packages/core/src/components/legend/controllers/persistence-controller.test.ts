@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ReactiveControllerHost } from 'lit';
 import { PersistenceController, type PersistenceCallbacks } from './persistence-controller';
 import type { LegendItem } from '../types';
-import { LEGEND_VALUES, NA_VALUE } from '../config';
+import { NA_VALUE } from '../config';
 
 function createTestItem(value: string, zOrder: number): LegendItem {
   return {

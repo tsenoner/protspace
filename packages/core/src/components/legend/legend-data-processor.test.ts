@@ -6,7 +6,7 @@ import {
 } from './legend-data-processor';
 import { getVisualEncoding } from './visual-encoding';
 import type { LegendItem } from './types';
-import { LEGEND_VALUES, NA_VALUE, NA_DEFAULT_COLOR } from './config';
+import { NA_VALUE, NA_DEFAULT_COLOR } from './config';
 
 describe('legend-data-processor', () => {
   let ctx: LegendProcessorContext;

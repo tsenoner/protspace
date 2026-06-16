@@ -10,7 +10,6 @@ import {
   cmToMm,
   mmToCm,
   SIZE_MODE_WIDTH_MM,
-  type SizeMode,
 } from './dimension-utils';
 
 describe('dimension-utils', () => {

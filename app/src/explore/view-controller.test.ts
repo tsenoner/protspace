@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createViewController, type ViewController } from './view-controller';
+import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
 
