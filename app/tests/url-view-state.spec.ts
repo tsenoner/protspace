@@ -290,6 +290,20 @@ test.beforeAll(async ({ browser }) => {
     });
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
+    // getCurrentView reads the control-bar's annotations/projections, which the
+    // app wires separately from the scatter-plot data and can lag the
+    // plot-data-ready signal under parallel load. Poll until both expose at
+    // least two entries — the deep-link / canonicalization tests below derive a
+    // non-default `target` and a distinct `second` from these, so an empty or
+    // single-value view would silently collapse those to the default and make
+    // the later `not.toContain(demoDefault…)` assertions self-contradictory.
+    // Failing here instead surfaces a slow/degenerate demo as a clear setup error.
+    await expect
+      .poll(async () => {
+        const v = await getCurrentView(page);
+        return Math.min(v.annotations.length, v.projections.length);
+      })
+      .toBeGreaterThanOrEqual(2);
     const view = await getCurrentView(page);
     demoAnnotations = view.annotations;
     demoDefaultAnnotation = view.annotation ?? view.annotations[0] ?? '';

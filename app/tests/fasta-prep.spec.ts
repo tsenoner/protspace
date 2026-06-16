@@ -38,9 +38,7 @@ test('FASTA prep can be cancelled from the loading overlay', async ({ page }) =>
   // with a body would close the stream, end the prep early, and remove the
   // overlay before we can interact with it. The pending promise is abandoned
   // when the client aborts this request on cancel.
-  let sseAborted = false;
   await page.route('**/api/prepare/cancel-job/events', async () => {
-    sseAborted = false;
     await new Promise<void>(() => {
       /* never resolves */
     });
@@ -66,10 +64,12 @@ test('FASTA prep can be cancelled from the loading overlay', async ({ page }) =>
 
   await expect(overlay).toBeHidden();
 
+  // Cancellation is observed by the overlay disappearing and — critically — the
+  // bundle never being fetched. Whether the client also tears down the SSE
+  // EventSource is intentionally not asserted: Playwright does not reliably
+  // surface the client-side abort across browsers, so any such check would be a
+  // tautology rather than a real signal.
   expect(bundleRequested).toBe(false);
-  // Touch sseAborted so the linter sees the symbol exercised even if the
-  // mock does not surface an abort (Playwright behavior is browser-dependent).
-  expect(typeof sseAborted).toBe('boolean');
 });
 
 test('FASTA drop completes the prep flow end-to-end', async ({ page }) => {

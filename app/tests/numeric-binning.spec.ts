@@ -734,9 +734,13 @@ async function clickPickerValue(
 
 /** Remove every selected value chip from a condition row. */
 async function clearChips(page: Page, rowIndex: number): Promise<void> {
-  // Each click removes one chip; loop until none remain.
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  // Removing a chip dispatches condition-changed up through the control-bar and
+  // back down, so the chip DOM only updates after an async Lit re-render. Wait
+  // for the chip count to actually drop before the next click so we never
+  // re-click a stale/detached button, and cap the loop so a removal regression
+  // fails fast (a clear poll timeout) instead of spinning until the test timeout.
+  let remaining = (await chipValues(page, rowIndex)).length;
+  for (let guard = remaining + 5; guard > 0 && remaining > 0; guard -= 1) {
     const removed = await page.evaluate((idx) => {
       const cb = document.querySelector('protspace-control-bar');
       const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
@@ -751,6 +755,9 @@ async function clearChips(page: Page, rowIndex: number): Promise<void> {
       return true;
     }, rowIndex);
     if (!removed) break;
+    const before = remaining;
+    await expect.poll(async () => (await chipValues(page, rowIndex)).length).toBeLessThan(before);
+    remaining = (await chipValues(page, rowIndex)).length;
   }
   await expect.poll(async () => (await chipValues(page, rowIndex)).length).toBe(0);
 }
@@ -2391,27 +2398,39 @@ test('numeric tooltip shows the raw value within the current bin range after reb
   await waitForDialogClosed(page);
 
   // The numeric tooltip shows the raw value (no bin label / comparison markers).
-  // After rebinning, that raw value must fall within the overall range the
-  // current bins span. hoverFirstVisiblePoint picks an arbitrary point, and the
-  // bin-edge labels are rounded for display, so check against the global
-  // min/max with a small tolerance rather than a single (rounded) bin — that
-  // keeps the assertion stable regardless of which point is hovered.
-  const binBounds = (await readLegendDisplay(page)).items
-    .flatMap((item) => item.label.split(' - ').map((part) => Number(part)))
-    .filter((value) => Number.isFinite(value));
-  expect(binBounds.length).toBeGreaterThan(0);
-  const globalMin = Math.min(...binBounds);
-  const globalMax = Math.max(...binBounds);
-  const tolerance = Math.max(1, (globalMax - globalMin) * 0.02);
+  // To verify it shows the *hovered point's* value — not a stale or
+  // wrong-but-in-range value — isolate to a single bin first so every visible
+  // point is known to belong to it, then assert the hovered raw value falls
+  // within that bin's own range. Checking against the full-data range (the union
+  // of all bin edges) would be near-tautological: every protein's value
+  // trivially lies inside it. Bin labels can carry thousands separators, so
+  // strip them before parsing; a small tolerance absorbs float-edge display
+  // rounding (length is integer-typed here, so it is effectively exact).
+  const numericBin = (await readLegendDisplay(page)).items
+    .map((item) => ({
+      label: item.label,
+      count: Number(item.count.replace(/[^\d]/g, '')) || 0,
+      bounds: item.label.split(' - ').map((part) => Number(part.replace(/,/g, ''))),
+    }))
+    .filter((bin) => bin.bounds.length === 2 && bin.bounds.every((value) => Number.isFinite(value)))
+    .sort((a, b) => b.count - a.count)[0];
+  expect(numericBin, 'no numeric bin with a parseable range was found').toBeTruthy();
+  const [binMin, binMax] = numericBin!.bounds;
+
+  // Isolate to the chosen bin so the hovered point is guaranteed to be in it.
+  await setFilterValues(page, 'length', [numericBin!.label]);
+  await applyFiltersFromMenu(page);
+  expect(await isolatedCount(page)).toBeGreaterThan(0);
 
   await hoverFirstVisiblePoint(page);
   const tooltip = await readTooltipSummary(page);
   const rawValue = Number(tooltip.rawValue ?? Number.NaN);
 
+  const tolerance = Math.max(0.5, (binMax - binMin) * 0.02);
   expect(Number.isFinite(rawValue)).toBe(true);
   expect(tooltip.rawValue ?? '').not.toContain('<');
-  expect(rawValue).toBeGreaterThanOrEqual(globalMin - tolerance);
-  expect(rawValue).toBeLessThanOrEqual(globalMax + tolerance);
+  expect(rawValue).toBeGreaterThanOrEqual(binMin - tolerance);
+  expect(rawValue).toBeLessThanOrEqual(binMax + tolerance);
 });
 
 test('zero-match query disables Apply & Isolate and leaves the view unchanged (no fall-back to full data)', async ({
@@ -2500,7 +2519,10 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
         return qb?.shadowRoot?.querySelector('.match-count')?.textContent?.trim() ?? '';
       }),
     )
-    .toContain('0 of');
+    // Anchor to the start: the count renders as "<n> of <total> proteins
+    // matched", so a bare .toContain('0 of') would also match "10 of", "20 of",
+    // etc. Require the matched count itself to be exactly 0.
+    .toMatch(/^0 of /);
   await expect(page.locator('protspace-query-builder .btn-primary')).toBeDisabled();
   expect(await isolatedCount(page)).toBe(fullCount);
 
@@ -2560,15 +2582,15 @@ test('stale numeric filter labels are pruned when bins change', async ({ page })
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
-  await openFilterValueMenu(page, 'length');
-  const labels = await readOpenFilterLabels(page, 'length');
-  // After rebinning, the value picker offers only the current bins — the stale
-  // label is gone from the available values.
-  expect(labels).not.toContain(staleValue);
-  await page
-    .getByRole('dialog', { name: 'Filter Query Builder' })
-    .getByRole('button', { name: 'Cancel' })
-    .click();
+  // After rebinning, the annotation exposes an entirely new set of bins, so the
+  // stale bin label must be gone from the current bins. Read the current bins
+  // directly (numericMetadata.bins via valueMap) rather than the value-picker
+  // list: the picker hides already-selected values as chips, and the stale value
+  // is still selected here, so a picker-list check would report it "absent"
+  // whether or not rebinning actually replaced it — i.e. a tautology.
+  const currentBinLabels = Object.keys((await valueMap(page, 'length')).toInternal);
+  expect(currentBinLabels.length).toBeGreaterThan(0);
+  expect(currentBinLabels).not.toContain(staleValue);
 });
 
 test('loading a new dataset clears active filters before rendering the replacement data', async ({
