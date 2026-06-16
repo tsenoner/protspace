@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Database, BookOpen, Play } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { DOCS_URL } from '@/config';
 
 const Hero = () => {

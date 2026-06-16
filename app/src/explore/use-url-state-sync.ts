@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { SetURLSearchParams } from 'react-router-dom';
+import type { SetURLSearchParams } from 'react-router';
 import type { ExploreController, ExploreViewChange } from './types';
 import { getExploreViewSearchParamsUpdate, parseExploreViewRequest } from './url-state';
 

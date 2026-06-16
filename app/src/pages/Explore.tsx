@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import Header, { HEADER_HEIGHT_CLASS } from '@/components/Header';
 import { useExploreUrlStateSync } from '../explore/use-url-state-sync';
 import './Explore.css';

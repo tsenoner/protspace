@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { SUPPORT_EMAIL, buildMailto } from '@/lib/support';

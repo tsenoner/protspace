@@ -1,6 +1,6 @@
 import { Menu, X, ChevronDown, MessageSquareText } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { GitHubIcon } from '@/components/icons/brand-icons';
 import { Button } from '@/components/ui/button';
 import { buildMailto } from '@/lib/support';

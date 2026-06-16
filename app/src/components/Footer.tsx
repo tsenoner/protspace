@@ -1,7 +1,7 @@
 import { GitHubIcon } from '@/components/icons/brand-icons';
 import { DOCS_URL } from '@/config';
 import { buildMailto } from '@/lib/support';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 const Footer = () => {
   return (
