@@ -388,27 +388,28 @@ test.describe('Dataset reload resets state (#178)', () => {
     await clickLegendItem(page, itemValue);
     await expect.poll(() => isLegendItemHidden(page, itemValue)).toBe(true);
 
-    // Verify localStorage has legend entries
-    await expect.poll(() => findLegendStorageKey(page)).not.toBeNull();
-    const storageKey = await findLegendStorageKey(page);
-
-    const savedSettings = await page.evaluate((key) => {
-      return JSON.parse(localStorage.getItem(key!) || '{}');
-    }, storageKey);
-    expect(savedSettings.hiddenValues).toContain(itemValue);
+    // The hidden value is persisted under a protspace:legend:* key. Persistence
+    // can lag the UI hide (it runs off a separate visibility-model event) and
+    // there may be more than one legend key, so poll across all of them rather
+    // than reading the first key once.
+    const itemHiddenInStorage = () =>
+      page.evaluate((value) => {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key?.startsWith('protspace:legend:')) continue;
+          const settings = JSON.parse(localStorage.getItem(key) || '{}');
+          if ((settings.hiddenValues ?? []).includes(value)) return true;
+        }
+        return false;
+      }, itemValue);
+    await expect.poll(itemHiddenInStorage).toBe(true);
 
     // Reload the page
     await page.reload();
     await waitForExploreDataLoad(page);
 
-    // After reload + file settings applied, hiddenValues should not contain our item
-    const reloadedKey = await findLegendStorageKey(page);
-    if (reloadedKey) {
-      const reloadedSettings = await page.evaluate((key) => {
-        return JSON.parse(localStorage.getItem(key!) || '{}');
-      }, reloadedKey);
-      expect(reloadedSettings.hiddenValues ?? []).not.toContain(itemValue);
-    }
+    // After reload + file settings applied, no legend key should still hide our item.
+    expect(await itemHiddenInStorage()).toBe(false);
   });
 });
 
