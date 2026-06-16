@@ -11,11 +11,12 @@
 /docs/publication
 
 # --- data ---
-# Ignore all data directories except 3FTx, Pla2g2, and toxins
+# Ignore all data directories except 3FTx, Pla2g2, toxins, and jmb_2025
 /data/*
 !/data/3FTx
 !/data/Pla2g2
 !/data/toxins
+!/data/jmb_2025
 # Always ignore pdb subdirectories, tmp subdirectories, and .h5 files everywhere
 **/pdb/
 **/tmp/
