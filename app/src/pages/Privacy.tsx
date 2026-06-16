@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { SUPPORT_EMAIL, buildMailto } from '@/lib/support';
 
 const Privacy = () => {
   return (
@@ -143,7 +144,14 @@ const Privacy = () => {
             <section>
               <h2 className="text-xl font-semibold text-foreground mb-3">Contact</h2>
               <p>
-                For privacy-related questions, open an issue on{' '}
+                For privacy or data requests, email{' '}
+                <a
+                  href={buildMailto({ subject: 'Privacy request' })}
+                  className="text-primary hover:underline"
+                >
+                  {SUPPORT_EMAIL}
+                </a>{' '}
+                or open an issue on{' '}
                 <a
                   href="https://github.com/tsenoner/protspace_web"
                   target="_blank"
@@ -151,8 +159,8 @@ const Privacy = () => {
                   className="text-primary hover:underline"
                 >
                   GitHub
-                </a>{' '}
-                or contact the ProtSpace contributors.
+                </a>
+                .
               </p>
             </section>
           </div>

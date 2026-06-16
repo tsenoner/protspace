@@ -155,4 +155,20 @@ describe('explore notifications', () => {
       description: 'Disk full',
     });
   });
+
+  it('attaches a "Report this" mailto action to the import failure notification', () => {
+    const action = getDataLoadFailureNotification(dataError('Invalid parquet bundle')).action;
+
+    expect(action?.label).toBe('Report this');
+    expect(action?.href).toMatch(/^mailto:hello@protspace\.app\?/);
+    expect(action?.href).toContain('subject=%5BBug%5D%20Dataset%20import%20failed');
+  });
+
+  it('attaches a "Report this" mailto action to the export failure notification', () => {
+    const action = getExportFailureNotification(new Error('Disk full')).action;
+
+    expect(action?.label).toBe('Report this');
+    expect(action?.href).toMatch(/^mailto:hello@protspace\.app\?/);
+    expect(action?.href).toContain('subject=%5BBug%5D%20Export%20failed');
+  });
 });
