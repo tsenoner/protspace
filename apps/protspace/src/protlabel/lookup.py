@@ -39,26 +39,33 @@ class Lookup:
         )
 
     def save(self, path: Path) -> None:
-        """Serialize to a .npz sidecar."""
+        """Serialize to a .npz sidecar.
+
+        Embeddings are stored as float32 (lossless round-trip); ids/labels are
+        stored as unicode arrays rather than pickled object arrays so the sidecar
+        can be loaded with ``allow_pickle=False`` (no arbitrary-code-execution
+        surface on load). ids/labels must not contain trailing NUL bytes, which
+        numpy's fixed-width unicode arrays strip on round-trip.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(
             path,
-            embeddings=self.embeddings.astype(np.float16),
-            ids=np.array(self.ids, dtype=object),
-            labels=np.array(self.labels, dtype=object),
-            metric=self.metric,
-            model=self.model,
+            embeddings=self.embeddings.astype(np.float32),
+            ids=np.asarray(self.ids, dtype=np.str_),
+            labels=np.asarray(self.labels, dtype=np.str_),
+            metric=np.asarray(self.metric, dtype=np.str_),
+            model=np.asarray(self.model, dtype=np.str_),
         )
 
     @classmethod
     def load(cls, path: Path) -> Lookup:
-        """Load a .npz sidecar (re-upcasts embeddings to float32)."""
-        with np.load(path, allow_pickle=True) as data:
+        """Load a .npz sidecar (with pickling disabled)."""
+        with np.load(path, allow_pickle=False) as data:
             return cls(
                 embeddings=data["embeddings"].astype(np.float32),
-                ids=list(data["ids"]),
-                labels=list(data["labels"]),
+                ids=[str(x) for x in data["ids"]],
+                labels=[str(x) for x in data["labels"]],
                 metric=str(data["metric"]),
                 model=str(data["model"]),
             )

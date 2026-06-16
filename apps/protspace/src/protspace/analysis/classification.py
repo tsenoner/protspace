@@ -47,12 +47,19 @@ def classify(
             if column not in columns:
                 raise KeyError(f"Classification column {column!r} not in annotations")
 
-    rows = annotations.to_pylist()
-    identifiers = [str(r["identifier"]) for r in rows]
+    # Materialize only the columns the rules actually need (identifier + any
+    # where-columns) instead of the whole table — the latter is ~GB-scale at
+    # Swiss-Prot row counts.
+    identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
+    where_columns = {
+        column for rule in (query_rule, reference_rule) for column, _ in rule.where
+    }
+    column_data = {c: annotations.column(c).to_pylist() for c in where_columns}
 
     query_indices: list[int] = []
     reference_indices: list[int] = []
-    for i, (identifier, row) in enumerate(zip(identifiers, rows, strict=True)):
+    for i, identifier in enumerate(identifiers):
+        row = {c: column_data[c][i] for c in where_columns}
         if _matches(query_rule, identifier, row):
             query_indices.append(i)
         elif _matches(reference_rule, identifier, row):

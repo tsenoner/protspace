@@ -1,8 +1,34 @@
 """Tests for H5 identifier parsing."""
 
+from pathlib import Path
+
 import pytest
 
-from protspace.data.loaders.h5 import parse_identifier
+from protspace.data.loaders.h5 import parse_identifier, split_h5_spec
+
+
+class TestSplitH5Spec:
+    def test_no_override(self):
+        assert split_h5_spec("emb.h5") == (Path("emb.h5"), None)
+
+    def test_name_override(self):
+        assert split_h5_spec("emb.h5:prot_t5") == (Path("emb.h5"), "prot_t5")
+
+    def test_posix_path_with_override(self):
+        assert split_h5_spec("/data/emb.h5:prot_t5") == (
+            Path("/data/emb.h5"),
+            "prot_t5",
+        )
+
+    def test_windows_drive_path_no_override(self):
+        # The drive-letter colon must not be mistaken for a name override.
+        assert split_h5_spec("C:\\data\\emb.h5") == (Path("C:\\data\\emb.h5"), None)
+
+    def test_windows_drive_path_with_override(self):
+        assert split_h5_spec("C:\\data\\emb.h5:prot_t5") == (
+            Path("C:\\data\\emb.h5"),
+            "prot_t5",
+        )
 
 
 class TestParseIdentifier:

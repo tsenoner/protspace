@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import numpy as np
 import pyarrow as pa
@@ -17,6 +17,9 @@ import typer
 
 from protspace.cli.app import app, setup_logging
 from protspace.cli.common_options import Opt_Verbose
+
+if TYPE_CHECKING:
+    from protspace.analysis.classification import Rule
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +33,8 @@ def run_transfer(
     annotations: pa.Table,
     embeddings: dict[str, np.ndarray],
     transfer_columns: list[str],
-    query_rule,
-    reference_rule,
+    query_rule: Rule,
+    reference_rule: Rule,
     k: int = 1,
     metric: str = "euclidean",
 ) -> pa.Table:
@@ -57,7 +60,9 @@ def run_transfer(
         )
 
     query_idx, ref_idx = classify(embedded, query_rule, reference_rule)
-    rows = embedded.to_pylist()
+    # Materialize only the id column once (not the whole table); per-column values
+    # are pulled inside the loop. Avoids GB-scale Python lists at Swiss-Prot size.
+    id_list = [str(v) for v in embedded.column("identifier").to_pylist()]
 
     out = annotations
     total_transferred = 0
@@ -65,12 +70,14 @@ def run_transfer(
         if column not in annotations.column_names:
             raise KeyError(f"Transfer column {column!r} not in annotations table")
 
+        col_vals = embedded.column(column).to_pylist()
+
         # References: classified refs that HAVE a value in this column.
         ref_ids, ref_labels, ref_vecs = [], [], []
         for i in ref_idx:
-            value = rows[i].get(column)
+            value = col_vals[i]
             if not _is_missing(value):
-                rid = str(rows[i]["identifier"])
+                rid = id_list[i]
                 ref_ids.append(rid)
                 ref_labels.append(str(value))
                 ref_vecs.append(embeddings[rid])
@@ -81,8 +88,8 @@ def run_transfer(
         # Queries: classified queries MISSING a value in this column.
         q_ids, q_vecs = [], []
         for i in query_idx:
-            if _is_missing(rows[i].get(column)):
-                qid = str(rows[i]["identifier"])
+            if _is_missing(col_vals[i]):
+                qid = id_list[i]
                 q_ids.append(qid)
                 q_vecs.append(embeddings[qid])
         if not q_ids:
@@ -165,7 +172,7 @@ def transfer(
 
     from protspace.analysis.classification import Rule
     from protspace.data.io.bundle import read_bundle, replace_annotations_in_bundle
-    from protspace.data.loaders import load_h5
+    from protspace.data.loaders import load_h5, split_h5_spec
 
     def _parse_where(items: list[str] | None) -> list[tuple[str, str]]:
         clauses = []
@@ -188,10 +195,8 @@ def transfer(
     if k < 1:
         raise typer.BadParameter("--k must be >= 1")
 
-    # Load embeddings (name override after ':').
-    h5_spec = embeddings.split(":", 1)
-    h5_path = Path(h5_spec[0])
-    name_override = h5_spec[1] if len(h5_spec) == 2 else None
+    # Load embeddings (optional ':name' override; colon/Windows-safe parsing).
+    h5_path, name_override = split_h5_spec(embeddings)
     emb_set = load_h5([h5_path], name_override=name_override)
     emb_map = {header: emb_set.data[i] for i, header in enumerate(emb_set.headers)}
 
@@ -200,6 +205,14 @@ def transfer(
     annotations = pq.read_table(io.BytesIO(parts[0]))
 
     # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
+    if (
+        "protein_id" in annotations.column_names
+        and "identifier" in annotations.column_names
+    ):
+        raise typer.BadParameter(
+            "Bundle annotations contain both 'protein_id' and 'identifier' columns; "
+            "cannot determine the id column unambiguously."
+        )
     id_col = "protein_id" if "protein_id" in annotations.column_names else "identifier"
     if id_col != "identifier":
         annotations = annotations.rename_columns(
@@ -212,15 +225,31 @@ def transfer(
                 f"--transfer column {col!r} not found in the bundle annotations"
             )
 
-    augmented = run_transfer(
-        annotations=annotations,
-        embeddings=emb_map,
-        transfer_columns=transfer_columns,
-        query_rule=query_rule,
-        reference_rule=reference_rule,
-        k=k,
-        metric=metric,
-    )
+    # Validate classification --*-where columns up front for a clean error.
+    available = set(annotations.column_names)
+    for col, _ in query_rule.where + reference_rule.where:
+        if col not in available:
+            raise typer.BadParameter(
+                f"--*-where column {col!r} not found in the bundle annotations"
+            )
+
+    # Translate input-driven errors from the core into clean CLI errors rather
+    # than leaking raw KeyError/ValueError tracebacks to the user.
+    try:
+        augmented = run_transfer(
+            annotations=annotations,
+            embeddings=emb_map,
+            transfer_columns=transfer_columns,
+            query_rule=query_rule,
+            reference_rule=reference_rule,
+            k=k,
+            metric=metric,
+        )
+    except (KeyError, ValueError) as exc:
+        # Use the raw message (KeyError stringifies with repr quotes) rather than
+        # stripping quotes off the rendered string, which could mangle messages.
+        message = exc.args[0] if exc.args else str(exc)
+        raise typer.BadParameter(str(message)) from exc
 
     # Rename id column back so the written bundle keeps its original name
     # (the web frontend expects "protein_id").

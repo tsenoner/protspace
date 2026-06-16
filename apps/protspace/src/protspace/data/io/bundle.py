@@ -8,6 +8,7 @@ fourth part carries settings (annotation colours, shapes, etc.).
 import io
 import json
 import logging
+import os
 import tempfile
 from pathlib import Path
 
@@ -25,6 +26,43 @@ CORE_FILENAMES = [
 ]
 
 SETTINGS_FILENAME = "settings.parquet"
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically (temp file + ``os.replace``).
+
+    The destination is never left truncated or partial on interrupt — it keeps
+    the old bytes until the rename completes, then atomically becomes the full
+    new bytes.  Critical for the in-place overwrite workflow that ``transfer``
+    documents (``-b results.parquetbundle -o results.parquetbundle``): a Ctrl+C
+    or crash mid-write can no longer destroy the user's bundle.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _check_no_delimiter(part_bytes: bytes) -> None:
+    """Guard: a serialized part must not contain the bundle delimiter.
+
+    If a value (e.g. an annotation string) happens to contain the reserved
+    delimiter byte string, the part split on read-back would be corrupted; fail
+    loudly at write time instead.
+    """
+    if PARQUET_BUNDLE_DELIMITER in part_bytes:
+        raise ValueError(
+            "Serialized parquet part contains the bundle delimiter "
+            f"{PARQUET_BUNDLE_DELIMITER!r}; a value includes this reserved byte "
+            "string and would corrupt the bundle on read."
+        )
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
@@ -101,20 +139,23 @@ def write_bundle(
         bundle_path: Output file path.
         settings: Optional settings dict to include as 4th part.
     """
-    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    buf = io.BytesIO()
+    for i, table in enumerate(tables):
+        if i > 0:
+            buf.write(PARQUET_BUNDLE_DELIMITER)
+        table_buf = io.BytesIO()
+        pq.write_table(table, table_buf)
+        part_bytes = table_buf.getvalue()
+        _check_no_delimiter(part_bytes)
+        buf.write(part_bytes)
 
-    with open(bundle_path, "wb") as f:
-        for i, table in enumerate(tables):
-            if i > 0:
-                f.write(PARQUET_BUNDLE_DELIMITER)
-            buf = io.BytesIO()
-            pq.write_table(table, buf)
-            f.write(buf.getvalue())
+    if settings is not None:
+        buf.write(PARQUET_BUNDLE_DELIMITER)
+        settings_bytes = create_settings_parquet(settings)
+        _check_no_delimiter(settings_bytes)
+        buf.write(settings_bytes)
 
-        if settings is not None:
-            f.write(PARQUET_BUNDLE_DELIMITER)
-            f.write(create_settings_parquet(settings))
-
+    _atomic_write_bytes(bundle_path, buf.getvalue())
     logger.info(f"Saved bundled output to: {bundle_path}")
 
 
@@ -143,9 +184,7 @@ def replace_settings_in_bundle(
     core = PARQUET_BUNDLE_DELIMITER.join(parts[:3])
     new_content = core + PARQUET_BUNDLE_DELIMITER + settings_bytes
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as f:
-        f.write(new_content)
+    _atomic_write_bytes(output_path, new_content)
 
 
 def replace_annotations_in_bundle(
@@ -167,13 +206,13 @@ def replace_annotations_in_bundle(
 
     buf = io.BytesIO()
     pq.write_table(annotations_table, buf)
-    new_parts = [buf.getvalue(), parts[1], parts[2]]
+    new_annotations_bytes = buf.getvalue()
+    _check_no_delimiter(new_annotations_bytes)
+    new_parts = [new_annotations_bytes, parts[1], parts[2]]
     if len(parts) == 4:
         new_parts.append(parts[3])
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as f:
-        f.write(PARQUET_BUNDLE_DELIMITER.join(new_parts))
+    _atomic_write_bytes(output_path, PARQUET_BUNDLE_DELIMITER.join(new_parts))
 
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
 

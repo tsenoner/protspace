@@ -37,7 +37,19 @@ def add_overlay_columns(
             confidences.append(float(pred.reliability))
             sources.append(pred.source_id)
 
+    # Drop any pre-existing overlay columns first so re-running transfer on an
+    # already-overlaid table replaces them rather than appending duplicates
+    # (duplicate field names produce a parquet table that cannot be read back).
+    overlay_names = [
+        f"{column}__pred_value",
+        f"{column}__pred_confidence",
+        f"{column}__pred_source",
+    ]
     out = annotations
+    stale = [name for name in overlay_names if name in out.column_names]
+    if stale:
+        out = out.drop_columns(stale)
+
     out = out.append_column(f"{column}__pred_value", pa.array(values, pa.string()))
     out = out.append_column(
         f"{column}__pred_confidence", pa.array(confidences, pa.float32())

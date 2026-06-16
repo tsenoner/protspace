@@ -6,6 +6,18 @@
 **Trigger:** Conference feedback (`Conference_feedback/ProtSpaceExtractor_v1.7.4_mod 1.py`) + GitHub issue [#54 "EAT — Embedding Annotation Transfer (protlabel lookup table)"](https://github.com/tsenoner/protspace/issues/54) + frontend PR [protspace_web #272 "mark predictions and surface per-annotation docs"](https://github.com/tsenoner/protspace_web/pull/272).
 **Research backing:** Literature + codebase fan-out (8 agents) with adversarial verification of the storage/compute math and the EAT algorithm against primary sources. Citations in §15.
 
+> **Shipped vs deferred (read this first).** This document is a design draft, not as-built documentation. Only a subset of what is described below shipped in PR #55; several flags and the long-format table are deferred follow-ups. Treat anything not in the "Shipped" list as future work that is **not yet implemented**.
+>
+> **Shipped in PR #55** (`protspace transfer`, see `src/protspace/cli/transfer.py`):
+> - Flags: `-b/--bundle`, `-e/--embeddings`, `-t/--transfer`, `-o/--output`, `--query-id-prefix`, `--query-where`, `--reference-id-prefix`, `--reference-where`, `--k`, `--metric` (`euclidean` | `cosine`).
+> - Wide overlay columns appended to the bundle annotations table (`src/protspace/data/io/predictions.py`): `<col>__pred_value`, `<col>__pred_confidence`, `<col>__pred_source`.
+> - Brute-force nearest-neighbour search and the goPredSim reliability index.
+>
+> **Deferred / not yet implemented (future work):**
+> - The opt-in flags described in §3, §5, and §11: `--cutoff`, `--mine`/`--top-n`, `--lookup`, `--report`, `--plots`, `--full-tables`, `--excel`, distance-threshold transfer mode.
+> - The long-format `predicted_annotations` parquet table (§7.2); shipped output is the wide `<col>__pred_*` overlay columns instead.
+> - The faiss accelerator and the `protspace[ann]` extra — **the `ann` extra is not declared in `pyproject.toml`**, so `pip install protspace[ann]` does not work today.
+
 ---
 
 ## 1. One-paragraph decision

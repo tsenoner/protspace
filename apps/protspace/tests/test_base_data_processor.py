@@ -137,16 +137,17 @@ class TestSaveOutput:
             assert mock_write_table.call_count == 3
             mock_mkdir.assert_called()
 
-    @patch("src.protspace.data.processors.base_processor.pq.write_table")
-    def test_save_output_bundled(self, _):
+    def test_save_output_bundled(self, tmp_path):
+        from src.protspace.data.io.bundle import read_bundle
+
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
         tables = processor.create_output(
             SAMPLE_METADATA, SAMPLE_REDUCTIONS, SAMPLE_HEADERS
         )
-        with (
-            patch("pathlib.Path.mkdir") as mock_mkdir,
-            patch("builtins.open", new_callable=MagicMock) as mock_open,
-        ):
-            processor.save_output(tables, Path("output_dir"), bundled=True)
-            mock_mkdir.assert_called()
-            mock_open.assert_called()
+        out_dir = tmp_path / "output_dir"
+        processor.save_output(tables, out_dir, bundled=True)
+
+        bundle_path = out_dir / "data.parquetbundle"
+        assert bundle_path.exists()
+        parts, _settings = read_bundle(bundle_path)
+        assert len(parts) == 3

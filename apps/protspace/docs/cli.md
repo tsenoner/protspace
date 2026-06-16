@@ -186,7 +186,13 @@ protspace style data.parquetbundle --dump-settings
 
 ## `protspace transfer`
 
-Embedding Annotation Transfer (EAT): fills missing annotation values for query proteins by transferring the annotation of the nearest annotated reference protein in pLM embedding space. For each query protein that lacks a value in the requested annotation column, the command finds the closest reference (by Euclidean distance in the original high-dimensional embedding space — not in the 2-D/3-D projection) and assigns that reference's label along with a reliability index adapted from goPredSim (`confidence = 0.5 / (0.5 + distance)`), yielding a score in [0, 1] where 1 means identical embeddings. The curated source column (`COL`) is left untouched; results are written as three new columns: `COL__pred_value` (string), `COL__pred_confidence` (float), and `COL__pred_source` (the nearest reference protein ID). The method is a direct application of the approach introduced by Littmann et al., Sci Rep 2021 ([DOI 10.1038/s41598-020-80786-0](https://doi.org/10.1038/s41598-020-80786-0)) and extended by Heinzinger et al., NAR Genom Bioinform 2022 ([DOI 10.1093/nargab/lqac043](https://doi.org/10.1093/nargab/lqac043)).
+Embedding Annotation Transfer (EAT): fills missing annotation values for query proteins by transferring the annotation of the nearest annotated reference protein in pLM embedding space. For each query protein that lacks a value in the requested annotation column, the command finds the closest reference (by distance in the original high-dimensional embedding space — Euclidean by default, or cosine via `--metric`, and not in the 2-D/3-D projection) and assigns that reference's label along with a reliability index adapted from goPredSim, yielding a score in [0, 1] where 1 means identical embeddings. The curated source column (`COL`) is left untouched; results are written as three new columns: `COL__pred_value` (string), `COL__pred_confidence` (float), and `COL__pred_source` (the nearest reference protein ID). The method is a direct application of the approach introduced by Littmann et al., Sci Rep 2021 ([DOI 10.1038/s41598-020-80786-0](https://doi.org/10.1038/s41598-020-80786-0)) and extended by Heinzinger et al., NAR Genom Bioinform 2022 ([DOI 10.1093/nargab/lqac043](https://doi.org/10.1093/nargab/lqac043)).
+
+**Reliability index (`COL__pred_confidence`).** The exact form depends on `--metric` and `--k`:
+
+- **Default (`--metric euclidean`, `--k 1`):** `confidence = 0.5 / (0.5 + distance)` (1 at distance 0, 0.5 at distance 0.5, → 0 as distance → ∞).
+- **`--metric cosine` (`--k 1`):** `confidence = clamp(1 - cosine_distance, 0, 1)`, where `cosine_distance` is in [0, 2].
+- **`--k > 1`:** the value is the goPredSim mean reliability — `(1/m) · Σ s(d)`, the sum of the per-neighbour similarity `s(d)` (the euclidean or cosine form above) over the `k` nearest neighbours that carry the chosen label, divided by `m = min(k, number of references)`. Because of this normalization, confidence values are **not** comparable across different `--k` settings.
 
 ```bash
 protspace transfer \
@@ -211,9 +217,9 @@ protspace transfer \
 | `--reference-id-prefix` | Restrict reference proteins to IDs starting with this prefix | — |
 | `--reference-where` | Filter reference proteins by annotation value (`col~substr`) | — |
 | `--k` | Number of nearest neighbours | `1` |
-| `--metric` | Distance metric (`euclidean`, `cosine`) | `euclidean` |
+| `--metric` | Distance metric (`euclidean`, `cosine`); see the reliability-index forms above | `euclidean` |
 
-Distances are computed in the original embedding space (HDF5), not in the 2-D/3-D projection.
+Distances are computed in the original embedding space (HDF5), not in the 2-D/3-D projection. The `--metric` choice also changes how `COL__pred_confidence` is computed: euclidean uses `0.5 / (0.5 + distance)`, while cosine uses `clamp(1 - cosine_distance, 0, 1)` (see the reliability-index note above).
 
 ## Combining Multiple Inputs (`-i`)
 

@@ -1,9 +1,12 @@
 """Embedding annotation transfer: kNN -> reliability index -> transferred label.
 
 Implements the goPredSim aggregation (Littmann et al. 2021, Eq. 5):
-    RI(p) = (1/k) * sum over neighbours carrying label p of similarity(d).
-The transferred label is argmax RI(p); its source is the nearest neighbour
-carrying that label.
+    RI(p) = (1/eff_k) * sum over neighbours carrying label p of similarity(d),
+where ``eff_k`` is the number of neighbours actually used (``k`` capped to the
+number of references).  The transferred label is argmax RI(p); its source is the
+nearest neighbour carrying that label.  Ties are broken deterministically by
+smallest source distance, then by lexically smallest label, so the result never
+depends on the (arbitrary) ordering of equidistant neighbours.
 """
 
 from __future__ import annotations
@@ -63,11 +66,16 @@ def eat(
             ri_by_label[lab] = ri_by_label.get(lab, 0.0) + similarity(d, metric)
             if lab not in nearest_src or d < nearest_src[lab][0]:
                 nearest_src[lab] = (d, ref_ids[ref_i])
-        # Normalise by k (the goPredSim 1/k term).
-        # Tie-break: max() over the insertion-ordered dict returns the first label
-        # seen while iterating neighbours (which are in ascending distance order),
-        # so for distinct distances the nearest neighbour's label wins a tie.
-        best_label = max(ri_by_label, key=lambda p: ri_by_label[p])
+        # Pick the highest-RI label; break ties deterministically by smallest
+        # source distance, then lexically smallest label. This makes the choice
+        # independent of the order of equidistant neighbours (whose argsort order
+        # is otherwise arbitrary). For distinct distances the nearest neighbour's
+        # label wins, as before.
+        best_label = min(
+            ri_by_label,
+            key=lambda p: (-ri_by_label[p], nearest_src[p][0], p),
+        )
+        # Normalise by eff_k (the goPredSim 1/k term, k capped to n_refs).
         ri = ri_by_label[best_label] / eff_k
         src_dist, src_id = nearest_src[best_label]
         predictions.append(

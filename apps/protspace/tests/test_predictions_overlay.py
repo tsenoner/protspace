@@ -1,6 +1,9 @@
 """Tests for building the per-cell prediction overlay columns."""
 
+import io
+
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from protlabel import Prediction
 from protspace.data.io.predictions import add_overlay_columns
@@ -67,3 +70,25 @@ def test_prediction_for_unknown_identifier_is_ignored():
     preds = [Prediction("NOT_IN_TABLE", "x", "R0", 0.1, 0.9, 1, "euclidean")]
     out = add_overlay_columns(_table(), "protein_category", preds).to_pylist()
     assert all(r["protein_category__pred_value"] is None for r in out)
+
+
+def test_reapplying_overlay_replaces_not_duplicates():
+    # Re-running transfer on an already-overlaid table must replace the overlay
+    # columns, not append duplicates (which produce an unreadable parquet table).
+    preds1 = [Prediction("Q0", "old", "R0", 0.3, 0.6, 1, "euclidean")]
+    once = add_overlay_columns(_table(), "protein_category", preds1)
+    preds2 = [Prediction("Q0", "new", "R0", 0.1, 0.9, 1, "euclidean")]
+    twice = add_overlay_columns(once, "protein_category", preds2)
+
+    assert twice.column_names.count("protein_category__pred_value") == 1
+    assert twice.column_names.count("protein_category__pred_confidence") == 1
+    assert twice.column_names.count("protein_category__pred_source") == 1
+
+    by_id = {r["identifier"]: r for r in twice.to_pylist()}
+    assert by_id["Q0"]["protein_category__pred_value"] == "new"
+
+    # Duplicate column names would make this round-trip raise ArrowInvalid.
+    buf = io.BytesIO()
+    pq.write_table(twice, buf)
+    reread = pq.read_table(io.BytesIO(buf.getvalue()))
+    assert reread.column("protein_category__pred_value").to_pylist()[0] == "new"

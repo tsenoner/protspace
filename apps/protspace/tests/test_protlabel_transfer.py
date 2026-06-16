@@ -79,6 +79,17 @@ def test_empty_references_raises():
         )
 
 
+def test_equal_distance_tie_break_is_deterministic():
+    # Two refs exactly equidistant from the query carry different labels at equal
+    # source distances; the winner must be deterministic (lexically smallest
+    # label) rather than dependent on argsort ordering of the equal distances.
+    ref_emb = np.array([[1.0, 0.0], [-1.0, 0.0]], dtype=np.float32)
+    query_emb = np.array([[0.0, 0.0]], dtype=np.float32)  # distance 1.0 to both
+    preds = eat(query_emb, ["Q"], ref_emb, ["R_z", "R_a"], ["zebra", "apple"], k=2)
+    assert preds[0].label == "apple"
+    assert preds[0].source_id == "R_a"
+
+
 def test_source_is_nearest_neighbour_with_winning_label():
     # Two neighbours share the winning label at distinct distances; the source
     # must be the closer one.
