@@ -30,7 +30,7 @@
     "d3": "^7.9.0",
     "html2canvas-pro": "^1.5.11",
     "hyparquet-writer": "^0.7.0",
-    "jspdf": "^3.0.1"
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
