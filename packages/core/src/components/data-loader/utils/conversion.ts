@@ -233,6 +233,13 @@ export const parseAnnotationValue = (
  * value. Sanitizing names at the source is tracked in tsenoner/protspace#56.
  */
 function splitOnTopLevelSemicolons(value: string): string[] {
+  // Fast path: with no '(' the depth stays 0 throughout, so the paren-aware scan
+  // is byte-identical to a native split. Skip the per-char string building for the
+  // common case (Kingdom/Organism/Localization cells carry no parentheses).
+  if (!value.includes('(')) {
+    return value.split(';');
+  }
+
   const parts: string[] = [];
   let current = '';
   let depth = 0;
