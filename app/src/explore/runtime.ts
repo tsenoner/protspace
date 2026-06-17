@@ -272,12 +272,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   addTrackedEventListener(
     lifecycle,
     legendElement,
-    'legend-item-click',
-    interactionController.handleLegendItemClick,
-  );
-  addTrackedEventListener(
-    lifecycle,
-    legendElement,
     'legend-error',
     interactionController.handleLegendError,
   );
