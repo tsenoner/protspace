@@ -9,10 +9,17 @@ import { getNavigation } from '../../../config/navigation';
 
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
-// Ghost-style Feedback CTA: transparent, canonical ProtSpace blue (#00a3e0) text/icon,
-// faint blue hover. De-emphasized and on-brand vs. the app-shell primary (#3c83f6).
-const FEEDBACK_BUTTON_CLASS =
+// Ghost-style Feedback CTA: transparent, on-brand blue text/icon with a faint blue
+// hover — de-emphasized vs. the app-shell primary (#3c83f6). The hue is variant-aware
+// so the label clears WCAG AA on both header backgrounds: the canonical ProtSpace blue
+// (#00a3e0, ~5.6:1) on the dark header, and a darker shade (#006d96, ~5.3:1) on the
+// light Explore header, where #00a3e0 would only reach ~2.6:1.
+// Both literals are spelled out so Tailwind's source scan can generate the arbitrary
+// color utilities (it cannot see classes built from interpolated strings).
+const FEEDBACK_BUTTON_CLASS_DEFAULT =
   'text-[#00a3e0] hover:bg-[#00a3e0]/10 hover:text-[#00a3e0] focus-visible:ring-[#00a3e0]';
+const FEEDBACK_BUTTON_CLASS_LIGHT =
+  'text-[#006d96] hover:bg-[#006d96]/10 hover:text-[#006d96] focus-visible:ring-[#006d96]';
 
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
 const navItems = getNavigation(mode);
@@ -36,6 +43,8 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
   const textClass = variant === 'light' ? 'text-slate-900' : 'text-foreground';
   const hoverTextClass = variant === 'light' ? 'hover:text-slate-700' : 'hover:text-primary';
   const mutedTextClass = variant === 'light' ? 'text-slate-700' : 'text-foreground/80';
+  const feedbackButtonClass =
+    variant === 'light' ? FEEDBACK_BUTTON_CLASS_LIGHT : FEEDBACK_BUTTON_CLASS_DEFAULT;
 
   const headerClasses = cn(
     'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg',
@@ -132,7 +141,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
             })}
 
             {/* Feedback CTA */}
-            <Button asChild variant="ghost" size="sm" className={FEEDBACK_BUTTON_CLASS}>
+            <Button asChild variant="ghost" size="sm" className={feedbackButtonClass}>
               <a href={FEEDBACK_HREF}>
                 <MessageSquareText />
                 Feedback
@@ -241,7 +250,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
               asChild
               variant="ghost"
               size="sm"
-              className={cn(FEEDBACK_BUTTON_CLASS, 'w-full mt-2')}
+              className={cn(feedbackButtonClass, 'w-full mt-2')}
             >
               <a href={FEEDBACK_HREF} onClick={() => setIsMenuOpen(false)}>
                 <MessageSquareText />
