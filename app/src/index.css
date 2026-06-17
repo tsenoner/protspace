@@ -2,8 +2,6 @@
 
 @plugin 'tailwindcss-animate';
 
-@custom-variant dark (&:is(.dark *));
-
 @utility container {
   margin-inline: auto;
   padding-inline: 2rem;
@@ -15,7 +13,17 @@
   }
 }
 
-@theme {
+/*
+  These tokens map Tailwind utilities (bg-primary, bg-gradient-*, rounded-lg, …)
+  onto the runtime design-system CSS variables defined in `:root` below.
+
+  `@theme inline` is required because every value references another CSS
+  variable. Without `inline`, Tailwind v4 would also emit each token into
+  `:root` as a literal `var(--…)` indirection, adding a redundant copy that
+  only resolves via cascade-layer order. `inline` substitutes the value
+  directly into each utility and skips that emission, per the Tailwind v4 docs.
+*/
+@theme inline {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -50,34 +58,21 @@
   --background-image-gradient-hero: var(--gradient-hero);
   --background-image-gradient-card: var(--gradient-card);
 
-  --shadow-glow: var(--shadow-glow);
-  --shadow-card: var(--shadow-card);
-
-  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
-
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+}
 
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
+/*
+  Shadow elevations are literal `@theme` values rather than `:root`
+  indirections: the Tailwind `--shadow-*` namespace collides with same-named
+  design tokens, which would re-introduce a self-referential
+  `--shadow-glow: var(--shadow-glow)` emission. They have no runtime override,
+  so a plain literal is both simpler and fully resolved.
+*/
+@theme {
+  --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
+  --shadow-card: 0 8px 32px hsl(229 84% 5% / 0.4);
 }
 
 /*
@@ -143,8 +138,6 @@ All colors MUST be HSL.
     --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(262 83% 58%));
     --gradient-hero: linear-gradient(180deg, hsl(229 84% 8%), hsl(229 70% 12%));
     --gradient-card: linear-gradient(135deg, hsl(229 70% 12% / 0.4), hsl(229 60% 15% / 0.2));
-    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
-    --shadow-card: 0 8px 32px hsl(229 84% 5% / 0.4);
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
