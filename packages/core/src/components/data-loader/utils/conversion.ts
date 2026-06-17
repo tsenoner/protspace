@@ -228,35 +228,40 @@ export const parseAnnotationValue = (
  * into bogus categories ("Chain: K", "domain 2)"). Splitting only on ';' at parenthesis
  * depth 0 keeps each `(name)` intact while still separating distinct hits.
  *
- * If a name contains an unbalanced '(' (depth never returns to 0), fall back to a plain
- * split so two distinct hits are not merged — at the cost of re-splitting that one rare
- * value. Sanitizing names at the source is tracked in tsenoner/protspace#56.
+ * If a name contains an unbalanced '(' so the running depth never returns to 0, fall back
+ * to a plain split so two distinct hits are not merged — at the cost of re-splitting that
+ * one rare value. Note this only catches a *net* imbalance (depth != 0 at the end): a stray
+ * '(' in one hit cancelled by a stray ')' in a later hit leaves the final depth at 0, so the
+ * inter-hit ';' (seen while depth was > 0) is silently swallowed and those two hits merge.
+ * Both are symptoms of unsanitized names; sanitizing at the source is tracked in
+ * tsenoner/protspace#56.
  */
 function splitOnTopLevelSemicolons(value: string): string[] {
   // Fast path: with no '(' the depth stays 0 throughout, so the paren-aware scan
-  // is byte-identical to a native split. Skip the per-char string building for the
-  // common case (Kingdom/Organism/Localization cells carry no parentheses).
+  // is byte-identical to a native split. Skip it for the common case
+  // (Kingdom/Organism/Localization cells carry no parentheses).
   if (!value.includes('(')) {
     return value.split(';');
   }
 
+  // Index scan + slice: cut the string only at top-level ';' positions, avoiding the
+  // per-character allocation and code-point decoding of a `for..of` + `current += ch` build.
   const parts: string[] = [];
-  let current = '';
   let depth = 0;
+  let start = 0;
 
-  for (const ch of value) {
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
     if (ch === '(') {
       depth += 1;
     } else if (ch === ')') {
       if (depth > 0) depth -= 1; // clamp at 0 so a stray ')' can't go negative
     } else if (ch === ';' && depth === 0) {
-      parts.push(current);
-      current = '';
-      continue;
+      parts.push(value.slice(start, i));
+      start = i + 1;
     }
-    current += ch;
   }
-  parts.push(current);
+  parts.push(value.slice(start));
 
   if (depth !== 0) {
     return value.split(';');
@@ -264,6 +269,16 @@ function splitOnTopLevelSemicolons(value: string): string[] {
   return parts;
 }
 
+/**
+ * Split a raw categorical annotation cell into its individual hit strings.
+ *
+ * Normalizes the whole cell first (an entirely missing cell yields `[]`), splits on the
+ * top-level ';' separator via {@link splitOnTopLevelSemicolons} (paren-aware, so names
+ * containing ';' stay intact), then trims each token and drops empty or missing-value tokens.
+ *
+ * @param rawValue - the raw cell value; non-strings are normalized then stringified.
+ * @returns the trimmed, non-missing hit strings, in source order.
+ */
 export function splitCategoricalAnnotationValues(rawValue: unknown): string[] {
   // First-level: normalize the whole cell. Returns null if the entire cell is missing.
   const cellNormalized = normalizeMissingValue(rawValue);
