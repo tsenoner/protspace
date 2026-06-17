@@ -813,7 +813,7 @@ test.describe('URL-backed explore view state', () => {
     await expect(page).toHaveURL(/foo=1/);
   });
 
-  test('resets hidden legend state when back navigation changes annotation via URL', async ({
+  test('restores hidden legend state when back navigation returns to a previous annotation via URL', async ({
     page,
   }) => {
     await page.goto(
@@ -838,6 +838,37 @@ test.describe('URL-backed explore view state', () => {
 
     await page.goBack();
     await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
-    await expect.poll(() => isLegendItemHidden(page, firstLegendValue)).toBe(false);
+    // Per-annotation legend visibility is persisted (datasetHash + annotation), so
+    // returning to the original annotation restores the previously hidden category.
+    await expect.poll(() => isLegendItemHidden(page, firstLegendValue)).toBe(true);
+  });
+
+  test('keeps hidden legend categories when switching annotation away and back via the control bar', async ({
+    page,
+  }) => {
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(targetAnnotation)}&projection=${encodeURIComponent(targetProjection)}`,
+    );
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+    await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
+
+    const currentView = await getCurrentView(page);
+    const nextAnnotation = currentView.annotations.find(
+      (annotation) => annotation !== targetAnnotation,
+    );
+    expect(nextAnnotation).toBeTruthy();
+
+    const firstLegendValue = await getFirstLegendItemValue(page);
+    await clickLegendItem(page, firstLegendValue);
+    await expect.poll(() => isLegendItemHidden(page, firstLegendValue)).toBe(true);
+
+    // Switch to another annotation and back, both via the control bar (no URL navigation).
+    await selectAnnotation(page, nextAnnotation!);
+    await waitForView(page, { annotation: nextAnnotation! });
+    await selectAnnotation(page, targetAnnotation);
+    await waitForView(page, { annotation: targetAnnotation });
+
+    await expect.poll(() => isLegendItemHidden(page, firstLegendValue)).toBe(true);
   });
 });

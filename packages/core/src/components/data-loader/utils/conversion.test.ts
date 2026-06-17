@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnotationValue } from './conversion';
+import { parseAnnotationValue, splitCategoricalAnnotationValues } from './conversion';
 
 describe('parseAnnotationValue', () => {
   it('parses label without pipe as full string with empty scores', () => {
@@ -164,5 +164,62 @@ describe('parseAnnotationValue', () => {
     expect(result.label).toBe('PF00001');
     expect(result.scores).toEqual([162.3]);
     expect(result.evidence).toBeNull();
+  });
+});
+
+describe('splitCategoricalAnnotationValues', () => {
+  it('splits distinct hits on the top-level ; separator', () => {
+    expect(splitCategoricalAnnotationValues('PF00001 (7tm_1)|1.5e-10;PF00002 (Foo)|30.0')).toEqual([
+      'PF00001 (7tm_1)|1.5e-10',
+      'PF00002 (Foo)|30.0',
+    ]);
+  });
+
+  it('keeps a CATH-Gene3D name containing ";" intact as a single category', () => {
+    // Real-world shape: the name itself contains semicolons inside the parentheses.
+    expect(
+      splitCategoricalAnnotationValues(
+        'G3DSA:3.100 (Ribosomal Protein L15; Chain: K; domain 2)|45.2',
+      ),
+    ).toEqual(['G3DSA:3.100 (Ribosomal Protein L15; Chain: K; domain 2)|45.2']);
+  });
+
+  it('splits two CATH hits whose names both contain ";"', () => {
+    expect(
+      splitCategoricalAnnotationValues(
+        'G3DSA:3.100 (Ribosomal Protein L15; Chain: K; domain 2)|45.2;' +
+          'G3DSA:2.40 (Acid Proteases; Chain A)|30.0',
+      ),
+    ).toEqual([
+      'G3DSA:3.100 (Ribosomal Protein L15; Chain: K; domain 2)|45.2',
+      'G3DSA:2.40 (Acid Proteases; Chain A)|30.0',
+    ]);
+  });
+
+  it('handles nested balanced parentheses in a name', () => {
+    expect(
+      splitCategoricalAnnotationValues('G3DSA:2.60 (3-Layer(aba) Sandwich; domain 1)|12.0'),
+    ).toEqual(['G3DSA:2.60 (3-Layer(aba) Sandwich; domain 1)|12.0']);
+  });
+
+  it('still splits plain multi-value cells without parentheses', () => {
+    expect(splitCategoricalAnnotationValues('Cytoplasm;Nucleus;Membrane')).toEqual([
+      'Cytoplasm',
+      'Nucleus',
+      'Membrane',
+    ]);
+  });
+
+  it('falls back to a plain split when a name has an unbalanced "(" so distinct hits are not merged', () => {
+    // The name "YojJ-like (1" never closes its paren; depth never returns to 0, so the
+    // paren-aware scan would swallow the inter-hit ";". The fallback keeps the two hits apart.
+    expect(
+      splitCategoricalAnnotationValues('G3DSA:1.10 (YojJ-like (1)|9.0;G3DSA:3.40 (Bar)|8.0'),
+    ).toEqual(['G3DSA:1.10 (YojJ-like (1)|9.0', 'G3DSA:3.40 (Bar)|8.0']);
+  });
+
+  it('returns an empty array for missing cells', () => {
+    expect(splitCategoricalAnnotationValues(null)).toEqual([]);
+    expect(splitCategoricalAnnotationValues('')).toEqual([]);
   });
 });
