@@ -29,6 +29,7 @@ _BIOCENTRAL_DOWN_PATTERNS = (
     "name or service not known",
     "503 service unavailable",
     "503 server error",
+    "no healthy biocentral",
 )
 
 _BIOCENTRAL_FRIENDLY_MESSAGE = (
