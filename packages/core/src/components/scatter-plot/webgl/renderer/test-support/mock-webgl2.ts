@@ -121,6 +121,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     isVertexArray: () => true,
     isBuffer: () => true,
     isTexture: () => true,
+    isFramebuffer: () => true,
+    isRenderbuffer: () => true,
     viewport: noop,
     clearColor: noop,
     clear: noop,
