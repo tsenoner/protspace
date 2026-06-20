@@ -7,6 +7,14 @@ import * as d3 from 'd3';
 // a NEW PlotData via clonePlotData, correctly missing the cache.
 const extentCache = new WeakMap<PlotData, { x: [number, number]; y: [number, number] }>();
 
+// Shared d3 linear scale pair returned by createScales. Declared here (not in
+// @protspace/core's webgl/types.ts) because utils cannot import core. The core
+// webgl/types.ts ScalePair stays as a transient duplicate until B12 collapses it.
+export type ScalePair = {
+  x: d3.ScaleLinear<number, number>;
+  y: d3.ScaleLinear<number, number>;
+};
+
 export class DataProcessor {
   static processVisualizationData(
     data: VisualizationData,
@@ -115,7 +123,7 @@ export class DataProcessor {
     width: number,
     height: number,
     margin: { top: number; right: number; bottom: number; left: number },
-  ) {
+  ): ScalePair | null {
     if (plotData.length === 0) return null;
 
     let extents = extentCache.get(plotData);

@@ -8,20 +8,20 @@ import type {
   PlotDataPoint,
   ScatterplotConfig,
   NumericAnnotationDisplaySettingsMap,
-  AnnotationData,
   TooltipView,
 } from '@protspace/utils';
 import {
   DataProcessor,
   buildTooltipView,
   materializeVisualizationData,
-  sliceAnnotationData,
+  sliceVisualizationDataByIndices,
   EMPTY_PLOT_DATA,
   clonePlotData,
   plotDataId,
   materializePlotDataPoint,
   gatherPlotData,
 } from '@protspace/utils';
+import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
 import { scatterplotStyles } from './scatter-plot.styles';
 import './projection-metadata';
@@ -35,6 +35,7 @@ import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
 import { getDuplicateStackKey } from './duplicate-stack-helpers';
 import { estimateTooltipHeight } from './tooltip-height-estimate';
+import { NumericRecomputeRunner } from './numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
@@ -52,10 +53,10 @@ const DUPLICATE_BADGES_MAX_VISIBLE = 800;
 const DUPLICATE_BADGES_VIEWPORT_PADDING = 60;
 const DUPLICATE_BADGES_UPDATE_DEBOUNCE_MS = 120;
 const DUPLICATE_STACK_COMPUTE_CHUNK_SIZE = 25_000;
-type ScalePair = {
-  x: d3.ScaleLinear<number, number>;
-  y: d3.ScaleLinear<number, number>;
-};
+
+/** Default number of bins for numeric→categorical materialization. Mirrors
+ *  materializeVisualizationData's `defaultBinCount = 10` default. */
+const DEFAULT_NUMERIC_BIN_COUNT = 10;
 
 /**
  * Memoization key for `_getVisibilityModel`. Stored as a plain struct so each
@@ -122,15 +123,7 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _colorMapping: Record<string, string> | null = null;
   @state() private _shapeMapping: Record<string, string> | null = null;
   @state() private _canvasKey = 0;
-  @state() private _numericRecomputeState: {
-    running: boolean;
-    annotation: string | null;
-    startedAt: number | null;
-  } = {
-    running: false,
-    annotation: null,
-    startedAt: null,
-  };
+  @state() private _numericRecomputeRunning = false;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -189,6 +182,10 @@ export class ProtspaceScatterplot extends LitElement {
     fadedOpacity: number;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
+  // F-17: advanced on every quadtree rebuild and folded into the virtualization
+  // cacheKey so a rebuild forces a miss even when the transform is unchanged
+  // (otherwise un-hidden points stay missing until a pan/zoom changes the key).
+  private _quadtreeGeneration = 0;
   private _hoverRaf: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _visiblePlotData: PlotData = EMPTY_PLOT_DATA;
@@ -256,6 +253,17 @@ export class ProtspaceScatterplot extends LitElement {
   private _lastMaterializedNumericValues: Array<number | null> | null = null;
   private _materializedDataCacheKey: string | null = null;
   private _materializedDataCache: VisualizationData | null = null;
+  // F-40: memoize the filtered display-data rebuild. Keyed by reference on the
+  // same inputs the filtered slice depends on so repeated reads with unchanged
+  // inputs reuse the prior VisualizationData instead of reallocating.
+  private _filteredDisplayCache: VisualizationData | null = null;
+  private _filteredDisplayCacheDeps: {
+    materialized: VisualizationData | null;
+    filteredProteinIds: string[];
+    filtersActive: boolean;
+    selectedProjectionIndex: number;
+    projectionPlane: 'xy' | 'xz' | 'yz';
+  } | null = null;
   // Fast-path keys for _getMaterializedData: avoid JSON.stringify on the hot
   // per-point path (getOpacity -> visibility model -> materialized data). These
   // mirror the JSON cacheKey's reference/primitive inputs so a hit can return
@@ -266,7 +274,17 @@ export class ProtspaceScatterplot extends LitElement {
   private _lastMaterializedSelectedSettings:
     | NumericAnnotationDisplaySettingsMap[string]
     | undefined = undefined;
-  private _numericRecomputeJobId = 0;
+  private _numericRecompute = new NumericRecomputeRunner({
+    hasData: () => !!this.data,
+    getSelectedAnnotation: () => this.selectedAnnotation,
+    dispatch: (type, detail) =>
+      this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true })),
+    requestUpdate: () => this.requestUpdate(),
+    setRunning: (running) => {
+      this._numericRecomputeRunning = running;
+    },
+    runRecompute: () => this._runNumericRecomputeBody(),
+  });
 
   // Computed properties with caching
   private get _scales(): ScalePair | null {
@@ -290,7 +308,7 @@ export class ProtspaceScatterplot extends LitElement {
         config.width,
         config.height,
         config.margin,
-      ) as ScalePair | null;
+      );
       this._cachedScales = computedScales;
       this._scalesCacheDeps = {
         plotDataLength: this._plotData.length,
@@ -315,9 +333,7 @@ export class ProtspaceScatterplot extends LitElement {
     const selectedNumericValues = this.selectedAnnotation
       ? sourceData.numeric_annotation_data?.[this.selectedAnnotation]
       : undefined;
-    const selectedNumericValuesCacheRef = this.selectedAnnotation
-      ? (this.data.numeric_annotation_data?.[this.selectedAnnotation] ?? null)
-      : null;
+    const selectedNumericValuesCacheRef = selectedNumericValues ?? null;
     const selectedNumericSettings = this.selectedAnnotation
       ? this.numericAnnotationSettings?.[this.selectedAnnotation]
       : undefined;
@@ -366,7 +382,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._materializedDataCache = materializeVisualizationData(
       sourceData,
       this.numericAnnotationSettings,
-      10,
+      DEFAULT_NUMERIC_BIN_COUNT,
       this.selectedAnnotation,
     );
     this._lastMaterializedSource = this.data;
@@ -380,6 +396,17 @@ export class ProtspaceScatterplot extends LitElement {
   private _getVisibleProteinIdsSet(): Set<string> | null {
     if (!this.filtersActive) return null;
     return new Set(this.filteredProteinIds);
+  }
+
+  /** INV-11: the exact set of reactive inputs that affect rendered geometry. */
+  private _geometryInputsChanged(changed: Map<string, unknown>): boolean {
+    return (
+      changed.has('data') ||
+      changed.has('filteredProteinIds') ||
+      changed.has('filtersActive') ||
+      changed.has('selectedProjectionIndex') ||
+      changed.has('projectionPlane')
+    );
   }
 
   constructor() {
@@ -432,6 +459,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._hoverRaf = null;
     }
     this._pendingHover = null;
+    this._numericRecompute.cancel();
     this._cancelDuplicateOverlayDebounce();
     this._cancelDuplicateStackCompute();
     this._clearDuplicateBadgesCanvas();
@@ -523,9 +551,30 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   updated(changedProperties: Map<string, unknown>) {
-    // When new data is loaded (or projection index changes), ensure the selection is valid.
-    // This prevents a blank plot when switching from a dataset with many projections/annotations
-    // to one with only a single projection/annotation.
+    this._reconcileSelectionDefaults(changedProperties);
+    this._reconcileFilterOnDataSwap(changedProperties);
+    this._reprocessGeometryIfNeeded(changedProperties);
+    if (
+      changedProperties.has('numericAnnotationSettings') &&
+      !this._geometryInputsChanged(changedProperties) &&
+      this.data
+    ) {
+      this._scheduleNumericAnnotationRefresh();
+    }
+    this._reconcileConfigMerge(changedProperties);
+    this._rebuildStyleAndSignature(changedProperties);
+    this._reconcileSelectionMode(changedProperties);
+    this._refreshStyleGettersCache(changedProperties);
+    this._reconcileSelectionOverlays(changedProperties);
+    this._reconcileTooltipMeasurement(changedProperties);
+  }
+
+  /**
+   * INV-10: when new data is loaded (or projection index changes), ensure the
+   * selection is valid. This prevents a blank plot when switching from a dataset
+   * with many projections/annotations to one with only a single projection/annotation.
+   */
+  private _reconcileSelectionDefaults(changedProperties: Map<string, unknown>) {
     if (
       (changedProperties.has('data') || changedProperties.has('selectedProjectionIndex')) &&
       this.data
@@ -556,31 +605,34 @@ export class ProtspaceScatterplot extends LitElement {
         this._shapeMapping = null;
       }
     }
+  }
 
-    // A query filter is scoped to the current dataset. On a dataset swap, drop the
-    // filtered-id set before _processData runs below — otherwise a stale set (ids
-    // from the previous dataset) would match nothing and blank the new plot. Set
-    // here (not via a getter) so the synchronous _processData read sees it cleared.
-    if (changedProperties.has('data') && this.filtersActive) {
-      this.filteredProteinIds = [];
-      this.filtersActive = false;
+  /**
+   * A query filter is scoped to the current dataset. On a dataset swap, drop the
+   * filtered-id set before _processData runs below — otherwise a stale set (ids
+   * from the previous dataset) would match nothing and blank the new plot. Set
+   * here (not via a getter) so the synchronous _processData read sees it cleared.
+   */
+  private _reconcileFilterOnDataSwap(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('data')) {
+      // F-40: the filtered-display memo is keyed by reference on the previous
+      // materialized object. _getMaterializedData returns a fresh object after a
+      // data swap, so the reference check already misses — but drop the cache
+      // explicitly here too so a stale slice from the previous dataset can never
+      // be returned. Value-identical to the original (no cache) behavior; it only
+      // forces the recompute that would happen anyway.
+      this._filteredDisplayCache = null;
+      this._filteredDisplayCacheDeps = null;
+      if (this.filtersActive) {
+        this.filteredProteinIds = [];
+        this.filtersActive = false;
+      }
     }
+  }
 
-    const numericSettingsChangedOnly =
-      changedProperties.has('numericAnnotationSettings') &&
-      !changedProperties.has('data') &&
-      !changedProperties.has('filteredProteinIds') &&
-      !changedProperties.has('filtersActive') &&
-      !changedProperties.has('selectedProjectionIndex') &&
-      !changedProperties.has('projectionPlane');
-
-    if (
-      changedProperties.has('data') ||
-      changedProperties.has('filteredProteinIds') ||
-      changedProperties.has('filtersActive') ||
-      changedProperties.has('selectedProjectionIndex') ||
-      changedProperties.has('projectionPlane')
-    ) {
+  /** INV-11: reprocess geometry + emit data-change when a geometry input changes. */
+  private _reprocessGeometryIfNeeded(changedProperties: Map<string, unknown>) {
+    if (this._geometryInputsChanged(changedProperties)) {
       this._processData();
       this._scheduleQuadtreeRebuild();
       this._webglRenderer?.invalidatePositionCache();
@@ -613,9 +665,10 @@ export class ProtspaceScatterplot extends LitElement {
         );
       }
     }
-    if (numericSettingsChangedOnly && this.data) {
-      this._scheduleNumericAnnotationRefresh();
-    }
+  }
+
+  /** INV-14: config shallow-merge + duplicate-UI teardown + style signature + quadtree schedule. */
+  private _reconcileConfigMerge(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
       this._mergedConfig = { ...DEFAULT_CONFIG, ...prev, ...this.config };
@@ -632,6 +685,9 @@ export class ProtspaceScatterplot extends LitElement {
       this._webglRenderer?.setStyleSignature(this._styleSig);
       this._scheduleQuadtreeRebuild();
     }
+  }
+
+  private _rebuildStyleAndSignature(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
@@ -653,13 +709,19 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidatePositionCache();
       }
     }
+  }
+
+  private _reconcileSelectionMode(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectionMode') ||
       (changedProperties.has('selectionTool') && this.selectionMode)
     ) {
       this._updateSelectionMode();
     }
-    // Refresh cached style getters when any relevant input changes
+  }
+
+  /** Refresh cached style getters when any relevant input changes. */
+  private _refreshStyleGettersCache(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('data') ||
       changedProperties.has('numericAnnotationSettings') ||
@@ -672,6 +734,9 @@ export class ProtspaceScatterplot extends LitElement {
     ) {
       this._styleGettersCache = this._buildStyleGetters();
     }
+  }
+
+  private _reconcileSelectionOverlays(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds')
@@ -690,7 +755,9 @@ export class ProtspaceScatterplot extends LitElement {
       this._renderPlot();
       this._updateSelectionOverlays();
     }
+  }
 
+  private _reconcileTooltipMeasurement(changedProperties: Map<string, unknown>) {
     // Only measure tooltip height when the tooltip data itself changes. The rendered
     // height is derived purely from _tooltipData.view, so there is no reason to
     // read offsetHeight (which forces a synchronous layout reflow) on unrelated
@@ -837,81 +904,50 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _scheduleNumericAnnotationRefresh() {
-    if (!this.data) return;
+    this._numericRecompute.schedule();
+  }
 
-    const jobId = ++this._numericRecomputeJobId;
-    this._numericRecomputeState = {
-      running: true,
-      annotation: this.selectedAnnotation,
-      startedAt: performance.now(),
-    };
-    this.dispatchEvent(
-      new CustomEvent('numeric-recompute-start', {
-        detail: { annotation: this.selectedAnnotation },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    this.requestUpdate();
+  /**
+   * Component-owned data-refresh routing + lifecycle-bound render tail + the
+   * `data-change` re-emit. Runs inside the deferred RAF for the current job
+   * (NumericRecomputeRunner owns the job id, events, RAF, and running state).
+   */
+  private _runNumericRecomputeBody() {
+    const materializedData = this._getMaterializedData();
+    if (!materializedData) return;
 
-    requestAnimationFrame(() => {
-      if (jobId !== this._numericRecomputeJobId) return;
+    // _refreshSelectedAnnotationValues only reads annotations / annotation_data
+    // (both present on the materialized object) and then triggers a lazy
+    // style-getter rebuild that itself uses includeFilteredProteinIds:false.
+    // Excluding filtered ids returns the cached materialized object by
+    // reference (no per-point deep-slice of projections/numeric/scores/evidence),
+    // matching the pattern at _getVisibilityModel / _buildStyleGetters.
+    const displayData =
+      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
 
-      const materializedData = this._getMaterializedData();
-      if (!materializedData) {
-        this._numericRecomputeState = { running: false, annotation: null, startedAt: null };
-        return;
-      }
+    if (this._plotData.length > 0) {
+      this._refreshSelectedAnnotationValues(displayData);
+    } else {
+      this._processData();
+    }
 
-      // _refreshSelectedAnnotationValues only reads annotations / annotation_data
-      // (both present on the materialized object) and then triggers a lazy
-      // style-getter rebuild that itself uses includeFilteredProteinIds:false.
-      // Excluding filtered ids returns the cached materialized object by
-      // reference (no per-point deep-slice of projections/numeric/scores/evidence),
-      // matching the pattern at _getVisibilityModel / _buildStyleGetters.
-      const displayData =
-        this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
+    this._scheduleQuadtreeRebuild();
+    this._webglRenderer?.invalidateStyleCache();
+    this._updateStyleSignature();
+    this._webglRenderer?.setStyleSignature(this._styleSig);
+    this._renderPlot();
+    this._updateSelectionOverlays();
 
-      if (this._plotData.length > 0) {
-        this._refreshSelectedAnnotationValues(displayData);
-      } else {
-        this._processData();
-      }
-
-      this._scheduleQuadtreeRebuild();
-      this._webglRenderer?.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer?.setStyleSignature(this._styleSig);
-      this._renderPlot();
-      this._updateSelectionOverlays();
-
-      const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
-      if (currentData) {
-        this.dispatchEvent(
-          new CustomEvent('data-change', {
-            detail: { data: currentData },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      }
-
+    const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
+    if (currentData) {
       this.dispatchEvent(
-        new CustomEvent('numeric-recompute-end', {
-          detail: {
-            annotation: this.selectedAnnotation,
-            durationMs:
-              this._numericRecomputeState.startedAt == null
-                ? 0
-                : performance.now() - this._numericRecomputeState.startedAt,
-          },
+        new CustomEvent('data-change', {
+          detail: { data: currentData },
           bubbles: true,
           composed: true,
         }),
       );
-      this._numericRecomputeState = { running: false, annotation: null, startedAt: null };
-      this.requestUpdate();
-    });
+    }
   }
 
   private _getCurrentDisplayData(options?: {
@@ -926,6 +962,19 @@ export class ProtspaceScatterplot extends LitElement {
       return materializedData;
     }
 
+    const deps = this._filteredDisplayCacheDeps;
+    if (
+      this._filteredDisplayCache &&
+      deps &&
+      deps.materialized === materializedData &&
+      deps.filteredProteinIds === this.filteredProteinIds &&
+      deps.filtersActive === this.filtersActive &&
+      deps.selectedProjectionIndex === this.selectedProjectionIndex &&
+      deps.projectionPlane === this.projectionPlane
+    ) {
+      return this._filteredDisplayCache;
+    }
+
     const keptIndices: number[] = [];
     materializedData.protein_ids.forEach((proteinId, index) => {
       if (visibleProteinIds.has(proteinId)) {
@@ -933,54 +982,16 @@ export class ProtspaceScatterplot extends LitElement {
       }
     });
 
-    return {
-      ...materializedData,
-      protein_ids: keptIndices.map((index) => materializedData.protein_ids[index]),
-      projections: materializedData.projections.map((projection) => {
-        const dim = projection.dimension;
-        const out = new Float32Array(keptIndices.length * dim);
-        for (let k = 0; k < keptIndices.length; k++) {
-          const base = keptIndices[k] * dim;
-          const o = k * dim;
-          out[o] = projection.data[base];
-          out[o + 1] = projection.data[base + 1];
-          if (dim === 3) out[o + 2] = projection.data[base + 2];
-        }
-        return { ...projection, data: out, dimension: dim };
-      }),
-      annotation_data: Object.fromEntries(
-        Object.entries(materializedData.annotation_data).map(([annotationName, rows]) => [
-          annotationName,
-          sliceAnnotationData(rows, keptIndices),
-        ]),
-      ),
-      numeric_annotation_data: materializedData.numeric_annotation_data
-        ? Object.fromEntries(
-            Object.entries(materializedData.numeric_annotation_data).map(
-              ([annotationName, values]) => [
-                annotationName,
-                keptIndices.map((index) => values[index]),
-              ],
-            ),
-          )
-        : undefined,
-      annotation_scores: materializedData.annotation_scores
-        ? Object.fromEntries(
-            Object.entries(materializedData.annotation_scores).map(([annotationName, rows]) => [
-              annotationName,
-              keptIndices.map((index) => rows[index]),
-            ]),
-          )
-        : undefined,
-      annotation_evidence: materializedData.annotation_evidence
-        ? Object.fromEntries(
-            Object.entries(materializedData.annotation_evidence).map(([annotationName, rows]) => [
-              annotationName,
-              keptIndices.map((index) => rows[index]),
-            ]),
-          )
-        : undefined,
+    const result = sliceVisualizationDataByIndices(materializedData, keptIndices);
+    this._filteredDisplayCache = result;
+    this._filteredDisplayCacheDeps = {
+      materialized: materializedData,
+      filteredProteinIds: this.filteredProteinIds,
+      filtersActive: this.filtersActive,
+      selectedProjectionIndex: this.selectedProjectionIndex,
+      projectionPlane: this.projectionPlane,
     };
+    return result;
   }
 
   /**
@@ -1037,6 +1048,11 @@ export class ProtspaceScatterplot extends LitElement {
       this._pointIdToDuplicateStackKey.clear();
       this._expandedDuplicateStackKey = null;
       this._duplicateStacksCacheKey = null;
+      // F-17: an emptied quadtree also changes the indexed slot set; bump the
+      // generation and invalidate so the transform-keyed cache cannot serve a
+      // stale slot set. No render here — there is nothing to draw.
+      this._quadtreeGeneration++;
+      this._invalidateVirtualizationCache();
       return;
     }
     const pd = this._plotData;
@@ -1067,6 +1083,14 @@ export class ProtspaceScatterplot extends LitElement {
     // rendered synchronously in updated() used a stale cache and nothing would
     // re-trigger them after the deferred quadtree rebuild.
     this._scheduleDuplicateOverlayUpdate(true);
+
+    // F-17: any rebuild can change the indexed (isInteractive) slot set, so the
+    // transform-keyed virtualization cache is now stale even if the transform is
+    // unchanged. Bump the generation (folded into the cacheKey), force a miss,
+    // and schedule a render so un-hidden points reappear without a pan/zoom.
+    this._quadtreeGeneration++;
+    this._invalidateVirtualizationCache();
+    this._renderPlot();
   }
 
   private _scheduleQuadtreeRebuild() {
@@ -1562,7 +1586,7 @@ export class ProtspaceScatterplot extends LitElement {
     const minY = Math.min(topPx, bottomPx);
     const maxY = Math.max(topPx, bottomPx);
 
-    const cacheKey = `${Math.round(transform.x)}|${Math.round(transform.y)}|${transform.k.toFixed(3)}|${config.width}|${config.height}`;
+    const cacheKey = `${Math.round(transform.x)}|${Math.round(transform.y)}|${transform.k.toFixed(3)}|${config.width}|${config.height}|${this._quadtreeGeneration}`;
     if (this._virtualizationCacheKey !== cacheKey) {
       const slots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
       this._visiblePlotData = gatherPlotData(this._plotData, slots);
@@ -2625,10 +2649,11 @@ export class ProtspaceScatterplot extends LitElement {
         ${this.data
           ? html` <div class="plot-indicator">${this._getVisiblePointCount()} points</div> `
           : ''}
-        ${this._numericRecomputeState.running
+        ${this._numericRecomputeRunning
           ? html`
               <div class="plot-indicator" style="left: auto; right: 0.5rem;">
-                Recalculating bins for ${this._numericRecomputeState.annotation ?? 'annotation'}...
+                Recalculating bins for
+                ${this._numericRecompute.runningAnnotation() ?? 'annotation'}...
               </div>
             `
           : ''}
@@ -2850,44 +2875,14 @@ export class ProtspaceScatterplot extends LitElement {
         });
       }
 
-      // Filter annotation data to match current protein IDs
-      const filteredAnnotationData: Record<string, AnnotationData> = {};
-      const filteredNumericAnnotationData: { [key: string]: (number | null)[] } = {};
-
-      for (const [annotationName, annotationValues] of Object.entries(
-        currentDisplayData.annotation_data,
-      )) {
-        filteredAnnotationData[annotationName] = sliceAnnotationData(annotationValues, keptIndices);
-      }
-
-      for (const [annotationName, annotationValues] of Object.entries(
-        currentDisplayData.numeric_annotation_data ?? {},
-      )) {
-        const sliced: (number | null)[] = new Array(keptIndices.length);
-        for (let k = 0; k < keptIndices.length; k++) {
-          sliced[k] = annotationValues[keptIndices[k]];
-        }
-        filteredNumericAnnotationData[annotationName] = sliced;
-      }
-
-      return {
-        ...currentDisplayData,
-        protein_ids: currentProteinIds,
-        annotation_data: filteredAnnotationData,
-        numeric_annotation_data: filteredNumericAnnotationData,
-        projections: currentDisplayData.projections.map((projection) => {
-          const dim = projection.dimension;
-          const out = new Float32Array(keptIndices.length * dim);
-          for (let k = 0; k < keptIndices.length; k++) {
-            const base = keptIndices[k] * dim;
-            const o = k * dim;
-            out[o] = projection.data[base];
-            out[o + 1] = projection.data[base + 1];
-            if (dim === 3) out[o + 2] = projection.data[base + 2];
-          }
-          return { ...projection, data: out, dimension: dim };
-        }),
-      };
+      // Delegate the per-index slice to the shared helper (same construction the
+      // filtered-display path uses), then override protein_ids with the
+      // plotDataId-ordered current ids exactly as before. This also reslices
+      // annotation_scores/annotation_evidence consistently, silently correcting
+      // the prior isolation-mode misalignment (sanctioned by F-13; no consumer
+      // indexes scores/evidence off this result, so INV-04 holds).
+      const sliced = sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
+      return { ...sliced, protein_ids: currentProteinIds };
     }
 
     return currentDisplayData;
