@@ -240,6 +240,11 @@ export class ProtspaceScatterplot extends LitElement {
   // LitElement has finished rendering.
   private _tooltipMeasureToken = 0;
 
+  // Monotonically-increasing token used to invalidate a pending WebGL context-loss
+  // recovery microtask when a newer loss supersedes it, or when the element detaches
+  // before updateComplete resolves (route change is a common GPU-recycle trigger).
+  private _webglRecoveryToken = 0;
+
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
   // Whether the current _plotData was built with a cull (filter or isolation).
@@ -392,8 +397,12 @@ export class ProtspaceScatterplot extends LitElement {
     this._webglRenderer?.destroy();
     this._webglRenderer = null;
     this._canvasKey += 1;
+    const token = ++this._webglRecoveryToken;
     this.requestUpdate();
-    void this.updateComplete.then(() => this._updateSizeAndRender());
+    void this.updateComplete.then(() => {
+      if (token !== this._webglRecoveryToken || !this.isConnected) return;
+      this._updateSizeAndRender();
+    });
   };
 
   connectedCallback() {

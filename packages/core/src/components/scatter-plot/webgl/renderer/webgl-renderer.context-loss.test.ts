@@ -83,7 +83,14 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
     expect(onLost).not.toHaveBeenCalled();
   });
 
-  it('restore re-renders lastRenderedData via RAF', () => {
+  // F-39: the internal webglcontextrestored recovery handler was deleted. It was
+  // unreachable in production (real loss → onContextLost → scatter-plot destroy()s
+  // the renderer, which removes the webglcontextlost listener and disposes; the
+  // restore listener never survived to fire). Recovery now flows solely through the
+  // scatter-plot rebuild-on-loss path. These two cases used to characterize the dead
+  // internal handler (they only "passed" because they synthesized the restore event
+  // directly); they now pin its absence.
+  it('F-39: no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
     const { canvas } = createMockCanvas();
     const r = new WebGLRenderer(
       canvas,
@@ -96,26 +103,23 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
     const renderSpy = vi.spyOn(r, 'render');
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     canvas.dispatchEvent(new Event('webglcontextrestored'));
-    expect(renderSpy).not.toHaveBeenCalled(); // deferred to RAF
-    drain();
-    expect(renderSpy).toHaveBeenCalledTimes(1);
+    drain(); // no RAF was ever queued by the (now-deleted) restore handler
+    expect(renderSpy).not.toHaveBeenCalled();
   });
 
-  it('a second loss before the restore RAF suppresses the re-render', () => {
-    const { canvas } = createMockCanvas();
+  it('F-39: constructor registers no webglcontextrestored listener', () => {
+    const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
     const r = new WebGLRenderer(
-      canvas,
+      createMockCanvas().canvas,
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
       style(),
     );
-    r.render(pd);
-    const renderSpy = vi.spyOn(r, 'render');
-    canvas.dispatchEvent(new Event('webglcontextrestored')); // queues RAF
-    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true })); // sets contextLost again
-    drain();
-    expect(renderSpy).not.toHaveBeenCalled(); // RAF body guards on !this.contextLost
+    const types = addSpy.mock.calls.map((c) => c[0]);
+    expect(types).toContain('webglcontextlost');
+    expect(types).not.toContain('webglcontextrestored');
+    r.destroy();
   });
 });
 

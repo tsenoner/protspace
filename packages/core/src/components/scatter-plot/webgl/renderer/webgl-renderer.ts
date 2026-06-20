@@ -10,7 +10,7 @@
 
 import * as d3 from 'd3';
 import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
-import { getShapeIndex, EMPTY_PLOT_DATA } from '@protspace/utils';
+import { getShapeIndex } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -320,18 +320,6 @@ export class WebGLRenderer {
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault();
     this.markContextLost();
-    this.onContextLost?.();
-  };
-  private readonly handleContextRestored = () => {
-    this.contextLost = false;
-    this.resetRendererState();
-    if (this.lastRenderedData && this.lastRenderedData.length > 0) {
-      requestAnimationFrame(() => {
-        if (!this.contextLost) {
-          this.render(this.lastRenderedData ?? EMPTY_PLOT_DATA);
-        }
-      });
-    }
   };
 
   constructor(
@@ -343,12 +331,11 @@ export class WebGLRenderer {
     private onContextLost?: () => void,
   ) {
     this.canvas.addEventListener('webglcontextlost', this.handleContextLost, { passive: false });
-    this.canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
   }
 
   destroy() {
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost);
-    this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
+    this.dispose();
   }
 
   // ============================================================================
@@ -1561,6 +1548,7 @@ export class WebGLRenderer {
     if (this.contextLost) return;
     this.contextLost = true;
     this.resetRendererState();
+    this.onContextLost?.();
   }
 
   private resetRendererState() {

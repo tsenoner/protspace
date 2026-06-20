@@ -218,3 +218,33 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     expect(sp.selectedProteinIds).toEqual([]);
   });
 });
+
+describe('scatter-plot WebGL context-loss recovery (detached guard)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('F-10: recovery microtask does not rebuild renderer after disconnect', async () => {
+    type RecoveryInternals = HTMLElement & {
+      updateComplete: Promise<boolean>;
+      _updateSizeAndRender(): void;
+      _handleWebglContextLost(): void;
+    };
+    const sp = document.createElement('protspace-scatterplot') as RecoveryInternals;
+    // Connect so Lit's update lifecycle (and updateComplete) actually runs,
+    // then disconnect synchronously after firing the loss event but BEFORE the
+    // recovery microtask resolves. This is the exact route-change / GPU-recycle
+    // sequence the finding targets: loss -> detach -> microtask. A disconnected
+    // element must NOT reconstruct a fresh WebGLRenderer (fresh context +
+    // listeners) on a detached renderRoot.
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    const spy = vi.spyOn(sp, '_updateSizeAndRender');
+    sp._handleWebglContextLost(); // schedules the recovery microtask
+    sp.remove(); // isConnected === false before the microtask resolves
+    await sp.updateComplete;
+    await Promise.resolve(); // flush the .then microtask
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
