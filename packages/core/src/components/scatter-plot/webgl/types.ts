@@ -31,6 +31,27 @@ export interface FramebufferResources {
   height: number;
 }
 
+/** Attribute locations for the point shader program (six attributes). */
+export interface PointAttribLocations {
+  dataPosition: number;
+  size: number;
+  color: number;
+  depth: number;
+  labelCount: number;
+  shape: number;
+}
+
+/** Uniform locations for the point shader program (seven uniforms). */
+export interface PointUniformLocations {
+  resolution: WebGLUniformLocation | null;
+  transform: WebGLUniformLocation | null;
+  dpr: WebGLUniformLocation | null;
+  gamma: WebGLUniformLocation | null;
+  labelColors: WebGLUniformLocation | null;
+  labelTextureSize: WebGLUniformLocation | null;
+  maxLabels: WebGLUniformLocation | null;
+}
+
 // ============================================================================
 // Configuration Constants (tuned for performance)
 // ============================================================================
