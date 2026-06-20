@@ -5,9 +5,9 @@
  * by embedding identity (across projections) would lie about where the other
  * members render.
  *
- * The chunked, viewport-aware implementation lives in `scatter-plot.ts`;
- * these helpers exist so the algorithm itself can be unit-tested
- * (legend-hide, projection-switch — see #121).
+ * The chunked viewport pass in `scatter-plot.ts` feeds its materialized
+ * points through this same function, so production grouping and these tests
+ * share one implementation (legend-hide, projection-switch — see #121).
  */
 
 export interface DuplicateStackPoint {

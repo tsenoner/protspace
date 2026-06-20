@@ -33,7 +33,8 @@ import { computeVisibilityModel } from './visibility-model';
 import type { VisibilityModel } from './visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
 import { QuadtreeIndex } from './quadtree-index';
-import { getDuplicateStackKey } from './duplicate-stack-helpers';
+import { computeViewportWindow, buildViewKey } from './duplicate-stack-viewport';
+import { DuplicateStackOverlayController } from './duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltip-height-estimate';
 import { NumericRecomputeRunner } from './numeric-recompute-runner';
 import {
@@ -47,12 +48,6 @@ import {
 // (no per-frame quadtree queries or buffer rebuilds), which is substantially faster for ~500k points.
 const VIRTUALIZATION_THRESHOLD = MAX_POINTS_DIRECT_RENDER;
 const VIRTUALIZATION_PADDING = 100;
-
-// Duplicate stack UI performance tuning (target: M1 MacBook + Chrome)
-const DUPLICATE_BADGES_MAX_VISIBLE = 800;
-const DUPLICATE_BADGES_VIEWPORT_PADDING = 60;
-const DUPLICATE_BADGES_UPDATE_DEBOUNCE_MS = 120;
-const DUPLICATE_STACK_COMPUTE_CHUNK_SIZE = 25_000;
 
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
@@ -200,35 +195,24 @@ export class ProtspaceScatterplot extends LitElement {
     margin: { top: number; right: number; bottom: number; left: number };
   } | null = null;
 
-  // Duplicate stacks (exact same coordinates)
-  private _duplicateStacks: Array<{
-    key: string;
-    x: number;
-    y: number;
-    px: number;
-    py: number;
-    points: PlotDataPoint[];
-  }> = [];
-  private _duplicateStackByKey = new Map<
-    string,
-    { key: string; x: number; y: number; px: number; py: number; points: PlotDataPoint[] }
-  >();
-  private _pointIdToDuplicateStackKey = new Map<string, string>();
-  private _expandedDuplicateStackKey: string | null = null;
-  // Anchor position the user clicked to open the current spider. Stored separately
-  // from the per-viewport stack object so it survives the rebuild that happens on
-  // every pan/zoom (see _applyExpandedSpiderAnchor).
-  private _expandedSpiderAnchor: { stackKey: string; x: number; y: number } | null = null;
-  private _isDuplicateStackUIEnabled(): boolean {
-    return !!this._mergedConfig.enableDuplicateStackUI;
-  }
-  private _duplicateOverlayDebounceId: number | null = null;
-  private _duplicateStacksCacheKey: string | null = null;
-  private _duplicateStacksComputeJobId = 0;
-  private _duplicateStacksComputing = false;
-  // Spiderfy interaction can lose native 'click' due to d3.zoom gesture handling in some browsers.
-  // Track press/release to reliably treat spiderfy node interactions like normal point clicks.
-  private _spiderfyPressByPointerId = new Map<number, { x: number; y: number; t: number }>();
+  // Duplicate-stack / spiderfy / badge overlay subsystem (state + schedulers +
+  // chunked compute + badge canvas + spiderfy SVG layer). Event dispatch stays
+  // on the host via the onPointActivate/onHover/onHoverEnd callbacks (INV-05/INV-03).
+  private _dupOverlay = new DuplicateStackOverlayController({
+    getOverlayGroup: () => this._overlayGroup ?? null,
+    getBadgesCanvas: () => this._badgesCanvas,
+    getTransform: () => this._transform,
+    getConfig: () => this._mergedConfig,
+    getScales: () => this._scales,
+    getPlotData: () => this._plotData,
+    getQuadtree: () => this._quadtreeIndex,
+    isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
+    isSelectionMode: () => this.selectionMode,
+    getColor: (p) => this._getColors(p)[0] ?? '#888888',
+    onPointActivate: (e, p) => this._handleClick(e, p),
+    onHover: (e, p) => this._handleMouseOver(e, p),
+    onHoverEnd: () => this._clearHoverState(),
+  });
 
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
 
@@ -460,9 +444,9 @@ export class ProtspaceScatterplot extends LitElement {
     }
     this._pendingHover = null;
     this._numericRecompute.cancel();
-    this._cancelDuplicateOverlayDebounce();
-    this._cancelDuplicateStackCompute();
-    this._clearDuplicateBadgesCanvas();
+    this._dupOverlay.cancelDebounce();
+    this._dupOverlay.cancelCompute();
+    this._dupOverlay.clearBadges();
     this._webglRenderer?.destroy();
     if (this._brush) {
       this._brush.on('start', null).on('end', null);
@@ -676,9 +660,9 @@ export class ProtspaceScatterplot extends LitElement {
       const nextDupUI = !!this._mergedConfig.enableDuplicateStackUI;
       if (prevDupUI !== nextDupUI) {
         // Cancel any in-flight work and invalidate caches when toggling.
-        this._cancelDuplicateOverlayDebounce();
-        this._cancelDuplicateStackCompute();
-        this._duplicateStacksCacheKey = null;
+        this._dupOverlay.cancelDebounce();
+        this._dupOverlay.cancelCompute();
+        this._dupOverlay.resetCacheKey();
       }
       this._updateStyleSignature();
       this._webglRenderer?.invalidateStyleCache();
@@ -1040,14 +1024,10 @@ export class ProtspaceScatterplot extends LitElement {
   private _buildQuadtree() {
     // Cancel any in-flight duplicate stack computation — it uses the old quadtree
     // and would overwrite cleared state with stale results when it finishes.
-    this._cancelDuplicateStackCompute();
+    this._dupOverlay.cancelCompute();
 
     if (!this._plotData.length || !this._scales) {
-      this._duplicateStacks = [];
-      this._duplicateStackByKey.clear();
-      this._pointIdToDuplicateStackKey.clear();
-      this._expandedDuplicateStackKey = null;
-      this._duplicateStacksCacheKey = null;
+      this._dupOverlay.resetState();
       // F-17: an emptied quadtree also changes the indexed slot set; bump the
       // generation and invalidate so the transform-keyed cache cannot serve a
       // stale slot set. No render here — there is nothing to draw.
@@ -1070,19 +1050,15 @@ export class ProtspaceScatterplot extends LitElement {
     }
     this._quadtreeIndex.setScales(this._scales);
     this._quadtreeIndex.rebuild(pd, visibleSlots);
-    // Duplicate stacks are computed lazily for the current viewport (see _ensureDuplicateStacksForViewport)
-    // to keep quadtree rebuilds fast on large datasets.
-    this._duplicateStacks = [];
-    this._duplicateStackByKey.clear();
-    this._pointIdToDuplicateStackKey.clear();
-    this._expandedDuplicateStackKey = null;
-    this._duplicateStacksCacheKey = null;
+    // Duplicate stacks are computed lazily for the current viewport (see the
+    // controller's ensureForViewport) to keep quadtree rebuilds fast on large datasets.
+    this._dupOverlay.resetState();
 
     // Trigger a fresh duplicate overlay update so badges are recomputed for the
     // new quadtree (e.g. after a projection switch).  Without this, the overlays
     // rendered synchronously in updated() used a stale cache and nothing would
     // re-trigger them after the deferred quadtree rebuild.
-    this._scheduleDuplicateOverlayUpdate(true);
+    this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
 
     // F-17: any rebuild can change the indexed (isInteractive) slot set, so the
     // transform-keyed virtualization cache is now stale even if the transform is
@@ -1231,57 +1207,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._scheduleQuadtreeRebuild();
     this._renderPlot();
     this._updateSelectionOverlays();
-  }
-
-  private _clearDuplicateBadgesCanvas() {
-    if (!this._badgesCanvas) return;
-    const ctx = this._badgesCanvas.getContext('2d');
-    if (!ctx) return;
-    // Clear in device pixels (canvas is sized to DPR).
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this._badgesCanvas.width, this._badgesCanvas.height);
-  }
-
-  private _renderDuplicateBadgesCanvas(
-    stacks: Array<{ key: string; px: number; py: number; points: PlotDataPoint[] }>,
-  ) {
-    if (!this._badgesCanvas) return;
-    const ctx = this._badgesCanvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const width = this._mergedConfig.width;
-    const height = this._mergedConfig.height;
-
-    // Work in CSS pixels for drawing; scale to device pixels once.
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const t = this._transform;
-    const badgeOffset = { x: 10, y: -10 };
-    const r = 9;
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '700 10px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-
-    for (let i = 0; i < stacks.length; i++) {
-      const s = stacks[i];
-      const x = t.x + t.k * s.px + badgeOffset.x;
-      const y = t.y + t.k * s.py + badgeOffset.y;
-      const isExpanded = s.key === this._expandedDuplicateStackKey;
-
-      ctx.fillStyle = isExpanded ? 'rgba(59, 130, 246, 0.9)' : 'rgba(17, 24, 39, 0.85)';
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(String(s.points.length), x, y);
-    }
   }
 
   // HiDPI setup and quality handled by WebGLRenderer
@@ -1574,19 +1499,14 @@ export class ProtspaceScatterplot extends LitElement {
     // For very large datasets, apply viewport culling
     const config = this._mergedConfig;
     const transform = this._transform;
-    const padding = VIRTUALIZATION_PADDING;
 
-    const leftPx = transform.invertX(config.margin.left - padding);
-    const rightPx = transform.invertX(config.width - config.margin.right + padding);
-    const topPx = transform.invertY(config.margin.top - padding);
-    const bottomPx = transform.invertY(config.height - config.margin.bottom + padding);
+    const { minX, maxX, minY, maxY } = computeViewportWindow(
+      transform,
+      config,
+      VIRTUALIZATION_PADDING,
+    );
 
-    const minX = Math.min(leftPx, rightPx);
-    const maxX = Math.max(leftPx, rightPx);
-    const minY = Math.min(topPx, bottomPx);
-    const maxY = Math.max(topPx, bottomPx);
-
-    const cacheKey = `${Math.round(transform.x)}|${Math.round(transform.y)}|${transform.k.toFixed(3)}|${config.width}|${config.height}|${this._quadtreeGeneration}`;
+    const cacheKey = `${buildViewKey(transform, config.width, config.height)}|${this._quadtreeGeneration}`;
     if (this._virtualizationCacheKey !== cacheKey) {
       const slots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
       this._visiblePlotData = gatherPlotData(this._plotData, slots);
@@ -1604,451 +1524,10 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _updateSelectionOverlays(options: { duplicateImmediate?: boolean } = {}) {
     if (!this._overlayGroup) return;
+    // The selected-overlay clear stays on the host; the duplicate-stack/spiderfy/
+    // badge update is owned by the controller (F-06).
     this._overlayGroup.selectAll('.selected-overlay').remove();
-    this._scheduleDuplicateOverlayUpdate(options.duplicateImmediate ?? true);
-  }
-
-  private _cancelDuplicateOverlayDebounce() {
-    if (this._duplicateOverlayDebounceId !== null) {
-      window.clearTimeout(this._duplicateOverlayDebounceId);
-      this._duplicateOverlayDebounceId = null;
-    }
-  }
-
-  private _cancelDuplicateStackCompute() {
-    // Bump job id so any in-flight chunked compute aborts early.
-    this._duplicateStacksComputeJobId++;
-    this._duplicateStacksComputing = false;
-  }
-
-  private _scheduleDuplicateOverlayUpdate(immediate: boolean) {
-    if (!this._overlayGroup) return;
-
-    // When the feature is disabled, keep this lightweight and synchronous.
-    if (!this._isDuplicateStackUIEnabled()) {
-      this._updateDuplicateOverlays();
-      return;
-    }
-
-    if (immediate) {
-      this._cancelDuplicateOverlayDebounce();
-      this._updateDuplicateOverlays();
-      return;
-    }
-
-    // Cheap path: redraw existing badges with the current zoom transform (no recompute, no DOM churn).
-    this._redrawDuplicateBadgesCanvasOnly();
-
-    // Debounce to avoid DOM churn during pan/zoom.
-    this._cancelDuplicateOverlayDebounce();
-    this._duplicateOverlayDebounceId = window.setTimeout(() => {
-      this._duplicateOverlayDebounceId = null;
-      this._updateDuplicateOverlays();
-    }, DUPLICATE_BADGES_UPDATE_DEBOUNCE_MS);
-  }
-
-  private _ensureDuplicateStacksForViewport(
-    viewKey: string,
-    minX: number,
-    minY: number,
-    maxX: number,
-    maxY: number,
-  ): boolean {
-    if (this._duplicateStacksCacheKey === viewKey) return true;
-    if (this._duplicateStacksComputing) return false;
-
-    this._duplicateStacksComputing = true;
-    const jobId = ++this._duplicateStacksComputeJobId;
-
-    // Query only the slots currently in (or near) the viewport. This is the key perf win.
-    const candidateSlots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
-    const scales = this._scales;
-    if (!scales) {
-      this._duplicateStacksComputing = false;
-      return false;
-    }
-
-    const stackMap = new Map<
-      string,
-      { key: string; x: number; y: number; px: number; py: number; points: PlotDataPoint[] }
-    >();
-    const idToKey = new Map<string, string>();
-
-    let idx = 0;
-    const step = () => {
-      if (jobId !== this._duplicateStacksComputeJobId) return; // cancelled
-      const end = Math.min(candidateSlots.length, idx + DUPLICATE_STACK_COMPUTE_CHUNK_SIZE);
-      for (; idx < end; idx++) {
-        const slot = candidateSlots[idx];
-        const p = materializePlotDataPoint(this._plotData, slot);
-        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-
-        // Group only points that share coords in the *current* projection
-        // (see duplicate-stack-helpers for the rationale and key contract).
-        const key = getDuplicateStackKey(p);
-
-        let stack = stackMap.get(key);
-        if (!stack) {
-          stack = {
-            key,
-            x: p.x,
-            y: p.y,
-            px: scales.x(p.x),
-            py: scales.y(p.y),
-            points: [],
-          };
-          stackMap.set(key, stack);
-        }
-        stack.points.push(p);
-        idToKey.set(p.id, key);
-      }
-
-      if (idx < candidateSlots.length) {
-        requestAnimationFrame(step);
-        return;
-      }
-
-      // Finalize: keep only true duplicates.
-      const stacks: Array<{
-        key: string;
-        x: number;
-        y: number;
-        px: number;
-        py: number;
-        points: PlotDataPoint[];
-      }> = [];
-      const byKey = new Map<
-        string,
-        { key: string; x: number; y: number; px: number; py: number; points: PlotDataPoint[] }
-      >();
-
-      for (const stack of stackMap.values()) {
-        if (stack.points.length > 1) {
-          stacks.push(stack);
-          byKey.set(stack.key, stack);
-        }
-      }
-
-      this._duplicateStacks = stacks;
-      this._duplicateStackByKey = byKey;
-      this._pointIdToDuplicateStackKey = idToKey;
-
-      // If the expanded stack is no longer available for this viewport, collapse it.
-      if (
-        this._expandedDuplicateStackKey &&
-        !this._duplicateStackByKey.has(this._expandedDuplicateStackKey)
-      ) {
-        this._expandedDuplicateStackKey = null;
-        this._expandedSpiderAnchor = null;
-      }
-
-      // Restore the user's spider anchor on the freshly built stack object so
-      // pan/zoom doesn't snap the spider back to whichever group member was
-      // iterated first.
-      this._applyExpandedSpiderAnchor();
-
-      this._duplicateStacksCacheKey = viewKey;
-      this._duplicateStacksComputing = false;
-
-      // Re-render overlays for the freshly computed viewport stacks.
-      this._updateDuplicateOverlays();
-    };
-
-    requestAnimationFrame(step);
-    return false;
-  }
-
-  private _capDuplicateStacksForRendering(
-    stacks: Array<{ key: string; px: number; py: number; points: PlotDataPoint[] }>,
-    minX: number,
-    minY: number,
-    maxX: number,
-    maxY: number,
-  ): Array<{ key: string; px: number; py: number; points: PlotDataPoint[] }> {
-    let stacksToRender = stacks;
-
-    if (stacksToRender.length > DUPLICATE_BADGES_MAX_VISIBLE) {
-      stacksToRender = [...stacksToRender]
-        .sort((a, b) => b.points.length - a.points.length)
-        .slice(0, DUPLICATE_BADGES_MAX_VISIBLE);
-
-      // Ensure the expanded stack remains visible even if it is not in the top-N.
-      if (
-        this._expandedDuplicateStackKey &&
-        !stacksToRender.some((s) => s.key === this._expandedDuplicateStackKey)
-      ) {
-        const expanded = this._duplicateStackByKey.get(this._expandedDuplicateStackKey);
-        if (
-          expanded &&
-          expanded.px >= minX &&
-          expanded.px <= maxX &&
-          expanded.py >= minY &&
-          expanded.py <= maxY
-        ) {
-          stacksToRender = [...stacksToRender, expanded];
-        }
-      }
-    }
-
-    return stacksToRender;
-  }
-
-  private _redrawDuplicateBadgesCanvasOnly() {
-    if (!this._isDuplicateStackUIEnabled() || this.selectionMode) {
-      this._clearDuplicateBadgesCanvas();
-      return;
-    }
-    if (!this._scales) return;
-
-    const config = this._mergedConfig;
-    const padding = DUPLICATE_BADGES_VIEWPORT_PADDING;
-    const leftPx = this._transform.invertX(config.margin.left - padding);
-    const rightPx = this._transform.invertX(config.width - config.margin.right + padding);
-    const topPx = this._transform.invertY(config.margin.top - padding);
-    const bottomPx = this._transform.invertY(config.height - config.margin.bottom + padding);
-
-    const minX = Math.min(leftPx, rightPx);
-    const maxX = Math.max(leftPx, rightPx);
-    const minY = Math.min(topPx, bottomPx);
-    const maxY = Math.max(topPx, bottomPx);
-
-    const visibleStacks = this._duplicateStacks.filter(
-      (s) => s.px >= minX && s.px <= maxX && s.py >= minY && s.py <= maxY,
-    );
-    const stacksToRender = this._capDuplicateStacksForRendering(
-      visibleStacks,
-      minX,
-      minY,
-      maxX,
-      maxY,
-    );
-
-    // Note: canvas drawing uses screen coordinates and already keeps badge size constant.
-    this._renderDuplicateBadgesCanvas(stacksToRender);
-  }
-
-  private _ensureDuplicateSpiderfyLayer() {
-    if (!this._overlayGroup) return null;
-    let spiderfyLayer = this._overlayGroup.select<SVGGElement>('g.duplicate-spiderfy-layer');
-    if (spiderfyLayer.empty()) {
-      spiderfyLayer = this._overlayGroup.append('g').attr('class', 'duplicate-spiderfy-layer');
-    }
-    return spiderfyLayer;
-  }
-
-  private _updateDuplicateOverlays() {
-    if (!this._overlayGroup || !this._scales) return;
-
-    if (!this._isDuplicateStackUIEnabled()) {
-      // Remove both to clean up older DOM from previous versions.
-      this._overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').remove();
-      this._expandedDuplicateStackKey = null;
-      this._clearDuplicateBadgesCanvas();
-      return;
-    }
-
-    // Don't show stack UI while brushing/selecting.
-    if (this.selectionMode) {
-      this._overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').remove();
-      this._expandedDuplicateStackKey = null;
-      this._clearDuplicateBadgesCanvas();
-      return;
-    }
-
-    const spiderfyLayer = this._ensureDuplicateSpiderfyLayer();
-    if (!spiderfyLayer) return;
-
-    const k = this._transform.k || 1;
-    const config = this._mergedConfig;
-    const viewKey = `${Math.round(this._transform.x)}|${Math.round(this._transform.y)}|${k.toFixed(3)}|${config.width}|${config.height}`;
-
-    // Compute visible window in "base pixel space" (same as quadtree indexing).
-    const padding = DUPLICATE_BADGES_VIEWPORT_PADDING;
-    const leftPx = this._transform.invertX(config.margin.left - padding);
-    const rightPx = this._transform.invertX(config.width - config.margin.right + padding);
-    const topPx = this._transform.invertY(config.margin.top - padding);
-    const bottomPx = this._transform.invertY(config.height - config.margin.bottom + padding);
-
-    const minX = Math.min(leftPx, rightPx);
-    const maxX = Math.max(leftPx, rightPx);
-    const minY = Math.min(topPx, bottomPx);
-    const maxY = Math.max(topPx, bottomPx);
-
-    // Ensure we have duplicate stacks for the current viewport before trying to render.
-    if (!this._ensureDuplicateStacksForViewport(viewKey, minX, minY, maxX, maxY)) {
-      // Keep existing DOM as-is until computation finishes; _updateDuplicateOverlays will rerun.
-      return;
-    }
-
-    const visibleStacks = this._duplicateStacks.filter(
-      (s) => s.px >= minX && s.px <= maxX && s.py >= minY && s.py <= maxY,
-    );
-
-    // --- Badges (N) ---
-    const stacksToRender = this._capDuplicateStacksForRendering(
-      visibleStacks,
-      minX,
-      minY,
-      maxX,
-      maxY,
-    );
-
-    // Phase 3: render badges via a lightweight 2D canvas overlay (much faster than many SVG nodes).
-    // Spiderfy remains in SVG for interaction.
-    this._renderDuplicateBadgesCanvas(stacksToRender);
-
-    // --- Spiderfy ---
-    spiderfyLayer.selectAll('*').remove();
-    if (!this._expandedDuplicateStackKey) return;
-
-    const stack = this._duplicateStackByKey.get(this._expandedDuplicateStackKey);
-    if (!stack) {
-      this._expandedDuplicateStackKey = null;
-      return;
-    }
-
-    // Hide spiderfy if the stack is off-screen (e.g., after a zoom/pan).
-    if (!(stack.px >= minX && stack.px <= maxX && stack.py >= minY && stack.py <= maxY)) {
-      this._expandedDuplicateStackKey = null;
-      return;
-    }
-
-    const points = stack.points;
-    const n = points.length;
-    // Ring radius in screen pixels (kept constant by scale(1/k) below)
-    const ringRadius = Math.min(70, Math.max(22, 12 + n * 2));
-    const nodeRadius = 5;
-
-    const spiderGroup = spiderfyLayer
-      .append('g')
-      .attr('class', 'dup-spiderfy')
-      // Keep spiderfy UI constant-size in screen pixels via scale(1/k)
-      .attr('transform', `translate(${stack.px},${stack.py}) scale(${1 / k})`);
-
-    const items = points.map((p, idx) => {
-      const angle = (idx / n) * Math.PI * 2 - Math.PI / 2;
-      const x = ringRadius * Math.cos(angle);
-      const y = ringRadius * Math.sin(angle);
-      return { point: p, idx, x, y };
-    });
-
-    // Leader lines
-    spiderGroup
-      .selectAll('line.dup-spiderfy-line')
-      .data(items)
-      .enter()
-      .append('line')
-      .attr('class', 'dup-spiderfy-line')
-      .attr('x1', 0)
-      .attr('y1', 0)
-      .attr('x2', (d) => d.x)
-      .attr('y2', (d) => d.y);
-
-    // Clickable nodes
-    const nodes = spiderGroup
-      .selectAll('g.dup-spiderfy-node')
-      .data(items)
-      .enter()
-      .append('g')
-      .attr('class', 'dup-spiderfy-node')
-      .attr('transform', (d) => `translate(${d.x},${d.y})`);
-
-    // Create circles with explicit pointer-events and handle selection via pointer press/release.
-    // We avoid relying on the native 'click' event because it can be suppressed by d3.zoom gesture handling.
-    nodes
-      .append('circle')
-      .attr('class', 'dup-spiderfy-node-circle')
-      .attr('r', nodeRadius)
-      .attr('fill', (d) => this._getColors(d.point)[0] ?? '#888888')
-      .style('pointer-events', 'all')
-      .style('cursor', 'pointer')
-      .on('pointerdown', (event) => {
-        event.stopPropagation();
-        const pe = event as PointerEvent;
-        if (typeof pe.pointerId === 'number') {
-          this._spiderfyPressByPointerId.set(pe.pointerId, {
-            x: pe.clientX,
-            y: pe.clientY,
-            t: Date.now(),
-          });
-        }
-        // Keep pointer events routed to this element even if the pointer moves slightly.
-        const el = event.currentTarget as HTMLElement | null;
-        if (el && typeof el.setPointerCapture === 'function' && typeof pe.pointerId === 'number') {
-          try {
-            el.setPointerCapture(pe.pointerId);
-          } catch {
-            // ignore
-          }
-        }
-      })
-      .on('pointerup', (event, d) => {
-        event.stopPropagation();
-        const pe = event as PointerEvent;
-        const rec =
-          typeof pe.pointerId === 'number'
-            ? this._spiderfyPressByPointerId.get(pe.pointerId)
-            : undefined;
-        if (typeof pe.pointerId === 'number') this._spiderfyPressByPointerId.delete(pe.pointerId);
-        if (!rec) return;
-
-        // Treat a short, low-movement press/release as a click.
-        const dx = pe.clientX - rec.x;
-        const dy = pe.clientY - rec.y;
-        const dist2 = dx * dx + dy * dy;
-        const dt = Date.now() - rec.t;
-        if (dist2 <= 16 && dt <= 700) {
-          this._handleClick(event as unknown as MouseEvent, d.point);
-        }
-      })
-      .on('lostpointercapture', (event) => {
-        const pe = event as PointerEvent;
-        if (typeof pe.pointerId === 'number') this._spiderfyPressByPointerId.delete(pe.pointerId);
-      })
-      .on('pointercancel', (event) => {
-        const pe = event as PointerEvent;
-        if (typeof pe.pointerId === 'number') this._spiderfyPressByPointerId.delete(pe.pointerId);
-      })
-      .on('mouseenter', (event, d) => {
-        // Show the real tooltip for the hovered protein (not the stack centroid)
-        this._handleMouseOver(event as unknown as MouseEvent, d.point);
-      })
-      .on('mouseleave', () => {
-        this._clearHoverState();
-      });
-  }
-
-  private _toggleSpiderfy(stackKey: string, anchorPoint?: PlotDataPoint) {
-    this._expandedDuplicateStackKey =
-      this._expandedDuplicateStackKey === stackKey ? null : stackKey;
-
-    if (this._expandedDuplicateStackKey && anchorPoint) {
-      // Remember where the user clicked so the spider stays anchored to that
-      // point across pan/zoom — _duplicateStackByKey rebuilds with fresh
-      // objects on every viewport recompute and would otherwise drop the anchor.
-      this._expandedSpiderAnchor = {
-        stackKey: this._expandedDuplicateStackKey,
-        x: anchorPoint.x,
-        y: anchorPoint.y,
-      };
-      this._applyExpandedSpiderAnchor();
-    } else {
-      this._expandedSpiderAnchor = null;
-    }
-
-    this._updateDuplicateOverlays();
-  }
-
-  private _applyExpandedSpiderAnchor(): void {
-    const anchor = this._expandedSpiderAnchor;
-    if (!anchor || !this._scales) return;
-    if (anchor.stackKey !== this._expandedDuplicateStackKey) return;
-    const stack = this._duplicateStackByKey.get(anchor.stackKey);
-    if (!stack) return;
-    stack.x = anchor.x;
-    stack.y = anchor.y;
-    stack.px = this._scales.x(anchor.x);
-    stack.py = this._scales.y(anchor.y);
+    this._dupOverlay.updateSelectionOverlays(options);
   }
 
   private _getPointShape(point: PlotDataPoint): string {
@@ -2435,11 +1914,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     // Clicking anywhere outside the expanded stack collapses it.
-    const hadExpanded = !!this._expandedDuplicateStackKey;
-    if (this._expandedDuplicateStackKey) {
-      this._expandedDuplicateStackKey = null;
-      this._updateDuplicateOverlays();
-    }
+    const hadExpanded = this._dupOverlay.collapseExpanded();
 
     const [mouseX, mouseY] = d3.pointer(event);
 
@@ -2471,15 +1946,8 @@ export class ProtspaceScatterplot extends LitElement {
       const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / 3;
 
       if (distance <= pointRadius) {
-        if (this._isDuplicateStackUIEnabled()) {
-          // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
-          const stackKey = this._pointIdToDuplicateStackKey.get(nearestPoint.id);
-          const stack = stackKey ? this._duplicateStackByKey.get(stackKey) : undefined;
-          if (stack && stack.points.length > 1) {
-            this._toggleSpiderfy(stack.key, nearestPoint);
-            return;
-          }
-        }
+        // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
+        if (this._dupOverlay.maybeSpiderfyPoint(nearestPoint)) return;
 
         // If we just collapsed an expanded stack, treat this click as a "dismiss" click.
         // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
@@ -2750,15 +2218,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   /** True when a duplicate-badge spider is currently expanded. */
   hasExpandedDuplicateStack(): boolean {
-    return this._expandedDuplicateStackKey !== null;
+    return this._dupOverlay.hasExpanded();
   }
 
   /** Collapse the currently-open duplicate-badge spider, if any. */
   closeExpandedDuplicateStack(): void {
-    if (this._expandedDuplicateStackKey === null) return;
-    this._expandedDuplicateStackKey = null;
-    this._expandedSpiderAnchor = null;
-    this._updateDuplicateOverlays();
+    this._dupOverlay.closeExpanded();
   }
 
   /**

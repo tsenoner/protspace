@@ -46,6 +46,14 @@ describe('buildDuplicateStacks', () => {
     expect(result.byKey.get(getDuplicateStackKey({ x: 1, y: 1 }))?.points).toHaveLength(2);
   });
 
+  it('exposes the data-space x/y of the stack so callers can re-project to pixels', () => {
+    // Contract for the production viewport path: it re-projects stack.x/stack.y
+    // through scales.x/scales.y to get px/py, so the helper must surface them.
+    const result = buildDuplicateStacks([point('a', 1.5, 2.5), point('b', 1.5, 2.5)]);
+    expect(result.stacks[0].x).toBe(1.5);
+    expect(result.stacks[0].y).toBe(2.5);
+  });
+
   it('handles multiple independent groups', () => {
     const result = buildDuplicateStacks([
       point('a', 0, 0),

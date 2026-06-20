@@ -13,16 +13,23 @@ beforeAll(() => {
 });
 import './scatter-plot';
 
+// F-06 moved the chunked-compute state into DuplicateStackOverlayController.
+// These are TS-private at compile time but reachable at runtime; the probes
+// assert the SAME contracts (job-id supersede guard, viewKey cache hit).
+type DupOverlay = {
+  ensureForViewport(k: string, a: number, b: number, c: number, d: number): boolean;
+  stacks: unknown[];
+  cacheKey: string | null;
+  computeJobId: number;
+};
+
 type Internals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
   config: { enableDuplicateStackUI: boolean };
   _processData(): void;
   _buildQuadtree(): void;
-  _ensureDuplicateStacksForViewport(k: string, a: number, b: number, c: number, d: number): boolean;
-  _duplicateStacks: unknown[];
-  _duplicateStacksCacheKey: string | null;
-  _duplicateStacksComputeJobId: number;
+  _dupOverlay: DupOverlay;
 };
 
 // Two pairs of EXACT-duplicate coordinates so a stack of >1 forms.
@@ -81,21 +88,21 @@ describe('duplicate-stack chunked compute (F-24 characterization lock)', () => {
 
   it('a superseded job (job id bumped before drain) does not commit its results', () => {
     const sp = prime();
-    sp._ensureDuplicateStacksForViewport('view-1', -1000, -1000, 1000, 1000); // starts job, queues RAF
-    sp._duplicateStacksComputeJobId++; // simulate a second viewport/cancel superseding it
+    sp._dupOverlay.ensureForViewport('view-1', -1000, -1000, 1000, 1000); // starts job, queues RAF
+    sp._dupOverlay.computeJobId++; // simulate a second viewport/cancel superseding it
     drain();
-    expect(sp._duplicateStacksCacheKey).not.toBe('view-1'); // first job bailed → cache key not set
+    expect(sp._dupOverlay.cacheKey).not.toBe('view-1'); // first job bailed → cache key not set
   });
 
   it('a repeat call with the same viewKey short-circuits (cache hit) without recompute', () => {
     const sp = prime();
-    sp._ensureDuplicateStacksForViewport('view-1', -1000, -1000, 1000, 1000);
+    sp._dupOverlay.ensureForViewport('view-1', -1000, -1000, 1000, 1000);
     drain(); // completes; cache key becomes 'view-1'
-    expect(sp._duplicateStacksCacheKey).toBe('view-1');
-    const before = sp._duplicateStacks;
-    const hit = sp._ensureDuplicateStacksForViewport('view-1', -1000, -1000, 1000, 1000);
-    expect(hit).toBe(true); // L1624 early-return
+    expect(sp._dupOverlay.cacheKey).toBe('view-1');
+    const before = sp._dupOverlay.stacks;
+    const hit = sp._dupOverlay.ensureForViewport('view-1', -1000, -1000, 1000, 1000);
+    expect(hit).toBe(true); // cache-key early-return
     expect(rafQueue).toHaveLength(0); // no new compute scheduled
-    expect(sp._duplicateStacks).toBe(before); // results untouched
+    expect(sp._dupOverlay.stacks).toBe(before); // results untouched
   });
 });
