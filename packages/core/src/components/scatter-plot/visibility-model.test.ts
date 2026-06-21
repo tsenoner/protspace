@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { VisualizationData, PlotDataPoint, AnnotationData } from '@protspace/utils';
-import type { DisplayTier, VisibilityInputs, VisibilityModel } from './visibility-model';
+import type { VisibilityInputs, VisibilityModel } from './visibility-model';
 import { computeVisibilityModel } from './visibility-model';
 
 /**
@@ -86,17 +86,15 @@ describe('computeVisibilityModel', () => {
         baseInputs({ data, hiddenAnnotationValues: ['A'], selectedProteinIds: ['p0'] }),
       );
       expect(model.opacityOf(point('p0', 0))).toBe(0);
-      expect(model.tierOf(point('p0', 0))).toBe('hidden');
       expect(model.isInteractive(point('p0', 0))).toBe(false);
     });
 
-    it('a HIGHLIGHTED point whose only value is hidden → opacity 0, tier hidden', () => {
+    it('a HIGHLIGHTED point whose only value is hidden → opacity 0', () => {
       const data = makeData(['A', 'B'], Int32Array.of(0, 1));
       const model = computeVisibilityModel(
         baseInputs({ data, hiddenAnnotationValues: ['A'], highlightedProteinIds: ['p0'] }),
       );
       expect(model.opacityOf(point('p0', 0))).toBe(0);
-      expect(model.tierOf(point('p0', 0))).toBe('hidden');
     });
   });
 
@@ -107,7 +105,6 @@ describe('computeVisibilityModel', () => {
       const data = makeData(['A', 'B'], [[0, 1], [1]]);
       const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: ['A'] }));
       expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
-      expect(model.tierOf(point('p0', 0))).toBe('base');
     });
 
     it('fully hidden multilabel point → opacity 0', () => {
@@ -138,7 +135,6 @@ describe('computeVisibilityModel', () => {
       const data = makeData(['A', 'B'], Int32Array.of(0, -1));
       const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: [] }));
       expect(model.opacityOf(point('p1', 1))).toBe(0);
-      expect(model.tierOf(point('p1', 1))).toBe('hidden');
     });
 
     it('nested empty row [] → hidden even with empty hidden set', () => {
@@ -195,7 +191,6 @@ describe('computeVisibilityModel', () => {
       const model = computeVisibilityModel(baseInputs({ data, selectedProteinIds: ['p0'] }));
       expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
       expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.faded);
-      expect(model.tierOf(point('p1', 1))).toBe('faded');
     });
 
     it('highlight-only: highlighted gets selected opacity, others stay base (no fade)', () => {
@@ -205,7 +200,6 @@ describe('computeVisibilityModel', () => {
       );
       expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
       expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.base); // NOT faded
-      expect(model.tierOf(point('p1', 1))).toBe('base');
     });
   });
 
@@ -293,9 +287,8 @@ describe('computeVisibilityModel', () => {
           opacities: { base: 0.8, selected: 1.0, faded: 0 },
         }),
       );
-      // Still the FADED tier...
-      expect(model.tierOf(point('p1', 1))).toBe('faded');
-      // ...but numerically non-interactive because opacity is 0.
+      // A non-selected point under an active selection is numerically
+      // non-interactive because its (faded) opacity is 0.
       expect(model.opacityOf(point('p1', 1))).toBe(0);
       expect(model.isInteractive(point('p1', 1))).toBe(false);
     });
@@ -307,9 +300,19 @@ describe('computeVisibilityModel', () => {
     });
   });
 
-  // ── tierOf never collapses selected into base ─────────────────────────────
-  describe('tierOf: never collapses selected into base', () => {
-    it('returns the full DisplayTier domain distinctly', () => {
+  // ── F-45 removal guard: tierOf / DisplayTier are gone ─────────────────────
+  // tierOf was a convenience view with no live readers; the opacity/depth
+  // contract carriers (opacityOf / baseOpacityOf / isInteractive) carry all
+  // behavior. This guard locks tierOf's removal while proving those carriers
+  // — and the full hidden/selected/faded/base distinctions they encode — remain.
+  describe('F-45: model exposes no tierOf, distinctions live in opacity carriers', () => {
+    it('the model surface has no tierOf member', () => {
+      const data = makeData(['A'], Int32Array.of(0));
+      const model = computeVisibilityModel(baseInputs({ data }));
+      expect((model as Record<string, unknown>).tierOf).toBeUndefined();
+    });
+
+    it('hidden / selected / faded distinctions survive via opacityOf + isInteractive', () => {
       const data = makeData(['A', 'B', 'C', 'D'], Int32Array.of(0, 1, 2, 3));
       const model = computeVisibilityModel(
         baseInputs({
@@ -318,22 +321,19 @@ describe('computeVisibilityModel', () => {
           selectedProteinIds: ['p1'], // p1 selected (=> p2,p3 faded)
         }),
       );
-      const tiers: Record<string, DisplayTier> = {
-        p0: model.tierOf(point('p0', 0)),
-        p1: model.tierOf(point('p1', 1)),
-        p2: model.tierOf(point('p2', 2)),
-      };
-      expect(tiers.p0).toBe('hidden');
-      expect(tiers.p1).toBe('selected');
-      expect(tiers.p2).toBe('faded');
-      // selected is never reported as base
-      expect(model.tierOf(point('p1', 1))).not.toBe('base');
+      // hidden → opacity 0, non-interactive
+      expect(model.opacityOf(point('p0', 0))).toBe(0);
+      expect(model.isInteractive(point('p0', 0))).toBe(false);
+      // selected → selected opacity (never collapsed into base)
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      // faded → faded opacity (distinct from base and selected)
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
     });
 
-    it('base tier when no selection and not hidden', () => {
+    it('base opacity when no selection and not hidden', () => {
       const data = makeData(['A', 'B'], Int32Array.of(0, 1));
       const model = computeVisibilityModel(baseInputs({ data }));
-      expect(model.tierOf(point('p0', 0))).toBe('base');
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
     });
   });
 
@@ -419,8 +419,6 @@ describe('computeVisibilityModel', () => {
     const data = makeData(['A'], Int32Array.of(0));
     const inputs: VisibilityInputs = baseInputs({ data });
     const model: VisibilityModel = computeVisibilityModel(inputs);
-    const tier: DisplayTier = model.tierOf(point('p0', 0));
-    expect(['hidden', 'faded', 'base', 'selected']).toContain(tier);
     expect(typeof model.opacityOf(point('p0', 0))).toBe('number');
     expect(typeof model.baseOpacityOf(point('p0', 0))).toBe('number');
     expect(typeof model.isInteractive(point('p0', 0))).toBe('boolean');

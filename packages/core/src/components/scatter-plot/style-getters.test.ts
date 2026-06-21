@@ -592,4 +592,61 @@ describe('style-getters', () => {
       expect(getOpacity(createMockPoint('p1', 1))).toBe(cfg.opacities.base);
     });
   });
+
+  // ── F-44 removal guard: dead stroke getters are gone, live getters survive ──
+  // The GPU draws strokes from a hardcoded fragment-shader constant
+  // (strokeWidth = 0.15 in webgl-renderer.ts), so createStyleGetters' stroke
+  // getters were never consumed. This guard locks their removal and proves the
+  // five live keys remain present.
+  describe('F-44: createStyleGetters does not expose stroke getters', () => {
+    const createMockData = (annotationValues: string[]): VisualizationData => ({
+      protein_ids: annotationValues.map((_, i) => `protein_${i}`),
+      projections: [
+        { name: 'test', data: new Float32Array(annotationValues.length * 3), dimension: 3 },
+      ],
+      annotations: {
+        test_annotation: {
+          kind: 'categorical',
+          values: annotationValues,
+          colors: annotationValues.map(() => '#ff0000'),
+          shapes: annotationValues.map(() => 'circle'),
+        },
+      },
+      annotation_data: {
+        test_annotation: annotationValues.map((_, i) => [i]),
+      },
+    });
+
+    const createDefaultStyleConfig = (): StyleConfig => ({
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'test_annotation',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: null,
+      colorMapping: null,
+      shapeMapping: null,
+      sizes: { base: 10 },
+      opacities: { base: 1, selected: 1, faded: 0.3 },
+    });
+
+    it('returns no getStrokeColor / getStrokeWidth, but keeps the live getters', () => {
+      const getters = createStyleGetters(
+        createMockData(['catA', 'catB']),
+        createDefaultStyleConfig(),
+      );
+      const surface = getters as Record<string, unknown>;
+
+      // Dead getters removed.
+      expect(surface.getStrokeColor).toBeUndefined();
+      expect(surface.getStrokeWidth).toBeUndefined();
+
+      // Live getters preserved.
+      expect(typeof surface.getColors).toBe('function');
+      expect(typeof surface.getPointSize).toBe('function');
+      expect(typeof surface.getOpacity).toBe('function');
+      expect(typeof surface.getDepth).toBe('function');
+      expect(typeof surface.getPointShape).toBe('function');
+    });
+  });
 });

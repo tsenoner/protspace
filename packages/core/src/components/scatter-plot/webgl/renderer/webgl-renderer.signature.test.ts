@@ -25,8 +25,6 @@ const style = (): WebGLStyleGetters => ({
   getPointSize: () => 9,
   getOpacity: () => 1,
   getDepth: () => 0,
-  getStrokeColor: () => '#000',
-  getStrokeWidth: () => 0,
   getShape: () => 'circle',
 });
 
@@ -90,5 +88,33 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
     renderer.invalidatePositionCache(); // the explicit path that backstops the lossy signature
     renderer.render(pd([0, 99, 2, 3, 4], [0, 1, 2, 3, 4]));
     expect(populateSpy).toHaveBeenCalled();
+  });
+});
+
+// ── F-55 / F-56 removal guards on a live WebGLRenderer instance ─────────────
+// F-55: the unused public getGamma/setGamma accessors are removed; the gamma
+//       field and its effective-gamma resolver (getEffectiveGamma) stay.
+// F-56: the @deprecated no-op setSelectedAnnotation is removed; the live
+//       signature methods (setStyleSignature) survive.
+describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
+  let renderer: ReturnType<typeof makeRenderer>;
+  beforeEach(() => {
+    renderer = makeRenderer();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('F-55: getGamma / setGamma are gone; getEffectiveGamma survives', () => {
+    const surface = renderer as unknown as Record<string, unknown>;
+    expect(surface.getGamma).toBeUndefined();
+    expect(surface.setGamma).toBeUndefined();
+    // getEffectiveGamma is private; reach it through the same indexed view used
+    // by the context-loss lock.
+    expect(typeof surface.getEffectiveGamma).toBe('function');
+  });
+
+  it('F-56: setSelectedAnnotation is gone; setStyleSignature survives', () => {
+    const surface = renderer as unknown as Record<string, unknown>;
+    expect(surface.setSelectedAnnotation).toBeUndefined();
+    expect(typeof surface.setStyleSignature).toBe('function');
   });
 });

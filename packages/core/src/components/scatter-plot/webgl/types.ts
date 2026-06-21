@@ -1,5 +1,8 @@
-import type * as d3 from 'd3';
 import type { PlotDataPoint } from '@protspace/utils';
+
+// ScalePair is owned by @protspace/utils (data-processor `createScales`); re-export
+// it here so webgl code importing `ScalePair` from this module still resolves.
+export type { ScalePair } from '@protspace/utils';
 
 // ============================================================================
 // Types & Interfaces
@@ -10,15 +13,8 @@ export interface WebGLStyleGetters {
   getPointSize: (point: PlotDataPoint) => number;
   getOpacity: (point: PlotDataPoint) => number;
   getDepth: (point: PlotDataPoint) => number;
-  getStrokeColor: (point: PlotDataPoint) => string;
-  getStrokeWidth: (point: PlotDataPoint) => number;
   getShape: (point: PlotDataPoint) => string;
 }
-
-export type ScalePair = {
-  x: d3.ScaleLinear<number, number>;
-  y: d3.ScaleLinear<number, number>;
-};
 
 /**
  * Framebuffer resources for offscreen rendering

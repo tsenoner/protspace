@@ -166,23 +166,6 @@ export class WebGLRenderer {
   // Public API
   // ============================================================================
 
-  /**
-   * Set the gamma value for display.
-   * Standard sRGB displays use gamma ~2.2.
-   * @param gamma Gamma value (clamped between 1.0 and 3.0)
-   */
-  setGamma(gamma: number) {
-    this.gamma = Math.max(1.0, Math.min(3.0, gamma));
-  }
-
-  /**
-   * Get the current gamma value.
-   * @returns Current gamma value
-   */
-  getGamma(): number {
-    return this.gamma;
-  }
-
   setStyleSignature(signature: string | null) {
     if (this.styleSignature !== signature) {
       this.styleSignature = signature;
@@ -192,14 +175,6 @@ export class WebGLRenderer {
 
   setSelectionActive(active: boolean) {
     this.selectionActive = active;
-  }
-
-  /**
-   * @deprecated Selected annotation is now handled via style signature.
-   * Kept for backward compatibility.
-   */
-  setSelectedAnnotation(_annotation: string) {
-    // No-op: selected annotation is now part of style signature
   }
 
   invalidateStyleCache() {

@@ -9,7 +9,7 @@ import {
   BADGE_EXPANDED_FILL,
   BADGE_DEFAULT_FILL,
 } from './duplicate-badges-canvas-renderer';
-import type { ViewportDuplicateStack } from './duplicate-badges-canvas-renderer';
+import type { RenderDuplicateStack } from './duplicate-stack-types';
 
 function fakeCanvas() {
   const calls: Array<[string, unknown[]]> = [];
@@ -29,7 +29,7 @@ function fakeCanvas() {
   return { canvas, calls };
 }
 
-const stk = (key: string, px: number, py: number, n: number): ViewportDuplicateStack => ({
+const stk = (key: string, px: number, py: number, n: number): RenderDuplicateStack => ({
   key,
   px,
   py,
@@ -76,7 +76,7 @@ describe('DuplicateBadgesCanvasRenderer', () => {
   });
 });
 
-const stack = (key: string, px: number, py: number, n: number): ViewportDuplicateStack => ({
+const stack = (key: string, px: number, py: number, n: number): RenderDuplicateStack => ({
   key,
   px,
   py,

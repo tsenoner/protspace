@@ -5,11 +5,12 @@
  * interactivity). Pure and side-effect free: no DOM, no WebGL, no Lit — safe to
  * import under jsdom and from workers.
  *
- * This module replicates the opacity semantics of `createStyleGetters`
- * (`style-getters.ts` — `computeAllHidden`, `getBaseOpacity`, `getOpacity`)
- * BIT-FOR-BIT. The authoritative contract is the design D5 table in
- * `openspec/changes/unified-visibility-model/design.md`; the decisive reference
- * is the current code, not intuition. Subtleties preserved on purpose:
+ * This module is the SINGLE authority for those opacity semantics:
+ * `style-getters.ts` delegates to it (`getBaseOpacity = visibility.baseOpacityOf`,
+ * `getOpacity = visibility.opacityOf`), so there is no second implementation to
+ * keep in lockstep. The authoritative contract is the design D5 table in
+ * `openspec/changes/unified-visibility-model/design.md`. Subtleties preserved on
+ * purpose:
  *
  *   - Hidden ⇒ opacity exactly `0` (consumers agree only at exact 0).
  *   - Hidden beats selected/highlighted.
@@ -41,8 +42,6 @@ import type {
 } from '@protspace/utils';
 import { toInternalValue } from '@protspace/utils';
 
-export type DisplayTier = 'hidden' | 'faded' | 'base' | 'selected';
-
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
   data: VisualizationData | null;
@@ -57,8 +56,6 @@ export interface VisibilityInputs {
 export interface VisibilityModel {
   /** True when every value of the selected annotation is hidden (escape hatch). */
   allHidden: boolean;
-  /** Display tier — hidden beats selected. Convenience view; never collapses selected into base. */
-  tierOf(point: PlotDataPoint): DisplayTier;
   /** Render opacity — exactly `0` for hidden (load-bearing). */
   opacityOf(point: PlotDataPoint): number;
   /** Base opacity, ignoring hidden — feeds depth sorting. */
@@ -68,7 +65,7 @@ export interface VisibilityModel {
 }
 
 /**
- * Exact replica of `createStyleGetters`' `computeAllHidden`. Note the deliberate
+ * The single implementation of the all-hidden escape hatch. Note the deliberate
  * asymmetry: the hidden set is built from RAW strings while the annotation
  * values it tests are normalized.
  */
@@ -257,19 +254,10 @@ export function computeVisibilityModel(
     return baseOpacityOf(point);
   };
 
-  const tierOf = (point: PlotDataPoint): DisplayTier => {
-    if (isHidden(point)) return 'hidden';
-    const isSelected = selectedIdsSet.has(point.id);
-    if (isSelected || highlightedIdsSet.has(point.id)) return 'selected';
-    if (hasSelection && !isSelected) return 'faded';
-    return 'base';
-  };
-
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
 
   const model: VisibilityModel = {
     allHidden,
-    tierOf,
     opacityOf,
     baseOpacityOf,
     isInteractive,

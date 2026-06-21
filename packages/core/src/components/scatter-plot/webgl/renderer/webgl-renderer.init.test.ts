@@ -23,8 +23,6 @@ const style = (): WebGLStyleGetters => ({
   getPointSize: () => 9,
   getOpacity: () => 1,
   getDepth: () => 0,
-  getStrokeColor: () => '#000',
-  getStrokeWidth: () => 0,
   getShape: () => 'circle',
 });
 

@@ -234,21 +234,11 @@ export function createStyleGetters(
     return Math.min(1, Math.max(0, depth));
   };
 
-  const getStrokeColor = (_point: PlotDataPoint): string => {
-    return 'var(--protspace-default-stroke, #333333)';
-  };
-
-  const getStrokeWidth = (_point: PlotDataPoint): number => {
-    return 1;
-  };
-
   return {
     getPointSize,
     getPointShape,
     getColors,
     getOpacity,
     getDepth,
-    getStrokeColor,
-    getStrokeWidth,
   };
 }

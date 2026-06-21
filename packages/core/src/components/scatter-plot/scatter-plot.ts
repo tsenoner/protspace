@@ -448,8 +448,6 @@ export class ProtspaceScatterplot extends LitElement {
         getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
         getDepth: (p: PlotDataPoint) => this._getDepth(p),
-        getStrokeColor: (p: PlotDataPoint) => this._getStrokeColor(p),
-        getStrokeWidth: (p: PlotDataPoint) => this._getStrokeWidth(p),
         getShape: (p: PlotDataPoint) => this._getPointShape(p),
       },
       this._handleWebglContextLost,
@@ -1560,16 +1558,6 @@ export class ProtspaceScatterplot extends LitElement {
   private _getDepth(point: PlotDataPoint): number {
     const getters = this._getStyleGetters();
     return getters.getDepth(point);
-  }
-
-  private _getStrokeColor(point: PlotDataPoint): string {
-    const getters = this._getStyleGetters();
-    return getters.getStrokeColor(point);
-  }
-
-  private _getStrokeWidth(point: PlotDataPoint): number {
-    const getters = this._getStyleGetters();
-    return getters.getStrokeWidth(point);
   }
 
   /** Build style getters for the current data and visual state. */

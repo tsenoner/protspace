@@ -9,7 +9,7 @@
  * All geometry/style literals are preserved verbatim from the original inline code.
  */
 
-import type { PlotDataPoint } from '@protspace/utils';
+import type { RenderDuplicateStack } from './duplicate-stack-types';
 
 /** Badge geometry/style constants — verbatim from the original inline literals. */
 export const BADGE_RADIUS = 9;
@@ -24,18 +24,6 @@ const BADGE_TEXT_FILL = '#ffffff';
 
 /** Cap: max duplicate badges drawn per frame (verbatim from `scatter-plot.ts:52`). */
 export const DUPLICATE_BADGES_MAX_VISIBLE = 800;
-
-/**
- * A duplicate stack as held in the viewport list (`_duplicateStacks`): screen-space
- * `px`/`py` plus its member points. Shape verbatim from the inline stack type the
- * cull/cap/render path operated on in `scatter-plot.ts`.
- */
-export interface ViewportDuplicateStack {
-  key: string;
-  px: number;
-  py: number;
-  points: PlotDataPoint[];
-}
 
 /** Base-pixel viewport window (inclusive bounds), as computed by the host. */
 interface ViewportWindow {
@@ -60,17 +48,17 @@ interface BadgesRendererDeps {
  * (inclusive bounds) and cap behavior previously inline at the two badge-draw sites.
  */
 export function cullAndCapStacks(
-  stacks: ViewportDuplicateStack[],
+  stacks: RenderDuplicateStack[],
   win: ViewportWindow,
   expandedKey: string | null,
-  byKey: Map<string, ViewportDuplicateStack>,
-): ViewportDuplicateStack[] {
+  byKey: Map<string, RenderDuplicateStack>,
+): RenderDuplicateStack[] {
   const visible = stacks.filter(
     (s) => s.px >= win.minX && s.px <= win.maxX && s.py >= win.minY && s.py <= win.maxY,
   );
   if (visible.length <= DUPLICATE_BADGES_MAX_VISIBLE) return visible;
 
-  let capped: ViewportDuplicateStack[] = [...visible]
+  let capped: RenderDuplicateStack[] = [...visible]
     .sort((a, b) => b.points.length - a.points.length)
     .slice(0, DUPLICATE_BADGES_MAX_VISIBLE);
 
@@ -102,7 +90,7 @@ export class DuplicateBadgesCanvasRenderer {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  render(stacks: ViewportDuplicateStack[]): void {
+  render(stacks: RenderDuplicateStack[]): void {
     const canvas = this.deps.getCanvas();
     if (!canvas) return;
     const ctx = canvas.getContext('2d');

@@ -8,8 +8,8 @@ import * as d3 from 'd3';
 const extentCache = new WeakMap<PlotData, { x: [number, number]; y: [number, number] }>();
 
 // Shared d3 linear scale pair returned by createScales. Declared here (not in
-// @protspace/core's webgl/types.ts) because utils cannot import core. The core
-// webgl/types.ts ScalePair stays as a transient duplicate until B12 collapses it.
+// @protspace/core's webgl/types.ts) because utils cannot import core; core's
+// webgl/types.ts re-exports this type.
 export type ScalePair = {
   x: d3.ScaleLinear<number, number>;
   y: d3.ScaleLinear<number, number>;

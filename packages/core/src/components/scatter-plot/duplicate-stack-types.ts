@@ -15,3 +15,10 @@ export interface ViewportDuplicateStack {
   py: number;
   points: PlotDataPoint[];
 }
+
+/**
+ * The render-time subset of {@link ViewportDuplicateStack} used by the badge
+ * canvas cull/cap/draw path: screen-space `px`/`py` plus member `points`, keyed
+ * by `key`. Structurally a slice of the canonical viewport stack.
+ */
+export type RenderDuplicateStack = Pick<ViewportDuplicateStack, 'key' | 'px' | 'py' | 'points'>;
