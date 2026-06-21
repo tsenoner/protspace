@@ -36,6 +36,7 @@ import { QuadtreeIndex } from './quadtree-index';
 import { computeViewportWindow, buildViewKey } from './duplicate-stack-viewport';
 import { DuplicateStackOverlayController } from './duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltip-height-estimate';
+import { computeTooltipStyle, TOOLTIP_FALLBACK_HEIGHT } from './tooltip-position';
 import { NumericRecomputeRunner } from './numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
@@ -1804,7 +1805,7 @@ export class ProtspaceScatterplot extends LitElement {
    * helper so the logic is unit-testable without a DOM.
    */
   private _estimateTooltipHeight(): number {
-    if (!this._tooltipData) return 160;
+    if (!this._tooltipData) return TOOLTIP_FALLBACK_HEIGHT;
     return estimateTooltipHeight(this._tooltipData.view);
   }
 
@@ -1813,40 +1814,13 @@ export class ProtspaceScatterplot extends LitElement {
 
     const { x, y } = this._tooltipData;
     const config = this._mergedConfig;
-    const padding = 15;
-    const tooltipMaxWidth = 350;
-    const tooltipHeight = this._tooltipHeight ?? this._estimateTooltipHeight();
-
-    let left = x + 15;
-    let top = y - 60;
-    let transform = '';
-
-    // Horizontal adjustment: if it goes off the right edge, flip to the left side
-    if (left + tooltipMaxWidth > config.width) {
-      // Position anchor at x - 15 and use translateX(-100%) to pull it to the left
-      // this ensures the right edge of the tooltip is close to the mouse regardless of width
-      left = x - 15;
-      transform = 'translateX(-100%)';
-    }
-
-    // Keep within horizontal bounds (left side)
-    if (!transform && left < padding) {
-      left = padding;
-    } else if (transform && left - tooltipMaxWidth < padding) {
-      // If flipped to the left and would go off the left edge, clamp it
-      left = tooltipMaxWidth + padding;
-    }
-
-    // Vertical adjustment: clamp to viewport using the measured height when
-    // available, so tall multi-annotation tooltips do not run off the bottom.
-    if (top + tooltipHeight > config.height - padding) {
-      top = config.height - tooltipHeight - padding;
-    }
-    if (top < padding) {
-      top = padding;
-    }
-
-    return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;
+    return computeTooltipStyle({
+      x,
+      y,
+      height: this._tooltipHeight ?? this._estimateTooltipHeight(),
+      viewportWidth: config.width,
+      viewportHeight: config.height,
+    });
   }
 
   render() {
