@@ -13,7 +13,7 @@
 // (F-46) The previously-dispatched `numeric-recompute-start` / `-end`
 // CustomEvents were unconsumed public surface and have been removed; the busy
 // state is now characterized solely via the `setRunning` mirror, the runner's
-// `isRunning()` / `runningAnnotation()`, and the `runRecompute()` body call.
+// `runningAnnotation()`, and the `runRecompute()` body call.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NumericRecomputeRunner } from './numeric-recompute-runner';
 
@@ -54,7 +54,7 @@ describe('NumericRecomputeRunner', () => {
     const r = new NumericRecomputeRunner(host);
     r.schedule();
     expect(host.running).toHaveLength(0);
-    expect(r.isRunning()).toBe(false);
+    expect(r.runningAnnotation()).toBe(null);
   });
 
   it('enters the running state synchronously (F-57: no explicit requestUpdate)', () => {
@@ -62,7 +62,6 @@ describe('NumericRecomputeRunner', () => {
     const r = new NumericRecomputeRunner(host);
     r.schedule();
     expect(host.running[0]).toBe(true);
-    expect(r.isRunning()).toBe(true);
     expect(r.runningAnnotation()).toBe('plddt');
   });
 
@@ -72,7 +71,6 @@ describe('NumericRecomputeRunner', () => {
     r.schedule();
     raf.forEach((cb) => cb());
     expect(host.runRecompute).toHaveBeenCalledTimes(1);
-    expect(r.isRunning()).toBe(false);
     expect(r.runningAnnotation()).toBe(null);
     // running mirror toggled true (schedule) then false (job end)
     expect(host.running).toEqual([true, false]);
@@ -85,7 +83,7 @@ describe('NumericRecomputeRunner', () => {
     expect(r.runningAnnotation()).toBe('plddt');
     host.selectedAnnotation = 'charge'; // changes after schedule(), before the RAF
     raf.forEach((cb) => cb());
-    expect(r.isRunning()).toBe(false);
+    expect(r.runningAnnotation()).toBe(null);
   });
 
   it('runs the body before clearing the running state', () => {
@@ -106,10 +104,10 @@ describe('NumericRecomputeRunner', () => {
     r.schedule();
     raf[0](); // stale job → bails, no body
     expect(host.runRecompute).not.toHaveBeenCalled();
-    expect(r.isRunning()).toBe(true); // still busy: the current job hasn't run
+    expect(r.runningAnnotation()).not.toBe(null); // still busy: the current job hasn't run
     raf[1](); // current job → completes
     expect(host.runRecompute).toHaveBeenCalledTimes(1);
-    expect(r.isRunning()).toBe(false);
+    expect(r.runningAnnotation()).toBe(null);
   });
 
   it('two overlapping schedules run the body exactly once (last-write-wins)', () => {
@@ -131,7 +129,6 @@ describe('NumericRecomputeRunner', () => {
     r.cancel();
     raf.forEach((cb) => cb());
     expect(host.runRecompute).not.toHaveBeenCalled();
-    expect(r.isRunning()).toBe(false);
     expect(r.runningAnnotation()).toBe(null);
     expect(host.running).toEqual([true, false]); // schedule set true, cancel set false
   });

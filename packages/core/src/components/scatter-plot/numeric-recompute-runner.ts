@@ -10,7 +10,7 @@
  * (F-46) The previously-dispatched `numeric-recompute-start` / `-end`
  * CustomEvents were unconsumed public surface and have been removed; the busy
  * state is now observable solely via the `setRunning` host mirror and the
- * runner's own `isRunning()` / `runningAnnotation()`.
+ * runner's own `runningAnnotation()`.
  *
  * The component supplies the data-refresh routing + lifecycle-bound render tail
  * + the `data-change` re-emit via `runRecompute()`; that body stays in the
@@ -41,14 +41,9 @@ interface NumericRecomputeHost {
 export class NumericRecomputeRunner {
   private _jobId = 0;
   private _rafId: number | null = null;
-  private _running = false;
   private _annotation: string | null = null;
 
   constructor(private readonly _host: NumericRecomputeHost) {}
-
-  isRunning(): boolean {
-    return this._running;
-  }
 
   runningAnnotation(): string | null {
     return this._annotation;
@@ -59,7 +54,6 @@ export class NumericRecomputeRunner {
 
     const annotation = this._host.getSelectedAnnotation();
     const jobId = ++this._jobId;
-    this._running = true;
     this._annotation = annotation;
     // F-57: setRunning writes the `_numericRecomputeRunning` @state mirror, whose
     // reactive setter already schedules a Lit update — an explicit requestUpdate()
@@ -73,7 +67,6 @@ export class NumericRecomputeRunner {
 
       this._host.runRecompute();
 
-      this._running = false;
       this._annotation = null;
       // F-57: the setRunning @state-mirror write schedules the Lit update; the
       // explicit requestUpdate() that used to follow was redundant.
@@ -87,7 +80,6 @@ export class NumericRecomputeRunner {
       this._rafId = null;
     }
     this._jobId++; // invalidate any in-flight job
-    this._running = false;
     this._annotation = null;
     this._host.setRunning(false);
   }
