@@ -13,6 +13,13 @@ export interface PlotInteractionHost {
   };
   getSelectionMode(): boolean;
   getSelectionTool(): 'rectangle' | 'lasso';
+  // Readiness: whether the host's scales (and thus data) exist yet. Mirrors main's
+  // `!this._scales` guard so updateSelectionMode is a no-op before data arrives.
+  hasScales(): boolean;
+  // host owns _transform (F-48): the controller reads it back through this getter
+  // rather than keeping a parallel copy. applyZoom funnels new transforms through
+  // onTransform first, so reads here always see the latest value.
+  getTransform(): d3.ZoomTransform;
   // host-owned spatial + picking (reuses _quadtreeIndex / _slotsToInteractiveIds / pickInteractivePointAt)
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
   queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
@@ -46,7 +53,6 @@ export class PlotInteractionController {
   private _lassoVertices: Array<[number, number]> = [];
   private _lassoPath: SVGPathElement | null = null;
   private _isLassoing = false;
-  private _transform = d3.zoomIdentity;
 
   private _zoomRafId: number | null = null;
   private _lassoRafId: number | null = null;
@@ -91,7 +97,8 @@ export class PlotInteractionController {
 
   /** Apply a transform (from the d3 zoom handler or programmatic reset). */
   applyZoom(t: d3.ZoomTransform): void {
-    this._transform = t;
+    // Host owns the transform (F-48): write it back first so the brush-extent sync
+    // below (and any other host.getTransform() read) sees the new value.
     this.host.onTransform(t);
     if (this._mainGroup) {
       this._mainGroup.attr('transform', t.toString());
@@ -153,7 +160,7 @@ export class PlotInteractionController {
   }
 
   updateSelectionMode(): void {
-    if (!this._svgSelection || !this._brushGroup) return;
+    if (!this._svgSelection || !this._brushGroup || !this.host.hasScales()) return;
 
     // Clean up both selection tools
     this._brushGroup.selectAll('*').remove();
@@ -207,7 +214,7 @@ export class PlotInteractionController {
     if (!this._brush || !this._brushGroup) return;
 
     const config = this.host.getMergedConfig();
-    const t = this._transform;
+    const t = this.host.getTransform();
     const vx0 = t.invertX(0);
     const vy0 = t.invertY(0);
     const vx1 = t.invertX(config.width);
@@ -250,8 +257,9 @@ export class PlotInteractionController {
   /** Convert a pointer event to local (untransformed) SVG coordinates. */
   private _pointerToLocal(event: PointerEvent): [number, number] {
     const [svgX, svgY] = d3.pointer(event);
-    const localX = (svgX - this._transform.x) / this._transform.k;
-    const localY = (svgY - this._transform.y) / this._transform.k;
+    const t = this.host.getTransform();
+    const localX = (svgX - t.x) / t.k;
+    const localY = (svgY - t.y) / t.k;
     return [localX, localY];
   }
 

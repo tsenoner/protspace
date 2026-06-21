@@ -151,11 +151,6 @@ export class ProtspaceScatterplot extends LitElement {
   // loops live in the controller (F-07). Constructed in firstUpdated. Event
   // dispatch + the transform field stay on the host (INV-03/INV-05, F-48).
   private _interaction: PlotInteractionController | null = null;
-  // Lasso characterization state retained on the host so the thin _handleLassoEnd
-  // shim (driven directly by scatter-plot.test.ts) stays behavior-identical.
-  private _lassoVertices: Array<[number, number]> = [];
-  private _lassoPath: SVGPathElement | null = null;
-  private _isLassoing = false;
   private _webglRenderer: WebGLRenderer | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
@@ -1116,6 +1111,8 @@ export class ProtspaceScatterplot extends LitElement {
       getMergedConfig: () => this._mergedConfig,
       getSelectionMode: () => this.selectionMode,
       getSelectionTool: () => this.selectionTool,
+      hasScales: () => this._scales != null,
+      getTransform: () => this._transform,
       queryByPolygon: (vertices) => this._quadtreeIndex.queryByPolygon(vertices),
       queryByPixels: (x0, y0, x1, y1) => this._quadtreeIndex.queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
@@ -1206,46 +1203,6 @@ export class ProtspaceScatterplot extends LitElement {
       if (model.isInteractive(sp)) ids.push(sp.id);
     }
     return ids;
-  }
-
-  /**
-   * Host shim retained for the characterization suite (F-07): the live lasso
-   * lifecycle now lives in PlotInteractionController, but scatter-plot.test.ts
-   * drives this handler directly after setting `_isLassoing`/`_lassoVertices`,
-   * so its body stays behavior-identical (host-side slot→id resolution + event
-   * dispatch — INV-03/INV-05). Public so the test can drive it (mirrors
-   * pickInteractivePointAt); not called from app code (controller owns the live path).
-   */
-  _handleLassoEnd(event: PointerEvent) {
-    if (!this._isLassoing) return;
-    event.preventDefault();
-    this._isLassoing = false;
-
-    (event.target as Element)?.releasePointerCapture?.(event.pointerId);
-
-    // Need at least 3 vertices to form a polygon
-    if (this._lassoVertices.length < 3) {
-      this._clearLassoVisual();
-      return;
-    }
-
-    // Close the path visually
-    if (this._lassoPath) {
-      const d = this._lassoPath.getAttribute('d') ?? '';
-      this._lassoPath.setAttribute('d', d + ' Z');
-    }
-
-    const slots = this._quadtreeIndex.queryByPolygon(this._lassoVertices);
-    const selectedIds = this._slotsToInteractiveIds(slots);
-    this._commitSelection(selectedIds, () => this._clearLassoVisual());
-  }
-
-  private _clearLassoVisual() {
-    if (this._lassoPath) {
-      this._lassoPath.remove();
-      this._lassoPath = null;
-    }
-    this._lassoVertices = [];
   }
 
   /**
