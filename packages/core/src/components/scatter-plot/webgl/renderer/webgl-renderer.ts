@@ -24,11 +24,16 @@ import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { fillLabelColorTexels } from './label-texture-utils';
-import { sortIndicesByDepthDescending } from './depth-sort';
+import { buildPaintOrder } from './point-staging';
 import { planRendererCapacity } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
 import { GLResources } from './gl-resources';
-import { bindAndClearTarget, setPointBlendState, drawPoints } from './render-target';
+import {
+  bindAndClearTarget,
+  setPointBlendState,
+  drawPoints,
+  bindPointDrawState,
+} from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import {
@@ -725,25 +730,24 @@ export class WebGLRenderer {
     }
 
     const gl = this.gl;
-    gl.useProgram(this.resources.pointProgram);
 
-    const gamma = this.getEffectiveGamma();
-    gl.uniform2f(this.pointUniformLocations.resolution, this.canvas.width, this.canvas.height);
-    gl.uniform3f(this.pointUniformLocations.transform, transform.x, transform.y, transform.k);
-    gl.uniform1f(this.pointUniformLocations.dpr, this.dpr);
-    gl.uniform1f(this.pointUniformLocations.gamma, gamma);
-    gl.uniform1i(this.pointUniformLocations.maxLabels, MAX_LABELS);
-    gl.uniform2f(
-      this.pointUniformLocations.labelTextureSize,
-      LABEL_TEXTURE_WIDTH,
-      this.labelColorData.length / 4 / LABEL_TEXTURE_WIDTH,
+    bindPointDrawState(
+      gl,
+      this.resources.pointProgram,
+      this.pointUniformLocations,
+      this.resources.pointVao,
+      this.resources.labelColorTexture,
+      {
+        width: this.canvas.width,
+        height: this.canvas.height,
+        transform: { x: transform.x, y: transform.y, k: transform.k },
+        dpr: this.dpr,
+        gamma: this.getEffectiveGamma(),
+        maxLabels: MAX_LABELS,
+        labelTextureWidth: LABEL_TEXTURE_WIDTH,
+        labelColorDataLength: this.labelColorData.length,
+      },
     );
-
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.resources.labelColorTexture);
-    gl.uniform1i(this.pointUniformLocations.labelColors, 1);
-
-    gl.bindVertexArray(this.resources.pointVao);
 
     drawPoints(gl, this.currentPointCount, this.selectionActive, this.selectedStartIndex);
 
@@ -876,53 +880,50 @@ export class WebGLRenderer {
         sp.originalIndex = origIdx;
         depthScratch[i] = this.style.getDepth(sp);
       }
-      sortIndicesByDepthDescending(order, depthScratch, count);
+      // Canonical painter-order plan (shared with the export path via
+      // buildPaintOrder): sort far->near, then locate the two-pass selection cut
+      // from the first sorted slot with opacity >= 0.99. The per-slot callback
+      // also performs the live side effects (ID tracking + staging) so every slot
+      // — including opacity-0 — is staged exactly as before.
+      const { selectedStartIndex } = buildPaintOrder(
+        order,
+        depthScratch,
+        count,
+        this.selectionActive,
+        (k, srcSlot) => {
+          const origIdx = oi ? oi[srcSlot] : srcSlot;
+          sp.id = pd.proteinIds[origIdx];
+          sp.x = xs[srcSlot];
+          sp.y = ys[srcSlot];
+          sp.originalIndex = origIdx;
+          const opacity = this.style.getOpacity(sp);
 
-      // Find where selected points start (opacity ≈ 1.0, contiguous at the end after sort).
-      // Used for two-pass rendering: unselected without blend, selected with blend.
-      let firstSelected = -1;
+          if (this.trackRenderedPointIds && opacity > 0) {
+            this.renderedPointIds.add(sp.id);
+          }
 
-      for (let k = 0; k < count; k++) {
-        const srcSlot = order[k];
-        const origIdx = oi ? oi[srcSlot] : srcSlot;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[srcSlot];
-        sp.y = ys[srcSlot];
-        sp.originalIndex = origIdx;
-        const opacity = this.style.getOpacity(sp);
+          // updatePositions is always true here (see above). Positions are
+          // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
+          // original slot), NOT depthScratch[k]. sizeScaleFactor=1 for the live path.
+          stagePoint(
+            this.stageArrays,
+            k,
+            sp,
+            scales.x(xs[srcSlot]),
+            scales.y(ys[srcSlot]),
+            opacity,
+            depthScratch[srcSlot],
+            this.style,
+            this.dpr,
+            1,
+          );
 
-        if (this.selectionActive && firstSelected === -1 && opacity >= 0.99) {
-          firstSelected = k;
-        }
+          return opacity;
+        },
+      );
 
-        if (this.trackRenderedPointIds && opacity > 0) {
-          this.renderedPointIds.add(sp.id);
-        }
-
-        // updatePositions is always true here (see above). Positions are
-        // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
-        // original slot), NOT depthScratch[k]. sizeScaleFactor=1 for the live path.
-        stagePoint(
-          this.stageArrays,
-          idx,
-          sp,
-          scales.x(xs[srcSlot]),
-          scales.y(ys[srcSlot]),
-          opacity,
-          depthScratch[srcSlot],
-          this.style,
-          this.dpr,
-          1,
-        );
-
-        idx++;
-      }
-
-      this.selectedStartIndex = this.selectionActive
-        ? firstSelected === -1
-          ? count
-          : firstSelected
-        : count;
+      idx = count;
+      this.selectedStartIndex = selectedStartIndex;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
     } else if (updateStyles) {

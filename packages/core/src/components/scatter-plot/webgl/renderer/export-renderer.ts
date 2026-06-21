@@ -35,11 +35,17 @@ import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
-import { bindAndClearTarget, setPointBlendState, drawPoints } from './render-target';
+import {
+  bindAndClearTarget,
+  setPointBlendState,
+  drawPoints,
+  bindPointDrawState,
+} from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import { computeExtent, computePaddedExtent } from './data-extent';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, type StagePointArrays, MAX_LABELS } from './stage-point';
+import { buildPaintOrder } from './point-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -573,23 +579,14 @@ export class ExportRenderer {
     const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
     const labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
 
-    // Stage slots by depth (painter's algorithm) — use a temp scratch point per slot.
+    // Stage slots by depth using the SAME canonical painter-order plan as the
+    // live path (buildPaintOrder): the live path is canonical, so the export
+    // includes opacity-0 slots (invisible — F-15 pixels unchanged) and uses the
+    // identical stable far->near sort and the same sorted-k selectedStartIndex.
     const { xs, ys } = pd;
     const oi = pd.originalIndices;
     const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
-    const staged: Array<{ slot: number; opacity: number; depth: number }> = [];
-    for (let i = 0; i < pd.length && staged.length < maxPoints; i++) {
-      const origIdx = oi ? oi[i] : i;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[i];
-      sp.y = ys[i];
-      sp.originalIndex = origIdx;
-      const opacity = style.getOpacity(sp);
-      if (opacity === 0) continue;
-      const depth = style.getDepth(sp);
-      staged.push({ slot: i, opacity, depth });
-    }
-    staged.sort((a, b) => b.depth - a.depth);
+    const count = maxPoints;
 
     const target: StagePointArrays = {
       dataPositions,
@@ -601,38 +598,51 @@ export class ExportRenderer {
       labelColorData,
     };
 
-    // Find where selected points start (opacity ≈ 1.0, contiguous at the high-opacity
-    // tail after the descending-depth sort, matching the live sort). Used for the
-    // two-pass selection blend so an export equals the live on-screen render.
-    let firstSelected = -1;
-
-    let idx = 0;
-    for (let s = 0; s < staged.length; s++) {
-      const { slot, opacity, depth } = staged[s];
-      const origIdx = oi ? oi[slot] : slot;
+    // Per-slot depth scratch indexed by ORIGINAL slot index, then the index order
+    // sorted far->near in place. Sized to the staged count (export has no persistent
+    // scratch, so allocate locally per call).
+    const order = new Uint32Array(count);
+    const depthScratch = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const origIdx = oi ? oi[i] : i;
       sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[slot];
-      sp.y = ys[slot];
+      sp.x = xs[i];
+      sp.y = ys[i];
       sp.originalIndex = origIdx;
-
-      if (selectionActive && firstSelected === -1 && opacity >= 0.99) {
-        firstSelected = idx;
-      }
-
-      stagePoint(
-        target,
-        idx,
-        sp,
-        scales.x(xs[slot]),
-        scales.y(ys[slot]),
-        opacity,
-        depth,
-        style,
-        dpr,
-        sizeScaleFactor,
-      );
-      idx++;
+      depthScratch[i] = style.getDepth(sp);
     }
+
+    const { selectedStartIndex } = buildPaintOrder(
+      order,
+      depthScratch,
+      count,
+      selectionActive,
+      (k, srcSlot) => {
+        const origIdx = oi ? oi[srcSlot] : srcSlot;
+        sp.id = pd.proteinIds[origIdx];
+        sp.x = xs[srcSlot];
+        sp.y = ys[srcSlot];
+        sp.originalIndex = origIdx;
+        const opacity = style.getOpacity(sp);
+
+        // Depth uses depthScratch[srcSlot] (indexed by original slot), NOT
+        // depthScratch[k], matching the live path.
+        stagePoint(
+          target,
+          k,
+          sp,
+          scales.x(xs[srcSlot]),
+          scales.y(ys[srcSlot]),
+          opacity,
+          depthScratch[srcSlot],
+          style,
+          dpr,
+          sizeScaleFactor,
+        );
+
+        return opacity;
+      },
+    );
 
     return {
       dataPositions,
@@ -642,8 +652,8 @@ export class ExportRenderer {
       labelCounts,
       shapes,
       labelColorData,
-      pointCount: idx,
-      selectedStartIndex: selectionActive ? (firstSelected === -1 ? idx : firstSelected) : idx,
+      pointCount: count,
+      selectedStartIndex,
     };
   }
 
@@ -666,24 +676,17 @@ export class ExportRenderer {
     selectionActive: boolean,
     selectedStartIndex: number,
   ): void {
-    gl.useProgram(program);
+    bindPointDrawState(gl, program, uniforms, vao, labelColorTexture, {
+      width,
+      height,
+      transform: { x: transform.x, y: transform.y, k: transform.k },
+      dpr,
+      gamma,
+      maxLabels: MAX_LABELS,
+      labelTextureWidth: LABEL_TEXTURE_WIDTH,
+      labelColorDataLength,
+    });
 
-    gl.uniform2f(uniforms.resolution, width, height);
-    gl.uniform3f(uniforms.transform, transform.x, transform.y, transform.k);
-    gl.uniform1f(uniforms.dpr, dpr);
-    gl.uniform1f(uniforms.gamma, gamma);
-    gl.uniform1i(uniforms.maxLabels, MAX_LABELS);
-    gl.uniform2f(
-      uniforms.labelTextureSize,
-      LABEL_TEXTURE_WIDTH,
-      labelColorDataLength / 4 / LABEL_TEXTURE_WIDTH,
-    );
-
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, labelColorTexture);
-    gl.uniform1i(uniforms.labelColors, 1);
-
-    gl.bindVertexArray(vao);
     drawPoints(gl, pointCount, selectionActive, selectedStartIndex);
     gl.bindVertexArray(null);
   }
