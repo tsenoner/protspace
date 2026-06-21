@@ -42,12 +42,19 @@ import {
   type PerfDatasetInfo,
   type RenderWebGLTrigger,
 } from './webgl-render-perf';
+import { PlotInteractionController, type PlotInteractionHost } from './plot-interaction-controller';
 
 // Visualization is only needed for viewport culling on very large datasets.
 // For <= MAX_POINTS_DIRECT_RENDER we can render the full set once and then pan/zoom via uniforms
 // (no per-frame quadtree queries or buffer rebuilds), which is substantially faster for ~500k points.
 const VIRTUALIZATION_THRESHOLD = MAX_POINTS_DIRECT_RENDER;
 const VIRTUALIZATION_PADDING = 100;
+
+// Hit-test tuning (shared by hover + click). Search radius is in screen px and
+// is divided by the zoom factor so the data-space radius stays constant; the
+// point radius is derived from point size (sqrt(size)/3 matches the WebGL draw).
+const HIT_TEST_SEARCH_RADIUS_PX = 15;
+const POINT_RADIUS_SIZE_DIVISOR = 3;
 
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
@@ -111,7 +118,12 @@ export class ProtspaceScatterplot extends LitElement {
   } | null = null;
   @state() private _tooltipHeight: number | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
-  @state() private _transform = d3.zoomIdentity;
+  // Plain field, NOT @state: render() never reads _transform (it drives the
+  // canvas imperatively via the zoom RAF + d3 attr()), so reactivity here only
+  // caused a redundant per-frame updated()/_renderPlot() pass (F-48). The
+  // getter closures passed to WebGLRenderer and the duplicate-overlay/hit-test
+  // reads are pull-based and keep working unchanged.
+  private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
   @state() private _zOrderMapping: Record<string, number> | null = null;
@@ -128,19 +140,16 @@ export class ProtspaceScatterplot extends LitElement {
   // Internal
   private _quadtreeIndex: QuadtreeIndex = new QuadtreeIndex();
   private resizeObserver: ResizeObserver;
-  private _zoom: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;
-  private _svgSelection: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
-  private _mainGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-  private _brushGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-  private _overlayGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-  private _brush: d3.BrushBehavior<unknown> | null = null;
-  private _isBrushing = false;
+  // d3 zoom/brush/lasso lifecycle, the three SVG groups, and the zoom/lasso RAF
+  // loops live in the controller (F-07). Constructed in firstUpdated. Event
+  // dispatch + the transform field stay on the host (INV-03/INV-05, F-48).
+  private _interaction: PlotInteractionController | null = null;
+  // Lasso characterization state retained on the host so the thin _handleLassoEnd
+  // shim (driven directly by scatter-plot.test.ts) stays behavior-identical.
   private _lassoVertices: Array<[number, number]> = [];
   private _lassoPath: SVGPathElement | null = null;
   private _isLassoing = false;
-  private _lassoRafId: number | null = null;
   private _webglRenderer: WebGLRenderer | null = null;
-  private _zoomRafId: number | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
   // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
@@ -199,7 +208,7 @@ export class ProtspaceScatterplot extends LitElement {
   // chunked compute + badge canvas + spiderfy SVG layer). Event dispatch stays
   // on the host via the onPointActivate/onHover/onHoverEnd callbacks (INV-05/INV-03).
   private _dupOverlay = new DuplicateStackOverlayController({
-    getOverlayGroup: () => this._overlayGroup ?? null,
+    getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
     getBadgesCanvas: () => this._badgesCanvas,
     getTransform: () => this._transform,
     getConfig: () => this._mergedConfig,
@@ -434,10 +443,6 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._quadtreeRebuildRafId);
       this._quadtreeRebuildRafId = null;
     }
-    if (this._zoomRafId !== null) {
-      cancelAnimationFrame(this._zoomRafId);
-      this._zoomRafId = null;
-    }
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
       this._hoverRaf = null;
@@ -448,12 +453,9 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelCompute();
     this._dupOverlay.clearBadges();
     this._webglRenderer?.destroy();
-    if (this._brush) {
-      this._brush.on('start', null).on('end', null);
-      this._brush = null;
-      this._isBrushing = false;
-    }
-    this._cleanupLasso();
+    // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
+    // down the d3 brush + lasso (F-07).
+    this._interaction?.teardown();
 
     super.disconnectedCallback();
     this.removeEventListener('legend-zorder-change', this._handleZOrderChange);
@@ -700,7 +702,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('selectionMode') ||
       (changedProperties.has('selectionTool') && this.selectionMode)
     ) {
-      this._updateSelectionMode();
+      this._interaction?.updateSelectionMode();
     }
   }
 
@@ -789,7 +791,8 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   firstUpdated() {
-    this._initializeInteractions();
+    this._interaction = new PlotInteractionController(this._interactionHost());
+    this._interaction.initialize();
     this._updateSizeAndRender();
     if (this._canvas) {
       this._webglRenderer = new WebGLRenderer(
@@ -1079,72 +1082,33 @@ export class ProtspaceScatterplot extends LitElement {
     });
   }
 
-  private _initializeInteractions() {
-    if (!this._svg) return;
-
-    this._svgSelection = d3.select(this._svg);
-
-    // Clear existing content
-    this._svgSelection.selectAll('*').remove();
-
-    // Create main container group
-    this._mainGroup = this._svgSelection.append('g').attr('class', 'scatter-plot-container');
-
-    // Create brush group
-    this._brushGroup = this._svgSelection.append('g').attr('class', 'brush-container');
-
-    // Create overlay group (above brush) for transient drawings like selections
-    this._overlayGroup = this._svgSelection.append('g').attr('class', 'overlay-container');
-
-    this._zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent(this._mergedConfig.zoomExtent)
-      .on('zoom', (event) => {
-        this._transform = event.transform;
-        if (this._mainGroup) {
-          this._mainGroup.attr('transform', event.transform);
-        }
-        if (this._brushGroup) {
-          this._brushGroup.attr('transform', event.transform);
-        }
-        if (this._overlayGroup) {
-          this._overlayGroup.attr('transform', event.transform);
-        }
-        // Smooth WebGL rendering during zoom using requestAnimationFrame
-        if (this._canvas) {
-          if (this._zoomRafId !== null) {
-            cancelAnimationFrame(this._zoomRafId);
-          }
-          this._zoomRafId = requestAnimationFrame(() => {
-            this._zoomRafId = null;
-            this._renderWebGL('zoom');
-            // During active zoom/pan, defer duplicate badge DOM updates to keep interactions smooth.
-            this._updateSelectionOverlays({ duplicateImmediate: false });
-          });
-        }
-        // Keep brush extent in sync with the viewport when scroll-zooming in selection mode.
-        // Skip if a brush gesture is in progress — re-applying the brush resets D3's drag state.
-        if (
-          this.selectionMode &&
-          this.selectionTool === 'rectangle' &&
-          this._brush &&
-          !this._isBrushing
-        ) {
-          this._updateBrushExtent();
-        }
-      });
-    this._svgSelection.call(this._zoom);
-    this._setupDblClickHandlers();
-  }
-
-  /** Disable D3's built-in double-click zoom and attach our own reset handler. */
-  private _setupDblClickHandlers() {
-    if (!this._svgSelection) return;
-    this._svgSelection.on('dblclick.zoom', null);
-    this._svgSelection.on('dblclick.reset', (event: MouseEvent) => {
-      event.preventDefault();
-      this.resetZoom();
-    });
+  /**
+   * Bridge handed to the PlotInteractionController (F-07): narrow pull-getters +
+   * callbacks so the controller never reaches into the component. Event dispatch
+   * stays on the host (INV-03/INV-05); the host owns the _transform field (F-48,
+   * written back via onTransform).
+   */
+  private _interactionHost(): PlotInteractionHost {
+    return {
+      getSvg: () => this._svg,
+      getCanvas: () => this._canvas,
+      getMergedConfig: () => this._mergedConfig,
+      getSelectionMode: () => this.selectionMode,
+      getSelectionTool: () => this.selectionTool,
+      queryByPolygon: (vertices) => this._quadtreeIndex.queryByPolygon(vertices),
+      queryByPixels: (x0, y0, x1, y1) => this._quadtreeIndex.queryByPixels(x0, y0, x1, y1),
+      resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
+      pickInteractivePointAt: (mouseX, mouseY) => this.pickInteractivePointAt(mouseX, mouseY),
+      onTransform: (t) => {
+        this._transform = t;
+      },
+      onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
+      onHover: (event) => this._handleCanvasMouseMove(event),
+      onHoverEnd: () => this._handleCanvasMouseOut(),
+      onClick: (event) => this._handleCanvasClick(event),
+      renderWebGL: (trigger) => this._renderWebGL(trigger),
+      updateSelectionOverlays: (opts) => this._updateSelectionOverlays(opts),
+    };
   }
 
   private _updateSizeAndRender() {
@@ -1211,146 +1175,6 @@ export class ProtspaceScatterplot extends LitElement {
 
   // HiDPI setup and quality handled by WebGLRenderer
 
-  private _updateSelectionMode() {
-    if (!this._svgSelection || !this._brushGroup || !this._scales) return;
-
-    // Clean up both selection tools
-    this._brushGroup.selectAll('*').remove();
-    this._cleanupLasso();
-    this._brush = null;
-    this._isBrushing = false;
-
-    if (this.selectionMode) {
-      // Keep scroll-wheel zoom active but disable drag-to-pan (drag = selection)
-      if (this._zoom && this._svgSelection) {
-        this._svgSelection
-          .on('mousedown.zoom', null)
-          .on('touchstart.zoom', null)
-          .on('touchmove.zoom', null)
-          .on('touchend.zoom', null);
-      }
-
-      if (this.selectionTool === 'lasso') {
-        this._setupLasso();
-      } else {
-        this._setupBrush();
-      }
-    } else {
-      // Re-enable zoom
-      if (this._zoom) {
-        this._svgSelection.call(this._zoom);
-        this._setupDblClickHandlers();
-      }
-    }
-  }
-
-  private _setupBrush() {
-    if (!this._svgSelection || !this._brushGroup) return;
-
-    this._brush = d3
-      .brush()
-      .handleSize(0)
-      .on('start', () => {
-        this._isBrushing = true;
-      })
-      .on('end', (event) => {
-        this._isBrushing = false;
-        this._handleBrushEnd(event);
-      });
-
-    this._updateBrushExtent();
-  }
-
-  /** Recompute the brush extent from the current zoom transform and re-apply. */
-  private _updateBrushExtent() {
-    if (!this._brush || !this._brushGroup) return;
-
-    const config = this._mergedConfig;
-    const t = this._transform;
-    const vx0 = t.invertX(0);
-    const vy0 = t.invertY(0);
-    const vx1 = t.invertX(config.width);
-    const vy1 = t.invertY(config.height);
-
-    this._brush.extent([
-      [Math.min(vx0, vx1), Math.min(vy0, vy1)],
-      [Math.max(vx0, vx1), Math.max(vy0, vy1)],
-    ]);
-
-    this._brushGroup.call(this._brush);
-  }
-
-  // ── Lasso selection ──────────────────────────────────────────────
-
-  private _setupLasso() {
-    if (!this._svgSelection) return;
-
-    this._svgSelection
-      .on('pointerdown.lasso', (event: PointerEvent) => this._handleLassoStart(event))
-      .on('pointermove.lasso', (event: PointerEvent) => this._handleLassoMove(event))
-      .on('pointerup.lasso', (event: PointerEvent) => this._handleLassoEnd(event));
-  }
-
-  private _cleanupLasso() {
-    if (this._svgSelection) {
-      this._svgSelection.on('pointerdown.lasso', null);
-      this._svgSelection.on('pointermove.lasso', null);
-      this._svgSelection.on('pointerup.lasso', null);
-    }
-    if (this._lassoRafId !== null) {
-      cancelAnimationFrame(this._lassoRafId);
-      this._lassoRafId = null;
-    }
-    this._lassoPath?.remove();
-    this._lassoPath = null;
-    this._lassoVertices = [];
-    this._isLassoing = false;
-  }
-
-  /** Convert a pointer event to local (untransformed) SVG coordinates. */
-  private _pointerToLocal(event: PointerEvent): [number, number] {
-    const [svgX, svgY] = d3.pointer(event);
-    const localX = (svgX - this._transform.x) / this._transform.k;
-    const localY = (svgY - this._transform.y) / this._transform.k;
-    return [localX, localY];
-  }
-
-  private _handleLassoStart(event: PointerEvent) {
-    if (event.button !== 0) return; // left click only
-    event.preventDefault();
-
-    this._isLassoing = true;
-    this._lassoVertices = [this._pointerToLocal(event)];
-
-    // Create the SVG path in the brush group (same coordinate space as the brush)
-    if (this._brushGroup) {
-      this._lassoPath = this._brushGroup.append('path').attr('class', 'lasso-path').node();
-    }
-
-    // Capture pointer for reliable tracking even if cursor leaves the SVG
-    (event.target as Element)?.setPointerCapture?.(event.pointerId);
-  }
-
-  private _handleLassoMove(event: PointerEvent) {
-    if (!this._isLassoing || !this._lassoPath) return;
-    event.preventDefault();
-
-    this._lassoVertices.push(this._pointerToLocal(event));
-
-    // Throttle SVG path updates to animation frames
-    if (this._lassoRafId === null) {
-      this._lassoRafId = requestAnimationFrame(() => {
-        this._lassoRafId = null;
-        if (!this._lassoPath || this._lassoVertices.length < 2) return;
-
-        const d = this._lassoVertices
-          .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`)
-          .join(' ');
-        this._lassoPath.setAttribute('d', d);
-      });
-    }
-  }
-
   /**
    * Resolve a list of quadtree slots to the protein ids of the interactive
    * points among them, in a single allocation-free pass.
@@ -1380,7 +1204,15 @@ export class ProtspaceScatterplot extends LitElement {
     return ids;
   }
 
-  private _handleLassoEnd(event: PointerEvent) {
+  /**
+   * Host shim retained for the characterization suite (F-07): the live lasso
+   * lifecycle now lives in PlotInteractionController, but scatter-plot.test.ts
+   * drives this handler directly after setting `_isLassoing`/`_lassoVertices`,
+   * so its body stays behavior-identical (host-side slot→id resolution + event
+   * dispatch — INV-03/INV-05). Public so the test can drive it (mirrors
+   * pickInteractivePointAt); not called from app code (controller owns the live path).
+   */
+  _handleLassoEnd(event: PointerEvent) {
     if (!this._isLassoing) return;
     event.preventDefault();
     this._isLassoing = false;
@@ -1412,16 +1244,23 @@ export class ProtspaceScatterplot extends LitElement {
     this._lassoVertices = [];
   }
 
-  private _handleBrushEnd(event: d3.D3BrushEvent<unknown>) {
+  /**
+   * Host shim retained for the characterization suite (F-07): the live brush
+   * lifecycle (incl. clearing the brush rectangle on commit) lives in
+   * PlotInteractionController, but scatter-plot.test.ts drives this handler
+   * directly. Body stays behavior-identical for slot→id resolution + dispatch;
+   * the brush-rectangle clear is owned by the controller for the live path.
+   * Public so the test can drive it (mirrors pickInteractivePointAt); not called
+   * from app code (controller owns the live path).
+   */
+  _handleBrushEnd(event: d3.D3BrushEvent<unknown>) {
     if (!event.selection) return;
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
     const slots = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
     const selectedIds = this._slotsToInteractiveIds(slots);
     this._commitSelection(selectedIds, () => {
-      if (this._brush && this._brushGroup) {
-        this._brushGroup.call(this._brush.move, null);
-      }
+      /* brush-rectangle clear owned by the controller for the live path */
     });
   }
 
@@ -1461,7 +1300,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (this._canvas && this._webglRenderer) {
       this._renderWebGL('plot');
-      this._setupCanvasEventHandling();
+      this._interaction?.setupCanvasEventHandling();
     }
   }
 
@@ -1472,7 +1311,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     this._webglRenderer!.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
     this._webglRenderer!.render(pd);
-    this._mainGroup?.selectAll('.protein-point').remove();
+    this._interaction?.mainGroup?.selectAll('.protein-point').remove();
 
     this._webglRenderPerf.stop(perfToken, pd.length);
   }
@@ -1523,10 +1362,11 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _updateSelectionOverlays(options: { duplicateImmediate?: boolean } = {}) {
-    if (!this._overlayGroup) return;
+    const overlayGroup = this._interaction?.overlayGroup;
+    if (!overlayGroup) return;
     // The selected-overlay clear stays on the host; the duplicate-stack/spiderfy/
     // badge update is owned by the controller (F-06).
-    this._overlayGroup.selectAll('.selected-overlay').remove();
+    overlayGroup.selectAll('.selected-overlay').remove();
     this._dupOverlay.updateSelectionOverlays(options);
   }
 
@@ -1824,16 +1664,6 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Setup event handling for canvas-based rendering
    */
-  private _setupCanvasEventHandling(): void {
-    if (!this._svgSelection) return;
-
-    // Use event delegation on the SVG overlay for canvas interactions
-    this._svgSelection
-      .on('mousemove.canvas', (event) => this._handleCanvasMouseMove(event))
-      .on('click.canvas', (event) => this._handleCanvasClick(event))
-      .on('mouseout.canvas', () => this._handleCanvasMouseOut());
-  }
-
   /**
    * Handle mouse move events for canvas rendering.
    * Coalesces rapid mousemoves to at most one hover computation per animation frame.
@@ -1854,48 +1684,52 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Deferred hover processing — runs inside a rAF scheduled by _handleCanvasMouseMove.
-   * Behaviour is identical to the former per-event body; only the call frequency is throttled.
+   * Shared screen→data hit-test for hover and click (F-28). Resolves the nearest
+   * INTERACTIVE, currently-RENDERED point under the cursor, or null. Owns the
+   * transform inversion, quadtree `findNearest`, the isInteractive/isPointRendered
+   * guards, and the within-radius distance check. Callers branch only on the result.
    */
-  private _processCanvasHover(event: MouseEvent, mouseX: number, mouseY: number): void {
-    if (!this._scales) return; // may have been cleared between scheduling and the frame
+  pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
+    if (!this._scales) return null;
 
     // Transform mouse coordinates to data space
     const dataX = (mouseX - this._transform.x) / this._transform.k;
     const dataY = (mouseY - this._transform.y) / this._transform.k;
 
-    // Find nearest slot using spatial index
-    const searchRadius = 15 / this._transform.k; // Search radius adjusted for zoom
+    // Find nearest slot using spatial index (search radius adjusted for zoom)
+    const searchRadius = HIT_TEST_SEARCH_RADIUS_PX / this._transform.k;
     const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    if (nearestSlot < 0) return null;
 
-    if (nearestSlot >= 0) {
-      const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
+    const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
 
-      // Don't hover non-interactive points (hidden/faded-to-0 → opacity 0)
-      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
-        this._clearHoverState();
-        return;
-      }
+    // Don't pick non-interactive points (hidden/faded-to-0 → opacity 0)
+    if (!this._getVisibilityModel().isInteractive(nearestPoint)) return null;
 
-      // Verify the point is actually rendered (not excluded due to point limits)
-      if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
-        // Point exists in spatial index but isn't rendered - clear tooltip
-        this._clearHoverState();
-        return;
-      }
-
-      // Calculate actual distance to verify it's within the point
-      const pointX = this._scales.x(nearestPoint.x);
-      const pointY = this._scales.y(nearestPoint.y);
-      const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
-      const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / 3;
-
-      if (distance <= pointRadius) {
-        this._handleMouseOver(event, nearestPoint);
-        return;
-      }
+    // Verify the point is actually rendered (not excluded due to point limits)
+    if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
+      return null;
     }
 
+    // Calculate actual distance to verify it's within the point
+    const pointX = this._scales.x(nearestPoint.x);
+    const pointY = this._scales.y(nearestPoint.y);
+    const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
+    const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / POINT_RADIUS_SIZE_DIVISOR;
+
+    return distance <= pointRadius ? nearestPoint : null;
+  }
+
+  /**
+   * Deferred hover processing — runs inside a rAF scheduled by _handleCanvasMouseMove.
+   * Behaviour is identical to the former per-event body; only the call frequency is throttled.
+   */
+  private _processCanvasHover(event: MouseEvent, mouseX: number, mouseY: number): void {
+    const point = this.pickInteractivePointAt(mouseX, mouseY);
+    if (point) {
+      this._handleMouseOver(event, point);
+      return;
+    }
     // No point found, clear hover state if it exists
     this._clearHoverState();
   }
@@ -1917,45 +1751,17 @@ export class ProtspaceScatterplot extends LitElement {
     const hadExpanded = this._dupOverlay.collapseExpanded();
 
     const [mouseX, mouseY] = d3.pointer(event);
+    const nearestPoint = this.pickInteractivePointAt(mouseX, mouseY);
+    if (!nearestPoint) return;
 
-    // Transform mouse coordinates to data space
-    const dataX = (mouseX - this._transform.x) / this._transform.k;
-    const dataY = (mouseY - this._transform.y) / this._transform.k;
+    // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
+    if (this._dupOverlay.maybeSpiderfyPoint(nearestPoint)) return;
 
-    // Find nearest slot using spatial index
-    const searchRadius = 15 / this._transform.k;
-    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    // If we just collapsed an expanded stack, treat this click as a "dismiss" click.
+    // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
+    if (hadExpanded) return;
 
-    if (nearestSlot >= 0) {
-      const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
-
-      // Don't click non-interactive points (hidden/faded-to-0 → opacity 0)
-      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
-        return;
-      }
-
-      // Verify the point is actually rendered (not excluded due to point limits)
-      if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
-        return;
-      }
-
-      // Calculate actual distance to verify it's within the point
-      const pointX = this._scales.x(nearestPoint.x);
-      const pointY = this._scales.y(nearestPoint.y);
-      const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
-      const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / 3;
-
-      if (distance <= pointRadius) {
-        // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
-        if (this._dupOverlay.maybeSpiderfyPoint(nearestPoint)) return;
-
-        // If we just collapsed an expanded stack, treat this click as a "dismiss" click.
-        // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
-        if (hadExpanded) return;
-
-        this._handleClick(event, nearestPoint);
-      }
-    }
+    this._handleClick(event, nearestPoint);
   }
 
   /**
@@ -1988,9 +1794,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   resetZoom() {
-    if (this._zoom && this._svgSelection) {
-      this._svgSelection.transition().duration(750).call(this._zoom.transform, d3.zoomIdentity);
-    }
+    this._interaction?.resetZoom();
   }
 
   /**
