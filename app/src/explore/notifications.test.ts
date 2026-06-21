@@ -98,6 +98,24 @@ describe('explore notifications', () => {
     expect(notification.dedupeKey).toBe('data-error:TOO_MANY_SEQUENCES');
   });
 
+  it('surfaces the floor for a TOO_FEW_SEQUENCES failure without calling it "empty"', () => {
+    const detail = dataError(
+      'Need at least 20 sequences; got 5.',
+      new FastaPrepError('Need at least 20 sequences; got 5.', {
+        code: 'TOO_FEW_SEQUENCES',
+        jobId: 'job-few',
+      }),
+    );
+
+    const notification = getDataLoadFailureNotification(detail);
+    expect(notification.title).toBe('Dataset import failed.');
+    // No curated copy for this code, so the raw message shows through — it
+    // already names the 20-sequence floor and never says "empty".
+    expect(notification.description).toMatch(/20/);
+    expect(notification.description).not.toMatch(/empty/i);
+    expect(notification.dedupeKey).toBe('data-error:TOO_FEW_SEQUENCES');
+  });
+
   it('routes a BIOCENTRAL_UNAVAILABLE failure to Colab with copy and an action', () => {
     const detail = dataError(
       'biocentral down',
@@ -177,6 +195,19 @@ describe('explore notifications', () => {
     expect(action?.label).toBe('Report this');
     expect(action?.href).toMatch(/^mailto:hello@protspace\.app\?/);
     expect(action?.href).toContain('subject=%5BBug%5D%20Dataset%20import%20failed');
+  });
+
+  it('includes the trace id in the "Report this" email body for backend failures', () => {
+    const detail = dataError(
+      'Lost connection to the prep backend.',
+      new FastaPrepError('Lost connection to the prep backend.', { jobId: 'job-xyz' }),
+    );
+
+    const action = getDataLoadFailureNotification(detail).action;
+
+    expect(action?.label).toBe('Report this');
+    // "Trace ID: job-xyz" survives mailto encoding (space → %20, ':' → %3A).
+    expect(action?.href).toContain('Trace%20ID%3A%20job-xyz');
   });
 
   it('attaches a "Report this" mailto action to the export failure notification', () => {

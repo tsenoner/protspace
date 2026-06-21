@@ -12,12 +12,16 @@ import { COLAB_NOTEBOOK_URL, MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-pre
  * Build a "Report this" toast action that opens a prefilled support email
  * describing the failing operation and its error.
  */
-function buildReportAction(operation: string, error: unknown): NotifyOptions['action'] {
+function buildReportAction(
+  operation: string,
+  error: unknown,
+  traceId?: string,
+): NotifyOptions['action'] {
   return {
     label: 'Report this',
     href: buildMailto({
       subject: `[Bug] ${operation} failed`,
-      body: buildBugContext({ operation, error, ...clientContext() }),
+      body: buildBugContext({ operation, error, traceId, ...clientContext() }),
     }),
   };
 }
@@ -127,7 +131,7 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
     action:
       code === 'BIOCENTRAL_UNAVAILABLE'
         ? { label: 'Open in Colab ↗', href: COLAB_NOTEBOOK_URL }
-        : buildReportAction('Dataset import', prepError ?? detail.message),
+        : buildReportAction('Dataset import', prepError ?? detail.message, jobId),
   };
 }
 

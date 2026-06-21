@@ -41,6 +41,15 @@ def test_rejects_when_no_sequences_only_headers():
     assert exc.value.code is ValidationCode.EMPTY_FASTA
 
 
+def test_rejects_too_few_sequences():
+    # Non-empty input below the minimum is "too few", distinct from empty.
+    text = "".join(f">id{i}\nMKT\n" for i in range(3))
+    with pytest.raises(FastaValidationError) as exc:
+        parse_and_validate(text, settings(sequence_min_count=20))
+    assert exc.value.code is ValidationCode.TOO_FEW_SEQUENCES
+    assert "20" in exc.value.message
+
+
 def test_rejects_too_many_sequences():
     text = "".join(f">id{i}\nMKT\n" for i in range(3))
     with pytest.raises(FastaValidationError) as exc:

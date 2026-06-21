@@ -42,6 +42,8 @@ interface BugContextParams {
   page?: string;
   /** Reporter's browser string (e.g. `navigator.userAgent`). */
   userAgent?: string;
+  /** Backend trace id (the prep `job_id`) to correlate the report with logs. */
+  traceId?: string;
 }
 
 /**
@@ -111,7 +113,13 @@ export function buildIssueUrl({ title, body }: IssueParams = {}): string {
  * Build a bug-report body: free-text prompts for the reporter followed by a
  * technical block. The error/stack is truncated to {@link MAX_ERROR_CHARS}.
  */
-export function buildBugContext({ operation, error, page, userAgent }: BugContextParams): string {
+export function buildBugContext({
+  operation,
+  error,
+  page,
+  userAgent,
+  traceId,
+}: BugContextParams): string {
   const errorText = truncate(describeError(error), MAX_ERROR_CHARS);
 
   return [
@@ -123,6 +131,9 @@ export function buildBugContext({ operation, error, page, userAgent }: BugContex
     '',
     '--- technical details (please keep) ---',
     `Operation: ${operation}`,
+    // Only backend failures carry a trace id; omit the line entirely otherwise
+    // so client-only reports stay clean.
+    ...(traceId ? [`Trace ID: ${traceId}`] : []),
     `Error: ${errorText}`,
     `Page: ${page ?? ''}`,
     `Browser: ${userAgent ?? ''}`,

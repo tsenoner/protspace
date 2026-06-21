@@ -10,6 +10,7 @@ from .config import Settings
 
 class ValidationCode(str, enum.Enum):
     EMPTY_FASTA = "EMPTY_FASTA"
+    TOO_FEW_SEQUENCES = "TOO_FEW_SEQUENCES"
     TOO_MANY_SEQUENCES = "TOO_MANY_SEQUENCES"
     SEQUENCE_TOO_LONG = "SEQUENCE_TOO_LONG"
     MALFORMED_FASTA = "MALFORMED_FASTA"
@@ -84,9 +85,11 @@ def parse_and_validate(text: str, settings: Settings) -> list[FastaRecord]:
             "No sequence data found in FASTA.",
         )
     if len(records) < settings.sequence_min_count:
+        # Non-empty but below the floor is "too few", not "empty" — keep the
+        # codes distinct so the UI can tell the user the actual minimum.
         raise FastaValidationError(
-            ValidationCode.EMPTY_FASTA,
-            f"Need at least {settings.sequence_min_count} sequence(s).",
+            ValidationCode.TOO_FEW_SEQUENCES,
+            f"Need at least {settings.sequence_min_count} sequences; got {len(records)}.",
         )
     if len(records) > settings.sequence_max_count:
         raise FastaValidationError(
