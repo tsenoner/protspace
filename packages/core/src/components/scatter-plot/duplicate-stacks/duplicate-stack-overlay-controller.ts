@@ -35,7 +35,7 @@ import {
 } from './duplicate-badges-canvas-renderer';
 import { SpiderfyLayer } from './spiderfy-layer';
 import type { ViewportDuplicateStack } from './duplicate-stack-types';
-import type { QuadtreeIndex } from './quadtree-index';
+import type { QuadtreeIndex } from '../interaction/quadtree-index';
 
 // Duplicate stack UI performance tuning (target: M1 MacBook + Chrome)
 const DUPLICATE_BADGES_VIEWPORT_PADDING = 60;

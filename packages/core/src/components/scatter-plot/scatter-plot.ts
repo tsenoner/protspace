@@ -30,26 +30,29 @@ import {
   type LegendZOrderChangeEvent,
 } from '../legend/legend-mapping-events';
 import { scatterplotStyles } from './scatter-plot.styles';
-import './projection-metadata';
-import './protspace-tips';
-import './protein-tooltip';
+import './projection-metadata/projection-metadata';
+import './tooltips/protspace-tips';
+import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
-import { createStyleGetters } from './style-getters';
-import { computeVisibilityModel } from './visibility-model';
-import type { VisibilityModel } from './visibility-model';
+import { createStyleGetters } from './styling/style-getters';
+import { computeVisibilityModel } from './styling/visibility-model';
+import type { VisibilityModel } from './styling/visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
-import { QuadtreeIndex } from './quadtree-index';
-import { computeViewportWindow, buildViewKey } from './duplicate-stack-viewport';
-import { DuplicateStackOverlayController } from './duplicate-stack-overlay-controller';
-import { estimateTooltipHeight } from './tooltip-height-estimate';
-import { computeTooltipStyle, TOOLTIP_FALLBACK_HEIGHT } from './tooltip-position';
-import { NumericRecomputeRunner } from './numeric-recompute-runner';
+import { QuadtreeIndex } from './interaction/quadtree-index';
+import { computeViewportWindow, buildViewKey } from './duplicate-stacks/duplicate-stack-viewport';
+import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
+import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
+import { computeTooltipStyle, TOOLTIP_FALLBACK_HEIGHT } from './tooltips/tooltip-position';
+import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
   type RenderWebGLTrigger,
 } from './webgl-render-perf';
-import { PlotInteractionController, type PlotInteractionHost } from './plot-interaction-controller';
+import {
+  PlotInteractionController,
+  type PlotInteractionHost,
+} from './interaction/plot-interaction-controller';
 
 // Visualization is only needed for viewport culling on very large datasets.
 // For <= MAX_POINTS_DIRECT_RENDER we can render the full set once and then pan/zoom via uniforms

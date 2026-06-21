@@ -1,4 +1,4 @@
-import { NEUTRAL_VALUE_COLOR } from './config';
+import { NEUTRAL_VALUE_COLOR } from '../config';
 import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
 import {
   getProteinAnnotationValues,

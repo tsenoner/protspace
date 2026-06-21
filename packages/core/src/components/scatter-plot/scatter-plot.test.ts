@@ -16,7 +16,10 @@
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
-import { PlotInteractionController, type PlotInteractionHost } from './plot-interaction-controller';
+import {
+  PlotInteractionController,
+  type PlotInteractionHost,
+} from './interaction/plot-interaction-controller';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {

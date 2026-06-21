@@ -34,7 +34,10 @@ vi.hoisted(() => {
 });
 
 import './scatter-plot';
-import { buildDuplicateStacks, getDuplicateStackKey } from './duplicate-stack-helpers';
+import {
+  buildDuplicateStacks,
+  getDuplicateStackKey,
+} from './duplicate-stacks/duplicate-stack-helpers';
 
 interface DuplicateOverlayController {
   // TS-private at compile time, reachable at runtime — the job-id race guard.

@@ -1,6 +1,6 @@
 import * as d3 from 'd3';
 import type { PlotDataPoint } from '@protspace/utils';
-import type { RenderWebGLTrigger } from './webgl-render-perf';
+import type { RenderWebGLTrigger } from '../webgl-render-perf';
 
 export interface PlotInteractionHost {
   getSvg(): SVGSVGElement | undefined;
