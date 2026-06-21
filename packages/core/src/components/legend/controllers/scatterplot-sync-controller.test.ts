@@ -279,22 +279,22 @@ describe('ScatterplotSyncController', () => {
     });
 
     it('updates scatterplot config with new values', () => {
-      mockScatterplot.config = { existing: 'value' };
+      mockScatterplot.config = { width: 800 };
 
       controller.updateConfig({ pointSize: 100 });
 
       expect(mockScatterplot.config).toEqual({
-        existing: 'value',
+        width: 800,
         pointSize: 100,
       });
     });
 
     it('preserves existing config values', () => {
-      mockScatterplot.config = { a: 1, b: 2 };
+      mockScatterplot.config = { width: 1, height: 2 };
 
-      controller.updateConfig({ b: 3, c: 4 });
+      controller.updateConfig({ height: 3, pointSize: 4 });
 
-      expect(mockScatterplot.config).toEqual({ a: 1, b: 3, c: 4 });
+      expect(mockScatterplot.config).toEqual({ width: 1, height: 3, pointSize: 4 });
     });
 
     it('preserves config identity for no-op updates', () => {
@@ -304,6 +304,11 @@ describe('ScatterplotSyncController', () => {
       controller.updateConfig({ pointSize: 100 });
 
       expect(mockScatterplot.config).toBe(previousConfig);
+    });
+
+    it('updateConfig parameter is shape-checked against ScatterplotConfig keys (F-47)', () => {
+      // @ts-expect-error — pointSize must be a number per ScatterplotConfig, not a string.
+      controller.updateConfig({ pointSize: 'not-a-number' });
     });
   });
 

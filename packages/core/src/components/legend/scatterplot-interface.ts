@@ -1,5 +1,5 @@
 import type { ScatterplotData } from './types';
-import type { NumericAnnotationDisplaySettingsMap } from '@protspace/utils';
+import type { NumericAnnotationDisplaySettingsMap, ScatterplotConfig } from '@protspace/utils';
 import type { LegendSortMode } from './types';
 
 /**
@@ -21,7 +21,7 @@ export interface IScatterplotElement extends Element {
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
 
   // Configuration
-  config: Record<string, unknown>;
+  config: Partial<ScatterplotConfig>;
 
   // Isolation mode (optional - may not exist on all implementations)
   isIsolationMode?(): boolean;

@@ -17,9 +17,11 @@
  *   - F-35 + F-11: firstUpdated constructs EXACTLY ONE WebGLRenderer and never
  *     orphans one (currently RED — firstUpdated double-constructs via
  *     _updateSizeAndRender then again inline).
- *   - F-05: no `numeric-recompute-end` dispatched after disconnect
- *     (ALREADY SATISFIED by B6/F-04 NumericRecomputeRunner.cancel(); this is a
- *     characterization lock).
+ *   - F-05: a numeric recompute does not complete after disconnect — the busy
+ *     state is cleared and a superseded RAF body bails (ALREADY SATISFIED by
+ *     B6/F-04 NumericRecomputeRunner.cancel(); this is a characterization lock).
+ *     (F-46 removed the old `numeric-recompute-end` event; re-characterized via
+ *     the kept `_numericRecomputeRunning` mirror.)
  *   - F-12: the 750ms resetZoom transition is interrupted on disconnect
  *     (ALREADY SATISFIED by B8 PlotInteractionController.teardown(); this is a
  *     characterization lock asserted via the controller teardown path).
@@ -119,6 +121,7 @@ type Host = HTMLElement & {
   _scheduleNumericAnnotationRefresh(): void;
   _commitSelection(ids: string[], clearVisual: () => void): void;
   _renderWebGL(trigger?: string): void;
+  _numericRecomputeRunning: boolean;
   _webglRenderer: FakeWebGLRenderer | null;
   _interaction: {
     teardown(): void;
@@ -163,8 +166,8 @@ describe('F-35 + F-11: firstUpdated constructs exactly one WebGLRenderer', () =>
   });
 });
 
-describe('F-05: no numeric-recompute-end after disconnect', () => {
-  it('a numeric recompute scheduled then disconnected dispatches no end event', () => {
+describe('F-05: numeric recompute does not complete after disconnect', () => {
+  it('a numeric recompute scheduled then disconnected leaves no job running', () => {
     const rafQueue: FrameRequestCallback[] = [];
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       rafQueue.push(cb);
@@ -174,16 +177,20 @@ describe('F-05: no numeric-recompute-end after disconnect', () => {
 
     const sp = makeHost();
     sp.selectedAnnotation = 'score';
-    const ends: string[] = [];
-    sp.addEventListener('numeric-recompute-end', () => ends.push('end'));
 
     sp._scheduleNumericAnnotationRefresh(); // queues the heavy-recompute RAF
-    sp.disconnectedCallback(); // cancel() bumps the job id + cancels the RAF
+    expect(sp._numericRecomputeRunning).toBe(true); // running after schedule
 
-    // Drain whatever RAF bodies are still queued: the superseded job must bail.
+    sp.disconnectedCallback(); // cancel() bumps the job id + cancels the RAF + clears running
+    expect(sp._numericRecomputeRunning).toBe(false); // teardown cleared the busy state
+
+    // Drain whatever RAF bodies are still queued: the superseded job must bail
+    // (the cancel bumped the job id), so it neither runs the body nor re-enters
+    // the running state. (F-46: the removed -end event is now re-characterized via
+    // the kept busy-state mirror.)
     rafQueue.forEach((cb) => cb(0));
 
-    expect(ends).toHaveLength(0);
+    expect(sp._numericRecomputeRunning).toBe(false);
   });
 });
 

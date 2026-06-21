@@ -1,6 +1,6 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import type { ScatterplotData, OtherItem } from '../types';
-import type { NumericAnnotationDisplaySettingsMap } from '@protspace/utils';
+import type { NumericAnnotationDisplaySettingsMap, ScatterplotConfig } from '@protspace/utils';
 import type { LegendSortMode } from '../types';
 import {
   isScatterplotElement,
@@ -14,6 +14,10 @@ import {
 import { LEGEND_EVENTS } from '../config';
 import { expandHiddenValues, buildZOrderMapping, buildColorShapeMappings } from '../legend-helpers';
 import type { LegendItem } from '../types';
+import type {
+  LegendColorMappingChangeEvent,
+  LegendZOrderChangeEvent,
+} from '../legend-mapping-events';
 
 /** Maximum number of retries when looking for scatterplot element */
 const MAX_DISCOVERY_RETRIES = 10;
@@ -153,11 +157,13 @@ export class ScatterplotSyncController implements ReactiveController {
   /**
    * Update scatterplot config
    */
-  updateConfig(updates: Record<string, unknown>): void {
+  updateConfig(updates: Partial<ScatterplotConfig>): void {
     if (!this._scatterplotElement || !supportsConfig(this._scatterplotElement)) return;
 
     const currentConfig = this._scatterplotElement.config || {};
-    const hasChanges = Object.entries(updates).some(([key, value]) => currentConfig[key] !== value);
+    const hasChanges = Object.entries(updates).some(
+      ([key, value]) => (currentConfig as Record<string, unknown>)[key] !== value,
+    );
     if (!hasChanges) return;
 
     this._scatterplotElement.config = { ...currentConfig, ...updates };
@@ -169,7 +175,7 @@ export class ScatterplotSyncController implements ReactiveController {
   dispatchZOrderChange(): void {
     const zOrderMapping = buildZOrderMapping(this.callbacks.getLegendItems());
 
-    const event = new CustomEvent(LEGEND_EVENTS.ZORDER_CHANGE, {
+    const event: LegendZOrderChangeEvent = new CustomEvent(LEGEND_EVENTS.ZORDER_CHANGE, {
       detail: { zOrderMapping },
       bubbles: !this._scatterplotElement,
     });
@@ -188,10 +194,13 @@ export class ScatterplotSyncController implements ReactiveController {
   dispatchColorMappingChange(colorOnly: boolean = false): void {
     const { colorMapping, shapeMapping } = buildColorShapeMappings(this.callbacks.getLegendItems());
 
-    const event = new CustomEvent(LEGEND_EVENTS.COLORMAPPING_CHANGE, {
-      detail: { colorMapping, shapeMapping, colorOnly },
-      bubbles: !this._scatterplotElement,
-    });
+    const event: LegendColorMappingChangeEvent = new CustomEvent(
+      LEGEND_EVENTS.COLORMAPPING_CHANGE,
+      {
+        detail: { colorMapping, shapeMapping, colorOnly },
+        bubbles: !this._scatterplotElement,
+      },
+    );
 
     if (this._scatterplotElement) {
       this._scatterplotElement.dispatchEvent(event);

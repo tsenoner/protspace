@@ -23,6 +23,12 @@ import {
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
+import {
+  isLegendColorMappingDetail,
+  isLegendZOrderDetail,
+  type LegendColorMappingChangeEvent,
+  type LegendZOrderChangeEvent,
+} from '../legend/legend-mapping-events';
 import { scatterplotStyles } from './scatter-plot.styles';
 import './projection-metadata';
 import './protspace-tips';
@@ -127,9 +133,9 @@ export class ProtspaceScatterplot extends LitElement {
   private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
-  @state() private _zOrderMapping: Record<string, number> | null = null;
-  @state() private _colorMapping: Record<string, string> | null = null;
-  @state() private _shapeMapping: Record<string, string> | null = null;
+  private _zOrderMapping: Record<string, number> | null = null;
+  private _colorMapping: Record<string, string> | null = null;
+  private _shapeMapping: Record<string, string> | null = null;
   @state() private _canvasKey = 0;
   @state() private _numericRecomputeRunning = false;
 
@@ -272,9 +278,6 @@ export class ProtspaceScatterplot extends LitElement {
   private _numericRecompute = new NumericRecomputeRunner({
     hasData: () => !!this.data,
     getSelectedAnnotation: () => this.selectedAnnotation,
-    dispatch: (type, detail) =>
-      this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true })),
-    requestUpdate: () => this.requestUpdate(),
     setRunning: (running) => {
       this._numericRecomputeRunning = running;
     },
@@ -532,14 +535,16 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   private _handleZOrderChange = (event: Event) => {
-    const customEvent = event as CustomEvent;
-    this._zOrderMapping = customEvent.detail.zOrderMapping;
+    const { detail } = event as LegendZOrderChangeEvent;
+    if (!isLegendZOrderDetail(detail)) return; // F-19: skip rather than overwrite GPU state with undefined
+    this._zOrderMapping = detail.zOrderMapping;
     // z-order affects GPU depth; force a fresh style getter cache so getDepth sees the new mapping
     this._styleGettersCache = null;
 
     if (this._plotData.length > 0) {
-      // Z-order mapping changed but coordinates didn't — ask the renderer to
-      // re-sort by depth without invalidating the position cache.
+      // Z-order mapping changed but coordinates didn't — re-sort by depth without
+      // invalidating the position cache. Single render path (F-31): these fields are
+      // plain (not @state), so updated()'s catch-all never fires a second render.
       this._webglRenderer?.invalidateDepthOrder();
       this._webglRenderer?.invalidateStyleCache();
       this._renderPlot();
@@ -547,26 +552,23 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   private _handleColorMappingChange = (event: Event) => {
-    const customEvent = event as CustomEvent;
-    this._colorMapping = customEvent.detail.colorMapping;
-    this._shapeMapping = customEvent.detail.shapeMapping;
-    const colorOnly = customEvent.detail.colorOnly ?? false;
+    const { detail } = event as LegendColorMappingChangeEvent;
+    if (!isLegendColorMappingDetail(detail)) return; // F-19
+    this._colorMapping = detail.colorMapping;
+    this._shapeMapping = detail.shapeMapping;
+    const colorOnly = detail.colorOnly ?? false;
 
     // Force fresh style getters to use new color/shape mapping
     this._styleGettersCache = null;
 
-    // Trigger render (z-order is handled in WebGL depth; avoid CPU-sorting on every zoom/pan)
     if (this._plotData.length > 0) {
-      // For color-only changes, we don't need to invalidate positions or re-sort points
-      // Only invalidate style cache to update colors
+      // INV-08: color-only changes skip depth re-sort + virtualization invalidation.
       if (!colorOnly) {
-        // Z-order mapping may have changed; ask the renderer to re-sort by depth
-        // without invalidating the position cache.
         this._webglRenderer?.invalidateDepthOrder();
         this._invalidateVirtualizationCache();
       }
       this._webglRenderer?.invalidateStyleCache();
-      this._renderPlot();
+      this._renderPlot(); // single render path (F-31)
     }
   };
 

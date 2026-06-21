@@ -2,13 +2,17 @@
 //
 // F-23 characterization lock: the numeric-recompute stale-job generation guard.
 //
-// `_scheduleNumericAnnotationRefresh` (scatter-plot.ts L830-906) bumps
-// `++this._numericRecomputeJobId`, captures it as `jobId`, dispatches a
-// synchronous `numeric-recompute-start`, and queues the heavy recompute in a
-// requestAnimationFrame. The RAF body bails immediately (L849) when
-// `jobId !== this._numericRecomputeJobId` — so a superseded (older) job writes
-// no values and dispatches no `numeric-recompute-end`. This locks "last-write-
-// wins" for two overlapping schedules.
+// `_scheduleNumericAnnotationRefresh` delegates to the NumericRecomputeRunner,
+// which bumps + captures a per-schedule job id, flips the `_numericRecomputeRunning`
+// @state mirror to true synchronously, and queues the heavy recompute in a
+// requestAnimationFrame. The RAF body bails immediately when its captured job id
+// was superseded — so a superseded (older) job runs no body and does NOT clear
+// the running state; only the surviving (latest) job's RAF clears it. This locks
+// "last-write-wins" for two overlapping schedules.
+//
+// (F-46) The runner's old public `numeric-recompute-start` / `-end` CustomEvents
+// were unconsumed and have been removed; the stale-job guard is now characterized
+// via the kept `_numericRecomputeRunning` busy-state mirror.
 //
 // We queue (do NOT run inline) RAFs via a stubbed requestAnimationFrame so the
 // two overlapping schedules both register before either body executes, then
@@ -31,6 +35,7 @@ type Internals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
   _scheduleNumericAnnotationRefresh(): void;
+  _numericRecomputeRunning: boolean;
 };
 
 /**
@@ -86,33 +91,34 @@ describe('numeric-recompute stale-job guard (F-23 characterization lock)', () =>
     q.forEach((cb) => cb(0));
   };
 
-  it('only the latest of two overlapping schedules dispatches numeric-recompute-end', () => {
+  it('only the latest of two overlapping schedules clears the running state', () => {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = numericData();
     sp.selectedAnnotation = 'score';
-    const ends: string[] = [];
-    sp.addEventListener('numeric-recompute-end', () => ends.push('end'));
 
     sp._scheduleNumericAnnotationRefresh(); // job 1 → queues RAF #1
     sp._scheduleNumericAnnotationRefresh(); // job 2 → bumps id, queues RAF #2
-    expect(ends).toHaveLength(0); // nothing ran yet (RAFs queued)
+    expect(sp._numericRecomputeRunning).toBe(true); // running, nothing drained yet
 
-    drain(); // RAF#1 sees jobId mismatch → bails; RAF#2 completes
-    expect(ends).toHaveLength(1); // exactly ONE end event from the surviving job
+    drain(); // RAF#1 sees jobId mismatch → bails (no clear); RAF#2 completes → clears
+    expect(sp._numericRecomputeRunning).toBe(false); // surviving job cleared the state
   });
 
-  it('two starts emit two starts but the superseded job writes no end (last-write-wins)', () => {
+  it('the superseded job does not clear the running state before the latest job runs', () => {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = numericData();
     sp.selectedAnnotation = 'score';
-    const starts: string[] = [];
-    const ends: string[] = [];
-    sp.addEventListener('numeric-recompute-start', () => starts.push('s'));
-    sp.addEventListener('numeric-recompute-end', () => ends.push('e'));
-    sp._scheduleNumericAnnotationRefresh();
-    sp._scheduleNumericAnnotationRefresh();
-    drain();
-    expect(starts).toHaveLength(2); // each schedule emits a start synchronously
-    expect(ends).toHaveLength(1); // only the latest job reaches the end
+
+    sp._scheduleNumericAnnotationRefresh(); // job 1 → queues RAF #1
+    sp._scheduleNumericAnnotationRefresh(); // job 2 → bumps id, queues RAF #2
+    expect(sp._numericRecomputeRunning).toBe(true); // each schedule enters running
+
+    // Drain ONLY the superseded RAF #1: it must bail and leave running untouched.
+    const stale = rafQueue.shift()!;
+    stale(0);
+    expect(sp._numericRecomputeRunning).toBe(true); // superseded job did not clear
+
+    drain(); // latest job completes → clears
+    expect(sp._numericRecomputeRunning).toBe(false);
   });
 });
