@@ -185,3 +185,136 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     expect(Array.from(r.projections[0].data)).toEqual([10, 11, 30, 33]);
   });
 });
+
+describe('scatter-plot isolation render-refresh sequence', () => {
+  type RefreshInternals = HTMLElement & {
+    data: VisualizationData;
+    selectedProteinIds: string[];
+    selectedProjectionIndex: number;
+    _isolationMode: boolean;
+    _isolationHistory: string[][];
+    _plotData: PlotData;
+    _lastDataRef: unknown;
+    _processData(): void;
+    _buildQuadtree(): void;
+    _updateStyleSignature(): void;
+    _renderPlot(): void;
+    _reprocessAndRefresh(): void;
+    isolateSelection(): void;
+    resetIsolation(): void;
+  };
+
+  function buildData(): VisualizationData {
+    return {
+      protein_ids: ['p0', 'p1', 'p2', 'p3', 'p4'],
+      projections: [
+        {
+          name: 'proj',
+          dimension: 2,
+          data: new Float32Array([0, 0, 10, 11, 20, 22, 30, 33, 40, 44]),
+        },
+      ],
+      annotations: {
+        cat: {
+          kind: 'categorical',
+          values: ['A', 'B'],
+          colors: ['#000000', '#ffffff'],
+          shapes: ['circle', 'square'],
+        },
+      },
+      annotation_data: { cat: new Int32Array([0, 1, 0, 1, 0]) },
+    };
+  }
+
+  function makeEl(): RefreshInternals {
+    const el = document.createElement('protspace-scatterplot') as RefreshInternals;
+    el.data = buildData();
+    el.selectedProjectionIndex = 0;
+    // Identity view over all 5 proteins. isolateSelection() validates the
+    // requested ids against plotDataId(_plotData, slot); without a populated
+    // _plotData the validation finds no survivors and bails before the refresh.
+    el._plotData = {
+      length: 5,
+      xs: new Float32Array([0, 10, 20, 30, 40]),
+      ys: new Float32Array([0, 11, 22, 33, 44]),
+      zs: null,
+      originalIndices: null,
+      proteinIds: ['p0', 'p1', 'p2', 'p3', 'p4'],
+    };
+    return el;
+  }
+
+  // Record the order of the staged refresh steps. We spy the pure-ish private
+  // steps; requestUpdate + the deferred _renderPlot are observed via
+  // updateComplete resolution. The element is never appended, so Lit's lifecycle
+  // and WebGL never fire — _webglRenderer stays undefined, exercising the
+  // `if (this._webglRenderer)` false branch.
+  function instrument(el: RefreshInternals) {
+    const calls: string[] = [];
+    vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
+    vi.spyOn(el, '_buildQuadtree').mockImplementation(() => calls.push('buildQuadtree'));
+    vi.spyOn(el, '_updateStyleSignature').mockImplementation(() =>
+      calls.push('updateStyleSignature'),
+    );
+    vi.spyOn(el, '_renderPlot').mockImplementation(() => calls.push('renderPlot'));
+    // jsdom element is not connected, so updateComplete is an already-resolved promise.
+    Object.defineProperty(el, 'updateComplete', {
+      configurable: true,
+      get: () => Promise.resolve(true),
+    });
+    const requestUpdate = vi.spyOn(el as unknown as { requestUpdate: () => void }, 'requestUpdate');
+    return { calls, requestUpdate };
+  }
+
+  it('isolateSelection runs processData → buildQuadtree → requestUpdate, then defers renderPlot', async () => {
+    const el = makeEl();
+    el.selectedProteinIds = ['p1', 'p3'];
+    const { calls, requestUpdate } = instrument(el);
+
+    el.isolateSelection();
+
+    // Synchronous portion: process + quadtree happen before requestUpdate; render is deferred.
+    expect(calls).toEqual(['processData', 'buildQuadtree']);
+    expect(requestUpdate).toHaveBeenCalled();
+
+    await el.updateComplete;
+    expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
+  });
+
+  it('resetIsolation nulls _lastDataRef BEFORE reprocess, then runs the same refresh sequence', async () => {
+    const el = makeEl();
+    el._isolationMode = true;
+    el._isolationHistory = [['p1', 'p3']];
+    el._lastDataRef = { stale: true };
+    const { calls, requestUpdate } = instrument(el);
+    // Capture _lastDataRef at the moment _processData is (re)invoked.
+    let lastDataRefAtProcess: unknown = 'unset';
+    (
+      el._processData as unknown as { mockImplementation: (f: () => void) => void }
+    ).mockImplementation(() => {
+      lastDataRefAtProcess = el._lastDataRef;
+      calls.push('processData');
+    });
+
+    el.resetIsolation();
+
+    // Divergence preserved: cleared before the shared refresh block runs.
+    expect(lastDataRefAtProcess).toBeNull();
+    expect(calls).toEqual(['processData', 'buildQuadtree']);
+    expect(requestUpdate).toHaveBeenCalled();
+
+    await el.updateComplete;
+    expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
+  });
+
+  it('_reprocessAndRefresh is the single shared implementation both callers route through', () => {
+    const el = makeEl();
+    const spy = vi.spyOn(el, '_reprocessAndRefresh');
+    el.selectedProteinIds = ['p1'];
+    el.isolateSelection();
+    el._isolationMode = true;
+    el._isolationHistory = [['p1']];
+    el.resetIsolation();
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+});

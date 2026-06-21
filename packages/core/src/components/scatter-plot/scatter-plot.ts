@@ -1913,6 +1913,31 @@ export class ProtspaceScatterplot extends LitElement {
     this._styleSig = parts.join('|');
   }
 
+  /**
+   * Shared isolation render-refresh: reprocess derived plot data, rebuild the
+   * quadtree, invalidate + re-sign the WebGL renderer's caches, request a Lit
+   * update, and render once the update settles. Called by isolateSelection() and
+   * resetIsolation() — the only divergence (resetIsolation clears _lastDataRef to
+   * force the full-rebuild path) stays at the call site, before this method runs.
+   */
+  private _reprocessAndRefresh(): void {
+    this._processData();
+    this._buildQuadtree();
+
+    if (this._webglRenderer) {
+      this._webglRenderer.invalidatePositionCache();
+      this._webglRenderer.invalidateStyleCache();
+      this._updateStyleSignature();
+      this._webglRenderer.setStyleSignature(this._styleSig);
+    }
+
+    this.requestUpdate();
+
+    this.updateComplete.then(() => {
+      this._renderPlot();
+    });
+  }
+
   isolateSelection() {
     if (!this.data || this.selectedProteinIds.length === 0) {
       return;
@@ -1933,25 +1958,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._isolationMode = true;
     this.selectedProteinIds = [];
 
-    // Process data and update rendering
-    this._processData();
-    this._buildQuadtree();
-
-    // Ensure canvas renderer is completely refreshed
-    if (this._webglRenderer) {
-      this._webglRenderer.invalidatePositionCache();
-      this._webglRenderer.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
-    }
-
-    // Force immediate component update
-    this.requestUpdate();
-
-    // Render after all updates are complete
-    this.updateComplete.then(() => {
-      this._renderPlot();
-    });
+    this._reprocessAndRefresh();
 
     this.dispatchEvent(
       new CustomEvent('data-isolation', {
@@ -2036,25 +2043,7 @@ export class ProtspaceScatterplot extends LitElement {
     // instead of the fast coordinate-only path (which would keep the filtered subset)
     this._lastDataRef = null;
 
-    // Process data and update rendering
-    this._processData();
-    this._buildQuadtree();
-
-    // Ensure canvas renderer is completely refreshed
-    if (this._webglRenderer) {
-      this._webglRenderer.invalidatePositionCache();
-      this._webglRenderer.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
-    }
-
-    // Force immediate component update
-    this.requestUpdate();
-
-    // Render after all updates are complete
-    this.updateComplete.then(() => {
-      this._renderPlot();
-    });
+    this._reprocessAndRefresh();
 
     this.dispatchEvent(
       new CustomEvent('data-isolation-reset', {
