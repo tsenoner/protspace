@@ -192,6 +192,7 @@ export class ProtspaceScatterplot extends LitElement {
   // (otherwise un-hidden points stay missing until a pan/zoom changes the key).
   private _quadtreeGeneration = 0;
   private _hoverRaf: number | null = null;
+  private _commitSelectionRafId: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _visiblePlotData: PlotData = EMPTY_PLOT_DATA;
   private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
@@ -426,6 +427,34 @@ export class ProtspaceScatterplot extends LitElement {
     });
   };
 
+  /**
+   * F-35/F-11: single construction point for the WebGL renderer. Both firstUpdated
+   * and the lazy _updateSizeAndRender path route through here so the renderer is
+   * built exactly once (firstUpdated previously orphaned the renderer that
+   * _updateSizeAndRender had just created). Requires _canvas to be present.
+   */
+  private _createWebglRenderer() {
+    if (!this._canvas) return;
+    this._webglRenderer = new WebGLRenderer(
+      this._canvas,
+      () => this._scales,
+      () => this._transform,
+      () => this._mergedConfig,
+      {
+        getColors: (p: PlotDataPoint) => this._getColors(p),
+        getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
+        getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
+        getDepth: (p: PlotDataPoint) => this._getDepth(p),
+        getStrokeColor: (p: PlotDataPoint) => this._getStrokeColor(p),
+        getStrokeWidth: (p: PlotDataPoint) => this._getStrokeWidth(p),
+        getShape: (p: PlotDataPoint) => this._getPointShape(p),
+      },
+      this._handleWebglContextLost,
+    );
+    this._updateStyleSignature();
+    this._webglRenderer.setStyleSignature(this._styleSig);
+  }
+
   connectedCallback() {
     super.connectedCallback();
     this.resizeObserver.observe(this);
@@ -447,6 +476,10 @@ export class ProtspaceScatterplot extends LitElement {
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
       this._hoverRaf = null;
+    }
+    if (this._commitSelectionRafId !== null) {
+      cancelAnimationFrame(this._commitSelectionRafId);
+      this._commitSelectionRafId = null;
     }
     this._pendingHover = null;
     this._numericRecompute.cancel();
@@ -796,24 +829,11 @@ export class ProtspaceScatterplot extends LitElement {
     this._interaction.initialize();
     this._updateSizeAndRender();
     if (this._canvas) {
-      this._webglRenderer = new WebGLRenderer(
-        this._canvas,
-        () => this._scales,
-        () => this._transform,
-        () => this._mergedConfig,
-        {
-          getColors: (p: PlotDataPoint) => this._getColors(p),
-          getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
-          getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-          getDepth: (p: PlotDataPoint) => this._getDepth(p),
-          getStrokeColor: (p: PlotDataPoint) => this._getStrokeColor(p),
-          getStrokeWidth: (p: PlotDataPoint) => this._getStrokeWidth(p),
-          getShape: (p: PlotDataPoint) => this._getPointShape(p),
-        },
-        this._handleWebglContextLost,
-      );
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
+      // _updateSizeAndRender already lazily constructs the renderer when _canvas
+      // exists; guard here so firstUpdated no longer orphans that instance (F-35).
+      if (!this._webglRenderer) {
+        this._createWebglRenderer();
+      }
       this._syncWebglSelectionActive();
     }
   }
@@ -1118,31 +1138,14 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (this._canvas) {
       if (!this._webglRenderer) {
-        this._webglRenderer = new WebGLRenderer(
-          this._canvas,
-          () => this._scales,
-          () => this._transform,
-          () => this._mergedConfig,
-          {
-            getColors: (p: PlotDataPoint) => this._getColors(p),
-            getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
-            getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-            getDepth: (p: PlotDataPoint) => this._getDepth(p),
-            getStrokeColor: (p: PlotDataPoint) => this._getStrokeColor(p),
-            getStrokeWidth: (p: PlotDataPoint) => this._getStrokeWidth(p),
-            getShape: (p: PlotDataPoint) => this._getPointShape(p),
-          },
-          this._handleWebglContextLost,
-        );
-        this._updateStyleSignature();
-        this._webglRenderer.setStyleSignature(this._styleSig);
+        this._createWebglRenderer();
       }
-      this._webglRenderer.resize(width, height);
+      this._webglRenderer!.resize(width, height);
       // Force fresh style getters to ensure depth values are recomputed consistently
       this._styleGettersCache = null;
-      this._webglRenderer.invalidatePositionCache();
+      this._webglRenderer!.invalidatePositionCache();
       // Also invalidate style cache to force re-sorting of colors when point order may change
-      this._webglRenderer.invalidateStyleCache();
+      this._webglRenderer!.invalidateStyleCache();
     }
 
     // Keep badge canvas in sync with layout and DPR
@@ -1271,7 +1274,13 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _commitSelection(selectedIds: string[], clearVisual: () => void) {
     if (selectedIds.length > 0) {
-      requestAnimationFrame(() => {
+      // F-16: track the deferred-commit RAF so disconnectedCallback can cancel it.
+      // The post-disconnect no-op is achieved by that cancellation (a selection
+      // committed then disconnected before this RAF fires never dispatches), NOT
+      // by guarding the body on isConnected — the connected selection flow must
+      // dispatch byte-identically (INV-03/INV-05).
+      this._commitSelectionRafId = requestAnimationFrame(() => {
+        this._commitSelectionRafId = null;
         this.selectedProteinIds = [...selectedIds];
 
         this.dispatchEvent(
@@ -1306,12 +1315,13 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _renderWebGL(trigger: RenderWebGLTrigger = 'unknown') {
+    if (!this._webglRenderer) return;
     const perfToken = this._webglRenderPerf.start(trigger);
 
     const pd = this._getPointsForRendering();
 
-    this._webglRenderer!.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
-    this._webglRenderer!.render(pd);
+    this._webglRenderer.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
+    this._webglRenderer.render(pd);
     this._interaction?.mainGroup?.selectAll('.protein-point').remove();
 
     this._webglRenderPerf.stop(perfToken, pd.length);

@@ -106,4 +106,21 @@ describe('PlotInteractionController', () => {
     expect(cancel).toHaveBeenCalled();
     expect(svg.querySelector('path.lasso-path')).toBeNull();
   });
+
+  // F-12: resetZoom() runs a 750ms d3 transition on the SVG selection. teardown()
+  // (called from the host's disconnectedCallback) must interrupt that transition so
+  // it cannot keep re-arming the zoom RAF / writing the transform after disconnect.
+  // d3 stores the pending transition schedule on node.__transition synchronously when
+  // .transition() is called; interrupt() removes it. We assert teardown() clears it.
+  it('teardown() interrupts the in-flight resetZoom transition', () => {
+    const { bridge } = makeHostBridge(svg);
+    const c = new PlotInteractionController(bridge);
+    c.initialize();
+    type NodeWithTransition = SVGSVGElement & { __transition?: unknown };
+    // Start the 750ms reset transition, then tear down before it can settle.
+    c.resetZoom();
+    expect((svg as NodeWithTransition).__transition).not.toBeUndefined(); // scheduled
+    c.teardown();
+    expect((svg as NodeWithTransition).__transition).toBeUndefined(); // interrupt() cleared it
+  });
 });
