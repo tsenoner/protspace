@@ -10,6 +10,7 @@
  */
 
 import type { RenderDuplicateStack } from './duplicate-stack-types';
+import { pointInWindow, type ViewportWindow } from './duplicate-stack-viewport';
 
 /** Badge geometry/style constants — verbatim from the original inline literals. */
 export const BADGE_RADIUS = 9;
@@ -24,14 +25,6 @@ const BADGE_TEXT_FILL = '#ffffff';
 
 /** Cap: max duplicate badges drawn per frame (verbatim from `scatter-plot.ts:52`). */
 export const DUPLICATE_BADGES_MAX_VISIBLE = 800;
-
-/** Base-pixel viewport window (inclusive bounds), as computed by the host. */
-interface ViewportWindow {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-}
 
 interface BadgesRendererDeps {
   getCanvas: () => HTMLCanvasElement | undefined;
@@ -53,9 +46,7 @@ export function cullAndCapStacks(
   expandedKey: string | null,
   byKey: Map<string, RenderDuplicateStack>,
 ): RenderDuplicateStack[] {
-  const visible = stacks.filter(
-    (s) => s.px >= win.minX && s.px <= win.maxX && s.py >= win.minY && s.py <= win.maxY,
-  );
+  const visible = stacks.filter((s) => pointInWindow(s, win));
   if (visible.length <= DUPLICATE_BADGES_MAX_VISIBLE) return visible;
 
   let capped: RenderDuplicateStack[] = [...visible]
@@ -64,13 +55,7 @@ export function cullAndCapStacks(
 
   if (expandedKey && !capped.some((s) => s.key === expandedKey)) {
     const expanded = byKey.get(expandedKey);
-    if (
-      expanded &&
-      expanded.px >= win.minX &&
-      expanded.px <= win.maxX &&
-      expanded.py >= win.minY &&
-      expanded.py <= win.maxY
-    ) {
+    if (expanded && pointInWindow(expanded, win)) {
       capped = [...capped, expanded];
     }
   }

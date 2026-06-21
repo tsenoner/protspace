@@ -1,6 +1,6 @@
 import type { ZoomTransform } from 'd3';
 
-interface ViewportWindow {
+export interface ViewportWindow {
   minX: number;
   maxX: number;
   minY: number;
@@ -33,6 +33,14 @@ export function computeViewportWindow(
     minY: Math.min(topPx, bottomPx),
     maxY: Math.max(topPx, bottomPx),
   };
+}
+
+/**
+ * Inclusive point-in-window test in base-pixel space. Single source of truth for
+ * the predicate previously copy-pasted at the badge-cull and spiderfy-hide sites.
+ */
+export function pointInWindow(p: { px: number; py: number }, win: ViewportWindow): boolean {
+  return p.px >= win.minX && p.px <= win.maxX && p.py >= win.minY && p.py <= win.maxY;
 }
 
 /** Cache key shared by virtualization, badge culling, and overlays — they must agree. */

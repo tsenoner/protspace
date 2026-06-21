@@ -23,7 +23,12 @@ import type { ZoomTransform } from 'd3';
 import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
 import { materializePlotDataPoint } from '@protspace/utils';
 import { buildDuplicateStacks } from './duplicate-stack-helpers';
-import { computeViewportWindow, buildViewKey } from './duplicate-stack-viewport';
+import {
+  computeViewportWindow,
+  pointInWindow,
+  buildViewKey,
+  type ViewportWindow,
+} from './duplicate-stack-viewport';
 import {
   cullAndCapStacks,
   DuplicateBadgesCanvasRenderer,
@@ -171,6 +176,7 @@ export class DuplicateStackOverlayController {
     const hadExpanded = !!this.expandedKey;
     if (this.expandedKey) {
       this.expandedKey = null;
+      this.expandedAnchor = null;
       this.updateOverlays();
     }
     return hadExpanded;
@@ -287,19 +293,18 @@ export class DuplicateStackOverlayController {
     }
     if (!this.deps.getScales()) return;
 
-    const config = this.deps.getConfig();
-    const { minX, maxX, minY, maxY } = computeViewportWindow(
+    const win = computeViewportWindow(
       this.deps.getTransform(),
-      config,
+      this.deps.getConfig(),
       DUPLICATE_BADGES_VIEWPORT_PADDING,
     );
 
-    const stacksToRender = cullAndCapStacks(
-      this.stacks,
-      { minX, maxX, minY, maxY },
-      this.expandedKey,
-      this.byKey,
-    );
+    this.renderBadgesForViewport(win);
+  }
+
+  /** Cull the current stacks to `win` (top-N cap, keep-expanded) and draw the badges. */
+  private renderBadgesForViewport(win: ViewportWindow): void {
+    const stacksToRender = cullAndCapStacks(this.stacks, win, this.expandedKey, this.byKey);
 
     // Note: canvas drawing uses screen coordinates and already keeps badge size constant.
     this.badges.render(stacksToRender);
@@ -319,18 +324,12 @@ export class DuplicateStackOverlayController {
     const overlayGroup = this.deps.getOverlayGroup();
     if (!overlayGroup || !this.deps.getScales()) return;
 
-    if (!this.deps.isEnabled()) {
-      // Remove both to clean up older DOM from previous versions.
+    // When disabled, remove both layers to clean up older DOM from previous
+    // versions; while brushing/selecting, don't show stack UI either.
+    if (!this.deps.isEnabled() || this.deps.isSelectionMode()) {
       overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').remove();
       this.expandedKey = null;
-      this.badges.clear();
-      return;
-    }
-
-    // Don't show stack UI while brushing/selecting.
-    if (this.deps.isSelectionMode()) {
-      overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').remove();
-      this.expandedKey = null;
+      this.expandedAnchor = null;
       this.badges.clear();
       return;
     }
@@ -344,29 +343,18 @@ export class DuplicateStackOverlayController {
     const viewKey = buildViewKey(transform, config.width, config.height);
 
     // Compute visible window in "base pixel space" (same as quadtree indexing).
-    const { minX, maxX, minY, maxY } = computeViewportWindow(
-      transform,
-      config,
-      DUPLICATE_BADGES_VIEWPORT_PADDING,
-    );
+    const win = computeViewportWindow(transform, config, DUPLICATE_BADGES_VIEWPORT_PADDING);
 
     // Ensure we have duplicate stacks for the current viewport before trying to render.
-    if (!this.ensureForViewport(viewKey, minX, minY, maxX, maxY)) {
+    if (!this.ensureForViewport(viewKey, win.minX, win.minY, win.maxX, win.maxY)) {
       // Keep existing DOM as-is until computation finishes; updateOverlays will rerun.
       return;
     }
 
     // --- Badges (N) ---
-    const stacksToRender = cullAndCapStacks(
-      this.stacks,
-      { minX, maxX, minY, maxY },
-      this.expandedKey,
-      this.byKey,
-    );
-
     // Phase 3: render badges via a lightweight 2D canvas overlay (much faster than many SVG nodes).
     // Spiderfy remains in SVG for interaction.
-    this.badges.render(stacksToRender);
+    this.renderBadgesForViewport(win);
 
     // --- Spiderfy ---
     if (!this.expandedKey) {
@@ -378,13 +366,15 @@ export class DuplicateStackOverlayController {
     const stack = this.byKey.get(this.expandedKey);
     if (!stack) {
       this.expandedKey = null;
+      this.expandedAnchor = null;
       spiderfyLayer.selectAll('*').remove();
       return;
     }
 
     // Hide spiderfy if the stack is off-screen (e.g., after a zoom/pan).
-    if (!(stack.px >= minX && stack.px <= maxX && stack.py >= minY && stack.py <= maxY)) {
+    if (!pointInWindow(stack, win)) {
       this.expandedKey = null;
+      this.expandedAnchor = null;
       spiderfyLayer.selectAll('*').remove();
       return;
     }
