@@ -35,6 +35,15 @@ def bundle(
         Path,
         typer.Option("-o", "--output", help="Output .parquetbundle file path."),
     ],
+    statistics: Annotated[
+        Path | None,
+        typer.Option(
+            "-s",
+            "--statistics",
+            help="Optional projection-statistics parquet file → 5th bundle part.",
+            exists=True,
+        ),
+    ] = None,
     verbose: Annotated[
         int,
         typer.Option("-v", "--verbose", count=True, help="Increase verbosity."),
@@ -72,10 +81,13 @@ def bundle(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
+    statistics_table = pq.read_table(str(statistics)) if statistics is not None else None
+
     output_path = output.with_suffix(".parquetbundle")
     write_bundle(
         [annotations_table, metadata_table, data_table],
         output_path,
+        statistics=statistics_table,
     )
 
     typer.echo(f"Saved: {output_path}")

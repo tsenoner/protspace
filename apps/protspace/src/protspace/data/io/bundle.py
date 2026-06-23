@@ -2,7 +2,13 @@
 
 A .parquetbundle file concatenates multiple parquet files separated by a
 delimiter.  The first three parts are the core data tables; an optional
-fourth part carries settings (annotation colours, shapes, etc.).
+fourth part carries settings (annotation colours, shapes, etc.); an optional
+fifth part carries projection statistics.
+
+Positional layout: ``core(3) + settings? + statistics?``.  When statistics are
+present but settings are absent, the fourth part is written as **zero bytes** so
+the statistics part is unambiguously the fifth — readers and writers branch on
+the fourth part's emptiness, not on the raw part count.
 """
 
 import io
@@ -25,13 +31,15 @@ CORE_FILENAMES = [
 ]
 
 SETTINGS_FILENAME = "settings.parquet"
+STATISTICS_FILENAME = "statistics.parquet"
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
     """Extract a .parquetbundle into separate parquet files on disk.
 
-    Supports bundles with 3 parts (core data only) or 4 parts (core data +
-    settings).
+    Supports bundles with 3 parts (core data only), 4 parts (core + settings),
+    or 5 parts (core + settings + statistics, where the settings part may be
+    zero bytes).
 
     Args:
         bundle_path: Path to the .parquetbundle file.
@@ -52,23 +60,31 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
 
     parts = content.split(PARQUET_BUNDLE_DELIMITER)
 
-    if len(parts) < 3 or len(parts) > 4:
-        raise ValueError(f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}")
+    if len(parts) < 3 or len(parts) > 5:
+        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
 
     # Write core parts
     for part_bytes, filename in zip(parts[:3], CORE_FILENAMES, strict=False):
         if part_bytes:
             (target_dir / filename).write_bytes(part_bytes)
 
-    # Write optional settings part
-    if len(parts) == 4 and parts[3]:
+    # Write optional settings part (branch on emptiness, not part count)
+    if len(parts) >= 4 and parts[3]:
         (target_dir / SETTINGS_FILENAME).write_bytes(parts[3])
+
+    # Write optional statistics part
+    if len(parts) == 5 and parts[4]:
+        (target_dir / STATISTICS_FILENAME).write_bytes(parts[4])
 
     return str(target_dir)
 
 
 def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
-    """Read a bundle and return raw part bytes plus parsed settings.
+    """Read a bundle and return raw core part bytes plus parsed settings.
+
+    The return shape is preserved (``(core_parts, settings)``) so existing
+    callers keep working; use :func:`read_statistics_from_bundle` for the
+    optional fifth part.
 
     Returns:
         (core_parts_bytes, settings_dict_or_None)
@@ -78,28 +94,43 @@ def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
 
     parts = content.split(PARQUET_BUNDLE_DELIMITER)
 
-    if len(parts) < 3 or len(parts) > 4:
-        raise ValueError(f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}")
+    if len(parts) < 3 or len(parts) > 5:
+        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
 
     settings = None
-    if len(parts) == 4 and parts[3]:
+    if len(parts) >= 4 and parts[3]:
         settings = read_settings_from_bytes(parts[3])
 
     return parts[:3], settings
+
+
+def read_statistics_from_bundle(bundle_path: Path) -> bytes | None:
+    """Return the raw statistics parquet bytes (fifth part), or None if absent."""
+    with open(bundle_path, "rb") as f:
+        content = f.read()
+
+    parts = content.split(PARQUET_BUNDLE_DELIMITER)
+    if len(parts) == 5 and parts[4]:
+        return parts[4]
+    return None
 
 
 def write_bundle(
     tables: list[pa.Table],
     bundle_path: Path,
     settings: dict | None = None,
+    statistics: "pa.Table | None" = None,
 ) -> None:
-    """Write Arrow tables (and optional settings) to a .parquetbundle.
+    """Write Arrow tables (and optional settings/statistics) to a .parquetbundle.
 
     Args:
         tables: List of 3 Arrow tables (annotations, projections_metadata,
             projections_data).
         bundle_path: Output file path.
         settings: Optional settings dict to include as 4th part.
+        statistics: Optional projection-statistics Arrow table to include as the
+            5th part.  When given without ``settings``, a zero-byte settings slot
+            is written so the statistics part stays at position five.
     """
     bundle_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -111,9 +142,18 @@ def write_bundle(
             pq.write_table(table, buf)
             f.write(buf.getvalue())
 
-        if settings is not None:
+        # A settings slot must exist whenever statistics follow it.
+        if settings is not None or statistics is not None:
             f.write(PARQUET_BUNDLE_DELIMITER)
-            f.write(create_settings_parquet(settings))
+            if settings is not None:
+                f.write(create_settings_parquet(settings))
+            # else: zero-byte settings slot
+
+        if statistics is not None:
+            f.write(PARQUET_BUNDLE_DELIMITER)
+            buf = io.BytesIO()
+            pq.write_table(statistics, buf)
+            f.write(buf.getvalue())
 
     logger.info(f"Saved bundled output to: {bundle_path}")
 
@@ -125,23 +165,26 @@ def replace_settings_in_bundle(
 ) -> None:
     """Append or replace the settings (4th) part in a bundle.
 
-    The three core parts are preserved byte-for-byte.
+    The three core parts are preserved byte-for-byte, and an existing statistics
+    (5th) part is preserved so styling a statistics-bearing bundle is non-lossy.
     """
     with open(input_path, "rb") as f:
         content = f.read()
 
     parts = content.split(PARQUET_BUNDLE_DELIMITER)
 
-    if len(parts) < 3:
+    if len(parts) < 3 or len(parts) > 5:
         raise ValueError(
-            f"Expected at least 3 parts in parquetbundle, found {len(parts)}"
+            f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}"
         )
 
     settings_bytes = create_settings_parquet(settings)
 
-    # Build new content: first 3 parts + new settings
-    core = PARQUET_BUNDLE_DELIMITER.join(parts[:3])
-    new_content = core + PARQUET_BUNDLE_DELIMITER + settings_bytes
+    # core(3) + new settings, preserving a trailing statistics part if present.
+    new_parts = parts[:3] + [settings_bytes]
+    if len(parts) == 5:
+        new_parts.append(parts[4])
+    new_content = PARQUET_BUNDLE_DELIMITER.join(new_parts)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "wb") as f:

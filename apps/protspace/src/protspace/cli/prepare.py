@@ -115,6 +115,14 @@ Opt_Scores = Annotated[
         rich_help_panel="Annotations",
     ),
 ]
+Opt_Stats = Annotated[
+    bool,
+    typer.Option(
+        "--stats/--no-stats",
+        help="Compute projection statistics (cluster-validity + faithfulness).",
+        rich_help_panel="Output",
+    ),
+]
 REFETCH_STAGES = frozenset(
     {
         "query",
@@ -290,6 +298,7 @@ def prepare(
     # Annotations
     annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
+    stats: Opt_Stats = True,
     refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),
@@ -505,6 +514,7 @@ def prepare(
             bundled=bundled,
             keep_tmp=keep_tmp,
             no_scores=not scores,
+            stats=stats,
             refetch_stages=refetch_stages,
             annotations=annotation_list,
             intermediate_dir=cache_dir,

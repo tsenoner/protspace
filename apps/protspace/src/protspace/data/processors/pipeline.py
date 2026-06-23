@@ -73,6 +73,7 @@ class PipelineConfig:
     bundled: bool = True
     keep_tmp: bool = False
     no_scores: bool = False
+    stats: bool = False
     refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
@@ -254,10 +255,19 @@ class ReductionPipeline:
         # DR: each embedding set × each method
         all_reductions = self._run_reductions(embedding_sets)
 
+        # Projection statistics (best-effort; never fail the run for a secondary
+        # artifact). Computed here where embeddings and projections coexist.
+        statistics_table = None
+        if self.config.stats:
+            statistics_table = self._compute_statistics(embedding_sets, all_reductions, all_headers)
+
         # Create and save output
         output = self.base.create_output(metadata, all_reductions, all_headers)
         self.base.save_output(
-            output, self.config.output_path, bundled=self.config.bundled
+            output,
+            self.config.output_path,
+            bundled=self.config.bundled,
+            statistics=statistics_table,
         )
 
         logger.info(
@@ -616,6 +626,7 @@ class ReductionPipeline:
                     emb_set.name, MDS_NAME, 2, global_params
                 )
                 if cached:
+                    cached["source"] = emb_set.name
                     all_reductions.append(cached)
                     cached_projections.append(f"MDS 2 ({emb_set.name})")
                     continue
@@ -625,6 +636,7 @@ class ReductionPipeline:
                     self.base, effective_params, MDS_NAME, 2, emb_set.data
                 )
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
+                reduction["source"] = emb_set.name
                 all_reductions.append(reduction)
                 self._save_projection_cache(
                     emb_set.name, MDS_NAME, 2, reduction, global_params
@@ -649,6 +661,7 @@ class ReductionPipeline:
                     emb_set.name, method, dims, effective_params, param_suffix
                 )
                 if cached:
+                    cached["source"] = emb_set.name
                     all_reductions.append(cached)
                     cached_projections.append(
                         f"{method.upper()} {dims} ({emb_set.name})"
@@ -663,6 +676,7 @@ class ReductionPipeline:
                 reduction["name"] = format_projection_name(
                     emb_set.name, method, dims, param_suffix
                 )
+                reduction["source"] = emb_set.name
                 all_reductions.append(reduction)
                 self._save_projection_cache(
                     emb_set.name, method, dims, reduction, effective_params
@@ -677,3 +691,32 @@ class ReductionPipeline:
             )
 
         return all_reductions
+
+    def _compute_statistics(self, embedding_sets, all_reductions, all_headers):
+        """Compute projection statistics, returning an Arrow table or None.
+
+        Best-effort: any failure is logged and yields ``None`` so the bundle
+        still ships. Each reduction's coordinate rows correspond to
+        ``all_headers`` (the common header order), which is also the embedding
+        row order after header validation — so faithfulness aligns cleanly.
+        """
+        try:
+            from protspace.stats import compute_statistics
+
+            for red in all_reductions:
+                red.setdefault("ids", all_headers)
+            report = compute_statistics(
+                embedding_sets,
+                all_reductions,
+                rng_seed=self.config.reducer_params.random_state,
+                # Faithfulness high-dim metric: reducers like PCA/MDS/PaCMAP omit
+                # 'metric' from their params, so fall back to the run's metric
+                # rather than silently assuming euclidean.
+                default_metric=self.config.reducer_params.metric,
+            )
+            table = report.to_arrow()
+            logger.info("Computed %d projection-statistic row(s)", table.num_rows)
+            return table if table.num_rows else None
+        except Exception as exc:  # noqa: BLE001 - statistics are secondary
+            logger.warning("Statistics computation failed: %s", exc)
+            return None

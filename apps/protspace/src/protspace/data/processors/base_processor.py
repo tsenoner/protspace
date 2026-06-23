@@ -108,7 +108,11 @@ class BaseProcessor:
         }
 
     def save_output(
-        self, data: dict[str, pa.Table], output_path: Path, bundled: bool = True
+        self,
+        data: dict[str, pa.Table],
+        output_path: Path,
+        bundled: bool = True,
+        statistics: pa.Table | None = None,
     ):
         """Save output data to Parquet files using Apache Arrow.
 
@@ -116,6 +120,7 @@ class BaseProcessor:
             data: Dictionary of Apache Arrow tables to save
             output_path: Path for output (file or directory)
             bundled: Whether to bundle into single .parquetbundle file
+            statistics: Optional projection-statistics table → 5th bundle part.
         """
         # Custom filename mapping for better naming
         filename_mapping = {
@@ -138,7 +143,7 @@ class BaseProcessor:
                 output_path.mkdir(parents=True, exist_ok=True)
                 bundle_path = output_path / "data.parquetbundle"
 
-            write_bundle(list(data.values()), bundle_path)
+            write_bundle(list(data.values()), bundle_path, statistics=statistics)
         else:
             # Save as separate parquet files
             # output_path must be a directory
@@ -151,6 +156,9 @@ class BaseProcessor:
 
                 # Overwrite existing files
                 pq.write_table(table, str(table_path))
+
+            if statistics is not None:
+                pq.write_table(statistics, str(base_path / "statistics.parquet"))
 
             logger.info(f"Saved separate parquet files to: {base_path}")
 
@@ -182,6 +190,9 @@ class BaseProcessor:
                     "projection_name": reduction["name"],
                     "dimensions": reduction["dimensions"],
                     "info_json": json.dumps(reduction["info"]),
+                    # Raw source-embedding name, so `protspace stats` can map each
+                    # projection back to its embedding in multi-embedding runs.
+                    "source": str(reduction.get("source", "")),
                 }
             )
 

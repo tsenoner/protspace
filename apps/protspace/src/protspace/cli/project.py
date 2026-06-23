@@ -153,6 +153,7 @@ def project(
                 dims,
                 disambiguation_suffix(spec, method_counts),
             )
+            reduction["source"] = emb_set.name
             all_reductions.append(reduction)
 
     output.mkdir(parents=True, exist_ok=True)
