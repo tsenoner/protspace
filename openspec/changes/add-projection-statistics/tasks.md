@@ -61,7 +61,7 @@ check. All sklearn imports under `stats/` are **function-local** (preserve ~50 m
 ## 5. Engine — bundle format (fifth part, ALL readers/writers, no arity break)
 
 - [ ] 5.1 `data/io/bundle.py`: `STATISTICS_FILENAME`; `write_bundle(tables, path, settings=None,
-    statistics=None)` emitting `core(3) + settings? + statistics?` with a **zero-byte** settings slot
+statistics=None)` emitting `core(3) + settings? + statistics?` with a **zero-byte** settings slot
       when statistics is given without settings.
 - [ ] 5.2 **Keep `read_bundle`'s 2-tuple** (two `add_annotation_style.py` callers unpack it); add
       `read_statistics_from_bundle(path) -> bytes | None`; `extract_bundle_to_dir` writes
@@ -108,8 +108,8 @@ check. All sklearn imports under `stats/` are **function-local** (preserve ~50 m
       release from task 7.3.
 - [ ] 8.2 `services/protspace-prep/.../pipeline.py`: **produce the core bundle first** (within the
       parent `pipeline_timeout_seconds`), then run `protspace stats -i <resolved h5_files[0]> -p
-    <project_dir> -o statistics.parquet` under a **nested** `asyncio.timeout(PREP_STATS_TIMEOUT_
-    SECONDS)`, catching failure/timeout **locally** so it never reaches the outer handler; on success
+<project_dir> -o statistics.parquet` under a **nested** `asyncio.timeout(PREP_STATS_TIMEOUT_
+SECONDS)`, catching failure/timeout **locally** so it never reaches the outer handler; on success
       re-run `bundle` with `-s`. A one-time `protspace stats --help` probe → skip if absent. Emit an
       SSE `computing_statistics` stage.
 - [ ] 8.3 Tests (`tests/test_pipeline.py`): stats invoked with the resolved H5 + project dir and folded
