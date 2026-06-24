@@ -44,6 +44,14 @@ def bundle(
             exists=True,
         ),
     ] = None,
+    settings: Annotated[
+        Path | None,
+        typer.Option(
+            "--settings",
+            help="Optional settings JSON (e.g. auto-generated cluster styles) → 4th bundle part.",
+            exists=True,
+        ),
+    ] = None,
     verbose: Annotated[
         int,
         typer.Option("-v", "--verbose", count=True, help="Increase verbosity."),
@@ -58,9 +66,13 @@ def bundle(
     """
     setup_logging(verbose)
 
+    import json
+
     import pyarrow.parquet as pq
 
     from protspace.data.io.bundle import write_bundle
+
+    settings_obj = json.loads(settings.read_text()) if settings is not None else None
 
     metadata_path = projections / "projections_metadata.parquet"
     data_path = projections / "projections_data.parquet"
@@ -89,6 +101,7 @@ def bundle(
     write_bundle(
         [annotations_table, metadata_table, data_table],
         output_path,
+        settings=settings_obj,
         statistics=statistics_table,
     )
 

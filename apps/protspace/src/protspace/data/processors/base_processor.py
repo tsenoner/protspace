@@ -113,6 +113,7 @@ class BaseProcessor:
         output_path: Path,
         bundled: bool = True,
         statistics: pa.Table | None = None,
+        settings: dict | None = None,
     ):
         """Save output data to Parquet files using Apache Arrow.
 
@@ -121,6 +122,8 @@ class BaseProcessor:
             output_path: Path for output (file or directory)
             bundled: Whether to bundle into single .parquetbundle file
             statistics: Optional projection-statistics table → 5th bundle part.
+            settings: Optional bundle settings (e.g. auto-generated cluster styles)
+                → 4th bundle part.
         """
         # Custom filename mapping for better naming
         filename_mapping = {
@@ -143,7 +146,12 @@ class BaseProcessor:
                 output_path.mkdir(parents=True, exist_ok=True)
                 bundle_path = output_path / "data.parquetbundle"
 
-            write_bundle(list(data.values()), bundle_path, statistics=statistics)
+            write_bundle(
+                list(data.values()),
+                bundle_path,
+                settings=settings,
+                statistics=statistics,
+            )
         else:
             # Save as separate parquet files
             # output_path must be a directory

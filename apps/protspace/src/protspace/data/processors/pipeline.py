@@ -258,6 +258,7 @@ class ReductionPipeline:
         # Projection statistics (best-effort; never fail the run for a secondary
         # artifact). Computed here where embeddings and projections coexist.
         statistics_table = None
+        self._stats_settings: dict = {}
         if self.config.stats:
             statistics_table = self._compute_statistics(
                 embedding_sets, all_reductions, all_headers, metadata
@@ -270,6 +271,7 @@ class ReductionPipeline:
             self.config.output_path,
             bundled=self.config.bundled,
             statistics=statistics_table,
+            settings=self._stats_settings or None,
         )
 
         logger.info(
@@ -712,6 +714,7 @@ class ReductionPipeline:
         try:
             from protspace.stats import compute_statistics
             from protspace.stats.carriage import (
+                build_cluster_legend_settings,
                 merge_annotation_columns,
                 route_faithfulness_to_metadata,
             )
@@ -730,7 +733,14 @@ class ReductionPipeline:
             route_faithfulness_to_metadata(report, all_reductions)
             if metadata is not None and report.annotation_columns:
                 added = merge_annotation_columns(report, metadata)
-                logger.info("Routed %d computed annotation column(s)", len(added))
+                # Auto-style the membership columns so clusters are colored when
+                # selected (a full legend envelope → the bundle's settings part).
+                self._stats_settings = build_cluster_legend_settings(report)
+                logger.info(
+                    "Routed %d computed annotation column(s); styled %d",
+                    len(added),
+                    len(self._stats_settings),
+                )
             table = report.to_arrow()
             logger.info("Computed %d projection-statistic row(s)", table.num_rows)
             return table if table.num_rows else None

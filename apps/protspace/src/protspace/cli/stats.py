@@ -184,6 +184,14 @@ def stats(
             "cluster-membership + silhouette columns. Omit to skip per-protein outputs.",
         ),
     ] = None,
+    settings_out: Annotated[
+        Path | None,
+        typer.Option(
+            "--settings-out",
+            help="Write auto-generated cluster-membership legend styles here (JSON) "
+            "for `protspace bundle --settings`. Only with -a/--annotations.",
+        ),
+    ] = None,
     seed: Annotated[int, typer.Option("--seed", help="Random seed.")] = 42,
     metric: Annotated[
         str,
@@ -204,7 +212,10 @@ def stats(
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.loaders import load_h5
     from protspace.stats import compute_statistics
-    from protspace.stats.carriage import route_faithfulness_to_metadata
+    from protspace.stats.carriage import (
+        build_cluster_legend_settings,
+        route_faithfulness_to_metadata,
+    )
 
     embedding_sets = [
         load_h5([path], name_override=name_override)
@@ -239,6 +250,10 @@ def stats(
     n_cols = 0
     if annotations is not None:
         n_cols = _merge_annotations_with_columns(annotations, report)
+        if settings_out is not None:
+            cluster_settings = build_cluster_legend_settings(report)
+            settings_out.parent.mkdir(parents=True, exist_ok=True)
+            settings_out.write_text(json.dumps(cluster_settings))
 
     table = report.to_arrow()
     output.parent.mkdir(parents=True, exist_ok=True)

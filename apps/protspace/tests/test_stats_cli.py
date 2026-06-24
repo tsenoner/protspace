@@ -271,6 +271,72 @@ def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     assert "protein_id" in cols  # identifier renamed by bundle
 
 
+def test_stats_settings_out_then_bundle_settings_styles_clusters(tmp_path):
+    """End-to-end auto-style: `stats -a --settings-out` writes a valid cluster
+    legend-settings JSON, and `bundle --settings` folds it into the bundle's
+    settings part (route-projection-statistics Phase 2A.4)."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_bundle
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    runner = CliRunner()
+    ann_path = tmp_path / "annotations.parquet"
+    pq.write_table(pa.table({"identifier": headers}), str(ann_path))
+
+    stats_out = tmp_path / "statistics.parquet"
+    styles_out = tmp_path / "cluster_styles.json"
+    r1 = runner.invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "--settings-out",
+            str(styles_out),
+            "-o",
+            str(stats_out),
+        ],
+    )
+    assert r1.exit_code == 0, r1.output
+    assert styles_out.exists()
+    styles = json.loads(styles_out.read_text())
+    cluster_keys = [k for k in styles if k.startswith("cluster_")]
+    assert cluster_keys
+    env = styles[cluster_keys[0]]
+    assert env["selectedPaletteId"] == "kellys" and env["categories"]
+
+    bundle_out = tmp_path / "data.parquetbundle"
+    r2 = runner.invoke(
+        app,
+        [
+            "bundle",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "-s",
+            str(stats_out),
+            "--settings",
+            str(styles_out),
+            "-o",
+            str(bundle_out),
+        ],
+    )
+    assert r2.exit_code == 0, r2.output
+
+    _, settings = read_bundle(bundle_out)
+    assert settings is not None
+    assert any(k.startswith("cluster_") for k in settings)
+
+
 def test_stats_then_bundle_carries_faithfulness_into_bundle(tmp_path):
     """End-to-end prep path: `protspace stats` then `protspace bundle -p` ships a
     bundle whose projections_metadata.info_json carries faithfulness quality, and

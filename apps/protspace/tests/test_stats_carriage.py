@@ -135,6 +135,51 @@ def test_router_round_trips_through_projections_metadata_table():
     assert "faithfulness" not in families
 
 
+def test_build_cluster_legend_settings_produces_valid_envelope():
+    from protspace.stats.base import AnnotationColumn, StatsReport
+    from protspace.stats.carriage import build_cluster_legend_settings
+
+    report = StatsReport()
+    report.add(
+        [
+            AnnotationColumn(
+                name="cluster_P",
+                kind="categorical",
+                values={"a": "cluster 0", "b": "cluster 1", "c": "cluster 0"},
+            ),
+            AnnotationColumn(name="silhouette_P", kind="numeric", values={"a": 0.5}),
+        ]
+    )
+    settings = build_cluster_legend_settings(report)
+
+    # only the categorical membership column is styled (silhouette is a numeric ramp)
+    assert set(settings) == {"cluster_P"}
+    env = settings["cluster_P"]
+    # every field sanitizeLegendSettingsEntry requires, with the right types
+    assert isinstance(env["maxVisibleValues"], int)
+    assert isinstance(env["shapeSize"], int | float)
+    assert env["sortMode"] in {
+        "size-asc",
+        "size-desc",
+        "alpha-asc",
+        "alpha-desc",
+        "manual",
+        "manual-reverse",
+    }
+    assert env["enableDuplicateStackUI"] is False
+    assert env["hiddenValues"] == []
+    assert env["selectedPaletteId"] == "kellys"
+    cats = env["categories"]
+    assert set(cats) == {"cluster 0", "cluster 1"}
+    colors = set()
+    for cat in cats.values():
+        assert isinstance(cat["zOrder"], int)
+        assert isinstance(cat["color"], str) and cat["color"].startswith("#")
+        assert isinstance(cat["shape"], str)
+        colors.add(cat["color"])
+    assert len(colors) == 2  # distinct palette colors per cluster
+
+
 def test_merge_annotation_columns_joins_by_identifier():
     import pandas as pd
 

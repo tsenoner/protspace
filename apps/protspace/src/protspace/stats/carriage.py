@@ -86,3 +86,48 @@ def merge_annotation_columns(
         frame[col.name] = frame[id_col].map(col.values)
         added.append(col.name)
     return added
+
+
+def _cluster_label_sort_key(label: str):
+    """Order ``cluster N`` labels by their integer N, others alphabetically."""
+    head, _, tail = label.rpartition(" ")
+    if head and tail.isdigit():
+        return (0, int(tail))
+    return (1, label)
+
+
+def build_cluster_legend_settings(report: StatsReport, shape: str = "circle") -> dict:
+    """Build a legend-settings map auto-styling each categorical membership column.
+
+    Returns ``{column_name: LegendPersistedSettings}`` (the bundle's settings part
+    format) with a full envelope per ``categorical`` ``AnnotationColumn`` — every
+    field the frontend's ``sanitizeLegendSettingsEntry`` requires, categories keyed
+    by the exact label strings with a Kelly-palette ``color`` + ``zOrder`` + ``shape``
+    — so clusters are colored when selected without a manual styling step. Numeric
+    columns (per-point silhouette) are left to the default continuous ramp.
+    """
+    from protspace.data.io.settings_converter import KELLYS_COLORS
+
+    settings: dict = {}
+    for col in report.annotation_columns:
+        if col.kind != "categorical":
+            continue
+        labels = sorted(set(col.values.values()), key=_cluster_label_sort_key)
+        categories = {
+            label: {
+                "zOrder": i,
+                "color": KELLYS_COLORS[i % len(KELLYS_COLORS)],
+                "shape": shape,
+            }
+            for i, label in enumerate(labels)
+        }
+        settings[col.name] = {
+            "maxVisibleValues": max(10, len(labels)),
+            "shapeSize": 30,
+            "sortMode": "size-desc",
+            "hiddenValues": [],
+            "enableDuplicateStackUI": False,
+            "selectedPaletteId": "kellys",
+            "categories": categories,
+        }
+    return settings
