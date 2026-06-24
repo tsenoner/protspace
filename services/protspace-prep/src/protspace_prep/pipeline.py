@@ -283,6 +283,12 @@ async def _maybe_add_statistics(
                         str(h5_files[0]),
                         "-p",
                         str(project_dir),
+                        # Enrich the annotations file in place with per-protein
+                        # cluster-membership + silhouette columns so the re-bundle
+                        # below (`bundle -a`) carries them. Faithfulness is folded
+                        # into projections_metadata by the same command.
+                        "-a",
+                        str(annotations_path),
                         "-o",
                         str(stats_path),
                     ],
