@@ -48,7 +48,9 @@ class ClusterValidityStatistic:
         X = np.asarray(ctx.coords, dtype=float)
         n = X.shape[0]
         rng_seed = ctx.rng_seed
-        sample_threshold = int(ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
+        sample_threshold = int(
+            ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD)
+        )
         k_max = ctx.params.get("k_max")
 
         res = kmeans_elbow(

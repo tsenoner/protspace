@@ -259,7 +259,9 @@ class ReductionPipeline:
         # artifact). Computed here where embeddings and projections coexist.
         statistics_table = None
         if self.config.stats:
-            statistics_table = self._compute_statistics(embedding_sets, all_reductions, all_headers)
+            statistics_table = self._compute_statistics(
+                embedding_sets, all_reductions, all_headers
+            )
 
         # Create and save output
         output = self.base.create_output(metadata, all_reductions, all_headers)

@@ -92,7 +92,9 @@ def kmeans_elbow(
     # With only 3 swept points the chord knee is structurally pinned to the middle
     # K; require a wider sweep before claiming high confidence.
     knee_confidence = (
-        "high" if len(k_range) >= 4 and float(dev.max()) >= knee_min_deviation else "low"
+        "high"
+        if len(k_range) >= 4 and float(dev.max()) >= knee_min_deviation
+        else "low"
     )
 
     # Silhouette-optimal K over the sweep, for cross-checking (bounded by sampling).

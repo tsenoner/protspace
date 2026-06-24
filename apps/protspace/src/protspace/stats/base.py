@@ -58,8 +58,12 @@ class StatContext:
     ids: list[str]  # ids for `coords`
     rng_seed: int = 42
     embedding: np.ndarray | None = None  # source embedding, aligned to embedding_coords
-    embedding_coords: np.ndarray | None = None  # projection coords aligned to `embedding`
-    embedding_ids: list[str] | None = None  # ids for the aligned embedding/embedding_coords
+    embedding_coords: np.ndarray | None = (
+        None  # projection coords aligned to `embedding`
+    )
+    embedding_ids: list[str] | None = (
+        None  # ids for the aligned embedding/embedding_coords
+    )
     embedding_name: str | None = None
     high_dim_metric: str = "euclidean"
     params: dict = field(default_factory=dict)

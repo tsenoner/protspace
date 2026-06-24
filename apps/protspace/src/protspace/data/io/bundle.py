@@ -174,9 +174,7 @@ def replace_settings_in_bundle(
     parts = content.split(PARQUET_BUNDLE_DELIMITER)
 
     if len(parts) < 3 or len(parts) > 5:
-        raise ValueError(
-            f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}"
-        )
+        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
 
     settings_bytes = create_settings_parquet(settings)
 

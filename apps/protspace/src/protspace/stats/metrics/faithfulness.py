@@ -74,7 +74,9 @@ class FaithfulnessStatistic:
         emb = np.asarray(ctx.embedding, dtype=float)
         # Use the projection coordinates ALIGNED to the embedding (id-intersection
         # join), falling back to full coords only when no aligned view was built.
-        coords_src = ctx.embedding_coords if ctx.embedding_coords is not None else ctx.coords
+        coords_src = (
+            ctx.embedding_coords if ctx.embedding_coords is not None else ctx.coords
+        )
         coords = np.asarray(coords_src, dtype=float)
         ids = ctx.embedding_ids if ctx.embedding_ids is not None else ctx.ids
         n = emb.shape[0]
@@ -82,7 +84,9 @@ class FaithfulnessStatistic:
             return []
 
         k = int(ctx.params.get("k", DEFAULT_K))
-        sample_threshold = int(ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
+        sample_threshold = int(
+            ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD)
+        )
         hard_ceiling = int(ctx.params.get("hard_ceiling", DEFAULT_HARD_CEILING))
         hi_metric = ctx.high_dim_metric or "euclidean"
 
@@ -148,7 +152,9 @@ class FaithfulnessStatistic:
                 StatRow(
                     metric="trustworthiness",
                     metric_kind="faithfulness",
-                    value=float(trustworthiness(emb, coords, n_neighbors=k, metric=hi_metric)),
+                    value=float(
+                        trustworthiness(emb, coords, n_neighbors=k, metric=hi_metric)
+                    ),
                     extra={**common, "metric": hi_metric},
                     **base,
                 )

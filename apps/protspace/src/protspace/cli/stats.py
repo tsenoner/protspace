@@ -18,7 +18,9 @@ from protspace.cli.app import app, setup_logging
 logger = logging.getLogger(__name__)
 
 
-def _load_reductions(projections: Path, default_metric: str = "euclidean") -> list[dict]:
+def _load_reductions(
+    projections: Path, default_metric: str = "euclidean"
+) -> list[dict]:
     """Reconstruct per-projection ``{name, data, ids, info, source}`` from a dir.
 
     Reads ``projections_data.parquet`` (long table of projection_name/identifier/

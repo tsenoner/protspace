@@ -81,7 +81,9 @@ def bundle(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
-    statistics_table = pq.read_table(str(statistics)) if statistics is not None else None
+    statistics_table = (
+        pq.read_table(str(statistics)) if statistics is not None else None
+    )
 
     output_path = output.with_suffix(".parquetbundle")
     write_bundle(
