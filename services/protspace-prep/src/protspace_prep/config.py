@@ -20,6 +20,8 @@ class Settings:
     annotations: str
     sweep_interval_seconds: int
     pipeline_timeout_seconds: int
+    stats_enabled: bool
+    stats_timeout_seconds: int
     log_level: str
     log_json_format: bool
     cors_allowed_origins: tuple[str, ...]
@@ -48,6 +50,8 @@ def load_settings() -> Settings:
         annotations=os.getenv("PREP_ANNOTATIONS", "default"),
         sweep_interval_seconds=int(os.getenv("PREP_SWEEP_INTERVAL_SECONDS", "300")),
         pipeline_timeout_seconds=int(os.getenv("PREP_PIPELINE_TIMEOUT_SECONDS", "420")),
+        stats_enabled=os.getenv("PREP_STATS", "true").lower() in {"1", "true", "yes"},
+        stats_timeout_seconds=int(os.getenv("PREP_STATS_TIMEOUT_SECONDS", "120")),
         log_level=os.getenv("PREP_LOG_LEVEL", "INFO"),
         log_json_format=os.getenv("PREP_LOG_JSON_FORMAT", "false").lower() in {"1", "true", "yes"},
         cors_allowed_origins=_parse_origins(os.getenv("CORS_ALLOWED_ORIGIN", "")),

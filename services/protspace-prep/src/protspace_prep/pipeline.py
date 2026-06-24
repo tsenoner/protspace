@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Awaitable, Callable, Sequence
 
@@ -179,7 +180,144 @@ async def run_protspace_prepare(
         raise PipelineFailure(
             "protspace bundle reported success but produced no .parquetbundle file."
         )
+
+    # Best-effort projection statistics — AFTER the core bundle exists and OUTSIDE
+    # the pipeline timeout budget, so a stats failure/timeout can never cost the
+    # job or lose the bundle.
+    if settings.stats_enabled:
+        await _maybe_add_statistics(
+            emit,
+            settings,
+            embed_dir=embed_dir,
+            project_dir=project_dir,
+            annotations_path=annotations_path,
+            bundle_path=bundle_path,
+        )
+
     return bundle_path
+
+
+_STATS_CLI_AVAILABLE: bool | None = None
+_STATS_CLI_PROBE_LOCK = asyncio.Lock()
+_STATS_PROBE_TIMEOUT_SECONDS = 10.0
+
+
+async def _stats_cli_available() -> bool:
+    """Bounded one-time probe: is the installed protspace new enough to have ``stats``?
+
+    Caches only DEFINITIVE answers — a clean exit (0 ⇒ present, non-zero / not on
+    PATH ⇒ absent). A transient spawn error or a hung probe returns unavailable for
+    THIS call but is NOT latched, so a later job can retry. The probe is bounded by a
+    hard timeout and kills a hung subprocess, so it can never stall the job or leak a
+    concurrency slot. A lock collapses the first concurrent wave to a single probe.
+    """
+    global _STATS_CLI_AVAILABLE
+    if _STATS_CLI_AVAILABLE is not None:
+        return _STATS_CLI_AVAILABLE
+    async with _STATS_CLI_PROBE_LOCK:
+        if _STATS_CLI_AVAILABLE is not None:  # re-check after acquiring the lock
+            return _STATS_CLI_AVAILABLE
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "protspace",
+                "stats",
+                "--help",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            _STATS_CLI_AVAILABLE = False  # binary not on PATH: definitively absent
+            return _STATS_CLI_AVAILABLE
+        except Exception:  # noqa: BLE001 - could not spawn; transient, do not latch
+            logger.warning("protspace stats probe could not spawn; will retry next job", exc_info=True)
+            return False
+        try:
+            rc = await asyncio.wait_for(proc.wait(), timeout=_STATS_PROBE_TIMEOUT_SECONDS)
+            _STATS_CLI_AVAILABLE = rc == 0  # definitive
+            return _STATS_CLI_AVAILABLE
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
+            logger.warning("protspace stats probe timed out; will retry next job")
+            return False  # transient hang, do not latch
+
+
+async def _maybe_add_statistics(
+    emit: EmitFn,
+    settings: Settings,
+    *,
+    embed_dir: Path,
+    project_dir: Path,
+    annotations_path: Path,
+    bundle_path: Path,
+) -> None:
+    """Compute projection statistics and fold them into the bundle (best-effort).
+
+    Runs ``protspace stats`` then re-bundles with ``-s`` under a dedicated
+    timeout, swallowing every failure so the already-shipped bundle stands.
+    """
+    try:
+        if not await _stats_cli_available():
+            logger.info("protspace `stats` subcommand unavailable; skipping statistics")
+            return
+        h5_files = sorted(embed_dir.glob("*.h5"))
+        if not h5_files:
+            return
+        stats_path = bundle_path.parent / "statistics.parquet"
+        # Re-bundle to a sibling temp file, then atomically rename — a stats timeout
+        # /kill mid-write must never corrupt the already-shipped core bundle. The
+        # ".parquetbundle" suffix is required because `protspace bundle` forces it.
+        tmp_bundle = bundle_path.with_name(bundle_path.stem + ".stats-tmp.parquetbundle")
+        await emit("computing_statistics", {})
+        try:
+            async with asyncio.timeout(settings.stats_timeout_seconds):
+                await _run_step(
+                    "stats",
+                    [
+                        "protspace",
+                        "stats",
+                        "-i",
+                        str(h5_files[0]),
+                        "-p",
+                        str(project_dir),
+                        "-o",
+                        str(stats_path),
+                    ],
+                )
+                if not stats_path.exists():
+                    return
+                await _run_step(
+                    "bundle",
+                    [
+                        "protspace",
+                        "bundle",
+                        "-p",
+                        str(project_dir),
+                        "-a",
+                        str(annotations_path),
+                        "-s",
+                        str(stats_path),
+                        "-o",
+                        str(tmp_bundle),
+                    ],
+                )
+            # Promote only a fully-written temp bundle (atomic, same filesystem).
+            if tmp_bundle.exists():
+                os.replace(tmp_bundle, bundle_path)
+        finally:
+            tmp_bundle.unlink(missing_ok=True)  # clear any partial temp on failure
+    except asyncio.TimeoutError:
+        logger.warning(
+            "statistics step timed out after %ss; bundle ships without stats",
+            settings.stats_timeout_seconds,
+        )
+    except PipelineFailure as exc:
+        logger.warning("statistics step failed; bundle ships without stats: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - statistics are secondary
+        logger.warning("statistics step error; bundle ships without stats: %s", exc)
 
 
 async def _run_step(name: str, cmd: Sequence[str]) -> None:

@@ -3,7 +3,13 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { extractRowsFromParquetBundle } from './bundle';
 import { convertParquetToVisualizationData } from './conversion';
-import { createParquetBundle, countBundleDelimiters, isParquetBundle } from '@protspace/utils';
+import {
+  createParquetBundle,
+  countBundleDelimiters,
+  isParquetBundle,
+  BUNDLE_DELIMITER_BYTES,
+  findBundleDelimiterPositions,
+} from '@protspace/utils';
 
 function loadArrayBuffer(filePath: string): ArrayBuffer {
   const buffer = readFileSync(filePath);
@@ -330,6 +336,93 @@ describe('metadata preservation through round-trip', () => {
         expect(reimportedMeta[key]).toEqual(value);
       }
     }
+  });
+});
+
+describe('5-part statistics bundle parsing', () => {
+  // The frontend writer (createParquetBundle) only emits 3/4 parts, so we splice
+  // real parquet parts into the 5-part shapes the backend produces.
+  const DELIM = BUNDLE_DELIMITER_BYTES;
+
+  function splitParts(buf: ArrayBuffer): Uint8Array[] {
+    const u8 = new Uint8Array(buf);
+    const pos = findBundleDelimiterPositions(u8);
+    const out: Uint8Array[] = [];
+    for (let i = 0; i <= pos.length; i++) {
+      const start = i === 0 ? 0 : pos[i - 1] + DELIM.length;
+      const end = i < pos.length ? pos[i] : u8.length;
+      out.push(u8.subarray(start, end).slice());
+    }
+    return out;
+  }
+
+  function assemble(parts: Uint8Array[]): ArrayBuffer {
+    let total = 0;
+    parts.forEach((p, i) => {
+      total += p.length + (i < parts.length - 1 ? DELIM.length : 0);
+    });
+    const out = new Uint8Array(total);
+    let off = 0;
+    parts.forEach((p, i) => {
+      out.set(p, off);
+      off += p.length;
+      if (i < parts.length - 1) {
+        out.set(DELIM, off);
+        off += DELIM.length;
+      }
+    });
+    return out.buffer;
+  }
+
+  const original = {
+    protein_ids: ['P1', 'P2', 'P3'],
+    projections: [{ name: 'UMAP', data: Float32Array.of(0, 0, 1, 1, 2, 2), dimension: 2 as const }],
+    annotations: {
+      family: {
+        kind: 'categorical' as const,
+        values: ['A', 'B'],
+        colors: ['#1F77B4', '#FF7F0E'],
+        shapes: ['circle', 'circle'],
+      },
+    },
+    annotation_data: { family: [[0], [1], [0]] },
+    annotation_scores: {},
+    annotation_evidence: {},
+  };
+
+  it('parses 5 parts with a zero-byte settings slot (statistics-only) → settings null', async () => {
+    const core = splitParts(createParquetBundle(original)); // [c0, c1, c2]
+    expect(core.length).toBe(3);
+    const stats = core[0]; // part 5 is ignored; any valid parquet bytes
+    const fivePart = assemble([core[0], core[1], core[2], new Uint8Array(0), stats]);
+    expect(countBundleDelimiters(new Uint8Array(fivePart))).toBe(4);
+    const res = await extractRowsFromParquetBundle(fivePart);
+    expect(res.projections.length).toBeGreaterThan(0);
+    expect(res.settings).toBeNull();
+  });
+
+  it('parses 5 parts with settings + statistics → settings parsed, statistics ignored', async () => {
+    const settings = {
+      legendSettings: {
+        family: {
+          maxVisibleValues: 10,
+          shapeSize: 24,
+          sortMode: 'size-desc' as const,
+          hiddenValues: [],
+          categories: {},
+          enableDuplicateStackUI: false,
+          selectedPaletteId: 'kellys',
+        },
+      },
+      exportOptions: {},
+    };
+    const ps = splitParts(createParquetBundle(original, { includeSettings: true, settings }));
+    expect(ps.length).toBe(4); // [c0, c1, c2, settings]
+    const fivePart = assemble([ps[0], ps[1], ps[2], ps[3], ps[0]]);
+    expect(countBundleDelimiters(new Uint8Array(fivePart))).toBe(4);
+    const res = await extractRowsFromParquetBundle(fivePart);
+    expect(res.projections.length).toBeGreaterThan(0);
+    expect(res.settings).not.toBeNull();
   });
 });
 

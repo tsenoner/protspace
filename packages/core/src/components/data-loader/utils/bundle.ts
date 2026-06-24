@@ -29,9 +29,11 @@ export interface BundleExtractionResult {
 /**
  * Extract rows and optional settings from a parquetbundle.
  *
- * Supports two formats:
+ * Supports:
  * - 2 delimiters (3 parts): Original format without settings
  * - 3 delimiters (4 parts): Extended format with settings
+ * - 4 delimiters (5 parts): With statistics (optional 5th part, ignored here;
+ *   the settings slot may be zero bytes when statistics are present without settings)
  */
 export async function extractRowsFromParquetBundle(
   arrayBuffer: ArrayBuffer,
@@ -39,36 +41,33 @@ export async function extractRowsFromParquetBundle(
   const uint8Array = new Uint8Array(arrayBuffer);
   const delimiterPositions = findBundleDelimiterPositions(uint8Array);
 
-  // Support both 2 delimiters (original) and 3 delimiters (with settings)
-  if (delimiterPositions.length !== 2 && delimiterPositions.length !== 3) {
+  // Supported shapes (by delimiter count):
+  //   2 → 3 parts (core only)
+  //   3 → 4 parts (core + settings)
+  //   4 → 5 parts (core + settings + statistics; the settings slot may be empty)
+  if (delimiterPositions.length < 2 || delimiterPositions.length > 4) {
     throw new Error(
-      `Expected 2 or 3 delimiters in parquetbundle, found ${delimiterPositions.length}`,
+      `Expected 2 to 4 delimiters in parquetbundle, found ${delimiterPositions.length}`,
     );
   }
 
-  const hasSettingsPart = delimiterPositions.length === 3;
+  const delimLen = BUNDLE_DELIMITER_BYTES.length;
+  const partStart = (i: number): number => (i === 0 ? 0 : delimiterPositions[i - 1] + delimLen);
+  const partEnd = (i: number): number =>
+    i < delimiterPositions.length ? delimiterPositions[i] : uint8Array.length;
+  const slicePart = (i: number): ArrayBuffer =>
+    uint8Array.subarray(partStart(i), partEnd(i)).slice().buffer;
 
-  // Extract the three required parts
-  let part1: ArrayBuffer | null = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
-  let part2: ArrayBuffer | null = uint8Array
-    .subarray(delimiterPositions[0] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[1])
-    .slice().buffer;
+  // Extract the three required core parts.
+  let part1: ArrayBuffer | null = slicePart(0);
+  let part2: ArrayBuffer | null = slicePart(1);
+  let part3: ArrayBuffer | null = slicePart(2);
 
-  let part3: ArrayBuffer | null;
-  let part4: ArrayBuffer | null = null;
-
-  if (hasSettingsPart) {
-    part3 = uint8Array
-      .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[2])
-      .slice().buffer;
-    part4 = uint8Array
-      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length)
-      .slice().buffer;
-  } else {
-    part3 = uint8Array
-      .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length)
-      .slice().buffer;
-  }
+  // Part 4 is settings (optional). It may be a zero-byte slot when a statistics
+  // part follows without settings — branch on emptiness, not the raw count.
+  // Part 5 is statistics, intentionally ignored for now (rendering is separate).
+  const part4: ArrayBuffer | null =
+    delimiterPositions.length >= 3 && partEnd(3) > partStart(3) ? slicePart(3) : null;
 
   // Validate parquet magic for each part before parsing
   assertValidParquetMagic(part1);
@@ -142,6 +141,10 @@ export async function extractRowsFromParquetBundle(
  */
 async function extractSettings(settingsBuffer: ArrayBuffer): Promise<BundleSettings | null> {
   try {
+    // A zero-byte settings slot (statistics-without-settings) is "no settings".
+    if (settingsBuffer.byteLength === 0) {
+      return null;
+    }
     // Validate parquet magic
     assertValidParquetMagic(settingsBuffer);
 

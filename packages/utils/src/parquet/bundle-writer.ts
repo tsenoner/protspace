@@ -9,6 +9,11 @@
  * - Part 3: projections_data.parquet (projection_name, identifier, x, y, z)
  * - Delimiter: ---PARQUET_DELIMITER--- (optional, only if settings included)
  * - Part 4: settings.parquet (optional, settings_json column)
+ * - Part 5: statistics.parquet (optional, written by the backend prep service;
+ *   this writer does not currently emit or preserve it on re-export)
+ *
+ * Readers accept 3–5 parts; when statistics are present without settings, the
+ * settings slot is written as zero bytes so statistics stays the fifth part.
  */
 
 import { parquetWriteBuffer } from 'hyparquet-writer';
