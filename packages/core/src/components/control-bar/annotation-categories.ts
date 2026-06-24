@@ -1,11 +1,28 @@
 import { annotationSource, compareTaxonomyRank, type AnnotationSource } from '@protspace/utils';
 
-/** Dropdown section names — one per annotation source (the predicted flag is shown per-row, not as a group). */
-export type CategoryName = 'Biocentral' | 'InterPro' | 'TED' | 'Taxonomy' | 'UniProt' | 'Other';
+/** Dropdown section names — one per annotation source, plus a Statistics section for
+ * computed columns (the predicted flag is shown per-row, not as a group). */
+export type CategoryName =
+  | 'Biocentral'
+  | 'InterPro'
+  | 'TED'
+  | 'Taxonomy'
+  | 'UniProt'
+  | 'Statistics'
+  | 'Other';
 
 export interface GroupedAnnotation {
   category: CategoryName;
   annotations: string[];
+}
+
+/** Prefixes of computed per-protein statistic columns (route-projection-statistics):
+ * one `cluster_<projection>` + one `silhouette_<projection>` per projection. Grouping
+ * them keeps ~12 computed columns from flooding the catch-all "Other" section. */
+const COMPUTED_STAT_PREFIXES = ['cluster_', 'silhouette_'];
+
+function isComputedStatistic(annotation: string): boolean {
+  return COMPUTED_STAT_PREFIXES.some((prefix) => annotation.startsWith(prefix));
 }
 
 /** Map an annotation's source to its dropdown section. */
@@ -26,13 +43,15 @@ function categoryForSource(source: AnnotationSource): CategoryName {
   }
 }
 
-// Display order of the dropdown sections (predicted sources first, then the rest).
+// Display order of the dropdown sections (predicted sources first, then the rest;
+// computed Statistics grouped just before the catch-all Other).
 const CATEGORY_ORDER: CategoryName[] = [
   'Biocentral',
   'InterPro',
   'TED',
   'Taxonomy',
   'UniProt',
+  'Statistics',
   'Other',
 ];
 
@@ -52,11 +71,15 @@ export function groupAnnotations(annotations: string[]): GroupedAnnotation[] {
     TED: [],
     Taxonomy: [],
     UniProt: [],
+    Statistics: [],
     Other: [],
   };
 
   for (const annotation of annotations) {
-    categorized[categoryForSource(annotationSource(annotation))].push(annotation);
+    const category = isComputedStatistic(annotation)
+      ? 'Statistics'
+      : categoryForSource(annotationSource(annotation));
+    categorized[category].push(annotation);
   }
 
   for (const category of CATEGORY_ORDER) {

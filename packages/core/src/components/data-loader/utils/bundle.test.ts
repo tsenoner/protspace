@@ -112,15 +112,29 @@ describe('bundle utilities', () => {
       const bundle = createMockBundle(2);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 or 3 delimiters/,
+        /Expected 2 to 4 delimiters/,
       );
     });
 
-    it('should reject bundle with 4 delimiters (5 parts)', async () => {
+    it('should accept a 5-part (core+settings+statistics) bundle structurally', async () => {
+      // 4 delimiters (5 parts) is now valid: core + settings + statistics. With
+      // mock (non-parquet) buffers it still fails later at parquet decode — but
+      // NOT at the delimiter-count guard, which is what we assert here.
       const bundle = createMockBundle(5);
+      let message = '';
+      try {
+        await extractRowsFromParquetBundle(bundle);
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).not.toMatch(/Expected 2 to 4 delimiters/);
+    });
+
+    it('should reject bundle with 5 delimiters (6 parts)', async () => {
+      const bundle = createMockBundle(6);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 or 3 delimiters/,
+        /Expected 2 to 4 delimiters/,
       );
     });
 
@@ -128,7 +142,7 @@ describe('bundle utilities', () => {
       const buffer = createMockParquetBuffer('no delimiter');
 
       await expect(extractRowsFromParquetBundle(buffer)).rejects.toThrow(
-        /Expected 2 or 3 delimiters/,
+        /Expected 2 to 4 delimiters/,
       );
     });
   });

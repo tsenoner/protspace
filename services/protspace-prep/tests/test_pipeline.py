@@ -350,3 +350,142 @@ def test_classify_failure_matches_503_service_unavailable():
     result = _classify_failure(exc)
     assert result.code == "BIOCENTRAL_UNAVAILABLE"
     assert "Biocentral embedding service is unavailable" in str(result)
+
+
+# --------------------------------------------------------------------------- #
+# Projection statistics step (bundle-first, best-effort, probed)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(autouse=True)
+def _reset_stats_probe_cache():
+    """Keep the module-global probe cache from leaking across tests."""
+    import protspace_prep.pipeline as ppl
+
+    ppl._STATS_CLI_AVAILABLE = None
+    yield
+    ppl._STATS_CLI_AVAILABLE = None
+
+
+async def test_stats_probe_filenotfound_is_absent_and_latched():
+    import protspace_prep.pipeline as ppl
+
+    async def boom(*args, **kwargs):
+        raise FileNotFoundError
+
+    with patch("asyncio.create_subprocess_exec", new=boom):
+        assert await ppl._stats_cli_available() is False
+    assert ppl._STATS_CLI_AVAILABLE is False  # binary absent → definitive, cached
+
+
+async def test_stats_probe_timeout_is_bounded_and_not_latched(monkeypatch):
+    import protspace_prep.pipeline as ppl
+
+    monkeypatch.setattr(ppl, "_STATS_PROBE_TIMEOUT_SECONDS", 0.05)
+    proc = MagicMock()
+    proc.kill = MagicMock()
+
+    async def _hang():
+        await asyncio.sleep(0.2)
+        return 0
+
+    proc.wait = _hang
+
+    async def fake(*args, **kwargs):
+        return proc
+
+    with patch("asyncio.create_subprocess_exec", new=fake):
+        assert await ppl._stats_cli_available() is False  # bounded, returns quickly
+    assert proc.kill.called  # hung probe was killed
+    assert ppl._STATS_CLI_AVAILABLE is None  # transient hang → NOT latched, retried later
+
+
+def _stats_router(ctx: JobContext, *, stats_returncode: int = 0):
+    """Step router that also writes a statistics parquet on the `stats` step and
+    a distinct bundle on the stats re-bundle (`bundle ... -s`)."""
+    embed_dir = ctx.output_dir / "embed"
+    project_dir = ctx.output_dir / "project"
+    annotations_path = ctx.output_dir / "annotations.parquet"
+    bundle_path = ctx.output_dir / "data.parquetbundle"
+    stats_path = ctx.output_dir / "statistics.parquet"
+
+    async def fake_create(*args, **kwargs):
+        cmd = list(args)
+        if not cmd or cmd[0] != "protspace":
+            return _mock_subprocess(0)
+        step = cmd[1] if len(cmd) > 1 else ""
+        if step == "stats" and "--help" in cmd:
+            return _mock_subprocess(0)  # feature probe
+        if step == "embed":
+            embed_dir.mkdir(parents=True, exist_ok=True)
+            (embed_dir / "prot_t5.h5").write_bytes(b"H5")
+        elif step == "annotate":
+            annotations_path.write_bytes(b"P")
+        elif step == "project":
+            project_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "projections_metadata.parquet").write_bytes(b"M")
+            (project_dir / "projections_data.parquet").write_bytes(b"D")
+        elif step == "stats":
+            if stats_returncode != 0:
+                return _mock_subprocess(stats_returncode, [b"ERROR stats boom\n"])
+            stats_path.write_bytes(b"STATS")
+        elif step == "bundle":
+            # Honor the -o target: core bundle → bundle_path; stats re-bundle → temp.
+            out = Path(cmd[cmd.index("-o") + 1])
+            out.write_bytes(b"BUNDLE+STATS" if "-s" in cmd else b"BUNDLE")
+        return _mock_subprocess(0)
+
+    return fake_create
+
+
+async def test_statistics_folds_into_bundle_and_emits_stage(ctx):
+    bundle_path = ctx.output_dir / "data.parquetbundle"
+    emitted = []
+
+    async def emit(stage, payload):
+        emitted.append(stage)
+
+    settings = load_settings()
+    with patch("protspace_prep.pipeline._stats_cli_available", new=AsyncMock(return_value=True)):
+        with patch("asyncio.create_subprocess_exec", new=_stats_router(ctx)):
+            result = await run_protspace_prepare(ctx, emit, settings=settings)
+    assert result == bundle_path
+    assert bundle_path.read_bytes() == b"BUNDLE+STATS"
+    assert (ctx.output_dir / "statistics.parquet").exists()
+    assert "computing_statistics" in emitted
+
+
+async def test_statistics_failure_keeps_core_bundle(ctx):
+    bundle_path = ctx.output_dir / "data.parquetbundle"
+    settings = load_settings()
+    with patch("protspace_prep.pipeline._stats_cli_available", new=AsyncMock(return_value=True)):
+        with patch("asyncio.create_subprocess_exec", new=_stats_router(ctx, stats_returncode=2)):
+            result = await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+    # Stats failed → job still succeeds with the core (stats-less) bundle.
+    assert result == bundle_path
+    assert bundle_path.read_bytes() == b"BUNDLE"
+
+
+async def test_statistics_skipped_when_subcommand_unavailable(ctx):
+    bundle_path = ctx.output_dir / "data.parquetbundle"
+    settings = load_settings()
+    with patch("protspace_prep.pipeline._stats_cli_available", new=AsyncMock(return_value=False)):
+        with patch("asyncio.create_subprocess_exec", new=_stats_router(ctx)):
+            result = await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+    assert result == bundle_path
+    assert bundle_path.read_bytes() == b"BUNDLE"
+    assert not (ctx.output_dir / "statistics.parquet").exists()
+
+
+async def test_statistics_disabled_by_settings(ctx):
+    bundle_path = ctx.output_dir / "data.parquetbundle"
+    base = load_settings()
+    fields = {k: getattr(base, k) for k in base.__slots__}
+    fields["stats_enabled"] = False
+    settings = type(base)(**fields)
+    probe = AsyncMock(return_value=True)
+    with patch("protspace_prep.pipeline._stats_cli_available", new=probe):
+        with patch("asyncio.create_subprocess_exec", new=_stats_router(ctx)):
+            await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+    assert bundle_path.read_bytes() == b"BUNDLE"
+    probe.assert_not_called()

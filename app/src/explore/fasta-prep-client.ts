@@ -83,7 +83,13 @@ function describeBundleFailure(status: number): string {
 }
 
 /** @public */
-export type FastaPrepStage = 'queued' | 'embedding' | 'projecting' | 'annotating' | 'bundling';
+export type FastaPrepStage =
+  | 'queued'
+  | 'embedding'
+  | 'projecting'
+  | 'annotating'
+  | 'bundling'
+  | 'computing_statistics';
 
 /** @public */
 export interface FastaPrepOptions {

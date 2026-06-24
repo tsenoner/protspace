@@ -191,8 +191,18 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
               lastProgress = 70;
               overlayController.update(true, lastProgress, 'Preparing FASTA…', 'Projecting…');
             } else if (stage === 'bundling') {
+              stopCreep();
               lastProgress = 90;
               overlayController.update(true, lastProgress, 'Preparing FASTA…', 'Bundling…');
+            } else if (stage === 'computing_statistics') {
+              stopCreep();
+              lastProgress = 95;
+              overlayController.update(
+                true,
+                lastProgress,
+                'Preparing FASTA…',
+                'Computing statistics…',
+              );
             }
           },
         });
