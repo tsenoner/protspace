@@ -71,7 +71,14 @@ class StatContext:
 
 @dataclass
 class StatRow:
-    """One statistic value, one row of the tidy table."""
+    """One statistic value.
+
+    ``destination`` routes the row to a bundle part at carriage time:
+    ``statistics_part`` (the tidy 8-column table — the default, so every existing
+    construction is unchanged), ``projection_metadata`` (folded into a projection's
+    ``info_json``), or ``annotation`` (a per-protein column). It is carriage
+    metadata, not a tidy-table column, so ``to_record`` never emits it.
+    """
 
     space_kind: str
     space_name: str
@@ -81,6 +88,7 @@ class StatRow:
     metric_kind: str
     value: float
     extra: dict = field(default_factory=dict)
+    destination: str = "statistics_part"
 
     def to_record(self) -> dict:
         return {
@@ -105,8 +113,19 @@ class StatsReport:
         if rows:
             self.rows.extend(rows)
 
+    def partition(self) -> dict[str, list[StatRow]]:
+        """Group rows by ``destination`` for the carriage layer to fan out."""
+        buckets: dict[str, list[StatRow]] = {}
+        for row in self.rows:
+            buckets.setdefault(row.destination, []).append(row)
+        return buckets
+
     def to_arrow(self) -> pa.Table:
-        records = [r.to_record() for r in self.rows]
+        # Only the statistics-part bucket is the tidy fifth part; rows routed to
+        # projection metadata / annotations are carried elsewhere by the router.
+        records = [
+            r.to_record() for r in self.rows if r.destination == "statistics_part"
+        ]
         if not records:
             return pa.Table.from_pylist([], schema=STATS_SCHEMA)
         return pa.Table.from_pylist(records, schema=STATS_SCHEMA)

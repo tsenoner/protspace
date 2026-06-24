@@ -217,6 +217,46 @@ def test_faithfulness_skips_without_embedding():
     assert FaithfulnessStatistic().compute(ctx) == []
 
 
+def test_faithfulness_rows_route_to_projection_metadata():
+    X, _ = _blobs(n=120, centers=3, dim=6, seed=21)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    ids = [str(i) for i in range(120)]
+    rows = FaithfulnessStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=coords,
+            ids=ids,
+            embedding=X,
+            embedding_name="e",
+        )
+    )
+    assert rows  # sanity: faithfulness produced rows
+    assert all(r.destination == "projection_metadata" for r in rows)
+
+
+def test_faithfulness_skip_row_routes_to_projection_metadata():
+    # Beyond the hard ceiling faithfulness emits a single skip row — it must also
+    # route to projection metadata, not the aggregate fifth part.
+    n = 30
+    X, _ = _blobs(n=n, centers=2, dim=4, seed=22)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    ids = [str(i) for i in range(n)]
+    rows = FaithfulnessStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=coords,
+            ids=ids,
+            embedding=X,
+            embedding_name="e",
+            params={"hard_ceiling": 10},  # force the skip path
+        )
+    )
+    assert len(rows) == 1 and rows[0].extra.get("skipped") == "n_too_large"
+    assert rows[0].destination == "projection_metadata"
+
+
 # --------------------------------------------------------------------------- #
 # 4. driver: mapping, alignment, failure isolation
 # --------------------------------------------------------------------------- #
@@ -415,3 +455,64 @@ def test_driver_isolates_failures():
     )
     # Boom is swallowed; cluster validity still produced rows.
     assert any(r.metric == "silhouette" for r in report.rows)
+
+
+# --------------------------------------------------------------------------- #
+# 5. routing / destination (route-projection-statistics, Phase 1A)
+# --------------------------------------------------------------------------- #
+
+
+def _statrow(metric, value, *, destination=None, **extra):
+    kw = {} if destination is None else {"destination": destination}
+    return StatRow(
+        space_kind="projection",
+        space_name="PCA_2",
+        stat_family="cluster_validity",
+        label_kind="kmeans_elbow",
+        metric=metric,
+        metric_kind="validity",
+        value=value,
+        extra=extra,
+        **kw,
+    )
+
+
+def test_statrow_defaults_to_statistics_part_destination():
+    # Every existing construction stays valid and keeps the 5th-part destination.
+    assert _statrow("silhouette", 0.5).destination == "statistics_part"
+
+
+def test_destination_is_not_a_tidy_table_column():
+    # destination is carriage metadata, never a column in the 8-column schema.
+    rec = _statrow("silhouette", 0.5).to_record()
+    assert "destination" not in rec
+    assert set(rec) == set(STATS_SCHEMA.names)
+
+
+def test_partition_groups_rows_by_destination():
+    report = StatsReport()
+    report.add(
+        [
+            _statrow("silhouette", 0.5),  # default -> statistics_part
+            _statrow("trustworthiness", 0.9, destination="projection_metadata"),
+            _statrow("cluster", 1.0, destination="annotation"),
+        ]
+    )
+    buckets = report.partition()
+    assert {r.metric for r in buckets["statistics_part"]} == {"silhouette"}
+    assert {r.metric for r in buckets["projection_metadata"]} == {"trustworthiness"}
+    assert {r.metric for r in buckets["annotation"]} == {"cluster"}
+
+
+def test_to_arrow_serializes_only_statistics_part_rows():
+    report = StatsReport()
+    report.add(
+        [
+            _statrow("silhouette", 0.5),  # statistics_part
+            _statrow("trustworthiness", 0.9, destination="projection_metadata"),
+            _statrow("cluster", 1.0, destination="annotation"),
+        ]
+    )
+    table = report.to_arrow()
+    assert table.schema == STATS_SCHEMA
+    assert table.column("metric").to_pylist() == ["silhouette"]

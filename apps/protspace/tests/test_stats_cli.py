@@ -72,9 +72,41 @@ def test_discrete_path_produces_full_matrix(tmp_path):
     # cluster-validity (coords only) + faithfulness (embedding matched by id-join)
     assert {"silhouette", "n_clusters"} <= metrics
     assert {"knn_overlap", "trustworthiness", "continuity"} <= metrics
+    # The fifth part (to_arrow) now carries aggregate validity only — faithfulness
+    # routes to projection metadata, not this table (route-projection-statistics).
     table = report.to_arrow()
     assert table.schema.names[0] == "space_kind"
-    assert table.num_rows == len(report.rows)
+    assert set(table.column("stat_family").to_pylist()) == {"cluster_validity"}
+    assert table.num_rows == len(report.partition()["statistics_part"])
+
+
+def test_stats_command_writes_aggregate_only_part(tmp_path):
+    """`protspace stats -o statistics.parquet` writes validity/meta rows only —
+    faithfulness now rides in projection metadata, not this fifth part
+    (route-projection-statistics Phase 1A; the prep stats+bundle path stays valid)."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app, ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+
+    table = pq.read_table(str(out))
+    families = set(table.column("stat_family").to_pylist())
+    assert families == {"cluster_validity"}
+    metrics = set(table.column("metric").to_pylist())
+    assert {
+        "silhouette",
+        "davies_bouldin",
+        "calinski_harabasz",
+        "n_clusters",
+    } <= metrics
+    assert not ({"knn_overlap", "trustworthiness", "continuity"} & metrics)
 
 
 def test_prepare_pipeline_compute_statistics(tmp_path):
@@ -98,4 +130,10 @@ def test_prepare_pipeline_compute_statistics(tmp_path):
     table = pipeline._compute_statistics([emb], reductions, headers)
     assert table is not None
     assert table.num_rows > 0
-    assert "faithfulness" in set(table.column("stat_family").to_pylist())
+    # Fifth part is aggregate-only now; faithfulness rides in projection metadata.
+    families = set(table.column("stat_family").to_pylist())
+    assert "cluster_validity" in families
+    assert "faithfulness" not in families
+    # ...and _compute_statistics routed faithfulness into the reduction's info.quality
+    quality = reductions[0]["info"]["quality"]
+    assert {"knn_overlap", "trustworthiness", "continuity"} <= set(quality)

@@ -704,6 +704,7 @@ class ReductionPipeline:
         """
         try:
             from protspace.stats import compute_statistics
+            from protspace.stats.carriage import route_faithfulness_to_metadata
 
             for red in all_reductions:
                 red.setdefault("ids", all_headers)
@@ -716,6 +717,11 @@ class ReductionPipeline:
                 # rather than silently assuming euclidean.
                 default_metric=self.config.reducer_params.metric,
             )
+            # Route per-projection faithfulness into each projection's
+            # info_json.quality (mutates all_reductions in place, before
+            # create_output serialises info_json). The returned table is then the
+            # aggregate-validity-only fifth part.
+            route_faithfulness_to_metadata(report, all_reductions)
             table = report.to_arrow()
             logger.info("Computed %d projection-statistic row(s)", table.num_rows)
             return table if table.num_rows else None

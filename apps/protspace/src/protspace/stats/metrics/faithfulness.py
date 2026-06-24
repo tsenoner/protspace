@@ -95,6 +95,9 @@ class FaithfulnessStatistic:
             "space_name": ctx.space_name,
             "stat_family": self.family,
             "label_kind": "none",
+            # Faithfulness is a per-projection scalar: route it into the
+            # projection's info_json.quality, not the aggregate fifth part.
+            "destination": "projection_metadata",
         }
 
         if n > hard_ceiling:
