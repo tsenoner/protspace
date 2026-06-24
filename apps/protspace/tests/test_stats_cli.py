@@ -109,6 +109,108 @@ def test_stats_command_writes_aggregate_only_part(tmp_path):
     assert not ({"knn_overlap", "trustworthiness", "continuity"} & metrics)
 
 
+def test_stats_command_writes_faithfulness_into_metadata(tmp_path):
+    """`protspace stats` folds faithfulness into projections_metadata.info_json.quality
+    in place, so the prep `protspace bundle -p` carries it through to the bundle
+    (route-projection-statistics Phase 1B, option A)."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    meta_path = proj / "projections_metadata.parquet"
+    before = pq.read_table(str(meta_path))
+
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app, ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+
+    after = pq.read_table(str(meta_path))
+    # All non-info columns and rows preserved; only info_json is enriched.
+    assert after.num_rows == before.num_rows
+    assert after.column_names == before.column_names
+    assert (
+        after.column("dimensions").to_pylist()
+        == before.column("dimensions").to_pylist()
+    )
+
+    info_by_name = dict(
+        zip(
+            after.column("projection_name").to_pylist(),
+            after.column("info_json").to_pylist(),
+            strict=False,
+        )
+    )
+    info = json.loads(info_by_name["E — PCA 2"])
+    assert {"knn_overlap", "trustworthiness", "continuity"} <= set(info["quality"])
+    assert info["quality"]["knn_overlap"]["value"] is not None
+    assert info["metric"] == "euclidean"  # pre-existing reducer info preserved
+
+
+def test_stats_then_bundle_carries_faithfulness_into_bundle(tmp_path):
+    """End-to-end prep path: `protspace stats` then `protspace bundle -p` ships a
+    bundle whose projections_metadata.info_json carries faithfulness quality, and
+    whose aggregate fifth part stays validity-only."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_bundle, read_statistics_from_bundle
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    runner = CliRunner()
+
+    stats_out = tmp_path / "statistics.parquet"
+    r1 = runner.invoke(
+        app, ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(stats_out)]
+    )
+    assert r1.exit_code == 0, r1.output
+
+    ann_path = tmp_path / "annotations.parquet"
+    pq.write_table(pa.table({"identifier": headers}), str(ann_path))
+
+    bundle_out = tmp_path / "data.parquetbundle"
+    r2 = runner.invoke(
+        app,
+        [
+            "bundle",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "-s",
+            str(stats_out),
+            "-o",
+            str(bundle_out),
+        ],
+    )
+    assert r2.exit_code == 0, r2.output
+
+    core, _ = read_bundle(bundle_out)
+    # core parts are raw parquet bytes; projections_metadata is the 2nd part.
+    metadata_table = pq.read_table(pa.BufferReader(core[1]))
+    info_by_name = dict(
+        zip(
+            metadata_table.column("projection_name").to_pylist(),
+            metadata_table.column("info_json").to_pylist(),
+            strict=False,
+        )
+    )
+    info = json.loads(info_by_name["E — PCA 2"])
+    assert {"knn_overlap", "trustworthiness", "continuity"} <= set(info["quality"])
+
+    # The fifth part still ships, aggregate-only.
+    stats_bytes = read_statistics_from_bundle(bundle_out)
+    assert stats_bytes is not None
+    fifth = pq.read_table(pa.BufferReader(stats_bytes))
+    assert set(fifth.column("stat_family").to_pylist()) == {"cluster_validity"}
+
+
 def test_prepare_pipeline_compute_statistics(tmp_path):
     from pathlib import Path
 

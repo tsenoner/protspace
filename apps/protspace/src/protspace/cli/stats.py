@@ -88,6 +88,45 @@ def _load_reductions(
     return reductions
 
 
+def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None:
+    """Fold faithfulness ``quality`` objects into ``projections_metadata.parquet``.
+
+    Rewrites the file in place, parsing each row's ``info_json``, injecting the
+    matching projection's ``quality`` (preserving the reducer's existing info), and
+    re-serialising — leaving every other column untouched. This is how the
+    standalone ``stats`` path carries faithfulness into the bundle: a later
+    ``protspace bundle -p`` reads the enriched metadata as the bundle's 2nd part.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    if not quality_by_name or not meta_path.exists():
+        return
+    table = pq.read_table(str(meta_path))
+    if (
+        "projection_name" not in table.column_names
+        or "info_json" not in table.column_names
+    ):
+        return
+
+    names = table.column("projection_name").to_pylist()
+    infos = table.column("info_json").to_pylist()
+    new_infos: list[str] = []
+    for nm, raw in zip(names, infos, strict=False):
+        try:
+            info = json.loads(raw) if raw else {}
+        except (json.JSONDecodeError, TypeError):
+            info = {}
+        quality = quality_by_name.get(nm)
+        if quality is not None:
+            info["quality"] = quality
+        new_infos.append(json.dumps(info))
+
+    idx = table.column_names.index("info_json")
+    table = table.set_column(idx, "info_json", pa.array(new_infos, type=pa.string()))
+    pq.write_table(table, str(meta_path))
+
+
 @app.command()
 def stats(
     input: Annotated[
@@ -131,6 +170,7 @@ def stats(
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.loaders import load_h5
     from protspace.stats import compute_statistics
+    from protspace.stats.carriage import route_faithfulness_to_metadata
 
     embedding_sets = [
         load_h5([path], name_override=name_override)
@@ -141,8 +181,23 @@ def stats(
     report = compute_statistics(
         embedding_sets, reductions, rng_seed=seed, default_metric=metric
     )
-    table = report.to_arrow()
 
+    # Route per-projection faithfulness into projections_metadata.info_json.quality
+    # (rewritten in place); the aggregate fifth part keeps validity/meta rows only.
+    route_faithfulness_to_metadata(report, reductions)
+    quality_by_name = {
+        r["name"]: r["info"]["quality"]
+        for r in reductions
+        if isinstance(r.get("info"), dict) and "quality" in r["info"]
+    }
+    _merge_quality_into_metadata(
+        projections / "projections_metadata.parquet", quality_by_name
+    )
+
+    table = report.to_arrow()
     output.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, str(output))
-    typer.echo(f"Saved {table.num_rows} statistic row(s): {output}")
+    typer.echo(
+        f"Saved {table.num_rows} statistic row(s): {output}"
+        f" (faithfulness for {len(quality_by_name)} projection(s) → metadata)"
+    )
