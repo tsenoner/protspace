@@ -127,6 +127,31 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     pq.write_table(table, str(meta_path))
 
 
+def _merge_annotations_with_columns(ann_path: Path, report) -> int:
+    """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
+
+    Rewrites the annotations parquet in place with the computed ``cluster_*`` /
+    ``silhouette_*`` columns joined by identifier. Added columns are stringified
+    (membership → category labels, silhouette → numeric strings, absent → empty)
+    so they match the prepare path's all-string annotations and the frontend's
+    content-based type inference. Returns the number of columns added.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from protspace.stats.carriage import merge_annotation_columns
+
+    if not report.annotation_columns or not ann_path.exists():
+        return 0
+    df = pq.read_table(str(ann_path)).to_pandas()
+    id_col = "identifier" if "identifier" in df.columns else df.columns[0]
+    added = merge_annotation_columns(report, df, id_col=id_col)
+    for name in added:
+        df[name] = df[name].fillna("").astype(str)
+    pq.write_table(pa.Table.from_pandas(df, preserve_index=False), str(ann_path))
+    return len(added)
+
+
 @app.command()
 def stats(
     input: Annotated[
@@ -150,6 +175,15 @@ def stats(
         Path,
         typer.Option("-o", "--output", help="Output statistics.parquet path."),
     ],
+    annotations: Annotated[
+        Path | None,
+        typer.Option(
+            "-a",
+            "--annotations",
+            help="Annotations parquet to enrich in place with per-protein "
+            "cluster-membership + silhouette columns. Omit to skip per-protein outputs.",
+        ),
+    ] = None,
     seed: Annotated[int, typer.Option("--seed", help="Random seed.")] = 42,
     metric: Annotated[
         str,
@@ -178,8 +212,16 @@ def stats(
     ]
 
     reductions = _load_reductions(projections, default_metric=metric)
+    # Per-protein outputs (cluster membership + per-point silhouette) are only
+    # computed when there's an annotations file to land them in — silhouette_samples
+    # is O(n^2), so we don't pay for it with nowhere to write.
+    params = {} if annotations is not None else {"cluster_annotations": False}
     report = compute_statistics(
-        embedding_sets, reductions, rng_seed=seed, default_metric=metric
+        embedding_sets,
+        reductions,
+        rng_seed=seed,
+        params=params,
+        default_metric=metric,
     )
 
     # Route per-projection faithfulness into projections_metadata.info_json.quality
@@ -194,10 +236,15 @@ def stats(
         projections / "projections_metadata.parquet", quality_by_name
     )
 
+    n_cols = 0
+    if annotations is not None:
+        n_cols = _merge_annotations_with_columns(annotations, report)
+
     table = report.to_arrow()
     output.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, str(output))
     typer.echo(
         f"Saved {table.num_rows} statistic row(s): {output}"
-        f" (faithfulness for {len(quality_by_name)} projection(s) → metadata)"
+        f" (faithfulness → {len(quality_by_name)} projection(s);"
+        f" {n_cols} computed annotation column(s))"
     )

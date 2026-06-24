@@ -104,14 +104,38 @@ class StatRow:
 
 
 @dataclass
+class AnnotationColumn:
+    """A per-protein statistic output destined for the ``protein_annotations`` part.
+
+    ``values`` maps protein identifier → value (a category label string for
+    ``kind="categorical"``, a float for ``kind="numeric"``); a protein absent from
+    the mapping has no value for the column. ``kind`` records the intended frontend
+    type so the carriage layer can format it for content-based inference.
+    """
+
+    name: str
+    kind: str  # "categorical" | "numeric"
+    values: dict[str, Any] = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
+    destination: str = "annotation"
+
+
+@dataclass
 class StatsReport:
-    """An accumulating set of StatRows; serialises to the tidy Arrow table."""
+    """Accumulates statistic outputs: scalar ``StatRow``s (the tidy fifth-part
+    table) and per-protein ``AnnotationColumn``s (a separate carriage channel)."""
 
     rows: list[StatRow] = field(default_factory=list)
+    annotation_columns: list[AnnotationColumn] = field(default_factory=list)
 
-    def add(self, rows: list[StatRow]) -> None:
-        if rows:
-            self.rows.extend(rows)
+    def add(self, items: list) -> None:
+        """Accept a mixed list of ``StatRow`` / ``AnnotationColumn`` outputs,
+        routing each to its channel."""
+        for item in items or []:
+            if isinstance(item, AnnotationColumn):
+                self.annotation_columns.append(item)
+            else:
+                self.rows.append(item)
 
     def partition(self) -> dict[str, list[StatRow]]:
         """Group rows by ``destination`` for the carriage layer to fan out."""

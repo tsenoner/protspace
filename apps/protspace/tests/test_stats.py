@@ -101,9 +101,11 @@ def test_cluster_validity_separated_vs_overlapping():
     ctx = StatContext(
         "projection", "PCA_2", coords=sep, ids=[str(i) for i in range(len(sep))]
     )
-    sep_sil = {r.metric: r.value for r in ClusterValidityStatistic().compute(ctx)}[
-        "silhouette"
-    ]
+    sep_sil = {
+        r.metric: r.value
+        for r in ClusterValidityStatistic().compute(ctx)
+        if isinstance(r, StatRow)
+    }["silhouette"]
     assert sep_sil > 0.6
 
     # Heavily overlapping clusters: KMeans still imposes a split, but the
@@ -114,9 +116,11 @@ def test_cluster_validity_separated_vs_overlapping():
     ctx2 = StatContext(
         "projection", "PCA_2", coords=overlap, ids=[str(i) for i in range(300)]
     )
-    ov_sil = {r.metric: r.value for r in ClusterValidityStatistic().compute(ctx2)}[
-        "silhouette"
-    ]
+    ov_sil = {
+        r.metric: r.value
+        for r in ClusterValidityStatistic().compute(ctx2)
+        if isinstance(r, StatRow)
+    }["silhouette"]
     assert ov_sil < 0.45
     assert sep_sil > ov_sil + 0.2
 
@@ -126,7 +130,9 @@ def test_cluster_validity_emits_meta_and_validity_kinds():
     ctx = StatContext(
         "projection", "PCA_2", coords=X, ids=[str(i) for i in range(len(X))]
     )
-    rows = ClusterValidityStatistic().compute(ctx)
+    rows = [
+        r for r in ClusterValidityStatistic().compute(ctx) if isinstance(r, StatRow)
+    ]
     by_metric = {r.metric: r for r in rows}
     assert by_metric["n_clusters"].metric_kind == "meta"
     assert by_metric["silhouette"].metric_kind == "validity"
@@ -516,3 +522,97 @@ def test_to_arrow_serializes_only_statistics_part_rows():
     table = report.to_arrow()
     assert table.schema == STATS_SCHEMA
     assert table.column("metric").to_pylist() == ["silhouette"]
+
+
+# --------------------------------------------------------------------------- #
+# 6. per-protein annotation outputs (route-projection-statistics Phase 2A)
+# --------------------------------------------------------------------------- #
+
+
+def test_annotation_column_defaults_to_annotation_destination():
+    from protspace.stats.base import AnnotationColumn
+
+    col = AnnotationColumn(name="cluster_PCA_2", kind="categorical", values={"a": "c0"})
+    assert col.destination == "annotation"
+
+
+def test_report_collects_annotation_columns_separately_from_rows():
+    from protspace.stats.base import AnnotationColumn
+
+    report = StatsReport()
+    report.add(
+        [
+            _statrow("silhouette", 0.5),  # statistics_part row
+            AnnotationColumn(
+                name="cluster_PCA_2", kind="categorical", values={"a": "c0"}
+            ),
+        ]
+    )
+    # the scalar row stays in rows / to_arrow; the column is a separate channel
+    assert [r.metric for r in report.rows] == ["silhouette"]
+    assert report.to_arrow().num_rows == 1
+    assert [c.name for c in report.annotation_columns] == ["cluster_PCA_2"]
+
+
+def test_cluster_validity_emits_per_protein_annotation_columns():
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=200, centers=4, dim=2, seed=31)
+    ids = [f"p{i}" for i in range(200)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext("projection", "PCA_2", coords=X, ids=ids)
+    )
+    cols = {o.name: o for o in outs if isinstance(o, AnnotationColumn)}
+    assert {"cluster_PCA_2", "silhouette_PCA_2"} <= set(cols)
+
+    mem = cols["cluster_PCA_2"]
+    assert mem.destination == "annotation" and mem.kind == "categorical"
+    assert set(mem.values) == set(ids)  # one value per protein, joined by id
+    # non-numeric label strings so content-based inference reads categorical
+    assert all(
+        isinstance(v, str) and v.startswith("cluster ") for v in mem.values.values()
+    )
+    assert mem.extra["k"] >= 2 and mem.extra.get("computed") is True
+
+    sil = cols["silhouette_PCA_2"]
+    assert sil.kind == "numeric"
+    assert set(sil.values) == set(ids)
+    assert all(isinstance(v, float) for v in sil.values.values())
+
+
+def test_per_point_silhouette_skipped_beyond_hard_ceiling():
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=200, centers=3, dim=2, seed=32)
+    ids = [f"p{i}" for i in range(200)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            params={"silhouette_hard_ceiling": 50},  # n=200 > 50
+        )
+    )
+    names = {o.name for o in outs if isinstance(o, AnnotationColumn)}
+    assert "cluster_PCA_2" in names  # membership is cheap, still emitted
+    assert "silhouette_PCA_2" not in names  # O(n^2) silhouette skipped
+
+
+def test_cluster_annotations_can_be_disabled():
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=150, centers=3, dim=2, seed=33)
+    ids = [f"p{i}" for i in range(150)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            params={"cluster_annotations": False},
+        )
+    )
+    assert not any(isinstance(o, AnnotationColumn) for o in outs)
+    # aggregate validity rows still produced
+    assert any(getattr(o, "metric", None) == "silhouette" for o in outs)

@@ -151,6 +151,126 @@ def test_stats_command_writes_faithfulness_into_metadata(tmp_path):
     assert info["metric"] == "euclidean"  # pre-existing reducer info preserved
 
 
+def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
+    """`protspace stats -a annotations.parquet` merges per-protein cluster
+    membership + silhouette columns into the annotations file in place
+    (route-projection-statistics Phase 2A), so the prep `bundle -a` carries them."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    ann_path = tmp_path / "annotations.parquet"
+    pq.write_table(
+        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        str(ann_path),
+    )
+
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "-o",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    df = pq.read_table(str(ann_path)).to_pandas()
+    cluster_cols = [c for c in df.columns if c.startswith("cluster_")]
+    sil_cols = [c for c in df.columns if c.startswith("silhouette_")]
+    assert cluster_cols and sil_cols
+    assert "organism" in df.columns  # pre-existing annotation preserved
+    assert "identifier" in df.columns
+    # membership categorical (non-numeric strings); silhouette numeric strings
+    assert str(df[cluster_cols[0]].iloc[0]).startswith("cluster ")
+    float(df[sil_cols[0]].iloc[0])  # must not raise
+
+
+def test_stats_without_annotations_does_not_compute_per_protein(tmp_path):
+    """Without -a, stats stays aggregate+faithfulness only (the per-protein
+    computation has nowhere to land, so it is skipped)."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app, ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    table = pq.read_table(str(out))
+    assert set(table.column("stat_family").to_pylist()) == {"cluster_validity"}
+
+
+def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
+    """End-to-end prep path: `stats -a` then `bundle -a` ships a bundle whose
+    protein_annotations part carries the computed cluster_/silhouette_ columns."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_bundle
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    runner = CliRunner()
+    ann_path = tmp_path / "annotations.parquet"
+    pq.write_table(
+        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        str(ann_path),
+    )
+
+    stats_out = tmp_path / "statistics.parquet"
+    r1 = runner.invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "-o",
+            str(stats_out),
+        ],
+    )
+    assert r1.exit_code == 0, r1.output
+
+    bundle_out = tmp_path / "data.parquetbundle"
+    r2 = runner.invoke(
+        app,
+        [
+            "bundle",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "-s",
+            str(stats_out),
+            "-o",
+            str(bundle_out),
+        ],
+    )
+    assert r2.exit_code == 0, r2.output
+
+    core, _ = read_bundle(bundle_out)
+    ann_table = pq.read_table(
+        pa.BufferReader(core[0])
+    )  # protein_annotations is 1st part
+    cols = ann_table.column_names
+    assert any(c.startswith("cluster_") for c in cols)
+    assert any(c.startswith("silhouette_") for c in cols)
+    assert "protein_id" in cols  # identifier renamed by bundle
+
+
 def test_stats_then_bundle_carries_faithfulness_into_bundle(tmp_path):
     """End-to-end prep path: `protspace stats` then `protspace bundle -p` ships a
     bundle whose projections_metadata.info_json carries faithfulness quality, and

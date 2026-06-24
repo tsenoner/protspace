@@ -135,6 +135,71 @@ def test_router_round_trips_through_projections_metadata_table():
     assert "faithfulness" not in families
 
 
+def test_merge_annotation_columns_joins_by_identifier():
+    import pandas as pd
+
+    from protspace.stats.base import AnnotationColumn, StatsReport
+    from protspace.stats.carriage import merge_annotation_columns
+
+    report = StatsReport()
+    report.add(
+        [
+            AnnotationColumn(
+                name="cluster_P",
+                kind="categorical",
+                values={"a": "cluster 0", "b": "cluster 1"},
+            ),
+            AnnotationColumn(
+                name="silhouette_P", kind="numeric", values={"a": 0.5, "b": 0.2}
+            ),
+        ]
+    )
+    frame = pd.DataFrame({"identifier": ["a", "b", "c"]})
+    added = merge_annotation_columns(report, frame)
+
+    assert added == ["cluster_P", "silhouette_P"]
+    assert frame.loc[frame.identifier == "a", "cluster_P"].item() == "cluster 0"
+    assert frame.loc[frame.identifier == "b", "silhouette_P"].item() == 0.2
+    # a protein absent from the column gets no value (not a fabricated one)
+    assert pd.isna(frame.loc[frame.identifier == "c", "cluster_P"].item())
+
+
+def test_annotation_columns_are_typed_in_protein_annotations_table():
+    import pandas as pd
+
+    from protspace.data.processors.base_processor import BaseProcessor
+    from protspace.stats import compute_statistics
+    from protspace.stats.carriage import merge_annotation_columns
+
+    X, _ = make_blobs(n_samples=120, centers=3, n_features=5, random_state=7)
+    headers = [f"p{i}" for i in range(120)]
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    emb = _EmbSet("e", X, headers)
+    reductions = [
+        {
+            "name": "P",
+            "dimensions": 2,
+            "info": {},
+            "data": coords,
+            "ids": headers,
+            "source": "e",
+        }
+    ]
+    report = compute_statistics([emb], reductions, rng_seed=42)
+    metadata = pd.DataFrame({"identifier": headers})
+    merge_annotation_columns(report, metadata)
+
+    table = BaseProcessor({}, {})._create_protein_annotations_table(metadata)
+    cols = table.column_names
+    assert "cluster_P" in cols and "silhouette_P" in cols
+    d = table.to_pydict()
+    # membership: non-numeric category labels → categorical inference
+    assert all(v.startswith("cluster ") for v in d["cluster_P"])
+    # per-point silhouette: clean numeric strings → continuous inference
+    for v in d["silhouette_P"]:
+        float(v)  # must not raise
+
+
 def test_router_multi_embedding_routes_each_projection_to_its_own_scores():
     Xa, _ = make_blobs(n_samples=100, centers=3, n_features=5, random_state=8)
     Xb, _ = make_blobs(n_samples=100, centers=4, n_features=7, random_state=9)

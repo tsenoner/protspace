@@ -260,7 +260,7 @@ class ReductionPipeline:
         statistics_table = None
         if self.config.stats:
             statistics_table = self._compute_statistics(
-                embedding_sets, all_reductions, all_headers
+                embedding_sets, all_reductions, all_headers, metadata
             )
 
         # Create and save output
@@ -694,17 +694,27 @@ class ReductionPipeline:
 
         return all_reductions
 
-    def _compute_statistics(self, embedding_sets, all_reductions, all_headers):
+    def _compute_statistics(
+        self, embedding_sets, all_reductions, all_headers, metadata=None
+    ):
         """Compute projection statistics, returning an Arrow table or None.
 
         Best-effort: any failure is logged and yields ``None`` so the bundle
         still ships. Each reduction's coordinate rows correspond to
         ``all_headers`` (the common header order), which is also the embedding
         row order after header validation — so faithfulness aligns cleanly.
+
+        Routes outputs to their parts in place: faithfulness → each projection's
+        ``info_json.quality``; per-protein cluster membership / silhouette →
+        columns on ``metadata`` (joined by identifier). The returned table is the
+        aggregate-validity-only fifth part.
         """
         try:
             from protspace.stats import compute_statistics
-            from protspace.stats.carriage import route_faithfulness_to_metadata
+            from protspace.stats.carriage import (
+                merge_annotation_columns,
+                route_faithfulness_to_metadata,
+            )
 
             for red in all_reductions:
                 red.setdefault("ids", all_headers)
@@ -717,11 +727,10 @@ class ReductionPipeline:
                 # rather than silently assuming euclidean.
                 default_metric=self.config.reducer_params.metric,
             )
-            # Route per-projection faithfulness into each projection's
-            # info_json.quality (mutates all_reductions in place, before
-            # create_output serialises info_json). The returned table is then the
-            # aggregate-validity-only fifth part.
             route_faithfulness_to_metadata(report, all_reductions)
+            if metadata is not None and report.annotation_columns:
+                added = merge_annotation_columns(report, metadata)
+                logger.info("Routed %d computed annotation column(s)", len(added))
             table = report.to_arrow()
             logger.info("Computed %d projection-statistic row(s)", table.num_rows)
             return table if table.num_rows else None

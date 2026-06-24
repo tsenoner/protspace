@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from protspace.stats.base import StatContext, StatRow
+from protspace.stats.base import AnnotationColumn, StatContext, StatRow
 from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
 
 DEFAULT_SAMPLE_THRESHOLD = 5000
+# silhouette_samples is O(n^2) with no sampling escape hatch (unlike the aggregate
+# mean), so the per-point column is skipped beyond this point count.
+DEFAULT_SILHOUETTE_HARD_CEILING = 20000
 
 
 def _silhouette(X, labels, *, rng_seed: int, sample_threshold: int):
@@ -42,7 +45,7 @@ class ClusterValidityStatistic:
     family = "cluster_validity"
     requires_embedding = False
 
-    def compute(self, ctx: StatContext) -> list[StatRow]:
+    def compute(self, ctx: StatContext) -> list:
         from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
 
         X = np.asarray(ctx.coords, dtype=float)
@@ -124,4 +127,60 @@ class ClusterValidityStatistic:
                 except Exception:  # noqa: BLE001
                     pass
 
-        return rows
+        outputs: list = list(rows)
+
+        # Per-protein outputs (route-projection-statistics Phase 2): the elbow-K
+        # labelling becomes a categorical membership column and per-point silhouette
+        # a numeric column, both joined by identifier. Gated by the cluster_annotations
+        # param; emitted only when there is a genuine (>=2) clustering and the ids
+        # line up with the scored points.
+        if (
+            ctx.params.get("cluster_annotations", True)
+            and achieved >= 2
+            and len(ctx.ids) == n
+        ):
+            ann_extra = {
+                "projection": ctx.space_name,
+                "k": int(k),
+                "seed": rng_seed,
+                "computed": True,
+            }
+            # Membership as NON-numeric label strings so the frontend's content-based
+            # type inference reads the column as categorical, not a numeric ramp.
+            outputs.append(
+                AnnotationColumn(
+                    name=f"cluster_{ctx.space_name}",
+                    kind="categorical",
+                    values={
+                        pid: f"cluster {int(lbl)}"
+                        for pid, lbl in zip(ctx.ids, labels, strict=False)
+                    },
+                    extra=ann_extra,
+                )
+            )
+
+            hard_ceiling = int(
+                ctx.params.get(
+                    "silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING
+                )
+            )
+            if 2 <= k <= n - 1 and n <= hard_ceiling:
+                try:
+                    from sklearn.metrics import silhouette_samples
+
+                    samples = silhouette_samples(X, labels)
+                    outputs.append(
+                        AnnotationColumn(
+                            name=f"silhouette_{ctx.space_name}",
+                            kind="numeric",
+                            values={
+                                pid: float(s)
+                                for pid, s in zip(ctx.ids, samples, strict=False)
+                            },
+                            extra=ann_extra,
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - per-point silhouette is best-effort
+                    pass
+
+        return outputs

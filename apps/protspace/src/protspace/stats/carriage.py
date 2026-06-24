@@ -66,3 +66,23 @@ def route_faithfulness_to_metadata(report: StatsReport, reductions: list[dict]) 
             info = {}
             reduction["info"] = info
         info["quality"] = _quality_from_rows(rows)
+
+
+def merge_annotation_columns(
+    report: StatsReport, frame, id_col: str = "identifier"
+) -> list[str]:
+    """Merge ``annotation``-destined per-protein columns into an annotations frame.
+
+    Each ``AnnotationColumn`` is joined onto ``frame`` by identifier (proteins
+    absent from a column get no value, not a fabricated one). Mutates ``frame`` in
+    place and returns the names of the columns added — membership stays a
+    non-numeric string, per-point silhouette a float, so the downstream
+    ``.astype(str)`` writer yields categorical / continuous inference respectively.
+    """
+    if id_col not in getattr(frame, "columns", []):
+        return []
+    added: list[str] = []
+    for col in report.annotation_columns:
+        frame[col.name] = frame[id_col].map(col.values)
+        added.append(col.name)
+    return added
