@@ -67,6 +67,22 @@ describe('buildBugContext', () => {
     expect((errorLine as string).length).toBeLessThan(MAX_ERROR_CHARS + 40);
   });
 
+  it('includes the trace id in the technical block when provided', () => {
+    const body = buildBugContext({
+      operation: 'Dataset import',
+      error: new Error('boom'),
+      traceId: 'job-123',
+    });
+
+    expect(body).toContain('Trace ID: job-123');
+  });
+
+  it('omits the trace id line when no trace id is provided', () => {
+    const body = buildBugContext({ operation: 'Export', error: new Error('boom') });
+
+    expect(body).not.toContain('Trace ID:');
+  });
+
   it('tolerates non-Error values without throwing', () => {
     expect(() => buildBugContext({ operation: 'Export', error: 'plain string' })).not.toThrow();
     expect(buildBugContext({ operation: 'Export', error: 'plain string' })).toContain(

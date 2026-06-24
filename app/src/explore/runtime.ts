@@ -100,7 +100,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       if (seqCount > 0 && seqCount < MIN_SEQUENCES) {
         throw new FastaPrepError(
           `This FASTA has only ${seqCount} sequence${seqCount === 1 ? '' : 's'}; the prep backend needs at least ${MIN_SEQUENCES}.`,
-          { code: 'EMPTY_FASTA' },
+          { code: 'TOO_FEW_SEQUENCES' },
         );
       }
 
