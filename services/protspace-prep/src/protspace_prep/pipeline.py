@@ -267,6 +267,9 @@ async def _maybe_add_statistics(
         if not h5_files:
             return
         stats_path = bundle_path.parent / "statistics.parquet"
+        # Auto-generated cluster-membership legend styles, written by `stats` and
+        # folded into the re-bundle so clusters are colored when selected.
+        styles_path = bundle_path.parent / "cluster_styles.json"
         # Re-bundle to a sibling temp file, then atomically rename — a stats timeout
         # /kill mid-write must never corrupt the already-shipped core bundle. The
         # ".parquetbundle" suffix is required because `protspace bundle` forces it.
@@ -289,27 +292,31 @@ async def _maybe_add_statistics(
                         # into projections_metadata by the same command.
                         "-a",
                         str(annotations_path),
+                        "--settings-out",
+                        str(styles_path),
                         "-o",
                         str(stats_path),
                     ],
                 )
                 if not stats_path.exists():
                     return
-                await _run_step(
+                bundle_cmd = [
+                    "protspace",
                     "bundle",
-                    [
-                        "protspace",
-                        "bundle",
-                        "-p",
-                        str(project_dir),
-                        "-a",
-                        str(annotations_path),
-                        "-s",
-                        str(stats_path),
-                        "-o",
-                        str(tmp_bundle),
-                    ],
-                )
+                    "-p",
+                    str(project_dir),
+                    "-a",
+                    str(annotations_path),
+                    "-s",
+                    str(stats_path),
+                    "-o",
+                    str(tmp_bundle),
+                ]
+                # Fold the auto-generated cluster styles into the bundle's settings
+                # part when `stats` produced them (older engines may not).
+                if styles_path.exists():
+                    bundle_cmd[-2:-2] = ["--settings", str(styles_path)]
+                await _run_step("bundle", bundle_cmd)
             # Promote only a fully-written temp bundle (atomic, same filesystem).
             if tmp_bundle.exists():
                 os.replace(tmp_bundle, bundle_path)
