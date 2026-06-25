@@ -144,10 +144,7 @@ export class DuplicateStackOverlayController {
 
   /** Collapse the currently-open duplicate-badge spider, if any. */
   closeExpanded(): void {
-    if (this.expandedKey === null) return;
-    this.expandedKey = null;
-    this.expandedAnchor = null;
-    this.updateOverlays();
+    this.collapseExpanded();
   }
 
   /**

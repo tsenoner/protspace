@@ -14,7 +14,7 @@
 // CustomEvents were unconsumed public surface and have been removed; the busy
 // state is now characterized solely via the `setRunning` mirror, the runner's
 // `runningAnnotation()`, and the `runRecompute()` body call.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NumericRecomputeRunner } from './numeric-recompute-runner';
 
 function makeHost() {
@@ -46,6 +46,10 @@ describe('NumericRecomputeRunner', () => {
       raf[id - 1] = () => {};
     });
     vi.stubGlobal('performance', { now: () => 1000 });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('does nothing when the host has no data', () => {

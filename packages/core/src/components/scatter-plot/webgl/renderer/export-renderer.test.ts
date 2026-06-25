@@ -28,18 +28,16 @@ function makePlotData(xs: number[], ys: number[]): PlotData {
 const REF_W = 800;
 const REF_H = 600;
 
-describe('ExportRenderer.getDataExtent (static)', () => {
-  it('returns the padded min/max over the first `length` columns (computePaddedExtent)', () => {
+describe('computePaddedExtent (export domain helper)', () => {
+  it('returns the padded min/max over the first `length` columns', () => {
     const xs = new Float32Array([0, 10]);
     const ys = new Float32Array([0, 20]);
-    const ext = ExportRenderer.getDataExtent(xs, ys, 2);
+    const ext = computePaddedExtent(xs, ys, 2);
     // Padded extent widens past the raw data on every side.
     expect(ext.xMin).toBeLessThanOrEqual(0);
     expect(ext.xMax).toBeGreaterThanOrEqual(10);
     expect(ext.yMin).toBeLessThanOrEqual(0);
     expect(ext.yMax).toBeGreaterThanOrEqual(20);
-    // ...and is exactly the shared padded-extent helper.
-    expect(ext).toEqual(computePaddedExtent(xs, ys, 2));
   });
 });
 

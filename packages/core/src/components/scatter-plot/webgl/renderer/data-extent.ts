@@ -1,3 +1,5 @@
+import { DATA_EXTENT_PADDING } from '@protspace/utils';
+
 interface DataExtent {
   xMin: number;
   xMax: number;
@@ -5,7 +7,9 @@ interface DataExtent {
   yMax: number;
 }
 
-export const DATA_EXTENT_PADDING = 0.05;
+// Re-exported so the export domain shares the single live-scale padding constant
+// (defined in @protspace/utils) — on-screen and exported framing stay in lockstep.
+export { DATA_EXTENT_PADDING };
 
 export function computeExtent(
   xs: ArrayLike<number>,

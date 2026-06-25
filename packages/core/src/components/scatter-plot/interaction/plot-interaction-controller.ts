@@ -20,11 +20,10 @@ export interface PlotInteractionHost {
   // rather than keeping a parallel copy. applyZoom funnels new transforms through
   // onTransform first, so reads here always see the latest value.
   getTransform(): d3.ZoomTransform;
-  // host-owned spatial + picking (reuses _quadtreeIndex / _slotsToInteractiveIds / pickInteractivePointAt)
+  // host-owned spatial selection (reuses _quadtreeIndex / _slotsToInteractiveIds)
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
   queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
   resolveSlotsToIds(slots: number[]): string[];
-  pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null;
   // callbacks — dispatch stays on the host (INV-03/INV-05)
   onTransform(t: d3.ZoomTransform): void;
   onSelect(ids: string[], clearVisual: () => void): void;

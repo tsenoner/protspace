@@ -1119,7 +1119,6 @@ export class ProtspaceScatterplot extends LitElement {
       queryByPolygon: (vertices) => this._quadtreeIndex.queryByPolygon(vertices),
       queryByPixels: (x0, y0, x1, y1) => this._quadtreeIndex.queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
-      pickInteractivePointAt: (mouseX, mouseY) => this.pickInteractivePointAt(mouseX, mouseY),
       onTransform: (t) => {
         this._transform = t;
       },

@@ -5,12 +5,13 @@ import { resolveColor } from '../color-utils';
 import { fillLabelColorTexels } from './label-texture-utils';
 
 // ============================================================================
-// Per-point staging constants (owned here; re-imported by the renderer)
+// Per-point staging constants (owned here; only MAX_LABELS is re-imported by
+// the renderer — the rest are internal to the staging helpers).
 // ============================================================================
 
-export const POINT_SIZE_DIVISOR = 3;
-export const MIN_POINT_SIZE = 1;
-export const DIAMOND_SIZE_SCALE = 1.25;
+const POINT_SIZE_DIVISOR = 3;
+const MIN_POINT_SIZE = 1;
+const DIAMOND_SIZE_SCALE = 1.25;
 export const MAX_LABELS = 8;
 
 /**
@@ -30,6 +31,48 @@ export interface StagePointArrays {
 
 /** The subset of style getters a single staged-point write depends on. */
 export type StagePointStyle = Pick<WebGLStyleGetters, 'getColors' | 'getPointSize' | 'getShape'>;
+
+/** The style channels (everything except position + depth) a staged point writes. */
+type StagePointStyleArrays = Pick<
+  StagePointArrays,
+  'colors' | 'sizes' | 'labelCounts' | 'shapes' | 'labelColorData'
+>;
+
+/**
+ * Write a point's *style* channels (color, alpha, size, shape, label texels) into
+ * `target` at slot `idx`. Shared by the full-rebuild path (via {@link stagePoint})
+ * and the color-only update path in the renderer, so a legend recolor encodes a
+ * point identically to a full rebuild / export — the single source of truth for
+ * the per-point style packing.
+ *
+ * Pure helper: no GL, no WebGLRenderer import.
+ */
+export function stagePointStyle(
+  target: StagePointStyleArrays,
+  idx: number,
+  sp: PlotDataPoint,
+  opacity: number,
+  style: StagePointStyle,
+  dpr: number,
+  sizeScaleFactor = 1,
+): void {
+  const pointColors = style.getColors(sp);
+  const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
+  const size = Math.sqrt(style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
+  const shapeIndex = getShapeIndex(style.getShape(sp));
+
+  target.colors[idx * 4] = r;
+  target.colors[idx * 4 + 1] = g;
+  target.colors[idx * 4 + 2] = b;
+  target.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
+
+  const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * dpr * sizeScaleFactor);
+  target.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
+  target.labelCounts[idx] = pointColors.length;
+  target.shapes[idx] = shapeIndex;
+
+  fillLabelColorTexels(target.labelColorData, idx, pointColors, MAX_LABELS);
+}
 
 /**
  * Write one staged point into the parallel target arrays at slot `idx`.
@@ -55,22 +98,6 @@ export function stagePoint(
 ): void {
   target.dataPositions[idx * 2] = screenX;
   target.dataPositions[idx * 2 + 1] = screenY;
-
-  const pointColors = style.getColors(sp);
-  const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-  const size = Math.sqrt(style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
-  const shapeIndex = getShapeIndex(style.getShape(sp));
-
-  target.colors[idx * 4] = r;
-  target.colors[idx * 4 + 1] = g;
-  target.colors[idx * 4 + 2] = b;
-  target.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
-
-  const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * dpr * sizeScaleFactor);
-  target.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
+  stagePointStyle(target, idx, sp, opacity, style, dpr, sizeScaleFactor);
   target.depths[idx] = depth;
-  target.labelCounts[idx] = pointColors.length;
-  target.shapes[idx] = shapeIndex;
-
-  fillLabelColorTexels(target.labelColorData, idx, pointColors, MAX_LABELS);
 }

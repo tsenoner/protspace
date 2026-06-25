@@ -10,7 +10,6 @@
 
 import type * as d3 from 'd3';
 import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
-import { getShapeIndex } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -19,11 +18,9 @@ import {
   MAX_POINTS_DIRECT_RENDER,
   DEFAULT_GAMMA,
 } from '../types';
-import { resolveColor } from '../color-utils';
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
-import { fillLabelColorTexels } from './label-texture-utils';
 import { buildPaintOrder } from './point-staging';
 import { planRendererCapacity } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
@@ -36,14 +33,7 @@ import {
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
-import {
-  stagePoint,
-  type StagePointArrays,
-  POINT_SIZE_DIVISOR,
-  MIN_POINT_SIZE,
-  DIAMOND_SIZE_SCALE,
-  MAX_LABELS,
-} from './stage-point';
+import { stagePoint, stagePointStyle, type StagePointArrays, MAX_LABELS } from './stage-point';
 import { ContextLossController } from './context-loss-controller';
 import { ExportRenderer } from './export-renderer';
 import {
@@ -446,6 +436,7 @@ export class WebGLRenderer {
       this.resources.linearFramebuffer.texture,
       this.gamma,
       this.resources.quadBuffer,
+      this.gammaCorrectionUniformLocations,
     );
   }
 
@@ -948,24 +939,11 @@ export class WebGLRenderer {
             this.renderedPointIds.add(sp.id);
           }
 
-          // Update only style buffers (colors, shapes, sizes)
-          const pointColors = this.style.getColors(sp);
-          const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-          const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
-          const shapeType = this.style.getShape(sp);
-          const shapeIndex = getShapeIndex(shapeType);
-
-          this.colors[idx * 4] = r;
-          this.colors[idx * 4 + 1] = g;
-          this.colors[idx * 4 + 2] = b;
-          this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
-          const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
-          this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-          this.labelCounts[idx] = pointColors.length;
-          this.shapes[idx] = shapeIndex;
-
-          // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
-          fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
+          // Update only style channels (color/alpha/size/shape/label texels) —
+          // positions and depths are unchanged from the last rebuild. Shares the
+          // exact packing the full-rebuild path uses via stagePoint (stageArrays
+          // aliases this.colors/this.sizes/... so this writes the same buffers).
+          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style, this.dpr);
 
           idx++;
         }

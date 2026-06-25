@@ -177,9 +177,16 @@ export function createStyleGetters(
 
   // Precompute normalization for z-order mapping so getDepth is cheap.
   const zMap = styleConfig.zOrderMapping ?? null;
+  // reduce (not Math.max(...spread)): a legend with tens of thousands of
+  // categories would blow the argument-count limit and throw RangeError.
+  // `-Infinity` start matches Math.max over an empty filtered set; downstream
+  // `zMax > 0` guards treat that the same as the old code.
   const zMax =
     zMap && Object.keys(zMap).length > 0
-      ? Math.max(...Object.values(zMap).filter((v) => typeof v === 'number' && Number.isFinite(v)))
+      ? Object.values(zMap).reduce(
+          (max, v) => (typeof v === 'number' && Number.isFinite(v) && v > max ? v : max),
+          -Infinity,
+        )
       : 0;
   const Z_EPS = 1e-3; // must be small enough to not override opacity-based depth differences
 

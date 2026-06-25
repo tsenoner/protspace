@@ -1,5 +1,6 @@
 import type { VisualizationData, PlotData } from '../types.js';
 import { EMPTY_PLOT_DATA } from './plot-data.js';
+import { DATA_EXTENT_PADDING } from './scales.js';
 import * as d3 from 'd3';
 
 // Memoize x/y extents per PlotData object reference. Resizes pass the same PlotData
@@ -150,8 +151,8 @@ export class DataProcessor {
     const xExtent = extents.x;
     const yExtent = extents.y;
 
-    const xPadding = Math.abs(xExtent[1] - xExtent[0]) * 0.05;
-    const yPadding = Math.abs(yExtent[1] - yExtent[0]) * 0.05;
+    const xPadding = Math.abs(xExtent[1] - xExtent[0]) * DATA_EXTENT_PADDING;
+    const yPadding = Math.abs(yExtent[1] - yExtent[0]) * DATA_EXTENT_PADDING;
 
     return {
       x: d3

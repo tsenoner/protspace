@@ -45,5 +45,8 @@ export function pointInWindow(p: { px: number; py: number }, win: ViewportWindow
 
 /** Cache key shared by virtualization, badge culling, and overlays — they must agree. */
 export function buildViewKey(transform: ZoomTransform, width: number, height: number): string {
-  return `${Math.round(transform.x)}|${Math.round(transform.y)}|${transform.k.toFixed(3)}|${width}|${height}`;
+  // Coerce k the same way the overlay render path does (`transform.k || 1`) so a
+  // degenerate k=0 keys to the geometry actually rendered, never a stale view.
+  const k = transform.k || 1;
+  return `${Math.round(transform.x)}|${Math.round(transform.y)}|${k.toFixed(3)}|${width}|${height}`;
 }

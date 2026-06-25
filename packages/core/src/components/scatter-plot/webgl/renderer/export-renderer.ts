@@ -94,21 +94,6 @@ interface ExportRenderOptions {
 
 export class ExportRenderer {
   /**
-   * Data extent (with 5% padding, matching the live scale convention) of the
-   * supplied SoA columns. Static so it is unit-testable without an instance.
-   *
-   * NOTE: the inline `getDataExtent` returned the *unpadded* extent
-   * (`computeExtent`); `createExportScales` applies the padding internally via
-   * `computePaddedExtent`. This static seam mirrors the padded domain used for
-   * the actual export render (which is what callers translating inset rects
-   * care about). The instance `getDataExtent` below preserves the original
-   * unpadded behavior byte-for-byte.
-   */
-  static getDataExtent(xs: ArrayLike<number>, ys: ArrayLike<number>, length: number): DataDomain {
-    return computePaddedExtent(xs, ys, length);
-  }
-
-  /**
    * Create scales appropriate for export dimensions.
    * Scales the margin proportionally to maintain visual consistency.
    *
@@ -505,7 +490,11 @@ export class ExportRenderer {
       const quadBuffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, QUAD_VERTICES, gl.STATIC_DRAW);
-      drawGammaQuad(gl, gammaCorrectionProgram, linearFramebuffer.texture, gamma, quadBuffer);
+      // One-shot export pass: resolve the gamma uniforms inline (no per-frame cost here).
+      drawGammaQuad(gl, gammaCorrectionProgram, linearFramebuffer.texture, gamma, quadBuffer, {
+        linearTexture: gl.getUniformLocation(gammaCorrectionProgram, 'u_linearTexture'),
+        gamma: gl.getUniformLocation(gammaCorrectionProgram, 'u_gamma'),
+      });
       gl.deleteBuffer(quadBuffer);
     } else {
       // Direct rendering

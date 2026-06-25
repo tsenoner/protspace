@@ -34,11 +34,10 @@ function makeHostBridge(svg: SVGSVGElement) {
       getSelectionTool: () => 'rectangle' as const,
       hasScales: () => true,
       getTransform: () => d3.zoomIdentity,
-      // slot resolution + picking are host-owned (reuse _slotsToInteractiveIds / pickInteractivePointAt)
+      // slot resolution is host-owned (reuses _slotsToInteractiveIds)
       resolveSlotsToIds: (slots: number[]) => slots.map((s) => `p${s}`),
       queryByPolygon: (_v: ReadonlyArray<[number, number]>) => [0, 1],
       queryByPixels: () => [0, 1],
-      pickInteractivePointAt: () => null,
       onTransform: (t: d3.ZoomTransform) => calls.transforms.push(t),
       onSelect: (ids: string[]) => calls.selections.push(ids),
       onHover: () => {},

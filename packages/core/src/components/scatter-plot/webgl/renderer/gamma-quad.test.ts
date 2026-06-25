@@ -35,7 +35,10 @@ describe('drawGammaQuad', () => {
       disableVertexAttribArray: (l: number) => calls.push(`disable:${l}`),
     } as unknown as WebGL2RenderingContext;
 
-    drawGammaQuad(gl, program, sourceTexture, 2.2, quadBuffer);
+    drawGammaQuad(gl, program, sourceTexture, 2.2, quadBuffer, {
+      linearTexture: { n: 'u_linearTexture' } as unknown as WebGLUniformLocation,
+      gamma: { n: 'u_gamma' } as unknown as WebGLUniformLocation,
+    });
 
     expect(calls).toEqual([
       'useProgram',
