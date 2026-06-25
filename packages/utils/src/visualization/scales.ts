@@ -1,13 +1,21 @@
 import * as d3 from 'd3';
 import type { PlotDataPoint } from '../types.js';
 
+/**
+ * Fraction of the data range added as padding on every edge when building plot
+ * scales. Single source of truth shared by the live scales (here and
+ * DataProcessor) and the WebGL export domain, so on-screen and exported framing
+ * stay in lockstep.
+ */
+export const DATA_EXTENT_PADDING = 0.05;
+
 export class ScaleManager {
   static createScales(
     data: PlotDataPoint[],
     width: number,
     height: number,
     margin: { top: number; right: number; bottom: number; left: number },
-    padding: number = 0.05,
+    padding: number = DATA_EXTENT_PADDING,
   ) {
     if (data.length === 0) return null;
 

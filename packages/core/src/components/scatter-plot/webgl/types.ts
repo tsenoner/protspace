@@ -1,5 +1,8 @@
-import type * as d3 from 'd3';
 import type { PlotDataPoint } from '@protspace/utils';
+
+// ScalePair is owned by @protspace/utils (data-processor `createScales`); re-export
+// it here so webgl code importing `ScalePair` from this module still resolves.
+export type { ScalePair } from '@protspace/utils';
 
 // ============================================================================
 // Types & Interfaces
@@ -10,15 +13,8 @@ export interface WebGLStyleGetters {
   getPointSize: (point: PlotDataPoint) => number;
   getOpacity: (point: PlotDataPoint) => number;
   getDepth: (point: PlotDataPoint) => number;
-  getStrokeColor: (point: PlotDataPoint) => string;
-  getStrokeWidth: (point: PlotDataPoint) => number;
   getShape: (point: PlotDataPoint) => string;
 }
-
-export type ScalePair = {
-  x: d3.ScaleLinear<number, number>;
-  y: d3.ScaleLinear<number, number>;
-};
 
 /**
  * Framebuffer resources for offscreen rendering
@@ -29,6 +25,27 @@ export interface FramebufferResources {
   depthBuffer: WebGLRenderbuffer;
   width: number;
   height: number;
+}
+
+/** Attribute locations for the point shader program (six attributes). */
+export interface PointAttribLocations {
+  dataPosition: number;
+  size: number;
+  color: number;
+  depth: number;
+  labelCount: number;
+  shape: number;
+}
+
+/** Uniform locations for the point shader program (seven uniforms). */
+export interface PointUniformLocations {
+  resolution: WebGLUniformLocation | null;
+  transform: WebGLUniformLocation | null;
+  dpr: WebGLUniformLocation | null;
+  gamma: WebGLUniformLocation | null;
+  labelColors: WebGLUniformLocation | null;
+  labelTextureSize: WebGLUniformLocation | null;
+  maxLabels: WebGLUniformLocation | null;
 }
 
 // ============================================================================

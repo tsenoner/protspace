@@ -8,209 +8,45 @@
  * Falls back to direct rendering if gamma pipeline is unavailable.
  */
 
-import * as d3 from 'd3';
+import type * as d3 from 'd3';
 import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
-import { getShapeIndex, EMPTY_PLOT_DATA } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
-  type FramebufferResources,
+  type PointAttribLocations,
+  type PointUniformLocations,
   MAX_POINTS_DIRECT_RENDER,
   DEFAULT_GAMMA,
 } from '../types';
-import { resolveColor } from '../color-utils';
 import { createProgramFromSources } from '../shader-utils';
-import { fillLabelColorTexels } from './label-texture-utils';
-import { sortIndicesByDepthDescending } from './depth-sort';
+import { resolvePointLocations } from './point-locations';
+import { setupAttributes } from './point-attributes';
+import { buildPaintOrder } from './point-staging';
 import { planRendererCapacity } from './capacity-planner';
-
-// ============================================================================
-// Shader Sources
-// ============================================================================
+import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
+import { GLResources } from './gl-resources';
+import {
+  bindAndClearTarget,
+  setPointBlendState,
+  drawPoints,
+  bindPointDrawState,
+} from './render-target';
+import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
+import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
+import { stagePoint, stagePointStyle, type StagePointArrays, MAX_LABELS } from './stage-point';
+import { ContextLossController } from './context-loss-controller';
+import { ExportRenderer } from './export-renderer';
+import {
+  POINT_VERTEX_SHADER,
+  POINT_FRAGMENT_SHADER,
+  GAMMA_VERTEX_SHADER,
+  GAMMA_FRAGMENT_SHADER,
+} from './export-shaders';
 
 // Constants
-const POINT_SIZE_DIVISOR = 3;
-const MIN_POINT_SIZE = 1;
 const MIN_CAPACITY = 1024;
-const MAX_LABELS = 8;
 const LABEL_TEXTURE_WIDTH = 2048;
 const POINTS_PER_TEXTURE_ROW = LABEL_TEXTURE_WIDTH / MAX_LABELS;
-const DIAMOND_SIZE_SCALE = 1.25;
-
-// Stable reference dimensions for margin scaling at export time. Tying margin
-// scaling to the live display canvas (via `config.width/height`, which track
-// `clientWidth/clientHeight`) made captured plots window-size dependent — same
-// data lands at slightly different pixel positions when the browser is resized,
-// causing publish-modal overlays to drift relative to clusters across sessions.
-// Anchoring to a fixed reference makes the export render reproducible.
-const EXPORT_MARGIN_REFERENCE_WIDTH = 800;
-const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
-
-const POINT_VERTEX_SHADER = `#version 300 es
-precision highp float;
-
-in vec2 a_dataPosition;
-in float a_pointSize;
-in vec4 a_color;
-in float a_depth;
-in float a_labelCount;
-in float a_shape;
-
-uniform vec2 u_resolution;
-uniform vec3 u_transform;
-uniform float u_dpr;
-uniform float u_gamma;
-
-out vec4 v_color;
-out float v_labelCount;
-flat out float v_shape;
-flat out int v_pointIndex;
-
-void main() {
-  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
-  vec2 physicalPos = cssTransformed * u_dpr;
-  vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;
-
-  // Depth is computed per-point on the CPU (opacity + legend z-order tie-break)
-  gl_Position = vec4(clipSpace.x, -clipSpace.y, a_depth, 1.0);
-  gl_PointSize = max(1.0, a_pointSize);
-
-  // Convert sRGB input to linear RGB for proper blending
-  vec3 linearColor = pow(max(a_color.rgb, vec3(0.0)), vec3(u_gamma));
-  v_color = vec4(linearColor, a_color.a);
-  v_labelCount = a_labelCount;
-  v_shape = a_shape;
-  v_pointIndex = gl_VertexID;
-}`;
-
-const POINT_FRAGMENT_SHADER = `#version 300 es
-precision highp float;
-
-in vec4 v_color;
-in float v_labelCount;
-flat in float v_shape;
-flat in int v_pointIndex;
-
-uniform sampler2D u_labelColors;
-uniform vec2 u_labelTextureSize;
-uniform int u_maxLabels;
-uniform float u_gamma;
-
-out vec4 fragColor;
-
-const float PI = 3.14159265359;
-const float SQRT3 = 1.73205080757;
-
-void main() {
-  vec2 coord = gl_PointCoord * 2.0 - 1.0;
-
-  // Compute signed edge distance for each shape.
-  // Positive = inside, zero = on boundary, negative = outside.
-  // This single computation drives both anti-aliasing and the outline effect.
-  float edgeDist;
-
-  if (v_shape < 0.5) { // Circle
-    edgeDist = 1.0 - length(coord);
-  } else if (v_shape < 1.5) { // Square
-    edgeDist = 1.0 - max(abs(coord.x), abs(coord.y));
-  } else if (v_shape < 2.5) { // Diamond
-    // Match d3.symbolDiamond proportions (same mapping as D3's "tan30" constant, i.e. sqrt(1/3))
-    edgeDist = 1.0 - (abs(coord.x) * SQRT3 + abs(coord.y));
-  } else if (v_shape < 3.5) { // Triangle Up
-    // Inside region: abs(x)*SQRT3 <= 1 + y, clipped to point quad [-1,1]^2.
-    float eSides = (1.0 + coord.y - abs(coord.x) * SQRT3) / 2.0;
-    float eBottom = 1.0 - coord.y;
-    float eLR = 1.0 - abs(coord.x);
-    edgeDist = min(eSides, min(eBottom, eLR));
-  } else if (v_shape < 4.5) { // Triangle Down
-    // Inside region: abs(x)*SQRT3 <= 1 - y, clipped to point quad [-1,1]^2.
-    float eSides = (1.0 - coord.y - abs(coord.x) * SQRT3) / 2.0;
-    float eTop = 1.0 + coord.y;
-    float eLR = 1.0 - abs(coord.x);
-    edgeDist = min(eSides, min(eTop, eLR));
-  } else { // Plus — SDF as union of vertical and horizontal arms
-    float thickness = 0.35;
-    // SDF for vertical arm (half-extents: thickness x 1.0)
-    vec2 dV = abs(coord) - vec2(thickness, 1.0);
-    float sdfV = length(max(dV, 0.0)) + min(max(dV.x, dV.y), 0.0);
-    // SDF for horizontal arm (half-extents: 1.0 x thickness)
-    vec2 dH = abs(coord) - vec2(1.0, thickness);
-    float sdfH = length(max(dH, 0.0)) + min(max(dH.x, dH.y), 0.0);
-    // Union of both arms; negate so positive = inside
-    edgeDist = -min(sdfV, sdfH);
-  }
-
-  // Anti-aliased shape edge: smooth alpha over ~1 screen pixel using
-  // screen-space derivatives of the distance field.
-  float aa = fwidth(edgeDist);
-  float shapeAlpha = smoothstep(0.0, aa, edgeDist);
-  if (shapeAlpha < 0.001) discard;
-
-  // Early-out for hidden points (alpha=0). These remain in GPU arrays to
-  // preserve sort order across visibility toggles, avoiding costly re-sorts.
-  if (v_color.a < 0.001) discard;
-
-  vec3 finalColor = v_color.rgb;
-
-  // Pie Chart Logic (only for multi-label points, which always use circle shape)
-  if (v_labelCount > 1.5) {
-    float angle = atan(coord.y, coord.x); // -PI to PI
-    // Map to 0..1
-    float normalizedAngle = (angle + PI) / (2.0 * PI);
-
-    float count = floor(v_labelCount + 0.5);
-    float sliceIndex = floor(normalizedAngle * count);
-
-    // Calculate texture lookup index
-    int globalIndex = v_pointIndex * u_maxLabels + int(sliceIndex);
-    int texW = int(u_labelTextureSize.x);
-    int tx = globalIndex % texW;
-    int ty = globalIndex / texW;
-
-    vec4 texColor = texelFetch(u_labelColors, ivec2(tx, ty), 0);
-
-    // Linearize texture color
-    finalColor = pow(max(texColor.rgb, vec3(0.0)), vec3(u_gamma));
-  }
-
-  // Darken near the edge to mimic a border/outline.
-  // Skip for faded points (low alpha) where the darkening is disproportionately visible.
-  float strokeWidth = 0.15;
-  if (v_color.a > 0.5 && max(edgeDist, 0.0) < strokeWidth) {
-    finalColor = finalColor * 0.5;
-  }
-
-  float finalAlpha = v_color.a * shapeAlpha;
-  fragColor = vec4(finalColor * finalAlpha, finalAlpha);
-}`;
-const GAMMA_VERTEX_SHADER = `#version 300 es
-precision highp float;
-
-in vec2 a_position;
-out vec2 v_texCoord;
-
-void main() {
-  gl_Position = vec4(a_position, 0.0, 1.0);
-  v_texCoord = (a_position + 1.0) * 0.5;
-}`;
-
-const GAMMA_FRAGMENT_SHADER = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_linearTexture;
-uniform float u_gamma;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-  vec4 linear = texture(u_linearTexture, v_texCoord);
-
-  // Apply gamma correction to RGB, preserve alpha
-  vec3 corrected = pow(max(linear.rgb, vec3(0.0)), vec3(1.0 / u_gamma));
-
-  fragColor = vec4(corrected, linear.a);
-}`;
 
 // ============================================================================
 // WebGL2 Renderer Implementation
@@ -219,49 +55,21 @@ void main() {
 export class WebGLRenderer {
   private gl: WebGL2RenderingContext | null = null;
 
-  // Point rendering
-  private pointProgram: WebGLProgram | null = null;
-  private pointVao: WebGLVertexArrayObject | null = null;
-  private pointAttribLocations: {
-    dataPosition: number;
-    size: number;
-    color: number;
-    depth: number;
-    labelCount: number;
-    shape: number;
-  } | null = null;
-  private pointUniformLocations: {
-    resolution: WebGLUniformLocation | null;
-    transform: WebGLUniformLocation | null;
-    dpr: WebGLUniformLocation | null;
-    gamma: WebGLUniformLocation | null;
-    labelColors: WebGLUniformLocation | null;
-    labelTextureSize: WebGLUniformLocation | null;
-    maxLabels: WebGLUniformLocation | null;
-  } | null = null;
+  // Owned GPU handles (programs, VAO, buffers, quad, label texture, framebuffer).
+  // Resource inventory (create/validate/delete/reset) lives in GLResources; the
+  // dirty-flag/signature/cache state below stays on the class.
+  private resources = new GLResources();
 
-  // Full-screen quad for gamma correction
-  private quadBuffer: WebGLBuffer | null = null;
-
-  // Gamma correction (final pass)
-  private gammaCorrectionProgram: WebGLProgram | null = null;
+  // Shader location maps (resolved from the live programs; not GPU-owned handles,
+  // so they are NOT part of the GLResources inventory).
+  private pointAttribLocations: PointAttribLocations | null = null;
+  private pointUniformLocations: PointUniformLocations | null = null;
   private gammaCorrectionUniformLocations: {
     linearTexture: WebGLUniformLocation | null;
     gamma: WebGLUniformLocation | null;
   } | null = null;
 
-  // Linear RGB framebuffer for gamma-correct rendering
-  private linearFramebuffer: FramebufferResources | null = null;
   private gamma = DEFAULT_GAMMA;
-
-  // GPU Buffers
-  private dataPositionBuffer: WebGLBuffer | null = null;
-  private sizeBuffer: WebGLBuffer | null = null;
-  private colorBuffer: WebGLBuffer | null = null;
-  private depthBuffer: WebGLBuffer | null = null;
-  private labelCountBuffer: WebGLBuffer | null = null;
-  private shapeBuffer: WebGLBuffer | null = null;
-  private labelColorTexture: WebGLTexture | null = null;
 
   // CPU arrays
   private dataPositions = new Float32Array(0);
@@ -271,6 +79,10 @@ export class WebGLRenderer {
   private labelCounts = new Float32Array(0);
   private shapes = new Float32Array(0);
   private labelColorData = new Uint8Array(0);
+
+  // Zero-copy view over the parallel staging arrays above, passed to `stagePoint`.
+  // Re-pointed in `refreshStageArrays()` whenever capacity is reallocated.
+  private stageArrays: StagePointArrays = this.buildStageArrays();
 
   // State
   private capacity = 0;
@@ -316,23 +128,15 @@ export class WebGLRenderer {
   private styleSignature: string | null = null;
   private gammaPipelineAvailable = true;
   private warnedGammaFallback = false;
-  private contextLost = false;
-  private readonly handleContextLost = (event: Event) => {
-    event.preventDefault();
-    this.markContextLost();
-    this.onContextLost?.();
-  };
-  private readonly handleContextRestored = () => {
-    this.contextLost = false;
-    this.resetRendererState();
-    if (this.lastRenderedData && this.lastRenderedData.length > 0) {
-      requestAnimationFrame(() => {
-        if (!this.contextLost) {
-          this.render(this.lastRenderedData ?? EMPTY_PLOT_DATA);
-        }
-      });
-    }
-  };
+
+  // Context-loss lifecycle (listener + idempotent "lost" flag) lives in the
+  // controller; `markContextLost`/`isContextLost` delegate to it.
+  private readonly lossController: ContextLossController;
+
+  // Off-screen export subsystem. Stateless apart from the ephemeral context it
+  // creates per `renderToCanvas` call; the facade passes in the live data,
+  // config, style getters, transform, gamma, and selection state.
+  private readonly exportRenderer = new ExportRenderer();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -342,35 +146,20 @@ export class WebGLRenderer {
     private style: WebGLStyleGetters,
     private onContextLost?: () => void,
   ) {
-    this.canvas.addEventListener('webglcontextlost', this.handleContextLost, { passive: false });
-    this.canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
+    this.lossController = new ContextLossController(this.canvas, () => {
+      this.resetRendererState();
+      this.onContextLost?.();
+    });
   }
 
   destroy() {
-    this.canvas.removeEventListener('webglcontextlost', this.handleContextLost);
-    this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
+    this.lossController.destroy();
+    this.dispose();
   }
 
   // ============================================================================
   // Public API
   // ============================================================================
-
-  /**
-   * Set the gamma value for display.
-   * Standard sRGB displays use gamma ~2.2.
-   * @param gamma Gamma value (clamped between 1.0 and 3.0)
-   */
-  setGamma(gamma: number) {
-    this.gamma = Math.max(1.0, Math.min(3.0, gamma));
-  }
-
-  /**
-   * Get the current gamma value.
-   * @returns Current gamma value
-   */
-  getGamma(): number {
-    return this.gamma;
-  }
 
   setStyleSignature(signature: string | null) {
     if (this.styleSignature !== signature) {
@@ -381,14 +170,6 @@ export class WebGLRenderer {
 
   setSelectionActive(active: boolean) {
     this.selectionActive = active;
-  }
-
-  /**
-   * @deprecated Selected annotation is now handled via style signature.
-   * Kept for backward compatibility.
-   */
-  setSelectedAnnotation(_annotation: string) {
-    // No-op: selected annotation is now part of style signature
   }
 
   invalidateStyleCache() {
@@ -476,58 +257,24 @@ export class WebGLRenderer {
     const gl = this.gl;
 
     // Reuse existing framebuffer if dimensions match
-    if (this.linearFramebuffer) {
-      if (this.linearFramebuffer.width === width && this.linearFramebuffer.height === height) {
+    if (this.resources.linearFramebuffer) {
+      if (
+        this.resources.linearFramebuffer.width === width &&
+        this.resources.linearFramebuffer.height === height
+      ) {
         return true;
       }
       // Clean up old framebuffer
-      gl.deleteFramebuffer(this.linearFramebuffer.framebuffer);
-      gl.deleteTexture(this.linearFramebuffer.texture);
-      gl.deleteRenderbuffer(this.linearFramebuffer.depthBuffer);
-      this.linearFramebuffer = null;
+      destroyFramebuffer(gl, this.resources.linearFramebuffer);
+      this.resources.linearFramebuffer = null;
     }
 
-    const framebuffer = gl.createFramebuffer();
-    const texture = gl.createTexture();
-    const depthBuffer = gl.createRenderbuffer();
-
-    if (!framebuffer || !texture || !depthBuffer) {
+    const fb = createLinearFramebuffer(gl, width, height);
+    if (!fb) {
+      console.error('Linear framebuffer not complete');
       return false;
     }
-
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-
-    // Use RGBA16F for linear color space with good precision
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthBuffer);
-
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      console.error('Linear framebuffer not complete:', status);
-      gl.deleteFramebuffer(framebuffer);
-      gl.deleteTexture(texture);
-      gl.deleteRenderbuffer(depthBuffer);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-      return false;
-    }
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-
-    this.linearFramebuffer = { framebuffer, texture, depthBuffer, width, height };
+    this.resources.linearFramebuffer = fb;
     return true;
   }
 
@@ -548,32 +295,30 @@ export class WebGLRenderer {
       return;
     }
 
-    if (this.gammaCorrectionProgram) {
-      gl.deleteProgram(this.gammaCorrectionProgram);
-      this.gammaCorrectionProgram = null;
+    if (this.resources.gammaCorrectionProgram) {
+      gl.deleteProgram(this.resources.gammaCorrectionProgram);
+      this.resources.gammaCorrectionProgram = null;
     }
 
-    if (this.linearFramebuffer) {
-      gl.deleteFramebuffer(this.linearFramebuffer.framebuffer);
-      gl.deleteTexture(this.linearFramebuffer.texture);
-      gl.deleteRenderbuffer(this.linearFramebuffer.depthBuffer);
-      this.linearFramebuffer = null;
+    if (this.resources.linearFramebuffer) {
+      destroyFramebuffer(gl, this.resources.linearFramebuffer);
+      this.resources.linearFramebuffer = null;
     }
 
     this.gammaCorrectionUniformLocations = null;
   }
 
   private cleanupGammaResources() {
-    this.gammaCorrectionProgram = null;
+    this.resources.gammaCorrectionProgram = null;
     this.gammaCorrectionUniformLocations = null;
-    this.linearFramebuffer = null;
+    this.resources.linearFramebuffer = null;
   }
 
   private shouldUseGammaPipeline(): boolean {
     return (
       this.gammaPipelineAvailable &&
-      !!this.linearFramebuffer &&
-      !!this.gammaCorrectionProgram &&
+      !!this.resources.linearFramebuffer &&
+      !!this.resources.gammaCorrectionProgram &&
       !!this.gammaCorrectionUniformLocations
     );
   }
@@ -599,8 +344,8 @@ export class WebGLRenderer {
     if (!gl || !scales || this.isContextLost()) return;
 
     const config = this.getConfig();
-    const width = config.width ?? 800;
-    const height = config.height ?? 600;
+    const width = config.width ?? DEFAULT_VIEWPORT_WIDTH;
+    const height = config.height ?? DEFAULT_VIEWPORT_HEIGHT;
     this.resize(width, height);
 
     const transform = this.getTransform();
@@ -642,7 +387,7 @@ export class WebGLRenderer {
       return;
     }
 
-    const framebuffer = this.linearFramebuffer;
+    const framebuffer = this.resources.linearFramebuffer;
     if (!framebuffer) {
       this.renderDirect(transform);
       return;
@@ -666,10 +411,7 @@ export class WebGLRenderer {
     this.renderPoints(transform);
 
     // Pass 2: Gamma correction to canvas
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
 
     this.renderGammaCorrection();
   }
@@ -677,42 +419,32 @@ export class WebGLRenderer {
   private renderGammaCorrection() {
     if (
       !this.gl ||
-      !this.gammaCorrectionProgram ||
-      !this.linearFramebuffer ||
-      !this.gammaCorrectionUniformLocations
+      !this.resources.gammaCorrectionProgram ||
+      !this.resources.linearFramebuffer ||
+      !this.gammaCorrectionUniformLocations ||
+      !this.resources.quadBuffer
     ) {
       return;
     }
 
     const gl = this.gl;
     gl.disable(gl.BLEND);
-    gl.useProgram(this.gammaCorrectionProgram);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.linearFramebuffer.texture);
-    gl.uniform1i(this.gammaCorrectionUniformLocations.linearTexture, 0);
-    gl.uniform1f(this.gammaCorrectionUniformLocations.gamma, this.gamma);
-
-    // Draw full-screen quad
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
-    const posLoc = gl.getAttribLocation(this.gammaCorrectionProgram, 'a_position');
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    gl.disableVertexAttribArray(posLoc);
-    gl.bindTexture(gl.TEXTURE_2D, null);
+    drawGammaQuad(
+      gl,
+      this.resources.gammaCorrectionProgram,
+      this.resources.linearFramebuffer.texture,
+      this.gamma,
+      this.resources.quadBuffer,
+      this.gammaCorrectionUniformLocations,
+    );
   }
 
   private renderDirect(transform: d3.ZoomTransform) {
     if (!this.gl) return;
     const gl = this.gl;
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
 
     this.renderPoints(transform);
   }
@@ -721,35 +453,23 @@ export class WebGLRenderer {
     if (!this.gl) return;
     const gl = this.gl;
 
-    if (this.pointVao) gl.deleteVertexArray(this.pointVao);
-    if (this.dataPositionBuffer) gl.deleteBuffer(this.dataPositionBuffer);
-    if (this.sizeBuffer) gl.deleteBuffer(this.sizeBuffer);
-    if (this.colorBuffer) gl.deleteBuffer(this.colorBuffer);
-    if (this.depthBuffer) gl.deleteBuffer(this.depthBuffer);
-    if (this.labelCountBuffer) gl.deleteBuffer(this.labelCountBuffer);
-    if (this.shapeBuffer) gl.deleteBuffer(this.shapeBuffer);
-    if (this.quadBuffer) gl.deleteBuffer(this.quadBuffer);
-    if (this.labelColorTexture) gl.deleteTexture(this.labelColorTexture);
-    if (this.pointProgram) gl.deleteProgram(this.pointProgram);
-    if (this.gammaCorrectionProgram) gl.deleteProgram(this.gammaCorrectionProgram);
-
-    if (this.linearFramebuffer) {
-      gl.deleteFramebuffer(this.linearFramebuffer.framebuffer);
-      gl.deleteTexture(this.linearFramebuffer.texture);
-      gl.deleteRenderbuffer(this.linearFramebuffer.depthBuffer);
-      this.linearFramebuffer = null;
-    }
+    this.resources.deleteAll(gl);
 
     this.gl = null;
   }
 
   // ============================================================================
-  // Off-Screen Export Rendering
+  // Off-Screen Export Rendering (delegated to ExportRenderer)
   // ============================================================================
 
   /**
    * Render visualization at arbitrary dimensions to a new off-screen canvas.
    * Creates a temporary WebGL context, renders at requested size, returns 2D canvas.
+   *
+   * Thin delegate over {@link ExportRenderer.renderToCanvas}: the facade supplies
+   * the last-rendered data, the live config + style getters, and the live render
+   * state (selection, transform, gamma) so the export equals the on-screen render
+   * (incl. the F-15 two-pass selection blend).
    *
    * @param width Target width in CSS pixels (will be multiplied by DPR)
    * @param height Target height in CSS pixels
@@ -763,164 +483,16 @@ export class WebGLRenderer {
     dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number },
     pointSizeReference?: { width: number; height: number },
   ): HTMLCanvasElement {
-    // Validate dimensions
-    const physicalWidth = Math.floor(width * dpr);
-    const physicalHeight = Math.floor(height * dpr);
-
-    const MAX_DIMENSION = 8192;
-    const MAX_AREA = 268435456; // ~268M pixels
-
-    if (physicalWidth > MAX_DIMENSION || physicalHeight > MAX_DIMENSION) {
-      throw new Error(
-        `Export dimensions ${physicalWidth}×${physicalHeight} exceed browser limit of ${MAX_DIMENSION}px`,
-      );
-    }
-    if (physicalWidth * physicalHeight > MAX_AREA) {
-      throw new Error(
-        `Export area ${(physicalWidth * physicalHeight).toLocaleString()} exceeds limit of ${MAX_AREA.toLocaleString()} pixels`,
-      );
-    }
-
-    // Ensure we have data to render
-    const pd = this.lastRenderedData;
-    if (!pd || pd.length === 0) {
-      throw new Error('No points available to render. Call render() first.');
-    }
-
-    // Create scales for export dimensions
-    const exportScales = this.createExportScales(pd, physicalWidth, physicalHeight, dataDomain);
-    if (!exportScales) {
-      throw new Error('Could not create scales for export rendering');
-    }
-
-    // Create off-screen WebGL canvas
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = physicalWidth;
-    offscreenCanvas.height = physicalHeight;
-
-    // Get WebGL2 context with same options as main canvas
-    const gl = offscreenCanvas.getContext('webgl2', {
-      antialias: true,
-      preserveDrawingBuffer: true,
-      premultipliedAlpha: false,
-      alpha: true,
-      powerPreference: 'high-performance',
+    return this.exportRenderer.renderToCanvas(this.lastRenderedData, this.getConfig(), this.style, {
+      width,
+      height,
+      dpr,
+      dataDomain,
+      pointSizeReference,
+      selectionActive: this.selectionActive,
+      transform: this.getTransform(),
+      gamma: this.gamma,
     });
-
-    if (!gl) {
-      throw new Error('Failed to create WebGL2 context for export');
-    }
-
-    try {
-      // Initialize WebGL state for the off-screen context
-      this.initializeOffscreenContext(
-        gl,
-        physicalWidth,
-        physicalHeight,
-        pd,
-        exportScales,
-        dpr,
-        pointSizeReference,
-      );
-
-      // Copy WebGL canvas to 2D canvas for safe export
-      const outputCanvas = document.createElement('canvas');
-      outputCanvas.width = physicalWidth;
-      outputCanvas.height = physicalHeight;
-
-      const ctx = outputCanvas.getContext('2d');
-      if (!ctx) {
-        throw new Error('Failed to create 2D context for export');
-      }
-
-      ctx.drawImage(offscreenCanvas, 0, 0);
-
-      return outputCanvas;
-    } finally {
-      // Clean up off-screen context
-      const loseContext = gl.getExtension('WEBGL_lose_context');
-      if (loseContext) {
-        loseContext.loseContext();
-      }
-    }
-  }
-
-  /**
-   * Create scales appropriate for export dimensions.
-   * Scales the margin proportionally to maintain visual consistency.
-   */
-  private createExportScales(
-    pd: PlotData,
-    exportWidth: number,
-    exportHeight: number,
-    dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number },
-  ): ScalePair | null {
-    if (pd.length === 0) return null;
-
-    const config = this.getConfig();
-
-    // Default margin if not specified
-    const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
-
-    // Scale margins from a fixed reference instead of the live display size,
-    // so the export render is reproducible across browser-window resizes.
-    const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
-    const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
-
-    const scaledMargin = {
-      top: margin.top * scaleY,
-      right: margin.right * scaleX,
-      bottom: margin.bottom * scaleY,
-      left: margin.left * scaleX,
-    };
-
-    let xDomMin: number;
-    let xDomMax: number;
-    let yDomMin: number;
-    let yDomMax: number;
-    let useFullBleed = false;
-    if (dataDomain) {
-      // Caller supplied an exact viewport — used by inset (geometric zoom)
-      // rendering. Skip the 5% padding AND skip margins so the data domain
-      // fills the canvas edge-to-edge. The caller is responsible for picking
-      // a domain that already accounts for the source plot's margins, so the
-      // inset's data fills aligns 1:1 with the source rect's data region.
-      xDomMin = dataDomain.xMin;
-      xDomMax = dataDomain.xMax;
-      yDomMin = dataDomain.yMin;
-      yDomMax = dataDomain.yMax;
-      useFullBleed = true;
-    } else {
-      // Compute data extent + 5% padding (ScaleManager.createScales convention).
-      let xMin = Infinity,
-        xMax = -Infinity,
-        yMin = Infinity,
-        yMax = -Infinity;
-      const { xs, ys, length } = pd;
-      for (let i = 0; i < length; i++) {
-        if (xs[i] < xMin) xMin = xs[i];
-        if (xs[i] > xMax) xMax = xs[i];
-        if (ys[i] < yMin) yMin = ys[i];
-        if (ys[i] > yMax) yMax = ys[i];
-      }
-      const padding = 0.05;
-      const xPadding = Math.abs(xMax - xMin) * padding;
-      const yPadding = Math.abs(yMax - yMin) * padding;
-      xDomMin = xMin - xPadding;
-      xDomMax = xMax + xPadding;
-      yDomMin = yMin - yPadding;
-      yDomMax = yMax + yPadding;
-    }
-
-    const xRangeStart = useFullBleed ? 0 : scaledMargin.left;
-    const xRangeEnd = useFullBleed ? exportWidth : exportWidth - scaledMargin.right;
-    const yRangeStart = useFullBleed ? exportHeight : exportHeight - scaledMargin.bottom;
-    const yRangeEnd = useFullBleed ? 0 : scaledMargin.top;
-
-    const xScale = d3.scaleLinear().domain([xDomMin, xDomMax]).range([xRangeStart, xRangeEnd]);
-    const yScale = d3.scaleLinear().domain([yDomMin, yDomMax]).range([yRangeStart, yRangeEnd]);
-
-    return { x: xScale, y: yScale };
   }
 
   /**
@@ -935,18 +507,7 @@ export class WebGLRenderer {
     exportWidth: number,
     exportHeight: number,
   ): { marginLeft: number; marginRight: number; marginTop: number; marginBottom: number } {
-    const config = this.getConfig();
-    const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
-    // Match createExportScales: anchor to the same fixed reference so insets'
-    // data-domain inversion stays consistent with the export render.
-    const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
-    const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
-    return {
-      marginLeft: margin.left * scaleX,
-      marginRight: margin.right * scaleX,
-      marginTop: margin.top * scaleY,
-      marginBottom: margin.bottom * scaleY,
-    };
+    return ExportRenderer.getRenderInfo(this.getConfig(), exportWidth, exportHeight);
   }
 
   /**
@@ -955,498 +516,7 @@ export class WebGLRenderer {
    * source rects (in normalized canvas coords) into data-coordinate viewports.
    */
   public getDataExtent(): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
-    const pd = this.lastRenderedData;
-    if (!pd || pd.length === 0) return null;
-    let xMin = Infinity,
-      xMax = -Infinity,
-      yMin = Infinity,
-      yMax = -Infinity;
-    const { xs, ys, length } = pd;
-    for (let i = 0; i < length; i++) {
-      if (xs[i] < xMin) xMin = xs[i];
-      if (xs[i] > xMax) xMax = xs[i];
-      if (ys[i] < yMin) yMin = ys[i];
-      if (ys[i] > yMax) yMax = ys[i];
-    }
-    return { xMin, xMax, yMin, yMax };
-  }
-
-  /**
-   * Initialize and render to an off-screen WebGL context
-   */
-  private initializeOffscreenContext(
-    gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
-    pd: PlotData,
-    scales: ScalePair,
-    dpr: number,
-    pointSizeReference?: { width: number; height: number },
-  ): void {
-    // Calculate size scale factor based on export vs display dimensions.
-    // For inset (zoom) renders, callers pass `pointSizeReference` set to the
-    // source plot's render size so points stay visually the same size as in
-    // the main plot — instead of shrinking when the inset target is small.
-    const config = this.getConfig();
-    const displayWidth = config.width ?? 800;
-    const displayHeight = config.height ?? 600;
-    const refW = pointSizeReference?.width ?? width;
-    const refH = pointSizeReference?.height ?? height;
-    const sizeScaleFactor = Math.sqrt((refW * refH) / (displayWidth * displayHeight));
-    // Enable extensions for float textures (needed for gamma pipeline)
-    const colorBufferFloatExt = gl.getExtension('EXT_color_buffer_float');
-    const floatBlendExt = gl.getExtension('EXT_float_blend');
-    gl.getExtension('OES_texture_float_linear');
-
-    const useGammaPipeline = !!colorBufferFloatExt && !!floatBlendExt;
-
-    // Create shader programs
-    const pointProgram = createProgramFromSources(gl, POINT_VERTEX_SHADER, POINT_FRAGMENT_SHADER);
-    if (!pointProgram) {
-      throw new Error('Failed to create point shader program for export');
-    }
-
-    let gammaCorrectionProgram: WebGLProgram | null = null;
-    if (useGammaPipeline) {
-      gammaCorrectionProgram = createProgramFromSources(
-        gl,
-        GAMMA_VERTEX_SHADER,
-        GAMMA_FRAGMENT_SHADER,
-      );
-    }
-
-    // Get attribute and uniform locations
-    const attribs = {
-      dataPosition: gl.getAttribLocation(pointProgram, 'a_dataPosition'),
-      size: gl.getAttribLocation(pointProgram, 'a_pointSize'),
-      color: gl.getAttribLocation(pointProgram, 'a_color'),
-      depth: gl.getAttribLocation(pointProgram, 'a_depth'),
-      labelCount: gl.getAttribLocation(pointProgram, 'a_labelCount'),
-      shape: gl.getAttribLocation(pointProgram, 'a_shape'),
-    };
-
-    const uniforms = {
-      resolution: gl.getUniformLocation(pointProgram, 'u_resolution'),
-      transform: gl.getUniformLocation(pointProgram, 'u_transform'),
-      dpr: gl.getUniformLocation(pointProgram, 'u_dpr'),
-      gamma: gl.getUniformLocation(pointProgram, 'u_gamma'),
-      labelColors: gl.getUniformLocation(pointProgram, 'u_labelColors'),
-      labelTextureSize: gl.getUniformLocation(pointProgram, 'u_labelTextureSize'),
-      maxLabels: gl.getUniformLocation(pointProgram, 'u_maxLabels'),
-    };
-
-    // Prepare point data using existing CPU arrays (reuse from main renderer)
-    const maxPoints = Math.min(pd.length, MAX_POINTS_DIRECT_RENDER);
-
-    // Populate buffers for off-screen rendering
-    const {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      labelColorData,
-      pointCount,
-    } = this.prepareOffscreenBufferData(pd, scales, maxPoints, dpr, sizeScaleFactor);
-
-    // Create and upload buffers
-    const dataPositionBuffer = gl.createBuffer();
-    const sizeBuffer = gl.createBuffer();
-    const colorBuffer = gl.createBuffer();
-    const depthBuffer = gl.createBuffer();
-    const labelCountBuffer = gl.createBuffer();
-    const shapeBuffer = gl.createBuffer();
-    const labelColorTexture = gl.createTexture();
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, dataPositionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, dataPositions.subarray(0, pointCount * 2), gl.STATIC_DRAW);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, sizes.subarray(0, pointCount), gl.STATIC_DRAW);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, colors.subarray(0, pointCount * 4), gl.STATIC_DRAW);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, depthBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, depths.subarray(0, pointCount), gl.STATIC_DRAW);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, labelCountBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, labelCounts.subarray(0, pointCount), gl.STATIC_DRAW);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, shapeBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, shapes.subarray(0, pointCount), gl.STATIC_DRAW);
-
-    // Setup label color texture
-    gl.bindTexture(gl.TEXTURE_2D, labelColorTexture);
-    const texHeight = labelColorData.length / 4 / LABEL_TEXTURE_WIDTH;
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA8,
-      LABEL_TEXTURE_WIDTH,
-      texHeight,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      labelColorData,
-    );
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-    // Create VAO
-    const pointVao = gl.createVertexArray();
-    gl.bindVertexArray(pointVao);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, dataPositionBuffer);
-    gl.enableVertexAttribArray(attribs.dataPosition);
-    gl.vertexAttribPointer(attribs.dataPosition, 2, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuffer);
-    gl.enableVertexAttribArray(attribs.size);
-    gl.vertexAttribPointer(attribs.size, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-    gl.enableVertexAttribArray(attribs.color);
-    gl.vertexAttribPointer(attribs.color, 4, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, depthBuffer);
-    gl.enableVertexAttribArray(attribs.depth);
-    gl.vertexAttribPointer(attribs.depth, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, labelCountBuffer);
-    gl.enableVertexAttribArray(attribs.labelCount);
-    gl.vertexAttribPointer(attribs.labelCount, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, shapeBuffer);
-    gl.enableVertexAttribArray(attribs.shape);
-    gl.vertexAttribPointer(attribs.shape, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindVertexArray(null);
-
-    // Get current transform and scale it for export dimensions
-    const displayTransform = this.getTransform();
-    // Scale transform's translation to export dimensions
-    const scaleFactorX = width / displayWidth;
-    const scaleFactorY = height / displayHeight;
-    // Create a scaled transform that preserves the current view at export resolution
-    const exportTransform = {
-      x: displayTransform.x * scaleFactorX,
-      y: displayTransform.y * scaleFactorY,
-      k: displayTransform.k, // Zoom level stays the same
-    } as d3.ZoomTransform;
-    const gamma = useGammaPipeline ? this.gamma : 1.0;
-
-    // Setup linear framebuffer if using gamma pipeline
-    let linearFramebuffer: FramebufferResources | null = null;
-    if (useGammaPipeline && gammaCorrectionProgram) {
-      linearFramebuffer = this.createOffscreenLinearFramebuffer(gl, width, height);
-    }
-
-    // Render
-    if (linearFramebuffer && gammaCorrectionProgram) {
-      // Gamma-correct pipeline
-      gl.bindFramebuffer(gl.FRAMEBUFFER, linearFramebuffer.framebuffer);
-      gl.viewport(0, 0, width, height);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.disable(gl.DEPTH_TEST);
-      gl.depthMask(false);
-
-      this.renderOffscreenPoints(
-        gl,
-        pointProgram,
-        pointVao,
-        uniforms,
-        width,
-        height,
-        dpr,
-        gamma,
-        exportTransform,
-        labelColorTexture,
-        labelColorData.length,
-        pointCount,
-      );
-
-      // Apply gamma correction
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, width, height);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.disable(gl.BLEND);
-
-      this.renderOffscreenGammaCorrection(gl, gammaCorrectionProgram, linearFramebuffer, gamma);
-    } else {
-      // Direct rendering
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, width, height);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.disable(gl.DEPTH_TEST);
-      gl.depthMask(false);
-
-      this.renderOffscreenPoints(
-        gl,
-        pointProgram,
-        pointVao,
-        uniforms,
-        width,
-        height,
-        dpr,
-        gamma,
-        exportTransform,
-        labelColorTexture,
-        labelColorData.length,
-        pointCount,
-      );
-    }
-
-    // Cleanup
-    gl.deleteVertexArray(pointVao);
-    gl.deleteBuffer(dataPositionBuffer);
-    gl.deleteBuffer(sizeBuffer);
-    gl.deleteBuffer(colorBuffer);
-    gl.deleteBuffer(depthBuffer);
-    gl.deleteBuffer(labelCountBuffer);
-    gl.deleteBuffer(shapeBuffer);
-    gl.deleteTexture(labelColorTexture);
-    gl.deleteProgram(pointProgram);
-    if (gammaCorrectionProgram) gl.deleteProgram(gammaCorrectionProgram);
-    if (linearFramebuffer) {
-      gl.deleteFramebuffer(linearFramebuffer.framebuffer);
-      gl.deleteTexture(linearFramebuffer.texture);
-      gl.deleteRenderbuffer(linearFramebuffer.depthBuffer);
-    }
-  }
-
-  /**
-   * Prepare buffer data for off-screen rendering
-   */
-  private prepareOffscreenBufferData(
-    pd: PlotData,
-    scales: ScalePair,
-    maxPoints: number,
-    dpr: number,
-    sizeScaleFactor: number = 1,
-  ): {
-    dataPositions: Float32Array;
-    sizes: Float32Array;
-    colors: Float32Array;
-    depths: Float32Array;
-    labelCounts: Float32Array;
-    shapes: Float32Array;
-    labelColorData: Uint8Array;
-    pointCount: number;
-  } {
-    const capacity = Math.max(MIN_CAPACITY, maxPoints);
-    const dataPositions = new Float32Array(capacity * 2);
-    const sizes = new Float32Array(capacity);
-    const colors = new Float32Array(capacity * 4);
-    const depths = new Float32Array(capacity);
-    const labelCounts = new Float32Array(capacity);
-    const shapes = new Float32Array(capacity);
-    const requiredPixels = capacity * MAX_LABELS;
-    const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
-    const labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
-
-    // Stage slots by depth (painter's algorithm) — use a temp scratch point per slot.
-    const { xs, ys } = pd;
-    const oi = pd.originalIndices;
-    const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
-    const staged: Array<{ slot: number; opacity: number; depth: number }> = [];
-    for (let i = 0; i < pd.length && staged.length < maxPoints; i++) {
-      const origIdx = oi ? oi[i] : i;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[i];
-      sp.y = ys[i];
-      sp.originalIndex = origIdx;
-      const opacity = this.style.getOpacity(sp);
-      if (opacity === 0) continue;
-      const depth = this.style.getDepth(sp);
-      staged.push({ slot: i, opacity, depth });
-    }
-    staged.sort((a, b) => b.depth - a.depth);
-
-    let idx = 0;
-    for (let s = 0; s < staged.length; s++) {
-      const { slot, opacity, depth } = staged[s];
-      const origIdx = oi ? oi[slot] : slot;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[slot];
-      sp.y = ys[slot];
-      sp.originalIndex = origIdx;
-
-      dataPositions[idx * 2] = scales.x(xs[slot]);
-      dataPositions[idx * 2 + 1] = scales.y(ys[slot]);
-
-      const pointColors = this.style.getColors(sp);
-      const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-      const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
-      const shapeType = this.style.getShape(sp);
-      const shapeIndex = getShapeIndex(shapeType);
-
-      colors[idx * 4] = r;
-      colors[idx * 4 + 1] = g;
-      colors[idx * 4 + 2] = b;
-      colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
-      // Scale point sizes proportionally to export dimensions
-      const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * dpr * sizeScaleFactor);
-      sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-      depths[idx] = depth;
-      labelCounts[idx] = pointColors.length;
-      shapes[idx] = shapeIndex;
-
-      // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
-      fillLabelColorTexels(labelColorData, idx, pointColors, MAX_LABELS);
-
-      idx++;
-    }
-
-    return {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      labelColorData,
-      pointCount: idx,
-    };
-  }
-
-  /**
-   * Create linear framebuffer for off-screen gamma-correct rendering
-   */
-  private createOffscreenLinearFramebuffer(
-    gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
-  ): FramebufferResources | null {
-    const framebuffer = gl.createFramebuffer();
-    const texture = gl.createTexture();
-    const depthBuffer = gl.createRenderbuffer();
-
-    if (!framebuffer || !texture || !depthBuffer) {
-      return null;
-    }
-
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthBuffer);
-
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      gl.deleteFramebuffer(framebuffer);
-      gl.deleteTexture(texture);
-      gl.deleteRenderbuffer(depthBuffer);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      return null;
-    }
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-
-    return { framebuffer, texture, depthBuffer, width, height };
-  }
-
-  /**
-   * Render points in off-screen context
-   */
-  private renderOffscreenPoints(
-    gl: WebGL2RenderingContext,
-    program: WebGLProgram,
-    vao: WebGLVertexArrayObject,
-    uniforms: {
-      resolution: WebGLUniformLocation | null;
-      transform: WebGLUniformLocation | null;
-      dpr: WebGLUniformLocation | null;
-      gamma: WebGLUniformLocation | null;
-      labelColors: WebGLUniformLocation | null;
-      labelTextureSize: WebGLUniformLocation | null;
-      maxLabels: WebGLUniformLocation | null;
-    },
-    width: number,
-    height: number,
-    dpr: number,
-    gamma: number,
-    transform: d3.ZoomTransform,
-    labelColorTexture: WebGLTexture | null,
-    labelColorDataLength: number,
-    pointCount: number,
-  ): void {
-    gl.useProgram(program);
-
-    gl.uniform2f(uniforms.resolution, width, height);
-    gl.uniform3f(uniforms.transform, transform.x, transform.y, transform.k);
-    gl.uniform1f(uniforms.dpr, dpr);
-    gl.uniform1f(uniforms.gamma, gamma);
-    gl.uniform1i(uniforms.maxLabels, MAX_LABELS);
-    gl.uniform2f(
-      uniforms.labelTextureSize,
-      LABEL_TEXTURE_WIDTH,
-      labelColorDataLength / 4 / LABEL_TEXTURE_WIDTH,
-    );
-
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, labelColorTexture);
-    gl.uniform1i(uniforms.labelColors, 1);
-
-    gl.bindVertexArray(vao);
-    gl.drawArrays(gl.POINTS, 0, pointCount);
-    gl.bindVertexArray(null);
-  }
-
-  /**
-   * Apply gamma correction in off-screen context
-   */
-  private renderOffscreenGammaCorrection(
-    gl: WebGL2RenderingContext,
-    program: WebGLProgram,
-    framebuffer: FramebufferResources,
-    gamma: number,
-  ): void {
-    gl.useProgram(program);
-
-    const linearTextureLocation = gl.getUniformLocation(program, 'u_linearTexture');
-    const gammaLocation = gl.getUniformLocation(program, 'u_gamma');
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, framebuffer.texture);
-    gl.uniform1i(linearTextureLocation, 0);
-    gl.uniform1f(gammaLocation, gamma);
-
-    // Create and draw full-screen quad
-    const quadBuffer = gl.createBuffer();
-    const quadVertices = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW);
-
-    const posLoc = gl.getAttribLocation(program, 'a_position');
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    gl.disableVertexAttribArray(posLoc);
-    gl.deleteBuffer(quadBuffer);
+    return this.exportRenderer.getDataExtent(this.lastRenderedData);
   }
 
   // ============================================================================
@@ -1454,7 +524,7 @@ export class WebGLRenderer {
   // ============================================================================
 
   private ensureGL(): WebGL2RenderingContext | null {
-    if (this.contextLost) return null;
+    if (this.lossController.isLost) return null;
     if (this.gl) {
       if (this.gl.isContextLost && this.gl.isContextLost()) {
         this.markContextLost();
@@ -1464,7 +534,12 @@ export class WebGLRenderer {
         this.resetRendererState();
       }
     }
-    if (this.gl && this.pointProgram && this.pointAttribLocations && this.pointUniformLocations) {
+    if (
+      this.gl &&
+      this.resources.pointProgram &&
+      this.pointAttribLocations &&
+      this.pointUniformLocations
+    ) {
       return this.gl;
     }
 
@@ -1502,27 +577,16 @@ export class WebGLRenderer {
       }
     }
 
-    this.dataPositionBuffer = gl.createBuffer();
-    this.sizeBuffer = gl.createBuffer();
-    this.colorBuffer = gl.createBuffer();
-    this.depthBuffer = gl.createBuffer();
-    this.labelCountBuffer = gl.createBuffer();
-    this.shapeBuffer = gl.createBuffer();
-    this.quadBuffer = gl.createBuffer();
-    this.labelColorTexture = gl.createTexture();
+    this.resources.createAll(gl);
     this.labelTextureInitialized = false;
 
     this.createPointVAO();
 
     this.setupQuad();
 
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-
     // We want overlapping points to remain visible, so we do NOT use the depth buffer to cull.
     // Z-order is preserved via painter's algorithm (CPU sorting) in populateBuffers().
-    gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
+    setPointBlendState(gl);
 
     if (
       this.gammaPipelineAvailable &&
@@ -1535,20 +599,11 @@ export class WebGLRenderer {
   }
 
   private isRendererStateValid(gl: WebGL2RenderingContext): boolean {
-    if (!this.pointProgram || !gl.isProgram(this.pointProgram)) return false;
-    if (this.pointVao && !gl.isVertexArray(this.pointVao)) return false;
-    if (this.dataPositionBuffer && !gl.isBuffer(this.dataPositionBuffer)) return false;
-    if (this.sizeBuffer && !gl.isBuffer(this.sizeBuffer)) return false;
-    if (this.colorBuffer && !gl.isBuffer(this.colorBuffer)) return false;
-    if (this.depthBuffer && !gl.isBuffer(this.depthBuffer)) return false;
-    if (this.labelCountBuffer && !gl.isBuffer(this.labelCountBuffer)) return false;
-    if (this.shapeBuffer && !gl.isBuffer(this.shapeBuffer)) return false;
-    if (this.labelColorTexture && !gl.isTexture(this.labelColorTexture)) return false;
-    return true;
+    return this.resources.validate(gl);
   }
 
   private isContextLost(): boolean {
-    if (this.contextLost) return true;
+    if (this.lossController.isLost) return true;
     const gl = this.gl;
     if (gl?.isContextLost && gl.isContextLost()) {
       this.markContextLost();
@@ -1558,28 +613,17 @@ export class WebGLRenderer {
   }
 
   private markContextLost() {
-    if (this.contextLost) return;
-    this.contextLost = true;
-    this.resetRendererState();
+    // Idempotent: the controller fires the onLost callback (resetRendererState +
+    // onContextLost) exactly once.
+    this.lossController.markLost();
   }
 
   private resetRendererState() {
     this.gl = null;
-    this.pointProgram = null;
-    this.pointVao = null;
+    this.resources.reset();
     this.pointAttribLocations = null;
     this.pointUniformLocations = null;
-    this.quadBuffer = null;
-    this.gammaCorrectionProgram = null;
     this.gammaCorrectionUniformLocations = null;
-    this.linearFramebuffer = null;
-    this.dataPositionBuffer = null;
-    this.sizeBuffer = null;
-    this.colorBuffer = null;
-    this.depthBuffer = null;
-    this.labelCountBuffer = null;
-    this.shapeBuffer = null;
-    this.labelColorTexture = null;
     this.labelTextureInitialized = false;
     this.gammaPipelineAvailable = true;
     this.warnedGammaFallback = false;
@@ -1594,42 +638,34 @@ export class WebGLRenderer {
   }
 
   private initializePointShaders(gl: WebGL2RenderingContext): boolean {
-    this.pointProgram = createProgramFromSources(gl, POINT_VERTEX_SHADER, POINT_FRAGMENT_SHADER);
-    if (!this.pointProgram) return false;
+    this.resources.pointProgram = createProgramFromSources(
+      gl,
+      POINT_VERTEX_SHADER,
+      POINT_FRAGMENT_SHADER,
+    );
+    if (!this.resources.pointProgram) return false;
 
-    this.pointAttribLocations = {
-      dataPosition: gl.getAttribLocation(this.pointProgram, 'a_dataPosition'),
-      size: gl.getAttribLocation(this.pointProgram, 'a_pointSize'),
-      color: gl.getAttribLocation(this.pointProgram, 'a_color'),
-      depth: gl.getAttribLocation(this.pointProgram, 'a_depth'),
-      labelCount: gl.getAttribLocation(this.pointProgram, 'a_labelCount'),
-      shape: gl.getAttribLocation(this.pointProgram, 'a_shape'),
-    };
-
-    this.pointUniformLocations = {
-      resolution: gl.getUniformLocation(this.pointProgram, 'u_resolution'),
-      transform: gl.getUniformLocation(this.pointProgram, 'u_transform'),
-      dpr: gl.getUniformLocation(this.pointProgram, 'u_dpr'),
-      gamma: gl.getUniformLocation(this.pointProgram, 'u_gamma'),
-      labelColors: gl.getUniformLocation(this.pointProgram, 'u_labelColors'),
-      labelTextureSize: gl.getUniformLocation(this.pointProgram, 'u_labelTextureSize'),
-      maxLabels: gl.getUniformLocation(this.pointProgram, 'u_maxLabels'),
-    };
+    const { attribs, uniforms } = resolvePointLocations(gl, this.resources.pointProgram);
+    this.pointAttribLocations = attribs;
+    this.pointUniformLocations = uniforms;
 
     return true;
   }
 
   private initializeGammaCorrectionShaders(gl: WebGL2RenderingContext): boolean {
-    this.gammaCorrectionProgram = createProgramFromSources(
+    this.resources.gammaCorrectionProgram = createProgramFromSources(
       gl,
       GAMMA_VERTEX_SHADER,
       GAMMA_FRAGMENT_SHADER,
     );
-    if (!this.gammaCorrectionProgram) return false;
+    if (!this.resources.gammaCorrectionProgram) return false;
 
     this.gammaCorrectionUniformLocations = {
-      linearTexture: gl.getUniformLocation(this.gammaCorrectionProgram, 'u_linearTexture'),
-      gamma: gl.getUniformLocation(this.gammaCorrectionProgram, 'u_gamma'),
+      linearTexture: gl.getUniformLocation(
+        this.resources.gammaCorrectionProgram,
+        'u_linearTexture',
+      ),
+      gamma: gl.getUniformLocation(this.resources.gammaCorrectionProgram, 'u_gamma'),
     };
 
     return true;
@@ -1643,44 +679,31 @@ export class WebGLRenderer {
     const gl = this.gl;
     if (!gl || !this.pointAttribLocations) return;
 
-    this.pointVao = gl.createVertexArray();
-    gl.bindVertexArray(this.pointVao);
+    this.resources.pointVao = gl.createVertexArray();
+    gl.bindVertexArray(this.resources.pointVao);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.dataPositionBuffer);
-    gl.enableVertexAttribArray(this.pointAttribLocations.dataPosition);
-    gl.vertexAttribPointer(this.pointAttribLocations.dataPosition, 2, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.sizeBuffer);
-    gl.enableVertexAttribArray(this.pointAttribLocations.size);
-    gl.vertexAttribPointer(this.pointAttribLocations.size, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
-    gl.enableVertexAttribArray(this.pointAttribLocations.color);
-    gl.vertexAttribPointer(this.pointAttribLocations.color, 4, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.depthBuffer);
-    gl.enableVertexAttribArray(this.pointAttribLocations.depth);
-    gl.vertexAttribPointer(this.pointAttribLocations.depth, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.labelCountBuffer);
-    gl.enableVertexAttribArray(this.pointAttribLocations.labelCount);
-    gl.vertexAttribPointer(this.pointAttribLocations.labelCount, 1, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuffer);
-    gl.enableVertexAttribArray(this.pointAttribLocations.shape);
-    gl.vertexAttribPointer(this.pointAttribLocations.shape, 1, gl.FLOAT, false, 0, 0);
+    setupAttributes(
+      gl,
+      {
+        dataPosition: this.resources.dataPositionBuffer,
+        size: this.resources.sizeBuffer,
+        color: this.resources.colorBuffer,
+        depth: this.resources.depthBuffer,
+        labelCount: this.resources.labelCountBuffer,
+        shape: this.resources.shapeBuffer,
+      },
+      this.pointAttribLocations,
+    );
 
     gl.bindVertexArray(null);
   }
 
   private setupQuad() {
     const gl = this.gl;
-    if (!gl || !this.quadBuffer) return;
+    if (!gl || !this.resources.quadBuffer) return;
 
-    const quadVertices = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.quadBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, QUAD_VERTICES, gl.STATIC_DRAW);
   }
 
   // ============================================================================
@@ -1691,56 +714,33 @@ export class WebGLRenderer {
     if (
       !this.gl ||
       this.currentPointCount === 0 ||
-      !this.pointProgram ||
+      !this.resources.pointProgram ||
       !this.pointUniformLocations
     ) {
       return;
     }
 
     const gl = this.gl;
-    gl.useProgram(this.pointProgram);
 
-    const gamma = this.getEffectiveGamma();
-    gl.uniform2f(this.pointUniformLocations.resolution, this.canvas.width, this.canvas.height);
-    gl.uniform3f(this.pointUniformLocations.transform, transform.x, transform.y, transform.k);
-    gl.uniform1f(this.pointUniformLocations.dpr, this.dpr);
-    gl.uniform1f(this.pointUniformLocations.gamma, gamma);
-    gl.uniform1i(this.pointUniformLocations.maxLabels, MAX_LABELS);
-    gl.uniform2f(
-      this.pointUniformLocations.labelTextureSize,
-      LABEL_TEXTURE_WIDTH,
-      this.labelColorData.length / 4 / LABEL_TEXTURE_WIDTH,
+    bindPointDrawState(
+      gl,
+      this.resources.pointProgram,
+      this.pointUniformLocations,
+      this.resources.pointVao,
+      this.resources.labelColorTexture,
+      {
+        width: this.canvas.width,
+        height: this.canvas.height,
+        transform: { x: transform.x, y: transform.y, k: transform.k },
+        dpr: this.dpr,
+        gamma: this.getEffectiveGamma(),
+        maxLabels: MAX_LABELS,
+        labelTextureWidth: LABEL_TEXTURE_WIDTH,
+        labelColorDataLength: this.labelColorData.length,
+      },
     );
 
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.labelColorTexture);
-    gl.uniform1i(this.pointUniformLocations.labelColors, 1);
-
-    gl.bindVertexArray(this.pointVao);
-
-    if (this.selectionActive && this.selectedStartIndex < this.currentPointCount) {
-      // Two-pass rendering:
-      // Pass 1 — Unselected points (blend OFF): flat fading, no density accumulation.
-      // The subtle MSAA edge artifact at low alpha is imperceptible.
-      gl.disable(gl.BLEND);
-      if (this.selectedStartIndex > 0) {
-        gl.drawArrays(gl.POINTS, 0, this.selectedStartIndex);
-      }
-
-      // Pass 2 — Selected points (blend ON): correct MSAA anti-aliasing on opaque points.
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.drawArrays(
-        gl.POINTS,
-        this.selectedStartIndex,
-        this.currentPointCount - this.selectedStartIndex,
-      );
-    } else {
-      // No selection — single pass with blend (density visible, original behavior)
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.drawArrays(gl.POINTS, 0, this.currentPointCount);
-    }
+    drawPoints(gl, this.currentPointCount, this.selectionActive, this.selectedStartIndex);
 
     gl.bindVertexArray(null);
   }
@@ -1871,61 +871,50 @@ export class WebGLRenderer {
         sp.originalIndex = origIdx;
         depthScratch[i] = this.style.getDepth(sp);
       }
-      sortIndicesByDepthDescending(order, depthScratch, count);
+      // Canonical painter-order plan (shared with the export path via
+      // buildPaintOrder): sort far->near, then locate the two-pass selection cut
+      // from the first sorted slot with opacity >= 0.99. The per-slot callback
+      // also performs the live side effects (ID tracking + staging) so every slot
+      // — including opacity-0 — is staged exactly as before.
+      const { selectedStartIndex } = buildPaintOrder(
+        order,
+        depthScratch,
+        count,
+        this.selectionActive,
+        (k, srcSlot) => {
+          const origIdx = oi ? oi[srcSlot] : srcSlot;
+          sp.id = pd.proteinIds[origIdx];
+          sp.x = xs[srcSlot];
+          sp.y = ys[srcSlot];
+          sp.originalIndex = origIdx;
+          const opacity = this.style.getOpacity(sp);
 
-      // Find where selected points start (opacity ≈ 1.0, contiguous at the end after sort).
-      // Used for two-pass rendering: unselected without blend, selected with blend.
-      let firstSelected = -1;
+          if (this.trackRenderedPointIds && opacity > 0) {
+            this.renderedPointIds.add(sp.id);
+          }
 
-      for (let k = 0; k < count; k++) {
-        const srcSlot = order[k];
-        const origIdx = oi ? oi[srcSlot] : srcSlot;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[srcSlot];
-        sp.y = ys[srcSlot];
-        sp.originalIndex = origIdx;
-        const opacity = this.style.getOpacity(sp);
+          // updatePositions is always true here (see above). Positions are
+          // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
+          // original slot), NOT depthScratch[k]. sizeScaleFactor=1 for the live path.
+          stagePoint(
+            this.stageArrays,
+            k,
+            sp,
+            scales.x(xs[srcSlot]),
+            scales.y(ys[srcSlot]),
+            opacity,
+            depthScratch[srcSlot],
+            this.style,
+            this.dpr,
+            1,
+          );
 
-        if (this.selectionActive && firstSelected === -1 && opacity >= 0.99) {
-          firstSelected = k;
-        }
+          return opacity;
+        },
+      );
 
-        if (this.trackRenderedPointIds && opacity > 0) {
-          this.renderedPointIds.add(sp.id);
-        }
-
-        // updatePositions is always true here (see above)
-        this.dataPositions[idx * 2] = scales.x(xs[srcSlot]);
-        this.dataPositions[idx * 2 + 1] = scales.y(ys[srcSlot]);
-
-        const pointColors = this.style.getColors(sp);
-        const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-        const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
-        const shapeType = this.style.getShape(sp);
-        const shapeIndex = getShapeIndex(shapeType);
-
-        this.colors[idx * 4] = r;
-        this.colors[idx * 4 + 1] = g;
-        this.colors[idx * 4 + 2] = b;
-        this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
-        const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
-        this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-        // Use depthScratch[srcSlot] (indexed by original slot), NOT depthScratch[k].
-        this.depths[idx] = depthScratch[srcSlot];
-        this.labelCounts[idx] = pointColors.length;
-        this.shapes[idx] = shapeIndex;
-
-        // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
-        fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
-
-        idx++;
-      }
-
-      this.selectedStartIndex = this.selectionActive
-        ? firstSelected === -1
-          ? count
-          : firstSelected
-        : count;
+      idx = count;
+      this.selectedStartIndex = selectedStartIndex;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
     } else if (updateStyles) {
@@ -1950,24 +939,11 @@ export class WebGLRenderer {
             this.renderedPointIds.add(sp.id);
           }
 
-          // Update only style buffers (colors, shapes, sizes)
-          const pointColors = this.style.getColors(sp);
-          const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-          const size = Math.sqrt(this.style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
-          const shapeType = this.style.getShape(sp);
-          const shapeIndex = getShapeIndex(shapeType);
-
-          this.colors[idx * 4] = r;
-          this.colors[idx * 4 + 1] = g;
-          this.colors[idx * 4 + 2] = b;
-          this.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
-          const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * this.dpr);
-          this.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
-          this.labelCounts[idx] = pointColors.length;
-          this.shapes[idx] = shapeIndex;
-
-          // Fill label color texture data (skips single-label points; see fillLabelColorTexels)
-          fillLabelColorTexels(this.labelColorData, idx, pointColors, MAX_LABELS);
+          // Update only style channels (color/alpha/size/shape/label texels) —
+          // positions and depths are unchanged from the last rebuild. Shares the
+          // exact packing the full-rebuild path uses via stagePoint (stageArrays
+          // aliases this.colors/this.sizes/... so this writes the same buffers).
+          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style, this.dpr);
 
           idx++;
         }
@@ -2008,22 +984,22 @@ export class WebGLRenderer {
 
     this.currentPointCount = idx;
 
-    gl.bindVertexArray(this.pointVao);
+    gl.bindVertexArray(this.resources.pointVao);
 
     if (updatePositions) {
-      this.updateBuffer(gl, this.dataPositionBuffer, this.dataPositions, idx * 2);
+      this.updateBuffer(gl, this.resources.dataPositionBuffer, this.dataPositions, idx * 2);
     }
 
     if (updateStyles) {
-      this.updateBuffer(gl, this.sizeBuffer, this.sizes, idx);
-      this.updateBuffer(gl, this.colorBuffer, this.colors, idx * 4);
-      this.updateBuffer(gl, this.depthBuffer, this.depths, idx);
-      this.updateBuffer(gl, this.labelCountBuffer, this.labelCounts, idx);
-      this.updateBuffer(gl, this.shapeBuffer, this.shapes, idx);
+      this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
+      this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
+      this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
+      this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
+      this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
 
       // Update label-color texture. Allocate storage once (and whenever capacity grew);
       // afterwards update in place with texSubImage2D — no 32 MiB reallocation per recolor.
-      gl.bindTexture(gl.TEXTURE_2D, this.labelColorTexture);
+      gl.bindTexture(gl.TEXTURE_2D, this.resources.labelColorTexture);
       const texHeight = this.labelColorData.length / 4 / LABEL_TEXTURE_WIDTH;
       if (!this.labelTextureInitialized) {
         gl.texImage2D(
@@ -2075,6 +1051,23 @@ export class WebGLRenderer {
     }
   }
 
+  /**
+   * Build a fresh {@link StagePointArrays} view bound to the current parallel
+   * staging arrays. Call after any reallocation so `stagePoint` writes into the
+   * live buffers (zero copy — the struct only holds references).
+   */
+  private buildStageArrays(): StagePointArrays {
+    return {
+      dataPositions: this.dataPositions,
+      sizes: this.sizes,
+      colors: this.colors,
+      depths: this.depths,
+      labelCounts: this.labelCounts,
+      shapes: this.shapes,
+      labelColorData: this.labelColorData,
+    };
+  }
+
   private expandCapacity(minCapacity: number) {
     const nextCapacity = planRendererCapacity(
       minCapacity,
@@ -2099,6 +1092,9 @@ export class WebGLRenderer {
     const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
     this.labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
     this.labelTextureInitialized = false;
+
+    // Re-point the staging view at the freshly reallocated arrays (zero copy).
+    this.stageArrays = this.buildStageArrays();
 
     this.buffersInitialized = false;
   }

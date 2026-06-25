@@ -38,8 +38,9 @@ async function brushSelect(
       if (!plot) return { brushCreated: false, selectionMode: false };
 
       const selectionMode = !!plot.selectionMode;
-      const brushGroup = plot._brushGroup;
-      const brush = plot._brush;
+      // B8/F-07: brush + brushGroup moved into PlotInteractionController.
+      const brushGroup = plot._interaction?._brushGroup;
+      const brush = plot._interaction?._brush;
       const brushCreated = !!brush;
 
       if (!brush || !brushGroup) {
@@ -87,11 +88,13 @@ async function setZoomTransform(page: Page, k: number, tx: number, ty: number): 
   await page.evaluate(
     ({ k, tx, ty }) => {
       const plot = document.querySelector('#myPlot') as any;
-      if (!plot?._svgSelection || !plot._zoom) return;
+      // B8/F-07: zoom behavior + svg selection moved into PlotInteractionController.
+      const ix = plot?._interaction;
+      if (!ix?._svgSelection || !ix._zoom) return;
 
       const ZoomTransform = plot._transform.constructor;
       const transform = new ZoomTransform(k, tx, ty);
-      plot._svgSelection.call(plot._zoom.transform, transform);
+      ix._svgSelection.call(ix._zoom.transform, transform);
     },
     { k, tx, ty },
   );
@@ -116,14 +119,14 @@ async function enableSelectionMode(page: Page): Promise<boolean> {
   await page.waitForFunction(
     () => {
       const plot = document.querySelector('#myPlot') as any;
-      return !!plot?.selectionMode && !!plot?._brush;
+      return !!plot?.selectionMode && !!plot?._interaction?._brush;
     },
     { timeout: 5_000 },
   );
 
   return page.evaluate(() => {
     const plot = document.querySelector('#myPlot') as any;
-    return !!plot?.selectionMode && !!plot?._brush;
+    return !!plot?.selectionMode && !!plot?._interaction?._brush;
   });
 }
 
@@ -252,11 +255,12 @@ test.describe('Brush selection works at all zoom levels (#189)', () => {
 
     const extentInfo = await page.evaluate(() => {
       const plot = document.querySelector('#myPlot') as any;
-      if (!plot?._brush) return null;
+      // B8/F-07: brush moved into PlotInteractionController.
+      if (!plot?._interaction?._brush) return null;
 
       const config = plot._mergedConfig;
       const t = plot._transform;
-      const extent = plot._brush.extent()();
+      const extent = plot._interaction._brush.extent()();
 
       return {
         extentX0: extent[0][0],

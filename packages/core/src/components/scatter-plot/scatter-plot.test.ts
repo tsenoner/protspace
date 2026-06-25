@@ -1,19 +1,25 @@
 /**
  * @vitest-environment jsdom
  *
- * Lasso / brush selection: the slot→id resolution is shared by both handlers via
- * the `_slotsToInteractiveIds` helper. These tests drive the helper through the
- * public selection handlers (`_handleLassoEnd` / `_handleBrushEnd`) and assert
- * the dispatched `brush-selection` event carries ONLY the interactive ids, in
- * slot order, resolving originalIndex → proteinId correctly in both the
- * identity (originalIndices === null) and explicit-mapping cases.
+ * Lasso / brush selection: the slot→id resolution is shared by both paths via
+ * the `_slotsToInteractiveIds` helper. The lasso cases drive the live
+ * PlotInteractionController (via the element's `_interactionHost()` bridge) and
+ * the brush case drives the `_handleBrushEnd` host shim; both assert the
+ * dispatched `brush-selection` event carries ONLY the interactive ids, in slot
+ * order, resolving originalIndex → proteinId correctly in both the identity
+ * (originalIndices === null) and explicit-mapping cases.
  *
  * Construct the element via createElement without appending it (so Lit's
  * connectedCallback / WebGL init never runs — same approach as
- * scatter-plot.isolation.test.ts) and call the private handlers directly.
+ * scatter-plot.isolation.test.ts) and drive the controller / private handler
+ * directly through the host bridge.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
+import {
+  PlotInteractionController,
+  type PlotInteractionHost,
+} from './interaction/plot-interaction-controller';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -70,11 +76,24 @@ type SelectionInternals = HTMLElement & {
   selectedProteinIds: string[];
   _plotData: PlotData;
   _quadtreeIndex: QuadtreeStub;
-  _isLassoing: boolean;
-  _lassoVertices: Array<[number, number]>;
-  _handleLassoEnd(event: PointerEvent): void;
+  _interactionHost(): PlotInteractionHost;
   _handleBrushEnd(event: { selection: [[number, number], [number, number]] | null }): void;
 };
+
+/**
+ * Drive the live lasso path through the controller using the element's real
+ * host bridge: begin + extend to build a >=3-vertex polygon, then endLasso()
+ * resolves slots → ids via host.queryByPolygon/resolveSlotsToIds and dispatches
+ * through host.onSelect (_commitSelection). The controller is not initialize()'d,
+ * so no SVG groups exist and the lasso path stays null (endLasso handles that).
+ */
+function runLassoSelection(sp: SelectionInternals) {
+  const controller = new PlotInteractionController(sp._interactionHost());
+  controller.beginLasso([0, 0]);
+  controller.extendLasso([10, 0]);
+  controller.extendLasso([10, 10]);
+  controller.endLasso();
+}
 
 /**
  * Build a scatter element with a 6-point SoA `_plotData`. `originalIndices`
@@ -125,17 +144,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
     stubSyncRaf();
-    sp._isLassoing = true;
-    sp._lassoVertices = [
-      [0, 0],
-      [10, 0],
-      [10, 10],
-    ];
-    sp._handleLassoEnd({
-      preventDefault() {},
-      pointerId: 1,
-      target: null,
-    } as unknown as PointerEvent);
+    runLassoSelection(sp);
 
     expect(events).toHaveLength(1);
     expect(events[0].detail.proteinIds).toEqual(['p0', 'p1', 'p2']);
@@ -177,17 +186,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
     stubSyncRaf();
-    sp._isLassoing = true;
-    sp._lassoVertices = [
-      [0, 0],
-      [10, 0],
-      [10, 10],
-    ];
-    sp._handleLassoEnd({
-      preventDefault() {},
-      pointerId: 1,
-      target: null,
-    } as unknown as PointerEvent);
+    runLassoSelection(sp);
 
     expect(events).toHaveLength(1);
     // Interactive (family B) at slots 0,1,2 → originalIndex 5,4,3 → p5,p4,p3,
@@ -216,5 +215,35 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
 
     expect(events).toHaveLength(0);
     expect(sp.selectedProteinIds).toEqual([]);
+  });
+});
+
+describe('scatter-plot WebGL context-loss recovery (detached guard)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('F-10: recovery microtask does not rebuild renderer after disconnect', async () => {
+    type RecoveryInternals = HTMLElement & {
+      updateComplete: Promise<boolean>;
+      _updateSizeAndRender(): void;
+      _handleWebglContextLost(): void;
+    };
+    const sp = document.createElement('protspace-scatterplot') as RecoveryInternals;
+    // Connect so Lit's update lifecycle (and updateComplete) actually runs,
+    // then disconnect synchronously after firing the loss event but BEFORE the
+    // recovery microtask resolves. This is the exact route-change / GPU-recycle
+    // sequence the finding targets: loss -> detach -> microtask. A disconnected
+    // element must NOT reconstruct a fresh WebGLRenderer (fresh context +
+    // listeners) on a detached renderRoot.
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    const spy = vi.spyOn(sp, '_updateSizeAndRender');
+    sp._handleWebglContextLost(); // schedules the recovery microtask
+    sp.remove(); // isConnected === false before the microtask resolves
+    await sp.updateComplete;
+    await Promise.resolve(); // flush the .then microtask
+    expect(spy).not.toHaveBeenCalled();
   });
 });

@@ -8,38 +8,51 @@ import type {
   PlotDataPoint,
   ScatterplotConfig,
   NumericAnnotationDisplaySettingsMap,
-  AnnotationData,
   TooltipView,
 } from '@protspace/utils';
 import {
   DataProcessor,
   buildTooltipView,
   materializeVisualizationData,
-  sliceAnnotationData,
+  sliceVisualizationDataByIndices,
   EMPTY_PLOT_DATA,
   clonePlotData,
   plotDataId,
   materializePlotDataPoint,
   gatherPlotData,
 } from '@protspace/utils';
+import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
+import {
+  isLegendColorMappingDetail,
+  isLegendZOrderDetail,
+  type LegendColorMappingChangeEvent,
+  type LegendZOrderChangeEvent,
+} from '../legend/legend-mapping-events';
 import { scatterplotStyles } from './scatter-plot.styles';
-import './projection-metadata';
-import './protspace-tips';
-import './protein-tooltip';
+import './projection-metadata/projection-metadata';
+import './tooltips/protspace-tips';
+import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
-import { createStyleGetters } from './style-getters';
-import { computeVisibilityModel } from './visibility-model';
-import type { VisibilityModel } from './visibility-model';
+import { createStyleGetters } from './styling/style-getters';
+import { computeVisibilityModel } from './styling/visibility-model';
+import type { VisibilityModel } from './styling/visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
-import { QuadtreeIndex } from './quadtree-index';
-import { getDuplicateStackKey } from './duplicate-stack-helpers';
-import { estimateTooltipHeight } from './tooltip-height-estimate';
+import { QuadtreeIndex } from './interaction/quadtree-index';
+import { computeViewportWindow, buildViewKey } from './duplicate-stacks/duplicate-stack-viewport';
+import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
+import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
+import { computeTooltipStyle, TOOLTIP_FALLBACK_HEIGHT } from './tooltips/tooltip-position';
+import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
   type PerfDatasetInfo,
   type RenderWebGLTrigger,
 } from './webgl-render-perf';
+import {
+  PlotInteractionController,
+  type PlotInteractionHost,
+} from './interaction/plot-interaction-controller';
 
 // Visualization is only needed for viewport culling on very large datasets.
 // For <= MAX_POINTS_DIRECT_RENDER we can render the full set once and then pan/zoom via uniforms
@@ -47,15 +60,15 @@ import {
 const VIRTUALIZATION_THRESHOLD = MAX_POINTS_DIRECT_RENDER;
 const VIRTUALIZATION_PADDING = 100;
 
-// Duplicate stack UI performance tuning (target: M1 MacBook + Chrome)
-const DUPLICATE_BADGES_MAX_VISIBLE = 800;
-const DUPLICATE_BADGES_VIEWPORT_PADDING = 60;
-const DUPLICATE_BADGES_UPDATE_DEBOUNCE_MS = 120;
-const DUPLICATE_STACK_COMPUTE_CHUNK_SIZE = 25_000;
-type ScalePair = {
-  x: d3.ScaleLinear<number, number>;
-  y: d3.ScaleLinear<number, number>;
-};
+// Hit-test tuning (shared by hover + click). Search radius is in screen px and
+// is divided by the zoom factor so the data-space radius stays constant; the
+// point radius is derived from point size (sqrt(size)/3 matches the WebGL draw).
+const HIT_TEST_SEARCH_RADIUS_PX = 15;
+const POINT_RADIUS_SIZE_DIVISOR = 3;
+
+/** Default number of bins for numeric→categorical materialization. Mirrors
+ *  materializeVisualizationData's `defaultBinCount = 10` default. */
+const DEFAULT_NUMERIC_BIN_COUNT = 10;
 
 /**
  * Memoization key for `_getVisibilityModel`. Stored as a plain struct so each
@@ -115,22 +128,19 @@ export class ProtspaceScatterplot extends LitElement {
   } | null = null;
   @state() private _tooltipHeight: number | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
-  @state() private _transform = d3.zoomIdentity;
+  // Plain field, NOT @state: render() never reads _transform (it drives the
+  // canvas imperatively via the zoom RAF + d3 attr()), so reactivity here only
+  // caused a redundant per-frame updated()/_renderPlot() pass (F-48). The
+  // getter closures passed to WebGLRenderer and the duplicate-overlay/hit-test
+  // reads are pull-based and keep working unchanged.
+  private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
-  @state() private _zOrderMapping: Record<string, number> | null = null;
-  @state() private _colorMapping: Record<string, string> | null = null;
-  @state() private _shapeMapping: Record<string, string> | null = null;
+  private _zOrderMapping: Record<string, number> | null = null;
+  private _colorMapping: Record<string, string> | null = null;
+  private _shapeMapping: Record<string, string> | null = null;
   @state() private _canvasKey = 0;
-  @state() private _numericRecomputeState: {
-    running: boolean;
-    annotation: string | null;
-    startedAt: number | null;
-  } = {
-    running: false,
-    annotation: null,
-    startedAt: null,
-  };
+  @state() private _numericRecomputeRunning = false;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -140,19 +150,11 @@ export class ProtspaceScatterplot extends LitElement {
   // Internal
   private _quadtreeIndex: QuadtreeIndex = new QuadtreeIndex();
   private resizeObserver: ResizeObserver;
-  private _zoom: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;
-  private _svgSelection: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
-  private _mainGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-  private _brushGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-  private _overlayGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-  private _brush: d3.BrushBehavior<unknown> | null = null;
-  private _isBrushing = false;
-  private _lassoVertices: Array<[number, number]> = [];
-  private _lassoPath: SVGPathElement | null = null;
-  private _isLassoing = false;
-  private _lassoRafId: number | null = null;
+  // d3 zoom/brush/lasso lifecycle, the three SVG groups, and the zoom/lasso RAF
+  // loops live in the controller (F-07). Constructed in firstUpdated. Event
+  // dispatch + the transform field stay on the host (INV-03/INV-05, F-48).
+  private _interaction: PlotInteractionController | null = null;
   private _webglRenderer: WebGLRenderer | null = null;
-  private _zoomRafId: number | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
   // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
@@ -189,7 +191,12 @@ export class ProtspaceScatterplot extends LitElement {
     fadedOpacity: number;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
+  // F-17: advanced on every quadtree rebuild and folded into the virtualization
+  // cacheKey so a rebuild forces a miss even when the transform is unchanged
+  // (otherwise un-hidden points stay missing until a pan/zoom changes the key).
+  private _quadtreeGeneration = 0;
   private _hoverRaf: number | null = null;
+  private _commitSelectionRafId: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _visiblePlotData: PlotData = EMPTY_PLOT_DATA;
   private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
@@ -203,35 +210,24 @@ export class ProtspaceScatterplot extends LitElement {
     margin: { top: number; right: number; bottom: number; left: number };
   } | null = null;
 
-  // Duplicate stacks (exact same coordinates)
-  private _duplicateStacks: Array<{
-    key: string;
-    x: number;
-    y: number;
-    px: number;
-    py: number;
-    points: PlotDataPoint[];
-  }> = [];
-  private _duplicateStackByKey = new Map<
-    string,
-    { key: string; x: number; y: number; px: number; py: number; points: PlotDataPoint[] }
-  >();
-  private _pointIdToDuplicateStackKey = new Map<string, string>();
-  private _expandedDuplicateStackKey: string | null = null;
-  // Anchor position the user clicked to open the current spider. Stored separately
-  // from the per-viewport stack object so it survives the rebuild that happens on
-  // every pan/zoom (see _applyExpandedSpiderAnchor).
-  private _expandedSpiderAnchor: { stackKey: string; x: number; y: number } | null = null;
-  private _isDuplicateStackUIEnabled(): boolean {
-    return !!this._mergedConfig.enableDuplicateStackUI;
-  }
-  private _duplicateOverlayDebounceId: number | null = null;
-  private _duplicateStacksCacheKey: string | null = null;
-  private _duplicateStacksComputeJobId = 0;
-  private _duplicateStacksComputing = false;
-  // Spiderfy interaction can lose native 'click' due to d3.zoom gesture handling in some browsers.
-  // Track press/release to reliably treat spiderfy node interactions like normal point clicks.
-  private _spiderfyPressByPointerId = new Map<number, { x: number; y: number; t: number }>();
+  // Duplicate-stack / spiderfy / badge overlay subsystem (state + schedulers +
+  // chunked compute + badge canvas + spiderfy SVG layer). Event dispatch stays
+  // on the host via the onPointActivate/onHover/onHoverEnd callbacks (INV-05/INV-03).
+  private _dupOverlay = new DuplicateStackOverlayController({
+    getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
+    getBadgesCanvas: () => this._badgesCanvas,
+    getTransform: () => this._transform,
+    getConfig: () => this._mergedConfig,
+    getScales: () => this._scales,
+    getPlotData: () => this._plotData,
+    getQuadtree: () => this._quadtreeIndex,
+    isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
+    isSelectionMode: () => this.selectionMode,
+    getColor: (p) => this._getColors(p)[0] ?? '#888888',
+    onPointActivate: (e, p) => this._handleClick(e, p),
+    onHover: (e, p) => this._handleMouseOver(e, p),
+    onHoverEnd: () => this._clearHoverState(),
+  });
 
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
 
@@ -239,6 +235,11 @@ export class ProtspaceScatterplot extends LitElement {
   // measurement when a newer hover or a tooltip-clear supersedes it before the child
   // LitElement has finished rendering.
   private _tooltipMeasureToken = 0;
+
+  // Monotonically-increasing token used to invalidate a pending WebGL context-loss
+  // recovery microtask when a newer loss supersedes it, or when the element detaches
+  // before updateComplete resolves (route change is a common GPU-recycle trigger).
+  private _webglRecoveryToken = 0;
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
@@ -251,6 +252,17 @@ export class ProtspaceScatterplot extends LitElement {
   private _lastMaterializedNumericValues: Array<number | null> | null = null;
   private _materializedDataCacheKey: string | null = null;
   private _materializedDataCache: VisualizationData | null = null;
+  // F-40: memoize the filtered display-data rebuild. Keyed by reference on the
+  // same inputs the filtered slice depends on so repeated reads with unchanged
+  // inputs reuse the prior VisualizationData instead of reallocating.
+  private _filteredDisplayCache: VisualizationData | null = null;
+  private _filteredDisplayCacheDeps: {
+    materialized: VisualizationData | null;
+    filteredProteinIds: string[];
+    filtersActive: boolean;
+    selectedProjectionIndex: number;
+    projectionPlane: 'xy' | 'xz' | 'yz';
+  } | null = null;
   // Fast-path keys for _getMaterializedData: avoid JSON.stringify on the hot
   // per-point path (getOpacity -> visibility model -> materialized data). These
   // mirror the JSON cacheKey's reference/primitive inputs so a hit can return
@@ -261,7 +273,14 @@ export class ProtspaceScatterplot extends LitElement {
   private _lastMaterializedSelectedSettings:
     | NumericAnnotationDisplaySettingsMap[string]
     | undefined = undefined;
-  private _numericRecomputeJobId = 0;
+  private _numericRecompute = new NumericRecomputeRunner({
+    hasData: () => !!this.data,
+    getSelectedAnnotation: () => this.selectedAnnotation,
+    setRunning: (running) => {
+      this._numericRecomputeRunning = running;
+    },
+    runRecompute: () => this._runNumericRecomputeBody(),
+  });
 
   // Computed properties with caching
   private get _scales(): ScalePair | null {
@@ -285,7 +304,7 @@ export class ProtspaceScatterplot extends LitElement {
         config.width,
         config.height,
         config.margin,
-      ) as ScalePair | null;
+      );
       this._cachedScales = computedScales;
       this._scalesCacheDeps = {
         plotDataLength: this._plotData.length,
@@ -310,9 +329,7 @@ export class ProtspaceScatterplot extends LitElement {
     const selectedNumericValues = this.selectedAnnotation
       ? sourceData.numeric_annotation_data?.[this.selectedAnnotation]
       : undefined;
-    const selectedNumericValuesCacheRef = this.selectedAnnotation
-      ? (this.data.numeric_annotation_data?.[this.selectedAnnotation] ?? null)
-      : null;
+    const selectedNumericValuesCacheRef = selectedNumericValues ?? null;
     const selectedNumericSettings = this.selectedAnnotation
       ? this.numericAnnotationSettings?.[this.selectedAnnotation]
       : undefined;
@@ -361,7 +378,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._materializedDataCache = materializeVisualizationData(
       sourceData,
       this.numericAnnotationSettings,
-      10,
+      DEFAULT_NUMERIC_BIN_COUNT,
       this.selectedAnnotation,
     );
     this._lastMaterializedSource = this.data;
@@ -375,6 +392,17 @@ export class ProtspaceScatterplot extends LitElement {
   private _getVisibleProteinIdsSet(): Set<string> | null {
     if (!this.filtersActive) return null;
     return new Set(this.filteredProteinIds);
+  }
+
+  /** INV-11: the exact set of reactive inputs that affect rendered geometry. */
+  private _geometryInputsChanged(changed: Map<string, unknown>): boolean {
+    return (
+      changed.has('data') ||
+      changed.has('filteredProteinIds') ||
+      changed.has('filtersActive') ||
+      changed.has('selectedProjectionIndex') ||
+      changed.has('projectionPlane')
+    );
   }
 
   constructor() {
@@ -392,9 +420,39 @@ export class ProtspaceScatterplot extends LitElement {
     this._webglRenderer?.destroy();
     this._webglRenderer = null;
     this._canvasKey += 1;
+    const token = ++this._webglRecoveryToken;
     this.requestUpdate();
-    void this.updateComplete.then(() => this._updateSizeAndRender());
+    void this.updateComplete.then(() => {
+      if (token !== this._webglRecoveryToken || !this.isConnected) return;
+      this._updateSizeAndRender();
+    });
   };
+
+  /**
+   * F-35/F-11: single construction point for the WebGL renderer. Both firstUpdated
+   * and the lazy _updateSizeAndRender path route through here so the renderer is
+   * built exactly once (firstUpdated previously orphaned the renderer that
+   * _updateSizeAndRender had just created). Requires _canvas to be present.
+   */
+  private _createWebglRenderer() {
+    if (!this._canvas) return;
+    this._webglRenderer = new WebGLRenderer(
+      this._canvas,
+      () => this._scales,
+      () => this._transform,
+      () => this._mergedConfig,
+      {
+        getColors: (p: PlotDataPoint) => this._getColors(p),
+        getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
+        getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
+        getDepth: (p: PlotDataPoint) => this._getDepth(p),
+        getShape: (p: PlotDataPoint) => this._getPointShape(p),
+      },
+      this._handleWebglContextLost,
+    );
+    this._updateStyleSignature();
+    this._webglRenderer.setStyleSignature(this._styleSig);
+  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -414,25 +472,23 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._quadtreeRebuildRafId);
       this._quadtreeRebuildRafId = null;
     }
-    if (this._zoomRafId !== null) {
-      cancelAnimationFrame(this._zoomRafId);
-      this._zoomRafId = null;
-    }
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
       this._hoverRaf = null;
     }
-    this._pendingHover = null;
-    this._cancelDuplicateOverlayDebounce();
-    this._cancelDuplicateStackCompute();
-    this._clearDuplicateBadgesCanvas();
-    this._webglRenderer?.destroy();
-    if (this._brush) {
-      this._brush.on('start', null).on('end', null);
-      this._brush = null;
-      this._isBrushing = false;
+    if (this._commitSelectionRafId !== null) {
+      cancelAnimationFrame(this._commitSelectionRafId);
+      this._commitSelectionRafId = null;
     }
-    this._cleanupLasso();
+    this._pendingHover = null;
+    this._numericRecompute.cancel();
+    this._dupOverlay.cancelDebounce();
+    this._dupOverlay.cancelCompute();
+    this._dupOverlay.clearBadges();
+    this._webglRenderer?.destroy();
+    // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
+    // down the d3 brush + lasso (F-07).
+    this._interaction?.teardown();
 
     super.disconnectedCallback();
     this.removeEventListener('legend-zorder-change', this._handleZOrderChange);
@@ -475,14 +531,16 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   private _handleZOrderChange = (event: Event) => {
-    const customEvent = event as CustomEvent;
-    this._zOrderMapping = customEvent.detail.zOrderMapping;
+    const { detail } = event as LegendZOrderChangeEvent;
+    if (!isLegendZOrderDetail(detail)) return; // F-19: skip rather than overwrite GPU state with undefined
+    this._zOrderMapping = detail.zOrderMapping;
     // z-order affects GPU depth; force a fresh style getter cache so getDepth sees the new mapping
     this._styleGettersCache = null;
 
     if (this._plotData.length > 0) {
-      // Z-order mapping changed but coordinates didn't — ask the renderer to
-      // re-sort by depth without invalidating the position cache.
+      // Z-order mapping changed but coordinates didn't — re-sort by depth without
+      // invalidating the position cache. Single render path (F-31): these fields are
+      // plain (not @state), so updated()'s catch-all never fires a second render.
       this._webglRenderer?.invalidateDepthOrder();
       this._webglRenderer?.invalidateStyleCache();
       this._renderPlot();
@@ -490,33 +548,51 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   private _handleColorMappingChange = (event: Event) => {
-    const customEvent = event as CustomEvent;
-    this._colorMapping = customEvent.detail.colorMapping;
-    this._shapeMapping = customEvent.detail.shapeMapping;
-    const colorOnly = customEvent.detail.colorOnly ?? false;
+    const { detail } = event as LegendColorMappingChangeEvent;
+    if (!isLegendColorMappingDetail(detail)) return; // F-19
+    this._colorMapping = detail.colorMapping;
+    this._shapeMapping = detail.shapeMapping;
+    const colorOnly = detail.colorOnly ?? false;
 
     // Force fresh style getters to use new color/shape mapping
     this._styleGettersCache = null;
 
-    // Trigger render (z-order is handled in WebGL depth; avoid CPU-sorting on every zoom/pan)
     if (this._plotData.length > 0) {
-      // For color-only changes, we don't need to invalidate positions or re-sort points
-      // Only invalidate style cache to update colors
+      // INV-08: color-only changes skip depth re-sort + virtualization invalidation.
       if (!colorOnly) {
-        // Z-order mapping may have changed; ask the renderer to re-sort by depth
-        // without invalidating the position cache.
         this._webglRenderer?.invalidateDepthOrder();
         this._invalidateVirtualizationCache();
       }
       this._webglRenderer?.invalidateStyleCache();
-      this._renderPlot();
+      this._renderPlot(); // single render path (F-31)
     }
   };
 
   updated(changedProperties: Map<string, unknown>) {
-    // When new data is loaded (or projection index changes), ensure the selection is valid.
-    // This prevents a blank plot when switching from a dataset with many projections/annotations
-    // to one with only a single projection/annotation.
+    this._reconcileSelectionDefaults(changedProperties);
+    this._reconcileFilterOnDataSwap(changedProperties);
+    this._reprocessGeometryIfNeeded(changedProperties);
+    if (
+      changedProperties.has('numericAnnotationSettings') &&
+      !this._geometryInputsChanged(changedProperties) &&
+      this.data
+    ) {
+      this._scheduleNumericAnnotationRefresh();
+    }
+    this._reconcileConfigMerge(changedProperties);
+    this._rebuildStyleAndSignature(changedProperties);
+    this._reconcileSelectionMode(changedProperties);
+    this._refreshStyleGettersCache(changedProperties);
+    this._reconcileSelectionOverlays(changedProperties);
+    this._reconcileTooltipMeasurement(changedProperties);
+  }
+
+  /**
+   * INV-10: when new data is loaded (or projection index changes), ensure the
+   * selection is valid. This prevents a blank plot when switching from a dataset
+   * with many projections/annotations to one with only a single projection/annotation.
+   */
+  private _reconcileSelectionDefaults(changedProperties: Map<string, unknown>) {
     if (
       (changedProperties.has('data') || changedProperties.has('selectedProjectionIndex')) &&
       this.data
@@ -547,31 +623,34 @@ export class ProtspaceScatterplot extends LitElement {
         this._shapeMapping = null;
       }
     }
+  }
 
-    // A query filter is scoped to the current dataset. On a dataset swap, drop the
-    // filtered-id set before _processData runs below — otherwise a stale set (ids
-    // from the previous dataset) would match nothing and blank the new plot. Set
-    // here (not via a getter) so the synchronous _processData read sees it cleared.
-    if (changedProperties.has('data') && this.filtersActive) {
-      this.filteredProteinIds = [];
-      this.filtersActive = false;
+  /**
+   * A query filter is scoped to the current dataset. On a dataset swap, drop the
+   * filtered-id set before _processData runs below — otherwise a stale set (ids
+   * from the previous dataset) would match nothing and blank the new plot. Set
+   * here (not via a getter) so the synchronous _processData read sees it cleared.
+   */
+  private _reconcileFilterOnDataSwap(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('data')) {
+      // F-40: the filtered-display memo is keyed by reference on the previous
+      // materialized object. _getMaterializedData returns a fresh object after a
+      // data swap, so the reference check already misses — but drop the cache
+      // explicitly here too so a stale slice from the previous dataset can never
+      // be returned. Value-identical to the original (no cache) behavior; it only
+      // forces the recompute that would happen anyway.
+      this._filteredDisplayCache = null;
+      this._filteredDisplayCacheDeps = null;
+      if (this.filtersActive) {
+        this.filteredProteinIds = [];
+        this.filtersActive = false;
+      }
     }
+  }
 
-    const numericSettingsChangedOnly =
-      changedProperties.has('numericAnnotationSettings') &&
-      !changedProperties.has('data') &&
-      !changedProperties.has('filteredProteinIds') &&
-      !changedProperties.has('filtersActive') &&
-      !changedProperties.has('selectedProjectionIndex') &&
-      !changedProperties.has('projectionPlane');
-
-    if (
-      changedProperties.has('data') ||
-      changedProperties.has('filteredProteinIds') ||
-      changedProperties.has('filtersActive') ||
-      changedProperties.has('selectedProjectionIndex') ||
-      changedProperties.has('projectionPlane')
-    ) {
+  /** INV-11: reprocess geometry + emit data-change when a geometry input changes. */
+  private _reprocessGeometryIfNeeded(changedProperties: Map<string, unknown>) {
+    if (this._geometryInputsChanged(changedProperties)) {
       this._processData();
       this._scheduleQuadtreeRebuild();
       this._webglRenderer?.invalidatePositionCache();
@@ -604,9 +683,10 @@ export class ProtspaceScatterplot extends LitElement {
         );
       }
     }
-    if (numericSettingsChangedOnly && this.data) {
-      this._scheduleNumericAnnotationRefresh();
-    }
+  }
+
+  /** INV-14: config shallow-merge + duplicate-UI teardown + style signature + quadtree schedule. */
+  private _reconcileConfigMerge(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
       this._mergedConfig = { ...DEFAULT_CONFIG, ...prev, ...this.config };
@@ -614,15 +694,18 @@ export class ProtspaceScatterplot extends LitElement {
       const nextDupUI = !!this._mergedConfig.enableDuplicateStackUI;
       if (prevDupUI !== nextDupUI) {
         // Cancel any in-flight work and invalidate caches when toggling.
-        this._cancelDuplicateOverlayDebounce();
-        this._cancelDuplicateStackCompute();
-        this._duplicateStacksCacheKey = null;
+        this._dupOverlay.cancelDebounce();
+        this._dupOverlay.cancelCompute();
+        this._dupOverlay.resetCacheKey();
       }
       this._updateStyleSignature();
       this._webglRenderer?.invalidateStyleCache();
       this._webglRenderer?.setStyleSignature(this._styleSig);
       this._scheduleQuadtreeRebuild();
     }
+  }
+
+  private _rebuildStyleAndSignature(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
@@ -644,13 +727,19 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidatePositionCache();
       }
     }
+  }
+
+  private _reconcileSelectionMode(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectionMode') ||
       (changedProperties.has('selectionTool') && this.selectionMode)
     ) {
-      this._updateSelectionMode();
+      this._interaction?.updateSelectionMode();
     }
-    // Refresh cached style getters when any relevant input changes
+  }
+
+  /** Refresh cached style getters when any relevant input changes. */
+  private _refreshStyleGettersCache(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('data') ||
       changedProperties.has('numericAnnotationSettings') ||
@@ -663,6 +752,9 @@ export class ProtspaceScatterplot extends LitElement {
     ) {
       this._styleGettersCache = this._buildStyleGetters();
     }
+  }
+
+  private _reconcileSelectionOverlays(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds')
@@ -681,7 +773,9 @@ export class ProtspaceScatterplot extends LitElement {
       this._renderPlot();
       this._updateSelectionOverlays();
     }
+  }
 
+  private _reconcileTooltipMeasurement(changedProperties: Map<string, unknown>) {
     // Only measure tooltip height when the tooltip data itself changes. The rendered
     // height is derived purely from _tooltipData.view, so there is no reason to
     // read offsetHeight (which forces a synchronous layout reflow) on unrelated
@@ -729,27 +823,15 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   firstUpdated() {
-    this._initializeInteractions();
+    this._interaction = new PlotInteractionController(this._interactionHost());
+    this._interaction.initialize();
     this._updateSizeAndRender();
     if (this._canvas) {
-      this._webglRenderer = new WebGLRenderer(
-        this._canvas,
-        () => this._scales,
-        () => this._transform,
-        () => this._mergedConfig,
-        {
-          getColors: (p: PlotDataPoint) => this._getColors(p),
-          getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
-          getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-          getDepth: (p: PlotDataPoint) => this._getDepth(p),
-          getStrokeColor: (p: PlotDataPoint) => this._getStrokeColor(p),
-          getStrokeWidth: (p: PlotDataPoint) => this._getStrokeWidth(p),
-          getShape: (p: PlotDataPoint) => this._getPointShape(p),
-        },
-        this._handleWebglContextLost,
-      );
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
+      // _updateSizeAndRender already lazily constructs the renderer when _canvas
+      // exists; guard here so firstUpdated no longer orphans that instance (F-35).
+      if (!this._webglRenderer) {
+        this._createWebglRenderer();
+      }
       this._syncWebglSelectionActive();
     }
   }
@@ -828,81 +910,50 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _scheduleNumericAnnotationRefresh() {
-    if (!this.data) return;
+    this._numericRecompute.schedule();
+  }
 
-    const jobId = ++this._numericRecomputeJobId;
-    this._numericRecomputeState = {
-      running: true,
-      annotation: this.selectedAnnotation,
-      startedAt: performance.now(),
-    };
-    this.dispatchEvent(
-      new CustomEvent('numeric-recompute-start', {
-        detail: { annotation: this.selectedAnnotation },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    this.requestUpdate();
+  /**
+   * Component-owned data-refresh routing + lifecycle-bound render tail + the
+   * `data-change` re-emit. Runs inside the deferred RAF for the current job
+   * (NumericRecomputeRunner owns the job id, events, RAF, and running state).
+   */
+  private _runNumericRecomputeBody() {
+    const materializedData = this._getMaterializedData();
+    if (!materializedData) return;
 
-    requestAnimationFrame(() => {
-      if (jobId !== this._numericRecomputeJobId) return;
+    // _refreshSelectedAnnotationValues only reads annotations / annotation_data
+    // (both present on the materialized object) and then triggers a lazy
+    // style-getter rebuild that itself uses includeFilteredProteinIds:false.
+    // Excluding filtered ids returns the cached materialized object by
+    // reference (no per-point deep-slice of projections/numeric/scores/evidence),
+    // matching the pattern at _getVisibilityModel / _buildStyleGetters.
+    const displayData =
+      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
 
-      const materializedData = this._getMaterializedData();
-      if (!materializedData) {
-        this._numericRecomputeState = { running: false, annotation: null, startedAt: null };
-        return;
-      }
+    if (this._plotData.length > 0) {
+      this._refreshSelectedAnnotationValues(displayData);
+    } else {
+      this._processData();
+    }
 
-      // _refreshSelectedAnnotationValues only reads annotations / annotation_data
-      // (both present on the materialized object) and then triggers a lazy
-      // style-getter rebuild that itself uses includeFilteredProteinIds:false.
-      // Excluding filtered ids returns the cached materialized object by
-      // reference (no per-point deep-slice of projections/numeric/scores/evidence),
-      // matching the pattern at _getVisibilityModel / _buildStyleGetters.
-      const displayData =
-        this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
+    this._scheduleQuadtreeRebuild();
+    this._webglRenderer?.invalidateStyleCache();
+    this._updateStyleSignature();
+    this._webglRenderer?.setStyleSignature(this._styleSig);
+    this._renderPlot();
+    this._updateSelectionOverlays();
 
-      if (this._plotData.length > 0) {
-        this._refreshSelectedAnnotationValues(displayData);
-      } else {
-        this._processData();
-      }
-
-      this._scheduleQuadtreeRebuild();
-      this._webglRenderer?.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer?.setStyleSignature(this._styleSig);
-      this._renderPlot();
-      this._updateSelectionOverlays();
-
-      const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
-      if (currentData) {
-        this.dispatchEvent(
-          new CustomEvent('data-change', {
-            detail: { data: currentData },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      }
-
+    const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
+    if (currentData) {
       this.dispatchEvent(
-        new CustomEvent('numeric-recompute-end', {
-          detail: {
-            annotation: this.selectedAnnotation,
-            durationMs:
-              this._numericRecomputeState.startedAt == null
-                ? 0
-                : performance.now() - this._numericRecomputeState.startedAt,
-          },
+        new CustomEvent('data-change', {
+          detail: { data: currentData },
           bubbles: true,
           composed: true,
         }),
       );
-      this._numericRecomputeState = { running: false, annotation: null, startedAt: null };
-      this.requestUpdate();
-    });
+    }
   }
 
   private _getCurrentDisplayData(options?: {
@@ -917,6 +968,19 @@ export class ProtspaceScatterplot extends LitElement {
       return materializedData;
     }
 
+    const deps = this._filteredDisplayCacheDeps;
+    if (
+      this._filteredDisplayCache &&
+      deps &&
+      deps.materialized === materializedData &&
+      deps.filteredProteinIds === this.filteredProteinIds &&
+      deps.filtersActive === this.filtersActive &&
+      deps.selectedProjectionIndex === this.selectedProjectionIndex &&
+      deps.projectionPlane === this.projectionPlane
+    ) {
+      return this._filteredDisplayCache;
+    }
+
     const keptIndices: number[] = [];
     materializedData.protein_ids.forEach((proteinId, index) => {
       if (visibleProteinIds.has(proteinId)) {
@@ -924,54 +988,16 @@ export class ProtspaceScatterplot extends LitElement {
       }
     });
 
-    return {
-      ...materializedData,
-      protein_ids: keptIndices.map((index) => materializedData.protein_ids[index]),
-      projections: materializedData.projections.map((projection) => {
-        const dim = projection.dimension;
-        const out = new Float32Array(keptIndices.length * dim);
-        for (let k = 0; k < keptIndices.length; k++) {
-          const base = keptIndices[k] * dim;
-          const o = k * dim;
-          out[o] = projection.data[base];
-          out[o + 1] = projection.data[base + 1];
-          if (dim === 3) out[o + 2] = projection.data[base + 2];
-        }
-        return { ...projection, data: out, dimension: dim };
-      }),
-      annotation_data: Object.fromEntries(
-        Object.entries(materializedData.annotation_data).map(([annotationName, rows]) => [
-          annotationName,
-          sliceAnnotationData(rows, keptIndices),
-        ]),
-      ),
-      numeric_annotation_data: materializedData.numeric_annotation_data
-        ? Object.fromEntries(
-            Object.entries(materializedData.numeric_annotation_data).map(
-              ([annotationName, values]) => [
-                annotationName,
-                keptIndices.map((index) => values[index]),
-              ],
-            ),
-          )
-        : undefined,
-      annotation_scores: materializedData.annotation_scores
-        ? Object.fromEntries(
-            Object.entries(materializedData.annotation_scores).map(([annotationName, rows]) => [
-              annotationName,
-              keptIndices.map((index) => rows[index]),
-            ]),
-          )
-        : undefined,
-      annotation_evidence: materializedData.annotation_evidence
-        ? Object.fromEntries(
-            Object.entries(materializedData.annotation_evidence).map(([annotationName, rows]) => [
-              annotationName,
-              keptIndices.map((index) => rows[index]),
-            ]),
-          )
-        : undefined,
+    const result = sliceVisualizationDataByIndices(materializedData, keptIndices);
+    this._filteredDisplayCache = result;
+    this._filteredDisplayCacheDeps = {
+      materialized: materializedData,
+      filteredProteinIds: this.filteredProteinIds,
+      filtersActive: this.filtersActive,
+      selectedProjectionIndex: this.selectedProjectionIndex,
+      projectionPlane: this.projectionPlane,
     };
+    return result;
   }
 
   /**
@@ -1020,14 +1046,15 @@ export class ProtspaceScatterplot extends LitElement {
   private _buildQuadtree() {
     // Cancel any in-flight duplicate stack computation — it uses the old quadtree
     // and would overwrite cleared state with stale results when it finishes.
-    this._cancelDuplicateStackCompute();
+    this._dupOverlay.cancelCompute();
 
     if (!this._plotData.length || !this._scales) {
-      this._duplicateStacks = [];
-      this._duplicateStackByKey.clear();
-      this._pointIdToDuplicateStackKey.clear();
-      this._expandedDuplicateStackKey = null;
-      this._duplicateStacksCacheKey = null;
+      this._dupOverlay.resetState();
+      // F-17: an emptied quadtree also changes the indexed slot set; bump the
+      // generation and invalidate so the transform-keyed cache cannot serve a
+      // stale slot set. No render here — there is nothing to draw.
+      this._quadtreeGeneration++;
+      this._invalidateVirtualizationCache();
       return;
     }
     const pd = this._plotData;
@@ -1045,19 +1072,23 @@ export class ProtspaceScatterplot extends LitElement {
     }
     this._quadtreeIndex.setScales(this._scales);
     this._quadtreeIndex.rebuild(pd, visibleSlots);
-    // Duplicate stacks are computed lazily for the current viewport (see _ensureDuplicateStacksForViewport)
-    // to keep quadtree rebuilds fast on large datasets.
-    this._duplicateStacks = [];
-    this._duplicateStackByKey.clear();
-    this._pointIdToDuplicateStackKey.clear();
-    this._expandedDuplicateStackKey = null;
-    this._duplicateStacksCacheKey = null;
+    // Duplicate stacks are computed lazily for the current viewport (see the
+    // controller's ensureForViewport) to keep quadtree rebuilds fast on large datasets.
+    this._dupOverlay.resetState();
 
     // Trigger a fresh duplicate overlay update so badges are recomputed for the
     // new quadtree (e.g. after a projection switch).  Without this, the overlays
     // rendered synchronously in updated() used a stale cache and nothing would
     // re-trigger them after the deferred quadtree rebuild.
-    this._scheduleDuplicateOverlayUpdate(true);
+    this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
+
+    // F-17: any rebuild can change the indexed (isInteractive) slot set, so the
+    // transform-keyed virtualization cache is now stale even if the transform is
+    // unchanged. Bump the generation (folded into the cacheKey), force a miss,
+    // and schedule a render so un-hidden points reappear without a pan/zoom.
+    this._quadtreeGeneration++;
+    this._invalidateVirtualizationCache();
+    this._renderPlot();
   }
 
   private _scheduleQuadtreeRebuild() {
@@ -1070,72 +1101,34 @@ export class ProtspaceScatterplot extends LitElement {
     });
   }
 
-  private _initializeInteractions() {
-    if (!this._svg) return;
-
-    this._svgSelection = d3.select(this._svg);
-
-    // Clear existing content
-    this._svgSelection.selectAll('*').remove();
-
-    // Create main container group
-    this._mainGroup = this._svgSelection.append('g').attr('class', 'scatter-plot-container');
-
-    // Create brush group
-    this._brushGroup = this._svgSelection.append('g').attr('class', 'brush-container');
-
-    // Create overlay group (above brush) for transient drawings like selections
-    this._overlayGroup = this._svgSelection.append('g').attr('class', 'overlay-container');
-
-    this._zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent(this._mergedConfig.zoomExtent)
-      .on('zoom', (event) => {
-        this._transform = event.transform;
-        if (this._mainGroup) {
-          this._mainGroup.attr('transform', event.transform);
-        }
-        if (this._brushGroup) {
-          this._brushGroup.attr('transform', event.transform);
-        }
-        if (this._overlayGroup) {
-          this._overlayGroup.attr('transform', event.transform);
-        }
-        // Smooth WebGL rendering during zoom using requestAnimationFrame
-        if (this._canvas) {
-          if (this._zoomRafId !== null) {
-            cancelAnimationFrame(this._zoomRafId);
-          }
-          this._zoomRafId = requestAnimationFrame(() => {
-            this._zoomRafId = null;
-            this._renderWebGL('zoom');
-            // During active zoom/pan, defer duplicate badge DOM updates to keep interactions smooth.
-            this._updateSelectionOverlays({ duplicateImmediate: false });
-          });
-        }
-        // Keep brush extent in sync with the viewport when scroll-zooming in selection mode.
-        // Skip if a brush gesture is in progress — re-applying the brush resets D3's drag state.
-        if (
-          this.selectionMode &&
-          this.selectionTool === 'rectangle' &&
-          this._brush &&
-          !this._isBrushing
-        ) {
-          this._updateBrushExtent();
-        }
-      });
-    this._svgSelection.call(this._zoom);
-    this._setupDblClickHandlers();
-  }
-
-  /** Disable D3's built-in double-click zoom and attach our own reset handler. */
-  private _setupDblClickHandlers() {
-    if (!this._svgSelection) return;
-    this._svgSelection.on('dblclick.zoom', null);
-    this._svgSelection.on('dblclick.reset', (event: MouseEvent) => {
-      event.preventDefault();
-      this.resetZoom();
-    });
+  /**
+   * Bridge handed to the PlotInteractionController (F-07): narrow pull-getters +
+   * callbacks so the controller never reaches into the component. Event dispatch
+   * stays on the host (INV-03/INV-05); the host owns the _transform field (F-48,
+   * written back via onTransform).
+   */
+  private _interactionHost(): PlotInteractionHost {
+    return {
+      getSvg: () => this._svg,
+      getCanvas: () => this._canvas,
+      getMergedConfig: () => this._mergedConfig,
+      getSelectionMode: () => this.selectionMode,
+      getSelectionTool: () => this.selectionTool,
+      hasScales: () => this._scales != null,
+      getTransform: () => this._transform,
+      queryByPolygon: (vertices) => this._quadtreeIndex.queryByPolygon(vertices),
+      queryByPixels: (x0, y0, x1, y1) => this._quadtreeIndex.queryByPixels(x0, y0, x1, y1),
+      resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
+      onTransform: (t) => {
+        this._transform = t;
+      },
+      onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
+      onHover: (event) => this._handleCanvasMouseMove(event),
+      onHoverEnd: () => this._handleCanvasMouseOut(),
+      onClick: (event) => this._handleCanvasClick(event),
+      renderWebGL: (trigger) => this._renderWebGL(trigger),
+      updateSelectionOverlays: (opts) => this._updateSelectionOverlays(opts),
+    };
   }
 
   private _updateSizeAndRender() {
@@ -1144,31 +1137,14 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (this._canvas) {
       if (!this._webglRenderer) {
-        this._webglRenderer = new WebGLRenderer(
-          this._canvas,
-          () => this._scales,
-          () => this._transform,
-          () => this._mergedConfig,
-          {
-            getColors: (p: PlotDataPoint) => this._getColors(p),
-            getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
-            getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-            getDepth: (p: PlotDataPoint) => this._getDepth(p),
-            getStrokeColor: (p: PlotDataPoint) => this._getStrokeColor(p),
-            getStrokeWidth: (p: PlotDataPoint) => this._getStrokeWidth(p),
-            getShape: (p: PlotDataPoint) => this._getPointShape(p),
-          },
-          this._handleWebglContextLost,
-        );
-        this._updateStyleSignature();
-        this._webglRenderer.setStyleSignature(this._styleSig);
+        this._createWebglRenderer();
       }
-      this._webglRenderer.resize(width, height);
+      this._webglRenderer!.resize(width, height);
       // Force fresh style getters to ensure depth values are recomputed consistently
       this._styleGettersCache = null;
-      this._webglRenderer.invalidatePositionCache();
+      this._webglRenderer!.invalidatePositionCache();
       // Also invalidate style cache to force re-sorting of colors when point order may change
-      this._webglRenderer.invalidateStyleCache();
+      this._webglRenderer!.invalidateStyleCache();
     }
 
     // Keep badge canvas in sync with layout and DPR
@@ -1200,198 +1176,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._updateSelectionOverlays();
   }
 
-  private _clearDuplicateBadgesCanvas() {
-    if (!this._badgesCanvas) return;
-    const ctx = this._badgesCanvas.getContext('2d');
-    if (!ctx) return;
-    // Clear in device pixels (canvas is sized to DPR).
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this._badgesCanvas.width, this._badgesCanvas.height);
-  }
-
-  private _renderDuplicateBadgesCanvas(
-    stacks: Array<{ key: string; px: number; py: number; points: PlotDataPoint[] }>,
-  ) {
-    if (!this._badgesCanvas) return;
-    const ctx = this._badgesCanvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const width = this._mergedConfig.width;
-    const height = this._mergedConfig.height;
-
-    // Work in CSS pixels for drawing; scale to device pixels once.
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const t = this._transform;
-    const badgeOffset = { x: 10, y: -10 };
-    const r = 9;
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '700 10px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-
-    for (let i = 0; i < stacks.length; i++) {
-      const s = stacks[i];
-      const x = t.x + t.k * s.px + badgeOffset.x;
-      const y = t.y + t.k * s.py + badgeOffset.y;
-      const isExpanded = s.key === this._expandedDuplicateStackKey;
-
-      ctx.fillStyle = isExpanded ? 'rgba(59, 130, 246, 0.9)' : 'rgba(17, 24, 39, 0.85)';
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(String(s.points.length), x, y);
-    }
-  }
-
   // HiDPI setup and quality handled by WebGLRenderer
-
-  private _updateSelectionMode() {
-    if (!this._svgSelection || !this._brushGroup || !this._scales) return;
-
-    // Clean up both selection tools
-    this._brushGroup.selectAll('*').remove();
-    this._cleanupLasso();
-    this._brush = null;
-    this._isBrushing = false;
-
-    if (this.selectionMode) {
-      // Keep scroll-wheel zoom active but disable drag-to-pan (drag = selection)
-      if (this._zoom && this._svgSelection) {
-        this._svgSelection
-          .on('mousedown.zoom', null)
-          .on('touchstart.zoom', null)
-          .on('touchmove.zoom', null)
-          .on('touchend.zoom', null);
-      }
-
-      if (this.selectionTool === 'lasso') {
-        this._setupLasso();
-      } else {
-        this._setupBrush();
-      }
-    } else {
-      // Re-enable zoom
-      if (this._zoom) {
-        this._svgSelection.call(this._zoom);
-        this._setupDblClickHandlers();
-      }
-    }
-  }
-
-  private _setupBrush() {
-    if (!this._svgSelection || !this._brushGroup) return;
-
-    this._brush = d3
-      .brush()
-      .handleSize(0)
-      .on('start', () => {
-        this._isBrushing = true;
-      })
-      .on('end', (event) => {
-        this._isBrushing = false;
-        this._handleBrushEnd(event);
-      });
-
-    this._updateBrushExtent();
-  }
-
-  /** Recompute the brush extent from the current zoom transform and re-apply. */
-  private _updateBrushExtent() {
-    if (!this._brush || !this._brushGroup) return;
-
-    const config = this._mergedConfig;
-    const t = this._transform;
-    const vx0 = t.invertX(0);
-    const vy0 = t.invertY(0);
-    const vx1 = t.invertX(config.width);
-    const vy1 = t.invertY(config.height);
-
-    this._brush.extent([
-      [Math.min(vx0, vx1), Math.min(vy0, vy1)],
-      [Math.max(vx0, vx1), Math.max(vy0, vy1)],
-    ]);
-
-    this._brushGroup.call(this._brush);
-  }
-
-  // ── Lasso selection ──────────────────────────────────────────────
-
-  private _setupLasso() {
-    if (!this._svgSelection) return;
-
-    this._svgSelection
-      .on('pointerdown.lasso', (event: PointerEvent) => this._handleLassoStart(event))
-      .on('pointermove.lasso', (event: PointerEvent) => this._handleLassoMove(event))
-      .on('pointerup.lasso', (event: PointerEvent) => this._handleLassoEnd(event));
-  }
-
-  private _cleanupLasso() {
-    if (this._svgSelection) {
-      this._svgSelection.on('pointerdown.lasso', null);
-      this._svgSelection.on('pointermove.lasso', null);
-      this._svgSelection.on('pointerup.lasso', null);
-    }
-    if (this._lassoRafId !== null) {
-      cancelAnimationFrame(this._lassoRafId);
-      this._lassoRafId = null;
-    }
-    this._lassoPath?.remove();
-    this._lassoPath = null;
-    this._lassoVertices = [];
-    this._isLassoing = false;
-  }
-
-  /** Convert a pointer event to local (untransformed) SVG coordinates. */
-  private _pointerToLocal(event: PointerEvent): [number, number] {
-    const [svgX, svgY] = d3.pointer(event);
-    const localX = (svgX - this._transform.x) / this._transform.k;
-    const localY = (svgY - this._transform.y) / this._transform.k;
-    return [localX, localY];
-  }
-
-  private _handleLassoStart(event: PointerEvent) {
-    if (event.button !== 0) return; // left click only
-    event.preventDefault();
-
-    this._isLassoing = true;
-    this._lassoVertices = [this._pointerToLocal(event)];
-
-    // Create the SVG path in the brush group (same coordinate space as the brush)
-    if (this._brushGroup) {
-      this._lassoPath = this._brushGroup.append('path').attr('class', 'lasso-path').node();
-    }
-
-    // Capture pointer for reliable tracking even if cursor leaves the SVG
-    (event.target as Element)?.setPointerCapture?.(event.pointerId);
-  }
-
-  private _handleLassoMove(event: PointerEvent) {
-    if (!this._isLassoing || !this._lassoPath) return;
-    event.preventDefault();
-
-    this._lassoVertices.push(this._pointerToLocal(event));
-
-    // Throttle SVG path updates to animation frames
-    if (this._lassoRafId === null) {
-      this._lassoRafId = requestAnimationFrame(() => {
-        this._lassoRafId = null;
-        if (!this._lassoPath || this._lassoVertices.length < 2) return;
-
-        const d = this._lassoVertices
-          .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`)
-          .join(' ');
-        this._lassoPath.setAttribute('d', d);
-      });
-    }
-  }
 
   /**
    * Resolve a list of quadtree slots to the protein ids of the interactive
@@ -1422,48 +1207,23 @@ export class ProtspaceScatterplot extends LitElement {
     return ids;
   }
 
-  private _handleLassoEnd(event: PointerEvent) {
-    if (!this._isLassoing) return;
-    event.preventDefault();
-    this._isLassoing = false;
-
-    (event.target as Element)?.releasePointerCapture?.(event.pointerId);
-
-    // Need at least 3 vertices to form a polygon
-    if (this._lassoVertices.length < 3) {
-      this._clearLassoVisual();
-      return;
-    }
-
-    // Close the path visually
-    if (this._lassoPath) {
-      const d = this._lassoPath.getAttribute('d') ?? '';
-      this._lassoPath.setAttribute('d', d + ' Z');
-    }
-
-    const slots = this._quadtreeIndex.queryByPolygon(this._lassoVertices);
-    const selectedIds = this._slotsToInteractiveIds(slots);
-    this._commitSelection(selectedIds, () => this._clearLassoVisual());
-  }
-
-  private _clearLassoVisual() {
-    if (this._lassoPath) {
-      this._lassoPath.remove();
-      this._lassoPath = null;
-    }
-    this._lassoVertices = [];
-  }
-
-  private _handleBrushEnd(event: d3.D3BrushEvent<unknown>) {
+  /**
+   * Host shim retained for the characterization suite (F-07): the live brush
+   * lifecycle (incl. clearing the brush rectangle on commit) lives in
+   * PlotInteractionController, but scatter-plot.test.ts drives this handler
+   * directly. Body stays behavior-identical for slot→id resolution + dispatch;
+   * the brush-rectangle clear is owned by the controller for the live path.
+   * Public so the test can drive it (mirrors pickInteractivePointAt); not called
+   * from app code (controller owns the live path).
+   */
+  _handleBrushEnd(event: d3.D3BrushEvent<unknown>) {
     if (!event.selection) return;
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
     const slots = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
     const selectedIds = this._slotsToInteractiveIds(slots);
     this._commitSelection(selectedIds, () => {
-      if (this._brush && this._brushGroup) {
-        this._brushGroup.call(this._brush.move, null);
-      }
+      /* brush-rectangle clear owned by the controller for the live path */
     });
   }
 
@@ -1473,7 +1233,13 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _commitSelection(selectedIds: string[], clearVisual: () => void) {
     if (selectedIds.length > 0) {
-      requestAnimationFrame(() => {
+      // F-16: track the deferred-commit RAF so disconnectedCallback can cancel it.
+      // The post-disconnect no-op is achieved by that cancellation (a selection
+      // committed then disconnected before this RAF fires never dispatches), NOT
+      // by guarding the body on isConnected — the connected selection flow must
+      // dispatch byte-identically (INV-03/INV-05).
+      this._commitSelectionRafId = requestAnimationFrame(() => {
+        this._commitSelectionRafId = null;
         this.selectedProteinIds = [...selectedIds];
 
         this.dispatchEvent(
@@ -1503,18 +1269,19 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (this._canvas && this._webglRenderer) {
       this._renderWebGL('plot');
-      this._setupCanvasEventHandling();
+      this._interaction?.setupCanvasEventHandling();
     }
   }
 
   private _renderWebGL(trigger: RenderWebGLTrigger = 'unknown') {
+    if (!this._webglRenderer) return;
     const perfToken = this._webglRenderPerf.start(trigger);
 
     const pd = this._getPointsForRendering();
 
-    this._webglRenderer!.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
-    this._webglRenderer!.render(pd);
-    this._mainGroup?.selectAll('.protein-point').remove();
+    this._webglRenderer.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
+    this._webglRenderer.render(pd);
+    this._interaction?.mainGroup?.selectAll('.protein-point').remove();
 
     this._webglRenderPerf.stop(perfToken, pd.length);
   }
@@ -1541,19 +1308,14 @@ export class ProtspaceScatterplot extends LitElement {
     // For very large datasets, apply viewport culling
     const config = this._mergedConfig;
     const transform = this._transform;
-    const padding = VIRTUALIZATION_PADDING;
 
-    const leftPx = transform.invertX(config.margin.left - padding);
-    const rightPx = transform.invertX(config.width - config.margin.right + padding);
-    const topPx = transform.invertY(config.margin.top - padding);
-    const bottomPx = transform.invertY(config.height - config.margin.bottom + padding);
+    const { minX, maxX, minY, maxY } = computeViewportWindow(
+      transform,
+      config,
+      VIRTUALIZATION_PADDING,
+    );
 
-    const minX = Math.min(leftPx, rightPx);
-    const maxX = Math.max(leftPx, rightPx);
-    const minY = Math.min(topPx, bottomPx);
-    const maxY = Math.max(topPx, bottomPx);
-
-    const cacheKey = `${Math.round(transform.x)}|${Math.round(transform.y)}|${transform.k.toFixed(3)}|${config.width}|${config.height}`;
+    const cacheKey = `${buildViewKey(transform, config.width, config.height)}|${this._quadtreeGeneration}`;
     if (this._virtualizationCacheKey !== cacheKey) {
       const slots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
       this._visiblePlotData = gatherPlotData(this._plotData, slots);
@@ -1570,452 +1332,12 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _updateSelectionOverlays(options: { duplicateImmediate?: boolean } = {}) {
-    if (!this._overlayGroup) return;
-    this._overlayGroup.selectAll('.selected-overlay').remove();
-    this._scheduleDuplicateOverlayUpdate(options.duplicateImmediate ?? true);
-  }
-
-  private _cancelDuplicateOverlayDebounce() {
-    if (this._duplicateOverlayDebounceId !== null) {
-      window.clearTimeout(this._duplicateOverlayDebounceId);
-      this._duplicateOverlayDebounceId = null;
-    }
-  }
-
-  private _cancelDuplicateStackCompute() {
-    // Bump job id so any in-flight chunked compute aborts early.
-    this._duplicateStacksComputeJobId++;
-    this._duplicateStacksComputing = false;
-  }
-
-  private _scheduleDuplicateOverlayUpdate(immediate: boolean) {
-    if (!this._overlayGroup) return;
-
-    // When the feature is disabled, keep this lightweight and synchronous.
-    if (!this._isDuplicateStackUIEnabled()) {
-      this._updateDuplicateOverlays();
-      return;
-    }
-
-    if (immediate) {
-      this._cancelDuplicateOverlayDebounce();
-      this._updateDuplicateOverlays();
-      return;
-    }
-
-    // Cheap path: redraw existing badges with the current zoom transform (no recompute, no DOM churn).
-    this._redrawDuplicateBadgesCanvasOnly();
-
-    // Debounce to avoid DOM churn during pan/zoom.
-    this._cancelDuplicateOverlayDebounce();
-    this._duplicateOverlayDebounceId = window.setTimeout(() => {
-      this._duplicateOverlayDebounceId = null;
-      this._updateDuplicateOverlays();
-    }, DUPLICATE_BADGES_UPDATE_DEBOUNCE_MS);
-  }
-
-  private _ensureDuplicateStacksForViewport(
-    viewKey: string,
-    minX: number,
-    minY: number,
-    maxX: number,
-    maxY: number,
-  ): boolean {
-    if (this._duplicateStacksCacheKey === viewKey) return true;
-    if (this._duplicateStacksComputing) return false;
-
-    this._duplicateStacksComputing = true;
-    const jobId = ++this._duplicateStacksComputeJobId;
-
-    // Query only the slots currently in (or near) the viewport. This is the key perf win.
-    const candidateSlots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
-    const scales = this._scales;
-    if (!scales) {
-      this._duplicateStacksComputing = false;
-      return false;
-    }
-
-    const stackMap = new Map<
-      string,
-      { key: string; x: number; y: number; px: number; py: number; points: PlotDataPoint[] }
-    >();
-    const idToKey = new Map<string, string>();
-
-    let idx = 0;
-    const step = () => {
-      if (jobId !== this._duplicateStacksComputeJobId) return; // cancelled
-      const end = Math.min(candidateSlots.length, idx + DUPLICATE_STACK_COMPUTE_CHUNK_SIZE);
-      for (; idx < end; idx++) {
-        const slot = candidateSlots[idx];
-        const p = materializePlotDataPoint(this._plotData, slot);
-        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-
-        // Group only points that share coords in the *current* projection
-        // (see duplicate-stack-helpers for the rationale and key contract).
-        const key = getDuplicateStackKey(p);
-
-        let stack = stackMap.get(key);
-        if (!stack) {
-          stack = {
-            key,
-            x: p.x,
-            y: p.y,
-            px: scales.x(p.x),
-            py: scales.y(p.y),
-            points: [],
-          };
-          stackMap.set(key, stack);
-        }
-        stack.points.push(p);
-        idToKey.set(p.id, key);
-      }
-
-      if (idx < candidateSlots.length) {
-        requestAnimationFrame(step);
-        return;
-      }
-
-      // Finalize: keep only true duplicates.
-      const stacks: Array<{
-        key: string;
-        x: number;
-        y: number;
-        px: number;
-        py: number;
-        points: PlotDataPoint[];
-      }> = [];
-      const byKey = new Map<
-        string,
-        { key: string; x: number; y: number; px: number; py: number; points: PlotDataPoint[] }
-      >();
-
-      for (const stack of stackMap.values()) {
-        if (stack.points.length > 1) {
-          stacks.push(stack);
-          byKey.set(stack.key, stack);
-        }
-      }
-
-      this._duplicateStacks = stacks;
-      this._duplicateStackByKey = byKey;
-      this._pointIdToDuplicateStackKey = idToKey;
-
-      // If the expanded stack is no longer available for this viewport, collapse it.
-      if (
-        this._expandedDuplicateStackKey &&
-        !this._duplicateStackByKey.has(this._expandedDuplicateStackKey)
-      ) {
-        this._expandedDuplicateStackKey = null;
-        this._expandedSpiderAnchor = null;
-      }
-
-      // Restore the user's spider anchor on the freshly built stack object so
-      // pan/zoom doesn't snap the spider back to whichever group member was
-      // iterated first.
-      this._applyExpandedSpiderAnchor();
-
-      this._duplicateStacksCacheKey = viewKey;
-      this._duplicateStacksComputing = false;
-
-      // Re-render overlays for the freshly computed viewport stacks.
-      this._updateDuplicateOverlays();
-    };
-
-    requestAnimationFrame(step);
-    return false;
-  }
-
-  private _capDuplicateStacksForRendering(
-    stacks: Array<{ key: string; px: number; py: number; points: PlotDataPoint[] }>,
-    minX: number,
-    minY: number,
-    maxX: number,
-    maxY: number,
-  ): Array<{ key: string; px: number; py: number; points: PlotDataPoint[] }> {
-    let stacksToRender = stacks;
-
-    if (stacksToRender.length > DUPLICATE_BADGES_MAX_VISIBLE) {
-      stacksToRender = [...stacksToRender]
-        .sort((a, b) => b.points.length - a.points.length)
-        .slice(0, DUPLICATE_BADGES_MAX_VISIBLE);
-
-      // Ensure the expanded stack remains visible even if it is not in the top-N.
-      if (
-        this._expandedDuplicateStackKey &&
-        !stacksToRender.some((s) => s.key === this._expandedDuplicateStackKey)
-      ) {
-        const expanded = this._duplicateStackByKey.get(this._expandedDuplicateStackKey);
-        if (
-          expanded &&
-          expanded.px >= minX &&
-          expanded.px <= maxX &&
-          expanded.py >= minY &&
-          expanded.py <= maxY
-        ) {
-          stacksToRender = [...stacksToRender, expanded];
-        }
-      }
-    }
-
-    return stacksToRender;
-  }
-
-  private _redrawDuplicateBadgesCanvasOnly() {
-    if (!this._isDuplicateStackUIEnabled() || this.selectionMode) {
-      this._clearDuplicateBadgesCanvas();
-      return;
-    }
-    if (!this._scales) return;
-
-    const config = this._mergedConfig;
-    const padding = DUPLICATE_BADGES_VIEWPORT_PADDING;
-    const leftPx = this._transform.invertX(config.margin.left - padding);
-    const rightPx = this._transform.invertX(config.width - config.margin.right + padding);
-    const topPx = this._transform.invertY(config.margin.top - padding);
-    const bottomPx = this._transform.invertY(config.height - config.margin.bottom + padding);
-
-    const minX = Math.min(leftPx, rightPx);
-    const maxX = Math.max(leftPx, rightPx);
-    const minY = Math.min(topPx, bottomPx);
-    const maxY = Math.max(topPx, bottomPx);
-
-    const visibleStacks = this._duplicateStacks.filter(
-      (s) => s.px >= minX && s.px <= maxX && s.py >= minY && s.py <= maxY,
-    );
-    const stacksToRender = this._capDuplicateStacksForRendering(
-      visibleStacks,
-      minX,
-      minY,
-      maxX,
-      maxY,
-    );
-
-    // Note: canvas drawing uses screen coordinates and already keeps badge size constant.
-    this._renderDuplicateBadgesCanvas(stacksToRender);
-  }
-
-  private _ensureDuplicateSpiderfyLayer() {
-    if (!this._overlayGroup) return null;
-    let spiderfyLayer = this._overlayGroup.select<SVGGElement>('g.duplicate-spiderfy-layer');
-    if (spiderfyLayer.empty()) {
-      spiderfyLayer = this._overlayGroup.append('g').attr('class', 'duplicate-spiderfy-layer');
-    }
-    return spiderfyLayer;
-  }
-
-  private _updateDuplicateOverlays() {
-    if (!this._overlayGroup || !this._scales) return;
-
-    if (!this._isDuplicateStackUIEnabled()) {
-      // Remove both to clean up older DOM from previous versions.
-      this._overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').remove();
-      this._expandedDuplicateStackKey = null;
-      this._clearDuplicateBadgesCanvas();
-      return;
-    }
-
-    // Don't show stack UI while brushing/selecting.
-    if (this.selectionMode) {
-      this._overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').remove();
-      this._expandedDuplicateStackKey = null;
-      this._clearDuplicateBadgesCanvas();
-      return;
-    }
-
-    const spiderfyLayer = this._ensureDuplicateSpiderfyLayer();
-    if (!spiderfyLayer) return;
-
-    const k = this._transform.k || 1;
-    const config = this._mergedConfig;
-    const viewKey = `${Math.round(this._transform.x)}|${Math.round(this._transform.y)}|${k.toFixed(3)}|${config.width}|${config.height}`;
-
-    // Compute visible window in "base pixel space" (same as quadtree indexing).
-    const padding = DUPLICATE_BADGES_VIEWPORT_PADDING;
-    const leftPx = this._transform.invertX(config.margin.left - padding);
-    const rightPx = this._transform.invertX(config.width - config.margin.right + padding);
-    const topPx = this._transform.invertY(config.margin.top - padding);
-    const bottomPx = this._transform.invertY(config.height - config.margin.bottom + padding);
-
-    const minX = Math.min(leftPx, rightPx);
-    const maxX = Math.max(leftPx, rightPx);
-    const minY = Math.min(topPx, bottomPx);
-    const maxY = Math.max(topPx, bottomPx);
-
-    // Ensure we have duplicate stacks for the current viewport before trying to render.
-    if (!this._ensureDuplicateStacksForViewport(viewKey, minX, minY, maxX, maxY)) {
-      // Keep existing DOM as-is until computation finishes; _updateDuplicateOverlays will rerun.
-      return;
-    }
-
-    const visibleStacks = this._duplicateStacks.filter(
-      (s) => s.px >= minX && s.px <= maxX && s.py >= minY && s.py <= maxY,
-    );
-
-    // --- Badges (N) ---
-    const stacksToRender = this._capDuplicateStacksForRendering(
-      visibleStacks,
-      minX,
-      minY,
-      maxX,
-      maxY,
-    );
-
-    // Phase 3: render badges via a lightweight 2D canvas overlay (much faster than many SVG nodes).
-    // Spiderfy remains in SVG for interaction.
-    this._renderDuplicateBadgesCanvas(stacksToRender);
-
-    // --- Spiderfy ---
-    spiderfyLayer.selectAll('*').remove();
-    if (!this._expandedDuplicateStackKey) return;
-
-    const stack = this._duplicateStackByKey.get(this._expandedDuplicateStackKey);
-    if (!stack) {
-      this._expandedDuplicateStackKey = null;
-      return;
-    }
-
-    // Hide spiderfy if the stack is off-screen (e.g., after a zoom/pan).
-    if (!(stack.px >= minX && stack.px <= maxX && stack.py >= minY && stack.py <= maxY)) {
-      this._expandedDuplicateStackKey = null;
-      return;
-    }
-
-    const points = stack.points;
-    const n = points.length;
-    // Ring radius in screen pixels (kept constant by scale(1/k) below)
-    const ringRadius = Math.min(70, Math.max(22, 12 + n * 2));
-    const nodeRadius = 5;
-
-    const spiderGroup = spiderfyLayer
-      .append('g')
-      .attr('class', 'dup-spiderfy')
-      // Keep spiderfy UI constant-size in screen pixels via scale(1/k)
-      .attr('transform', `translate(${stack.px},${stack.py}) scale(${1 / k})`);
-
-    const items = points.map((p, idx) => {
-      const angle = (idx / n) * Math.PI * 2 - Math.PI / 2;
-      const x = ringRadius * Math.cos(angle);
-      const y = ringRadius * Math.sin(angle);
-      return { point: p, idx, x, y };
-    });
-
-    // Leader lines
-    spiderGroup
-      .selectAll('line.dup-spiderfy-line')
-      .data(items)
-      .enter()
-      .append('line')
-      .attr('class', 'dup-spiderfy-line')
-      .attr('x1', 0)
-      .attr('y1', 0)
-      .attr('x2', (d) => d.x)
-      .attr('y2', (d) => d.y);
-
-    // Clickable nodes
-    const nodes = spiderGroup
-      .selectAll('g.dup-spiderfy-node')
-      .data(items)
-      .enter()
-      .append('g')
-      .attr('class', 'dup-spiderfy-node')
-      .attr('transform', (d) => `translate(${d.x},${d.y})`);
-
-    // Create circles with explicit pointer-events and handle selection via pointer press/release.
-    // We avoid relying on the native 'click' event because it can be suppressed by d3.zoom gesture handling.
-    nodes
-      .append('circle')
-      .attr('class', 'dup-spiderfy-node-circle')
-      .attr('r', nodeRadius)
-      .attr('fill', (d) => this._getColors(d.point)[0] ?? '#888888')
-      .style('pointer-events', 'all')
-      .style('cursor', 'pointer')
-      .on('pointerdown', (event) => {
-        event.stopPropagation();
-        const pe = event as PointerEvent;
-        if (typeof pe.pointerId === 'number') {
-          this._spiderfyPressByPointerId.set(pe.pointerId, {
-            x: pe.clientX,
-            y: pe.clientY,
-            t: Date.now(),
-          });
-        }
-        // Keep pointer events routed to this element even if the pointer moves slightly.
-        const el = event.currentTarget as HTMLElement | null;
-        if (el && typeof el.setPointerCapture === 'function' && typeof pe.pointerId === 'number') {
-          try {
-            el.setPointerCapture(pe.pointerId);
-          } catch {
-            // ignore
-          }
-        }
-      })
-      .on('pointerup', (event, d) => {
-        event.stopPropagation();
-        const pe = event as PointerEvent;
-        const rec =
-          typeof pe.pointerId === 'number'
-            ? this._spiderfyPressByPointerId.get(pe.pointerId)
-            : undefined;
-        if (typeof pe.pointerId === 'number') this._spiderfyPressByPointerId.delete(pe.pointerId);
-        if (!rec) return;
-
-        // Treat a short, low-movement press/release as a click.
-        const dx = pe.clientX - rec.x;
-        const dy = pe.clientY - rec.y;
-        const dist2 = dx * dx + dy * dy;
-        const dt = Date.now() - rec.t;
-        if (dist2 <= 16 && dt <= 700) {
-          this._handleClick(event as unknown as MouseEvent, d.point);
-        }
-      })
-      .on('lostpointercapture', (event) => {
-        const pe = event as PointerEvent;
-        if (typeof pe.pointerId === 'number') this._spiderfyPressByPointerId.delete(pe.pointerId);
-      })
-      .on('pointercancel', (event) => {
-        const pe = event as PointerEvent;
-        if (typeof pe.pointerId === 'number') this._spiderfyPressByPointerId.delete(pe.pointerId);
-      })
-      .on('mouseenter', (event, d) => {
-        // Show the real tooltip for the hovered protein (not the stack centroid)
-        this._handleMouseOver(event as unknown as MouseEvent, d.point);
-      })
-      .on('mouseleave', () => {
-        this._clearHoverState();
-      });
-  }
-
-  private _toggleSpiderfy(stackKey: string, anchorPoint?: PlotDataPoint) {
-    this._expandedDuplicateStackKey =
-      this._expandedDuplicateStackKey === stackKey ? null : stackKey;
-
-    if (this._expandedDuplicateStackKey && anchorPoint) {
-      // Remember where the user clicked so the spider stays anchored to that
-      // point across pan/zoom — _duplicateStackByKey rebuilds with fresh
-      // objects on every viewport recompute and would otherwise drop the anchor.
-      this._expandedSpiderAnchor = {
-        stackKey: this._expandedDuplicateStackKey,
-        x: anchorPoint.x,
-        y: anchorPoint.y,
-      };
-      this._applyExpandedSpiderAnchor();
-    } else {
-      this._expandedSpiderAnchor = null;
-    }
-
-    this._updateDuplicateOverlays();
-  }
-
-  private _applyExpandedSpiderAnchor(): void {
-    const anchor = this._expandedSpiderAnchor;
-    if (!anchor || !this._scales) return;
-    if (anchor.stackKey !== this._expandedDuplicateStackKey) return;
-    const stack = this._duplicateStackByKey.get(anchor.stackKey);
-    if (!stack) return;
-    stack.x = anchor.x;
-    stack.y = anchor.y;
-    stack.px = this._scales.x(anchor.x);
-    stack.py = this._scales.y(anchor.y);
+    const overlayGroup = this._interaction?.overlayGroup;
+    if (!overlayGroup) return;
+    // The selected-overlay clear stays on the host; the duplicate-stack/spiderfy/
+    // badge update is owned by the controller (F-06).
+    overlayGroup.selectAll('.selected-overlay').remove();
+    this._dupOverlay.updateSelectionOverlays(options);
   }
 
   private _getPointShape(point: PlotDataPoint): string {
@@ -2197,16 +1519,6 @@ export class ProtspaceScatterplot extends LitElement {
     return getters.getDepth(point);
   }
 
-  private _getStrokeColor(point: PlotDataPoint): string {
-    const getters = this._getStyleGetters();
-    return getters.getStrokeColor(point);
-  }
-
-  private _getStrokeWidth(point: PlotDataPoint): number {
-    const getters = this._getStyleGetters();
-    return getters.getStrokeWidth(point);
-  }
-
   /** Build style getters for the current data and visual state. */
   private _buildStyleGetters(): ReturnType<typeof createStyleGetters> {
     const styleData =
@@ -2312,16 +1624,6 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Setup event handling for canvas-based rendering
    */
-  private _setupCanvasEventHandling(): void {
-    if (!this._svgSelection) return;
-
-    // Use event delegation on the SVG overlay for canvas interactions
-    this._svgSelection
-      .on('mousemove.canvas', (event) => this._handleCanvasMouseMove(event))
-      .on('click.canvas', (event) => this._handleCanvasClick(event))
-      .on('mouseout.canvas', () => this._handleCanvasMouseOut());
-  }
-
   /**
    * Handle mouse move events for canvas rendering.
    * Coalesces rapid mousemoves to at most one hover computation per animation frame.
@@ -2342,48 +1644,52 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Deferred hover processing — runs inside a rAF scheduled by _handleCanvasMouseMove.
-   * Behaviour is identical to the former per-event body; only the call frequency is throttled.
+   * Shared screen→data hit-test for hover and click (F-28). Resolves the nearest
+   * INTERACTIVE, currently-RENDERED point under the cursor, or null. Owns the
+   * transform inversion, quadtree `findNearest`, the isInteractive/isPointRendered
+   * guards, and the within-radius distance check. Callers branch only on the result.
    */
-  private _processCanvasHover(event: MouseEvent, mouseX: number, mouseY: number): void {
-    if (!this._scales) return; // may have been cleared between scheduling and the frame
+  pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
+    if (!this._scales) return null;
 
     // Transform mouse coordinates to data space
     const dataX = (mouseX - this._transform.x) / this._transform.k;
     const dataY = (mouseY - this._transform.y) / this._transform.k;
 
-    // Find nearest slot using spatial index
-    const searchRadius = 15 / this._transform.k; // Search radius adjusted for zoom
+    // Find nearest slot using spatial index (search radius adjusted for zoom)
+    const searchRadius = HIT_TEST_SEARCH_RADIUS_PX / this._transform.k;
     const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    if (nearestSlot < 0) return null;
 
-    if (nearestSlot >= 0) {
-      const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
+    const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
 
-      // Don't hover non-interactive points (hidden/faded-to-0 → opacity 0)
-      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
-        this._clearHoverState();
-        return;
-      }
+    // Don't pick non-interactive points (hidden/faded-to-0 → opacity 0)
+    if (!this._getVisibilityModel().isInteractive(nearestPoint)) return null;
 
-      // Verify the point is actually rendered (not excluded due to point limits)
-      if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
-        // Point exists in spatial index but isn't rendered - clear tooltip
-        this._clearHoverState();
-        return;
-      }
-
-      // Calculate actual distance to verify it's within the point
-      const pointX = this._scales.x(nearestPoint.x);
-      const pointY = this._scales.y(nearestPoint.y);
-      const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
-      const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / 3;
-
-      if (distance <= pointRadius) {
-        this._handleMouseOver(event, nearestPoint);
-        return;
-      }
+    // Verify the point is actually rendered (not excluded due to point limits)
+    if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
+      return null;
     }
 
+    // Calculate actual distance to verify it's within the point
+    const pointX = this._scales.x(nearestPoint.x);
+    const pointY = this._scales.y(nearestPoint.y);
+    const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
+    const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / POINT_RADIUS_SIZE_DIVISOR;
+
+    return distance <= pointRadius ? nearestPoint : null;
+  }
+
+  /**
+   * Deferred hover processing — runs inside a rAF scheduled by _handleCanvasMouseMove.
+   * Behaviour is identical to the former per-event body; only the call frequency is throttled.
+   */
+  private _processCanvasHover(event: MouseEvent, mouseX: number, mouseY: number): void {
+    const point = this.pickInteractivePointAt(mouseX, mouseY);
+    if (point) {
+      this._handleMouseOver(event, point);
+      return;
+    }
     // No point found, clear hover state if it exists
     this._clearHoverState();
   }
@@ -2402,59 +1708,20 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     // Clicking anywhere outside the expanded stack collapses it.
-    const hadExpanded = !!this._expandedDuplicateStackKey;
-    if (this._expandedDuplicateStackKey) {
-      this._expandedDuplicateStackKey = null;
-      this._updateDuplicateOverlays();
-    }
+    const hadExpanded = this._dupOverlay.collapseExpanded();
 
     const [mouseX, mouseY] = d3.pointer(event);
+    const nearestPoint = this.pickInteractivePointAt(mouseX, mouseY);
+    if (!nearestPoint) return;
 
-    // Transform mouse coordinates to data space
-    const dataX = (mouseX - this._transform.x) / this._transform.k;
-    const dataY = (mouseY - this._transform.y) / this._transform.k;
+    // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
+    if (this._dupOverlay.maybeSpiderfyPoint(nearestPoint)) return;
 
-    // Find nearest slot using spatial index
-    const searchRadius = 15 / this._transform.k;
-    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    // If we just collapsed an expanded stack, treat this click as a "dismiss" click.
+    // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
+    if (hadExpanded) return;
 
-    if (nearestSlot >= 0) {
-      const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
-
-      // Don't click non-interactive points (hidden/faded-to-0 → opacity 0)
-      if (!this._getVisibilityModel().isInteractive(nearestPoint)) {
-        return;
-      }
-
-      // Verify the point is actually rendered (not excluded due to point limits)
-      if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
-        return;
-      }
-
-      // Calculate actual distance to verify it's within the point
-      const pointX = this._scales.x(nearestPoint.x);
-      const pointY = this._scales.y(nearestPoint.y);
-      const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
-      const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / 3;
-
-      if (distance <= pointRadius) {
-        if (this._isDuplicateStackUIEnabled()) {
-          // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
-          const stackKey = this._pointIdToDuplicateStackKey.get(nearestPoint.id);
-          const stack = stackKey ? this._duplicateStackByKey.get(stackKey) : undefined;
-          if (stack && stack.points.length > 1) {
-            this._toggleSpiderfy(stack.key, nearestPoint);
-            return;
-          }
-        }
-
-        // If we just collapsed an expanded stack, treat this click as a "dismiss" click.
-        // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
-        if (hadExpanded) return;
-
-        this._handleClick(event, nearestPoint);
-      }
-    }
+    this._handleClick(event, nearestPoint);
   }
 
   /**
@@ -2487,9 +1754,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   resetZoom() {
-    if (this._zoom && this._svgSelection) {
-      this._svgSelection.transition().duration(750).call(this._zoom.transform, d3.zoomIdentity);
-    }
+    this._interaction?.resetZoom();
   }
 
   /**
@@ -2499,7 +1764,7 @@ export class ProtspaceScatterplot extends LitElement {
    * helper so the logic is unit-testable without a DOM.
    */
   private _estimateTooltipHeight(): number {
-    if (!this._tooltipData) return 160;
+    if (!this._tooltipData) return TOOLTIP_FALLBACK_HEIGHT;
     return estimateTooltipHeight(this._tooltipData.view);
   }
 
@@ -2508,40 +1773,13 @@ export class ProtspaceScatterplot extends LitElement {
 
     const { x, y } = this._tooltipData;
     const config = this._mergedConfig;
-    const padding = 15;
-    const tooltipMaxWidth = 350;
-    const tooltipHeight = this._tooltipHeight ?? this._estimateTooltipHeight();
-
-    let left = x + 15;
-    let top = y - 60;
-    let transform = '';
-
-    // Horizontal adjustment: if it goes off the right edge, flip to the left side
-    if (left + tooltipMaxWidth > config.width) {
-      // Position anchor at x - 15 and use translateX(-100%) to pull it to the left
-      // this ensures the right edge of the tooltip is close to the mouse regardless of width
-      left = x - 15;
-      transform = 'translateX(-100%)';
-    }
-
-    // Keep within horizontal bounds (left side)
-    if (!transform && left < padding) {
-      left = padding;
-    } else if (transform && left - tooltipMaxWidth < padding) {
-      // If flipped to the left and would go off the left edge, clamp it
-      left = tooltipMaxWidth + padding;
-    }
-
-    // Vertical adjustment: clamp to viewport using the measured height when
-    // available, so tall multi-annotation tooltips do not run off the bottom.
-    if (top + tooltipHeight > config.height - padding) {
-      top = config.height - tooltipHeight - padding;
-    }
-    if (top < padding) {
-      top = padding;
-    }
-
-    return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;
+    return computeTooltipStyle({
+      x,
+      y,
+      height: this._tooltipHeight ?? this._estimateTooltipHeight(),
+      viewportWidth: config.width,
+      viewportHeight: config.height,
+    });
   }
 
   render() {
@@ -2616,10 +1854,11 @@ export class ProtspaceScatterplot extends LitElement {
         ${this.data
           ? html` <div class="plot-indicator">${this._getVisiblePointCount()} points</div> `
           : ''}
-        ${this._numericRecomputeState.running
+        ${this._numericRecomputeRunning
           ? html`
               <div class="plot-indicator" style="left: auto; right: 0.5rem;">
-                Recalculating bins for ${this._numericRecomputeState.annotation ?? 'annotation'}...
+                Recalculating bins for
+                ${this._numericRecompute.runningAnnotation() ?? 'annotation'}...
               </div>
             `
           : ''}
@@ -2631,6 +1870,31 @@ export class ProtspaceScatterplot extends LitElement {
     const cfg = this._mergedConfig;
     const parts = [`ps:${cfg.pointSize}`, `annot:${this.selectedAnnotation}`];
     this._styleSig = parts.join('|');
+  }
+
+  /**
+   * Shared isolation render-refresh: reprocess derived plot data, rebuild the
+   * quadtree, invalidate + re-sign the WebGL renderer's caches, request a Lit
+   * update, and render once the update settles. Called by isolateSelection() and
+   * resetIsolation() — the only divergence (resetIsolation clears _lastDataRef to
+   * force the full-rebuild path) stays at the call site, before this method runs.
+   */
+  private _reprocessAndRefresh(): void {
+    this._processData();
+    this._buildQuadtree();
+
+    if (this._webglRenderer) {
+      this._webglRenderer.invalidatePositionCache();
+      this._webglRenderer.invalidateStyleCache();
+      this._updateStyleSignature();
+      this._webglRenderer.setStyleSignature(this._styleSig);
+    }
+
+    this.requestUpdate();
+
+    this.updateComplete.then(() => {
+      this._renderPlot();
+    });
   }
 
   isolateSelection() {
@@ -2653,25 +1917,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._isolationMode = true;
     this.selectedProteinIds = [];
 
-    // Process data and update rendering
-    this._processData();
-    this._buildQuadtree();
-
-    // Ensure canvas renderer is completely refreshed
-    if (this._webglRenderer) {
-      this._webglRenderer.invalidatePositionCache();
-      this._webglRenderer.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
-    }
-
-    // Force immediate component update
-    this.requestUpdate();
-
-    // Render after all updates are complete
-    this.updateComplete.then(() => {
-      this._renderPlot();
-    });
+    this._reprocessAndRefresh();
 
     this.dispatchEvent(
       new CustomEvent('data-isolation', {
@@ -2716,15 +1962,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   /** True when a duplicate-badge spider is currently expanded. */
   hasExpandedDuplicateStack(): boolean {
-    return this._expandedDuplicateStackKey !== null;
+    return this._dupOverlay.hasExpanded();
   }
 
   /** Collapse the currently-open duplicate-badge spider, if any. */
   closeExpandedDuplicateStack(): void {
-    if (this._expandedDuplicateStackKey === null) return;
-    this._expandedDuplicateStackKey = null;
-    this._expandedSpiderAnchor = null;
-    this._updateDuplicateOverlays();
+    this._dupOverlay.closeExpanded();
   }
 
   /**
@@ -2759,25 +2002,7 @@ export class ProtspaceScatterplot extends LitElement {
     // instead of the fast coordinate-only path (which would keep the filtered subset)
     this._lastDataRef = null;
 
-    // Process data and update rendering
-    this._processData();
-    this._buildQuadtree();
-
-    // Ensure canvas renderer is completely refreshed
-    if (this._webglRenderer) {
-      this._webglRenderer.invalidatePositionCache();
-      this._webglRenderer.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
-    }
-
-    // Force immediate component update
-    this.requestUpdate();
-
-    // Render after all updates are complete
-    this.updateComplete.then(() => {
-      this._renderPlot();
-    });
+    this._reprocessAndRefresh();
 
     this.dispatchEvent(
       new CustomEvent('data-isolation-reset', {
@@ -2841,44 +2066,14 @@ export class ProtspaceScatterplot extends LitElement {
         });
       }
 
-      // Filter annotation data to match current protein IDs
-      const filteredAnnotationData: Record<string, AnnotationData> = {};
-      const filteredNumericAnnotationData: { [key: string]: (number | null)[] } = {};
-
-      for (const [annotationName, annotationValues] of Object.entries(
-        currentDisplayData.annotation_data,
-      )) {
-        filteredAnnotationData[annotationName] = sliceAnnotationData(annotationValues, keptIndices);
-      }
-
-      for (const [annotationName, annotationValues] of Object.entries(
-        currentDisplayData.numeric_annotation_data ?? {},
-      )) {
-        const sliced: (number | null)[] = new Array(keptIndices.length);
-        for (let k = 0; k < keptIndices.length; k++) {
-          sliced[k] = annotationValues[keptIndices[k]];
-        }
-        filteredNumericAnnotationData[annotationName] = sliced;
-      }
-
-      return {
-        ...currentDisplayData,
-        protein_ids: currentProteinIds,
-        annotation_data: filteredAnnotationData,
-        numeric_annotation_data: filteredNumericAnnotationData,
-        projections: currentDisplayData.projections.map((projection) => {
-          const dim = projection.dimension;
-          const out = new Float32Array(keptIndices.length * dim);
-          for (let k = 0; k < keptIndices.length; k++) {
-            const base = keptIndices[k] * dim;
-            const o = k * dim;
-            out[o] = projection.data[base];
-            out[o + 1] = projection.data[base + 1];
-            if (dim === 3) out[o + 2] = projection.data[base + 2];
-          }
-          return { ...projection, data: out, dimension: dim };
-        }),
-      };
+      // Delegate the per-index slice to the shared helper (same construction the
+      // filtered-display path uses), then override protein_ids with the
+      // plotDataId-ordered current ids exactly as before. This also reslices
+      // annotation_scores/annotation_evidence consistently, silently correcting
+      // the prior isolation-mode misalignment (sanctioned by F-13; no consumer
+      // indexes scores/evidence off this result, so INV-04 holds).
+      const sliced = sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
+      return { ...sliced, protein_ids: currentProteinIds };
     }
 
     return currentDisplayData;

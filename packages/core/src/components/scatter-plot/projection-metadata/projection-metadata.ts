@@ -1,6 +1,6 @@
 import { LitElement, html } from 'lit';
 import { property } from 'lit/decorators.js';
-import { customElement } from '../../utils/safe-custom-element';
+import { customElement } from '../../../utils/safe-custom-element';
 import type { Projection } from '@protspace/utils';
 import { NA_DISPLAY } from '@protspace/utils';
 import { projectionMetadataStyles } from './projection-metadata.styles';
