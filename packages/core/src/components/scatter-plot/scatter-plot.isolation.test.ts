@@ -202,6 +202,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _reprocessAndRefresh(): void;
     isolateSelection(): void;
     resetIsolation(): void;
+    resetZoom(): void;
   };
 
   function buildData(): VisualizationData {
@@ -316,5 +317,40 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     el._isolationHistory = [['p1']];
     el.resetIsolation();
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  // #297: zooming into a region and then isolating should snap back to the full
+  // view of the isolated subset, not keep the stale pre-isolation zoom transform.
+  it('isolateSelection resets the zoom to the full view', () => {
+    const el = makeEl();
+    el.selectedProteinIds = ['p1', 'p3'];
+    const resetZoom = vi.spyOn(el, 'resetZoom');
+
+    el.isolateSelection();
+
+    expect(resetZoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reset the zoom when isolateSelection bails (no valid selection)', () => {
+    const el = makeEl();
+    el.selectedProteinIds = [];
+    const resetZoom = vi.spyOn(el, 'resetZoom');
+
+    el.isolateSelection();
+
+    expect(resetZoom).not.toHaveBeenCalled();
+  });
+
+  // Symmetry with isolateSelection: exiting isolation restores the full dataset,
+  // so the view should also snap back to the full extent (#297).
+  it('resetIsolation resets the zoom to the full view', () => {
+    const el = makeEl();
+    el._isolationMode = true;
+    el._isolationHistory = [['p1', 'p3']];
+    const resetZoom = vi.spyOn(el, 'resetZoom');
+
+    el.resetIsolation();
+
+    expect(resetZoom).toHaveBeenCalledTimes(1);
   });
 });

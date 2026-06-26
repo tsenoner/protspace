@@ -1919,6 +1919,11 @@ export class ProtspaceScatterplot extends LitElement {
 
     this._reprocessAndRefresh();
 
+    // Snap back to the full view of the isolated subset. Without this, a zoom
+    // applied before isolating lingers and the isolated points render under a
+    // stale transform instead of filling the plot (#297).
+    this.resetZoom();
+
     this.dispatchEvent(
       new CustomEvent('data-isolation', {
         detail: {
@@ -2003,6 +2008,11 @@ export class ProtspaceScatterplot extends LitElement {
     this._lastDataRef = null;
 
     this._reprocessAndRefresh();
+
+    // Exiting isolation restores the full dataset, so snap back to the full
+    // view — mirrors isolateSelection() and the data-change reset so a zoom
+    // applied inside the isolated view doesn't linger over the full plot (#297).
+    this.resetZoom();
 
     this.dispatchEvent(
       new CustomEvent('data-isolation-reset', {
@@ -2110,6 +2120,10 @@ export class ProtspaceScatterplot extends LitElement {
        *  pass the source plot's render size so dots stay the same visual size
        *  as in the main plot, instead of shrinking with the inset. */
       pointSizeReference?: { width: number; height: number };
+      /** Ignore the live zoom/pan transform and render the default fit-all
+       *  view (what a double-click reset shows). The figure editor sets this
+       *  so a zoomed-in plot doesn't leak into the exported/preview figure. */
+      resetView?: boolean;
     } = {},
   ): HTMLCanvasElement {
     if (!this._webglRenderer) {
@@ -2120,7 +2134,13 @@ export class ProtspaceScatterplot extends LitElement {
       throw new Error('Width and height must be positive numbers');
     }
 
-    const { dpr = 1, backgroundColor = '#ffffff', dataDomain, pointSizeReference } = options;
+    const {
+      dpr = 1,
+      backgroundColor = '#ffffff',
+      dataDomain,
+      pointSizeReference,
+      resetView = false,
+    } = options;
 
     // Capture WebGL content using native off-screen rendering
     const webglCanvas = this._webglRenderer.renderToCanvas(
@@ -2129,6 +2149,7 @@ export class ProtspaceScatterplot extends LitElement {
       dpr,
       dataDomain,
       pointSizeReference,
+      resetView,
     );
 
     // Composite with badges canvas if present
