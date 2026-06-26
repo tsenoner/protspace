@@ -94,6 +94,44 @@ export class DuplicateStackOverlayController {
     });
   }
 
+  /**
+   * Render the current duplicate-stack badges into a fresh off-screen canvas
+   * using `transform` instead of the live zoom, leaving the on-screen badge
+   * canvas untouched. The figure editor passes `d3.zoomIdentity` so the captured
+   * badges line up with the unzoomed, fit-all points (#294) — the live badge
+   * canvas is positioned for the live zoom/pan and would otherwise be composited
+   * at the wrong place. The canvas is sized exactly like the live badge canvas
+   * (config size × devicePixelRatio) so the caller's existing draw-image stretch
+   * behaves identically. Returns null (so the caller skips compositing) when the
+   * overlay is disabled or no stacks are currently in view.
+   *
+   * Coverage note: badges reflect the stacks computed for the last live viewport
+   * (`ensureForViewport` queries only the visible region for perf), so a capture
+   * taken while the live plot is zoomed in shows that region's badges — the same
+   * coverage as the live overlay, now drawn at their correct fit-all positions.
+   */
+  captureBadges(transform: ZoomTransform): HTMLCanvasElement | null {
+    if (!this.deps.isEnabled()) return null;
+    const config = this.deps.getConfig();
+    const win = computeViewportWindow(transform, config, DUPLICATE_BADGES_VIEWPORT_PADDING);
+    const stacksToRender = cullAndCapStacks(this.stacks, win, this.expandedKey, this.byKey);
+    if (stacksToRender.length === 0) return null;
+
+    const dpr = window.devicePixelRatio || 1;
+    const target = document.createElement('canvas');
+    target.width = Math.max(1, Math.floor(config.width * dpr));
+    target.height = Math.max(1, Math.floor(config.height * dpr));
+
+    const renderer = new DuplicateBadgesCanvasRenderer({
+      getCanvas: () => target,
+      getTransform: () => transform,
+      getSize: () => ({ width: config.width, height: config.height }),
+      getExpandedKey: () => this.expandedKey,
+    });
+    renderer.render(stacksToRender);
+    return target;
+  }
+
   // ----- Public surface (1:1 with the old private methods on the host) -----
 
   updateSelectionOverlays(options: { duplicateImmediate?: boolean } = {}): void {

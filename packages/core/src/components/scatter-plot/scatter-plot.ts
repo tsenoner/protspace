@@ -2152,8 +2152,16 @@ export class ProtspaceScatterplot extends LitElement {
       resetView,
     );
 
-    // Composite with badges canvas if present
-    const badgesCanvas = this._badgesCanvas;
+    // Composite with badges canvas if present. For the unzoomed (resetView)
+    // capture, re-render the badges at the identity transform so they line up
+    // with the fit-all points; the live _badgesCanvas is positioned for the
+    // live zoom/pan and would otherwise leak the zoom into the figure (#294).
+    // The inset path (dataDomain set) keeps the live canvas — its badge handling
+    // is a separate, pre-existing concern.
+    const badgesCanvas =
+      resetView && !dataDomain
+        ? (this._dupOverlay.captureBadges(d3.zoomIdentity) ?? undefined)
+        : this._badgesCanvas;
     if (badgesCanvas && badgesCanvas.width > 0 && badgesCanvas.height > 0) {
       const ctx = webglCanvas.getContext('2d');
       if (ctx) {
