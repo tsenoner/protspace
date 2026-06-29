@@ -2,7 +2,8 @@
 
 Distances are computed with a chunked BLAS matrix product (numpy ``@``) plus
 ``argpartition`` — the GEMM path, which is roughly an order of magnitude faster
-than ``scipy.cdist`` while staying pure-numpy (no scipy/sklearn dependency).
+than a naive per-pair distance loop while staying pure-numpy (no third-party
+distance/ANN library).
 
 The query axis is chunked and, adaptively, bounded against the reference axis so
 the per-chunk distance block is kept at or below ``max_block_bytes`` (default

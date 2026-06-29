@@ -82,8 +82,8 @@ def test_k_less_than_one_raises():
 
 
 def test_cosine_zero_vector_query_is_finite():
-    # A zero-magnitude query must not produce NaN cosine distances (scipy.cdist
-    # returns NaN here); the result must stay finite and deterministic.
+    # A zero-magnitude query must not produce NaN cosine distances (a naive
+    # 1 - cos computation would divide by a zero norm); it must stay finite.
     refs = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
     queries = np.array([[0.0, 0.0]], dtype=np.float32)
     idx, dist = nearest(queries, refs, k=2, metric="cosine")
