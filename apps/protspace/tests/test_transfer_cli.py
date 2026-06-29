@@ -341,10 +341,12 @@ def test_cli_end_to_end_protein_id_bundle(tmp_path):
     write_bundle([annotations, proj_meta, proj_data], bundle_path)
 
     h5_path = tmp_path / "emb.h5"
+    # Non-zero, near-parallel vectors so the default (cosine) metric is meaningful
+    # (a zero query vector has no direction and yields a degenerate cosine distance).
     with h5py.File(h5_path, "w") as f:
         f.attrs["model_name"] = "test_model"
-        f.create_dataset("TRINITY_1", data=np.array([0.0, 0.0], dtype=np.float32))
-        f.create_dataset("P00001", data=np.array([0.1, 0.0], dtype=np.float32))
+        f.create_dataset("TRINITY_1", data=np.array([1.0, 0.05], dtype=np.float32))
+        f.create_dataset("P00001", data=np.array([1.0, 0.0], dtype=np.float32))
 
     out_path = tmp_path / "out.parquetbundle"
     result = CliRunner().invoke(

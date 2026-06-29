@@ -197,8 +197,8 @@ A protein is considered "predicted" for `COL` when `COL` is empty but `COL__pred
 
 The reliability index depends on the `--metric` and `--k` used during transfer:
 
-- **Default (`--metric euclidean`, `--k 1`):** `0.5 / (0.5 + distance)`.
-- **`--metric cosine` (`--k 1`):** `clamp(1 - cosine_distance, 0, 1)`, where `cosine_distance` is in [0, 2].
+- **Default (`--metric cosine`, `--k 1`):** `clamp(1 - cosine_distance, 0, 1)`, where `cosine_distance` is in [0, 2] (1 = identical direction, 0 = orthogonal/opposite). Cosine is the default because the confidence is naturally bounded and directly interpretable.
+- **`--metric euclidean` (`--k 1`):** `0.5 / (0.5 + distance)` — the published goPredSim transform, calibrated for ProtT5. On embedding spaces whose raw distances are much larger than ~0.5 it collapses toward 0 even for near neighbours, so treat it as a *ranking* rather than a calibrated probability.
 - **`--k > 1`:** the goPredSim mean reliability — `(1/m) · Σ s(d)` of the per-neighbour similarity over the `k` nearest neighbours carrying the chosen label, with `m = min(k, number of references)`. Because of this normalization, values are **not** comparable across different `--k` settings.
 
 See [`protspace transfer`](cli.md#protspace-transfer) for usage and option details.

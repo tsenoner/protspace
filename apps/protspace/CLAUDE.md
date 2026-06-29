@@ -17,14 +17,14 @@ Python package for dimensionality reduction of protein language model (pLM) embe
 uv sync --group dev
 git config core.hooksPath .githooks
 
-# Run tests (skip slow)
-uv run pytest tests/ -m "not slow"
+# Run tests (skip slow) — testpaths covers both protspace + protlabel
+uv run pytest -m "not slow"
 
 # Run all tests
-uv run pytest tests/
+uv run pytest
 
 # Lint
-uv run ruff check src/ tests/
+uv run ruff check src/ packages/ tests/
 
 # Run CLI
 uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m pca2 -o output --no-scores
@@ -143,6 +143,31 @@ src/protspace/
 └── wsgi.py                     # WSGI entry point for deployment
 ```
 
+### uv workspace: `protlabel` (EAT engine)
+
+This repo is a **uv workspace**. `protlabel` — the Embedding Annotation Transfer
+(EAT) engine — is a separate distribution developed as a workspace member, **not**
+part of the `protspace` package:
+
+```
+packages/protlabel/             # workspace member; PyPI: protlabel (numpy only)
+├── pyproject.toml              # own deps; built as its own wheel
+└── src/protlabel/
+    ├── reliability.py          # goPredSim distance→[0,1] confidence transform
+    ├── backends.py             # exact brute-force (chunked GEMM) kNN
+    ├── transfer.py             # kNN + label transfer + reliability index → eat()
+    └── lookup.py               # build / save / load the .npz reference sidecar
+```
+
+`protlabel` imports nothing from `protspace` (enforced by
+`packages/protlabel/tests/test_protlabel_boundary.py`). `protspace` depends on it via
+`[tool.uv.sources] protlabel = { workspace = true }` (local, editable in dev; from
+PyPI when published); the two are released in lock-step. The thin
+`protspace transfer` CLI (`src/protspace/cli/transfer.py`) and the overlay writer
+(`src/protspace/data/io/predictions.py`) are the only protspace-side glue —
+all distance math lives in `protlabel`. Run/build the whole workspace with
+`uv sync` / `uv build --all-packages`.
+
 ## Dimensionality Reduction
 
 Six methods supported, all in `src/protspace/utils/reducers.py`:
@@ -194,10 +219,10 @@ HDF5 file (float16 embeddings)
 ## Testing
 
 ```bash
-uv run pytest tests/ -m "not slow"          # Fast tests (recommended during development)
-uv run pytest tests/                         # All tests
+uv run pytest -m "not slow"                  # Fast tests (recommended during development)
+uv run pytest                                # All tests (protspace + protlabel)
 uv run pytest tests/test_reducers.py -v      # Specific test file
-uv run pytest tests/ --cov=src/protspace     # With coverage
+uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With coverage
 ```
 
 ### Test Files
@@ -246,8 +271,8 @@ Located in `notebooks/`:
 ## Conventions
 
 - **Logging:** Configure once via `setup_logging()` in `cli/common_args.py`. Library modules use `logger = logging.getLogger(__name__)` only — no `logging.basicConfig()`.
-- **Imports:** src-layout (`src/protspace/`). Tests import from `protspace.*` or `src.protspace.*`.
-- **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ tests/`.
-- **Versioning:** python-semantic-release via `pyproject.toml`. Version in `pyproject.toml` + `__init__.py`.
-- **Build:** hatchling backend.
+- **Imports:** src-layout (`src/protspace/`; `protlabel` at `packages/protlabel/src/`). Tests import from `protspace.*` / `src.protspace.*` and `protlabel.*`.
+- **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ packages/ tests/`.
+- **Versioning:** python-semantic-release via `pyproject.toml`, lock-step across `protspace` + `protlabel`. Versions in `pyproject.toml`, `packages/protlabel/pyproject.toml`, and `src/protspace/__init__.py`.
+- **Build:** hatchling backend; uv workspace (`uv build --all-packages`).
 - **Git workflow:** Always create a feature branch and open a PR — never push directly to `main`.

@@ -7,6 +7,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "protlabel",
+    "protspace",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
@@ -2724,6 +2730,17 @@ wheels = [
 ]
 
 [[package]]
+name = "protlabel"
+version = "4.4.0"
+source = { editable = "packages/protlabel" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=1.23.0" }]
+
+[[package]]
 name = "protspace"
 version = "4.4.0"
 source = { editable = "." }
@@ -2733,12 +2750,12 @@ dependencies = [
     { name = "numpy" },
     { name = "pacmap" },
     { name = "pandas" },
+    { name = "protlabel" },
     { name = "pyarrow" },
     { name = "pymmseqs" },
     { name = "requests" },
     { name = "rich" },
     { name = "scikit-learn" },
-    { name = "scipy" },
     { name = "tqdm" },
     { name = "typer" },
     { name = "umap-learn" },
@@ -2799,6 +2816,7 @@ requires-dist = [
     { name = "pacmap", specifier = ">=0.8.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "plotly", marker = "extra == 'frontend'", specifier = ">=5.24.1" },
+    { name = "protlabel", editable = "packages/protlabel" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pymmseqs", specifier = ">=1.0.4" },
     { name = "python-dotenv", marker = "extra == 'frontend'", specifier = ">=1.0.1" },
@@ -2806,7 +2824,6 @@ requires-dist = [
     { name = "requests", marker = "extra == 'frontend'", specifier = ">=2.32.4" },
     { name = "rich", specifier = ">=14.3.3" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
-    { name = "scipy", specifier = ">=1.10" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "typer", specifier = ">=0.24.1" },
     { name = "umap-learn", specifier = ">=0.5.10" },

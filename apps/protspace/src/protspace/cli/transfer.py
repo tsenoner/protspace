@@ -36,7 +36,7 @@ def run_transfer(
     query_rule: Rule,
     reference_rule: Rule,
     k: int = 1,
-    metric: str = "euclidean",
+    metric: str = "cosine",
 ) -> pa.Table:
     """Pure core: classify, transfer per column, return the augmented table.
 
@@ -159,8 +159,8 @@ def transfer(
         int, typer.Option("--k", help="Neighbours considered (default 1).")
     ] = 1,
     metric: Annotated[
-        str, typer.Option("--metric", help="euclidean | cosine.")
-    ] = "euclidean",
+        str, typer.Option("--metric", help="cosine | euclidean (default cosine).")
+    ] = "cosine",
     verbose: Opt_Verbose = 0,
 ) -> None:
     """Transfer annotations to query proteins from nearest reference neighbours."""
