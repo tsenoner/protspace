@@ -20,10 +20,10 @@ builds one index over a large fixed reference set and answers many thousands of 
 lookups. Two things would drive that decision, and only at scale:
 - **Per-query speed:** usearch was ~5–6× faster *per query* at 100K refs — but you need
   ~tens of thousands of queries against the same fixed index to repay the build.
-- **Memory (the stronger argument for the 4-core/4 GB target):** a 570K × 1024 float32 reference
-  matrix is ~2.3 GB — tight in 4 GB. usearch's `i8`/`f16` quantization (≈4×/2× smaller) is a real
-  lever there; brute-force must hold the full f32 matrix (it already chunks the *distance block*, but
-  not the reference matrix itself).
+- **Memory (the stronger argument for the 4-core/4 GB target):** full Swiss-Prot at dim 1024 now
+  **fits** — measured ~3 GB peak in a 4 GB container, *after* a fix that stops the cosine path from
+  holding the reference matrix twice (it was ~4.7 GB → OOM before). It only stops fitting at dim 2560
+  (~5.8 GB f32), where usearch's `i8`/`f16` quantization (≈4×/2× smaller) becomes a real lever.
 
 ## Method
 
@@ -76,11 +76,11 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
   goes 0.010 → 0.117 → 1.167 ms/query across 1K → 10K → 100K. Extrapolating to Swiss-Prot
   (~570K × 1024) ≈ **6–7 ms/query** (~3.8 ms at dim 320) — fine for batch transfer, which is exactly
   the chunked-GEMM backend's design point.
-- **Memory.** Brute-force peak RSS tracks the reference matrix (100K × 1024 f32 ≈ 0.39 GB of data,
-  ~2.0 GB whole-process incl. interpreter + the float64-budgeted distance block). usearch peaks
-  ~10–12 % higher (graph on top of the stored vectors). At full Swiss-Prot, f32 references are
-  ~2.3 GB (dim 1024) to ~5.8 GB (dim 2560) — this is the binding constraint on a 4 GB box, and where
-  usearch quantization could help.
+- **Memory.** *(The `peak RSS` column in the table above is unreliable — that run measured several
+  configs in one long-lived process, and process RSS is a monotonic high-water mark, so later rows
+  are inflated by earlier ones. Use the clean per-process measurement under "Deployment envelope"
+  below instead.)* The reference matrix is the binding constraint: f32 references are ~2.3 GB
+  (dim 1024) to ~5.8 GB (dim 2560) at full Swiss-Prot.
 - **Recall caveat (important).** The low recall@1 at ef=64 (0.06–0.96) is largely a **random-vector
   artifact**, not a usearch defect: i.i.d. Gaussian vectors are near-orthogonal in high dim, so the
   true top-1 is a near-tie among many almost-equidistant candidates (measured 1st–2nd-neighbour gap
@@ -89,6 +89,34 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
   inside the exact top-5 ~94 % of the time at ef=64. **Real pLM embeddings have cluster structure
   (a clear nearest neighbour), so production recall would be far higher at the same ef.** Still, for
   *label transfer* where the nearest neighbour's label is copied, exactness is the safe default.
+
+### Deployment envelope (4-core / 4 GB), measured
+
+Re-measured in a Docker container limited to `--cpus=4 --memory=4g` (the deploy profile), with
+**one fresh process per config** (so peak RSS reflects that config alone) and vectors generated
+directly as float32. arm64 (Apple M4) throttled to 4 cores — per-core speed is faster than the
+target Intel VM, so **treat the timings as a lower bound; the memory figures are
+architecture-independent.** Reproduce with `packages/protlabel/benchmarks/bench_memory.py`.
+
+| metric | n_refs | refs f32 | per-query (4 cores) | peak RSS |
+|---|---:|---:|---:|---:|
+| euclidean | 100K | 0.41 GB | 2.2 ms | 676 MB |
+| euclidean | 300K | 1.23 GB | 5.3 ms | 1875 MB |
+| euclidean | 570K (Swiss-Prot) | 2.33 GB | 9.7 ms | **3151 MB** |
+| cosine | 100K | 0.41 GB | 1.1 ms | 630 MB |
+| cosine | 300K | 1.23 GB | 3.7 ms | 1749 MB |
+| cosine | 570K (Swiss-Prot) | 2.33 GB | 7.4 ms | **3037 MB** |
+
+**Full Swiss-Prot fits in 4 GB** for both metrics at dim 1024 (~3 GB peak, no OOM), at ~7–10 ms/query
+on 4 arm64 cores (expect ~2–3× on a slower Intel VM — still fine for batch transfer).
+
+> **Memory fix shipped.** The cosine path used to hold the reference matrix **twice** (the raw matrix
+> plus a normalized copy), so cosine at Swiss-Prot / dim 1024 needed ~4.7 GB and would OOM-kill a 4 GB
+> box. `backends.py` now folds the per-reference norm into the dot product (`cos = q·r / (‖q‖‖r‖)`)
+> instead of storing a second matrix, so cosine holds **1× references like euclidean** — which is what
+> makes the ~3 GB peak above (and the 4 GB target) achievable. At **dim 2560** (ESM2-3B) references
+> alone are ~5.8 GB → still exceed 4 GB; use a smaller model, fp16 references, or (future) usearch
+> quantization on that box.
 
 ## Literature / background
 
@@ -121,7 +149,8 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 | `protspace transfer` (one-shot, batch of queries, rebuilt per run) | **exact brute-force** (current) — faster end-to-end and exact |
 | 64 GB Colab, any realistic dataset | **exact brute-force** — memory is a non-issue |
 | 4-core/4 GB deployed VM, references ≤ ~100–200K | **exact brute-force** — sub-ms/low-ms per query, fits memory |
-| 4 GB VM, full Swiss-Prot (570K), memory-bound | brute-force still works (~2.3 GB at dim 1024) but is tight → **only here** consider usearch with `i8`/`f16` quantization + a persisted, memory-mapped index |
+| 4 GB VM, full Swiss-Prot (570K), dim ≤ 1024 | **exact brute-force** — measured ~3 GB peak (after the cosine 1×-memory fix), fits; ~7–10 ms/query on 4 cores |
+| 4 GB VM, Swiss-Prot at dim 2560 (ESM2-3B) | references alone are ~5.8 GB → won't fit f32 → use a smaller model, fp16 references, or (future) usearch `i8`/`f16` quantization |
 | Always-on EAT service: one fixed index, ≫10K online single-vector lookups | **optional usearch backend** — its ~5–6× per-query speedup and on-disk index amortise the build |
 
 **Conclusion:** the brute-force default the reviewer favoured is the right call, and the measurements

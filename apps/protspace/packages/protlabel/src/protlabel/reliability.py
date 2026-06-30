@@ -28,9 +28,12 @@ import math
 def similarity(distance: float, metric: str) -> float:
     """Per-neighbour distance->similarity (the goPredSim reliability transform).
 
-    Always returns a value in [0, 1]. A negative distance is treated as 0; a
-    non-finite distance (NaN/inf) maps to 0.0 so an invalid neighbour never
-    produces a spuriously high confidence.
+    Always returns a value in [0, 1]. The kNN backend never emits a negative
+    distance (euclidean is a clamped ``sqrt``; cosine distance is in [0, 2]), so
+    the negative-distance branch is purely defensive for direct callers of this
+    function: a negative distance is treated as 0, and a non-finite distance
+    (NaN/inf) maps to 0.0 so an invalid neighbour never yields a spuriously high
+    confidence.
     """
     if not math.isfinite(distance):
         return 0.0
