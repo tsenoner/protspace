@@ -18,6 +18,8 @@ scikit-learn imports are function-local to keep CLI startup fast.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 
 from protspace.stats.base import AnnotationColumn, StatContext, StatRow
@@ -46,6 +48,16 @@ def _silhouette(X, labels, *, rng_seed: int, sample_threshold: int):
     return float(silhouette_score(X, labels)), {"sampled": False, "sample_size": int(n)}
 
 
+class _Labeling(NamedTuple):
+    """One K-selection's clustering: how it was chosen + its column and labels."""
+
+    label_kind: str  # "kmeans_elbow" | "kmeans_silhouette" (statistics.parquet tag)
+    col_name: str  # "cluster_elbow_<proj>" | "cluster_silhouette_<proj>"
+    selection_name: str  # "elbow" | "silhouette"
+    requested_k: int
+    labels: np.ndarray
+
+
 class ClusterValidityStatistic:
     """Elbow / silhouette K + silhouette / Davies-Bouldin / Calinski-Harabasz."""
 
@@ -58,6 +70,11 @@ class ClusterValidityStatistic:
         params = ctx.params
         sample_threshold = int(params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
         selection = str(params.get("cluster_selection", "elbow")).lower()
+        # The CLI validates this via a Typer enum; guard the raw stats API too so an
+        # unrecognised value falls back to the default rather than silently emitting
+        # no labelling at all (best-effort: never drop a projection's whole output).
+        if selection not in ("elbow", "silhouette", "both"):
+            selection = "elbow"
 
         res = kmeans_elbow(
             X,
@@ -73,40 +90,45 @@ class ClusterValidityStatistic:
         # Which labelling(s) to emit. Each K-selection method is named explicitly
         # (cluster_elbow_<proj> / cluster_silhouette_<proj>) so the column name — the
         # only signal that survives to the frontend — carries the provenance.
-        labelings: list[tuple[str, str, int, np.ndarray]] = []
+        labelings: list[_Labeling] = []
         if selection in ("elbow", "both"):
             labelings.append(
-                ("kmeans_elbow", f"cluster_elbow_{ctx.space_name}", res.k, res.labels)
+                _Labeling(
+                    "kmeans_elbow",
+                    f"cluster_elbow_{ctx.space_name}",
+                    "elbow",
+                    res.k,
+                    res.labels,
+                )
             )
         if selection in ("silhouette", "both") and res.silhouette_labels is not None:
             labelings.append(
-                (
+                _Labeling(
                     "kmeans_silhouette",
                     f"cluster_silhouette_{ctx.space_name}",
+                    "silhouette",
                     int(res.silhouette_k),
                     res.silhouette_labels,
                 )
             )
 
         out: list = []
-        for label_kind, col_name, requested_k, labels in labelings:
-            out.extend(
-                self._emit_labeling(
-                    ctx, X, n, labels, label_kind, col_name, requested_k, res
-                )
-            )
+        for labeling in labelings:
+            out.extend(self._emit_labeling(ctx, X, n, res, labeling))
         return out
 
-    def _emit_labeling(
-        self, ctx, X, n, labels, label_kind, col_name, requested_k, res
-    ) -> list:
+    def _emit_labeling(self, ctx, X, n, res, labeling: _Labeling) -> list:
         """Rows + membership column for one labelling (elbow or silhouette-K)."""
         from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
 
         rng_seed = ctx.rng_seed
         params = ctx.params
         sample_threshold = int(params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
-        k = int(requested_k)
+        label_kind = labeling.label_kind
+        col_name = labeling.col_name
+        selection_name = labeling.selection_name
+        labels = labeling.labels
+        k = int(labeling.requested_k)
 
         # Report the ACHIEVED number of distinct clusters (KMeans can collapse on
         # coincident points), keeping the requested K in extra. The cluster sizes
@@ -121,7 +143,6 @@ class ClusterValidityStatistic:
             "stat_family": self.family,
             "label_kind": label_kind,
         }
-        selection_name = "silhouette" if label_kind == "kmeans_silhouette" else "elbow"
 
         # Decide up front whether the exact per-point silhouette will be computed.
         # When it is, its mean is the exact aggregate silhouette (== unsampled

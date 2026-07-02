@@ -127,8 +127,15 @@ def _random_triplet_accuracy(
     n = embedding.shape[0]
     anchors = np.repeat(np.arange(n), k_per_point)
     t = anchors.shape[0]
-    j = rng.integers(0, n, t)
-    m = rng.integers(0, n, t)
+    # Two DISTINCT others per anchor, neither equal to the anchor. Offsets in
+    # [1, n-1] added mod n never land on the anchor; drawing m's offset from
+    # [1, n-2] then skipping over j's offset guarantees j != m. This excludes
+    # self-pairs (distance 0), which would trivially agree and inflate the score.
+    off_j = rng.integers(1, n, t)
+    off_m = rng.integers(1, n - 1, t)
+    off_m += off_m >= off_j
+    j = (anchors + off_j) % n
+    m = (anchors + off_m) % n
     emb_a, coords_a = embedding[anchors], coords[anchors]
     d_hi_j = paired_distances(emb_a, embedding[j], metric=metric)
     d_hi_m = paired_distances(emb_a, embedding[m], metric=metric)
@@ -182,23 +189,7 @@ class FaithfulnessStatistic:
         if n < 3:
             return []
 
-        # Canonicalise row order by id up front so EVERY metric depends only on the
-        # id-SET, not the input row order. The kNN/Spearman metrics are already
-        # order-invariant, but the position-based triplet sampling below is not — so
-        # sorting here (matching the id-derived subsample seed) makes random_triplet
-        # reproducible across differently-ordered inputs too.
-        canonical = np.argsort(np.asarray(ids), kind="stable")
-        emb = emb[canonical]
-        coords = coords[canonical]
-        ids = [ids[int(i)] for i in canonical]
-
-        k = int(ctx.params.get("k", DEFAULT_K))
-        sample_threshold = int(
-            ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD)
-        )
         hard_ceiling = int(ctx.params.get("hard_ceiling", DEFAULT_HARD_CEILING))
-        hi_metric = ctx.high_dim_metric or "euclidean"
-
         base = {
             "space_kind": ctx.space_kind,
             "space_name": ctx.space_name,
@@ -210,6 +201,8 @@ class FaithfulnessStatistic:
             "destination": "projection_metadata",
         }
 
+        # Bail before the canonical sort/copy below: past the ceiling every metric
+        # is skipped anyway, so sorting and copying emb/coords would be pure waste.
         if n > hard_ceiling:
             return [
                 StatRow(
@@ -224,6 +217,22 @@ class FaithfulnessStatistic:
                     **base,
                 )
             ]
+
+        # Canonicalise row order by id up front so EVERY metric depends only on the
+        # id-SET, not the input row order. The kNN/Spearman metrics are already
+        # order-invariant, but the position-based triplet sampling below is not — so
+        # sorting here (matching the id-derived subsample seed) makes random_triplet
+        # reproducible across differently-ordered inputs too.
+        canonical = np.argsort(np.asarray(ids), kind="stable")
+        emb = emb[canonical]
+        coords = coords[canonical]
+        ids = [ids[int(i)] for i in canonical]
+
+        k = int(ctx.params.get("k", DEFAULT_K))
+        sample_threshold = int(
+            ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD)
+        )
+        hi_metric = ctx.high_dim_metric or "euclidean"
 
         sampled = False
         if n > sample_threshold:
@@ -256,23 +265,24 @@ class FaithfulnessStatistic:
         # duals via ``_continuity``); ``scope="global"`` probe the whole-layout
         # structure the local metrics miss. Each is best-effort — a failure drops
         # only that row.
+        local = {"metric": hi_metric, "scope": "local"}
         metrics = (
             (
                 "knn_overlap",
                 lambda: _knn_overlap(emb, coords, k, hi_metric),
-                {"metric": hi_metric, "scope": "local"},
+                local,
             ),
             (
                 "trustworthiness",
                 lambda: float(
                     trustworthiness(emb, coords, n_neighbors=k, metric=hi_metric)
                 ),
-                {"metric": hi_metric, "scope": "local"},
+                local,
             ),
             (
                 "continuity",
                 lambda: _continuity(emb, coords, k, hi_metric),
-                {"metric": hi_metric, "scope": "local"},
+                local,
             ),
             (
                 "random_triplet",

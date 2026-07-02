@@ -139,26 +139,17 @@ def kmeans_elbow(
     if len(k_range) < 3:
         # Too short to find a chord knee; take the smallest K, flag low confidence.
         k = k_range[0]
-        return ElbowResult(
-            k,
-            _labels_full(k),
-            k_range,
-            inertia,
-            "low",
-            silhouette_k=sil_k,
-            silhouette_labels=sil_labels,
+        knee_confidence = "low"
+    else:
+        dev = chord_deviation(np.asarray(inertia, dtype=float))
+        k = k_range[int(np.argmax(dev))]
+        # With only 3 swept points the chord knee is structurally pinned to the middle
+        # K; require a wider sweep before claiming high confidence.
+        knee_confidence = (
+            "high"
+            if len(k_range) >= 4 and float(dev.max()) >= knee_min_deviation
+            else "low"
         )
-
-    dev = chord_deviation(np.asarray(inertia, dtype=float))
-    k_idx = int(np.argmax(dev))
-    k = k_range[k_idx]
-    # With only 3 swept points the chord knee is structurally pinned to the middle
-    # K; require a wider sweep before claiming high confidence.
-    knee_confidence = (
-        "high"
-        if len(k_range) >= 4 and float(dev.max()) >= knee_min_deviation
-        else "low"
-    )
 
     return ElbowResult(
         k,

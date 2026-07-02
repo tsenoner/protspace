@@ -91,7 +91,10 @@ def compute_statistics(
             (embedding name), ``ids`` (coords row identifiers), and ``info``
             (reducer params, used for the high-dim ``metric``).
         rng_seed: deterministic seed.
-        params: tunables (``k``, ``k_max``, ``sample_threshold``, ``hard_ceiling``).
+        params: tunables — ``k``, ``k_max``, ``sample_threshold``, ``hard_ceiling``,
+            ``max_fit_sample``, ``n_triplets_per_point``; ``cluster_selection``
+            (``elbow`` | ``silhouette`` | ``both``); ``cluster_annotations`` and
+            ``include_scores`` (per-protein membership column + attached silhouette).
 
     Returns:
         A ``StatsReport`` (may be partial/empty; never raises on a statistic error).

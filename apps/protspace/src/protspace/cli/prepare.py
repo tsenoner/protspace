@@ -18,6 +18,7 @@ import typer
 
 from protspace.cli.app import app, setup_logging
 from protspace.cli.common_options import (
+    ClusterSelection,
     Metric,
     Opt_BatchSize,
     Opt_Eps,
@@ -127,7 +128,7 @@ Opt_Stats = Annotated[
     ),
 ]
 Opt_ClusterSelection = Annotated[
-    str,
+    ClusterSelection,
     typer.Option(
         "--cluster-selection",
         help="With --stats, how to choose the cluster count K: 'elbow' (default), "
@@ -311,7 +312,7 @@ def prepare(
     annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
     stats: Opt_Stats = False,
-    cluster_selection: Opt_ClusterSelection = "elbow",
+    cluster_selection: Opt_ClusterSelection = ClusterSelection.elbow,
     refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),
@@ -354,13 +355,6 @@ def prepare(
 
     if embedders and not has_fasta and not query:
         raise typer.BadParameter("-e/--embedder requires FASTA input or -q/--query.")
-
-    # Validate before any expensive I/O (query download / embedding / similarity).
-    if cluster_selection not in ("elbow", "silhouette", "both"):
-        raise typer.BadParameter(
-            "--cluster-selection must be 'elbow', 'silhouette', or 'both'.",
-            param_hint="--cluster-selection",
-        )
 
     if has_fasta and not embedders:
         from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
@@ -535,7 +529,7 @@ def prepare(
             keep_tmp=keep_tmp,
             no_scores=not scores,
             stats=stats,
-            cluster_selection=cluster_selection,
+            cluster_selection=cluster_selection.value,
             refetch_stages=refetch_stages,
             annotations=annotation_list,
             intermediate_dir=cache_dir,

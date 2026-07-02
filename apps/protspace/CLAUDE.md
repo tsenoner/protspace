@@ -240,9 +240,9 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
 | `test_pipeline_utils.py` | 70 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
-| `test_stats.py` | 37 | Projection statistics: elbow, cluster-validity, faithfulness (dual continuity), subsample determinism/order-invariance, silhouette consistency |
-| `test_stats_cli.py` | 11 | `protspace stats` CLI + `prepare` stats wiring, `--settings-out` guard |
-| `test_stats_carriage.py` | 9 | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
+| `test_stats.py` | 43 | Projection statistics: elbow, cluster-validity, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency |
+| `test_stats_cli.py` | 12 | `protspace stats` CLI + `prepare` stats wiring, `--settings-out` guard, `--cluster-selection` validation |
+| `test_stats_carriage.py` | 10 | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
 | `test_stats_bundle.py` | 7 | Optional 5th (statistics) bundle part round-trip |
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
