@@ -70,12 +70,13 @@ class ClusterValidityStatistic:
         if res is None:  # n < 3
             return []
 
-        # Which labelling(s) to emit. Elbow keeps the plain `cluster_<proj>` name
-        # (backward compatible); silhouette-K uses `cluster_silhouette_<proj>`.
+        # Which labelling(s) to emit. Each K-selection method is named explicitly
+        # (cluster_elbow_<proj> / cluster_silhouette_<proj>) so the column name — the
+        # only signal that survives to the frontend — carries the provenance.
         labelings: list[tuple[str, str, int, np.ndarray]] = []
         if selection in ("elbow", "both"):
             labelings.append(
-                ("kmeans_elbow", f"cluster_{ctx.space_name}", res.k, res.labels)
+                ("kmeans_elbow", f"cluster_elbow_{ctx.space_name}", res.k, res.labels)
             )
         if selection in ("silhouette", "both") and res.silhouette_labels is not None:
             labelings.append(

@@ -565,8 +565,8 @@ def test_cluster_validity_emits_membership_with_attached_silhouette():
     cols = {o.name: o for o in outs if isinstance(o, AnnotationColumn)}
     # Single membership column now; the per-point silhouette rides on its value as
     # `cluster N|<silhouette>` (like ECO / InterPro bit scores), not a 2nd column.
-    assert set(cols) == {"cluster_PCA_2"}
-    mem = cols["cluster_PCA_2"]
+    assert set(cols) == {"cluster_elbow_PCA_2"}
+    mem = cols["cluster_elbow_PCA_2"]
     assert mem.destination == "annotation" and mem.kind == "categorical"
     assert set(mem.values) == set(ids)  # one value per protein, joined by id
     assert mem.extra["has_silhouette_score"] is True
@@ -591,8 +591,8 @@ def test_per_point_silhouette_skipped_beyond_hard_ceiling():
         )
     )
     cols = {o.name: o for o in outs if isinstance(o, AnnotationColumn)}
-    assert set(cols) == {"cluster_PCA_2"}  # membership is cheap, still emitted
-    mem = cols["cluster_PCA_2"]
+    assert set(cols) == {"cluster_elbow_PCA_2"}  # membership is cheap, still emitted
+    mem = cols["cluster_elbow_PCA_2"]
     # O(n^2) per-point silhouette skipped → no attached score, plain labels.
     assert mem.extra["has_silhouette_score"] is False
     assert all("|" not in v for v in mem.values.values())
@@ -703,7 +703,9 @@ def test_aggregate_silhouette_equals_per_point_mean():
     )
     agg = next(o for o in outs if isinstance(o, StatRow) and o.metric == "silhouette")
     col = next(
-        o for o in outs if isinstance(o, AnnotationColumn) and o.name == "cluster_P"
+        o
+        for o in outs
+        if isinstance(o, AnnotationColumn) and o.name == "cluster_elbow_P"
     )
     per_point = [float(v.split("|", 1)[1]) for v in col.values.values()]
     assert agg.extra["sampled"] is False
@@ -796,7 +798,7 @@ def test_cluster_selection_both_emits_two_labelings():
         )
     )
     cols = {o.name for o in outs if isinstance(o, AnnotationColumn)}
-    assert cols == {"cluster_PCA_2", "cluster_silhouette_PCA_2"}
+    assert cols == {"cluster_elbow_PCA_2", "cluster_silhouette_PCA_2"}
     kinds = {r.label_kind for r in outs if isinstance(r, StatRow)}
     assert kinds == {"kmeans_elbow", "kmeans_silhouette"}
 

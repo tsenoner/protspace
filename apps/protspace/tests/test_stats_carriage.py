@@ -237,9 +237,9 @@ def test_annotation_columns_are_typed_in_protein_annotations_table():
     table = BaseProcessor({}, {})._create_protein_annotations_table(metadata)
     cols = table.column_names
     # Single membership column; per-point silhouette is attached to its value.
-    assert "cluster_P" in cols and "silhouette_P" not in cols
+    assert "cluster_elbow_P" in cols and "silhouette_P" not in cols
     d = table.to_pydict()
-    for v in d["cluster_P"]:
+    for v in d["cluster_elbow_P"]:
         label, _, score = v.partition("|")
         assert label.startswith("cluster ")  # categorical part
         float(score)  # attached per-point silhouette parses as a number

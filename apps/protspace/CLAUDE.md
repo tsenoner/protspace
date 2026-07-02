@@ -71,13 +71,15 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 
 ### protspace stats Usage
 
-Compute per-projection quality statistics for an existing project directory (also available inline via `prepare --stats`). Cluster-validity → `statistics.parquet` (bundle 5th part) + per-protein `cluster_*`/`silhouette_*` annotation columns + auto legend styles; faithfulness → each projection's `info_json.quality`.
+Compute per-projection quality statistics for an existing project directory (also available inline via `prepare --stats`). Cluster-validity → `statistics.parquet` (bundle 5th part) + per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership columns (each value a `cluster N` label with the per-point silhouette attached as `|score`) + auto legend styles; faithfulness (local kNN + global metrics, tagged `scope`) → each projection's `info_json.quality`. `--cluster-selection elbow|silhouette|both` picks the K-selection method(s).
 
 ```bash
 # Standalone (embeddings needed for faithfulness)
 protspace stats -i emb.h5 -p project_dir -o statistics.parquet
 # Enrich annotations in place + emit cluster legend styles for `bundle --settings`
 protspace stats -i emb.h5 -p project_dir -o statistics.parquet -a annotations.parquet --settings-out styles.json
+# Elbow + silhouette-optimal clusterings side by side
+protspace stats -i emb.h5 -p project_dir -o statistics.parquet -a annotations.parquet --cluster-selection both
 # Fold a stats parquet + settings into a bundle
 protspace bundle -p project_dir -a annotations.parquet -s statistics.parquet --settings styles.json -o out.parquetbundle
 ```
@@ -210,7 +212,7 @@ HDF5 file (float16 embeddings)
 ## Output Format
 
 `.parquetbundle` = concatenated Apache Parquet tables separated by `---PARQUET_DELIMITER---`:
-1. `protein_annotations` — identifier + annotation columns (incl. per-protein `cluster_*`/`silhouette_*` when `--stats`)
+1. `protein_annotations` — identifier + annotation columns (incl. per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership, with per-point silhouette attached as `value|score`, when `--stats`)
 2. `projections_metadata` — projection names, dimensions, parameters (faithfulness rides in `info_json.quality` when `--stats`)
 3. `projections_data` — reduced coordinates per protein per projection
 4. `settings` (optional) — annotation styles, pinned values, display config
