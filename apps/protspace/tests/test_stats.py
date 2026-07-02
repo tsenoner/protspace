@@ -40,19 +40,20 @@ def _blobs(n=300, centers=4, dim=2, seed=0):
 # --------------------------------------------------------------------------- #
 
 
-def test_registry_returns_two_statistics():
+def test_registry_returns_three_statistics():
     stats = get_statistics()
     families = {s.family for s in stats}
-    assert families == {"cluster_validity", "faithfulness"}
+    assert families == {"cluster_validity", "annotation_validity", "faithfulness"}
 
 
-def test_to_arrow_has_eight_column_schema():
+def test_to_arrow_has_nine_column_schema():
     report = StatsReport()
     report.add(
         [
             StatRow(
                 space_kind="projection",
                 space_name="UMAP_2",
+                annotation="",
                 stat_family="cluster_validity",
                 label_kind="kmeans_elbow",
                 metric="silhouette",
@@ -63,9 +64,10 @@ def test_to_arrow_has_eight_column_schema():
         ]
     )
     table = report.to_arrow()
-    assert table.schema.names == [
+    names = [
         "space_kind",
         "space_name",
+        "annotation",
         "stat_family",
         "label_kind",
         "metric",
@@ -73,6 +75,8 @@ def test_to_arrow_has_eight_column_schema():
         "value",
         "extra_json",
     ]
+    assert table.schema.names == names
+    assert len(names) == 9
     assert table.num_rows == 1
     assert table.column("value")[0].as_py() == pytest.approx(0.42)
 
@@ -525,6 +529,41 @@ def test_source_disambiguates_same_id_embeddings():
     assert embs["B — PCA 2"] == "B"
 
 
+def test_driver_emits_embedding_and_projection_annotation_validity():
+    from sklearn.decomposition import PCA
+
+    from protspace.stats import compute_statistics
+
+    X, y = _blobs(n=180, centers=4, dim=8, seed=71)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    # Named `hdrs` (not `headers`) so the class body below can read it: a class
+    # attribute assignment `headers = headers` would shadow the enclosing local
+    # in the class namespace before the RHS is resolved, raising NameError.
+    hdrs = [f"p{i}" for i in range(180)]
+    ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(hdrs, y, strict=False)}}
+
+    class _Emb:
+        name = "e"
+        data = X
+        headers = hdrs
+        precomputed = False
+
+    report = compute_statistics(
+        [_Emb()],
+        [{"name": "e — PCA 2", "data": coords, "ids": hdrs, "source": "e"}],
+        annotations=ann,
+    )
+    av = [r for r in report.rows if r.stat_family == "annotation_validity"]
+    kinds = {(r.space_kind, r.annotation) for r in av}
+    assert ("embedding", "grp") in kinds  # once-per-embedding pass
+    assert ("projection", "grp") in kinds  # per-projection pass
+    # embedding is computed exactly once per (embedding, annotation, metric)
+    emb_sil = [
+        r for r in av if r.space_kind == "embedding" and r.metric == "silhouette"
+    ]
+    assert len(emb_sil) == 1
+
+
 def test_driver_isolates_failures():
     class _Boom:
         family = "boom"
@@ -550,11 +589,12 @@ def test_driver_isolates_failures():
 # --------------------------------------------------------------------------- #
 
 
-def _statrow(metric, value, *, destination=None, **extra):
+def _statrow(metric, value, *, destination=None, annotation="", **extra):
     kw = {} if destination is None else {"destination": destination}
     return StatRow(
         space_kind="projection",
         space_name="PCA_2",
+        annotation=annotation,
         stat_family="cluster_validity",
         label_kind="kmeans_elbow",
         metric=metric,
@@ -571,7 +611,7 @@ def test_statrow_defaults_to_statistics_part_destination():
 
 
 def test_destination_is_not_a_tidy_table_column():
-    # destination is carriage metadata, never a column in the 8-column schema.
+    # destination is carriage metadata, never a column in the tidy schema.
     rec = _statrow("silhouette", 0.5).to_record()
     assert "destination" not in rec
     assert set(rec) == set(STATS_SCHEMA.names)

@@ -82,6 +82,7 @@ def compute_statistics(
     params: dict | None = None,
     statistics: list | None = None,
     default_metric: str = "euclidean",
+    annotations: dict | None = None,
 ) -> StatsReport:
     """Compute statistics for each projection.
 
@@ -95,6 +96,10 @@ def compute_statistics(
             ``max_fit_sample``, ``n_triplets_per_point``; ``cluster_selection``
             (``elbow`` | ``silhouette`` | ``both``); ``cluster_annotations`` and
             ``include_scores`` (per-protein membership column + attached silhouette).
+        annotations: annotation name -> {protein id -> category label}. When
+            supplied, threaded into every projection's ``StatContext`` and also
+            drives a once-per-embedding pass (see below) so annotation-validity
+            statistics can score the source embedding as a separability ceiling.
 
     Returns:
         A ``StatsReport`` (may be partial/empty; never raises on a statistic error).
@@ -147,6 +152,7 @@ def compute_statistics(
                 embedding_name=embedding_name,
                 high_dim_metric=high_dim_metric,
                 params=params,
+                annotations=annotations,
             )
         except Exception as exc:  # noqa: BLE001 - one bad reduction must not sink the report
             logger.warning(
@@ -166,5 +172,40 @@ def compute_statistics(
                     ctx.space_name,
                     exc,
                 )
+
+    # Once-per-embedding pass: annotation-validity on the source embedding itself
+    # (the true-separability "ceiling"), computed once per embedding rather than
+    # repeated for every projection that shares it. Only statistics that opt in
+    # via ``embedding_space`` run here.
+    if annotations:
+        emb_stats = [s for s in stats if getattr(s, "embedding_space", False)]
+        for es in embedding_sets:
+            if getattr(es, "precomputed", False):
+                continue
+            try:
+                ectx = StatContext(
+                    space_kind="embedding",
+                    space_name=es.name,
+                    coords=np.asarray(es.data, dtype=float),
+                    ids=list(es.headers),
+                    rng_seed=rng_seed,
+                    params=params or {},
+                    annotations=annotations,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "embedding-stats setup failed for '%s': %s", es.name, exc
+                )
+                continue
+            for stat in emb_stats:
+                try:
+                    report.add(stat.compute(ectx))
+                except Exception as exc:  # noqa: BLE001 - statistics are secondary
+                    logger.warning(
+                        "statistic %s failed for embedding '%s': %s",
+                        getattr(stat, "family", stat),
+                        es.name,
+                        exc,
+                    )
 
     return report

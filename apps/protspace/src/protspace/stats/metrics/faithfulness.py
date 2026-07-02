@@ -193,6 +193,7 @@ class FaithfulnessStatistic:
         base = {
             "space_kind": ctx.space_kind,
             "space_name": ctx.space_name,
+            "annotation": "",
             "stat_family": self.family,
             "label_kind": "none",
             "metric_kind": "faithfulness",
