@@ -7,6 +7,7 @@
 | `protspace project`  | Dimensionality reduction on HDF5 embeddings           |
 | `protspace annotate` | Fetch protein annotations from databases              |
 | `protspace bundle`   | Combine projections + annotations into .parquetbundle |
+| `protspace stats`    | Compute projection quality statistics for a project   |
 | `protspace serve`    | Launch interactive Dash web frontend                  |
 | `protspace style`    | Add/inspect annotation styles in existing files       |
 
@@ -129,6 +130,7 @@ This produces three projections: `ProtT5 — PCA 2`, `ProtT5 — UMAP 2 (n=15)`,
 | ---- | ----------- | ------- |
 | `-o, --output` | Output directory. | `.` |
 | `--bundled / --no-bundled` | Bundle into single `.parquetbundle`. | bundled |
+| `--stats / --no-stats` | Compute projection quality statistics (cluster-validity + faithfulness). See [Projection Statistics](#projection-statistics---stats). | off |
 | `--keep-tmp` | Cache intermediates for resumability. | on |
 | `--no-log` | Skip writing `run.log`. | off |
 | `--dump-cache` | Print cached annotations and exit. | off |
@@ -159,11 +161,56 @@ protspace annotate -i embeddings/prot_t5.h5 -a default -o annotations.parquet
 
 ## `protspace bundle`
 
-Combine projection and annotation parquet files into a `.parquetbundle`.
+Combine projection and annotation parquet files into a `.parquetbundle`. Optionally folds in a statistics parquet (from `protspace stats`) as the 5th part and a settings JSON as the 4th part.
 
 ```bash
 protspace bundle -p projections/ -a annotations.parquet -o output.parquetbundle
+
+# Include projection statistics + auto-generated cluster legend styles
+protspace bundle -p projections/ -a annotations.parquet \
+  -s statistics.parquet --settings cluster_styles.json -o output.parquetbundle
 ```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-s, --statistics` | Projection-statistics parquet → 5th bundle part. | — |
+| `--settings` | Settings JSON (e.g. cluster legend styles) → 4th bundle part. | — |
+
+## `protspace stats`
+
+Compute per-projection quality statistics for an existing project directory and write them as a `statistics.parquet` (the optional 5th `.parquetbundle` part). No annotations are required. See [Projection Statistics](#projection-statistics---stats) for what is computed.
+
+```bash
+# Statistics for a project (embeddings needed for faithfulness)
+protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet
+
+# Also enrich an annotations parquet in place with per-protein cluster-membership
+# + silhouette columns, and write the auto cluster-legend styles for `bundle`
+protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
+  -a annotations.parquet --settings-out cluster_styles.json
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-i, --input` | HDF5 embedding file(s) (for faithfulness). Repeat for multi-embedding; `-i file.h5:name` to override the name. | — |
+| `-p, --projections` | Project directory with `projections_metadata.parquet` + `projections_data.parquet`. | — |
+| `-o, --output` | Output `statistics.parquet` path. | — |
+| `-a, --annotations` | Annotations parquet to enrich in place with per-protein `cluster_*` / `silhouette_*` columns. | — |
+| `--settings-out` | Write auto cluster-legend styles here (JSON) for `bundle --settings`. Requires `-a`. | — |
+| `--metric` | High-dim distance metric for faithfulness when the projection metadata omits one (e.g. PCA/MDS). | `euclidean` |
+| `--seed` | Random seed. | `42` |
+
+## Projection Statistics (`--stats`)
+
+`prepare --stats` (opt-in) and the standalone `protspace stats` command compute two families of per-projection quality metrics and bake them into the output:
+
+- **Cluster validity** — KMeans with an elbow-chosen K labels the projection, scored by **silhouette**, **Davies–Bouldin**, and **Calinski–Harabasz**. Written to the tidy `statistics.parquet` (the bundle's 5th part). Per-protein **cluster-membership** (`cluster_<projection>`) and **silhouette** (`silhouette_<projection>`) columns are also added to the annotations, and the membership columns get an auto Kelly-palette legend (the bundle's 4th settings part).
+- **Faithfulness** — how well the projection preserves the source embedding's neighbourhoods: **kNN-overlap**, **trustworthiness**, and **continuity**. These per-projection scalars ride in each projection's `info_json.quality`.
+
+Notes:
+- Off by default — the compute (a KMeans elbow sweep) and the extra bundle columns/styles are opt-in.
+- Uses the projection's own high-dim metric (e.g. `cosine`) for faithfulness; falls back to `--metric` / `euclidean` when the reducer doesn't record one.
+- Best-effort: a failure for one statistic or projection is logged and skipped, never failing the run. At large scale the heavier metrics are subsampled (silhouette/faithfulness) or fit on a bounded subsample (KMeans elbow) with a deterministic seed.
 
 ## `protspace serve`
 
