@@ -127,31 +127,36 @@ def test_elbow_recovers_known_cluster_count():
     assert res.knee_confidence == "high"
 
 
+def _mean_membership_silhouette(outs):
+    """Mean of the per-point silhouette attached to the (sole) membership
+    column's `cluster N|score` values — the aggregate `silhouette` StatRow was
+    removed (self-validity on auto-clusters is circular); this per-point
+    confidence is the retained signal."""
+    from protspace.stats.base import AnnotationColumn
+
+    col = next(o for o in outs if isinstance(o, AnnotationColumn))
+    per_point = [float(v.split("|", 1)[1]) for v in col.values.values()]
+    return float(np.mean(per_point))
+
+
 def test_cluster_validity_separated_vs_overlapping():
     sep, _ = _blobs(n=300, centers=4, dim=2, seed=2)
     ctx = StatContext(
         "projection", "PCA_2", coords=sep, ids=[str(i) for i in range(len(sep))]
     )
-    sep_sil = {
-        r.metric: r.value
-        for r in ClusterValidityStatistic().compute(ctx)
-        if isinstance(r, StatRow)
-    }["silhouette"]
+    sep_sil = _mean_membership_silhouette(ClusterValidityStatistic().compute(ctx))
     assert sep_sil > 0.6
 
     # Heavily overlapping clusters: KMeans still imposes a split, but the
-    # silhouette is markedly lower than for well-separated clusters.
+    # per-point silhouette (attached to the membership column) is markedly
+    # lower than for well-separated clusters.
     overlap, _ = make_blobs(
         n_samples=300, centers=4, n_features=2, random_state=2, cluster_std=4.0
     )
     ctx2 = StatContext(
         "projection", "PCA_2", coords=overlap, ids=[str(i) for i in range(300)]
     )
-    ov_sil = {
-        r.metric: r.value
-        for r in ClusterValidityStatistic().compute(ctx2)
-        if isinstance(r, StatRow)
-    }["silhouette"]
+    ov_sil = _mean_membership_silhouette(ClusterValidityStatistic().compute(ctx2))
     assert ov_sil < 0.45
     assert sep_sil > ov_sil + 0.2
 
@@ -166,9 +171,57 @@ def test_cluster_validity_emits_meta_and_validity_kinds():
     ]
     by_metric = {r.metric: r for r in rows}
     assert by_metric["n_clusters"].metric_kind == "meta"
-    assert by_metric["silhouette"].metric_kind == "validity"
-    assert {"davies_bouldin", "calinski_harabasz"} <= set(by_metric)
+    # Self-validity (silhouette/DBI/CH) on the auto-clusters is no longer
+    # emitted (circular: KMeans optimises inertia, then silhouette grades the
+    # KMeans result against itself); without annotations, n_clusters is the
+    # only row.
+    assert set(by_metric) == {"n_clusters"}
     assert all(r.label_kind == "kmeans_elbow" for r in rows)
+
+
+def test_cluster_validity_emits_agreement_not_self_validity():
+    from protspace.stats.base import AnnotationColumn, StatContext, StatRow
+    from protspace.stats.metrics.validity import ClusterValidityStatistic
+
+    X, y = _blobs(n=200, centers=4, dim=2, seed=61)
+    ids = [f"p{i}" for i in range(200)]
+    ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(ids, y, strict=True)}}
+    outs = ClusterValidityStatistic().compute(
+        StatContext("projection", "PCA_2", coords=X, ids=ids, annotations=ann)
+    )
+    rows = [o for o in outs if isinstance(o, StatRow)]
+    metrics = {r.metric for r in rows}
+    # No self-validity rows anymore:
+    assert not ({"silhouette", "davies_bouldin", "calinski_harabasz"} & metrics)
+    # n_clusters meta kept:
+    assert "n_clusters" in metrics
+    # ARI/NMI agreement vs the annotation, tagged correctly:
+    agree = [r for r in rows if r.stat_family == "cluster_agreement"]
+    assert {r.metric for r in agree} == {"adjusted_rand", "normalized_mutual_info"}
+    assert all(r.annotation == "grp" and r.metric_kind == "agreement" for r in agree)
+    assert all(r.label_kind == "kmeans_elbow" for r in agree)
+    # Auto-clusters recover well-separated blobs → high agreement.
+    ari = next(r for r in agree if r.metric == "adjusted_rand")
+    assert ari.value > 0.5
+    # Membership column still emitted.
+    assert any(isinstance(o, AnnotationColumn) for o in outs)
+
+
+def test_cluster_validity_no_annotations_still_emits_membership():
+    from protspace.stats.base import AnnotationColumn, StatContext, StatRow
+    from protspace.stats.metrics.validity import ClusterValidityStatistic
+
+    X, _ = _blobs(n=150, centers=3, dim=2, seed=62)
+    ids = [f"p{i}" for i in range(150)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext("projection", "P", coords=X, ids=ids)
+    )
+    assert any(isinstance(o, AnnotationColumn) for o in outs)
+    assert not [
+        r
+        for r in outs
+        if isinstance(r, StatRow) and r.stat_family == "cluster_agreement"
+    ]
 
 
 def test_cluster_validity_too_few_points():
@@ -309,12 +362,10 @@ def test_driver_full_matrix_shape():
     ]
     report = compute_statistics([emb], reductions, rng_seed=42)
     metrics = {r.metric for r in report.rows}
-    assert {
-        "silhouette",
-        "davies_bouldin",
-        "calinski_harabasz",
-        "n_clusters",
-    } <= metrics
+    # Self-validity (silhouette/DBI/CH) on the auto-clusters is gone; only the
+    # n_clusters meta row remains without annotations.
+    assert "n_clusters" in metrics
+    assert not ({"silhouette", "davies_bouldin", "calinski_harabasz"} & metrics)
     assert {"knn_overlap", "trustworthiness", "continuity"} <= metrics
     assert all(r.space_name == "ProtT5 — PCA 2" for r in report.rows)
 
@@ -416,7 +467,7 @@ def test_cluster_validity_uses_full_projection_not_embedding_subset():
         r.extra["sample_size"] == 60 for r in faith
     )  # faithfulness on the subset
     # cluster_validity still runs (on the full 100-point projection)
-    assert any(r.metric == "silhouette" for r in report.rows)
+    assert any(r.metric == "n_clusters" for r in report.rows)
 
 
 def test_faithfulness_honors_default_metric_when_info_lacks_metric():
@@ -445,7 +496,7 @@ def test_precomputed_embedding_skips_faithfulness():
         rng_seed=42,
     )
     assert not any(r.stat_family == "faithfulness" for r in report.rows)
-    assert any(r.metric == "silhouette" for r in report.rows)
+    assert any(r.metric == "n_clusters" for r in report.rows)
 
 
 def test_source_disambiguates_same_id_embeddings():
@@ -491,7 +542,7 @@ def test_driver_isolates_failures():
         statistics=[_Boom(), ClusterValidityStatistic()],
     )
     # Boom is swallowed; cluster validity still produced rows.
-    assert any(r.metric == "silhouette" for r in report.rows)
+    assert any(r.metric == "n_clusters" for r in report.rows)
 
 
 # --------------------------------------------------------------------------- #
@@ -644,8 +695,8 @@ def test_cluster_annotations_can_be_disabled():
         )
     )
     assert not any(isinstance(o, AnnotationColumn) for o in outs)
-    # aggregate validity rows still produced
-    assert any(getattr(o, "metric", None) == "silhouette" for o in outs)
+    # the n_clusters meta row is still produced (self-validity rows are gone)
+    assert any(getattr(o, "metric", None) == "n_clusters" for o in outs)
 
 
 # --------------------------------------------------------------------------- #
@@ -722,25 +773,37 @@ def test_elbow_result_has_no_silhouette_optimal_k():
     assert "silhouette_optimal_k" not in meta.extra
 
 
-def test_aggregate_silhouette_equals_per_point_mean():
-    """The aggregate silhouette is exactly the mean of the per-point silhouettes
-    attached to the membership column values (consistent, not a sampled estimate)."""
+def test_membership_silhouette_matches_sklearn_per_point():
+    """The per-point silhouette attached to the membership column (`cluster N|score`)
+    is exactly sklearn's `silhouette_samples` for the auto-cluster labels — an exact
+    per-point value, not a sampled estimate. (Previously cross-checked against the
+    now-removed aggregate `silhouette` StatRow; the aggregate is gone because
+    self-scoring the auto-clusters this way is circular, so this cross-checks the
+    per-point column directly against sklearn instead.)"""
+    from sklearn.metrics import silhouette_samples
+
     from protspace.stats.base import AnnotationColumn
+    from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
 
     X, _ = _blobs(n=300, centers=4, dim=2, seed=45)
     ids = [f"p{i}" for i in range(300)]
     outs = ClusterValidityStatistic().compute(
         StatContext("projection", "P", coords=X, ids=ids)
     )
-    agg = next(o for o in outs if isinstance(o, StatRow) and o.metric == "silhouette")
     col = next(
         o
         for o in outs
         if isinstance(o, AnnotationColumn) and o.name == "cluster_elbow_P"
     )
-    per_point = [float(v.split("|", 1)[1]) for v in col.values.values()]
-    assert agg.extra["sampled"] is False
-    assert agg.value == pytest.approx(float(np.mean(per_point)), abs=1e-4)
+    per_point = {pid: float(v.split("|", 1)[1]) for pid, v in col.values.items()}
+
+    # Recompute independently via the same deterministic elbow selection. The
+    # membership column formats the attached score to 4 decimal places, so
+    # compare at that precision rather than bit-exact.
+    res = kmeans_elbow(X, rng_seed=42)
+    expected = silhouette_samples(X, res.labels)
+    for i, pid in enumerate(ids):
+        assert per_point[pid] == pytest.approx(float(expected[i]), abs=1e-4)
 
 
 @pytest.mark.parametrize("sample_threshold", [60, 1000])
