@@ -83,6 +83,37 @@ def test_empty_report_keeps_schema():
     assert table.schema == STATS_SCHEMA
 
 
+def test_statrow_carries_annotation_column():
+    from protspace.stats.base import STATS_SCHEMA, StatRow, StatsReport
+
+    assert "annotation" in STATS_SCHEMA.names
+    row = StatRow(
+        space_kind="embedding",
+        space_name="prot_t5",
+        stat_family="annotation_validity",
+        label_kind="annotation",
+        metric="silhouette",
+        metric_kind="validity",
+        value=0.42,
+        annotation="major_group",
+    )
+    rec = row.to_record()
+    assert rec["annotation"] == "major_group"
+    report = StatsReport()
+    report.add([row])
+    tbl = report.to_arrow()
+    assert tbl.column("annotation").to_pylist() == ["major_group"]
+
+
+def test_statcontext_defaults_annotations_none():
+    import numpy as np
+
+    from protspace.stats.base import StatContext
+
+    ctx = StatContext("projection", "P", coords=np.zeros((3, 2)), ids=["a", "b", "c"])
+    assert ctx.annotations is None
+
+
 # --------------------------------------------------------------------------- #
 # 2. cluster validity / elbow
 # --------------------------------------------------------------------------- #

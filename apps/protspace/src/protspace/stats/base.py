@@ -18,12 +18,14 @@ from typing import Any, Protocol
 import numpy as np
 import pyarrow as pa
 
-# The frozen eight-column schema. New scalar statistics add rows, never columns;
-# any per-source attribute (e.g. an annotation column name) goes in ``extra_json``.
+# The tidy schema. Rows are the bundle-boundary contract. Dimensions of the data
+# (space, annotation, label kind, metric) are columns; per-row provenance
+# (seeds, sample sizes, inertia lists) goes in ``extra_json``.
 STATS_SCHEMA = pa.schema(
     [
         ("space_kind", pa.string()),
         ("space_name", pa.string()),
+        ("annotation", pa.string()),
         ("stat_family", pa.string()),
         ("label_kind", pa.string()),
         ("metric", pa.string()),
@@ -67,6 +69,10 @@ class StatContext:
     embedding_name: str | None = None
     high_dim_metric: str = "euclidean"
     params: dict = field(default_factory=dict)
+    # annotation name -> {protein id -> category label}. Present only when the
+    # caller requested annotation-based validity; id-keyed so lookup is
+    # order-independent for any space (embedding or projection).
+    annotations: dict[str, dict[str, str]] | None = None
 
 
 @dataclass
@@ -82,6 +88,7 @@ class StatRow:
 
     space_kind: str
     space_name: str
+    annotation: str  # "" for non-annotation rows; the annotation name otherwise
     stat_family: str
     label_kind: str
     metric: str
@@ -94,6 +101,7 @@ class StatRow:
         return {
             "space_kind": self.space_kind,
             "space_name": self.space_name,
+            "annotation": self.annotation,
             "stat_family": self.stat_family,
             "label_kind": self.label_kind,
             "metric": self.metric,
