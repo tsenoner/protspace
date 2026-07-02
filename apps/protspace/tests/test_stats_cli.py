@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import h5py
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -459,6 +460,62 @@ def test_prepare_pipeline_compute_statistics(tmp_path):
     # ...and _compute_statistics routed faithfulness into the reduction's info.quality
     quality = reductions[0]["info"]["quality"]
     assert {"knn_overlap", "trustworthiness", "continuity"} <= set(quality)
+
+
+def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
+    """`prepare --stats --stats-annotation auto` (with -a CSV) threads annotation
+    labels through `PipelineConfig.stats_annotation` into `_compute_statistics`,
+    so the resulting bundle's fifth part gains `annotation_validity` rows scored
+    against the CSV's categorical column."""
+    import io
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_statistics_from_bundle
+
+    X, _ = make_blobs(n_samples=120, centers=3, n_features=5, random_state=1)
+    headers = [f"p{i}" for i in range(120)]
+
+    h5_path = tmp_path / "emb.h5"
+    with h5py.File(h5_path, "w") as f:
+        for i, h in enumerate(headers):
+            f.create_dataset(h, data=X[i].astype(np.float32))
+
+    ann_path = tmp_path / "grp.csv"
+    groups = ["a" if i % 2 == 0 else "b" for i in range(len(headers))]
+    pd.DataFrame({"identifier": headers, "grp": groups}).to_csv(ann_path, index=False)
+
+    output_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            f"{h5_path}:E",
+            "-a",
+            str(ann_path),
+            "-m",
+            "pca2",
+            "--stats",
+            "--stats-annotation",
+            "auto",
+            "--no-log",
+            "-o",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    bundle_path = output_dir / "data.parquetbundle"
+    assert bundle_path.exists()
+    raw = read_statistics_from_bundle(bundle_path)
+    assert raw is not None
+    st = pq.read_table(io.BytesIO(raw)).to_pandas()
+    assert (st.stat_family == "annotation_validity").any()
+    assert "annotation" in st.columns
+    av = st[st.stat_family == "annotation_validity"]
+    assert set(av["annotation"]) == {"grp"}
 
 
 def test_stats_rejects_bad_cluster_selection(tmp_path):

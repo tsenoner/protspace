@@ -136,6 +136,15 @@ Opt_ClusterSelection = Annotated[
         rich_help_panel="Output",
     ),
 ]
+Opt_StatsAnnotation = Annotated[
+    str,
+    typer.Option(
+        "--stats-annotation",
+        help="With --stats, which annotation column(s) to score: 'auto' (all "
+        "suitable categoricals) or a comma-separated list.",
+        rich_help_panel="Output",
+    ),
+]
 REFETCH_STAGES = frozenset(
     {
         "query",
@@ -313,6 +322,7 @@ def prepare(
     scores: Opt_Scores = True,
     stats: Opt_Stats = False,
     cluster_selection: Opt_ClusterSelection = ClusterSelection.elbow,
+    stats_annotation: Opt_StatsAnnotation = "auto",
     refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),
@@ -530,6 +540,7 @@ def prepare(
             no_scores=not scores,
             stats=stats,
             cluster_selection=cluster_selection.value,
+            stats_annotation=stats_annotation,
             refetch_stages=refetch_stages,
             annotations=annotation_list,
             intermediate_dir=cache_dir,
