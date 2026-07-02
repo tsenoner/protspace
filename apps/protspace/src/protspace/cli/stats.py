@@ -14,6 +14,7 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import app, setup_logging
+from protspace.cli.common_options import ClusterSelection
 
 logger = logging.getLogger(__name__)
 
@@ -148,11 +149,11 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
 def _merge_annotations_with_columns(ann_path: Path, report) -> int:
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
-    Rewrites the annotations parquet in place with the computed ``cluster_*`` /
-    ``silhouette_*`` columns joined by identifier. Added columns are stringified
-    (membership → category labels, silhouette → numeric strings, absent → empty)
-    so they match the prepare path's all-string annotations and the frontend's
-    content-based type inference. Returns the number of columns added.
+    Rewrites the annotations parquet in place with the computed ``cluster_*``
+    membership columns joined by identifier (each value a ``cluster N`` label with
+    the per-point silhouette attached as ``|score``). Added columns are stringified
+    (absent → empty) so they match the prepare path's all-string annotations and the
+    frontend's content-based type inference. Returns the number of columns added.
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -199,7 +200,8 @@ def stats(
             "-a",
             "--annotations",
             help="Annotations parquet to enrich in place with per-protein "
-            "cluster-membership + silhouette columns. Omit to skip per-protein outputs.",
+            "cluster-membership columns (per-point silhouette attached as |score). "
+            "Omit to skip per-protein outputs.",
         ),
     ] = None,
     settings_out: Annotated[
@@ -218,6 +220,14 @@ def stats(
             help="High-dim distance metric for faithfulness when the projection metadata omits one (e.g. PCA/MDS).",
         ),
     ] = "euclidean",
+    cluster_selection: Annotated[
+        ClusterSelection,
+        typer.Option(
+            "--cluster-selection",
+            help="How to choose the cluster count K: 'elbow' (default), 'silhouette' "
+            "(max-silhouette K), or 'both' (emit both clusterings).",
+        ),
+    ] = ClusterSelection.elbow,
     verbose: Annotated[
         int, typer.Option("-v", "--verbose", count=True, help="Increase verbosity.")
     ] = 0,
@@ -251,10 +261,12 @@ def stats(
     )
 
     reductions = _load_reductions(projections, default_metric=metric)
-    # Per-protein outputs (cluster membership + per-point silhouette) are only
-    # computed when there's an annotations file to land them in — silhouette_samples
+    # Per-protein output (cluster membership with attached per-point silhouette) is
+    # only computed when there's an annotations file to land it in — silhouette_samples
     # is O(n^2), so we don't pay for it with nowhere to write.
-    params = {} if annotations is not None else {"cluster_annotations": False}
+    params = {"cluster_selection": cluster_selection.value}
+    if annotations is None:
+        params["cluster_annotations"] = False
     report = compute_statistics(
         embedding_sets,
         reductions,

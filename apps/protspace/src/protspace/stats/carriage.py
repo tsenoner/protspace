@@ -75,9 +75,10 @@ def merge_annotation_columns(
 
     Each ``AnnotationColumn`` is joined onto ``frame`` by identifier (proteins
     absent from a column get no value, not a fabricated one). Mutates ``frame`` in
-    place and returns the names of the columns added — membership stays a
-    non-numeric string, per-point silhouette a float, so the downstream
-    ``.astype(str)`` writer yields categorical / continuous inference respectively.
+    place and returns the names of the columns added — membership values are
+    non-numeric ``cluster N`` strings (optionally carrying an attached
+    ``|silhouette`` confidence, like ECO / InterPro bit scores), so the downstream
+    ``.astype(str)`` writer keeps them categorical.
     """
     if id_col not in getattr(frame, "columns", []):
         return []
@@ -102,9 +103,9 @@ def build_cluster_legend_settings(report: StatsReport) -> dict:
     Returns ``{column_name: LegendPersistedSettings}`` (the bundle's settings part
     format) with a full envelope per ``categorical`` ``AnnotationColumn`` — every
     field the frontend's ``sanitizeLegendSettingsEntry`` requires, categories keyed
-    by the exact label strings with a Kelly-palette ``color`` + ``zOrder`` + ``shape``
-    — so clusters are colored when selected without a manual styling step. Numeric
-    columns (per-point silhouette) are left to the default continuous ramp.
+    by the bare ``cluster N`` label (any attached ``|silhouette`` confidence is
+    stripped) with a Kelly-palette ``color`` + ``zOrder`` + ``shape`` — so clusters
+    are colored when selected without a manual styling step.
     """
     from protspace.data.io.settings_converter import KELLYS_COLORS
 
@@ -112,7 +113,13 @@ def build_cluster_legend_settings(report: StatsReport) -> dict:
     for col in report.annotation_columns:
         if col.kind != "categorical":
             continue
-        labels = sorted(set(col.values.values()), key=_cluster_label_sort_key)
+        # Membership values may carry an attached ``|silhouette`` confidence
+        # (value|score) — strip it to recover the bare "cluster N" category, matching
+        # how the frontend splits score-bearing annotation values.
+        labels = sorted(
+            {str(v).split("|", 1)[0] for v in col.values.values()},
+            key=_cluster_label_sort_key,
+        )
         categories = {
             label: {
                 "zOrder": i,

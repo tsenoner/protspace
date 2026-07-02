@@ -10,7 +10,7 @@ ProtSpace is a visualization tool for exploring **protein embeddings** or **simi
 
 - **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP, LocalMAP
 - **Automatic annotations**: UniProt, InterPro, and Taxonomy
-- **Quality metrics** _(opt-in)_: cluster-validity + faithfulness per projection (`--stats`)
+- **Quality metrics** _(opt-in)_: per-projection cluster-validity + faithfulness (local & global) via `--stats`
 - **Structure viewer**: Integrated protein structure visualization
 - **Export**: PNG, PDF, SVG, HTML
 

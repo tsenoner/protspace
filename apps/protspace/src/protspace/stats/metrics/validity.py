@@ -1,13 +1,24 @@
 """Cluster-validity statistics on projection coordinates.
 
-KMeans (with an elbow-chosen K) labels the projection; silhouette, Davies-Bouldin
-and Calinski-Harabasz score that labelling. The chosen K is emitted as a
+KMeans labels the projection; silhouette, Davies-Bouldin and Calinski-Harabasz
+score that labelling. The K can be chosen by the inertia **elbow** and/or by
+**max silhouette** (``ctx.params["cluster_selection"]`` = ``elbow`` | ``silhouette``
+| ``both``); each selection is emitted with its own ``label_kind``
+(``kmeans_elbow`` / ``kmeans_silhouette``). The chosen K is emitted as a
 ``metric_kind="meta"`` row so consumers can exclude it from validity aggregates.
+
+Each labelling also becomes a per-protein ``cluster_*`` membership column whose
+per-point silhouette rides along as an attached ``value|score`` confidence — the
+same convention as UniProt evidence codes / InterPro bit scores — so no separate
+silhouette column is needed. Suppressed when ``ctx.params["include_scores"]`` is
+False (``--no-scores``).
 
 scikit-learn imports are function-local to keep CLI startup fast.
 """
 
 from __future__ import annotations
+
+from typing import NamedTuple
 
 import numpy as np
 
@@ -37,38 +48,91 @@ def _silhouette(X, labels, *, rng_seed: int, sample_threshold: int):
     return float(silhouette_score(X, labels)), {"sampled": False, "sample_size": int(n)}
 
 
+class _Labeling(NamedTuple):
+    """One K-selection's clustering: how it was chosen + its column and labels."""
+
+    label_kind: str  # "kmeans_elbow" | "kmeans_silhouette" (statistics.parquet tag)
+    col_name: str  # "cluster_elbow_<proj>" | "cluster_silhouette_<proj>"
+    selection_name: str  # "elbow" | "silhouette"
+    requested_k: int
+    labels: np.ndarray
+
+
 class ClusterValidityStatistic:
-    """Elbow K + silhouette / Davies-Bouldin / Calinski-Harabasz on the coords."""
+    """Elbow / silhouette K + silhouette / Davies-Bouldin / Calinski-Harabasz."""
 
     family = "cluster_validity"
     requires_embedding = False
 
     def compute(self, ctx: StatContext) -> list:
-        from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
-
         X = np.asarray(ctx.coords, dtype=float)
         n = X.shape[0]
-        rng_seed = ctx.rng_seed
-        sample_threshold = int(
-            ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD)
-        )
-        k_max = ctx.params.get("k_max")
+        params = ctx.params
+        sample_threshold = int(params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
+        selection = str(params.get("cluster_selection", "elbow")).lower()
+        # The CLI validates this via a Typer enum; guard the raw stats API too so an
+        # unrecognised value falls back to the default rather than silently emitting
+        # no labelling at all (best-effort: never drop a projection's whole output).
+        if selection not in ("elbow", "silhouette", "both"):
+            selection = "elbow"
 
         res = kmeans_elbow(
             X,
-            rng_seed=rng_seed,
-            k_max=k_max,
-            max_fit_sample=int(
-                ctx.params.get("max_fit_sample", DEFAULT_MAX_FIT_SAMPLE)
-            ),
+            rng_seed=ctx.rng_seed,
+            k_max=params.get("k_max"),
+            max_fit_sample=int(params.get("max_fit_sample", DEFAULT_MAX_FIT_SAMPLE)),
+            silhouette_selection=selection in ("silhouette", "both"),
+            silhouette_sample=sample_threshold,
         )
         if res is None:  # n < 3
             return []
-        labels = res.labels
-        k = res.k
+
+        # Which labelling(s) to emit. Each K-selection method is named explicitly
+        # (cluster_elbow_<proj> / cluster_silhouette_<proj>) so the column name — the
+        # only signal that survives to the frontend — carries the provenance.
+        labelings: list[_Labeling] = []
+        if selection in ("elbow", "both"):
+            labelings.append(
+                _Labeling(
+                    "kmeans_elbow",
+                    f"cluster_elbow_{ctx.space_name}",
+                    "elbow",
+                    res.k,
+                    res.labels,
+                )
+            )
+        if selection in ("silhouette", "both") and res.silhouette_labels is not None:
+            labelings.append(
+                _Labeling(
+                    "kmeans_silhouette",
+                    f"cluster_silhouette_{ctx.space_name}",
+                    "silhouette",
+                    int(res.silhouette_k),
+                    res.silhouette_labels,
+                )
+            )
+
+        out: list = []
+        for labeling in labelings:
+            out.extend(self._emit_labeling(ctx, X, n, res, labeling))
+        return out
+
+    def _emit_labeling(self, ctx, X, n, res, labeling: _Labeling) -> list:
+        """Rows + membership column for one labelling (elbow or silhouette-K)."""
+        from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
+
+        rng_seed = ctx.rng_seed
+        params = ctx.params
+        sample_threshold = int(params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
+        label_kind = labeling.label_kind
+        col_name = labeling.col_name
+        selection_name = labeling.selection_name
+        labels = labeling.labels
+        k = int(labeling.requested_k)
+
         # Report the ACHIEVED number of distinct clusters (KMeans can collapse on
-        # coincident points), keeping the elbow's requested K in extra. The cluster
-        # sizes also feed the Davies-Bouldin / Calinski-Harabasz singleton guard.
+        # coincident points), keeping the requested K in extra. The cluster sizes
+        # also feed the Davies-Bouldin / Calinski-Harabasz singleton guard.
         unique_labels, label_counts = np.unique(labels, return_counts=True)
         achieved = int(len(unique_labels))
         has_singleton = bool((label_counts < 2).any())
@@ -77,20 +141,19 @@ class ClusterValidityStatistic:
             "space_kind": ctx.space_kind,
             "space_name": ctx.space_name,
             "stat_family": self.family,
-            "label_kind": "kmeans_elbow",
+            "label_kind": label_kind,
         }
 
-        # Decide up front whether the exact per-point silhouette column will be
-        # emitted. When it is, its per-point values are the single source of truth:
-        # the aggregate `silhouette` row is their mean (== the exact unsampled
-        # silhouette_score by definition), so the headline value equals
-        # mean(silhouette_{proj}) and no redundant sampled score is computed.
+        # Decide up front whether the exact per-point silhouette will be computed.
+        # When it is, its mean is the exact aggregate silhouette (== unsampled
+        # silhouette_score) AND its per-point values ride along on the membership
+        # column, so nothing is computed twice.
         silhouette_ok = 2 <= k <= n - 1
         hard_ceiling = int(
-            ctx.params.get("silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING)
+            params.get("silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING)
         )
         want_per_point = (
-            ctx.params.get("cluster_annotations", True)
+            params.get("cluster_annotations", True)
             and achieved >= 2
             and len(ctx.ids) == n
         )
@@ -103,19 +166,22 @@ class ClusterValidityStatistic:
             except Exception:  # noqa: BLE001 - per-point silhouette is best-effort
                 per_point_samples = None
 
-        # Holds scalar StatRows plus, below, any per-protein AnnotationColumns.
+        meta_extra = {
+            "requested_k": k,
+            "selection": selection_name,
+            "k_range": [res.k_range[0], res.k_range[-1]],
+            "inertia": res.inertia,
+            "seed": rng_seed,
+        }
+        if selection_name == "elbow":
+            meta_extra["knee_confidence"] = res.knee_confidence
+
         rows: list = [
             StatRow(
                 metric="n_clusters",
                 metric_kind="meta",
                 value=float(achieved),
-                extra={
-                    "requested_k": k,
-                    "k_range": [res.k_range[0], res.k_range[-1]],
-                    "inertia": res.inertia,
-                    "knee_confidence": res.knee_confidence,
-                    "seed": rng_seed,
-                },
+                extra=meta_extra,
                 **base,
             )
         ]
@@ -125,12 +191,10 @@ class ClusterValidityStatistic:
             try:
                 if per_point_samples is not None:
                     # Exact aggregate over all n, consistent with the per-point
-                    # silhouette_{proj} column below.
+                    # values attached to the membership column below.
                     sil = float(per_point_samples.mean())
                     sx = {"sampled": False, "sample_size": int(n)}
                 else:
-                    # No exact column (n > hard_ceiling, disabled, or id mismatch):
-                    # fall back to the sampled/exact silhouette_score.
                     sil, sx = _silhouette(
                         X, labels, rng_seed=rng_seed, sample_threshold=sample_threshold
                     )
@@ -165,41 +229,40 @@ class ClusterValidityStatistic:
                 except Exception:  # noqa: BLE001
                     pass
 
-        # Per-protein outputs (route-projection-statistics Phase 2): the elbow-K
-        # labelling becomes a categorical membership column and per-point silhouette
-        # a numeric column, both joined by identifier. Gated identically to the
-        # per_point_samples decision above.
+        # Per-protein membership: a categorical `cluster N` label, with the per-point
+        # silhouette attached as a `value|score` confidence (like ECO / InterPro bit
+        # scores) so a single column carries both membership and its confidence.
         if want_per_point:
-            ann_extra = {
-                "projection": ctx.space_name,
-                "k": int(k),
-                "seed": rng_seed,
-                "computed": True,
-            }
-            # Membership as NON-numeric label strings so the frontend's content-based
-            # type inference reads the column as categorical, not a numeric ramp.
+            include_scores = bool(params.get("include_scores", True))
+            sil_by_id = {}
+            if per_point_samples is not None:
+                sil_by_id = {
+                    pid: float(s)
+                    for pid, s in zip(ctx.ids, per_point_samples, strict=False)
+                }
+
+            def _membership(pid, lbl):
+                label = f"cluster {int(lbl)}"
+                if include_scores and pid in sil_by_id:
+                    return f"{label}|{sil_by_id[pid]:.4f}"
+                return label
+
             rows.append(
                 AnnotationColumn(
-                    name=f"cluster_{ctx.space_name}",
+                    name=col_name,
                     kind="categorical",
                     values={
-                        pid: f"cluster {int(lbl)}"
+                        pid: _membership(pid, lbl)
                         for pid, lbl in zip(ctx.ids, labels, strict=False)
                     },
-                    extra=ann_extra,
+                    extra={
+                        "projection": ctx.space_name,
+                        "selection": selection_name,
+                        "k": k,
+                        "seed": rng_seed,
+                        "computed": True,
+                        "has_silhouette_score": bool(sil_by_id) and include_scores,
+                    },
                 )
             )
-            if per_point_samples is not None:
-                rows.append(
-                    AnnotationColumn(
-                        name=f"silhouette_{ctx.space_name}",
-                        kind="numeric",
-                        values={
-                            pid: float(s)
-                            for pid, s in zip(ctx.ids, per_point_samples, strict=False)
-                        },
-                        extra=ann_extra,
-                    )
-                )
-
         return rows
