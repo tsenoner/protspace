@@ -109,6 +109,35 @@ def test_stats_command_writes_aggregate_only_part(tmp_path):
     assert not ({"knn_overlap", "trustworthiness", "continuity"} & metrics)
 
 
+def test_stats_settings_out_without_annotations_errors(tmp_path):
+    """`--settings-out` without `-a/--annotations` must fail fast rather than
+    silently writing nothing — cluster legend styles are only produced alongside
+    the per-protein membership columns."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    styles = tmp_path / "styles.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "--settings-out",
+            str(styles),
+        ],
+    )
+    assert result.exit_code != 0
+    assert not styles.exists()
+
+
 def test_stats_command_writes_faithfulness_into_metadata(tmp_path):
     """`protspace stats` folds faithfulness into projections_metadata.info_json.quality
     in place, so the prep `protspace bundle -p` carries it through to the bundle
@@ -415,7 +444,7 @@ def test_prepare_pipeline_compute_statistics(tmp_path):
     reductions = [{"name": "E — PCA 2", "data": coords, "source": "E"}]
 
     pipeline = ReductionPipeline(PipelineConfig(methods=[], output_path=Path(tmp_path)))
-    table = pipeline._compute_statistics([emb], reductions, headers)
+    table, _settings = pipeline._compute_statistics([emb], reductions, headers)
     assert table is not None
     assert table.num_rows > 0
     # Fifth part is aggregate-only now; faithfulness rides in projection metadata.

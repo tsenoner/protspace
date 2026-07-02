@@ -18,6 +18,20 @@ from protspace.cli.app import app, setup_logging
 logger = logging.getLogger(__name__)
 
 
+def _atomic_write_table(table, path: Path) -> None:
+    """Overwrite ``path`` with ``table`` atomically.
+
+    Writes a sibling temp file then renames it into place, so an interrupted
+    write (Ctrl-C / OOM / full disk) can never leave the user's existing parquet
+    truncated — rename on the same filesystem is atomic.
+    """
+    import pyarrow.parquet as pq
+
+    tmp = path.with_name(path.name + ".tmp")
+    pq.write_table(table, str(tmp))
+    tmp.replace(path)
+
+
 def _load_reductions(
     projections: Path, default_metric: str = "euclidean"
 ) -> list[dict]:
@@ -42,7 +56,7 @@ def _load_reductions(
         mt = pq.read_table(str(meta_path)).to_pydict()
         names = mt.get("projection_name", [])
         infos = mt.get("info_json", [])
-        dims = mt.get("dimensions", [])
+        dims_col = mt.get("dimensions", [])
         sources = mt.get("source", [])
         for i, nm in enumerate(names):
             try:
@@ -50,8 +64,8 @@ def _load_reductions(
             except (json.JSONDecodeError, TypeError):
                 info = {}
             metric_by_name[nm] = info.get("metric") or default_metric
-            if i < len(dims):
-                dims_by_name[nm] = int(dims[i])
+            if i < len(dims_col):
+                dims_by_name[nm] = int(dims_col[i])
             if i < len(sources) and sources[i]:
                 source_by_name[nm] = sources[i]
 
@@ -71,8 +85,12 @@ def _load_reductions(
 
     reductions: list[dict] = []
     for nm, g in grouped.items():
-        dims = dims_by_name.get(nm, 2)
-        if dims == 3 and any(v is not None for v in g["z"]):
+        # Fall back to the data itself when projection metadata is absent: a 3D
+        # projection is identified by present z values, not defaulted to 2D (which
+        # would silently drop the z coordinate from the statistics computation).
+        has_z = any(v is not None for v in g["z"])
+        dims = dims_by_name.get(nm) or (3 if has_z else 2)
+        if dims == 3 and has_z:
             coords = np.array([g["x"], g["y"], g["z"]], dtype=float).T
         else:
             coords = np.array([g["x"], g["y"]], dtype=float).T
@@ -124,7 +142,7 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
 
     idx = table.column_names.index("info_json")
     table = table.set_column(idx, "info_json", pa.array(new_infos, type=pa.string()))
-    pq.write_table(table, str(meta_path))
+    _atomic_write_table(table, meta_path)
 
 
 def _merge_annotations_with_columns(ann_path: Path, report) -> int:
@@ -148,7 +166,7 @@ def _merge_annotations_with_columns(ann_path: Path, report) -> int:
     added = merge_annotation_columns(report, df, id_col=id_col)
     for name in added:
         df[name] = df[name].fillna("").astype(str)
-    pq.write_table(pa.Table.from_pandas(df, preserve_index=False), str(ann_path))
+    _atomic_write_table(pa.Table.from_pandas(df, preserve_index=False), ann_path)
     return len(added)
 
 
@@ -207,20 +225,30 @@ def stats(
     """Compute cluster-validity + faithfulness statistics for each projection."""
     setup_logging(verbose)
 
+    # Cluster legend styles are only generated alongside the per-protein membership
+    # columns, so --settings-out without -a would silently write nothing.
+    if settings_out is not None and annotations is None:
+        raise typer.BadParameter("--settings-out requires -a/--annotations.")
+
     import pyarrow.parquet as pq
 
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.loaders import load_h5
+    from protspace.data.loaders.embedding_set import merge_same_name_sets
     from protspace.stats import compute_statistics
     from protspace.stats.carriage import (
         build_cluster_legend_settings,
         route_faithfulness_to_metadata,
     )
 
-    embedding_sets = [
-        load_h5([path], name_override=name_override)
-        for path, name_override in _parse_input_specs(list(input))
-    ]
+    # Union same-name inputs (e.g. two species sharing one embedding model), mirroring
+    # the prepare pipeline — otherwise repeated same-name -i collapse to the last one.
+    embedding_sets = merge_same_name_sets(
+        [
+            load_h5([path], name_override=name_override)
+            for path, name_override in _parse_input_specs(list(input))
+        ]
+    )
 
     reductions = _load_reductions(projections, default_metric=metric)
     # Per-protein outputs (cluster membership + per-point silhouette) are only

@@ -96,7 +96,7 @@ def _cluster_label_sort_key(label: str):
     return (1, label)
 
 
-def build_cluster_legend_settings(report: StatsReport, shape: str = "circle") -> dict:
+def build_cluster_legend_settings(report: StatsReport) -> dict:
     """Build a legend-settings map auto-styling each categorical membership column.
 
     Returns ``{column_name: LegendPersistedSettings}`` (the bundle's settings part
@@ -117,7 +117,7 @@ def build_cluster_legend_settings(report: StatsReport, shape: str = "circle") ->
             label: {
                 "zOrder": i,
                 "color": KELLYS_COLORS[i % len(KELLYS_COLORS)],
-                "shape": shape,
+                "shape": "circle",
             }
             for i, label in enumerate(labels)
         }

@@ -119,7 +119,9 @@ Opt_Stats = Annotated[
     bool,
     typer.Option(
         "--stats/--no-stats",
-        help="Compute projection statistics (cluster-validity + faithfulness).",
+        help="Compute projection quality statistics (cluster-validity + "
+        "faithfulness); adds cluster_*/silhouette_* columns + legend styles to the "
+        "bundle. Opt-in (off by default): can be slow on large runs.",
         rich_help_panel="Output",
     ),
 ]
@@ -298,7 +300,7 @@ def prepare(
     # Annotations
     annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
-    stats: Opt_Stats = True,
+    stats: Opt_Stats = False,
     refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),

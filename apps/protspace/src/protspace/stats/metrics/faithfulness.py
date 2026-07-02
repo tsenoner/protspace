@@ -2,15 +2,22 @@
 
 These compare a projection to its *source embedding*. The high-dimensional
 distance metric (the reducer's own metric, euclidean by default unless the
-projection was built with e.g. cosine) is applied to whichever computation has
-the embedding as its primary input:
+projection was built with e.g. cosine) defines the embedding-space neighbourhoods
+for all three statistics, so trustworthiness and continuity form a consistent
+dual pair — both define the embedding's neighbourhoods by ``high_dim_metric`` and
+the coords' by euclidean (differing only in which space supplies ranks vs sets):
 
-  trustworthiness = trustworthiness(embedding, coords, metric=high_dim_metric)
-  continuity      = trustworthiness(coords, embedding, metric="euclidean")
+  trustworthiness = penalises false neighbours (near in coords, far in embedding)
+  continuity      = penalises missed neighbours (near in embedding, far in coords)
 
-``sklearn.manifold.trustworthiness`` materialises a full pairwise distance matrix
-(no ANN path), so above a sample threshold a fixed-seed shared subsample is used,
-and beyond a hard ceiling the statistic is skipped with a recorded marker.
+``sklearn.manifold.trustworthiness`` only applies its ``metric`` argument to the
+first (ranked) input, so continuity with a non-euclidean high-dim metric is not
+expressible via a single call; ``_continuity`` computes it with the same
+normalisation as sklearn (and is bit-identical when the metric is euclidean).
+
+Both build a full pairwise distance matrix (no ANN path), so above a sample
+threshold a fixed-seed shared subsample is used, and beyond a hard ceiling the
+statistic is skipped with a recorded marker.
 
 scikit-learn imports are function-local to keep CLI startup fast.
 """
@@ -29,9 +36,10 @@ DEFAULT_HARD_CEILING = 20000
 
 
 def _subsample_seed(rng_seed: int, ids: list[str]) -> int:
-    """A seed derived from (rng_seed, sorted ids). Within a single run all
-    projections of one embedding share the same id row order, so they draw the
-    same positional subset — keeping cross-projection scores comparable."""
+    """A seed derived from (rng_seed, sorted ids). Paired with a canonical-id-order
+    selection (see ``compute``), two inputs with the same id-set draw the same
+    id subset regardless of row order — keeping cross-projection scores comparable
+    and reproducible without relying on a shared row ordering."""
     digest = hashlib.sha256("|".join(sorted(ids)).encode()).hexdigest()[:8]
     return (rng_seed * 2654435761 + int(digest, 16)) % (2**32)
 
@@ -58,6 +66,40 @@ def _knn_overlap(embedding, coords, k: int, metric: str) -> float:
         lo_i = [j for j in lo[i] if j != i][:k]
         total += len(set(hi_i).intersection(lo_i))
     return float(total / (n * k))
+
+
+def _continuity(embedding, coords, k: int, metric: str) -> float:
+    """Continuity — the dual of ``sklearn.manifold.trustworthiness``.
+
+    High-dim neighbour sets use ``metric``; low-dim ranks use euclidean. Uses
+    sklearn's exact normalisation, so it is directly comparable to the
+    trustworthiness value and is bit-identical to
+    ``trustworthiness(coords, embedding, metric="euclidean")`` when ``metric`` is
+    euclidean. sklearn's ``trustworthiness`` only applies ``metric`` to its first
+    (ranked) argument, so continuity with a non-euclidean high-dim metric cannot
+    be expressed through it — hence this helper.
+    """
+    from sklearn.metrics import pairwise_distances
+    from sklearn.neighbors import NearestNeighbors
+
+    n = coords.shape[0]
+    # Ranks come from the low-dim (output) space, euclidean.
+    dist_lo = pairwise_distances(coords, metric="euclidean")
+    np.fill_diagonal(dist_lo, np.inf)
+    ind_lo = np.argsort(dist_lo, axis=1)
+    # Neighbour sets come from the high-dim (input) space, using hi_metric.
+    ind_hi = (
+        NearestNeighbors(n_neighbors=k, metric=metric)
+        .fit(embedding)
+        .kneighbors(return_distance=False)
+    )
+    inverted = np.zeros((n, n), dtype=int)
+    order = np.arange(n + 1)
+    inverted[order[:-1, np.newaxis], ind_lo] = order[1:]
+    ranks = inverted[order[:-1, np.newaxis], ind_hi] - k
+    c = np.sum(ranks[ranks > 0])
+    c = 1.0 - c * (2.0 / (n * k * (2.0 * n - 3.0 * k - 1.0)))
+    return float(c)
 
 
 class FaithfulnessStatistic:
@@ -95,6 +137,7 @@ class FaithfulnessStatistic:
             "space_name": ctx.space_name,
             "stat_family": self.family,
             "label_kind": "none",
+            "metric_kind": "faithfulness",
             # Faithfulness is a per-projection scalar: route it into the
             # projection's info_json.quality, not the aggregate fifth part.
             "destination": "projection_metadata",
@@ -104,7 +147,6 @@ class FaithfulnessStatistic:
             return [
                 StatRow(
                     metric="knn_overlap",
-                    metric_kind="faithfulness",
                     value=float("nan"),
                     extra={
                         "skipped": "n_too_large",
@@ -119,7 +161,11 @@ class FaithfulnessStatistic:
         sampled = False
         if n > sample_threshold:
             rng = np.random.default_rng(_subsample_seed(ctx.rng_seed, ids))
-            idx = np.sort(rng.permutation(n)[:sample_threshold])
+            # Select in canonical id order so WHICH proteins are sampled depends
+            # only on the id-set (matching the order-invariant seed), not on the
+            # input row order. order[r] = original row of the r-th smallest id.
+            order = np.argsort(np.asarray(ids), kind="stable")
+            idx = np.sort(order[rng.permutation(n)[:sample_threshold]])
             emb = emb[idx]
             coords = coords[idx]
             n = len(idx)
@@ -136,47 +182,38 @@ class FaithfulnessStatistic:
             "sample_size": int(n),
             "embedding": ctx.embedding_name,
         }
+        # Each metric differs only in its value computation and the high-dim metric
+        # recorded in ``extra``. Trustworthiness and continuity are duals that both
+        # rank the embedding by ``hi_metric`` (continuity via ``_continuity`` since
+        # sklearn can only metric-rank its first arg). Each is best-effort — a
+        # failure drops only that row.
+        metrics = (
+            ("knn_overlap", lambda: _knn_overlap(emb, coords, k, hi_metric), hi_metric),
+            (
+                "trustworthiness",
+                lambda: float(
+                    trustworthiness(emb, coords, n_neighbors=k, metric=hi_metric)
+                ),
+                hi_metric,
+            ),
+            (
+                "continuity",
+                lambda: _continuity(emb, coords, k, hi_metric),
+                hi_metric,
+            ),
+        )
         rows: list[StatRow] = []
-
-        try:
-            rows.append(
-                StatRow(
-                    metric="knn_overlap",
-                    metric_kind="faithfulness",
-                    value=_knn_overlap(emb, coords, k, hi_metric),
-                    extra={**common, "metric": hi_metric},
-                    **base,
+        for metric_name, value_fn, extra_metric in metrics:
+            try:
+                rows.append(
+                    StatRow(
+                        metric=metric_name,
+                        value=value_fn(),
+                        extra={**common, "metric": extra_metric},
+                        **base,
+                    )
                 )
-            )
-        except Exception:  # noqa: BLE001 - faithfulness is best-effort
-            pass
-        try:
-            rows.append(
-                StatRow(
-                    metric="trustworthiness",
-                    metric_kind="faithfulness",
-                    value=float(
-                        trustworthiness(emb, coords, n_neighbors=k, metric=hi_metric)
-                    ),
-                    extra={**common, "metric": hi_metric},
-                    **base,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            rows.append(
-                StatRow(
-                    metric="continuity",
-                    metric_kind="faithfulness",
-                    value=float(
-                        trustworthiness(coords, emb, n_neighbors=k, metric="euclidean")
-                    ),
-                    extra={**common, "metric": "euclidean"},
-                    **base,
-                )
-            )
-        except Exception:  # noqa: BLE001
-            pass
+            except Exception:  # noqa: BLE001 - faithfulness is best-effort
+                pass
 
         return rows

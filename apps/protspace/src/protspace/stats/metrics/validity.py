@@ -18,6 +18,9 @@ DEFAULT_SAMPLE_THRESHOLD = 5000
 # silhouette_samples is O(n^2) with no sampling escape hatch (unlike the aggregate
 # mean), so the per-point column is skipped beyond this point count.
 DEFAULT_SILHOUETTE_HARD_CEILING = 20000
+# Above this many points the KMeans elbow sweep fits on a random subsample (+predict)
+# rather than the full projection, bounding cost at 570k+ scale.
+DEFAULT_MAX_FIT_SAMPLE = 50_000
 
 
 def _silhouette(X, labels, *, rng_seed: int, sample_threshold: int):
@@ -32,11 +35,6 @@ def _silhouette(X, labels, *, rng_seed: int, sample_threshold: int):
         )
         return val, {"sampled": True, "sample_size": int(sample_threshold)}
     return float(silhouette_score(X, labels)), {"sampled": False, "sample_size": int(n)}
-
-
-def _has_singleton(labels) -> bool:
-    _, counts = np.unique(labels, return_counts=True)
-    return bool((counts < 2).any())
 
 
 class ClusterValidityStatistic:
@@ -57,15 +55,23 @@ class ClusterValidityStatistic:
         k_max = ctx.params.get("k_max")
 
         res = kmeans_elbow(
-            X, rng_seed=rng_seed, k_max=k_max, silhouette_sample=sample_threshold
+            X,
+            rng_seed=rng_seed,
+            k_max=k_max,
+            max_fit_sample=int(
+                ctx.params.get("max_fit_sample", DEFAULT_MAX_FIT_SAMPLE)
+            ),
         )
         if res is None:  # n < 3
             return []
         labels = res.labels
         k = res.k
         # Report the ACHIEVED number of distinct clusters (KMeans can collapse on
-        # coincident points), keeping the elbow's requested K in extra.
-        achieved = int(len(np.unique(labels)))
+        # coincident points), keeping the elbow's requested K in extra. The cluster
+        # sizes also feed the Davies-Bouldin / Calinski-Harabasz singleton guard.
+        unique_labels, label_counts = np.unique(labels, return_counts=True)
+        achieved = int(len(unique_labels))
+        has_singleton = bool((label_counts < 2).any())
 
         base = {
             "space_kind": ctx.space_kind,
@@ -73,7 +79,32 @@ class ClusterValidityStatistic:
             "stat_family": self.family,
             "label_kind": "kmeans_elbow",
         }
-        rows: list[StatRow] = [
+
+        # Decide up front whether the exact per-point silhouette column will be
+        # emitted. When it is, its per-point values are the single source of truth:
+        # the aggregate `silhouette` row is their mean (== the exact unsampled
+        # silhouette_score by definition), so the headline value equals
+        # mean(silhouette_{proj}) and no redundant sampled score is computed.
+        silhouette_ok = 2 <= k <= n - 1
+        hard_ceiling = int(
+            ctx.params.get("silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING)
+        )
+        want_per_point = (
+            ctx.params.get("cluster_annotations", True)
+            and achieved >= 2
+            and len(ctx.ids) == n
+        )
+        per_point_samples = None
+        if want_per_point and silhouette_ok and n <= hard_ceiling:
+            try:
+                from sklearn.metrics import silhouette_samples
+
+                per_point_samples = silhouette_samples(X, labels)
+            except Exception:  # noqa: BLE001 - per-point silhouette is best-effort
+                per_point_samples = None
+
+        # Holds scalar StatRows plus, below, any per-protein AnnotationColumns.
+        rows: list = [
             StatRow(
                 metric="n_clusters",
                 metric_kind="meta",
@@ -83,7 +114,6 @@ class ClusterValidityStatistic:
                     "k_range": [res.k_range[0], res.k_range[-1]],
                     "inertia": res.inertia,
                     "knee_confidence": res.knee_confidence,
-                    "silhouette_optimal_k": res.silhouette_optimal_k,
                     "seed": rng_seed,
                 },
                 **base,
@@ -91,11 +121,19 @@ class ClusterValidityStatistic:
         ]
 
         # silhouette needs 2 <= k <= n - 1
-        if 2 <= k <= n - 1:
+        if silhouette_ok:
             try:
-                sil, sx = _silhouette(
-                    X, labels, rng_seed=rng_seed, sample_threshold=sample_threshold
-                )
+                if per_point_samples is not None:
+                    # Exact aggregate over all n, consistent with the per-point
+                    # silhouette_{proj} column below.
+                    sil = float(per_point_samples.mean())
+                    sx = {"sampled": False, "sample_size": int(n)}
+                else:
+                    # No exact column (n > hard_ceiling, disabled, or id mismatch):
+                    # fall back to the sampled/exact silhouette_score.
+                    sil, sx = _silhouette(
+                        X, labels, rng_seed=rng_seed, sample_threshold=sample_threshold
+                    )
                 rows.append(
                     StatRow(
                         metric="silhouette",
@@ -109,7 +147,7 @@ class ClusterValidityStatistic:
                 pass
 
         # Davies-Bouldin / Calinski-Harabasz are unstable with singleton clusters.
-        if not _has_singleton(labels):
+        if not has_singleton:
             for metric_name, fn in (
                 ("davies_bouldin", davies_bouldin_score),
                 ("calinski_harabasz", calinski_harabasz_score),
@@ -127,18 +165,11 @@ class ClusterValidityStatistic:
                 except Exception:  # noqa: BLE001
                     pass
 
-        outputs: list = list(rows)
-
         # Per-protein outputs (route-projection-statistics Phase 2): the elbow-K
         # labelling becomes a categorical membership column and per-point silhouette
-        # a numeric column, both joined by identifier. Gated by the cluster_annotations
-        # param; emitted only when there is a genuine (>=2) clustering and the ids
-        # line up with the scored points.
-        if (
-            ctx.params.get("cluster_annotations", True)
-            and achieved >= 2
-            and len(ctx.ids) == n
-        ):
+        # a numeric column, both joined by identifier. Gated identically to the
+        # per_point_samples decision above.
+        if want_per_point:
             ann_extra = {
                 "projection": ctx.space_name,
                 "k": int(k),
@@ -147,7 +178,7 @@ class ClusterValidityStatistic:
             }
             # Membership as NON-numeric label strings so the frontend's content-based
             # type inference reads the column as categorical, not a numeric ramp.
-            outputs.append(
+            rows.append(
                 AnnotationColumn(
                     name=f"cluster_{ctx.space_name}",
                     kind="categorical",
@@ -158,29 +189,17 @@ class ClusterValidityStatistic:
                     extra=ann_extra,
                 )
             )
-
-            hard_ceiling = int(
-                ctx.params.get(
-                    "silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING
-                )
-            )
-            if 2 <= k <= n - 1 and n <= hard_ceiling:
-                try:
-                    from sklearn.metrics import silhouette_samples
-
-                    samples = silhouette_samples(X, labels)
-                    outputs.append(
-                        AnnotationColumn(
-                            name=f"silhouette_{ctx.space_name}",
-                            kind="numeric",
-                            values={
-                                pid: float(s)
-                                for pid, s in zip(ctx.ids, samples, strict=False)
-                            },
-                            extra=ann_extra,
-                        )
+            if per_point_samples is not None:
+                rows.append(
+                    AnnotationColumn(
+                        name=f"silhouette_{ctx.space_name}",
+                        kind="numeric",
+                        values={
+                            pid: float(s)
+                            for pid, s in zip(ctx.ids, per_point_samples, strict=False)
+                        },
+                        extra=ann_extra,
                     )
-                except Exception:  # noqa: BLE001 - per-point silhouette is best-effort
-                    pass
+                )
 
-        return outputs
+        return rows

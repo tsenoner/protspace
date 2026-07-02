@@ -9,7 +9,12 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from protspace.data.io.bundle import write_bundle
+from protspace.data.io.bundle import (
+    SETTINGS_FILENAME,
+    STATISTICS_FILENAME,
+    create_settings_parquet,
+    write_bundle,
+)
 from protspace.utils.constants import MDS_NAME, DimensionReductionConfig
 
 logger = logging.getLogger(__name__)
@@ -166,7 +171,14 @@ class BaseProcessor:
                 pq.write_table(table, str(table_path))
 
             if statistics is not None:
-                pq.write_table(statistics, str(base_path / "statistics.parquet"))
+                pq.write_table(statistics, str(base_path / STATISTICS_FILENAME))
+
+            # Mirror the bundled path: persist auto-generated settings (e.g. cluster
+            # legend styles) so unbundled output is not silently stripped of styling.
+            if settings is not None:
+                (base_path / SETTINGS_FILENAME).write_bytes(
+                    create_settings_parquet(settings)
+                )
 
             logger.info(f"Saved separate parquet files to: {base_path}")
 

@@ -258,9 +258,9 @@ class ReductionPipeline:
         # Projection statistics (best-effort; never fail the run for a secondary
         # artifact). Computed here where embeddings and projections coexist.
         statistics_table = None
-        self._stats_settings: dict = {}
+        stats_settings: dict = {}
         if self.config.stats:
-            statistics_table = self._compute_statistics(
+            statistics_table, stats_settings = self._compute_statistics(
                 embedding_sets, all_reductions, all_headers, metadata
             )
 
@@ -271,7 +271,7 @@ class ReductionPipeline:
             self.config.output_path,
             bundled=self.config.bundled,
             statistics=statistics_table,
-            settings=self._stats_settings or None,
+            settings=stats_settings or None,
         )
 
         logger.info(
@@ -624,14 +624,21 @@ class ReductionPipeline:
 
         global_params = asdict(self.config.reducer_params)
 
+        def add(reduction: dict[str, Any]) -> None:
+            """Stamp the current source embedding-set name, then record it — so
+            'every recorded projection carries a source' is a single fact. Called
+            only within an ``emb_set`` iteration, so late-bound ``emb_set`` is current.
+            """
+            reduction["source"] = emb_set.name
+            all_reductions.append(reduction)
+
         for emb_set in embedding_sets:
             if emb_set.precomputed:
                 cached = self._load_cached_projection(
                     emb_set.name, MDS_NAME, 2, global_params
                 )
                 if cached:
-                    cached["source"] = emb_set.name
-                    all_reductions.append(cached)
+                    add(cached)
                     cached_projections.append(f"MDS 2 ({emb_set.name})")
                     continue
                 logger.info(f"Applying MDS 2 to '{emb_set.name}' (precomputed)")
@@ -640,8 +647,7 @@ class ReductionPipeline:
                     self.base, effective_params, MDS_NAME, 2, emb_set.data
                 )
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
-                reduction["source"] = emb_set.name
-                all_reductions.append(reduction)
+                add(reduction)
                 self._save_projection_cache(
                     emb_set.name, MDS_NAME, 2, reduction, global_params
                 )
@@ -665,8 +671,7 @@ class ReductionPipeline:
                     emb_set.name, method, dims, effective_params, param_suffix
                 )
                 if cached:
-                    cached["source"] = emb_set.name
-                    all_reductions.append(cached)
+                    add(cached)
                     cached_projections.append(
                         f"{method.upper()} {dims} ({emb_set.name})"
                     )
@@ -680,8 +685,7 @@ class ReductionPipeline:
                 reduction["name"] = format_projection_name(
                     emb_set.name, method, dims, param_suffix
                 )
-                reduction["source"] = emb_set.name
-                all_reductions.append(reduction)
+                add(reduction)
                 self._save_projection_cache(
                     emb_set.name, method, dims, reduction, effective_params
                 )
@@ -699,18 +703,20 @@ class ReductionPipeline:
     def _compute_statistics(
         self, embedding_sets, all_reductions, all_headers, metadata=None
     ):
-        """Compute projection statistics, returning an Arrow table or None.
+        """Compute projection statistics, returning ``(table_or_None, settings)``.
 
-        Best-effort: any failure is logged and yields ``None`` so the bundle
+        Best-effort: any failure is logged and yields ``(None, {})`` so the bundle
         still ships. Each reduction's coordinate rows correspond to
         ``all_headers`` (the common header order), which is also the embedding
         row order after header validation — so faithfulness aligns cleanly.
 
         Routes outputs to their parts in place: faithfulness → each projection's
         ``info_json.quality``; per-protein cluster membership / silhouette →
-        columns on ``metadata`` (joined by identifier). The returned table is the
-        aggregate-validity-only fifth part.
+        columns on ``metadata`` (joined by identifier). Returns the aggregate-
+        validity-only fifth-part table plus the auto-generated cluster-legend
+        settings (empty when no membership columns were produced).
         """
+        settings: dict = {}
         try:
             from protspace.stats import compute_statistics
             from protspace.stats.carriage import (
@@ -735,15 +741,15 @@ class ReductionPipeline:
                 added = merge_annotation_columns(report, metadata)
                 # Auto-style the membership columns so clusters are colored when
                 # selected (a full legend envelope → the bundle's settings part).
-                self._stats_settings = build_cluster_legend_settings(report)
+                settings = build_cluster_legend_settings(report)
                 logger.info(
                     "Routed %d computed annotation column(s); styled %d",
                     len(added),
-                    len(self._stats_settings),
+                    len(settings),
                 )
             table = report.to_arrow()
             logger.info("Computed %d projection-statistic row(s)", table.num_rows)
-            return table if table.num_rows else None
+            return (table if table.num_rows else None), settings
         except Exception as exc:  # noqa: BLE001 - statistics are secondary
             logger.warning("Statistics computation failed: %s", exc)
-            return None
+            return None, {}

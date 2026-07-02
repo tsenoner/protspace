@@ -150,8 +150,8 @@ class StatsReport:
         records = [
             r.to_record() for r in self.rows if r.destination == "statistics_part"
         ]
-        if not records:
-            return pa.Table.from_pylist([], schema=STATS_SCHEMA)
+        # pyarrow.Table.from_pylist accepts an empty list with an explicit schema,
+        # so the empty case needs no special handling.
         return pa.Table.from_pylist(records, schema=STATS_SCHEMA)
 
 

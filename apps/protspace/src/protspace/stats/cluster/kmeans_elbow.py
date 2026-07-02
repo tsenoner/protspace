@@ -25,7 +25,6 @@ class ElbowResult:
     k_range: list[int]
     inertia: list[float]
     knee_confidence: str  # "high" | "low"
-    silhouette_optimal_k: int | None
 
 
 def chord_deviation(y: np.ndarray) -> np.ndarray:
@@ -54,15 +53,19 @@ def kmeans_elbow(
     k_max: int | None = None,
     n_init: int = 10,
     knee_min_deviation: float = 0.05,
-    silhouette_sample: int = 2000,
+    max_fit_sample: int = 50_000,
 ) -> ElbowResult | None:
     """Sweep KMeans over K and pick the elbow via max chord deviation.
 
     Returns ``None`` when there are too few points to cluster (n < 3).
-    ``silhouette_sample`` bounds the cost of the silhouette-optimal-K cross-check.
+
+    Above ``max_fit_sample`` points the per-K fit runs on a deterministic random
+    subsample with ``MiniBatchKMeans`` (so sweep cost is bounded independent of n),
+    then labels for *all* n points are recovered with a single ``predict`` pass.
+    At or below the threshold the full-batch ``KMeans`` is used, so small/medium
+    inputs are unchanged.
     """
-    from sklearn.cluster import KMeans
-    from sklearn.metrics import silhouette_score
+    from sklearn.cluster import KMeans, MiniBatchKMeans
 
     X = np.asarray(X, dtype=float)
     n = X.shape[0]
@@ -74,17 +77,36 @@ def kmeans_elbow(
     k_max = max(2, min(k_max, 50, n - 1))
     k_range = list(range(2, k_max + 1))
 
+    # Bound the fit cost: sweep a subsample at large n; keep full-batch below.
+    subsample = n > max_fit_sample
+    if subsample:
+        idx = np.random.default_rng(rng_seed).choice(n, max_fit_sample, replace=False)
+        x_fit = X[idx]
+    else:
+        x_fit = X
+
     inertia: list[float] = []
-    labels_by_k: dict[int, np.ndarray] = {}
+    models_by_k: dict[int, object] = {}
     for k in k_range:
-        km = KMeans(n_clusters=k, random_state=rng_seed, n_init=n_init).fit(X)
+        if subsample:
+            km = MiniBatchKMeans(
+                n_clusters=k, random_state=rng_seed, n_init=3, batch_size=4096
+            ).fit(x_fit)
+        else:
+            km = KMeans(n_clusters=k, random_state=rng_seed, n_init=n_init).fit(x_fit)
         inertia.append(float(km.inertia_))
-        labels_by_k[k] = km.labels_
+        models_by_k[k] = km
+
+    def _labels_full(k: int) -> np.ndarray:
+        # Full-coverage labels: fitted labels below the threshold, one O(n*k*d)
+        # nearest-centroid predict pass when the fit used a subsample.
+        km = models_by_k[k]
+        return km.predict(X) if subsample else km.labels_
 
     if len(k_range) < 3:
         # Too short to find a chord knee; take the smallest K, flag low confidence.
         k = k_range[0]
-        return ElbowResult(k, labels_by_k[k], k_range, inertia, "low", None)
+        return ElbowResult(k, _labels_full(k), k_range, inertia, "low")
 
     dev = chord_deviation(np.asarray(inertia, dtype=float))
     k_idx = int(np.argmax(dev))
@@ -97,21 +119,4 @@ def kmeans_elbow(
         else "low"
     )
 
-    # Silhouette-optimal K over the sweep, for cross-checking (bounded by sampling).
-    sil_kwargs = {}
-    if n > silhouette_sample:
-        sil_kwargs = {"sample_size": silhouette_sample, "random_state": rng_seed}
-    silhouette_optimal_k: int | None = None
-    best_sil = -np.inf
-    for kk in k_range:
-        try:
-            s = float(silhouette_score(X, labels_by_k[kk], **sil_kwargs))
-        except Exception:
-            continue
-        if s > best_sil:
-            best_sil = s
-            silhouette_optimal_k = kk
-
-    return ElbowResult(
-        k, labels_by_k[k], k_range, inertia, knee_confidence, silhouette_optimal_k
-    )
+    return ElbowResult(k, _labels_full(k), k_range, inertia, knee_confidence)

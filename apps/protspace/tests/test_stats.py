@@ -616,3 +616,134 @@ def test_cluster_annotations_can_be_disabled():
     assert not any(isinstance(o, AnnotationColumn) for o in outs)
     # aggregate validity rows still produced
     assert any(getattr(o, "metric", None) == "silhouette" for o in outs)
+
+
+# --------------------------------------------------------------------------- #
+# 7. regression: deferred-item fixes (continuity metric, silhouette consistency,
+#    KMeans subsampling, order-invariant faithfulness subsample)
+# --------------------------------------------------------------------------- #
+
+
+def test_continuity_matches_sklearn_dual_on_euclidean():
+    """_continuity is bit-identical to sklearn's dual (trustworthiness with args
+    swapped) when the high-dim metric is euclidean — the default path is unchanged."""
+    from sklearn.manifold import trustworthiness
+
+    from protspace.stats.metrics.faithfulness import _continuity
+
+    X, _ = _blobs(n=120, centers=4, dim=6, seed=41)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    k = 10
+    ours = _continuity(X, coords, k, "euclidean")
+    ref = float(trustworthiness(coords, X, n_neighbors=k, metric="euclidean"))
+    assert ours == pytest.approx(ref, abs=1e-12)
+
+
+def test_continuity_uses_high_dim_metric_consistently():
+    """For a non-euclidean high-dim metric, continuity ranks the embedding by that
+    metric (recorded in extra), consistent with trustworthiness — not the euclidean
+    fallback sklearn.trustworthiness forces on its second argument."""
+    X, _ = _blobs(n=120, centers=4, dim=6, seed=42)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    headers = [f"p{i}" for i in range(120)]
+    emb = _EmbSet("e", X, headers)
+    report = compute_statistics(
+        [emb],
+        [
+            {
+                "name": "P",
+                "data": coords,
+                "ids": headers,
+                "source": "e",
+                "info": {"metric": "cosine"},
+            }
+        ],
+        rng_seed=42,
+    )
+    by_metric = {r.metric: r for r in report.rows}
+    assert by_metric["continuity"].extra["metric"] == "cosine"
+    assert by_metric["trustworthiness"].extra["metric"] == "cosine"
+
+
+def test_kmeans_elbow_subsamples_above_max_fit_sample():
+    """Above max_fit_sample the elbow fits a subsample (MiniBatchKMeans) but still
+    labels ALL points via predict, deterministically."""
+    X, _ = _blobs(n=400, centers=4, dim=2, seed=43)
+    res1 = kmeans_elbow(X, rng_seed=42, max_fit_sample=100)
+    res2 = kmeans_elbow(X, rng_seed=42, max_fit_sample=100)
+    assert res1 is not None
+    assert len(res1.labels) == 400  # full coverage via predict
+    assert np.array_equal(res1.labels, res2.labels)  # deterministic
+
+
+def test_elbow_result_has_no_silhouette_optimal_k():
+    """The write-only silhouette_optimal_k field/sweep was removed."""
+    from dataclasses import fields
+
+    X, _ = _blobs(n=200, centers=3, dim=2, seed=44)
+    res = kmeans_elbow(X, rng_seed=42)
+    assert "silhouette_optimal_k" not in {f.name for f in fields(res)}
+    ctx = StatContext("projection", "P", coords=X, ids=[str(i) for i in range(len(X))])
+    meta = next(
+        r
+        for r in ClusterValidityStatistic().compute(ctx)
+        if isinstance(r, StatRow) and r.metric == "n_clusters"
+    )
+    assert "silhouette_optimal_k" not in meta.extra
+
+
+def test_aggregate_silhouette_equals_per_point_mean():
+    """When the per-point silhouette column is emitted, the aggregate silhouette is
+    exactly its mean (consistent, not a separate sampled estimate)."""
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=300, centers=4, dim=2, seed=45)
+    ids = [f"p{i}" for i in range(300)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext("projection", "P", coords=X, ids=ids)
+    )
+    agg = next(o for o in outs if isinstance(o, StatRow) and o.metric == "silhouette")
+    col = next(
+        o for o in outs if isinstance(o, AnnotationColumn) and o.name == "silhouette_P"
+    )
+    assert agg.extra["sampled"] is False
+    assert agg.value == pytest.approx(
+        float(np.mean(list(col.values.values()))), abs=1e-9
+    )
+
+
+def test_faithfulness_subsample_is_row_order_invariant():
+    """With subsampling active, the same id-set in a different row order selects the
+    same proteins, so faithfulness is identical (row-order invariant). This fails on
+    the old positional selection."""
+    X, _ = _blobs(n=120, centers=4, dim=6, seed=46)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    headers = [f"p{i}" for i in range(120)]
+    emb = _EmbSet("e", X, headers)
+    params = {"sample_threshold": 60}  # n=120 > 60 → subsample path
+
+    base = compute_statistics(
+        [emb],
+        [{"name": "P", "data": coords, "ids": headers, "source": "e"}],
+        rng_seed=42,
+        params=params,
+    )
+    perm = np.random.default_rng(5).permutation(120)
+    permuted = compute_statistics(
+        [emb],
+        [
+            {
+                "name": "P",
+                "data": coords[perm],
+                "ids": [headers[i] for i in perm],
+                "source": "e",
+            }
+        ],
+        rng_seed=42,
+        params=params,
+    )
+    b = {r.metric: r.value for r in base.rows}
+    p = {r.metric: r.value for r in permuted.rows}
+    assert b["trustworthiness"] == pytest.approx(p["trustworthiness"], abs=1e-9)
+    assert b["knn_overlap"] == pytest.approx(p["knn_overlap"], abs=1e-9)
+    assert b["continuity"] == pytest.approx(p["continuity"], abs=1e-9)
