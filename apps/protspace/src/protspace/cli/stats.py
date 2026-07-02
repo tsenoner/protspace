@@ -228,6 +228,15 @@ def stats(
             "(max-silhouette K), or 'both' (emit both clusterings).",
         ),
     ] = ClusterSelection.elbow,
+    stats_annotation: Annotated[
+        str,
+        typer.Option(
+            "--stats-annotation",
+            help="Which annotation column(s) to score for cluster-validity: "
+            "'auto' (all suitable categoricals) or a comma-separated list. "
+            "Requires -a/--annotations.",
+        ),
+    ] = "auto",
     verbose: Annotated[
         int, typer.Option("-v", "--verbose", count=True, help="Increase verbosity.")
     ] = 0,
@@ -239,6 +248,8 @@ def stats(
     # columns, so --settings-out without -a would silently write nothing.
     if settings_out is not None and annotations is None:
         raise typer.BadParameter("--settings-out requires -a/--annotations.")
+    if stats_annotation and annotations is None and stats_annotation != "auto":
+        raise typer.BadParameter("--stats-annotation requires -a/--annotations.")
 
     import pyarrow.parquet as pq
 
@@ -246,6 +257,7 @@ def stats(
     from protspace.data.loaders import load_h5
     from protspace.data.loaders.embedding_set import merge_same_name_sets
     from protspace.stats import compute_statistics
+    from protspace.stats.annotation_select import build_annotation_labels
     from protspace.stats.carriage import (
         build_cluster_legend_settings,
         route_faithfulness_to_metadata,
@@ -267,12 +279,27 @@ def stats(
     params = {"cluster_selection": cluster_selection.value}
     if annotations is None:
         params["cluster_annotations"] = False
+
+    annotation_labels = None
+    if annotations is not None:
+        ann_frame = pq.read_table(str(annotations)).to_pandas()
+        id_col = (
+            "identifier" if "identifier" in ann_frame.columns else ann_frame.columns[0]
+        )
+        selection = (
+            "auto"
+            if stats_annotation.strip().lower() == "auto"
+            else [s.strip() for s in stats_annotation.split(",") if s.strip()]
+        )
+        annotation_labels = build_annotation_labels(ann_frame, selection, id_col=id_col)
+
     report = compute_statistics(
         embedding_sets,
         reductions,
         rng_seed=seed,
         params=params,
         default_metric=metric,
+        annotations=annotation_labels,
     )
 
     # Route per-projection faithfulness into projections_metadata.info_json.quality
