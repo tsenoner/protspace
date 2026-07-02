@@ -120,8 +120,18 @@ Opt_Stats = Annotated[
     typer.Option(
         "--stats/--no-stats",
         help="Compute projection quality statistics (cluster-validity + "
-        "faithfulness); adds cluster_*/silhouette_* columns + legend styles to the "
-        "bundle. Opt-in (off by default): can be slow on large runs.",
+        "faithfulness); adds cluster_* membership columns (with per-point "
+        "silhouette confidence) + legend styles to the bundle. Opt-in (off by "
+        "default): can be slow on large runs.",
+        rich_help_panel="Output",
+    ),
+]
+Opt_ClusterSelection = Annotated[
+    str,
+    typer.Option(
+        "--cluster-selection",
+        help="With --stats, how to choose the cluster count K: 'elbow' (default), "
+        "'silhouette' (max-silhouette K), or 'both' (emit both clusterings).",
         rich_help_panel="Output",
     ),
 ]
@@ -301,6 +311,7 @@ def prepare(
     annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
     stats: Opt_Stats = False,
+    cluster_selection: Opt_ClusterSelection = "elbow",
     refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),
@@ -510,6 +521,11 @@ def prepare(
             max_iter=max_iter,
             eps=eps,
         )
+        if cluster_selection not in ("elbow", "silhouette", "both"):
+            raise typer.BadParameter(
+                "--cluster-selection must be 'elbow', 'silhouette', or 'both'.",
+                param_hint="--cluster-selection",
+            )
         config = PipelineConfig(
             methods=method_specs,
             output_path=output_path,
@@ -517,6 +533,7 @@ def prepare(
             keep_tmp=keep_tmp,
             no_scores=not scores,
             stats=stats,
+            cluster_selection=cluster_selection,
             refetch_stages=refetch_stages,
             annotations=annotation_list,
             intermediate_dir=cache_dir,

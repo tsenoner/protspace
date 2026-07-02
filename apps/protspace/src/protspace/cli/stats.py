@@ -218,6 +218,14 @@ def stats(
             help="High-dim distance metric for faithfulness when the projection metadata omits one (e.g. PCA/MDS).",
         ),
     ] = "euclidean",
+    cluster_selection: Annotated[
+        str,
+        typer.Option(
+            "--cluster-selection",
+            help="How to choose the cluster count K: 'elbow' (default), 'silhouette' "
+            "(max-silhouette K), or 'both' (emit both clusterings).",
+        ),
+    ] = "elbow",
     verbose: Annotated[
         int, typer.Option("-v", "--verbose", count=True, help="Increase verbosity.")
     ] = 0,
@@ -229,6 +237,11 @@ def stats(
     # columns, so --settings-out without -a would silently write nothing.
     if settings_out is not None and annotations is None:
         raise typer.BadParameter("--settings-out requires -a/--annotations.")
+    if cluster_selection not in ("elbow", "silhouette", "both"):
+        raise typer.BadParameter(
+            "--cluster-selection must be 'elbow', 'silhouette', or 'both'.",
+            param_hint="--cluster-selection",
+        )
 
     import pyarrow.parquet as pq
 
@@ -254,7 +267,9 @@ def stats(
     # Per-protein outputs (cluster membership + per-point silhouette) are only
     # computed when there's an annotations file to land them in — silhouette_samples
     # is O(n^2), so we don't pay for it with nowhere to write.
-    params = {} if annotations is not None else {"cluster_annotations": False}
+    params = {"cluster_selection": cluster_selection}
+    if annotations is None:
+        params["cluster_annotations"] = False
     report = compute_statistics(
         embedding_sets,
         reductions,

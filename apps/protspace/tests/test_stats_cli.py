@@ -214,13 +214,14 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
 
     df = pq.read_table(str(ann_path)).to_pandas()
     cluster_cols = [c for c in df.columns if c.startswith("cluster_")]
-    sil_cols = [c for c in df.columns if c.startswith("silhouette_")]
-    assert cluster_cols and sil_cols
+    assert cluster_cols
+    assert not [c for c in df.columns if c.startswith("silhouette_")]  # no 2nd column
     assert "organism" in df.columns  # pre-existing annotation preserved
     assert "identifier" in df.columns
-    # membership categorical (non-numeric strings); silhouette numeric strings
-    assert str(df[cluster_cols[0]].iloc[0]).startswith("cluster ")
-    float(df[sil_cols[0]].iloc[0])  # must not raise
+    # membership value = "cluster N|<silhouette>" (category + attached confidence)
+    label, _, score = str(df[cluster_cols[0]].iloc[0]).partition("|")
+    assert label.startswith("cluster ")
+    float(score)  # attached per-point silhouette parses as a number
 
 
 def test_stats_without_annotations_does_not_compute_per_protein(tmp_path):
@@ -296,7 +297,7 @@ def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     )  # protein_annotations is 1st part
     cols = ann_table.column_names
     assert any(c.startswith("cluster_") for c in cols)
-    assert any(c.startswith("silhouette_") for c in cols)
+    assert not any(c.startswith("silhouette_") for c in cols)  # folded into cluster_
     assert "protein_id" in cols  # identifier renamed by bundle
 
 

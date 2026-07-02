@@ -236,13 +236,13 @@ def test_annotation_columns_are_typed_in_protein_annotations_table():
 
     table = BaseProcessor({}, {})._create_protein_annotations_table(metadata)
     cols = table.column_names
-    assert "cluster_P" in cols and "silhouette_P" in cols
+    # Single membership column; per-point silhouette is attached to its value.
+    assert "cluster_P" in cols and "silhouette_P" not in cols
     d = table.to_pydict()
-    # membership: non-numeric category labels → categorical inference
-    assert all(v.startswith("cluster ") for v in d["cluster_P"])
-    # per-point silhouette: clean numeric strings → continuous inference
-    for v in d["silhouette_P"]:
-        float(v)  # must not raise
+    for v in d["cluster_P"]:
+        label, _, score = v.partition("|")
+        assert label.startswith("cluster ")  # categorical part
+        float(score)  # attached per-point silhouette parses as a number
 
 
 def test_router_multi_embedding_routes_each_projection_to_its_own_scores():
@@ -270,3 +270,27 @@ def test_router_multi_embedding_routes_each_projection_to_its_own_scores():
     assert qa == driver_vals["A — PCA 2"]
     assert qb == driver_vals["B — PCA 2"]
     assert qa != qb  # each projection scored against its own embedding
+
+
+def test_legend_settings_strip_attached_silhouette_score():
+    """Membership values carry a `|silhouette` confidence; the auto legend must key
+    categories by the bare `cluster N` label (stripping the attached score)."""
+    from protspace.stats.base import AnnotationColumn, StatsReport
+    from protspace.stats.carriage import build_cluster_legend_settings
+
+    report = StatsReport()
+    report.add(
+        [
+            AnnotationColumn(
+                name="cluster_P",
+                kind="categorical",
+                values={
+                    "a": "cluster 0|0.5123",
+                    "b": "cluster 1|0.3011",
+                    "c": "cluster 0|0.6200",
+                },
+            )
+        ]
+    )
+    settings = build_cluster_legend_settings(report)
+    assert set(settings["cluster_P"]["categories"]) == {"cluster 0", "cluster 1"}

@@ -25,6 +25,10 @@ class ElbowResult:
     k_range: list[int]
     inertia: list[float]
     knee_confidence: str  # "high" | "low"
+    # Alternative K maximising the (sampled) silhouette over the sweep, and its
+    # full-coverage labels — populated only when ``silhouette_selection`` is set.
+    silhouette_k: int | None = None
+    silhouette_labels: np.ndarray | None = None
 
 
 def chord_deviation(y: np.ndarray) -> np.ndarray:
@@ -54,6 +58,8 @@ def kmeans_elbow(
     n_init: int = 10,
     knee_min_deviation: float = 0.05,
     max_fit_sample: int = 50_000,
+    silhouette_selection: bool = False,
+    silhouette_sample: int = 5000,
 ) -> ElbowResult | None:
     """Sweep KMeans over K and pick the elbow via max chord deviation.
 
@@ -64,6 +70,11 @@ def kmeans_elbow(
     then labels for *all* n points are recovered with a single ``predict`` pass.
     At or below the threshold the full-batch ``KMeans`` is used, so small/medium
     inputs are unchanged.
+
+    When ``silhouette_selection`` is set, the K maximising the (sampled) silhouette
+    over the sweep is also returned (``silhouette_k`` / ``silhouette_labels``) as an
+    alternative to the elbow K. This costs one silhouette pass per K, so it is
+    computed only on request; ``silhouette_sample`` bounds that cost.
     """
     from sklearn.cluster import KMeans, MiniBatchKMeans
 
@@ -103,10 +114,40 @@ def kmeans_elbow(
         km = models_by_k[k]
         return km.predict(X) if subsample else km.labels_
 
+    def _silhouette_k():
+        # K maximising the (sampled) silhouette over the sweep, scored on x_fit
+        # with each K's fitted labels. Returns (k, full-coverage labels) or (None, None).
+        from sklearn.metrics import silhouette_score
+
+        kw = {}
+        if x_fit.shape[0] > silhouette_sample:
+            kw = {"sample_size": silhouette_sample, "random_state": rng_seed}
+        best_k, best_s = None, -np.inf
+        for kk in k_range:
+            try:
+                s = float(silhouette_score(x_fit, models_by_k[kk].labels_, **kw))
+            except Exception:  # noqa: BLE001 - a degenerate K is skipped
+                continue
+            if s > best_s:
+                best_s, best_k = s, kk
+        if best_k is None:
+            return None, None
+        return best_k, _labels_full(best_k)
+
+    sil_k, sil_labels = _silhouette_k() if silhouette_selection else (None, None)
+
     if len(k_range) < 3:
         # Too short to find a chord knee; take the smallest K, flag low confidence.
         k = k_range[0]
-        return ElbowResult(k, _labels_full(k), k_range, inertia, "low")
+        return ElbowResult(
+            k,
+            _labels_full(k),
+            k_range,
+            inertia,
+            "low",
+            silhouette_k=sil_k,
+            silhouette_labels=sil_labels,
+        )
 
     dev = chord_deviation(np.asarray(inertia, dtype=float))
     k_idx = int(np.argmax(dev))
@@ -119,4 +160,12 @@ def kmeans_elbow(
         else "low"
     )
 
-    return ElbowResult(k, _labels_full(k), k_range, inertia, knee_confidence)
+    return ElbowResult(
+        k,
+        _labels_full(k),
+        k_range,
+        inertia,
+        knee_confidence,
+        silhouette_k=sil_k,
+        silhouette_labels=sil_labels,
+    )

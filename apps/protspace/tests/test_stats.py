@@ -554,7 +554,7 @@ def test_report_collects_annotation_columns_separately_from_rows():
     assert [c.name for c in report.annotation_columns] == ["cluster_PCA_2"]
 
 
-def test_cluster_validity_emits_per_protein_annotation_columns():
+def test_cluster_validity_emits_membership_with_attached_silhouette():
     from protspace.stats.base import AnnotationColumn
 
     X, _ = _blobs(n=200, centers=4, dim=2, seed=31)
@@ -563,21 +563,17 @@ def test_cluster_validity_emits_per_protein_annotation_columns():
         StatContext("projection", "PCA_2", coords=X, ids=ids)
     )
     cols = {o.name: o for o in outs if isinstance(o, AnnotationColumn)}
-    assert {"cluster_PCA_2", "silhouette_PCA_2"} <= set(cols)
-
+    # Single membership column now; the per-point silhouette rides on its value as
+    # `cluster N|<silhouette>` (like ECO / InterPro bit scores), not a 2nd column.
+    assert set(cols) == {"cluster_PCA_2"}
     mem = cols["cluster_PCA_2"]
     assert mem.destination == "annotation" and mem.kind == "categorical"
     assert set(mem.values) == set(ids)  # one value per protein, joined by id
-    # non-numeric label strings so content-based inference reads categorical
-    assert all(
-        isinstance(v, str) and v.startswith("cluster ") for v in mem.values.values()
-    )
-    assert mem.extra["k"] >= 2 and mem.extra.get("computed") is True
-
-    sil = cols["silhouette_PCA_2"]
-    assert sil.kind == "numeric"
-    assert set(sil.values) == set(ids)
-    assert all(isinstance(v, float) for v in sil.values.values())
+    assert mem.extra["has_silhouette_score"] is True
+    for v in mem.values.values():
+        label, _, score = v.partition("|")
+        assert label.startswith("cluster ")  # categorical part
+        assert -1.0 <= float(score) <= 1.0  # attached per-point silhouette
 
 
 def test_per_point_silhouette_skipped_beyond_hard_ceiling():
@@ -594,9 +590,12 @@ def test_per_point_silhouette_skipped_beyond_hard_ceiling():
             params={"silhouette_hard_ceiling": 50},  # n=200 > 50
         )
     )
-    names = {o.name for o in outs if isinstance(o, AnnotationColumn)}
-    assert "cluster_PCA_2" in names  # membership is cheap, still emitted
-    assert "silhouette_PCA_2" not in names  # O(n^2) silhouette skipped
+    cols = {o.name: o for o in outs if isinstance(o, AnnotationColumn)}
+    assert set(cols) == {"cluster_PCA_2"}  # membership is cheap, still emitted
+    mem = cols["cluster_PCA_2"]
+    # O(n^2) per-point silhouette skipped → no attached score, plain labels.
+    assert mem.extra["has_silhouette_score"] is False
+    assert all("|" not in v for v in mem.values.values())
 
 
 def test_cluster_annotations_can_be_disabled():
@@ -693,8 +692,8 @@ def test_elbow_result_has_no_silhouette_optimal_k():
 
 
 def test_aggregate_silhouette_equals_per_point_mean():
-    """When the per-point silhouette column is emitted, the aggregate silhouette is
-    exactly its mean (consistent, not a separate sampled estimate)."""
+    """The aggregate silhouette is exactly the mean of the per-point silhouettes
+    attached to the membership column values (consistent, not a sampled estimate)."""
     from protspace.stats.base import AnnotationColumn
 
     X, _ = _blobs(n=300, centers=4, dim=2, seed=45)
@@ -704,12 +703,11 @@ def test_aggregate_silhouette_equals_per_point_mean():
     )
     agg = next(o for o in outs if isinstance(o, StatRow) and o.metric == "silhouette")
     col = next(
-        o for o in outs if isinstance(o, AnnotationColumn) and o.name == "silhouette_P"
+        o for o in outs if isinstance(o, AnnotationColumn) and o.name == "cluster_P"
     )
+    per_point = [float(v.split("|", 1)[1]) for v in col.values.values()]
     assert agg.extra["sampled"] is False
-    assert agg.value == pytest.approx(
-        float(np.mean(list(col.values.values()))), abs=1e-9
-    )
+    assert agg.value == pytest.approx(float(np.mean(per_point)), abs=1e-4)
 
 
 def test_faithfulness_subsample_is_row_order_invariant():
@@ -747,3 +745,127 @@ def test_faithfulness_subsample_is_row_order_invariant():
     assert b["trustworthiness"] == pytest.approx(p["trustworthiness"], abs=1e-9)
     assert b["knn_overlap"] == pytest.approx(p["knn_overlap"], abs=1e-9)
     assert b["continuity"] == pytest.approx(p["continuity"], abs=1e-9)
+
+
+# --------------------------------------------------------------------------- #
+# 8. cluster-selection (elbow / silhouette / both) + global faithfulness
+# --------------------------------------------------------------------------- #
+
+
+def test_cluster_selection_silhouette_emits_silhouette_labeling():
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=200, centers=4, dim=2, seed=51)
+    ids = [f"p{i}" for i in range(200)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            params={"cluster_selection": "silhouette"},
+        )
+    )
+    cols = {o.name for o in outs if isinstance(o, AnnotationColumn)}
+    assert cols == {"cluster_silhouette_PCA_2"}
+    rows = [o for o in outs if isinstance(o, StatRow)]
+    assert {r.label_kind for r in rows} == {"kmeans_silhouette"}
+    meta = next(r for r in rows if r.metric == "n_clusters")
+    assert meta.extra["selection"] == "silhouette"
+
+
+def test_cluster_selection_both_emits_two_labelings():
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=200, centers=4, dim=2, seed=52)
+    ids = [f"p{i}" for i in range(200)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            params={"cluster_selection": "both"},
+        )
+    )
+    cols = {o.name for o in outs if isinstance(o, AnnotationColumn)}
+    assert cols == {"cluster_PCA_2", "cluster_silhouette_PCA_2"}
+    kinds = {r.label_kind for r in outs if isinstance(r, StatRow)}
+    assert kinds == {"kmeans_elbow", "kmeans_silhouette"}
+
+
+def test_cluster_membership_omits_score_when_scores_disabled():
+    from protspace.stats.base import AnnotationColumn
+
+    X, _ = _blobs(n=200, centers=4, dim=2, seed=53)
+    ids = [f"p{i}" for i in range(200)]
+    outs = ClusterValidityStatistic().compute(
+        StatContext(
+            "projection", "P", coords=X, ids=ids, params={"include_scores": False}
+        )
+    )
+    mem = next(o for o in outs if isinstance(o, AnnotationColumn))
+    assert all("|" not in v for v in mem.values.values())
+    assert mem.extra["has_silhouette_score"] is False
+
+
+def test_kmeans_elbow_silhouette_selection_returns_alt_k():
+    X, _ = _blobs(n=200, centers=4, dim=2, seed=56)
+    res = kmeans_elbow(X, rng_seed=42, silhouette_selection=True)
+    assert res.silhouette_k is not None and res.silhouette_labels is not None
+    assert len(res.silhouette_labels) == 200
+    assert res.silhouette_k in res.k_range
+    # default (no selection) leaves the alternative-K fields unpopulated
+    res2 = kmeans_elbow(X, rng_seed=42)
+    assert res2.silhouette_k is None and res2.silhouette_labels is None
+
+
+def test_faithfulness_emits_global_metrics_tagged_by_scope():
+    X, _ = _blobs(n=150, centers=4, dim=8, seed=54)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    ids = [str(i) for i in range(150)]
+    rows = {
+        r.metric: r
+        for r in FaithfulnessStatistic().compute(
+            StatContext(
+                "projection",
+                "P",
+                coords=coords,
+                ids=ids,
+                embedding=X,
+                embedding_name="e",
+            )
+        )
+    }
+    assert {"random_triplet", "spearman_distance"} <= set(rows)
+    assert 0.0 <= rows["random_triplet"].value <= 1.0
+    assert -1.0 <= rows["spearman_distance"].value <= 1.0
+    assert rows["random_triplet"].extra["scope"] == "global"
+    assert rows["spearman_distance"].extra["scope"] == "global"
+    assert rows["knn_overlap"].extra["scope"] == "local"
+
+
+def test_global_metrics_higher_for_faithful_projection():
+    X, _ = _blobs(n=150, centers=5, dim=8, seed=55)
+    faithful = PCA(n_components=2, random_state=0).fit_transform(X)
+    rand = np.random.default_rng(0).normal(size=(150, 2))
+    ids = [str(i) for i in range(150)]
+
+    def q(coords):
+        return {
+            r.metric: r.value
+            for r in FaithfulnessStatistic().compute(
+                StatContext(
+                    "projection",
+                    "P",
+                    coords=coords,
+                    ids=ids,
+                    embedding=X,
+                    embedding_name="e",
+                )
+            )
+        }
+
+    good, bad = q(faithful), q(rand)
+    assert good["spearman_distance"] > bad["spearman_distance"]
+    assert good["random_triplet"] > bad["random_triplet"]

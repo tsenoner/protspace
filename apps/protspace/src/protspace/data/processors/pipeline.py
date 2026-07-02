@@ -74,6 +74,7 @@ class PipelineConfig:
     keep_tmp: bool = False
     no_scores: bool = False
     stats: bool = False
+    cluster_selection: str = "elbow"  # elbow | silhouette | both (for --stats)
     refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
@@ -731,6 +732,12 @@ class ReductionPipeline:
                 embedding_sets,
                 all_reductions,
                 rng_seed=self.config.reducer_params.random_state,
+                params={
+                    "cluster_selection": self.config.cluster_selection,
+                    # Silhouette-as-confidence on cluster values is a score, so it
+                    # honours --no-scores like UniProt/InterPro annotation scores.
+                    "include_scores": not self.config.no_scores,
+                },
                 # Faithfulness high-dim metric: reducers like PCA/MDS/PaCMAP omit
                 # 'metric' from their params, so fall back to the run's metric
                 # rather than silently assuming euclidean.
