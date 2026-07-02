@@ -129,10 +129,11 @@ def _random_triplet_accuracy(
     t = anchors.shape[0]
     j = rng.integers(0, n, t)
     m = rng.integers(0, n, t)
-    d_hi_j = paired_distances(embedding[anchors], embedding[j], metric=metric)
-    d_hi_m = paired_distances(embedding[anchors], embedding[m], metric=metric)
-    d_lo_j = paired_distances(coords[anchors], coords[j], metric="euclidean")
-    d_lo_m = paired_distances(coords[anchors], coords[m], metric="euclidean")
+    emb_a, coords_a = embedding[anchors], coords[anchors]
+    d_hi_j = paired_distances(emb_a, embedding[j], metric=metric)
+    d_hi_m = paired_distances(emb_a, embedding[m], metric=metric)
+    d_lo_j = paired_distances(coords_a, coords[j], metric="euclidean")
+    d_lo_m = paired_distances(coords_a, coords[m], metric="euclidean")
     agree = (d_hi_j < d_hi_m) == (d_lo_j < d_lo_m)
     return float(np.mean(agree))
 
@@ -151,7 +152,8 @@ def _spearman_distance(embedding, coords, metric: str) -> float:
     iu = np.triu_indices(n, k=1)
     hi = pairwise_distances(embedding, metric=metric)[iu]
     lo = pairwise_distances(coords, metric="euclidean")[iu]
-    # Spearman = Pearson on ranks; argsort-of-argsort gives dense 0-based ranks.
+    # Spearman = Pearson on ranks; argsort-of-argsort gives ordinal 0-based ranks
+    # (ties broken by index — a negligible deviation from midrank Spearman here).
     rank_hi = np.argsort(np.argsort(hi))
     rank_lo = np.argsort(np.argsort(lo))
     return float(np.corrcoef(rank_hi, rank_lo)[0, 1])
@@ -179,6 +181,16 @@ class FaithfulnessStatistic:
         n = emb.shape[0]
         if n < 3:
             return []
+
+        # Canonicalise row order by id up front so EVERY metric depends only on the
+        # id-SET, not the input row order. The kNN/Spearman metrics are already
+        # order-invariant, but the position-based triplet sampling below is not — so
+        # sorting here (matching the id-derived subsample seed) makes random_triplet
+        # reproducible across differently-ordered inputs too.
+        canonical = np.argsort(np.asarray(ids), kind="stable")
+        emb = emb[canonical]
+        coords = coords[canonical]
+        ids = [ids[int(i)] for i in canonical]
 
         k = int(ctx.params.get("k", DEFAULT_K))
         sample_threshold = int(
@@ -216,11 +228,9 @@ class FaithfulnessStatistic:
         sampled = False
         if n > sample_threshold:
             rng = np.random.default_rng(_subsample_seed(ctx.rng_seed, ids))
-            # Select in canonical id order so WHICH proteins are sampled depends
-            # only on the id-set (matching the order-invariant seed), not on the
-            # input row order. order[r] = original row of the r-th smallest id.
-            order = np.argsort(np.asarray(ids), kind="stable")
-            idx = np.sort(order[rng.permutation(n)[:sample_threshold]])
+            # Rows are already in canonical id order, so a positional draw is itself
+            # id-canonical and thus row-order invariant.
+            idx = np.sort(rng.permutation(n)[:sample_threshold])
             emb = emb[idx]
             coords = coords[idx]
             n = len(idx)

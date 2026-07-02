@@ -148,11 +148,11 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
 def _merge_annotations_with_columns(ann_path: Path, report) -> int:
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
-    Rewrites the annotations parquet in place with the computed ``cluster_*`` /
-    ``silhouette_*`` columns joined by identifier. Added columns are stringified
-    (membership → category labels, silhouette → numeric strings, absent → empty)
-    so they match the prepare path's all-string annotations and the frontend's
-    content-based type inference. Returns the number of columns added.
+    Rewrites the annotations parquet in place with the computed ``cluster_*``
+    membership columns joined by identifier (each value a ``cluster N`` label with
+    the per-point silhouette attached as ``|score``). Added columns are stringified
+    (absent → empty) so they match the prepare path's all-string annotations and the
+    frontend's content-based type inference. Returns the number of columns added.
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -199,7 +199,8 @@ def stats(
             "-a",
             "--annotations",
             help="Annotations parquet to enrich in place with per-protein "
-            "cluster-membership + silhouette columns. Omit to skip per-protein outputs.",
+            "cluster-membership columns (per-point silhouette attached as |score). "
+            "Omit to skip per-protein outputs.",
         ),
     ] = None,
     settings_out: Annotated[
@@ -264,8 +265,8 @@ def stats(
     )
 
     reductions = _load_reductions(projections, default_metric=metric)
-    # Per-protein outputs (cluster membership + per-point silhouette) are only
-    # computed when there's an annotations file to land them in — silhouette_samples
+    # Per-protein output (cluster membership with attached per-point silhouette) is
+    # only computed when there's an annotations file to land it in — silhouette_samples
     # is O(n^2), so we don't pay for it with nowhere to write.
     params = {"cluster_selection": cluster_selection}
     if annotations is None:

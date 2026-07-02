@@ -355,6 +355,13 @@ def prepare(
     if embedders and not has_fasta and not query:
         raise typer.BadParameter("-e/--embedder requires FASTA input or -q/--query.")
 
+    # Validate before any expensive I/O (query download / embedding / similarity).
+    if cluster_selection not in ("elbow", "silhouette", "both"):
+        raise typer.BadParameter(
+            "--cluster-selection must be 'elbow', 'silhouette', or 'both'.",
+            param_hint="--cluster-selection",
+        )
+
     if has_fasta and not embedders:
         from protspace.data.embedding.biocentral import DEFAULT_EMBEDDER
 
@@ -521,11 +528,6 @@ def prepare(
             max_iter=max_iter,
             eps=eps,
         )
-        if cluster_selection not in ("elbow", "silhouette", "both"):
-            raise typer.BadParameter(
-                "--cluster-selection must be 'elbow', 'silhouette', or 'both'.",
-                param_hint="--cluster-selection",
-            )
         config = PipelineConfig(
             methods=method_specs,
             output_path=output_path,

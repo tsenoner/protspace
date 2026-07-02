@@ -455,3 +455,28 @@ def test_prepare_pipeline_compute_statistics(tmp_path):
     # ...and _compute_statistics routed faithfulness into the reduction's info.quality
     quality = reductions[0]["info"]["quality"]
     assert {"knn_overlap", "trustworthiness", "continuity"} <= set(quality)
+
+
+def test_stats_rejects_bad_cluster_selection(tmp_path):
+    """`--cluster-selection` is validated (fail-fast) rather than silently ignored."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "--cluster-selection",
+            "bogus",
+        ],
+    )
+    assert result.exit_code != 0

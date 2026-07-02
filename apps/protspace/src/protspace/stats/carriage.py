@@ -103,9 +103,9 @@ def build_cluster_legend_settings(report: StatsReport) -> dict:
     Returns ``{column_name: LegendPersistedSettings}`` (the bundle's settings part
     format) with a full envelope per ``categorical`` ``AnnotationColumn`` — every
     field the frontend's ``sanitizeLegendSettingsEntry`` requires, categories keyed
-    by the exact label strings with a Kelly-palette ``color`` + ``zOrder`` + ``shape``
-    — so clusters are colored when selected without a manual styling step. Numeric
-    columns (per-point silhouette) are left to the default continuous ramp.
+    by the bare ``cluster N`` label (any attached ``|silhouette`` confidence is
+    stripped) with a Kelly-palette ``color`` + ``zOrder`` + ``shape`` — so clusters
+    are colored when selected without a manual styling step.
     """
     from protspace.data.io.settings_converter import KELLYS_COLORS
 

@@ -710,15 +710,17 @@ def test_aggregate_silhouette_equals_per_point_mean():
     assert agg.value == pytest.approx(float(np.mean(per_point)), abs=1e-4)
 
 
-def test_faithfulness_subsample_is_row_order_invariant():
-    """With subsampling active, the same id-set in a different row order selects the
-    same proteins, so faithfulness is identical (row-order invariant). This fails on
-    the old positional selection."""
+@pytest.mark.parametrize("sample_threshold", [60, 1000])
+def test_faithfulness_is_row_order_invariant(sample_threshold):
+    """All faithfulness metrics — including the position-sampled random_triplet —
+    depend only on the id-set, not the input row order, in BOTH the subsampled
+    (threshold=60 < n) and non-subsampled (threshold=1000 > n) regimes. The old
+    code broke this for random_triplet in the non-subsampled path."""
     X, _ = _blobs(n=120, centers=4, dim=6, seed=46)
     coords = PCA(n_components=2, random_state=0).fit_transform(X)
     headers = [f"p{i}" for i in range(120)]
     emb = _EmbSet("e", X, headers)
-    params = {"sample_threshold": 60}  # n=120 > 60 → subsample path
+    params = {"sample_threshold": sample_threshold}
 
     base = compute_statistics(
         [emb],
@@ -742,9 +744,14 @@ def test_faithfulness_subsample_is_row_order_invariant():
     )
     b = {r.metric: r.value for r in base.rows}
     p = {r.metric: r.value for r in permuted.rows}
-    assert b["trustworthiness"] == pytest.approx(p["trustworthiness"], abs=1e-9)
-    assert b["knn_overlap"] == pytest.approx(p["knn_overlap"], abs=1e-9)
-    assert b["continuity"] == pytest.approx(p["continuity"], abs=1e-9)
+    for metric in (
+        "trustworthiness",
+        "knn_overlap",
+        "continuity",
+        "random_triplet",
+        "spearman_distance",
+    ):
+        assert b[metric] == pytest.approx(p[metric], abs=1e-9), metric
 
 
 # --------------------------------------------------------------------------- #
