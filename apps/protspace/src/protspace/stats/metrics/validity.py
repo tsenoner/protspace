@@ -124,7 +124,7 @@ class ClusterValidityStatistic:
 
         # Report the ACHIEVED number of distinct clusters (KMeans can collapse on
         # coincident points), keeping the requested K in extra.
-        unique_labels, _label_counts = np.unique(labels, return_counts=True)
+        unique_labels = np.unique(labels)
         achieved = int(len(unique_labels))
 
         # Decide up front whether the exact per-point silhouette will be computed.

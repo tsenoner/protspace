@@ -94,7 +94,7 @@ class AnnotationValidityStatistic:
                             metric="silhouette",
                             metric_kind="validity",
                             value=float(silhouette_score(Xa, labels)),
-                            extra=extra,
+                            extra=dict(extra),
                             **base,
                         )
                     )
@@ -111,7 +111,7 @@ class AnnotationValidityStatistic:
                                 metric=metric_name,
                                 metric_kind="validity",
                                 value=float(fn(Xa, labels)),
-                                extra=extra,
+                                extra=dict(extra),
                                 **base,
                             )
                         )

@@ -2,7 +2,7 @@
 
 A ``Statistic`` describes a projection (and optionally its source embedding). It
 declares the inputs it needs and returns one or more ``StatRow`` records. The
-tidy long-format table produced by ``StatsReport.to_arrow`` (eight columns) is
+tidy long-format table produced by ``StatsReport.to_arrow`` (nine columns) is
 the bundle-boundary contract consumed downstream.
 
 Heavy imports (scikit-learn) live inside the metric/cluster modules, function-
@@ -80,10 +80,10 @@ class StatRow:
     """One statistic value.
 
     ``destination`` routes the row to a bundle part at carriage time:
-    ``statistics_part`` (the tidy 8-column table — the default, so every existing
-    construction is unchanged), ``projection_metadata`` (folded into a projection's
-    ``info_json``), or ``annotation`` (a per-protein column). It is carriage
-    metadata, not a tidy-table column, so ``to_record`` never emits it.
+    ``statistics_part`` (the tidy 9-column table — the default), ``projection_metadata``
+    (folded into a projection's ``info_json``), or ``annotation`` (a per-protein
+    column). It is carriage metadata, not a tidy-table column, so ``to_record``
+    never emits it.
     """
 
     space_kind: str

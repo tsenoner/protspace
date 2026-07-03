@@ -605,3 +605,33 @@ def test_stats_rejects_no_annotation_source_for_stats_annotation(tmp_path):
         ],
     )
     assert result.exit_code != 0
+
+
+def test_stats_annotation_auto_case_and_whitespace_without_annotations_ok(tmp_path):
+    """`--stats-annotation` values that normalise to ``auto`` (e.g. mixed case with
+    surrounding whitespace) must not be wrongly rejected by the `-a/--annotations`
+    guard when no `-a` is given — the guard has to use the same
+    ``.strip().lower() == "auto"`` normalisation the parser uses below it, not a
+    strict ``!= "auto"`` comparison."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "--stats-annotation",
+            " Auto ",  # no -a; must normalise to "auto", not be rejected
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()

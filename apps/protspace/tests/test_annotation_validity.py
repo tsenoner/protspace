@@ -65,3 +65,35 @@ def test_no_annotations_returns_empty():
         StatContext("projection", "P", coords=X, ids=[f"p{i}" for i in range(50)])
     )
     assert outs == []
+
+
+def test_subsample_path_flags_sampled_and_is_deterministic():
+    """When n exceeds ``sample_threshold`` the shared subsample kicks in: the
+    emitted silhouette row must report ``sampled=True`` and ``n_labels`` equal to
+    the threshold (not the full n), and repeating the identical call must
+    reproduce the exact same value (deterministic rng_seed-based subsample)."""
+    threshold = 30
+    X, y = _blobs(n=200, centers=4, dim=2, seed=9)
+    ids = [f"p{i}" for i in range(200)]
+    ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(ids, y, strict=True)}}
+
+    def _run():
+        outs = AnnotationValidityStatistic().compute(
+            StatContext(
+                "projection",
+                "P",
+                coords=X,
+                ids=ids,
+                annotations=ann,
+                params={"sample_threshold": threshold},
+            )
+        )
+        return next(r for r in outs if r.metric == "silhouette")
+
+    sil = _run()
+    assert sil.extra["sampled"] is True
+    assert sil.extra["n_labels"] == threshold
+
+    sil_again = _run()
+    assert sil_again.value == sil.value
+    assert sil_again.extra == sil.extra

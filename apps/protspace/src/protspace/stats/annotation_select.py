@@ -28,8 +28,8 @@ def _clean(series) -> list[str]:
     return out
 
 
-def _is_numeric(series) -> bool:
-    vals = _clean(series)
+def _is_numeric(vals: list[str]) -> bool:
+    """Whether every (already-cleaned) value parses as a float."""
     if not vals:
         return False
     try:
@@ -55,7 +55,7 @@ def suitable_annotations(
             continue
         if distinct == len(vals):  # all-unique → id-like
             continue
-        if _is_numeric(frame[col]):
+        if _is_numeric(vals):
             continue
         names.append(col)
     return names

@@ -248,7 +248,11 @@ def stats(
     # columns, so --settings-out without -a would silently write nothing.
     if settings_out is not None and annotations is None:
         raise typer.BadParameter("--settings-out requires -a/--annotations.")
-    if stats_annotation and annotations is None and stats_annotation != "auto":
+    if (
+        stats_annotation
+        and annotations is None
+        and stats_annotation.strip().lower() != "auto"
+    ):
         raise typer.BadParameter("--stats-annotation requires -a/--annotations.")
 
     import pyarrow.parquet as pq
