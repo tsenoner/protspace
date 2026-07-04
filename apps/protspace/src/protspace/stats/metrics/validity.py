@@ -114,6 +114,22 @@ class ClusterValidityStatistic:
                 )
             )
 
+        # `--cluster-selection silhouette` on a degenerate/coincident projection
+        # can leave `silhouette_labels` None (silhouette_score raises for every K),
+        # emptying `labelings` — fall back to the elbow clustering (always computed)
+        # so the projection still emits membership/agreement rows rather than
+        # vanishing silently from the report.
+        if not labelings:
+            labelings.append(
+                _Labeling(
+                    "kmeans_elbow",
+                    f"{CLUSTER_COLUMN_PREFIX}elbow_{ctx.space_name}",
+                    "elbow",
+                    res.k,
+                    res.labels,
+                )
+            )
+
         out: list = []
         for labeling in labelings:
             out.extend(self._emit_labeling(ctx, X, n, res, labeling))

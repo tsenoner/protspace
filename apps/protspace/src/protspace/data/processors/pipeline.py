@@ -754,18 +754,26 @@ class ReductionPipeline:
                 default_metric=self.config.reducer_params.metric,
                 annotations=annotation_labels,
             )
-            route_faithfulness_to_metadata(report, all_reductions)
-            if metadata is not None and report.annotation_columns:
-                added = merge_annotation_columns(report, metadata)
+            # Build the derived artifacts (the fallible steps) BEFORE mutating the
+            # shared reduction dicts / metadata frame, so a failure here returns a
+            # clean "no stats" fallback instead of leaving them half-enriched (e.g.
+            # cluster_* columns added but the statistics part absent).
+            table = report.to_arrow()
+            style_columns = metadata is not None and report.annotation_columns
+            if style_columns:
                 # Auto-style the membership columns so clusters are colored when
                 # selected (a full legend envelope → the bundle's settings part).
                 settings = build_cluster_legend_settings(report)
+
+            # Commit: fold the results into the shared reductions + metadata frame.
+            route_faithfulness_to_metadata(report, all_reductions)
+            if style_columns:
+                added = merge_annotation_columns(report, metadata)
                 logger.info(
                     "Routed %d computed annotation column(s); styled %d",
                     len(added),
                     len(settings),
                 )
-            table = report.to_arrow()
             logger.info("Computed %d projection-statistic row(s)", table.num_rows)
             return (table if table.num_rows else None), settings
         except Exception as exc:  # noqa: BLE001 - statistics are secondary

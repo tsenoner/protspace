@@ -34,6 +34,31 @@ SETTINGS_FILENAME = "settings.parquet"
 STATISTICS_FILENAME = "statistics.parquet"
 
 
+def _parse_bundle(bundle_path: Path) -> tuple[list[bytes], bytes | None, bytes | None]:
+    """Read a bundle → ``(core_parts, settings_bytes, statistics_bytes)``.
+
+    The single place the on-disk layout is decoded: reads the file, validates the
+    3-to-5 part count, and normalises the optional parts (the zero-byte settings
+    sentinel and an absent/empty statistics part both become ``None``).
+    """
+    with open(bundle_path, "rb") as f:
+        parts = f.read().split(PARQUET_BUNDLE_DELIMITER)
+
+    if len(parts) < 3 or len(parts) > 5:
+        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
+
+    settings = parts[3] if len(parts) >= 4 and parts[3] else None
+    statistics = parts[4] if len(parts) == 5 and parts[4] else None
+    return parts[:3], settings, statistics
+
+
+def _table_to_parquet_bytes(table: pa.Table) -> bytes:
+    """Serialize an Arrow table to in-memory parquet bytes."""
+    buf = io.BytesIO()
+    pq.write_table(table, buf)
+    return buf.getvalue()
+
+
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
     """Extract a .parquetbundle into separate parquet files on disk.
 
@@ -55,26 +80,15 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(bundle_path, "rb") as f:
-        content = f.read()
+    core, settings, statistics = _parse_bundle(bundle_path)
 
-    parts = content.split(PARQUET_BUNDLE_DELIMITER)
-
-    if len(parts) < 3 or len(parts) > 5:
-        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
-
-    # Write core parts
-    for part_bytes, filename in zip(parts[:3], CORE_FILENAMES, strict=False):
+    for part_bytes, filename in zip(core, CORE_FILENAMES, strict=False):
         if part_bytes:
             (target_dir / filename).write_bytes(part_bytes)
-
-    # Write optional settings part (branch on emptiness, not part count)
-    if len(parts) >= 4 and parts[3]:
-        (target_dir / SETTINGS_FILENAME).write_bytes(parts[3])
-
-    # Write optional statistics part
-    if len(parts) == 5 and parts[4]:
-        (target_dir / STATISTICS_FILENAME).write_bytes(parts[4])
+    if settings:
+        (target_dir / SETTINGS_FILENAME).write_bytes(settings)
+    if statistics:
+        (target_dir / STATISTICS_FILENAME).write_bytes(statistics)
 
     return str(target_dir)
 
@@ -89,30 +103,15 @@ def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
     Returns:
         (core_parts_bytes, settings_dict_or_None)
     """
-    with open(bundle_path, "rb") as f:
-        content = f.read()
-
-    parts = content.split(PARQUET_BUNDLE_DELIMITER)
-
-    if len(parts) < 3 or len(parts) > 5:
-        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
-
-    settings = None
-    if len(parts) >= 4 and parts[3]:
-        settings = read_settings_from_bytes(parts[3])
-
-    return parts[:3], settings
+    core, settings_bytes, _ = _parse_bundle(bundle_path)
+    settings = read_settings_from_bytes(settings_bytes) if settings_bytes else None
+    return core, settings
 
 
 def read_statistics_from_bundle(bundle_path: Path) -> bytes | None:
     """Return the raw statistics parquet bytes (fifth part), or None if absent."""
-    with open(bundle_path, "rb") as f:
-        content = f.read()
-
-    parts = content.split(PARQUET_BUNDLE_DELIMITER)
-    if len(parts) == 5 and parts[4]:
-        return parts[4]
-    return None
+    _, _, statistics = _parse_bundle(bundle_path)
+    return statistics
 
 
 def write_bundle(
@@ -138,9 +137,7 @@ def write_bundle(
         for i, table in enumerate(tables):
             if i > 0:
                 f.write(PARQUET_BUNDLE_DELIMITER)
-            buf = io.BytesIO()
-            pq.write_table(table, buf)
-            f.write(buf.getvalue())
+            f.write(_table_to_parquet_bytes(table))
 
         # A settings slot must exist whenever statistics follow it.
         if settings is not None or statistics is not None:
@@ -151,9 +148,7 @@ def write_bundle(
 
         if statistics is not None:
             f.write(PARQUET_BUNDLE_DELIMITER)
-            buf = io.BytesIO()
-            pq.write_table(statistics, buf)
-            f.write(buf.getvalue())
+            f.write(_table_to_parquet_bytes(statistics))
 
     logger.info(f"Saved bundled output to: {bundle_path}")
 
@@ -168,20 +163,12 @@ def replace_settings_in_bundle(
     The three core parts are preserved byte-for-byte, and an existing statistics
     (5th) part is preserved so styling a statistics-bearing bundle is non-lossy.
     """
-    with open(input_path, "rb") as f:
-        content = f.read()
-
-    parts = content.split(PARQUET_BUNDLE_DELIMITER)
-
-    if len(parts) < 3 or len(parts) > 5:
-        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
-
-    settings_bytes = create_settings_parquet(settings)
+    core, _, statistics = _parse_bundle(input_path)
 
     # core(3) + new settings, preserving a trailing statistics part if present.
-    new_parts = parts[:3] + [settings_bytes]
-    if len(parts) == 5:
-        new_parts.append(parts[4])
+    new_parts = [*core, create_settings_parquet(settings)]
+    if statistics is not None:
+        new_parts.append(statistics)
     new_content = PARQUET_BUNDLE_DELIMITER.join(new_parts)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -196,10 +183,7 @@ def create_settings_parquet(settings_dict: dict) -> bytes:
     holding the JSON-encoded settings string.
     """
     settings_json = json.dumps(settings_dict)
-    table = pa.table({"settings_json": [settings_json]})
-    buf = io.BytesIO()
-    pq.write_table(table, buf)
-    return buf.getvalue()
+    return _table_to_parquet_bytes(pa.table({"settings_json": [settings_json]}))
 
 
 def read_settings_from_bytes(data: bytes) -> dict:
@@ -211,6 +195,4 @@ def read_settings_from_bytes(data: bytes) -> dict:
 
 def read_settings_from_file(path: Path) -> dict:
     """Read a settings.parquet file and return the settings dict."""
-    table = pq.read_table(str(path))
-    settings_json = table.column("settings_json")[0].as_py()
-    return json.loads(settings_json)
+    return read_settings_from_bytes(Path(path).read_bytes())

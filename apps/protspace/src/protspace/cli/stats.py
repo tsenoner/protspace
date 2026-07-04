@@ -26,6 +26,14 @@ def _resolve_id_col(frame) -> str:
     return "identifier" if "identifier" in frame.columns else frame.columns[0]
 
 
+def _parse_info_json(raw) -> dict:
+    """Parse a projection's ``info_json`` cell into a dict; empty/malformed → {}."""
+    try:
+        return json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
 def _atomic_write_table(table, path: Path) -> None:
     """Overwrite ``path`` with ``table`` atomically.
 
@@ -67,10 +75,7 @@ def _load_reductions(
         dims_col = mt.get("dimensions", [])
         sources = mt.get("source", [])
         for i, nm in enumerate(names):
-            try:
-                info = json.loads(infos[i]) if i < len(infos) and infos[i] else {}
-            except (json.JSONDecodeError, TypeError):
-                info = {}
+            info = _parse_info_json(infos[i] if i < len(infos) else None)
             metric_by_name[nm] = info.get("metric") or default_metric
             if i < len(dims_col):
                 dims_by_name[nm] = int(dims_col[i])
@@ -139,10 +144,7 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     infos = table.column("info_json").to_pylist()
     new_infos: list[str] = []
     for nm, raw in zip(names, infos, strict=False):
-        try:
-            info = json.loads(raw) if raw else {}
-        except (json.JSONDecodeError, TypeError):
-            info = {}
+        info = _parse_info_json(raw)
         quality = quality_by_name.get(nm)
         if quality is not None:
             info["quality"] = quality

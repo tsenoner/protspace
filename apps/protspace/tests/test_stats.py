@@ -1012,3 +1012,39 @@ def test_global_metrics_higher_for_faithful_projection():
     good, bad = q(faithful), q(rand)
     assert good["spearman_distance"] > bad["spearman_distance"]
     assert good["random_triplet"] > bad["random_triplet"]
+
+
+# --------------------------------------------------------------------------- #
+# regression: review findings
+# --------------------------------------------------------------------------- #
+
+
+def test_align_returns_none_when_no_ids_and_row_counts_differ():
+    """Regression: with no ids to join on and mismatched row counts, `_align`
+    must return None rather than fall through to positional indexing (which built
+    out-of-range coord indices → IndexError, swallowed → the projection's whole
+    stats report silently dropped)."""
+    from protspace.stats.driver import _align
+
+    emb = _EmbSet("E", np.zeros((5, 3)), [f"p{i}" for i in range(5)])
+    coords = np.zeros((3, 2))  # fewer rows than the embedding, and no ids
+    assert _align(emb, None, coords) is None
+
+
+def test_silhouette_selection_falls_back_to_elbow_on_degenerate_coords():
+    """Regression: `--cluster-selection silhouette` on a coincident projection
+    leaves silhouette_labels None (silhouette_score raises for every K), emptying
+    `labelings` — the projection used to emit nothing. It must fall back to the
+    elbow labelling so membership/agreement rows still appear."""
+    X = np.ones((30, 2))  # all-coincident → no scorable silhouette-K
+    ctx = StatContext(
+        "projection",
+        "P",
+        coords=X,
+        ids=[f"p{i}" for i in range(30)],
+        params={"cluster_selection": "silhouette"},
+    )
+    outs = ClusterValidityStatistic().compute(ctx)
+    rows = [o for o in outs if isinstance(o, StatRow)]
+    assert rows, "silhouette selection on degenerate coords dropped the projection"
+    assert all(r.label_kind == "kmeans_elbow" for r in rows if r.metric == "n_clusters")

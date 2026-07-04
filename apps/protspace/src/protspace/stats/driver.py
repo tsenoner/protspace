@@ -71,12 +71,20 @@ def _align(emb_set, red_ids, coords):
     and the row counts already match (the common single-embedding prepare path).
     """
     emb_headers = list(emb_set.headers)
-    emb_data = np.asarray(emb_set.data, dtype=float)
+    # Keep the native dtype (float32): faithfulness upcasts only its bounded
+    # subsample, so a full float64 copy of a 570k-row embedding per projection
+    # would be wasted — especially when faithfulness then skips past its ceiling.
+    emb_data = np.asarray(emb_set.data)
 
     if not red_ids:
         if emb_data.shape[0] == coords.shape[0]:
             return coords, emb_data, emb_headers
-        red_ids = emb_headers
+        # No ids to join on and the row counts differ → alignment is impossible.
+        # Falling through to positional indexing over emb_headers would pair
+        # mismatched rows (or IndexError when the embedding has more rows than the
+        # projection, whose except-swallow drops the projection's whole report).
+        # Return None so faithfulness is skipped while cluster_validity still runs.
+        return None
 
     emb_index = {h: i for i, h in enumerate(emb_headers)}
     coord_rows: list[int] = []

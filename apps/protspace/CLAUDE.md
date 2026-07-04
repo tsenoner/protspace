@@ -155,6 +155,7 @@ src/protspace/
 │   ├── driver.py               # Per-projection contexts + once-per-embedding pass, embedding id-join, run stats
 │   ├── carriage.py             # Route rows to bundle parts (metadata / annotations / legend)
 │   ├── annotation_select.py    # Pick "suitable" annotations (auto/list) + build id→category labels
+│   ├── _sampling.py            # id-canonical deterministic subsampling (id_seed + sorted_subsample)
 │   ├── cluster/kmeans_elbow.py # KMeans + distance-to-chord elbow (subsampled at scale)
 │   └── metrics/
 │       ├── validity.py             # Auto-cluster (KMeans) + ARI/NMI agreement vs annotations
@@ -245,7 +246,7 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
 | `test_pipeline_utils.py` | 70 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
-| `test_stats.py` | 48 | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency |
+| `test_stats.py` | 50 | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
 | `test_stats_cli.py` | 16 | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
 | `test_stats_carriage.py` | 10 | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
 | `test_stats_bundle.py` | 7 | Optional 5th (statistics) bundle part round-trip |

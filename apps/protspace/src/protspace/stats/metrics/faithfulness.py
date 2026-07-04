@@ -168,15 +168,11 @@ class FaithfulnessStatistic:
 
         if ctx.embedding is None:
             return []
-        emb = np.asarray(ctx.embedding, dtype=float)
-        # Use the projection coordinates ALIGNED to the embedding (id-intersection
-        # join), falling back to full coords only when no aligned view was built.
-        coords_src = (
-            ctx.embedding_coords if ctx.embedding_coords is not None else ctx.coords
-        )
-        coords = np.asarray(coords_src, dtype=float)
-        ids = ctx.embedding_ids if ctx.embedding_ids is not None else ctx.ids
-        n = emb.shape[0]
+        # Derive n WITHOUT upcasting: the guards below may bail, and past the
+        # ceiling every metric is skipped — a full float64 copy of a 570k-row
+        # embedding just to discard it would be pure waste.
+        emb_raw = np.asarray(ctx.embedding)
+        n = emb_raw.shape[0]
         if n < 3:
             return []
 
@@ -209,6 +205,17 @@ class FaithfulnessStatistic:
                     **base,
                 )
             ]
+
+        # Past the guards: upcast to float64 (now bounded by hard_ceiling rows) and
+        # resolve the embedding-aligned projection coords + ids.
+        emb = np.asarray(emb_raw, dtype=float)
+        # Use the projection coordinates ALIGNED to the embedding (id-intersection
+        # join), falling back to full coords only when no aligned view was built.
+        coords_src = (
+            ctx.embedding_coords if ctx.embedding_coords is not None else ctx.coords
+        )
+        coords = np.asarray(coords_src, dtype=float)
+        ids = ctx.embedding_ids if ctx.embedding_ids is not None else ctx.ids
 
         # Canonicalise row order by id up front so EVERY metric depends only on the
         # id-SET, not the input row order. The kNN/Spearman metrics are already
