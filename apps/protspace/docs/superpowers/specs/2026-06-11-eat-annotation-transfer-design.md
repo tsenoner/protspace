@@ -109,9 +109,12 @@ independently testable and reusable.
   sidecar (or regenerated from the HDF5), **never** embedded in the portable
   `.parquetbundle`.
 - **Prediction overlay** is small and sparse. For each transferred column `COL`,
-  `protspace transfer` appends `COL__pred_value` (string) and `COL__pred_confidence`
-  (float32) to the bundle's annotations table, leaving the curated `COL` untouched.
-  A protein is "predicted" when `COL` is empty but `COL__pred_value` is present.
+  `protspace transfer` appends `COL__pred_value` (string), `COL__pred_confidence`
+  (float32), and `COL__pred_source` (string) to the bundle's annotations table,
+  leaving the curated `COL` untouched. A protein is "predicted" when `COL` is empty
+  but `COL__pred_value` is present. `COL__pred_source` is the reference the label came
+  from — emitted as *provenance* for the web overlay (connector line / tooltip), not as
+  a colour feature (see `2026-07-04-eat-visualization-overlay-design.md`).
 
 ## 5. CLI
 

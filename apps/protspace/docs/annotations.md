@@ -186,14 +186,17 @@ The `default` group only requires the UniProt REST API (+ ExPASy for EC names). 
 
 ## Prediction Overlay Columns (EAT Transfer)
 
-Running `protspace transfer` appends two new columns to the bundle's annotations table for each requested column `COL`. The curated `COL` column is never modified.
+Running `protspace transfer` appends three new columns to the bundle's annotations table for each requested column `COL`. The curated `COL` column is never modified.
 
 | Column | Type | Meaning |
 | --- | --- | --- |
 | `COL__pred_value` | string | The transferred label from the nearest annotated reference protein |
 | `COL__pred_confidence` | float | Reliability index in [0, 1] — 1 = identical embeddings (formula depends on `--metric`/`--k`, see below) |
+| `COL__pred_source` | string | The reference protein the label was transferred from (provenance) |
 
 A protein is considered "predicted" for `COL` when `COL` is empty but `COL__pred_value` is present. Use `COL__pred_confidence` to threshold low-reliability transfers.
+
+`COL__pred_source` is *provenance*: it lets a viewer link a predicted protein back to the reference its label came from (e.g. a connector line or a "transferred from &lt;neighbour&gt;" tooltip in the web frontend). It is not intended as a colour-by feature — it holds roughly one distinct value per predicted protein. The web frontend reserves the `__pred_` column-name namespace and keeps these overlay columns out of its annotation-selection dropdown.
 
 The reliability index depends on the `--metric` and `--k` used during transfer:
 
