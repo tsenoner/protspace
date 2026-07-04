@@ -32,25 +32,15 @@ scikit-learn imports are function-local to keep CLI startup fast.
 
 from __future__ import annotations
 
-import hashlib
-
 import numpy as np
 
+from protspace.stats._sampling import id_seed, sorted_subsample
 from protspace.stats.base import StatContext, StatRow
 
 DEFAULT_K = 15
 DEFAULT_SAMPLE_THRESHOLD = 5000
 DEFAULT_HARD_CEILING = 20000
 DEFAULT_N_TRIPLETS_PER_POINT = 5
-
-
-def _subsample_seed(rng_seed: int, ids: list[str]) -> int:
-    """A seed derived from (rng_seed, sorted ids). Paired with a canonical-id-order
-    selection (see ``compute``), two inputs with the same id-set draw the same
-    id subset regardless of row order — keeping cross-projection scores comparable
-    and reproducible without relying on a shared row ordering."""
-    digest = hashlib.sha256("|".join(sorted(ids)).encode()).hexdigest()[:8]
-    return (rng_seed * 2654435761 + int(digest, 16)) % (2**32)
 
 
 def _knn_overlap(embedding, coords, k: int, metric: str) -> float:
@@ -171,6 +161,7 @@ class FaithfulnessStatistic:
 
     family = "faithfulness"
     requires_embedding = True
+    embedding_space = False  # projection-only (compares projection vs embedding)
 
     def compute(self, ctx: StatContext) -> list[StatRow]:
         from sklearn.manifold import trustworthiness
@@ -236,11 +227,11 @@ class FaithfulnessStatistic:
         hi_metric = ctx.high_dim_metric or "euclidean"
 
         sampled = False
-        if n > sample_threshold:
-            rng = np.random.default_rng(_subsample_seed(ctx.rng_seed, ids))
-            # Rows are already in canonical id order, so a positional draw is itself
-            # id-canonical and thus row-order invariant.
-            idx = np.sort(rng.permutation(n)[:sample_threshold])
+        # Rows are already in canonical id order, so a positional draw is itself
+        # id-canonical and thus row-order invariant.
+        rng = np.random.default_rng(id_seed(ctx.rng_seed, ids))
+        idx = sorted_subsample(n, sample_threshold, rng)
+        if idx is not None:
             emb = emb[idx]
             coords = coords[idx]
             n = len(idx)

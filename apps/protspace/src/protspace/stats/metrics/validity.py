@@ -31,7 +31,13 @@ from typing import NamedTuple
 
 import numpy as np
 
-from protspace.stats.base import AnnotationColumn, StatContext, StatRow
+from protspace.stats.annotation_select import pair_by_id
+from protspace.stats.base import (
+    CLUSTER_COLUMN_PREFIX,
+    AnnotationColumn,
+    StatContext,
+    StatRow,
+)
 from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
 
 DEFAULT_SAMPLE_THRESHOLD = 5000
@@ -58,6 +64,7 @@ class ClusterValidityStatistic:
 
     family = "cluster_validity"
     requires_embedding = False
+    embedding_space = False  # projection-only (auto-clustering + agreement)
 
     def compute(self, ctx: StatContext) -> list:
         X = np.asarray(ctx.coords, dtype=float)
@@ -90,7 +97,7 @@ class ClusterValidityStatistic:
             labelings.append(
                 _Labeling(
                     "kmeans_elbow",
-                    f"cluster_elbow_{ctx.space_name}",
+                    f"{CLUSTER_COLUMN_PREFIX}elbow_{ctx.space_name}",
                     "elbow",
                     res.k,
                     res.labels,
@@ -100,7 +107,7 @@ class ClusterValidityStatistic:
             labelings.append(
                 _Labeling(
                     "kmeans_silhouette",
-                    f"cluster_silhouette_{ctx.space_name}",
+                    f"{CLUSTER_COLUMN_PREFIX}silhouette_{ctx.space_name}",
                     "silhouette",
                     int(res.silhouette_k),
                     res.silhouette_labels,
@@ -220,13 +227,9 @@ class ClusterValidityStatistic:
 
             label_by_id = dict(zip(ctx.ids, labels, strict=False))
             for name, mapping in ctx.annotations.items():
-                paired_clu: list[int] = []
-                paired_ann: list[str] = []
-                for pid, cat in mapping.items():
-                    lbl = label_by_id.get(pid)
-                    if lbl is not None:
-                        paired_clu.append(int(lbl))
-                        paired_ann.append(cat)
+                # ``paired_clu`` holds numpy ints straight from the KMeans labels;
+                # sklearn's ARI/NMI accept them as-is (no per-element cast needed).
+                paired_clu, paired_ann = pair_by_id(mapping, label_by_id)
                 if len(set(paired_ann)) < 2 or len(paired_ann) < 3:
                     continue
                 for metric_name, fn in (

@@ -10,25 +10,41 @@ from __future__ import annotations
 
 import logging
 
+from protspace.stats.base import CLUSTER_COLUMN_PREFIX
+
 logger = logging.getLogger(__name__)
 
-_MISSING = {"", "<NaN>", "nan", "None"}
+# Values treated as "missing" (dropped, never a category). Kept in sync with the
+# codebase's canonical sentinels: ``core.constants.standardize_missing`` maps
+# ``"", nan, none, null, NA, NaN`` → the display sentinel ``"<N/A>"``; pandas
+# nullable dtypes stringify to ``"<NA>"`` / ``"NaT"``. Missing any of these would
+# score a phantom missing-value cluster and inflate a column's cardinality.
+_MISSING = {
+    "",
+    "<N/A>",
+    "<NA>",
+    "<NaN>",
+    "nan",
+    "NaN",
+    "NaT",
+    "none",
+    "None",
+    "null",
+    "NA",
+}
+
+
+def _is_missing(value) -> bool:
+    """Whether a raw cell value is missing (None or a sentinel string)."""
+    return value is None or str(value) in _MISSING
 
 
 def _clean(series) -> list[str]:
     """Non-missing string values of a column."""
-    out = []
-    for v in series.tolist():
-        if v is None:
-            continue
-        s = str(v)
-        if s in _MISSING:
-            continue
-        out.append(s)
-    return out
+    return [str(v) for v in series.tolist() if not _is_missing(v)]
 
 
-def _is_numeric(vals: list[str]) -> bool:
+def _is_numeric(vals) -> bool:
     """Whether every (already-cleaned) value parses as a float."""
     if not vals:
         return False
@@ -40,25 +56,40 @@ def _is_numeric(vals: list[str]) -> bool:
         return False
 
 
+def _is_suitable_column(series, cap: int) -> bool:
+    """A low-cardinality categorical: 2..cap distinct non-missing values, not
+    all-unique (id-like), and not numeric.
+
+    Bails out as soon as the distinct count exceeds ``cap`` so a high-cardinality
+    free-text column doesn't grow a full 570k-value set before rejection.
+    """
+    seen: set[str] = set()
+    total = 0
+    for v in series.tolist():
+        if _is_missing(v):
+            continue
+        total += 1
+        seen.add(str(v))
+        if len(seen) > cap:  # too many categories → not a low-card categorical
+            return False
+    distinct = len(seen)
+    if distinct < 2 or distinct == total:  # too few, or all-unique (id-like)
+        return False
+    return not _is_numeric(seen)
+
+
 def suitable_annotations(
     frame, id_col: str = "identifier", max_card: int = 50
 ) -> list[str]:
     n = len(frame)
     cap = min(max_card, max(2, n // 2))
-    names: list[str] = []
-    for col in frame.columns:
-        if col == id_col or col.startswith("cluster_"):
-            continue
-        vals = _clean(frame[col])
-        distinct = len(set(vals))
-        if distinct < 2 or distinct > cap:
-            continue
-        if distinct == len(vals):  # all-unique → id-like
-            continue
-        if _is_numeric(vals):
-            continue
-        names.append(col)
-    return names
+    return [
+        col
+        for col in frame.columns
+        if col != id_col
+        and not col.startswith(CLUSTER_COLUMN_PREFIX)
+        and _is_suitable_column(frame[col], cap)
+    ]
 
 
 def build_annotation_labels(
@@ -66,37 +97,74 @@ def build_annotation_labels(
 ) -> dict[str, dict[str, str]]:
     """``{annotation name -> {protein id -> category}}`` for the selection.
 
-    ``selection`` is the string ``"auto"`` (all suitable) or a list of column
-    names. Missing / sentinel values are dropped, so a protein absent from a
-    column's mapping simply has no category for it.
+    ``selection`` is ``"auto"`` (all suitable), a comma-separated string of
+    column names (the raw ``--stats-annotation`` flag), or a list of names.
+    Missing / sentinel values are dropped, so a protein absent from a column's
+    mapping simply has no category for it.
     """
-    if id_col not in getattr(frame, "columns", []):
+    cols = list(getattr(frame, "columns", []))
+    if id_col not in cols:
         return {}
-    if isinstance(selection, str) and selection.lower() == "auto":
+    # ``wanted is None`` means "auto" (all suitable columns); otherwise it is the
+    # explicit list of requested names. Splitting the raw flag string here keeps
+    # every caller from re-implementing the "auto vs comma-list" parse.
+    if isinstance(selection, str):
+        stripped = selection.strip()
+        wanted = (
+            None
+            if stripped.lower() == "auto"
+            else [s.strip() for s in stripped.split(",") if s.strip()]
+        )
+    else:
+        wanted = [str(s).strip() for s in selection if str(s).strip()]
+
+    if wanted is None:
         names = suitable_annotations(frame, id_col=id_col)
     else:
-        wanted = list(selection)
-        available = suitable_annotations(frame, id_col=id_col)
+        # Explicit names: honour the request. The suitability heuristic (cardinality
+        # cap, numeric/id-like exclusion) is a *discovery* filter for ``auto``, not
+        # an authorisation gate — a user who names ``ec_number`` wants it scored even
+        # though it is high-cardinality. Only require what the metric needs: the
+        # column exists and carries >= 2 distinct non-missing categories.
         names = []
         for name in wanted:
-            if name in available:
-                names.append(name)
-            else:
+            if name == id_col or name not in cols:
                 logger.warning(
-                    "--stats-annotation '%s' is missing or unsuitable; skipping", name
+                    "--stats-annotation '%s' is not a column; skipping", name
                 )
+            elif len({*_clean(frame[name])}) < 2:
+                logger.warning(
+                    "--stats-annotation '%s' has fewer than 2 categories; skipping",
+                    name,
+                )
+            else:
+                names.append(name)
     labels: dict[str, dict[str, str]] = {}
     ids = [str(i) for i in frame[id_col].tolist()]
     for name in names:
-        col = frame[name].tolist()
-        mapping: dict[str, str] = {}
-        for pid, v in zip(ids, col, strict=False):
-            if v is None:
-                continue
-            s = str(v)
-            if s in _MISSING:
-                continue
-            mapping[pid] = s
+        mapping = {
+            pid: str(v)
+            for pid, v in zip(ids, frame[name].tolist(), strict=False)
+            if not _is_missing(v)
+        }
         if mapping:
             labels[name] = mapping
     return labels
+
+
+def pair_by_id(mapping, lookup):
+    """Align an annotation ``{id: category}`` mapping to an id-keyed ``lookup``.
+
+    Returns parallel lists ``(values, categories)`` over the ids present in both,
+    where ``values[i] == lookup[id]``. Ids missing from ``lookup`` (a point absent
+    from this space) are dropped — used by cluster-agreement to pair each auto
+    cluster label with its annotation category over the id-intersection.
+    """
+    values: list = []
+    categories: list = []
+    for pid, cat in mapping.items():
+        v = lookup.get(pid)
+        if v is not None:
+            values.append(v)
+            categories.append(cat)
+    return values, categories

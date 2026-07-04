@@ -45,3 +45,22 @@ def test_build_labels_explicit_names_and_missing_dropped():
 def test_build_labels_unknown_name_skipped():
     labels = build_annotation_labels(_frame(), ["does_not_exist"])
     assert labels == {}
+
+
+def test_explicit_name_bypasses_auto_suitability_heuristic():
+    # A high-cardinality categorical the auto heuristic rejects (all-unique) must
+    # still be honoured when the user names it explicitly — the suitability filter
+    # is for discovery, not authorisation. (Regression: the documented
+    # `--stats-annotation ec_number` example silently scored nothing.)
+    frame = _frame()
+    assert "all_unique" not in suitable_annotations(frame)  # auto rejects it
+    labels = build_annotation_labels(frame, "all_unique")  # raw-string explicit
+    assert set(labels) == {"all_unique"}
+    assert len(labels["all_unique"]) == 6
+
+
+def test_explicit_numeric_coded_categorical_is_honoured():
+    # An integer-coded categorical (auto excludes as "numeric") is scored when named.
+    labels = build_annotation_labels(_frame(), ["count"])
+    assert set(labels) == {"count"}
+    assert labels["count"]["p0"] == "1"

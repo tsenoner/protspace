@@ -11,17 +11,10 @@ from __future__ import annotations
 
 import numpy as np
 
+from protspace.stats._sampling import id_seed, sorted_subsample
 from protspace.stats.base import StatContext, StatRow
 
 DEFAULT_SAMPLE_THRESHOLD = 5000
-
-
-def _subsample(n: int, threshold: int, rng_seed: int):
-    """Deterministic sorted index subsample, or None when n <= threshold."""
-    if n <= threshold:
-        return None
-    rng = np.random.default_rng(rng_seed)
-    return np.sort(rng.permutation(n)[:threshold])
 
 
 class AnnotationValidityStatistic:
@@ -40,39 +33,42 @@ class AnnotationValidityStatistic:
             silhouette_score,
         )
 
-        X = np.asarray(ctx.coords, dtype=float)
+        coords = np.asarray(ctx.coords)
         threshold = int(ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
         id_to_row = {pid: i for i, pid in enumerate(ctx.ids)}
         rows: list[StatRow] = []
 
         for name, mapping in ctx.annotations.items():
-            # Rows of ctx.coords that have a category for this annotation.
-            row_idx: list[int] = []
-            cats: list[str] = []
-            for pid, cat in mapping.items():
-                i = id_to_row.get(pid)
-                if i is not None:
-                    row_idx.append(i)
-                    cats.append(cat)
-            if len(row_idx) < 3:
-                continue
-            uniq = sorted(set(cats))
-            if len(uniq) < 2:  # need >= 2 categories
-                continue
-            cat_to_int = {c: j for j, c in enumerate(uniq)}
-            Xa = X[np.asarray(row_idx)]
-            labels = np.asarray([cat_to_int[c] for c in cats])
+            # Annotated points present in this space, in canonical id order — so the
+            # subsample below is reproducible and picks the *same* proteins across
+            # spaces (embedding vs projection) whenever the annotated id-set matches;
+            # otherwise the "separability ceiling" would compare two different draws.
+            present = sorted(
+                (pid, id_to_row[pid], cat)
+                for pid, cat in mapping.items()
+                if pid in id_to_row
+            )
+            if len(present) < 3 or len({c for _, _, c in present}) < 2:
+                continue  # need >= 3 points, >= 2 categories
 
-            # Bound cost: shared deterministic subsample across all three metrics.
-            sub = _subsample(Xa.shape[0], threshold, ctx.rng_seed)
+            # Bound cost: subsample (id-seeded) BEFORE gathering + upcasting, so at
+            # 570k scale we materialise ~threshold float64 rows, not all of them
+            # (label integers are arbitrary, so renumbering post-subsample is
+            # metric-invariant). Shared across all three metrics.
+            rng = np.random.default_rng(id_seed(ctx.rng_seed, [p[0] for p in present]))
+            sub = sorted_subsample(len(present), threshold, rng)
             if sub is not None:
-                Xa, labels = Xa[sub], labels[sub]
+                present = [present[i] for i in sub]
+            row_idx = [r for _, r, _ in present]
+            cats = [c for _, _, c in present]
+            cat_to_int = {c: j for j, c in enumerate(sorted(set(cats)))}
+            Xa = np.asarray(coords[row_idx], dtype=float)
+            labels = np.asarray([cat_to_int[c] for c in cats])
             n = Xa.shape[0]
             _, counts = np.unique(labels, return_counts=True)
             achieved = len(counts)
             if achieved < 2:  # a category vanished under subsampling
                 continue
-            has_singleton = bool((counts < 2).any())
             base = {
                 "space_kind": ctx.space_kind,
                 "space_name": ctx.space_name,
@@ -87,34 +83,26 @@ class AnnotationValidityStatistic:
                 "sampled": sub is not None,
             }
 
+            # silhouette needs 2 <= k <= n-1; DBI/CH are unstable with singletons.
+            candidates: list = []
             if 2 <= achieved <= n - 1:
+                candidates.append(("silhouette", silhouette_score))
+            if not bool((counts < 2).any()):
+                candidates += [
+                    ("davies_bouldin", davies_bouldin_score),
+                    ("calinski_harabasz", calinski_harabasz_score),
+                ]
+            for metric_name, fn in candidates:
                 try:
                     rows.append(
                         StatRow(
-                            metric="silhouette",
+                            metric=metric_name,
                             metric_kind="validity",
-                            value=float(silhouette_score(Xa, labels)),
-                            extra=dict(extra),
+                            value=float(fn(Xa, labels)),
+                            extra=extra,
                             **base,
                         )
                     )
                 except Exception:  # noqa: BLE001 - best-effort
                     pass
-            if not has_singleton:
-                for metric_name, fn in (
-                    ("davies_bouldin", davies_bouldin_score),
-                    ("calinski_harabasz", calinski_harabasz_score),
-                ):
-                    try:
-                        rows.append(
-                            StatRow(
-                                metric=metric_name,
-                                metric_kind="validity",
-                                value=float(fn(Xa, labels)),
-                                extra=dict(extra),
-                                **base,
-                            )
-                        )
-                    except Exception:  # noqa: BLE001 - best-effort
-                        pass
         return rows

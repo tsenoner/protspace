@@ -18,6 +18,26 @@ from protspace.stats.base import StatContext, StatsReport
 logger = logging.getLogger(__name__)
 
 
+def _run_stats(
+    report: StatsReport, ctx: StatContext, stats: list, *, kind: str
+) -> None:
+    """Run each statistic on ``ctx``, isolating per-statistic failures.
+
+    ``kind`` (``projection`` | ``embedding``) only tags the warning message.
+    """
+    for stat in stats:
+        try:
+            report.add(stat.compute(ctx))
+        except Exception as exc:  # noqa: BLE001 - statistics are secondary
+            logger.warning(
+                "statistic %s failed for %s '%s': %s",
+                getattr(stat, "family", stat),
+                kind,
+                ctx.space_name,
+                exc,
+            )
+
+
 def _select_embedding(reduction: dict, embedding_sets: list, emb_by_name: dict):
     """Pick the embedding set that produced this projection.
 
@@ -160,25 +180,20 @@ def compute_statistics(
             )
             continue
 
-        for stat in stats:
-            if getattr(stat, "requires_embedding", False) and ctx.embedding is None:
-                continue
-            try:
-                report.add(stat.compute(ctx))
-            except Exception as exc:  # noqa: BLE001 - statistics are secondary
-                logger.warning(
-                    "statistic %s failed for projection '%s': %s",
-                    getattr(stat, "family", stat),
-                    ctx.space_name,
-                    exc,
-                )
+        runnable = [
+            s
+            for s in stats
+            if not getattr(s, "requires_embedding", False) or ctx.embedding is not None
+        ]
+        _run_stats(report, ctx, runnable, kind="projection")
 
     # Once-per-embedding pass: annotation-validity on the source embedding itself
     # (the true-separability "ceiling"), computed once per embedding rather than
     # repeated for every projection that shares it. Only statistics that opt in
-    # via ``embedding_space`` run here.
-    if annotations:
-        emb_stats = [s for s in stats if getattr(s, "embedding_space", False)]
+    # via ``embedding_space`` run here — skip the whole pass when none do so we
+    # don't build the (large) embedding context for nothing.
+    emb_stats = [s for s in stats if getattr(s, "embedding_space", False)]
+    if annotations and emb_stats:
         for es in embedding_sets:
             if getattr(es, "precomputed", False):
                 continue
@@ -186,10 +201,12 @@ def compute_statistics(
                 ectx = StatContext(
                     space_kind="embedding",
                     space_name=es.name,
-                    coords=np.asarray(es.data, dtype=float),
+                    # Keep the embedding at its native dtype (float32); the scored
+                    # statistic upcasts only its bounded subsample, not all 570k rows.
+                    coords=np.asarray(es.data),
                     ids=list(es.headers),
                     rng_seed=rng_seed,
-                    params=params or {},
+                    params=params,
                     annotations=annotations,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -197,15 +214,6 @@ def compute_statistics(
                     "embedding-stats setup failed for '%s': %s", es.name, exc
                 )
                 continue
-            for stat in emb_stats:
-                try:
-                    report.add(stat.compute(ectx))
-                except Exception as exc:  # noqa: BLE001 - statistics are secondary
-                    logger.warning(
-                        "statistic %s failed for embedding '%s': %s",
-                        getattr(stat, "family", stat),
-                        es.name,
-                        exc,
-                    )
+            _run_stats(report, ectx, emb_stats, kind="embedding")
 
     return report

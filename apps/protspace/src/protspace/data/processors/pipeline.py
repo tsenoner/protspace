@@ -734,17 +734,8 @@ class ReductionPipeline:
 
             annotation_labels = None
             if metadata is not None:
-                selection = (
-                    "auto"
-                    if str(self.config.stats_annotation).strip().lower() == "auto"
-                    else [
-                        s.strip()
-                        for s in self.config.stats_annotation.split(",")
-                        if s.strip()
-                    ]
-                )
                 annotation_labels = build_annotation_labels(
-                    metadata, selection, id_col="identifier"
+                    metadata, self.config.stats_annotation, id_col="identifier"
                 )
 
             report = compute_statistics(

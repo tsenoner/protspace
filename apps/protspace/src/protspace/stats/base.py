@@ -18,6 +18,14 @@ from typing import Any, Protocol
 import numpy as np
 import pyarrow as pa
 
+# Prefix of the generated per-protein cluster-membership columns
+# (``cluster_elbow_<proj>`` / ``cluster_silhouette_<proj>``). Shared so
+# ``annotation_select`` can exclude them from annotation scoring by the same
+# contract that ``ClusterValidityStatistic`` names them by — if the two drift,
+# the auto-clusters get scored as annotations again (the circular self-validity
+# this design removed).
+CLUSTER_COLUMN_PREFIX = "cluster_"
+
 # The tidy schema. Rows are the bundle-boundary contract. Dimensions of the data
 # (space, annotation, label kind, metric) are columns; per-row provenance
 # (seeds, sample sizes, inertia lists) goes in ``extra_json``.
@@ -167,10 +175,13 @@ class Statistic(Protocol):
     """A unit of computation over a projection space.
 
     ``requires_embedding`` lets the driver skip statistics when no source
-    embedding is available for a projection.
+    embedding is available for a projection. ``embedding_space`` opts a statistic
+    into the driver's once-per-embedding pass (scoring the source embedding, not
+    just each projection); defaults to ``False`` for projection-only statistics.
     """
 
     family: str
     requires_embedding: bool
+    embedding_space: bool = False
 
     def compute(self, ctx: StatContext) -> list[StatRow]: ...
