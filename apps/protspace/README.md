@@ -10,7 +10,7 @@ ProtSpace is a visualization tool for exploring **protein embeddings** or **simi
 
 - **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP, LocalMAP
 - **Automatic annotations**: UniProt, InterPro, and Taxonomy
-- **Quality metrics** _(opt-in)_: per-projection cluster-validity + faithfulness (local & global) via `--stats`
+- **Quality metrics** _(opt-in)_: annotation-based cluster-validity + faithfulness (local & global) via `--stats`
 - **Structure viewer**: Integrated protein structure visualization
 - **Export**: PNG, PDF, SVG, HTML
 
@@ -65,7 +65,7 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet  
 protspace bundle -p projections/ -a annotations.parquet -s statistics.parquet -o output.parquetbundle
 ```
 
-Or compute quality metrics inline during `prepare` with `--stats` (opt-in): cluster-validity + faithfulness per projection. See the [CLI Reference](docs/cli.md#projection-statistics---stats).
+Or compute quality metrics inline during `prepare` with `--stats` (opt-in): annotation-based cluster-validity + faithfulness per projection. See the [CLI Reference](docs/cli.md#projection-statistics---stats).
 
 ## 📊 Example Output
 

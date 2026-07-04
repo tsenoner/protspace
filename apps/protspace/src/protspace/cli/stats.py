@@ -2,8 +2,10 @@
 
 Loads the embedding H5(s) (for faithfulness) and the projection coordinates from
 a project directory, computes the tidy statistics table, and writes it as a
-parquet file — the optional fifth ``.parquetbundle`` part. No annotations are
-needed. Best-effort: per-statistic failures are isolated by the driver.
+parquet file — the optional fifth ``.parquetbundle`` part. Faithfulness and the
+cluster-membership columns need no annotations; annotation-based validity and its
+ARI/NMI agreement need ``-a/--annotations``. Best-effort: per-statistic failures
+are isolated by the driver.
 """
 
 import json
@@ -17,6 +19,11 @@ from protspace.cli.app import app, setup_logging
 from protspace.cli.common_options import ClusterSelection
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_id_col(frame) -> str:
+    """The identifier column: ``identifier`` if present, else the first column."""
+    return "identifier" if "identifier" in frame.columns else frame.columns[0]
 
 
 def _atomic_write_table(table, path: Path) -> None:
@@ -146,14 +153,15 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     _atomic_write_table(table, meta_path)
 
 
-def _merge_annotations_with_columns(ann_path: Path, report) -> int:
+def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> int:
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
     Rewrites the annotations parquet in place with the computed ``cluster_*``
     membership columns joined by identifier (each value a ``cluster N`` label with
     the per-point silhouette attached as ``|score``). Added columns are stringified
     (absent → empty) so they match the prepare path's all-string annotations and the
-    frontend's content-based type inference. Returns the number of columns added.
+    frontend's content-based type inference. ``frame`` reuses an already-loaded
+    DataFrame instead of re-reading ``ann_path``. Returns the number of columns added.
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -162,9 +170,8 @@ def _merge_annotations_with_columns(ann_path: Path, report) -> int:
 
     if not report.annotation_columns or not ann_path.exists():
         return 0
-    df = pq.read_table(str(ann_path)).to_pandas()
-    id_col = "identifier" if "identifier" in df.columns else df.columns[0]
-    added = merge_annotation_columns(report, df, id_col=id_col)
+    df = frame if frame is not None else pq.read_table(str(ann_path)).to_pandas()
+    added = merge_annotation_columns(report, df, id_col=_resolve_id_col(df))
     for name in added:
         df[name] = df[name].fillna("").astype(str)
     _atomic_write_table(pa.Table.from_pandas(df, preserve_index=False), ann_path)
@@ -228,6 +235,15 @@ def stats(
             "(max-silhouette K), or 'both' (emit both clusterings).",
         ),
     ] = ClusterSelection.elbow,
+    stats_annotation: Annotated[
+        str,
+        typer.Option(
+            "--stats-annotation",
+            help="Which annotation column(s) to score for cluster-validity: "
+            "'auto' (all suitable categoricals) or a comma-separated list. "
+            "Requires -a/--annotations.",
+        ),
+    ] = "auto",
     verbose: Annotated[
         int, typer.Option("-v", "--verbose", count=True, help="Increase verbosity.")
     ] = 0,
@@ -239,6 +255,12 @@ def stats(
     # columns, so --settings-out without -a would silently write nothing.
     if settings_out is not None and annotations is None:
         raise typer.BadParameter("--settings-out requires -a/--annotations.")
+    if (
+        stats_annotation
+        and annotations is None
+        and stats_annotation.strip().lower() != "auto"
+    ):
+        raise typer.BadParameter("--stats-annotation requires -a/--annotations.")
 
     import pyarrow.parquet as pq
 
@@ -246,6 +268,7 @@ def stats(
     from protspace.data.loaders import load_h5
     from protspace.data.loaders.embedding_set import merge_same_name_sets
     from protspace.stats import compute_statistics
+    from protspace.stats.annotation_select import build_annotation_labels
     from protspace.stats.carriage import (
         build_cluster_legend_settings,
         route_faithfulness_to_metadata,
@@ -267,12 +290,22 @@ def stats(
     params = {"cluster_selection": cluster_selection.value}
     if annotations is None:
         params["cluster_annotations"] = False
+
+    annotation_labels = None
+    ann_frame = None
+    if annotations is not None:
+        ann_frame = pq.read_table(str(annotations)).to_pandas()
+        annotation_labels = build_annotation_labels(
+            ann_frame, stats_annotation, id_col=_resolve_id_col(ann_frame)
+        )
+
     report = compute_statistics(
         embedding_sets,
         reductions,
         rng_seed=seed,
         params=params,
         default_metric=metric,
+        annotations=annotation_labels,
     )
 
     # Route per-projection faithfulness into projections_metadata.info_json.quality
@@ -289,7 +322,9 @@ def stats(
 
     n_cols = 0
     if annotations is not None:
-        n_cols = _merge_annotations_with_columns(annotations, report)
+        # Reuse the frame already read for label-building — nothing has rewritten
+        # the annotations parquet since (only projections_metadata was touched).
+        n_cols = _merge_annotations_with_columns(annotations, report, frame=ann_frame)
         if settings_out is not None:
             cluster_settings = build_cluster_legend_settings(report)
             settings_out.parent.mkdir(parents=True, exist_ok=True)

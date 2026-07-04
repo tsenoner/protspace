@@ -1,11 +1,20 @@
-"""Cluster-validity statistics on projection coordinates.
+"""Auto-clustering (KMeans) on projection coordinates + agreement with annotations.
 
-KMeans labels the projection; silhouette, Davies-Bouldin and Calinski-Harabasz
-score that labelling. The K can be chosen by the inertia **elbow** and/or by
-**max silhouette** (``ctx.params["cluster_selection"]`` = ``elbow`` | ``silhouette``
-| ``both``); each selection is emitted with its own ``label_kind``
-(``kmeans_elbow`` / ``kmeans_silhouette``). The chosen K is emitted as a
-``metric_kind="meta"`` row so consumers can exclude it from validity aggregates.
+KMeans labels the projection. The K can be chosen by the inertia **elbow**
+and/or by **max silhouette** (``ctx.params["cluster_selection"]`` = ``elbow`` |
+``silhouette`` | ``both``); each selection is emitted with its own
+``label_kind`` (``kmeans_elbow`` / ``kmeans_silhouette``). The chosen K is
+emitted as a ``metric_kind="meta"`` row (``n_clusters``).
+
+This auto-clustering is no longer self-scored (no silhouette / Davies-Bouldin /
+Calinski-Harabasz on the KMeans labels themselves — that was circular: KMeans
+optimises inertia, then silhouette grades the KMeans result against itself).
+Instead, when ``ctx.annotations`` are supplied, each auto-clustering is compared
+against every annotation's category labels via **ARI** (``adjusted_rand``) and
+**NMI** (``normalized_mutual_info``) — ``stat_family="cluster_agreement"``,
+``metric_kind="agreement"`` — reusing the KMeans labels already computed (no
+second sweep). Annotation-based *validity* (silhouette/DBI/CH scored on the
+annotation's own categories) lives in ``AnnotationValidityStatistic``.
 
 Each labelling also becomes a per-protein ``cluster_*`` membership column whose
 per-point silhouette rides along as an attached ``value|score`` confidence — the
@@ -22,7 +31,13 @@ from typing import NamedTuple
 
 import numpy as np
 
-from protspace.stats.base import AnnotationColumn, StatContext, StatRow
+from protspace.stats.annotation_select import pair_by_id
+from protspace.stats.base import (
+    CLUSTER_COLUMN_PREFIX,
+    AnnotationColumn,
+    StatContext,
+    StatRow,
+)
 from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
 
 DEFAULT_SAMPLE_THRESHOLD = 5000
@@ -32,20 +47,6 @@ DEFAULT_SILHOUETTE_HARD_CEILING = 20000
 # Above this many points the KMeans elbow sweep fits on a random subsample (+predict)
 # rather than the full projection, bounding cost at 570k+ scale.
 DEFAULT_MAX_FIT_SAMPLE = 50_000
-
-
-def _silhouette(X, labels, *, rng_seed: int, sample_threshold: int):
-    from sklearn.metrics import silhouette_score
-
-    n = len(labels)
-    if n > sample_threshold:
-        val = float(
-            silhouette_score(
-                X, labels, sample_size=sample_threshold, random_state=rng_seed
-            )
-        )
-        return val, {"sampled": True, "sample_size": int(sample_threshold)}
-    return float(silhouette_score(X, labels)), {"sampled": False, "sample_size": int(n)}
 
 
 class _Labeling(NamedTuple):
@@ -59,10 +60,11 @@ class _Labeling(NamedTuple):
 
 
 class ClusterValidityStatistic:
-    """Elbow / silhouette K + silhouette / Davies-Bouldin / Calinski-Harabasz."""
+    """Elbow / silhouette auto-clustering + ARI/NMI agreement vs annotations."""
 
     family = "cluster_validity"
     requires_embedding = False
+    embedding_space = False  # projection-only (auto-clustering + agreement)
 
     def compute(self, ctx: StatContext) -> list:
         X = np.asarray(ctx.coords, dtype=float)
@@ -95,7 +97,7 @@ class ClusterValidityStatistic:
             labelings.append(
                 _Labeling(
                     "kmeans_elbow",
-                    f"cluster_elbow_{ctx.space_name}",
+                    f"{CLUSTER_COLUMN_PREFIX}elbow_{ctx.space_name}",
                     "elbow",
                     res.k,
                     res.labels,
@@ -105,7 +107,7 @@ class ClusterValidityStatistic:
             labelings.append(
                 _Labeling(
                     "kmeans_silhouette",
-                    f"cluster_silhouette_{ctx.space_name}",
+                    f"{CLUSTER_COLUMN_PREFIX}silhouette_{ctx.space_name}",
                     "silhouette",
                     int(res.silhouette_k),
                     res.silhouette_labels,
@@ -119,11 +121,8 @@ class ClusterValidityStatistic:
 
     def _emit_labeling(self, ctx, X, n, res, labeling: _Labeling) -> list:
         """Rows + membership column for one labelling (elbow or silhouette-K)."""
-        from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
-
         rng_seed = ctx.rng_seed
         params = ctx.params
-        sample_threshold = int(params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD))
         label_kind = labeling.label_kind
         col_name = labeling.col_name
         selection_name = labeling.selection_name
@@ -131,23 +130,13 @@ class ClusterValidityStatistic:
         k = int(labeling.requested_k)
 
         # Report the ACHIEVED number of distinct clusters (KMeans can collapse on
-        # coincident points), keeping the requested K in extra. The cluster sizes
-        # also feed the Davies-Bouldin / Calinski-Harabasz singleton guard.
-        unique_labels, label_counts = np.unique(labels, return_counts=True)
+        # coincident points), keeping the requested K in extra.
+        unique_labels = np.unique(labels)
         achieved = int(len(unique_labels))
-        has_singleton = bool((label_counts < 2).any())
-
-        base = {
-            "space_kind": ctx.space_kind,
-            "space_name": ctx.space_name,
-            "stat_family": self.family,
-            "label_kind": label_kind,
-        }
 
         # Decide up front whether the exact per-point silhouette will be computed.
-        # When it is, its mean is the exact aggregate silhouette (== unsampled
-        # silhouette_score) AND its per-point values ride along on the membership
-        # column, so nothing is computed twice.
+        # Its per-point values ride along on the membership column below as a
+        # `|score` confidence; no aggregate self-validity row is emitted for it.
         silhouette_ok = 2 <= k <= n - 1
         hard_ceiling = int(
             params.get("silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING)
@@ -178,56 +167,17 @@ class ClusterValidityStatistic:
 
         rows: list = [
             StatRow(
+                space_kind=ctx.space_kind,
+                space_name=ctx.space_name,
+                annotation="",
+                stat_family=self.family,
+                label_kind=label_kind,
                 metric="n_clusters",
                 metric_kind="meta",
                 value=float(achieved),
                 extra=meta_extra,
-                **base,
             )
         ]
-
-        # silhouette needs 2 <= k <= n - 1
-        if silhouette_ok:
-            try:
-                if per_point_samples is not None:
-                    # Exact aggregate over all n, consistent with the per-point
-                    # values attached to the membership column below.
-                    sil = float(per_point_samples.mean())
-                    sx = {"sampled": False, "sample_size": int(n)}
-                else:
-                    sil, sx = _silhouette(
-                        X, labels, rng_seed=rng_seed, sample_threshold=sample_threshold
-                    )
-                rows.append(
-                    StatRow(
-                        metric="silhouette",
-                        metric_kind="validity",
-                        value=sil,
-                        extra={**sx, "seed": rng_seed},
-                        **base,
-                    )
-                )
-            except Exception:  # noqa: BLE001 - validity is best-effort
-                pass
-
-        # Davies-Bouldin / Calinski-Harabasz are unstable with singleton clusters.
-        if not has_singleton:
-            for metric_name, fn in (
-                ("davies_bouldin", davies_bouldin_score),
-                ("calinski_harabasz", calinski_harabasz_score),
-            ):
-                try:
-                    rows.append(
-                        StatRow(
-                            metric=metric_name,
-                            metric_kind="validity",
-                            value=float(fn(X, labels)),
-                            extra={"seed": rng_seed},
-                            **base,
-                        )
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
 
         # Per-protein membership: a categorical `cluster N` label, with the per-point
         # silhouette attached as a `value|score` confidence (like ECO / InterPro bit
@@ -265,4 +215,42 @@ class ClusterValidityStatistic:
                     },
                 )
             )
+
+        # ARI/NMI: does this auto-clustering recover each annotation? Reuses the
+        # KMeans labels already computed (no second sweep). Compared over the
+        # id-intersection of clustered points and annotated points.
+        if ctx.annotations:
+            from sklearn.metrics import (
+                adjusted_rand_score,
+                normalized_mutual_info_score,
+            )
+
+            label_by_id = dict(zip(ctx.ids, labels, strict=False))
+            for name, mapping in ctx.annotations.items():
+                # ``paired_clu`` holds numpy ints straight from the KMeans labels;
+                # sklearn's ARI/NMI accept them as-is (no per-element cast needed).
+                paired_clu, paired_ann = pair_by_id(mapping, label_by_id)
+                if len(set(paired_ann)) < 2 or len(paired_ann) < 3:
+                    continue
+                for metric_name, fn in (
+                    ("adjusted_rand", adjusted_rand_score),
+                    ("normalized_mutual_info", normalized_mutual_info_score),
+                ):
+                    try:
+                        rows.append(
+                            StatRow(
+                                space_kind=ctx.space_kind,
+                                space_name=ctx.space_name,
+                                annotation=name,
+                                stat_family="cluster_agreement",
+                                label_kind=label_kind,
+                                metric=metric_name,
+                                metric_kind="agreement",
+                                value=float(fn(paired_ann, paired_clu)),
+                                extra={"seed": rng_seed, "n_labels": len(paired_ann)},
+                            )
+                        )
+                    except Exception:  # noqa: BLE001 - best-effort
+                        pass
+
         return rows

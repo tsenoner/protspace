@@ -47,7 +47,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace project` | HDF5 → dimensionality reduction |
 | `protspace annotate` | Fetch protein annotations |
 | `protspace bundle` | Combine projections + annotations → .parquetbundle |
-| `protspace stats` | Compute projection quality statistics (cluster-validity + faithfulness) |
+| `protspace stats` | Compute projection quality statistics (annotation-based cluster-validity + faithfulness) |
 | `protspace serve` | Launch Dash web frontend |
 | `protspace style` | Add annotation colors/styles |
 
@@ -67,17 +67,20 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 # Parameter sweep: protspace prepare -i emb.h5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" -m pca2 -o output
 # Inline params: protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3" -o output
 # Quality stats (opt-in): protspace prepare -i emb.h5 -m pca2,umap2 --stats -o output
+# Quality stats scoped to specific annotations: protspace prepare -i emb.h5 -m pca2 --stats --stats-annotation major_group,ec_number -o output
 ```
 
 ### protspace stats Usage
 
-Compute per-projection quality statistics for an existing project directory (also available inline via `prepare --stats`). Cluster-validity → `statistics.parquet` (bundle 5th part) + per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership columns (each value a `cluster N` label with the per-point silhouette attached as `|score`) + auto legend styles; faithfulness (local kNN + global metrics, tagged `scope`) → each projection's `info_json.quality`. `--cluster-selection elbow|silhouette|both` picks the K-selection method(s).
+Compute per-projection quality statistics for an existing project directory (also available inline via `prepare --stats`). Validity is **annotation-based**: silhouette/DBI/CH are scored on a user-selected annotation's own category labels (not auto-clustering), computed once for the source embedding and again for each projection — `statistics.parquet` (bundle 5th part) gains an `annotation` column and `space_kind ∈ {embedding, projection}`. `--stats-annotation auto|name1,name2` (default `auto`) picks which annotation column(s) to score (all "suitable" low-cardinality categoricals, or an explicit list); requires `-a/--annotations`. Auto-clustering (KMeans elbow/silhouette) is retained for the per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership columns (each value a `cluster N` label with the per-point silhouette attached as `|score`) + auto legend styles, but is no longer self-scored — instead its **ARI**/**NMI** agreement against each scored annotation is recorded (`stat_family=cluster_agreement`). Faithfulness (local kNN + global metrics, tagged `scope`) → each projection's `info_json.quality`. `--cluster-selection elbow|silhouette|both` picks the K-selection method(s).
 
 ```bash
-# Standalone (embeddings needed for faithfulness)
+# Standalone (embeddings needed for faithfulness + the once-per-embedding annotation-validity pass)
 protspace stats -i emb.h5 -p project_dir -o statistics.parquet
-# Enrich annotations in place + emit cluster legend styles for `bundle --settings`
+# Enrich annotations in place, score annotation-based validity, + emit cluster legend styles for `bundle --settings`
 protspace stats -i emb.h5 -p project_dir -o statistics.parquet -a annotations.parquet --settings-out styles.json
+# Score only specific annotations instead of every suitable categorical (default: auto)
+protspace stats -i emb.h5 -p project_dir -o statistics.parquet -a annotations.parquet --stats-annotation major_group,ec_number
 # Elbow + silhouette-optimal clusterings side by side
 protspace stats -i emb.h5 -p project_dir -o statistics.parquet -a annotations.parquet --cluster-selection both
 # Fold a stats parquet + settings into a bundle
@@ -149,12 +152,14 @@ src/protspace/
 ├── stats/                      # Projection quality statistics (opt-in, --stats)
 │   ├── __init__.py             # Lazy STATISTICS registry + compute_statistics entry
 │   ├── base.py                 # StatContext / StatRow / AnnotationColumn / StatsReport
-│   ├── driver.py               # Per-projection contexts, embedding id-join, run stats
+│   ├── driver.py               # Per-projection contexts + once-per-embedding pass, embedding id-join, run stats
 │   ├── carriage.py             # Route rows to bundle parts (metadata / annotations / legend)
+│   ├── annotation_select.py    # Pick "suitable" annotations (auto/list) + build id→category labels
 │   ├── cluster/kmeans_elbow.py # KMeans + distance-to-chord elbow (subsampled at scale)
 │   └── metrics/
-│       ├── validity.py         # silhouette / Davies-Bouldin / Calinski-Harabasz
-│       └── faithfulness.py     # kNN-overlap / trustworthiness / continuity
+│       ├── validity.py             # Auto-cluster (KMeans) + ARI/NMI agreement vs annotations
+│       ├── annotation_validity.py  # silhouette / Davies-Bouldin / Calinski-Harabasz per annotation
+│       └── faithfulness.py         # kNN-overlap / trustworthiness / continuity
 ├── utils/
 │   ├── __init__.py             # Lazy exports: REDUCERS dict, reducer constants
 │   ├── constants.py            # DimensionReductionConfig, method name constants
@@ -216,7 +221,7 @@ HDF5 file (float16 embeddings)
 2. `projections_metadata` — projection names, dimensions, parameters (faithfulness rides in `info_json.quality` when `--stats`)
 3. `projections_data` — reduced coordinates per protein per projection
 4. `settings` (optional) — annotation styles, pinned values, display config
-5. `statistics` (optional) — tidy per-projection cluster-validity table (`protspace stats` / `prepare --stats`)
+5. `statistics` (optional) — tidy table of annotation-based validity (silhouette/DBI/CH per annotation, `space_kind ∈ {embedding, projection}`, `annotation` column) + auto-cluster ARI/NMI agreement (`stat_family=cluster_agreement`) (`protspace stats` / `prepare --stats`)
 
 Positional layout is `core(3) + settings? + statistics?`. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Both bundled and separate-file (`--no-bundled`) output persist `settings.parquet` and `statistics.parquet` when present.
 
@@ -240,10 +245,12 @@ uv run pytest tests/ --cov=src/protspace     # With coverage
 | `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
 | `test_pipeline_utils.py` | 70 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
-| `test_stats.py` | 43 | Projection statistics: elbow, cluster-validity, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency |
-| `test_stats_cli.py` | 12 | `protspace stats` CLI + `prepare` stats wiring, `--settings-out` guard, `--cluster-selection` validation |
+| `test_stats.py` | 48 | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency |
+| `test_stats_cli.py` | 16 | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
 | `test_stats_carriage.py` | 10 | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
 | `test_stats_bundle.py` | 7 | Optional 5th (statistics) bundle part round-trip |
+| `test_annotation_select.py` | 6 | Annotation selection: suitability filter (cardinality/numeric/id-like exclusion), `auto` vs explicit-list label building (explicit names bypass the heuristic), missing-value dropping |
+| `test_annotation_validity.py` | 6 | `AnnotationValidityStatistic`: silhouette/DBI/CH scored per annotation on `ctx.coords`, embedding vs. projection `space_kind`, missing-value exclusion, single-category no-op, id-canonical subsample determinism |
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
 | `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |

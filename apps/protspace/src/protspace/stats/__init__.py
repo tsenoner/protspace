@@ -14,10 +14,17 @@ def get_statistics() -> list:
     """Return the registered Statistic instances (lazy-imported)."""
     global _STATISTICS
     if _STATISTICS is None:
+        from protspace.stats.metrics.annotation_validity import (
+            AnnotationValidityStatistic,
+        )
         from protspace.stats.metrics.faithfulness import FaithfulnessStatistic
         from protspace.stats.metrics.validity import ClusterValidityStatistic
 
-        _STATISTICS = [ClusterValidityStatistic(), FaithfulnessStatistic()]
+        _STATISTICS = [
+            ClusterValidityStatistic(),
+            AnnotationValidityStatistic(),
+            FaithfulnessStatistic(),
+        ]
     return _STATISTICS
 
 

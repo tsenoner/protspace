@@ -75,6 +75,7 @@ class PipelineConfig:
     no_scores: bool = False
     stats: bool = False
     cluster_selection: str = "elbow"  # elbow | silhouette | both (for --stats)
+    stats_annotation: str = "auto"  # which annotation(s) to score (for --stats)
     refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
@@ -728,6 +729,15 @@ class ReductionPipeline:
 
             for red in all_reductions:
                 red.setdefault("ids", all_headers)
+
+            from protspace.stats.annotation_select import build_annotation_labels
+
+            annotation_labels = None
+            if metadata is not None:
+                annotation_labels = build_annotation_labels(
+                    metadata, self.config.stats_annotation, id_col="identifier"
+                )
+
             report = compute_statistics(
                 embedding_sets,
                 all_reductions,
@@ -742,6 +752,7 @@ class ReductionPipeline:
                 # 'metric' from their params, so fall back to the run's metric
                 # rather than silently assuming euclidean.
                 default_metric=self.config.reducer_params.metric,
+                annotations=annotation_labels,
             )
             route_faithfulness_to_metadata(report, all_reductions)
             if metadata is not None and report.annotation_columns:

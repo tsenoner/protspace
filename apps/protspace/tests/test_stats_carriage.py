@@ -31,6 +31,7 @@ def _faith_row(space_name, metric_name, value, **extra):
     return StatRow(
         space_kind="projection",
         space_name=space_name,
+        annotation="",  # faithfulness rows are not annotation-scoped
         stat_family="faithfulness",
         label_kind="none",
         metric=metric_name,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import h5py
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -69,8 +70,11 @@ def test_discrete_path_produces_full_matrix(tmp_path):
     reductions = _load_reductions(proj)
     report = compute_statistics([emb], reductions, rng_seed=42)
     metrics = {r.metric for r in report.rows}
-    # cluster-validity (coords only) + faithfulness (embedding matched by id-join)
-    assert {"silhouette", "n_clusters"} <= metrics
+    # Without annotations, cluster_validity emits only the K-selection meta row
+    # (n_clusters) — silhouette/DBI/CH now live in annotation_validity and require
+    # `annotations=`, which this call doesn't supply. Faithfulness (embedding
+    # matched by id-join) is unconditional.
+    assert {"n_clusters"} <= metrics
     assert {"knn_overlap", "trustworthiness", "continuity"} <= metrics
     # The fifth part (to_arrow) now carries aggregate validity only — faithfulness
     # routes to projection metadata, not this table (route-projection-statistics).
@@ -83,7 +87,13 @@ def test_discrete_path_produces_full_matrix(tmp_path):
 def test_stats_command_writes_aggregate_only_part(tmp_path):
     """`protspace stats -o statistics.parquet` writes validity/meta rows only —
     faithfulness now rides in projection metadata, not this fifth part
-    (route-projection-statistics Phase 1A; the prep stats+bundle path stays valid)."""
+    (route-projection-statistics Phase 1A; the prep stats+bundle path stays valid).
+
+    Without -a/--annotations, no annotation labels are built, so cluster_validity
+    contributes only its K-selection meta row (n_clusters) — annotation-based
+    silhouette/DBI/CH (family=annotation_validity) and cluster_agreement (ARI/NMI)
+    both require annotations and are absent here (see
+    test_stats_command_computes_annotation_validity for the annotated path)."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -100,12 +110,7 @@ def test_stats_command_writes_aggregate_only_part(tmp_path):
     families = set(table.column("stat_family").to_pylist())
     assert families == {"cluster_validity"}
     metrics = set(table.column("metric").to_pylist())
-    assert {
-        "silhouette",
-        "davies_bouldin",
-        "calinski_harabasz",
-        "n_clusters",
-    } <= metrics
+    assert metrics == {"n_clusters"}
     assert not ({"knn_overlap", "trustworthiness", "continuity"} & metrics)
 
 
@@ -457,6 +462,62 @@ def test_prepare_pipeline_compute_statistics(tmp_path):
     assert {"knn_overlap", "trustworthiness", "continuity"} <= set(quality)
 
 
+def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
+    """`prepare --stats --stats-annotation auto` (with -a CSV) threads annotation
+    labels through `PipelineConfig.stats_annotation` into `_compute_statistics`,
+    so the resulting bundle's fifth part gains `annotation_validity` rows scored
+    against the CSV's categorical column."""
+    import io
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_statistics_from_bundle
+
+    X, _ = make_blobs(n_samples=120, centers=3, n_features=5, random_state=1)
+    headers = [f"p{i}" for i in range(120)]
+
+    h5_path = tmp_path / "emb.h5"
+    with h5py.File(h5_path, "w") as f:
+        for i, h in enumerate(headers):
+            f.create_dataset(h, data=X[i].astype(np.float32))
+
+    ann_path = tmp_path / "grp.csv"
+    groups = ["a" if i % 2 == 0 else "b" for i in range(len(headers))]
+    pd.DataFrame({"identifier": headers, "grp": groups}).to_csv(ann_path, index=False)
+
+    output_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            f"{h5_path}:E",
+            "-a",
+            str(ann_path),
+            "-m",
+            "pca2",
+            "--stats",
+            "--stats-annotation",
+            "auto",
+            "--no-log",
+            "-o",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    bundle_path = output_dir / "data.parquetbundle"
+    assert bundle_path.exists()
+    raw = read_statistics_from_bundle(bundle_path)
+    assert raw is not None
+    st = pq.read_table(io.BytesIO(raw)).to_pandas()
+    assert (st.stat_family == "annotation_validity").any()
+    assert "annotation" in st.columns
+    av = st[st.stat_family == "annotation_validity"]
+    assert set(av["annotation"]) == {"grp"}
+
+
 def test_stats_rejects_bad_cluster_selection(tmp_path):
     """`--cluster-selection` is validated (fail-fast) rather than silently ignored."""
     from typer.testing import CliRunner
@@ -480,3 +541,97 @@ def test_stats_rejects_bad_cluster_selection(tmp_path):
         ],
     )
     assert result.exit_code != 0
+
+
+def test_stats_command_computes_annotation_validity(tmp_path):
+    """`stats --stats-annotation auto` (with -a) builds annotation labels and
+    threads them into `compute_statistics`, so the fifth part gains
+    annotation_validity rows for both the source embedding and the projection."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, ids = _project_dir(tmp_path)  # returns (h5, proj_dir, id list)
+    ann_path = tmp_path / "annotations.parquet"
+    # A separable categorical annotation over the same ids.
+    groups = ["a" if i % 2 else "b" for i in range(len(ids))]
+    pq.write_table(pa.table({"identifier": ids, "major_group": groups}), str(ann_path))
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "-a",
+            str(ann_path),
+            "--stats-annotation",
+            "auto",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    st = pq.read_table(str(out)).to_pandas()
+    assert "annotation" in st.columns
+    av = st[st.stat_family == "annotation_validity"]
+    assert set(av["annotation"]) == {"major_group"}
+    assert {"embedding", "projection"} <= set(av["space_kind"])
+
+
+def test_stats_rejects_no_annotation_source_for_stats_annotation(tmp_path):
+    """`--stats-annotation <name>` (non-`auto`) with no -a/--annotations has
+    nothing to score, so it must fail fast rather than silently doing nothing."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "--stats-annotation",
+            "major_group",  # no -a
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_stats_annotation_auto_case_and_whitespace_without_annotations_ok(tmp_path):
+    """`--stats-annotation` values that normalise to ``auto`` (e.g. mixed case with
+    surrounding whitespace) must not be wrongly rejected by the `-a/--annotations`
+    guard when no `-a` is given — the guard has to use the same
+    ``.strip().lower() == "auto"`` normalisation the parser uses below it, not a
+    strict ``!= "auto"`` comparison."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "--stats-annotation",
+            " Auto ",  # no -a; must normalise to "auto", not be rejected
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()

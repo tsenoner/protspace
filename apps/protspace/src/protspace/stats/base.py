@@ -2,7 +2,7 @@
 
 A ``Statistic`` describes a projection (and optionally its source embedding). It
 declares the inputs it needs and returns one or more ``StatRow`` records. The
-tidy long-format table produced by ``StatsReport.to_arrow`` (eight columns) is
+tidy long-format table produced by ``StatsReport.to_arrow`` (nine columns) is
 the bundle-boundary contract consumed downstream.
 
 Heavy imports (scikit-learn) live inside the metric/cluster modules, function-
@@ -18,12 +18,22 @@ from typing import Any, Protocol
 import numpy as np
 import pyarrow as pa
 
-# The frozen eight-column schema. New scalar statistics add rows, never columns;
-# any per-source attribute (e.g. an annotation column name) goes in ``extra_json``.
+# Prefix of the generated per-protein cluster-membership columns
+# (``cluster_elbow_<proj>`` / ``cluster_silhouette_<proj>``). Shared so
+# ``annotation_select`` can exclude them from annotation scoring by the same
+# contract that ``ClusterValidityStatistic`` names them by — if the two drift,
+# the auto-clusters get scored as annotations again (the circular self-validity
+# this design removed).
+CLUSTER_COLUMN_PREFIX = "cluster_"
+
+# The tidy schema. Rows are the bundle-boundary contract. Dimensions of the data
+# (space, annotation, label kind, metric) are columns; per-row provenance
+# (seeds, sample sizes, inertia lists) goes in ``extra_json``.
 STATS_SCHEMA = pa.schema(
     [
         ("space_kind", pa.string()),
         ("space_name", pa.string()),
+        ("annotation", pa.string()),
         ("stat_family", pa.string()),
         ("label_kind", pa.string()),
         ("metric", pa.string()),
@@ -67,6 +77,10 @@ class StatContext:
     embedding_name: str | None = None
     high_dim_metric: str = "euclidean"
     params: dict = field(default_factory=dict)
+    # annotation name -> {protein id -> category label}. Present only when the
+    # caller requested annotation-based validity; id-keyed so lookup is
+    # order-independent for any space (embedding or projection).
+    annotations: dict[str, dict[str, str]] | None = None
 
 
 @dataclass
@@ -74,14 +88,15 @@ class StatRow:
     """One statistic value.
 
     ``destination`` routes the row to a bundle part at carriage time:
-    ``statistics_part`` (the tidy 8-column table — the default, so every existing
-    construction is unchanged), ``projection_metadata`` (folded into a projection's
-    ``info_json``), or ``annotation`` (a per-protein column). It is carriage
-    metadata, not a tidy-table column, so ``to_record`` never emits it.
+    ``statistics_part`` (the tidy 9-column table — the default), ``projection_metadata``
+    (folded into a projection's ``info_json``), or ``annotation`` (a per-protein
+    column). It is carriage metadata, not a tidy-table column, so ``to_record``
+    never emits it.
     """
 
     space_kind: str
     space_name: str
+    annotation: str  # "" for non-annotation rows; the annotation name otherwise
     stat_family: str
     label_kind: str
     metric: str
@@ -94,6 +109,7 @@ class StatRow:
         return {
             "space_kind": self.space_kind,
             "space_name": self.space_name,
+            "annotation": self.annotation,
             "stat_family": self.stat_family,
             "label_kind": self.label_kind,
             "metric": self.metric,
@@ -159,10 +175,13 @@ class Statistic(Protocol):
     """A unit of computation over a projection space.
 
     ``requires_embedding`` lets the driver skip statistics when no source
-    embedding is available for a projection.
+    embedding is available for a projection. ``embedding_space`` opts a statistic
+    into the driver's once-per-embedding pass (scoring the source embedding, not
+    just each projection); defaults to ``False`` for projection-only statistics.
     """
 
     family: str
     requires_embedding: bool
+    embedding_space: bool = False
 
     def compute(self, ctx: StatContext) -> list[StatRow]: ...

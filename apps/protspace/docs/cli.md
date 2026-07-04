@@ -130,8 +130,9 @@ This produces three projections: `ProtT5 — PCA 2`, `ProtT5 — UMAP 2 (n=15)`,
 | ---- | ----------- | ------- |
 | `-o, --output` | Output directory. | `.` |
 | `--bundled / --no-bundled` | Bundle into single `.parquetbundle`. | bundled |
-| `--stats / --no-stats` | Compute projection quality statistics (cluster-validity + faithfulness). See [Projection Statistics](#projection-statistics---stats). | off |
+| `--stats / --no-stats` | Compute projection quality statistics (annotation-based cluster-validity + faithfulness). See [Projection Statistics](#projection-statistics---stats). | off |
 | `--cluster-selection` | With `--stats`, how to choose the cluster count K: `elbow`, `silhouette`, or `both`. | `elbow` |
+| `--stats-annotation` | With `--stats`, which annotation column(s) to score for cluster-validity: `auto` (all suitable low-cardinality categoricals) or a comma-separated list. | `auto` |
 | `--keep-tmp` | Cache intermediates for resumability. | on |
 | `--no-log` | Skip writing `run.log`. | off |
 | `--dump-cache` | Print cached annotations and exit. | off |
@@ -179,16 +180,20 @@ protspace bundle -p projections/ -a annotations.parquet \
 
 ## `protspace stats`
 
-Compute per-projection quality statistics for an existing project directory and write them as a `statistics.parquet` (the optional 5th `.parquetbundle` part). No annotations are required. See [Projection Statistics](#projection-statistics---stats) for what is computed.
+Compute per-projection quality statistics for an existing project directory and write them as a `statistics.parquet` (the optional 5th `.parquetbundle` part). Faithfulness and the auto-cluster membership columns need no annotations; annotation-based validity (and its ARI/NMI agreement with the auto-clusters) needs `-a/--annotations`. See [Projection Statistics](#projection-statistics---stats) for what is computed.
 
 ```bash
 # Statistics for a project (embeddings needed for faithfulness)
 protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet
 
 # Also enrich an annotations parquet in place with per-protein cluster-membership
-# columns, and write the auto cluster-legend styles for `bundle`
+# columns, score annotation-based validity, and write the auto cluster-legend styles
 protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
   -a annotations.parquet --settings-out cluster_styles.json
+
+# Score only specific annotations instead of every suitable categorical (default: auto)
+protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
+  -a annotations.parquet --stats-annotation major_group,ec_number
 
 # Emit both the elbow and the silhouette-optimal clustering
 protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
@@ -197,28 +202,31 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
-| `-i, --input` | HDF5 embedding file(s) (for faithfulness). Repeat for multi-embedding; `-i file.h5:name` to override the name. | — |
+| `-i, --input` | HDF5 embedding file(s) (for faithfulness + the once-per-embedding annotation-validity pass). Repeat for multi-embedding; `-i file.h5:name` to override the name. | — |
 | `-p, --projections` | Project directory with `projections_metadata.parquet` + `projections_data.parquet`. | — |
 | `-o, --output` | Output `statistics.parquet` path. | — |
-| `-a, --annotations` | Annotations parquet to enrich in place with per-protein `cluster_*` membership columns (per-point silhouette attached as `value|score`). | — |
+| `-a, --annotations` | Annotations parquet to enrich in place with per-protein `cluster_*` membership columns (per-point silhouette attached as `value|score`), and to score for annotation-based validity + ARI/NMI agreement. | — |
 | `--cluster-selection` | Cluster count K selection: `elbow`, `silhouette`, or `both`. | `elbow` |
+| `--stats-annotation` | Which annotation column(s) to score for cluster-validity: `auto` (all suitable low-cardinality categoricals) or a comma-separated list. Requires `-a`. | `auto` |
 | `--settings-out` | Write auto cluster-legend styles here (JSON) for `bundle --settings`. Requires `-a`. | — |
 | `--metric` | High-dim distance metric for faithfulness when the projection metadata omits one (e.g. PCA/MDS). | `euclidean` |
 | `--seed` | Random seed. | `42` |
 
 ## Projection Statistics (`--stats`)
 
-`prepare --stats` (opt-in) and the standalone `protspace stats` command compute two families of per-projection quality metrics and bake them into the output:
+`prepare --stats` (opt-in) and the standalone `protspace stats` command compute three families of per-projection quality metrics and bake them into the output:
 
-- **Cluster validity** — KMeans labels the projection, scored by **silhouette**, **Davies–Bouldin**, and **Calinski–Harabasz**, written to the tidy `statistics.parquet` (the bundle's 5th part). The cluster count K is chosen by the inertia **elbow** and/or by **max silhouette** — `--cluster-selection elbow|silhouette|both`. Each selection also becomes a per-protein membership column — `cluster_elbow_<projection>` and/or `cluster_silhouette_<projection>` — with the point's **silhouette attached to its value** as `cluster N|<silhouette>` (the same `value|score` convention as UniProt evidence codes / InterPro bit scores; suppressed by `--no-scores`). Membership columns get an auto Kelly-palette legend (the bundle's 4th settings part); in `statistics.parquet` the two selections are distinguished by `label_kind` (`kmeans_elbow` / `kmeans_silhouette`).
+- **Annotation-based validity** — silhouette, Davies–Bouldin, and Calinski–Harabasz scored using an annotation's own category labels (not auto-clustering) — how well proteins already grouped by an annotation (e.g. `major_group`, `ec_number`) separate in a given space. Computed once for the source embedding (a separability "ceiling") and again for each projection, written to the tidy `statistics.parquet` (the bundle's 5th part) with `space_kind ∈ {embedding, projection}` and an `annotation` column naming which one was scored. `--stats-annotation auto|name1,name2` (default `auto`) picks which annotation column(s) to score — `auto` scores every "suitable" low-cardinality categorical (≥2 and ≤min(50, max(2, n/2)) distinct non-empty values, not numeric, and not a generated `cluster_*` column); requires `-a/--annotations`.
+- **Auto-cluster agreement** — KMeans labels the projection; the cluster count K is chosen by the inertia **elbow** and/or by **max silhouette** — `--cluster-selection elbow|silhouette|both`. This auto-clustering is no longer scored against itself (that was circular); instead, when annotations are supplied, each labelling's **ARI** (adjusted Rand index) and **NMI** (normalized mutual information) agreement with every scored annotation is recorded (`stat_family=cluster_agreement`). Each selection also becomes a per-protein membership column — `cluster_elbow_<projection>` and/or `cluster_silhouette_<projection>` — with the point's **silhouette attached to its value** as `cluster N|<silhouette>` (the same `value|score` convention as UniProt evidence codes / InterPro bit scores; suppressed by `--no-scores`). Membership columns get an auto Kelly-palette legend (the bundle's 4th settings part); in `statistics.parquet` the two selections are distinguished by `label_kind` (`kmeans_elbow` / `kmeans_silhouette`).
 - **Faithfulness** — how well the projection preserves the source embedding's structure; each row is tagged `scope`:
   - **local** (kNN-neighbourhood): **kNN-overlap**, **trustworthiness**, **continuity**.
   - **global** (whole-layout): **random_triplet** (relative-ordering accuracy over random triplets, ∈[0,1]) and **spearman_distance** (rank correlation of all pairwise distances, ∈[−1,1]).
 
-  These per-projection scalars ride in each projection's `info_json.quality`.
+  These per-projection scalars ride in each projection's `info_json.quality` — they never land in `statistics.parquet`.
 
 Notes:
-- Off by default — the compute (a KMeans sweep + faithfulness) and the extra bundle columns/styles are opt-in.
+- Off by default — the compute (annotation-validity + a KMeans sweep + faithfulness) and the extra bundle columns/styles are opt-in.
+- Annotation-based validity and cluster agreement need `-a/--annotations`; faithfulness and the membership columns do not.
 - Uses the projection's own high-dim metric (e.g. `cosine`) for faithfulness; falls back to `--metric` / `euclidean` when the reducer doesn't record one.
 - Best-effort: a failure for one statistic or projection is logged and skipped, never failing the run. At large scale the heavier metrics are subsampled (silhouette/faithfulness) or fit on a bounded subsample (KMeans elbow) with a deterministic seed.
 

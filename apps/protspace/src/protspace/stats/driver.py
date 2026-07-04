@@ -18,6 +18,26 @@ from protspace.stats.base import StatContext, StatsReport
 logger = logging.getLogger(__name__)
 
 
+def _run_stats(
+    report: StatsReport, ctx: StatContext, stats: list, *, kind: str
+) -> None:
+    """Run each statistic on ``ctx``, isolating per-statistic failures.
+
+    ``kind`` (``projection`` | ``embedding``) only tags the warning message.
+    """
+    for stat in stats:
+        try:
+            report.add(stat.compute(ctx))
+        except Exception as exc:  # noqa: BLE001 - statistics are secondary
+            logger.warning(
+                "statistic %s failed for %s '%s': %s",
+                getattr(stat, "family", stat),
+                kind,
+                ctx.space_name,
+                exc,
+            )
+
+
 def _select_embedding(reduction: dict, embedding_sets: list, emb_by_name: dict):
     """Pick the embedding set that produced this projection.
 
@@ -82,6 +102,7 @@ def compute_statistics(
     params: dict | None = None,
     statistics: list | None = None,
     default_metric: str = "euclidean",
+    annotations: dict | None = None,
 ) -> StatsReport:
     """Compute statistics for each projection.
 
@@ -95,6 +116,10 @@ def compute_statistics(
             ``max_fit_sample``, ``n_triplets_per_point``; ``cluster_selection``
             (``elbow`` | ``silhouette`` | ``both``); ``cluster_annotations`` and
             ``include_scores`` (per-protein membership column + attached silhouette).
+        annotations: annotation name -> {protein id -> category label}. When
+            supplied, threaded into every projection's ``StatContext`` and also
+            drives a once-per-embedding pass (see below) so annotation-validity
+            statistics can score the source embedding as a separability ceiling.
 
     Returns:
         A ``StatsReport`` (may be partial/empty; never raises on a statistic error).
@@ -147,6 +172,7 @@ def compute_statistics(
                 embedding_name=embedding_name,
                 high_dim_metric=high_dim_metric,
                 params=params,
+                annotations=annotations,
             )
         except Exception as exc:  # noqa: BLE001 - one bad reduction must not sink the report
             logger.warning(
@@ -154,17 +180,40 @@ def compute_statistics(
             )
             continue
 
-        for stat in stats:
-            if getattr(stat, "requires_embedding", False) and ctx.embedding is None:
+        runnable = [
+            s
+            for s in stats
+            if not getattr(s, "requires_embedding", False) or ctx.embedding is not None
+        ]
+        _run_stats(report, ctx, runnable, kind="projection")
+
+    # Once-per-embedding pass: annotation-validity on the source embedding itself
+    # (the true-separability "ceiling"), computed once per embedding rather than
+    # repeated for every projection that shares it. Only statistics that opt in
+    # via ``embedding_space`` run here — skip the whole pass when none do so we
+    # don't build the (large) embedding context for nothing.
+    emb_stats = [s for s in stats if getattr(s, "embedding_space", False)]
+    if annotations and emb_stats:
+        for es in embedding_sets:
+            if getattr(es, "precomputed", False):
                 continue
             try:
-                report.add(stat.compute(ctx))
-            except Exception as exc:  # noqa: BLE001 - statistics are secondary
-                logger.warning(
-                    "statistic %s failed for projection '%s': %s",
-                    getattr(stat, "family", stat),
-                    ctx.space_name,
-                    exc,
+                ectx = StatContext(
+                    space_kind="embedding",
+                    space_name=es.name,
+                    # Keep the embedding at its native dtype (float32); the scored
+                    # statistic upcasts only its bounded subsample, not all 570k rows.
+                    coords=np.asarray(es.data),
+                    ids=list(es.headers),
+                    rng_seed=rng_seed,
+                    params=params,
+                    annotations=annotations,
                 )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "embedding-stats setup failed for '%s': %s", es.name, exc
+                )
+                continue
+            _run_stats(report, ectx, emb_stats, kind="embedding")
 
     return report
