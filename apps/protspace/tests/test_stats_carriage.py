@@ -156,27 +156,24 @@ def test_build_cluster_legend_settings_produces_valid_envelope():
     # only the categorical membership column is styled (silhouette is a numeric ramp)
     assert set(settings) == {"cluster_P"}
     env = settings["cluster_P"]
-    # every field sanitizeLegendSettingsEntry requires, with the right types
-    assert isinstance(env["maxVisibleValues"], int)
-    assert isinstance(env["shapeSize"], int | float)
-    assert env["sortMode"] in {
-        "size-asc",
-        "size-desc",
-        "alpha-asc",
-        "alpha-desc",
-        "manual",
-        "manual-reverse",
-    }
+    # every field sanitizeLegendSettingsEntry requires, with the ACTUAL values (not
+    # just types) so a regression like maxVisibleValues=0 — which would hide every
+    # legend entry — is caught rather than passing an isinstance-only check.
+    assert env["maxVisibleValues"] == 10  # max(10, len(labels)); 2 labels → 10
+    assert env["shapeSize"] == 30
+    assert env["sortMode"] == "size-desc"
     assert env["enableDuplicateStackUI"] is False
     assert env["hiddenValues"] == []
     assert env["selectedPaletteId"] == "kellys"
     cats = env["categories"]
     assert set(cats) == {"cluster 0", "cluster 1"}
+    # zOrder follows the cluster-N ordering; every marker is a circle.
+    assert cats["cluster 0"]["zOrder"] == 0
+    assert cats["cluster 1"]["zOrder"] == 1
     colors = set()
     for cat in cats.values():
-        assert isinstance(cat["zOrder"], int)
+        assert cat["shape"] == "circle"
         assert isinstance(cat["color"], str) and cat["color"].startswith("#")
-        assert isinstance(cat["shape"], str)
         colors.add(cat["color"])
     assert len(colors) == 2  # distinct palette colors per cluster
 
