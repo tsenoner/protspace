@@ -338,7 +338,9 @@ def stats(
     if annotations is not None:
         # Reuse the frame already read for label-building — nothing has rewritten
         # the annotations parquet since (only projections_metadata was touched).
-        added_cols = _merge_annotations_with_columns(annotations, report, frame=ann_frame)
+        added_cols = _merge_annotations_with_columns(
+            annotations, report, frame=ann_frame
+        )
         if settings_out is not None:
             # Style only the columns that actually landed values (id mismatches are
             # dropped in the merge), so we never write a legend for a phantom column.
