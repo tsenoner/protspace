@@ -1058,6 +1058,22 @@ def test_align_returns_none_when_no_ids_and_row_counts_differ():
     assert _align(emb, None, coords) is None
 
 
+def test_select_embedding_abstains_when_ambiguous():
+    """With no `source` and two embeddings that both fully cover the ids, the
+    choice is ambiguous — `_select_embedding` must return None (skip faithfulness)
+    rather than silently score against embedding_sets[0]."""
+    from protspace.stats.driver import _select_embedding
+
+    ids = [f"p{i}" for i in range(4)]
+    a = _EmbSet("esm2", np.zeros((4, 3)), ids)
+    b = _EmbSet("prot_t5", np.zeros((4, 3)), ids)
+    red = {"name": "PCA_2", "ids": ids}  # no source
+    assert _select_embedding(red, [a, b], {"esm2": a, "prot_t5": b}) is None
+    # An explicit source disambiguates and is honoured.
+    red_src = {"name": "PCA_2", "ids": ids, "source": "prot_t5"}
+    assert _select_embedding(red_src, [a, b], {"esm2": a, "prot_t5": b}) is b
+
+
 def test_silhouette_selection_falls_back_to_elbow_on_degenerate_coords():
     """Regression: `--cluster-selection silhouette` on a coincident projection
     leaves silhouette_labels None (silhouette_score raises for every K), emptying

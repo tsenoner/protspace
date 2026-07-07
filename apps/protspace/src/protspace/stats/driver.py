@@ -42,7 +42,10 @@ def _select_embedding(reduction: dict, embedding_sets: list, emb_by_name: dict):
     """Pick the embedding set that produced this projection.
 
     Preference: explicit ``source`` name → single available embedding → the set
-    whose headers best cover the projection's ids.
+    whose headers uniquely best cover the projection's ids. Returns ``None`` when
+    the choice is ambiguous (several embeddings cover the ids equally well and no
+    ``source`` disambiguates them) — guessing would score faithfulness against the
+    wrong high-dim space, so we skip it instead.
     """
     src = reduction.get("source") or reduction.get("embedding_name")
     if src and src in emb_by_name:
@@ -53,14 +56,20 @@ def _select_embedding(reduction: dict, embedding_sets: list, emb_by_name: dict):
     if not red_ids:
         return None
     target = set(red_ids)
-    best, best_overlap = None, 0
+    exact = [es for es in embedding_sets if target.issubset(es.headers)]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None  # several embeddings fully cover the ids → ambiguous, abstain
+    # No exact cover: take the single best partial overlap, abstaining on a tie.
+    best, best_overlap, tied = None, 0, False
     for es in embedding_sets:
         overlap = len(target.intersection(es.headers))
-        if overlap == len(target):
-            return es  # exact id-set cover wins immediately (no ambiguous tie-break)
         if overlap > best_overlap:
-            best, best_overlap = es, overlap
-    return best
+            best, best_overlap, tied = es, overlap, False
+        elif overlap == best_overlap and overlap > 0:
+            tied = True
+    return None if tied else best
 
 
 def _align(emb_set, red_ids, coords):
