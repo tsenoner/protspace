@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import h5py
 import numpy as np
 import pandas as pd
@@ -709,7 +711,17 @@ def test_stats_annotations_rewrite_preserves_untouched_dtypes(tmp_path):
     out = tmp_path / "statistics.parquet"
     result = CliRunner().invoke(
         app,
-        ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out), "-a", str(ann_path)],
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "-a",
+            str(ann_path),
+        ],
     )
     assert result.exit_code == 0, result.output
 
@@ -739,4 +751,7 @@ def test_prepare_rejects_stats_annotation_without_stats(tmp_path):
         ],
     )
     assert result.exit_code != 0
-    assert "--stats-annotation requires --stats" in result.output
+    # Rich styles the "--option" tokens (splitting them with ANSI codes) when color
+    # is enabled, as it is on CI — strip escape sequences before the substring match.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--stats-annotation requires --stats" in plain
