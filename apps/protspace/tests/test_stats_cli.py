@@ -637,6 +637,41 @@ def test_stats_annotation_auto_case_and_whitespace_without_annotations_ok(tmp_pa
     assert out.exists()
 
 
+def test_stats_annotations_rewrite_preserves_untouched_dtypes(tmp_path):
+    """`stats -a` appends cluster columns to the user's annotations parquet in
+    place; it must NOT rewrite untouched columns through a pandas round-trip that
+    re-infers dtypes (a nullable int64 → float64 corrupts e.g. taxon_id)."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    ann_path = tmp_path / "annotations.parquet"
+    # A nullable int64 column + a categorical the auto-selector can score.
+    taxon = [9606 if i % 2 == 0 else None for i in range(len(headers))]
+    pq.write_table(
+        pa.table(
+            {
+                "identifier": headers,
+                "taxon_id": pa.array(taxon, type=pa.int64()),
+                "grp": ["a" if i % 2 == 0 else "b" for i in range(len(headers))],
+            }
+        ),
+        str(ann_path),
+    )
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out), "-a", str(ann_path)],
+    )
+    assert result.exit_code == 0, result.output
+
+    after = pq.read_table(str(ann_path))
+    assert after.schema.field("taxon_id").type == pa.int64()  # dtype preserved
+    assert after.column("taxon_id").to_pylist() == taxon  # values + nulls intact
+    assert any(c.startswith("cluster_") for c in after.column_names)  # column added
+
+
 def test_prepare_rejects_stats_annotation_without_stats(tmp_path):
     """`prepare --stats-annotation <name>` without `--stats` would be a silent
     no-op — it must fail fast, mirroring the `stats` command's guard."""

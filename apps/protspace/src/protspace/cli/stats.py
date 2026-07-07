@@ -173,13 +173,22 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
 
     if not report.annotation_columns or not ann_path.exists():
         return []
-    df = frame if frame is not None else pq.read_table(str(ann_path)).to_pandas()
+    table = pq.read_table(str(ann_path))
+    df = frame if frame is not None else table.to_pandas()
     added = merge_annotation_columns(report, df, id_col=_resolve_id_col(df))
     if not added:
         return []
+    # Append ONLY the new string columns onto the ORIGINAL Arrow table (row order
+    # preserved: `df` came from the same file). A full `pa.Table.from_pandas(df)`
+    # round-trip would re-infer dtypes and silently rewrite untouched columns the
+    # user owns (e.g. a nullable int64 → float64), so avoid it.
     for name in added:
-        df[name] = df[name].fillna("").astype(str)
-    _atomic_write_table(pa.Table.from_pandas(df, preserve_index=False), ann_path)
+        arr = pa.array(df[name].fillna("").astype(str).tolist(), type=pa.string())
+        if name in table.column_names:
+            table = table.set_column(table.column_names.index(name), name, arr)
+        else:
+            table = table.append_column(name, arr)
+    _atomic_write_table(table, ann_path)
     return added
 
 
