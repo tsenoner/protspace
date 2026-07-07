@@ -154,6 +154,7 @@ def compute_statistics(
     """
     params = params or {}
     stats = statistics if statistics is not None else get_statistics()
+    default_metric = default_metric or "euclidean"  # single owned fallback
     report = StatsReport()
     emb_by_name = {es.name: es for es in embedding_sets}
 
@@ -170,10 +171,8 @@ def compute_statistics(
 
             info = red.get("info") or {}
             high_dim_metric = (
-                (info.get("metric") if isinstance(info, dict) else None)
-                or default_metric
-                or "euclidean"
-            )
+                info.get("metric") if isinstance(info, dict) else None
+            ) or default_metric
 
             embedding = None
             embedding_coords = None
