@@ -581,6 +581,53 @@ def test_stats_command_computes_annotation_validity(tmp_path):
     assert {"embedding", "projection"} <= set(av["space_kind"])
 
 
+def test_stats_command_scores_explicit_annotation_list(tmp_path):
+    """`--stats-annotation a,b` (an explicit comma-list, with -a) must score exactly
+    the named columns end-to-end — NOT silently fall back to `auto`. A third equally
+    suitable column left off the list must be absent from the scored annotations."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, ids = _project_dir(tmp_path)
+    ann_path = tmp_path / "annotations.parquet"
+    n = len(ids)
+    pq.write_table(
+        pa.table(
+            {
+                "identifier": ids,
+                "major_group": ["a" if i % 2 else "b" for i in range(n)],
+                "clade": ["x" if i % 3 else "y" for i in range(n)],
+                "unnamed_grp": ["p" if i % 2 else "q" for i in range(n)],  # suitable
+            }
+        ),
+        str(ann_path),
+    )
+    out = tmp_path / "statistics.parquet"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(out),
+            "-a",
+            str(ann_path),
+            "--stats-annotation",
+            "major_group,clade",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    st = pq.read_table(str(out)).to_pandas()
+    av = st[st.stat_family == "annotation_validity"]
+    # Exactly the two named columns — the explicit list is honoured, not auto.
+    assert set(av["annotation"]) == {"major_group", "clade"}
+    assert "unnamed_grp" not in set(av["annotation"])
+
+
 def test_stats_rejects_no_annotation_source_for_stats_annotation(tmp_path):
     """`--stats-annotation <name>` (non-`auto`) with no -a/--annotations has
     nothing to score, so it must fail fast rather than silently doing nothing."""
