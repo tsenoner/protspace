@@ -842,6 +842,24 @@ def test_kmeans_elbow_subsamples_above_max_fit_sample():
     assert np.array_equal(res1.labels, res2.labels)  # deterministic
 
 
+def test_kmeans_elbow_subsample_is_row_order_invariant_with_ids():
+    """Above max_fit_sample the fit-subsample must be id-canonical: the SAME proteins
+    in a different row order must yield the same elbow K and the same per-id cluster
+    assignment. (A positional draw would pick different proteins and shift labels.)"""
+    X, _ = _blobs(n=400, centers=4, dim=2, seed=43)
+    ids = [f"p{i}" for i in range(400)]
+    res1 = kmeans_elbow(X, ids=ids, rng_seed=42, max_fit_sample=100)
+
+    perm = np.random.default_rng(0).permutation(400)
+    res2 = kmeans_elbow(
+        X[perm], ids=[ids[i] for i in perm], rng_seed=42, max_fit_sample=100
+    )
+    assert res1.k == res2.k
+    m1 = dict(zip(ids, res1.labels, strict=True))
+    m2 = dict(zip([ids[i] for i in perm], res2.labels, strict=True))
+    assert m1 == m2  # per-id membership invariant to input row order
+
+
 def test_elbow_result_has_no_silhouette_optimal_k():
     """The write-only silhouette_optimal_k field/sweep was removed."""
     from dataclasses import fields
