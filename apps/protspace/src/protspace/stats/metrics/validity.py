@@ -80,6 +80,7 @@ class ClusterValidityStatistic:
 
         res = kmeans_elbow(
             X,
+            ids=ctx.ids if len(ctx.ids) == n else None,
             rng_seed=ctx.rng_seed,
             k_max=params.get("k_max"),
             max_fit_sample=int(params.get("max_fit_sample", DEFAULT_MAX_FIT_SAMPLE)),

@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from protspace.stats._sampling import id_seed, sorted_subsample
+
 
 @dataclass
 class ElbowResult:
@@ -53,6 +55,7 @@ def chord_deviation(y: np.ndarray) -> np.ndarray:
 def kmeans_elbow(
     X: np.ndarray,
     *,
+    ids: list | None = None,
     rng_seed: int = 42,
     k_max: int | None = None,
     n_init: int = 10,
@@ -71,6 +74,11 @@ def kmeans_elbow(
     At or below the threshold the full-batch ``KMeans`` is used, so small/medium
     inputs are unchanged.
 
+    When ``ids`` is given, the fit-subsample and the silhouette sample are drawn in
+    canonical id order (id-seeded, per ``_sampling.py``), so the chosen K and the
+    membership labels depend only on the id-SET, not the input row order — matching
+    the other heavy metrics. Labels are mapped back to the input order on return.
+
     When ``silhouette_selection`` is set, the K maximising the (sampled) silhouette
     over the sweep is also returned (``silhouette_k`` / ``silhouette_labels``) as an
     alternative to the elbow K. This costs one silhouette pass per K, so it is
@@ -88,13 +96,29 @@ def kmeans_elbow(
     k_max = max(2, min(k_max, 50, n - 1))
     k_range = list(range(2, k_max + 1))
 
-    # Bound the fit cost: sweep a subsample at large n; keep full-batch below.
+    # Canonicalise row order by id so the fit-subsample and the silhouette sample
+    # depend only on the id-SET, not the input order (the _sampling.py contract the
+    # other heavy metrics honour). Everything below runs on Xc (canonical order);
+    # labels are mapped back to the caller's order at the end.
+    if ids is not None and len(ids) == n:
+        canonical = np.argsort(np.asarray(ids), kind="stable")
+        inverse = np.empty(n, dtype=int)
+        inverse[canonical] = np.arange(n)
+        Xc = X[canonical]
+        fit_rng = np.random.default_rng(id_seed(rng_seed, list(ids)))
+    else:
+        canonical = inverse = None
+        Xc = X
+        fit_rng = np.random.default_rng(rng_seed)
+
+    # Bound the fit cost: sweep a subsample at large n; keep full-batch below. The
+    # draw is id-canonical (sorted positions over Xc, which is in canonical order).
     subsample = n > max_fit_sample
     if subsample:
-        idx = np.random.default_rng(rng_seed).choice(n, max_fit_sample, replace=False)
-        x_fit = X[idx]
+        idx = sorted_subsample(n, max_fit_sample, fit_rng)
+        x_fit = Xc[idx]
     else:
-        x_fit = X
+        x_fit = Xc
 
     inertia: list[float] = []
     models_by_k: dict[int, object] = {}
@@ -109,10 +133,12 @@ def kmeans_elbow(
         models_by_k[k] = km
 
     def _labels_full(k: int) -> np.ndarray:
-        # Full-coverage labels: fitted labels below the threshold, one O(n*k*d)
-        # nearest-centroid predict pass when the fit used a subsample.
+        # Full-coverage labels in the CALLER's row order: fitted labels below the
+        # threshold, else one O(n*k*d) nearest-centroid predict pass; both computed
+        # in canonical order, then mapped back via `inverse`.
         km = models_by_k[k]
-        return km.predict(X) if subsample else km.labels_
+        labels_c = km.predict(Xc) if subsample else km.labels_
+        return labels_c if inverse is None else labels_c[inverse]
 
     def _silhouette_k():
         # K maximising the (sampled) silhouette over the sweep, scored on x_fit
