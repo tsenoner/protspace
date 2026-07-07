@@ -42,6 +42,32 @@ def test_build_labels_explicit_names_and_missing_dropped():
     assert labels["major_group"]["p2"] == "b"
 
 
+def test_build_labels_strips_evidence_scores():
+    # A score-bearing column: the same category carries different |evidence codes,
+    # and one cell is multi-valued. Scoring must see the bare category, not the
+    # compound value|score string (which would split one location into several).
+    frame = pd.DataFrame(
+        {
+            "identifier": [f"p{i}" for i in range(6)],
+            "cc_subcellular_location": [
+                "Cytoplasm|EXP",
+                "Cytoplasm|IEA",
+                "Nucleus|EXP",
+                "Nucleus|IEA",
+                "Cytoplasm|EXP;Membrane|IEA",
+                "Cytoplasm|EXP;Membrane|IEA",
+            ],
+        }
+    )
+    labels = build_annotation_labels(frame, ["cc_subcellular_location"])
+    mapping = labels["cc_subcellular_location"]
+    assert mapping["p0"] == "Cytoplasm"  # |EXP stripped
+    assert mapping["p1"] == "Cytoplasm"  # |IEA collapses to the same category
+    assert mapping["p4"] == "Cytoplasm;Membrane"  # multi-value, per-entry stripped
+    # Evidence variants collapse to the real categories, not one-per-evidence-code.
+    assert set(mapping.values()) == {"Cytoplasm", "Nucleus", "Cytoplasm;Membrane"}
+
+
 def test_build_labels_unknown_name_skipped():
     labels = build_annotation_labels(_frame(), ["does_not_exist"])
     assert labels == {}

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from protspace.data.annotations.scores import _strip_scores_from_cell
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,20 @@ def _is_missing(value) -> bool:
     return value is None or str(value) in _MISSING
 
 
+def _category(value) -> str:
+    """The bare category label of a cell: its ``value|score`` evidence/bit-score
+    suffix stripped (per ``;``-separated entry), matching ``strip_scores_from_df``.
+
+    Scoring an annotation on ``value|EXP`` vs ``value|IEA`` would split one
+    biological category into several, so silhouette/DBI/CH and ARI/NMI must see
+    the stripped category — the same convention the cluster-legend carriage uses.
+    """
+    return _strip_scores_from_cell(str(value))
+
+
 def _clean(series) -> list[str]:
-    """Non-missing string values of a column."""
-    return [str(v) for v in series.tolist() if not _is_missing(v)]
+    """Non-missing bare-category string values of a column (scores stripped)."""
+    return [_category(v) for v in series.tolist() if not _is_missing(v)]
 
 
 def _is_numeric(vals) -> bool:
@@ -69,7 +81,7 @@ def _is_suitable_column(series, cap: int) -> bool:
         if _is_missing(v):
             continue
         total += 1
-        seen.add(str(v))
+        seen.add(_category(v))
         if len(seen) > cap:  # too many categories → not a low-card categorical
             return False
     distinct = len(seen)
@@ -143,7 +155,7 @@ def build_annotation_labels(
     ids = [str(i) for i in frame[id_col].tolist()]
     for name in names:
         mapping = {
-            pid: str(v)
+            pid: _category(v)
             for pid, v in zip(ids, frame[name].tolist(), strict=False)
             if not _is_missing(v)
         }
