@@ -311,6 +311,33 @@ def test_faithfulness_skips_without_embedding():
     assert FaithfulnessStatistic().compute(ctx) == []
 
 
+def test_faithfulness_marks_random_triplet_skipped_for_unsupported_metric():
+    # chebyshev is accepted by the kNN/pairwise path but NOT by paired_distances
+    # (which random_triplet uses). The metric must not vanish silently — it should
+    # emit a row flagged skipped while the other four metrics still compute.
+    X, _ = _blobs(n=120, centers=3, dim=6, seed=5)
+    coords = PCA(n_components=2, random_state=0).fit_transform(X)
+    ids = [str(i) for i in range(120)]
+    rows = FaithfulnessStatistic().compute(
+        StatContext(
+            "projection",
+            "PCA_2",
+            coords=coords,
+            ids=ids,
+            embedding=X,
+            embedding_name="e",
+            high_dim_metric="chebyshev",
+        )
+    )
+    by_metric = {r.metric: r for r in rows}
+    assert "random_triplet" in by_metric  # present, not dropped
+    assert by_metric["random_triplet"].extra.get("skipped")
+    assert np.isnan(by_metric["random_triplet"].value)
+    # The metrics that DO support chebyshev still produced real values.
+    assert not np.isnan(by_metric["knn_overlap"].value)
+    assert "skipped" not in by_metric["knn_overlap"].extra
+
+
 def test_faithfulness_rows_route_to_projection_metadata():
     X, _ = _blobs(n=120, centers=3, dim=6, seed=21)
     coords = PCA(n_components=2, random_state=0).fit_transform(X)

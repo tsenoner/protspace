@@ -303,15 +303,21 @@ class FaithfulnessStatistic:
         rows: list[StatRow] = []
         for metric_name, value_fn, extra_extra in metrics:
             try:
-                rows.append(
-                    StatRow(
-                        metric=metric_name,
-                        value=value_fn(),
-                        extra={**common, **extra_extra},
-                        **base,
-                    )
+                value = value_fn()
+            except Exception as exc:  # noqa: BLE001 - faithfulness is best-effort
+                # Record the gap instead of dropping it silently: e.g.
+                # ``random_triplet`` uses ``paired_distances``, which supports fewer
+                # metrics than the kNN path — an unsupported high-dim metric would
+                # otherwise leave quality with 4 of 5 metrics and no marker.
+                value = float("nan")
+                extra_extra = {**extra_extra, "skipped": type(exc).__name__}
+            rows.append(
+                StatRow(
+                    metric=metric_name,
+                    value=value,
+                    extra={**common, **extra_extra},
+                    **base,
                 )
-            except Exception:  # noqa: BLE001 - faithfulness is best-effort
-                pass
+            )
 
         return rows
