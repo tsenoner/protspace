@@ -14,6 +14,7 @@ export {
   findBundleDelimiterPositions,
   isParquetBundle,
   countBundleDelimiters,
+  splitBundleParts,
 } from './delimiter-utils';
 
 // BigInt utilities

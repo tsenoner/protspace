@@ -32,6 +32,10 @@ def _parse_origins(raw: str) -> tuple[str, ...]:
     return tuple(o.strip() for o in raw.split(",") if o.strip())
 
 
+def _parse_bool(raw: str) -> bool:
+    return raw.strip().lower() in {"1", "true", "yes"}
+
+
 def load_settings() -> Settings:
     return Settings(
         job_root=Path(os.getenv("PREP_JOB_ROOT", "/var/lib/protspace-prep/jobs")),
@@ -50,10 +54,10 @@ def load_settings() -> Settings:
         annotations=os.getenv("PREP_ANNOTATIONS", "default"),
         sweep_interval_seconds=int(os.getenv("PREP_SWEEP_INTERVAL_SECONDS", "300")),
         pipeline_timeout_seconds=int(os.getenv("PREP_PIPELINE_TIMEOUT_SECONDS", "420")),
-        stats_enabled=os.getenv("PREP_STATS", "true").lower() in {"1", "true", "yes"},
+        stats_enabled=_parse_bool(os.getenv("PREP_STATS", "true")),
         stats_timeout_seconds=int(os.getenv("PREP_STATS_TIMEOUT_SECONDS", "120")),
         log_level=os.getenv("PREP_LOG_LEVEL", "INFO"),
-        log_json_format=os.getenv("PREP_LOG_JSON_FORMAT", "false").lower() in {"1", "true", "yes"},
+        log_json_format=_parse_bool(os.getenv("PREP_LOG_JSON_FORMAT", "false")),
         cors_allowed_origins=_parse_origins(os.getenv("CORS_ALLOWED_ORIGIN", "")),
         rate_limit=(os.getenv("PREP_RATE_LIMIT", "").strip() or "5/15minutes"),
     )

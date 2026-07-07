@@ -8,7 +8,7 @@ import {
   countBundleDelimiters,
   isParquetBundle,
   BUNDLE_DELIMITER_BYTES,
-  findBundleDelimiterPositions,
+  splitBundleParts,
 } from '@protspace/utils';
 
 function loadArrayBuffer(filePath: string): ArrayBuffer {
@@ -346,14 +346,9 @@ describe('5-part statistics bundle parsing', () => {
 
   function splitParts(buf: ArrayBuffer): Uint8Array[] {
     const u8 = new Uint8Array(buf);
-    const pos = findBundleDelimiterPositions(u8);
-    const out: Uint8Array[] = [];
-    for (let i = 0; i <= pos.length; i++) {
-      const start = i === 0 ? 0 : pos[i - 1] + DELIM.length;
-      const end = i < pos.length ? pos[i] : u8.length;
-      out.push(u8.subarray(start, end).slice());
-    }
-    return out;
+    // Copy each view since callers below mutate/reassemble the returned parts
+    // independently of the source buffer.
+    return splitBundleParts(u8).map((part) => part.slice());
   }
 
   function assemble(parts: Uint8Array[]): ArrayBuffer {

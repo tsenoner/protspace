@@ -1,4 +1,6 @@
-from protspace_prep.config import load_settings
+import pytest
+
+from protspace_prep.config import _parse_bool, load_settings
 
 
 def test_cors_origins_parsed_from_env(monkeypatch):
@@ -30,3 +32,32 @@ def test_cors_origins_trailing_comma(monkeypatch):
 def test_rate_limit_blank_falls_back_to_default(monkeypatch):
     monkeypatch.setenv("PREP_RATE_LIMIT", "   ")
     assert load_settings().rate_limit == "5/15minutes"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("1", True),
+        ("true", True),
+        ("True", True),
+        ("YES", True),
+        ("yes", True),
+        ("0", False),
+        ("false", False),
+        ("no", False),
+        ("", False),
+        ("  true  ", True),
+    ],
+)
+def test_parse_bool(raw, expected):
+    assert _parse_bool(raw) is expected
+
+
+def test_stats_enabled_defaults_true(monkeypatch):
+    monkeypatch.delenv("PREP_STATS", raising=False)
+    assert load_settings().stats_enabled is True
+
+
+def test_log_json_format_defaults_false(monkeypatch):
+    monkeypatch.delenv("PREP_LOG_JSON_FORMAT", raising=False)
+    assert load_settings().log_json_format is False

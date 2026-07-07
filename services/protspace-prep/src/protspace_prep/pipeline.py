@@ -202,6 +202,19 @@ _STATS_CLI_PROBE_LOCK = asyncio.Lock()
 _STATS_PROBE_TIMEOUT_SECONDS = 10.0
 
 
+async def _kill_and_wait(process: asyncio.subprocess.Process, grace_seconds: float = 5.0) -> None:
+    """Kill *process* and wait up to *grace_seconds* for it to exit.
+
+    Swallows a second ``TimeoutError`` if the process still hasn't exited by
+    then; the caller has already decided to abandon it either way.
+    """
+    process.kill()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=grace_seconds)
+    except asyncio.TimeoutError:
+        pass
+
+
 async def _stats_cli_available() -> bool:
     """Bounded one-time probe: is the installed protspace new enough to have ``stats``?
 
@@ -244,11 +257,7 @@ async def _stats_cli_available() -> bool:
             _STATS_CLI_AVAILABLE = rc == 0  # definitive: clean exit, zero or non-zero
             return _STATS_CLI_AVAILABLE
         except asyncio.TimeoutError:
-            proc.kill()
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                pass
+            await _kill_and_wait(proc)
             logger.warning("protspace stats probe timed out; will retry next job")
             return False  # transient hang, do not latch
 
@@ -382,11 +391,7 @@ async def _run_step(name: str, cmd: Sequence[str]) -> None:
     try:
         returncode = await _drain()
     except asyncio.CancelledError:
-        process.kill()
-        try:
-            await asyncio.wait_for(process.wait(), timeout=5)
-        except asyncio.TimeoutError:
-            pass
+        await _kill_and_wait(process)
         raise
 
     if returncode != 0:

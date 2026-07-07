@@ -1,7 +1,7 @@
 import { parquetReadObjects } from 'hyparquet';
 import {
-  BUNDLE_DELIMITER_BYTES,
   findBundleDelimiterPositions,
+  splitBundleParts,
   normalizeBundleSettings,
   type BundleSettings,
 } from '@protspace/utils';
@@ -51,21 +51,21 @@ export async function extractRowsFromParquetBundle(
     );
   }
 
-  const delimLen = BUNDLE_DELIMITER_BYTES.length;
-  const partStart = (i: number): number => (i === 0 ? 0 : delimiterPositions[i - 1] + delimLen);
-  const partEnd = (i: number): number =>
-    i < delimiterPositions.length ? delimiterPositions[i] : uint8Array.length;
-  const slicePart = (i: number): ArrayBuffer =>
-    uint8Array.subarray(partStart(i), partEnd(i)).slice().buffer;
+  // Zero-copy views into uint8Array; only the parts we actually decode get
+  // copied into their own ArrayBuffer below (statistics is deliberately never
+  // copied — see below).
+  const parts = splitBundleParts(uint8Array, delimiterPositions);
 
   // Extract the three required core parts.
-  let part1: ArrayBuffer | null = slicePart(0);
-  let part2: ArrayBuffer | null = slicePart(1);
-  let part3: ArrayBuffer | null = slicePart(2);
+  let part1: ArrayBuffer | null = parts[0].slice().buffer;
+  let part2: ArrayBuffer | null = parts[1].slice().buffer;
+  let part3: ArrayBuffer | null = parts[2].slice().buffer;
 
   // Part 4 is settings (optional). It may be a zero-byte slot when a statistics
   // part follows without settings — branch on emptiness, not the raw count.
-  // Part 5 is statistics, intentionally ignored for now (rendering is separate).
+  // Part 5 is statistics, intentionally ignored for now (rendering is separate,
+  // and it is never copied out of `parts` — copying the potentially-huge
+  // statistics part would regress peak memory for large datasets).
   //
   // ASSUMPTION (unverified in this repo): part-index 3 = settings and
   // part-index 4 = statistics, i.e. the external `protspace bundle` CLI always
@@ -82,7 +82,7 @@ export async function extractRowsFromParquetBundle(
   // uncolored) with no signal. See the warn below for the best-effort
   // observability guard.
   const part4: ArrayBuffer | null =
-    delimiterPositions.length >= 3 && partEnd(3) > partStart(3) ? slicePart(3) : null;
+    delimiterPositions.length >= 3 && parts[3].byteLength > 0 ? parts[3].slice().buffer : null;
 
   // Validate parquet magic for each part before parsing
   assertValidParquetMagic(part1);
@@ -176,10 +176,6 @@ export async function extractRowsFromParquetBundle(
  */
 async function extractSettings(settingsBuffer: ArrayBuffer): Promise<BundleSettings | null> {
   try {
-    // A zero-byte settings slot (statistics-without-settings) is "no settings".
-    if (settingsBuffer.byteLength === 0) {
-      return null;
-    }
     // Validate parquet magic
     assertValidParquetMagic(settingsBuffer);
 

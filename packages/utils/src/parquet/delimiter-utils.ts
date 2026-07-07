@@ -50,3 +50,41 @@ export function isParquetBundle(arrayBuffer: ArrayBuffer): boolean {
 export function countBundleDelimiters(uint8Array: Uint8Array): number {
   return findBundleDelimiterPositions(uint8Array).length;
 }
+
+/**
+ * Split a parquetbundle byte array into its delimiter-separated parts.
+ *
+ * For N delimiter positions this yields N + 1 parts. Part `i` spans
+ * `[partStart(i), partEnd(i))` where:
+ *  - the first part starts at byte 0,
+ *  - each subsequent part starts right after the previous delimiter,
+ *  - the last part ends at `uint8Array.length`,
+ *  - every other part ends at the position of its following delimiter.
+ *
+ * Two adjacent delimiters (no bytes between them) correctly yield a
+ * zero-length part — used by the bundle format to represent an empty
+ * settings slot when statistics are present without settings.
+ *
+ * The returned parts are `subarray` views into `uint8Array` (zero-copy).
+ * Callers that need an owned, detachable buffer (e.g. to pass to a parser
+ * that takes an `ArrayBuffer`) must copy explicitly, e.g. `part.slice().buffer`.
+ *
+ * @param uint8Array - The binary data to split
+ * @param positions - Delimiter positions; defaults to
+ *   `findBundleDelimiterPositions(uint8Array)` when omitted
+ * @returns One `Uint8Array` view per part (`positions.length + 1` parts)
+ */
+export function splitBundleParts(
+  uint8Array: Uint8Array,
+  positions: number[] = findBundleDelimiterPositions(uint8Array),
+): Uint8Array[] {
+  const delimLen = BUNDLE_DELIMITER_BYTES.length;
+  const partStart = (i: number): number => (i === 0 ? 0 : positions[i - 1] + delimLen);
+  const partEnd = (i: number): number => (i < positions.length ? positions[i] : uint8Array.length);
+
+  const parts: Uint8Array[] = [];
+  for (let i = 0; i <= positions.length; i++) {
+    parts.push(uint8Array.subarray(partStart(i), partEnd(i)));
+  }
+  return parts;
+}
