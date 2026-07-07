@@ -93,17 +93,18 @@ class ClusterValidityStatistic:
         # Which labelling(s) to emit. Each K-selection method is named explicitly
         # (cluster_elbow_<proj> / cluster_silhouette_<proj>) so the column name — the
         # only signal that survives to the frontend — carries the provenance.
+        def _elbow_labeling() -> _Labeling:
+            return _Labeling(
+                "kmeans_elbow",
+                f"{CLUSTER_COLUMN_PREFIX}elbow_{ctx.space_name}",
+                "elbow",
+                res.k,
+                res.labels,
+            )
+
         labelings: list[_Labeling] = []
         if selection in ("elbow", "both"):
-            labelings.append(
-                _Labeling(
-                    "kmeans_elbow",
-                    f"{CLUSTER_COLUMN_PREFIX}elbow_{ctx.space_name}",
-                    "elbow",
-                    res.k,
-                    res.labels,
-                )
-            )
+            labelings.append(_elbow_labeling())
         if selection in ("silhouette", "both") and res.silhouette_labels is not None:
             labelings.append(
                 _Labeling(
@@ -121,15 +122,7 @@ class ClusterValidityStatistic:
         # so the projection still emits membership/agreement rows rather than
         # vanishing silently from the report.
         if not labelings:
-            labelings.append(
-                _Labeling(
-                    "kmeans_elbow",
-                    f"{CLUSTER_COLUMN_PREFIX}elbow_{ctx.space_name}",
-                    "elbow",
-                    res.k,
-                    res.labels,
-                )
-            )
+            labelings.append(_elbow_labeling())
 
         out: list = []
         for labeling in labelings:
