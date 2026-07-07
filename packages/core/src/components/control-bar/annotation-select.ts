@@ -18,6 +18,9 @@ class ProtspaceAnnotationSelect extends LitElement {
   @property({ type: String, attribute: 'selected-annotation' }) selectedAnnotation: string = '';
   @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String }) placeholder: string = 'Select annotation';
+  /** Names of the loaded bundle's projections, so computed `cluster_<name>` /
+   * `silhouette_<name>` columns can be told apart from same-prefixed user columns. */
+  @property({ type: Array }) projections: string[] = [];
 
   @state() private open: boolean = false;
   @state() private query: string = '';
@@ -153,7 +156,7 @@ class ProtspaceAnnotationSelect extends LitElement {
    * Categorize annotations using the shared utility.
    */
   private categorizeAnnotations(annotations: string[]): GroupedAnnotation[] {
-    return groupAnnotations(annotations);
+    return groupAnnotations(annotations, this.projections);
   }
 
   /**

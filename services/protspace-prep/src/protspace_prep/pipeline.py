@@ -205,11 +205,12 @@ _STATS_PROBE_TIMEOUT_SECONDS = 10.0
 async def _stats_cli_available() -> bool:
     """Bounded one-time probe: is the installed protspace new enough to have ``stats``?
 
-    Caches only DEFINITIVE answers — a clean exit (0 ⇒ present, non-zero / not on
-    PATH ⇒ absent). A transient spawn error or a hung probe returns unavailable for
-    THIS call but is NOT latched, so a later job can retry. The probe is bounded by a
-    hard timeout and kills a hung subprocess, so it can never stall the job or leak a
-    concurrency slot. A lock collapses the first concurrent wave to a single probe.
+    Caches only DEFINITIVE answers — a clean exit (0 ⇒ present, positive non-zero /
+    not on PATH ⇒ absent). A transient spawn error, a signal-killed probe (e.g. OOM
+    SIGKILL), or a hung probe returns unavailable for THIS call but is NOT latched,
+    so a later job can retry. The probe is bounded by a hard timeout and kills a hung
+    subprocess, so it can never stall the job or leak a concurrency slot. A lock
+    collapses the first concurrent wave to a single probe.
     """
     global _STATS_CLI_AVAILABLE
     if _STATS_CLI_AVAILABLE is not None:
@@ -233,7 +234,14 @@ async def _stats_cli_available() -> bool:
             return False
         try:
             rc = await asyncio.wait_for(proc.wait(), timeout=_STATS_PROBE_TIMEOUT_SECONDS)
-            _STATS_CLI_AVAILABLE = rc == 0  # definitive
+            if rc < 0:
+                # Killed by a signal (e.g. -9 SIGKILL from an OOM killer): transient,
+                # not a definitive "subcommand missing" answer, so do not latch.
+                logger.warning(
+                    "protspace stats probe was killed by signal %d; will retry next job", -rc
+                )
+                return False
+            _STATS_CLI_AVAILABLE = rc == 0  # definitive: clean exit, zero or non-zero
             return _STATS_CLI_AVAILABLE
         except asyncio.TimeoutError:
             proc.kill()
@@ -298,8 +306,15 @@ async def _maybe_add_statistics(
                         str(stats_path),
                     ],
                 )
-                if not stats_path.exists():
-                    return
+                # Always re-bundle after `stats` succeeds, regardless of whether it
+                # produced the aggregate statistics.parquet: `stats` enriches
+                # annotations.parquet in place (via `-a`) and may write
+                # cluster_styles.json even on a run where no projection yields a
+                # valid elbow K (so no aggregate file is written). Gating the
+                # re-bundle on stats_path alone would silently drop those
+                # already-computed per-protein cluster/silhouette columns and
+                # styles. If `stats` produced nothing at all, this re-bundle simply
+                # re-emits the core bundle, which is harmless.
                 bundle_cmd = [
                     "protspace",
                     "bundle",
@@ -307,15 +322,14 @@ async def _maybe_add_statistics(
                     str(project_dir),
                     "-a",
                     str(annotations_path),
-                    "-s",
-                    str(stats_path),
-                    "-o",
-                    str(tmp_bundle),
                 ]
+                if stats_path.exists():
+                    bundle_cmd += ["-s", str(stats_path)]
                 # Fold the auto-generated cluster styles into the bundle's settings
                 # part when `stats` produced them (older engines may not).
                 if styles_path.exists():
-                    bundle_cmd[-2:-2] = ["--settings", str(styles_path)]
+                    bundle_cmd += ["--settings", str(styles_path)]
+                bundle_cmd += ["-o", str(tmp_bundle)]
                 await _run_step("bundle", bundle_cmd)
             # Promote only a fully-written temp bundle (atomic, same filesystem).
             if tmp_bundle.exists():

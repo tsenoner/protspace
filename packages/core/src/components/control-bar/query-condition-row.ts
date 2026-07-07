@@ -83,7 +83,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   // ─── Annotation picker grouping ───────────────────────────────────────────
 
   private _groupAnnotations() {
-    return groupAnnotations(this.annotations).map((g) => ({
+    const projectionNames = (this.data?.projections ?? []).map((p) => p.name);
+    return groupAnnotations(this.annotations, projectionNames).map((g) => ({
       category: g.category,
       items: g.annotations,
     }));

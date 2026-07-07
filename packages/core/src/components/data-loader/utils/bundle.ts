@@ -66,6 +66,21 @@ export async function extractRowsFromParquetBundle(
   // Part 4 is settings (optional). It may be a zero-byte slot when a statistics
   // part follows without settings — branch on emptiness, not the raw count.
   // Part 5 is statistics, intentionally ignored for now (rendering is separate).
+  //
+  // ASSUMPTION (unverified in this repo): part-index 3 = settings and
+  // part-index 4 = statistics, i.e. the external `protspace bundle` CLI always
+  // orders a 5-part bundle as [core, core, core, settings, statistics], and
+  // writes a zero-byte placeholder for the settings slot when statistics are
+  // present without settings. That CLI lives outside this repo
+  // (services/protspace-prep shells out to `protspace bundle` / `protspace
+  // stats`), so this ordering has not been verified against the pinned
+  // protspace version. If the engine instead omits the delimiter for a
+  // missing settings part (writing a delimiter only BETWEEN present tables,
+  // per its known writer pattern) rather than emitting an empty placeholder,
+  // or orders parts differently, this slicing would misread part4 and
+  // auto-generated cluster styles would be silently dropped (clusters render
+  // uncolored) with no signal. See the warn below for the best-effort
+  // observability guard.
   const part4: ArrayBuffer | null =
     delimiterPositions.length >= 3 && partEnd(3) > partStart(3) ? slicePart(3) : null;
 
@@ -90,6 +105,26 @@ export async function extractRowsFromParquetBundle(
   let settings: BundleSettings | null = null;
   if (part4) {
     settings = await extractSettings(part4);
+
+    // Observability guard for the part-ordering ASSUMPTION documented above.
+    // A non-empty part4 that fails to parse as settings is expected (and
+    // silent) for the plain 3-delimiter core-only case where part4 doesn't
+    // exist at all — but here we've already established part4 has real
+    // bytes AND a statistics part is present (4 delimiters). If settings
+    // still came back null, either this bundle genuinely has no settings, or
+    // the part-ordering assumption doesn't hold for this bundle and we just
+    // misread the statistics part as settings. We can't tell which from here
+    // without changing the return shape, so just make the ambiguity visible.
+    if (delimiterPositions.length === 4 && settings === null) {
+      console.warn(
+        'protspace bundle: a 5-part bundle (core + settings + statistics) was detected, ' +
+          'but the settings part (index 3) did not parse as settings (no settings_json ' +
+          'found). This may mean the bundle genuinely has no settings, OR that the ' +
+          '`protspace bundle` CLI ordered parts differently than assumed here ' +
+          '([core, core, core, settings, statistics]) — in which case auto-generated ' +
+          'cluster styles were silently dropped. Verify against the pinned protspace version.',
+      );
+    }
   }
 
   // Validate projection rows for expected bundle shape

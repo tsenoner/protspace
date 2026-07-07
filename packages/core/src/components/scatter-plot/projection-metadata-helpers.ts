@@ -59,20 +59,26 @@ function expandQuality(quality: Record<string, unknown>): Array<[string, string]
  * a bare scalar (older flat shape) is formatted directly.
  */
 function formatQualityValue(raw: unknown): string {
-  if (isPlainObject(raw) && 'value' in raw) {
-    const value = raw.value;
-    if (value == null) {
+  if (raw == null) return NA_DISPLAY;
+
+  if (isPlainObject(raw)) {
+    const hasValueKey = 'value' in raw;
+    const value = hasValueKey ? raw.value : undefined;
+
+    if (!hasValueKey || value == null) {
       const skipped = typeof raw.skipped === 'string' ? raw.skipped : null;
-      return skipped ? `${NA_DISPLAY} (skipped: ${skipped})` : NA_DISPLAY;
+      if (skipped) return `${NA_DISPLAY} (skipped: ${skipped})`;
+      if (hasValueKey) return NA_DISPLAY;
+      // No `value` key and no `skipped` marker: shape isn't a recognized
+      // faithfulness metric — keep the raw JSON visible instead of masking it.
+      return JSON.stringify(raw);
     }
+
     const valueStr = formatSingleValue(value, false);
     const provenance: string[] = [];
     if (typeof raw.metric === 'string') provenance.push(raw.metric);
     if (raw.k != null) provenance.push(`k=${formatSingleValue(raw.k, false)}`);
     return provenance.length > 0 ? `${valueStr} (${provenance.join(', ')})` : valueStr;
-  }
-  if (isPlainObject(raw)) {
-    return JSON.stringify(raw);
   }
   return formatSingleValue(raw, false);
 }

@@ -600,6 +600,7 @@ export class ProtspaceControlBar extends LitElement {
               .annotations=${this.annotations}
               .selectedAnnotation=${this.selectedAnnotation}
               .tooltipAnnotations=${this.tooltipAnnotations}
+              .projections=${this.projections}
               @annotation-select=${this.handleAnnotationSelected}
               @tooltip-annotation-toggle=${this.handleTooltipAnnotationToggle}
             ></protspace-annotation-select>

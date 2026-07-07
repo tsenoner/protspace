@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { extractRowsFromParquetBundle } from './bundle';
@@ -423,6 +423,34 @@ describe('5-part statistics bundle parsing', () => {
     const res = await extractRowsFromParquetBundle(fivePart);
     expect(res.projections.length).toBeGreaterThan(0);
     expect(res.settings).not.toBeNull();
+  });
+
+  it('warns when a statistics part is present but the settings-slot part does not parse as settings', async () => {
+    // Regression guard for the unverified part-ordering ASSUMPTION documented
+    // in bundle.ts (part-index 3 = settings, part-index 4 = statistics). This
+    // simulates a mis-ordered/mis-typed part4: it is non-empty (so NOT the
+    // benign zero-byte-placeholder case) but is a plain core parquet with no
+    // `settings_json` column, so extractSettings legitimately returns null.
+    // The reader can't tell "genuinely no settings" apart from "ordering
+    // assumption broke and we misread the wrong part" — so it must warn
+    // instead of silently dropping cluster styles with no signal.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const core = splitParts(createParquetBundle(original)); // [c0, c1, c2]
+      const fivePart = assemble([core[0], core[1], core[2], core[0], core[0]]);
+      expect(countBundleDelimiters(new Uint8Array(fivePart))).toBe(4);
+
+      const res = await extractRowsFromParquetBundle(fivePart);
+
+      expect(res.settings).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'protspace bundle: a 5-part bundle (core + settings + statistics) was detected',
+        ),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

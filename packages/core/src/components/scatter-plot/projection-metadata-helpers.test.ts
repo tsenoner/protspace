@@ -54,4 +54,18 @@ describe('buildProjectionMetadataRows', () => {
     const rows = buildProjectionMetadataRows({ info_json: info });
     expect(new Map(rows).get('Knn Overlap')).toBe('0.830');
   });
+
+  it('renders a skipped faithfulness metric with no `value` key as N/A with the marker', () => {
+    const info = JSON.stringify({
+      quality: { knn_overlap: { skipped: 'n_too_large', n: 30000 } },
+    });
+    const rows = buildProjectionMetadataRows({ info_json: info });
+    expect(new Map(rows).get('Knn Overlap')).toBe('N/A (skipped: n_too_large)');
+  });
+
+  it('renders a bare null quality metric as N/A', () => {
+    const info = JSON.stringify({ quality: { knn_overlap: null } });
+    const rows = buildProjectionMetadataRows({ info_json: info });
+    expect(new Map(rows).get('Knn Overlap')).toBe('N/A');
+  });
 });

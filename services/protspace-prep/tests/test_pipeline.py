@@ -400,14 +400,46 @@ async def test_stats_probe_timeout_is_bounded_and_not_latched(monkeypatch):
     assert ppl._STATS_CLI_AVAILABLE is None  # transient hang → NOT latched, retried later
 
 
-def _stats_router(ctx: JobContext, *, stats_returncode: int = 0):
+async def test_stats_probe_signal_kill_is_not_latched():
+    import protspace_prep.pipeline as ppl
+
+    proc = MagicMock()
+
+    async def _killed():
+        return -9  # SIGKILL, e.g. an OOM killer
+
+    proc.wait = _killed
+
+    async def fake(*args, **kwargs):
+        return proc
+
+    with patch("asyncio.create_subprocess_exec", new=fake):
+        assert await ppl._stats_cli_available() is False
+    assert ppl._STATS_CLI_AVAILABLE is None  # signal kill → transient, NOT latched
+
+
+def _stats_router(
+    ctx: JobContext,
+    *,
+    stats_returncode: int = 0,
+    write_stats_aggregate: bool = True,
+    write_cluster_styles: bool = False,
+):
     """Step router that also writes a statistics parquet on the `stats` step and
-    a distinct bundle on the stats re-bundle (`bundle ... -s`)."""
+    a distinct bundle on the stats re-bundle (`bundle ... -s` / `--settings`).
+
+    ``write_stats_aggregate`` / ``write_cluster_styles`` let a test simulate a
+    `stats` run that exits 0 but produces only a subset of its outputs (e.g. no
+    projection yields a valid elbow K, so no aggregate statistics.parquet is
+    written, even though cluster_styles.json and the in-place annotations
+    enrichment already happened).
+    """
     embed_dir = ctx.output_dir / "embed"
     project_dir = ctx.output_dir / "project"
     annotations_path = ctx.output_dir / "annotations.parquet"
     bundle_path = ctx.output_dir / "data.parquetbundle"
     stats_path = ctx.output_dir / "statistics.parquet"
+    styles_path = ctx.output_dir / "cluster_styles.json"
 
     async def fake_create(*args, **kwargs):
         cmd = list(args)
@@ -428,11 +460,19 @@ def _stats_router(ctx: JobContext, *, stats_returncode: int = 0):
         elif step == "stats":
             if stats_returncode != 0:
                 return _mock_subprocess(stats_returncode, [b"ERROR stats boom\n"])
-            stats_path.write_bytes(b"STATS")
+            if write_cluster_styles:
+                styles_path.write_bytes(b"STYLES")
+            if write_stats_aggregate:
+                stats_path.write_bytes(b"STATS")
         elif step == "bundle":
             # Honor the -o target: core bundle → bundle_path; stats re-bundle → temp.
             out = Path(cmd[cmd.index("-o") + 1])
-            out.write_bytes(b"BUNDLE+STATS" if "-s" in cmd else b"BUNDLE")
+            parts = []
+            if "-s" in cmd:
+                parts.append(b"STATS")
+            if "--settings" in cmd:
+                parts.append(b"STYLES")
+            out.write_bytes(b"BUNDLE" + (b"+" + b"+".join(parts) if parts else b""))
         return _mock_subprocess(0)
 
     return fake_create
@@ -453,6 +493,28 @@ async def test_statistics_folds_into_bundle_and_emits_stage(ctx):
     assert bundle_path.read_bytes() == b"BUNDLE+STATS"
     assert (ctx.output_dir / "statistics.parquet").exists()
     assert "computing_statistics" in emitted
+
+
+async def test_statistics_rebundles_without_aggregate_file(ctx):
+    """`stats` can exit 0 without ever writing the aggregate statistics.parquet
+    (e.g. no projection yields a valid elbow K), while it already wrote
+    cluster_styles.json and enriched annotations.parquet in place. The
+    re-bundle must still run so those already-computed per-protein columns
+    and styles are folded in, instead of being silently lost because the
+    shipped bundle is left as the plain core bundle.
+    """
+    bundle_path = ctx.output_dir / "data.parquetbundle"
+    settings = load_settings()
+    router = _stats_router(ctx, write_stats_aggregate=False, write_cluster_styles=True)
+    with patch("protspace_prep.pipeline._stats_cli_available", new=AsyncMock(return_value=True)):
+        with patch("asyncio.create_subprocess_exec", new=router):
+            result = await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+    assert result == bundle_path
+    assert not (ctx.output_dir / "statistics.parquet").exists()
+    assert (ctx.output_dir / "cluster_styles.json").exists()
+    # Re-bundle ran (folding in styles + enriched annotations) rather than
+    # leaving the plain core bundle untouched.
+    assert bundle_path.read_bytes() == b"BUNDLE+STYLES"
 
 
 async def test_statistics_failure_keeps_core_bundle(ctx):
