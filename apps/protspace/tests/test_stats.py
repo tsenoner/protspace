@@ -1044,8 +1044,11 @@ def test_faithfulness_emits_global_metrics_tagged_by_scope():
         )
     }
     assert {"random_triplet", "spearman_distance"} <= set(rows)
-    assert 0.0 <= rows["random_triplet"].value <= 1.0
-    assert -1.0 <= rows["spearman_distance"].value <= 1.0
+    # A faithful PCA projection of separated blobs preserves global ordering well:
+    # assert meaningfully-high values, not just the by-construction [0,1]/[-1,1]
+    # bounds (which hold for any impl, even a broken one).
+    assert rows["random_triplet"].value > 0.75  # well above 0.5 chance
+    assert rows["spearman_distance"].value > 0.75
     assert rows["random_triplet"].extra["scope"] == "global"
     assert rows["spearman_distance"].extra["scope"] == "global"
     assert rows["knn_overlap"].extra["scope"] == "local"
