@@ -1094,6 +1094,21 @@ def test_align_returns_none_when_no_ids_and_row_counts_differ():
     assert _align(emb, None, coords) is None
 
 
+def test_align_positional_fallback_when_no_ids_and_rowcounts_match():
+    """With no ids to join on but equal row counts (the single-embedding prepare
+    path), `_align` pairs rows positionally: coords, embedding and headers come back
+    row-aligned and full-length."""
+    from protspace.stats.driver import _align
+
+    headers = [f"p{i}" for i in range(4)]
+    emb = _EmbSet("E", np.arange(12.0).reshape(4, 3), headers)
+    coords = np.arange(8.0).reshape(4, 2)
+    coord_out, emb_out, ids_out = _align(emb, None, coords)
+    assert ids_out == headers
+    assert np.array_equal(coord_out, coords)
+    assert np.array_equal(emb_out, emb.data)
+
+
 def test_align_returns_views_on_identity_match_without_copy():
     """When every row matches in order (the common single-embedding path), `_align`
     must return the source arrays as-is — not a full fancy-index copy that would
