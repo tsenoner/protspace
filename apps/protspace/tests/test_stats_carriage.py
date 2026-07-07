@@ -210,6 +210,40 @@ def test_merge_annotation_columns_joins_by_identifier():
     assert pd.isna(frame.loc[frame.identifier == "c", "cluster_P"].item())
 
 
+def test_merge_skips_and_warns_on_zero_id_matches(caplog):
+    import logging
+
+    import pandas as pd
+
+    from protspace.stats.base import AnnotationColumn, StatsReport
+    from protspace.stats.carriage import (
+        build_cluster_legend_settings,
+        merge_annotation_columns,
+    )
+
+    # Membership values keyed by projection ids that share NO id with the frame
+    # (e.g. 'sp|..|NAME' headers vs bare accessions) → an all-empty column.
+    report = StatsReport()
+    report.add(
+        [
+            AnnotationColumn(
+                name="cluster_elbow_P",
+                kind="categorical",
+                values={"sp|P1|X": "cluster 0", "sp|P2|Y": "cluster 1"},
+            )
+        ]
+    )
+    frame = pd.DataFrame({"identifier": ["P1", "P2", "P3"]})
+    with caplog.at_level(logging.WARNING):
+        added = merge_annotation_columns(report, frame)
+
+    assert added == []  # phantom column skipped, not reported as added
+    assert "cluster_elbow_P" not in frame.columns  # not added to the frame
+    assert "matched 0" in caplog.text
+    # And it gets no legend when the caller gates styling on the added columns.
+    assert build_cluster_legend_settings(report, columns=added) == {}
+
+
 def test_annotation_columns_are_typed_in_protein_annotations_table():
     import pandas as pd
 

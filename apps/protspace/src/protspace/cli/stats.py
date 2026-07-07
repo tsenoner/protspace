@@ -155,7 +155,7 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     _atomic_write_table(table, meta_path)
 
 
-def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> int:
+def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[str]:
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
     Rewrites the annotations parquet in place with the computed ``cluster_*``
@@ -163,7 +163,8 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> int:
     the per-point silhouette attached as ``|score``). Added columns are stringified
     (absent → empty) so they match the prepare path's all-string annotations and the
     frontend's content-based type inference. ``frame`` reuses an already-loaded
-    DataFrame instead of re-reading ``ann_path``. Returns the number of columns added.
+    DataFrame instead of re-reading ``ann_path``. Returns the names of columns added
+    (columns that matched no ids are warned about and skipped in ``merge``).
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -171,13 +172,15 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> int:
     from protspace.stats.carriage import merge_annotation_columns
 
     if not report.annotation_columns or not ann_path.exists():
-        return 0
+        return []
     df = frame if frame is not None else pq.read_table(str(ann_path)).to_pandas()
     added = merge_annotation_columns(report, df, id_col=_resolve_id_col(df))
+    if not added:
+        return []
     for name in added:
         df[name] = df[name].fillna("").astype(str)
     _atomic_write_table(pa.Table.from_pandas(df, preserve_index=False), ann_path)
-    return len(added)
+    return added
 
 
 @app.command()
@@ -322,15 +325,18 @@ def stats(
         projections / "projections_metadata.parquet", quality_by_name
     )
 
-    n_cols = 0
+    added_cols: list[str] = []
     if annotations is not None:
         # Reuse the frame already read for label-building — nothing has rewritten
         # the annotations parquet since (only projections_metadata was touched).
-        n_cols = _merge_annotations_with_columns(annotations, report, frame=ann_frame)
+        added_cols = _merge_annotations_with_columns(annotations, report, frame=ann_frame)
         if settings_out is not None:
-            cluster_settings = build_cluster_legend_settings(report)
+            # Style only the columns that actually landed values (id mismatches are
+            # dropped in the merge), so we never write a legend for a phantom column.
+            cluster_settings = build_cluster_legend_settings(report, columns=added_cols)
             settings_out.parent.mkdir(parents=True, exist_ok=True)
             settings_out.write_text(json.dumps(cluster_settings))
+    n_cols = len(added_cols)
 
     table = report.to_arrow()
     output.parent.mkdir(parents=True, exist_ok=True)

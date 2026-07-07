@@ -754,21 +754,18 @@ class ReductionPipeline:
                 default_metric=self.config.reducer_params.metric,
                 annotations=annotation_labels,
             )
-            # Build the derived artifacts (the fallible steps) BEFORE mutating the
-            # shared reduction dicts / metadata frame, so a failure here returns a
-            # clean "no stats" fallback instead of leaving them half-enriched (e.g.
-            # cluster_* columns added but the statistics part absent).
             table = report.to_arrow()
-            style_columns = metadata is not None and report.annotation_columns
-            if style_columns:
-                # Auto-style the membership columns so clusters are colored when
-                # selected (a full legend envelope → the bundle's settings part).
-                settings = build_cluster_legend_settings(report)
 
             # Commit: fold the results into the shared reductions + metadata frame.
             route_faithfulness_to_metadata(report, all_reductions)
-            if style_columns:
+            if metadata is not None and report.annotation_columns:
+                # Merge first so we know which columns actually landed values (an id
+                # namespace mismatch drops empties in merge), then auto-style only
+                # those so clusters are colored when selected without a phantom
+                # legend for a column that matched nothing.
                 added = merge_annotation_columns(report, metadata)
+                if added:
+                    settings = build_cluster_legend_settings(report, columns=added)
                 logger.info(
                     "Routed %d computed annotation column(s); styled %d",
                     len(added),

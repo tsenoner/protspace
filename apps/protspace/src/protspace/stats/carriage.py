@@ -11,9 +11,12 @@ too.
 
 from __future__ import annotations
 
+import logging
 import math
 
 from protspace.stats.base import StatRow, StatsReport
+
+logger = logging.getLogger(__name__)
 
 
 def _json_safe(value: float) -> float | None:
@@ -84,7 +87,20 @@ def merge_annotation_columns(
         return []
     added: list[str] = []
     for col in report.annotation_columns:
-        frame[col.name] = frame[id_col].map(col.values)
+        mapped = frame[id_col].map(col.values)
+        if mapped.notna().sum() == 0:
+            # Zero id matches → the annotations frame and the projection use
+            # different id namespaces (e.g. bare accession vs 'sp|..|NAME'). Adding
+            # an all-empty column (and later styling it) would be a silent phantom,
+            # so warn and skip it rather than reporting it as a real column.
+            logger.warning(
+                "cluster column '%s' matched 0 of %d annotation ids "
+                "(id namespace mismatch?) — skipping",
+                col.name,
+                len(frame),
+            )
+            continue
+        frame[col.name] = mapped
         added.append(col.name)
     return added
 
@@ -97,7 +113,7 @@ def _cluster_label_sort_key(label: str):
     return (1, label)
 
 
-def build_cluster_legend_settings(report: StatsReport) -> dict:
+def build_cluster_legend_settings(report: StatsReport, columns=None) -> dict:
     """Build a legend-settings map auto-styling each categorical membership column.
 
     Returns ``{column_name: LegendPersistedSettings}`` (the bundle's settings part
@@ -106,12 +122,19 @@ def build_cluster_legend_settings(report: StatsReport) -> dict:
     by the bare ``cluster N`` label (any attached ``|silhouette`` confidence is
     stripped) with a Kelly-palette ``color`` + ``zOrder`` + ``shape`` — so clusters
     are colored when selected without a manual styling step.
+
+    ``columns`` optionally restricts styling to a set of column names (the columns
+    that actually landed values in the annotations frame), so a column dropped for
+    an id mismatch is not given a phantom legend.
     """
     from protspace.data.io.settings_converter import KELLYS_COLORS
 
+    allowed = None if columns is None else set(columns)
     settings: dict = {}
     for col in report.annotation_columns:
         if col.kind != "categorical":
+            continue
+        if allowed is not None and col.name not in allowed:
             continue
         # Membership values may carry an attached ``|silhouette`` confidence
         # (value|score) — strip it to recover the bare "cluster N" category, matching
