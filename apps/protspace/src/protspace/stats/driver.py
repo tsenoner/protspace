@@ -108,7 +108,18 @@ def _align(emb_set, red_ids, coords):
         ids.append(pid)
     if not ids:
         return None
-    return coords[coord_rows], emb_data[emb_rows], ids
+    # Avoid a full fancy-index COPY of the embedding when every row matched in
+    # order (the common single-embedding path): faithfulness may then skip past its
+    # hard ceiling and discard it, so a ~GB copy at 570k scale would be pure waste.
+    # Return the source array as a view when the selection is the identity; gather
+    # only when the join actually drops or reorders rows.
+    m = len(ids)
+    identity = list(range(m))
+    emb_all = m == emb_data.shape[0] and emb_rows == identity
+    coord_all = m == coords.shape[0] and coord_rows == identity
+    emb_out = emb_data if emb_all else emb_data[emb_rows]
+    coord_out = coords if coord_all else coords[coord_rows]
+    return coord_out, emb_out, ids
 
 
 def compute_statistics(

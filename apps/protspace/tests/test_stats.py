@@ -1076,6 +1076,27 @@ def test_align_returns_none_when_no_ids_and_row_counts_differ():
     assert _align(emb, None, coords) is None
 
 
+def test_align_returns_views_on_identity_match_without_copy():
+    """When every row matches in order (the common single-embedding path), `_align`
+    must return the source arrays as-is — not a full fancy-index copy that would
+    waste ~GB at 570k scale when faithfulness then skips past its ceiling."""
+    from protspace.stats.driver import _align
+
+    ids = [f"p{i}" for i in range(5)]
+    emb = _EmbSet("E", np.arange(15.0).reshape(5, 3), ids)
+    coords = np.arange(10.0).reshape(5, 2)
+    coord_out, emb_out, ids_out = _align(emb, ids, coords)
+    assert emb_out is emb.data  # view, no copy
+    assert coord_out is coords
+    assert ids_out == ids
+
+    # A reordered join still gathers (and stays correct).
+    coord_out2, emb_out2, ids_out2 = _align(emb, list(reversed(ids)), coords)
+    assert emb_out2 is not emb.data
+    assert ids_out2 == list(reversed(ids))
+    assert np.array_equal(emb_out2[0], emb.data[4])
+
+
 def test_select_embedding_abstains_when_ambiguous():
     """With no `source` and two embeddings that both fully cover the ids, the
     choice is ambiguous — `_select_embedding` must return None (skip faithfulness)
