@@ -635,3 +635,26 @@ def test_stats_annotation_auto_case_and_whitespace_without_annotations_ok(tmp_pa
     )
     assert result.exit_code == 0, result.output
     assert out.exists()
+
+
+def test_prepare_rejects_stats_annotation_without_stats(tmp_path):
+    """`prepare --stats-annotation <name>` without `--stats` would be a silent
+    no-op — it must fail fast, mirroring the `stats` command's guard."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            str(tmp_path / "missing.h5"),  # never loaded; guard fires first
+            "-m",
+            "pca2",
+            "--stats-annotation",
+            "major_group",  # non-auto, but no --stats
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--stats-annotation requires --stats" in result.output

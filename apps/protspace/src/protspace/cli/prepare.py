@@ -347,6 +347,14 @@ def prepare(
             "At least one of -i/--input or -q/--query is required."
         )
 
+    # --stats-annotation / --cluster-selection only do anything under --stats;
+    # a non-default value without --stats would be silently ignored, so reject it.
+    if not stats:
+        if stats_annotation.strip().lower() != "auto":
+            raise typer.BadParameter("--stats-annotation requires --stats.")
+        if cluster_selection != ClusterSelection.elbow:
+            raise typer.BadParameter("--cluster-selection requires --stats.")
+
     setup_logging(verbose)
 
     refetch_stages = _parse_refetch(refetch)
