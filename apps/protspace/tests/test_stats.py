@@ -304,6 +304,24 @@ def test_faithfulness_records_k_and_metric():
     assert knn.label_kind == "none"
 
 
+def test_spearman_distance_uses_midranks_and_guards_collapse():
+    from protspace.stats.metrics.faithfulness import (
+        _rankdata_average,
+        _spearman_distance,
+    )
+
+    # Midranks: tied values share their mean rank (not ordinal index-broken ranks).
+    got = _rankdata_average(np.array([10.0, 10.0, 20.0, 30.0, 30.0, 30.0]))
+    assert list(got) == [1.5, 1.5, 3.0, 5.0, 5.0, 5.0]
+
+    # A collapsed projection (all coords coincident) has all-tied output distances;
+    # the old ordinal ranks reported a spurious ~1.0 — midranks make it NaN.
+    emb = np.random.default_rng(0).normal(size=(40, 4))
+    assert np.isnan(_spearman_distance(emb, np.zeros((40, 2)), "euclidean"))
+    # A faithful (identity) layout still scores ~1.0.
+    assert _spearman_distance(emb, emb, "euclidean") == pytest.approx(1.0)
+
+
 def test_faithfulness_skips_without_embedding():
     ctx = StatContext(
         "projection", "PCA_2", coords=np.zeros((10, 2)), ids=[str(i) for i in range(10)]

@@ -135,13 +135,36 @@ def _random_triplet_accuracy(
     return float(np.mean(agree))
 
 
+def _rankdata_average(a: np.ndarray) -> np.ndarray:
+    """Average (midrank) ranks of a 1-D array — tied values share their mean rank.
+
+    Equivalent to ``scipy.stats.rankdata`` (no scipy dependency) and fully
+    vectorised, so it scales to the ~C(n,2) pairwise-distance vector. Midranks (not
+    argsort-of-argsort ordinal ranks) are what make this a true Spearman: with many
+    tied distances the ordinal version breaks ties by index, biasing the score and
+    — on an all-tied/collapsed layout — reporting a spurious perfect correlation.
+    """
+    a = np.asarray(a)
+    order = np.argsort(a, kind="stable")
+    sorted_a = a[order]
+    n = a.size
+    is_new = np.ones(n, dtype=bool)
+    np.not_equal(sorted_a[1:], sorted_a[:-1], out=is_new[1:])
+    group = np.cumsum(is_new) - 1  # tie-group id per sorted position
+    positions = np.arange(n, dtype=float)  # 0-based positions
+    avg_pos = np.bincount(group, weights=positions) / np.bincount(group)
+    ranks = np.empty(n, dtype=float)
+    ranks[order] = avg_pos[group] + 1.0  # 1-based midranks, back in input order
+    return ranks
+
+
 def _spearman_distance(embedding, coords, metric: str) -> float:
     """Global structure: Spearman (rank) correlation between all pairwise
     embedding distances (``metric``) and projection distances (euclidean).
 
     Uses every unique pair (upper triangle), so it measures whether the *overall*
     distance layout — not just local neighbourhoods — is preserved. Range [-1, 1],
-    higher = better. Computed with numpy ranks + Pearson (no scipy dependency).
+    higher = better. Computed with numpy midranks + Pearson (no scipy dependency).
     """
     from sklearn.metrics import pairwise_distances
 
@@ -149,10 +172,12 @@ def _spearman_distance(embedding, coords, metric: str) -> float:
     iu = np.triu_indices(n, k=1)
     hi = pairwise_distances(embedding, metric=metric)[iu]
     lo = pairwise_distances(coords, metric="euclidean")[iu]
-    # Spearman = Pearson on ranks; argsort-of-argsort gives ordinal 0-based ranks
-    # (ties broken by index — a negligible deviation from midrank Spearman here).
-    rank_hi = np.argsort(np.argsort(hi))
-    rank_lo = np.argsort(np.argsort(lo))
+    rank_hi = _rankdata_average(hi)
+    rank_lo = _rankdata_average(lo)
+    # A collapsed/degenerate space has all-tied distances → constant ranks →
+    # correlation undefined. Return NaN rather than a spurious perfect score.
+    if rank_hi.std() == 0.0 or rank_lo.std() == 0.0:
+        return float("nan")
     return float(np.corrcoef(rank_hi, rank_lo)[0, 1])
 
 
