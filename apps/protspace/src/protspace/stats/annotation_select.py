@@ -10,28 +10,25 @@ from __future__ import annotations
 
 import logging
 
+from protspace.core.constants import MISSING_VALUE_TOKENS
 from protspace.data.annotations.scores import _strip_scores_from_cell
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
 
 logger = logging.getLogger(__name__)
 
-# Values treated as "missing" (dropped, never a category). Kept in sync with the
-# codebase's canonical sentinels: ``core.constants.standardize_missing`` maps
-# ``"", nan, none, null, NA, NaN`` → the display sentinel ``"<N/A>"``; pandas
-# nullable dtypes stringify to ``"<NA>"`` / ``"NaT"``. Missing any of these would
-# score a phantom missing-value cluster and inflate a column's cardinality.
+# Values treated as "missing" (dropped, never a category). The raw input sentinels
+# come from the shared ``core.constants.MISSING_VALUE_TOKENS`` (so they can't drift
+# from what ``standardize_missing`` normalises); on top we add the *display* forms
+# produced downstream — ``"<N/A>"`` (standardize_missing), pandas nullable dtypes'
+# ``"<NA>"`` / ``"NaT"``, ``"<NaN>"``, and ``None``'s str form. Missing any of these
+# would score a phantom missing-value cluster and inflate a column's cardinality.
 _MISSING = {
-    "",
+    *MISSING_VALUE_TOKENS,
     "<N/A>",
     "<NA>",
     "<NaN>",
-    "nan",
-    "NaN",
     "NaT",
-    "none",
     "None",
-    "null",
-    "NA",
 }
 
 
