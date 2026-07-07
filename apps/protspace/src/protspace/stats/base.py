@@ -26,6 +26,11 @@ import pyarrow as pa
 # this design removed).
 CLUSTER_COLUMN_PREFIX = "cluster_"
 
+# Default row count above which the heavy metrics subsample (overridable per run
+# via ``params["sample_threshold"]``). Shared by every metric so the cost/quality
+# trade-off lives in one place rather than drifting across three modules.
+DEFAULT_SAMPLE_THRESHOLD = 5000
+
 # The tidy schema. Rows are the bundle-boundary contract. Dimensions of the data
 # (space, annotation, label kind, metric) are columns; per-row provenance
 # (seeds, sample sizes, inertia lists) goes in ``extra_json``.

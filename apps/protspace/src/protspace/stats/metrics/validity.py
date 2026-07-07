@@ -34,13 +34,13 @@ import numpy as np
 from protspace.stats.annotation_select import pair_by_id
 from protspace.stats.base import (
     CLUSTER_COLUMN_PREFIX,
+    DEFAULT_SAMPLE_THRESHOLD,
     AnnotationColumn,
     StatContext,
     StatRow,
 )
 from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
 
-DEFAULT_SAMPLE_THRESHOLD = 5000
 # silhouette_samples is O(n^2) with no sampling escape hatch (unlike the aggregate
 # mean), so the per-point column is skipped beyond this point count.
 DEFAULT_SILHOUETTE_HARD_CEILING = 20000

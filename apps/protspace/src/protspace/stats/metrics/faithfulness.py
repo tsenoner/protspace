@@ -35,10 +35,9 @@ from __future__ import annotations
 import numpy as np
 
 from protspace.stats._sampling import id_seed, sorted_subsample
-from protspace.stats.base import StatContext, StatRow
+from protspace.stats.base import DEFAULT_SAMPLE_THRESHOLD, StatContext, StatRow
 
 DEFAULT_K = 15
-DEFAULT_SAMPLE_THRESHOLD = 5000
 DEFAULT_HARD_CEILING = 20000
 DEFAULT_N_TRIPLETS_PER_POINT = 5
 
