@@ -79,6 +79,24 @@ def test_extract_to_dir_writes_statistics(tmp_path):
     assert out
 
 
+def test_extract_to_dir_writes_both_settings_and_statistics(tmp_path):
+    """Extract a full 5-part bundle where BOTH the settings (4th) and statistics
+    (5th) parts are non-empty — both files must land with the right content, not
+    just the stats-only case the sibling test covers."""
+    from protspace.data.io.bundle import read_settings_from_file
+
+    p = tmp_path / "b.parquetbundle"
+    write_bundle(_core(), p, settings={"k": 1}, statistics=_stats())
+    out_dir = tmp_path / "out"
+    extract_bundle_to_dir(p, out_dir)
+
+    assert read_settings_from_file(out_dir / "settings.parquet") == {"k": 1}
+    stats = pq.read_table(str(out_dir / "statistics.parquet"))
+    assert stats.column("metric")[0].as_py() == "silhouette"
+    for name in ("selected_annotations", "projections_metadata", "projections_data"):
+        assert (out_dir / f"{name}.parquet").exists()
+
+
 def test_style_preserves_stats_with_settings(tmp_path):
     src = tmp_path / "b.parquetbundle"
     write_bundle(_core(), src, settings={"old": 1}, statistics=_stats())
