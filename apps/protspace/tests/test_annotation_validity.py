@@ -97,3 +97,32 @@ def test_subsample_path_flags_sampled_and_is_deterministic():
     sil_again = _run()
     assert sil_again.value == sil.value
     assert sil_again.extra == sil.extra
+
+
+def test_subsample_is_row_order_invariant():
+    """The id-canonical subsample must pick the SAME proteins regardless of input
+    row order, so the score is identical when the same points are shuffled. A
+    positional (row-order) draw would select a different subset and drift — the
+    guarantee the determinism-by-identical-call test above cannot catch."""
+    threshold = 30
+    X, y = _blobs(n=200, centers=4, dim=2, seed=9)
+    ids = [f"p{i}" for i in range(200)]
+    ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(ids, y, strict=True)}}
+
+    def _sil(coords, order_ids):
+        outs = AnnotationValidityStatistic().compute(
+            StatContext(
+                "projection",
+                "P",
+                coords=coords,
+                ids=order_ids,
+                annotations=ann,
+                params={"sample_threshold": threshold},
+            )
+        )
+        return next(r for r in outs if r.metric == "silhouette").value
+
+    base = _sil(X, ids)
+    perm = np.random.default_rng(0).permutation(200)
+    shuffled = _sil(X[perm], [ids[i] for i in perm])
+    assert shuffled == base  # same proteins sampled despite the reordering
