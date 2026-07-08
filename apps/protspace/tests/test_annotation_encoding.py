@@ -52,3 +52,15 @@ def test_stamp_round_trips_through_parquet():
     buf.seek(0)
     md = pq.read_metadata(buf).metadata
     assert md[FORMAT_VERSION_KEY] == str(BUNDLE_FORMAT_VERSION).encode()
+
+
+def test_stamp_preserves_existing_schema_metadata():
+    """stamp_format_version must merge into, not clobber, existing metadata."""
+    tbl = pa.table({"protein_id": ["P1"], "cath": ["6.20.10.10"]})
+    tbl = tbl.replace_schema_metadata({b"seeded": b"1"})
+
+    stamped = stamp_format_version(tbl)
+
+    metadata = stamped.schema.metadata
+    assert metadata[b"seeded"] == b"1"
+    assert metadata[FORMAT_VERSION_KEY] == str(BUNDLE_FORMAT_VERSION).encode()

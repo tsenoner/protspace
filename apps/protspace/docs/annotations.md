@@ -153,7 +153,7 @@ To preserve lossless parsing despite human-readable names containing structural 
 | Control chars `0x00-0x1F`, `0x7F` | → `%XX` (uppercase hex) |
 | `,`, `(`, `)` | LITERAL (not encoded) |
 
-Literal preservation of commas, parens, and parentheses keeps names readable and is safe: commas appear only after score delimiters (`|`), and parentheses are display sugar with fixed positions in the template.
+Literal preservation of commas and parentheses keeps names readable and is safe: commas appear only after score delimiters (`|`), and parentheses are display sugar with fixed positions in the template.
 
 The bundle's annotations parquet table carries format metadata in its key-value headers:
 - `protspace_format_version`: `2`
