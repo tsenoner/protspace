@@ -1,4 +1,4 @@
-import { parquetReadObjects } from 'hyparquet';
+import { parquetReadObjects, parquetMetadata } from 'hyparquet';
 import {
   BUNDLE_DELIMITER_BYTES,
   findBundleDelimiterPositions,
@@ -8,6 +8,9 @@ import {
 import type { Rows, GenericRow } from './types';
 import { assertValidParquetMagic, validateProjectionRows } from './validation';
 import { sanitizePublishState } from '../../publish/publish-state-validator';
+
+/** Key-value metadata key the Python writer stamps with the bundle's annotation format version. */
+const FORMAT_VERSION_KEY = 'protspace_format_version';
 
 /**
  * Result of extracting data from a parquetbundle.
@@ -24,6 +27,34 @@ export interface BundleExtractionResult {
   projectionsMetadata: Rows;
   /** Settings loaded from bundle (null if not present) */
   settings: BundleSettings | null;
+  /**
+   * Bundle annotation format version, read from the `protspace_format_version`
+   * parquet key-value metadata on the annotations part (part 1). `1` when the
+   * key is absent, unparsable, or the part isn't a bundle at all (defaults to
+   * legacy v1 behavior — plain-string labels, raw `;`-delimited multi-hit cells).
+   */
+  formatVersion: number;
+}
+
+/**
+ * Reads the `protspace_format_version` key-value metadata entry from a parquet
+ * file's footer. `parquetMetadata` parses the footer synchronously from the
+ * tail of the buffer, so this is cheap relative to the row-group decode done
+ * by `parquetReadObjects` on the same buffer.
+ *
+ * Returns `1` (legacy default) when the key is missing, non-numeric, or the
+ * buffer can't be parsed as parquet metadata at all — this keeps v1/absent
+ * bundles rendering exactly as before Task H2.
+ */
+function readFormatVersion(part1: ArrayBuffer): number {
+  try {
+    const kv = parquetMetadata(part1).key_value_metadata ?? [];
+    const entry = kv.find((k) => k.key === FORMAT_VERSION_KEY);
+    const v = entry?.value ? Number(entry.value) : 1;
+    return Number.isFinite(v) ? v : 1;
+  } catch {
+    return 1;
+  }
 }
 
 /**
@@ -74,6 +105,11 @@ export async function extractRowsFromParquetBundle(
   assertValidParquetMagic(part1);
   assertValidParquetMagic(part2);
   assertValidParquetMagic(part3);
+
+  // Read the format_version stamped in part1's footer (the annotations part) before
+  // it's decoded — same buffer `parquetReadObjects` below decodes, read synchronously
+  // while it's still non-null.
+  const formatVersion = readFormatVersion(part1);
 
   // Decode sequentially and release each sliced buffer immediately after its decode completes.
   // hyparquet is CPU-bound on the single JS thread — Promise.all gives no real parallelism, only
@@ -133,6 +169,7 @@ export async function extractRowsFromParquetBundle(
     annotationIdColumn: finalAnnotationIdColumn,
     projectionsMetadata: projectionsMetadataData,
     settings,
+    formatVersion,
   };
 }
 

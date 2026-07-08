@@ -439,6 +439,10 @@ export function convertParquetToVisualizationData(
   const meta: Rows | undefined = Array.isArray(input)
     ? projectionsMetadata
     : input.projectionsMetadata;
+  // Raw `Rows` input is always a non-bundle (plain .parquet / legacy test) read → v1.
+  // `BundleExtractionResult` carries the version detected from the bundle's parquet
+  // key-value metadata by `extractRowsFromParquetBundle` (bundle.ts).
+  const formatVersion = Array.isArray(input) ? 1 : input.formatVersion;
 
   validateRowsBasic(rows);
 
@@ -447,9 +451,9 @@ export function convertParquetToVisualizationData(
   const hasXY = columnNames.includes('x') && columnNames.includes('y');
 
   if (hasProjectionName && hasXY) {
-    return convertBundleFormatData(rows, columnNames, meta);
+    return convertBundleFormatData(rows, columnNames, meta, formatVersion);
   }
-  return convertLegacyFormatData(rows, columnNames);
+  return convertLegacyFormatData(rows, columnNames, formatVersion);
 }
 
 export function convertParquetToVisualizationDataOptimized(
@@ -481,10 +485,11 @@ async function convertLargeDatasetOptimizedRaw(
   const columnNames = Object.keys(rows[0]);
   const hasProjectionName = columnNames.includes('projection_name');
   const hasXY = columnNames.includes('x') && columnNames.includes('y');
+  // Raw `Rows` input is always a non-bundle (plain .parquet / legacy test) read → v1.
   if (hasProjectionName && hasXY) {
-    return convertBundleFormatDataOptimized(rows, columnNames, projectionsMetadata);
+    return convertBundleFormatDataOptimized(rows, columnNames, projectionsMetadata, 1);
   }
-  return convertLegacyFormatData(rows, columnNames);
+  return convertLegacyFormatData(rows, columnNames, 1);
 }
 
 async function convertLargeDatasetOptimized(
@@ -495,6 +500,7 @@ async function convertLargeDatasetOptimized(
     annotationsById,
     projectionIdColumn,
     projectionsMetadata,
+    formatVersion,
   } = extraction;
   const columnNames = Object.keys(projectionRows[0]);
   const hasProjectionName = columnNames.includes('projection_name');
@@ -515,17 +521,19 @@ async function convertLargeDatasetOptimized(
       projectionIdColumn,
       annotationColumnNames,
       projectionsMetadata,
+      formatVersion,
     );
   }
   // Legacy format: materialize rows (should not happen with bundle extraction, but safe fallback)
   const rows = materializeMergedRows(extraction);
-  return convertLegacyFormatData(rows, columnNames);
+  return convertLegacyFormatData(rows, columnNames, formatVersion);
 }
 
 function convertBundleFormatData(
   rows: Rows,
   columnNames: string[],
   projectionsMetadata?: Rows,
+  formatVersion = 1,
 ): VisualizationData {
   const proteinIdCol =
     findColumn(columnNames, ['identifier', 'protein_id', 'id', 'protein', 'uniprot']) ||
@@ -628,7 +636,7 @@ function convertBundleFormatData(
 
     for (const row of baseProjectionData) {
       const proteinId = row[proteinIdCol] != null ? String(row[proteinIdCol]) : '';
-      const rawValues = splitCategoricalAnnotationValues(row[annotationCol]);
+      const rawValues = splitCategoricalAnnotationValues(row[annotationCol], formatVersion);
 
       if (rawValues.length === 0) {
         annotationMap.set(proteinId, []);
@@ -641,7 +649,7 @@ function convertBundleFormatData(
       const scores: (number[] | null)[] = [];
       const evidences: (string | null)[] = [];
       for (const raw of rawValues) {
-        const parsed = parseAnnotationValue(raw);
+        const parsed = parseAnnotationValue(raw, formatVersion);
         labels.push(parsed.label);
         scores.push(parsed.scores.length > 0 ? parsed.scores : null);
         evidences.push(parsed.evidence);
@@ -703,6 +711,7 @@ async function convertBundleFormatDataOptimized(
   rows: Rows,
   columnNames: string[],
   projectionsMetadata?: Rows,
+  formatVersion = 1,
 ): Promise<VisualizationData> {
   const chunkSize = 50000;
   const proteinIdCol =
@@ -787,6 +796,7 @@ async function convertBundleFormatDataOptimized(
     columnNames,
     proteinIdCol,
     uniqueProteinIds,
+    formatVersion,
   );
 
   return {
@@ -811,6 +821,7 @@ async function convertBundleFormatDataOptimizedSeparated(
   projectionIdCol: string,
   annotationColumnNames: string[],
   projectionsMetadata?: Rows,
+  formatVersion = 1,
 ): Promise<VisualizationData> {
   const chunkSize = 50000;
 
@@ -884,6 +895,7 @@ async function convertBundleFormatDataOptimizedSeparated(
     annotationColumnNames,
     projectionIdCol,
     uniqueProteinIds,
+    formatVersion,
   );
 
   return {
@@ -897,7 +909,11 @@ async function convertBundleFormatDataOptimizedSeparated(
   };
 }
 
-function convertLegacyFormatData(rows: Rows, columnNames: string[]): VisualizationData {
+function convertLegacyFormatData(
+  rows: Rows,
+  columnNames: string[],
+  formatVersion = 1,
+): VisualizationData {
   const proteinIdCol =
     findColumn(columnNames, ['identifier', 'protein_id', 'id', 'protein', 'uniprot']) ||
     columnNames[0];
@@ -958,7 +974,7 @@ function convertLegacyFormatData(rows: Rows, columnNames: string[]): Visualizati
     }
 
     const rawValues: string[][] = rows.map((row) =>
-      splitCategoricalAnnotationValues(row[annotationCol]),
+      splitCategoricalAnnotationValues(row[annotationCol], formatVersion),
     );
 
     let columnHasScores = false;
@@ -968,7 +984,7 @@ function convertLegacyFormatData(rows: Rows, columnNames: string[]): Visualizati
       const scores: (number[] | null)[] = [];
       const evidences: (string | null)[] = [];
       for (const raw of valueArray) {
-        const p = parseAnnotationValue(raw);
+        const p = parseAnnotationValue(raw, formatVersion);
         labels.push(p.label);
         scores.push(p.scores.length > 0 ? p.scores : null);
         evidences.push(p.evidence);
@@ -1159,6 +1175,7 @@ interface ExtractedAnnotations {
 async function extractAnnotationsByProtein(
   rowByProteinIdx: ReadonlyArray<GenericRow | undefined>,
   annotationColumns: string[],
+  formatVersion = 1,
 ): Promise<ExtractedAnnotations> {
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
@@ -1229,7 +1246,7 @@ async function extractAnnotationsByProtein(
     const parseCell = (raw: unknown): ParsedCell => {
       const cached = parseCache.get(raw);
       if (cached !== undefined) return cached;
-      const rawValues = splitCategoricalAnnotationValues(raw);
+      const rawValues = splitCategoricalAnnotationValues(raw, formatVersion);
       const n = rawValues.length;
       if (n === 0) {
         parseCache.set(raw, EMPTY_CELL);
@@ -1239,7 +1256,7 @@ async function extractAnnotationsByProtein(
       let scores: (number[] | null)[] | null = null;
       let evidence: (string | null)[] | null = null;
       for (let k = 0; k < n; k++) {
-        const parsed = parseAnnotationValue(rawValues[k]);
+        const parsed = parseAnnotationValue(rawValues[k], formatVersion);
         labels[k] = parsed.label;
         if (parsed.scores.length > 0) {
           if (!scores) scores = new Array<number[] | null>(n).fill(null);
@@ -1377,6 +1394,7 @@ async function extractAnnotationsOptimized(
   columnNames: string[],
   proteinIdCol: string,
   uniqueProteinIds: string[],
+  formatVersion = 1,
 ): Promise<ExtractedAnnotations> {
   const allIdColumns = getIdColumnsSet(proteinIdCol);
   const annotationColumns = columnNames.filter((c) => !allIdColumns.has(c));
@@ -1394,7 +1412,7 @@ async function extractAnnotationsOptimized(
     if (idx !== undefined) rowByProteinIdx[idx] = row;
   }
 
-  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns);
+  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns, formatVersion);
 }
 
 /**
@@ -1407,6 +1425,7 @@ async function extractAnnotationsOptimizedSeparated(
   annotationColumnNames: string[],
   projectionIdCol: string,
   uniqueProteinIds: string[],
+  formatVersion = 1,
 ): Promise<ExtractedAnnotations> {
   const allIdColumns = getIdColumnsSet(projectionIdCol);
   const annotationColumns = annotationColumnNames.filter((c) => !allIdColumns.has(c));
@@ -1426,5 +1445,5 @@ async function extractAnnotationsOptimizedSeparated(
     rowByProteinIdx[p] = annotationsById.get(uniqueProteinIds[p]);
   }
 
-  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns);
+  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns, formatVersion);
 }
