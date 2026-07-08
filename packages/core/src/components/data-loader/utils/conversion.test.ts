@@ -223,3 +223,27 @@ describe('splitCategoricalAnnotationValues', () => {
     expect(splitCategoricalAnnotationValues('')).toEqual([]);
   });
 });
+
+describe('parseAnnotationValue v2', () => {
+  it('decodes an encoded name and keeps the score', () => {
+    const raw = 'G3DSA:1.10 (Ribosomal Protein L15%3B Chain: K)|50.2';
+    const r = parseAnnotationValue(raw, 2);
+    expect(r.label).toBe('G3DSA:1.10 (Ribosomal Protein L15; Chain: K)');
+    expect(r.scores).toEqual([50.2]);
+    expect(r.evidence).toBeNull();
+  });
+  it('decodes evidence-coded value', () => {
+    expect(parseAnnotationValue('Cytoplasm|EXP', 2)).toEqual({
+      label: 'Cytoplasm',
+      scores: [],
+      evidence: 'EXP',
+    });
+  });
+});
+
+describe('splitCategoricalAnnotationValues v2', () => {
+  it('plain-splits on ; (names carry no raw ;)', () => {
+    const raw = 'A (n%3B1)|1;B (n%3B2)|2';
+    expect(splitCategoricalAnnotationValues(raw, 2)).toEqual(['A (n%3B1)|1', 'B (n%3B2)|2']);
+  });
+});

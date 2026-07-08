@@ -9,6 +9,7 @@ import {
 import { validateRowsBasic } from './validation';
 import { findColumn, materializeMergedRows, type BundleExtractionResult } from './bundle';
 import type { Rows, GenericRow } from './types';
+import { decodeField } from './annotation-codec';
 
 /**
  * Fast yield using MessageChannel instead of setTimeout(0).
@@ -183,7 +184,19 @@ function appendSyntheticNACategory(
  *   "GO:0005524|ATP binding"         → { label: "GO:0005524|ATP binding", scores: [], evidence: null }
  *   "taxonomy_value"                 → { label: "taxonomy_value", scores: [], evidence: null }
  */
+/**
+ * Dispatches to the v1 (paren-aware, raw label) or v2 (decodeField) parser based on
+ * the bundle's `formatVersion`. Defaults to v1 so existing callers that don't yet
+ * thread a format version keep byte-identical behavior (threaded end-to-end in
+ * Task H2).
+ */
 export const parseAnnotationValue = (
+  raw: string,
+  formatVersion = 1,
+): { label: string; scores: number[]; evidence: string | null } =>
+  formatVersion >= 2 ? parseAnnotationValueV2(raw) : parseAnnotationValueV1(raw);
+
+const parseAnnotationValueV1 = (
   raw: string,
 ): { label: string; scores: number[]; evidence: string | null } => {
   const trimmed = raw.trim();
@@ -216,6 +229,43 @@ export const parseAnnotationValue = (
   }
 
   const label = trimmed.substring(0, lastPipe).trim();
+  return { label, scores, evidence: null };
+};
+
+/**
+ * v2 parser: names are percent-encoded at the source (bundle format v2), so `|`
+ * and `;` never appear inside a name — the last `|` is always the single
+ * structural separator between the (encoded) label and its score/evidence
+ * suffix. Decode the label (and the evidence token, which may itself carry
+ * encoded characters) via {@link decodeField}; numeric scores are parsed as-is.
+ */
+const parseAnnotationValueV2 = (
+  raw: string,
+): { label: string; scores: number[]; evidence: string | null } => {
+  const trimmed = raw.trim();
+  if (!trimmed) return { label: '', scores: [], evidence: null };
+
+  // In v2 no name contains '|', so there is at most one structural pipe.
+  const pipe = trimmed.lastIndexOf('|');
+  if (pipe === -1 || pipe === trimmed.length - 1) {
+    return { label: decodeField(trimmed), scores: [], evidence: null };
+  }
+
+  const suffix = trimmed.substring(pipe + 1).trim();
+  const label = decodeField(trimmed.substring(0, pipe).trim());
+
+  if (EVIDENCE_CODE_RE.test(suffix)) {
+    return { label, scores: [], evidence: suffix };
+  }
+
+  const scores: number[] = [];
+  for (const part of suffix.split(',')) {
+    const num = Number(part.trim());
+    if (!Number.isFinite(num)) {
+      return { label: decodeField(trimmed), scores: [], evidence: null };
+    }
+    scores.push(num);
+  }
   return { label, scores, evidence: null };
 };
 
@@ -277,15 +327,25 @@ function splitOnTopLevelSemicolons(value: string): string[] {
  * containing ';' stay intact), then trims each token and drops empty or missing-value tokens.
  *
  * @param rawValue - the raw cell value; non-strings are normalized then stringified.
+ * @param formatVersion - bundle format version; v2 names are percent-encoded at the
+ *   source so they never carry a raw ';', making the paren-aware scan unnecessary.
+ *   Defaults to 1 so existing callers keep v1 (paren-aware) behavior until Task H2
+ *   threads the real version through.
  * @returns the trimmed, non-missing hit strings, in source order.
  */
-export function splitCategoricalAnnotationValues(rawValue: unknown): string[] {
+export function splitCategoricalAnnotationValues(rawValue: unknown, formatVersion = 1): string[] {
   // First-level: normalize the whole cell. Returns null if the entire cell is missing.
   const cellNormalized = normalizeMissingValue(rawValue);
   if (cellNormalized == null) return [];
 
-  // Split on top-level ';' (paren-aware), trim, drop empty/missing tokens.
-  return splitOnTopLevelSemicolons(String(cellNormalized))
+  // v2: names carry no raw ';' (percent-encoded at the source), so a plain split
+  // suffices. v1: paren-aware split, since raw names may legitimately contain ';'.
+  const parts =
+    formatVersion >= 2
+      ? String(cellNormalized).split(';')
+      : splitOnTopLevelSemicolons(String(cellNormalized));
+
+  return parts
     .map((part) => part.trim())
     .filter((part) => part !== '' && normalizeMissingValue(part) !== null);
 }
