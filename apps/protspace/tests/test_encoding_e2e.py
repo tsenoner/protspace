@@ -17,7 +17,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import (
-    ENCODING_KEY,
     FORMAT_VERSION_KEY,
     decode_field,
     encode_field,
@@ -66,4 +65,3 @@ def test_semicolon_name_round_trips_through_bundle(tmp_path):
     # Ties the round-trip to the format-version stamp (Task E1).
     footer_meta = pq.read_metadata(io.BytesIO(annotations_bytes)).metadata
     assert footer_meta[FORMAT_VERSION_KEY] == b"2"
-    assert footer_meta[ENCODING_KEY] == b"pct"

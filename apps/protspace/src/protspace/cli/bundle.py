@@ -96,6 +96,10 @@ def bundle(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
+    # Trust boundary: the -a annotations input is ASSUMED to be produced by the
+    # same-version annotate/prepare pipeline (i.e. already percent-encoded).
+    # We don't inspect its contents, so it's unconditionally stamped as v2 --
+    # there is currently no other producer of this parquet to distrust.
     annotations_table = stamp_format_version(annotations_table)
 
     statistics_table = (

@@ -20,7 +20,6 @@ import pyarrow as pa
 
 BUNDLE_FORMAT_VERSION = 2
 FORMAT_VERSION_KEY = b"protspace_format_version"
-ENCODING_KEY = b"protspace_encoding"
 
 # Chars that must be percent-encoded inside any free-text token.
 _RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
@@ -53,6 +52,5 @@ def stamp_format_version(table: pa.Table) -> pa.Table:
         {
             **existing,
             FORMAT_VERSION_KEY: str(BUNDLE_FORMAT_VERSION).encode(),
-            ENCODING_KEY: b"pct",
         }
     )

@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from protspace.data.annotations.encoding import ENCODING_KEY, FORMAT_VERSION_KEY
+from protspace.data.annotations.encoding import FORMAT_VERSION_KEY
 from protspace.data.io.bundle import read_bundle
 from protspace.data.processors.base_processor import BaseProcessor
 from tests.test_config import sample_data  # noqa: F401 (pytest fixture)
@@ -34,7 +34,6 @@ def test_create_protein_annotations_table_stamps_format_version():
 
     footer_meta = pq.read_metadata(buf).metadata
     assert footer_meta[FORMAT_VERSION_KEY] == b"2"
-    assert footer_meta[ENCODING_KEY] == b"pct"
 
 
 def test_prepare_pipeline_bundle_carries_format_version(sample_data):
@@ -68,7 +67,6 @@ def test_prepare_pipeline_bundle_carries_format_version(sample_data):
 
         footer_meta = pq.read_metadata(io.BytesIO(annotations_bytes)).metadata
         assert footer_meta[FORMAT_VERSION_KEY] == b"2"
-        assert footer_meta[ENCODING_KEY] == b"pct"
 
 
 def test_cli_bundle_command_stamps_format_version(tmp_path):
@@ -126,4 +124,3 @@ def test_cli_bundle_command_stamps_format_version(tmp_path):
     annotations_bytes = core_parts[0]
     footer_meta = pq.read_metadata(io.BytesIO(annotations_bytes)).metadata
     assert footer_meta[FORMAT_VERSION_KEY] == b"2"
-    assert footer_meta[ENCODING_KEY] == b"pct"

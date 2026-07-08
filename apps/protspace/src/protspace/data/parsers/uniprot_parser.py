@@ -368,41 +368,31 @@ class UniProtEntry:
         """All Gene Ontology terms."""
         return self.get_go_terms()
 
-    @property
-    def go_bp(self) -> list[str]:
-        """GO Biological Process terms, with evidence codes appended."""
+    def _go_terms_encoded(self, aspect: str) -> list[str]:
+        """Encode GO terms for the given aspect, with evidence codes appended."""
         results = []
-        for term in self.get_go_terms(aspect="P"):
+        for term in self.get_go_terms(aspect=aspect):
             value = encode_field(term["term"])
             ev = term.get("evidence", "")
             if ev:
                 value = f"{value}|{ev.split(':')[0]}"
             results.append(value)
         return results
+
+    @property
+    def go_bp(self) -> list[str]:
+        """GO Biological Process terms, with evidence codes appended."""
+        return self._go_terms_encoded("P")
 
     @property
     def go_mf(self) -> list[str]:
         """GO Molecular Function terms, with evidence codes appended."""
-        results = []
-        for term in self.get_go_terms(aspect="F"):
-            value = encode_field(term["term"])
-            ev = term.get("evidence", "")
-            if ev:
-                value = f"{value}|{ev.split(':')[0]}"
-            results.append(value)
-        return results
+        return self._go_terms_encoded("F")
 
     @property
     def go_cc(self) -> list[str]:
         """GO Cellular Component terms, with evidence codes appended."""
-        results = []
-        for term in self.get_go_terms(aspect="C"):
-            value = encode_field(term["term"])
-            ev = term.get("evidence", "")
-            if ev:
-                value = f"{value}|{ev.split(':')[0]}"
-            results.append(value)
-        return results
+        return self._go_terms_encoded("C")
 
     @property
     def go_id(self) -> list[str]:
