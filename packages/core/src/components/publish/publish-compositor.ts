@@ -41,6 +41,10 @@ interface CaptureOptions {
   width: number;
   height: number;
   backgroundColor: string;
+  /** Render the default fit-all view, ignoring any live zoom/pan. The figure
+   *  editor always captures the unzoomed view so a zoomed plot doesn't leak
+   *  into the figure (and the zoom-inset mapping stays correct). */
+  resetView?: boolean;
 }
 
 /**
@@ -52,7 +56,7 @@ export function capturePlotCanvas(
     captureAtResolution?: (
       w: number,
       h: number,
-      opts: { dpr?: number; backgroundColor?: string },
+      opts: { dpr?: number; backgroundColor?: string; resetView?: boolean },
     ) => HTMLCanvasElement;
   },
   opts: CaptureOptions,
@@ -61,6 +65,7 @@ export function capturePlotCanvas(
     return plotEl.captureAtResolution(opts.width, opts.height, {
       dpr: 1,
       backgroundColor: opts.backgroundColor,
+      resetView: opts.resetView,
     });
   }
   // Fallback: grab whatever canvas the component has

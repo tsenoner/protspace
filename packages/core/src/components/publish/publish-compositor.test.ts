@@ -328,6 +328,35 @@ describe('publish-compositor', () => {
       expect(result).toBe(mockCanvas);
     });
 
+    // The figure editor relies on this passthrough to force the default
+    // (unzoomed) view (#294); guard it so a dropped forward is caught.
+    it('forwards resetView to captureAtResolution', () => {
+      const mockCanvas = document.createElement('canvas');
+      const seen: Array<{ resetView?: boolean }> = [];
+      const plotEl = document.createElement('div') as HTMLElement & {
+        captureAtResolution?: (
+          w: number,
+          h: number,
+          opts: { resetView?: boolean },
+        ) => HTMLCanvasElement;
+      };
+      plotEl.captureAtResolution = (_w, _h, opts) => {
+        seen.push(opts);
+        return mockCanvas;
+      };
+
+      capturePlotCanvas(plotEl, {
+        width: 800,
+        height: 400,
+        backgroundColor: '#ffffff',
+        resetView: true,
+      });
+      capturePlotCanvas(plotEl, { width: 800, height: 400, backgroundColor: '#ffffff' });
+
+      expect(seen[0].resetView).toBe(true);
+      expect(seen[1].resetView).toBeUndefined();
+    });
+
     /**
      * jsdom doesn't implement canvas 2d. Instead of pixel sampling, spy on
      * the output canvas's 2d context and assert drawImage's call signature.
