@@ -23,14 +23,14 @@ GO/keywords/subcellular). The overload corrupts parsing.
 
 ### Empirical evidence (real CATH corpus, `~/.cache/protspace/cath/cath-names.txt`, 5,142 named entries)
 
-| Character | Names containing it | Role in grammar |
-|-----------|--------------------:|-----------------|
-| `,` comma | **38.5%** (1,979) | score separator |
-| `;` semicolon | **15.2%** (784) | hit separator (this is #56) |
-| `(` / `)` | 6.2% / 6.1% | name wrapper; **1 unbalanced** (`YojJ-like (1`) |
-| `\|` pipe | **0%** | label↔score/evidence separator (this is #58 — latent for CATH, real for the contract) |
-| `%` percent | 0% | — |
-| any C0/DEL control char, TAB, NL | **0 of 5,142** | — |
+| Character                        |     Names containing it | Role in grammar                                                                        |
+| -------------------------------- | ----------------------: | -------------------------------------------------------------------------------------- |
+| `,` comma                      | **38.5%** (1,979) | score separator                                                                        |
+| `;` semicolon                  |   **15.2%** (784) | hit separator (this is#56)                                                             |
+| `(` / `)`                    |             6.2% / 6.1% | name wrapper;**1 unbalanced** (`YojJ-like (1`)                                 |
+| `\|` pipe                       |            **0%** | label↔score/evidence separator (this is#58 — latent for CATH, real for the contract) |
+| `%` percent                    |                      0% | —                                                                                     |
+| any C0/DEL control char, TAB, NL |    **0 of 5,142** | —                                                                                     |
 
 Example real name that shatters today: `Ribosomal Protein L15; Chain: K; domain 2`.
 
@@ -67,6 +67,7 @@ tab/nl/cr/`%`/control) and [VCF 4.3](https://samtools.github.io/hts-specs/VCFv4.
 (split on now-safe delimiters + one decode per field), human-inspectable, and tool-robust.
 
 **Rejected alternatives:**
+
 - **Native Arrow `list<struct>`** — viable (hyparquet *can* read nested STRUCT/LIST; pyarrow writes
   it), but heavier Dremel decode, `list<struct>` is a known-fragile area in hyparquet (struct-in-list
   bug fixed only Dec 2025, v1.23.3), the frontend `hyparquet-writer` **cannot** write nested (export
@@ -93,6 +94,7 @@ fragile frontend heuristic (`splitOnTopLevelSemicolons`, `lastIndexOf('|')` ambi
 ### 2.3 #57: label unnamed superfamilies by bare code; drop parent-name inheritance
 
 Unanimous across three authorities:
+
 - CNF format spec leaves the name field **blank**, no propagation
   ([README-cath-names-file-format.txt](https://download.cathdb.info/cath/releases/latest-release/cath-classification-data/README-cath-names-file-format.txt)).
 - cathdb.info shows *"CATH Superfamily 6.20.10.10 … waiting to be named"*
@@ -149,6 +151,7 @@ only touches `%`/`;`/`|`/control inside it, leaving `accession (name)` structura
 neutralizing any `;`/`|` that lived in `name`.
 
 **Invariants after v2 encoding:**
+
 - No name/label/evidence token contains a literal `;` or `|`.
 - Therefore `cell.split(';')` yields exactly the hits, and each hit has **at most one** structural
   `|` (`indexOf === lastIndexOf`).
@@ -158,18 +161,26 @@ neutralizing any `;`/`|` that lived in `name`.
 
 ## 5. Versioning & migration
 
-Stamp `format_version = 2` into the bundle.
+Stamp `format_version = 2` into the bundle via parquet **file-level key-value metadata** on the
+`protein_annotations` table. **Decided — verified end-to-end on the exact pinned versions:**
 
-- **Primary location:** parquet **key-value metadata** on the `protein_annotations` table
-  (`table.replace_schema_metadata({b"protspace_format_version": b"2"})` on the backend; read via
-  hyparquet's metadata API on the frontend). Always present, semantically correct, no data-schema
-  change.
-- **Fallback (if hyparquet KV-metadata access is awkward on the JS side):** a `format_version`
-  field in the JSON the frontend already parses (settings `settings_json` or projections
-  `info_json`). **To be finalized in the implementation plan after a ~5-minute frontend check** of
-  hyparquet's metadata surface; the spec does not block on it.
+- **Backend (pyarrow 20.0.0):** `table.replace_schema_metadata({b"protspace_format_version": b"2",
+  b"protspace_encoding": b"pct"})` before `pq.write_table`. Confirmed that pyarrow writes these as
+  **top-level footer `key_value_metadata` entries** (they appear alongside `ARROW:schema`, not
+  buried inside it).
+- **Frontend (hyparquet 1.26.0):** `parquetMetadata(part1Buffer).key_value_metadata` (type
+  `FileMetaData.key_value_metadata?: KeyValue[]`, parsed from the footer in
+  `hyparquet/src/metadata.js`). Confirmed hyparquet surfaces the custom keys directly — no
+  `ARROW:schema` blob decoding needed.
+
+Rationale: always present (unlike the optional settings part), semantically correct (versions the
+annotations serialization itself), and requires **no data-schema change** to any table. The
+round-trip was validated with a throwaway pyarrow→footer read that showed
+`['ARROW:schema', 'protspace_encoding', 'protspace_format_version']` with `protspace_format_version
+= b"2"`.
 
 **Frontend branch:**
+
 - `format_version >= 2` → v2 decode path (§7).
 - absent / `< 2` → **existing legacy parser, unchanged** (paren-depth split + `lastIndexOf('|')` +
   evidence regex). Every already-distributed `.parquetbundle` renders exactly as today; **no
@@ -184,17 +195,17 @@ to v2 (to get corrected names + #57) is an optional post-merge follow-up, not pa
 
 Emit sites (from the code map) that must `encode_field` the free-text token:
 
-| Site | File:line | Token |
-|------|-----------|-------|
-| InterPro hit name | `data/annotations/retrievers/interpro_retriever.py:362` | `name` in `f"{acc} ({name})"` |
-| TED domain name | `data/annotations/retrievers/ted_retriever.py:88` | `name` |
-| EC enzyme name | `data/annotations/transformers/uniprot_transforms.py:188` | `name` |
-| Pfam clan name | `data/annotations/transformers/interpro_transforms.py:68` | `clan_name` |
-| UniProt keyword name | `data/parsers/uniprot_parser.py:272` | `name` |
-| Subcellular value | `data/parsers/uniprot_parser.py:314` | `value` before `\|ev` |
-| protein_families value | `data/parsers/uniprot_parser.py:337` | `result` before `\|ev` |
-| EC value (parser) | `data/parsers/uniprot_parser.py:355` | `value` before `\|ev` |
-| GO bp/mf/cc values | `data/parsers/uniprot_parser.py:374/386/398` | `value` before `\|ev` |
+| Site                   | File:line                                                   | Token                             |
+| ---------------------- | ----------------------------------------------------------- | --------------------------------- |
+| InterPro hit name      | `data/annotations/retrievers/interpro_retriever.py:362`   | `name` in `f"{acc} ({name})"` |
+| TED domain name        | `data/annotations/retrievers/ted_retriever.py:88`         | `name`                          |
+| EC enzyme name         | `data/annotations/transformers/uniprot_transforms.py:188` | `name`                          |
+| Pfam clan name         | `data/annotations/transformers/interpro_transforms.py:68` | `clan_name`                     |
+| UniProt keyword name   | `data/parsers/uniprot_parser.py:272`                      | `name`                          |
+| Subcellular value      | `data/parsers/uniprot_parser.py:314`                      | `value` before `\|ev`          |
+| protein_families value | `data/parsers/uniprot_parser.py:337`                      | `result` before `\|ev`         |
+| EC value (parser)      | `data/parsers/uniprot_parser.py:355`                      | `value` before `\|ev`          |
+| GO bp/mf/cc values     | `data/parsers/uniprot_parser.py:374/386/398`              | `value` before `\|ev`          |
 
 **Free wins (no logic change — they become correct once names carry no `;`/`|`):**
 `transform_cath` (`interpro_transforms.py:91`), `transform_pfam_clan` (`:133/141`),
@@ -232,15 +243,23 @@ All decoding is centralized in `packages/core/src/components/data-loader/utils/c
   the already-decoded `{labels, scores, evidence}` structures (`annotation_scores` /
   `annotation_evidence` / `annotation.values`), whose shapes are preserved.
 
-**Out of scope:** the frontend export path (`packages/utils/src/parquet/bundle-writer.ts`) is
-*already* lossy (label-only, first hit; drops scores/evidence/secondary hits). Making export
-lossless is **not** part of this change (noted for a future issue).
+**Out of scope — tracked separately:** the frontend export path
+(`packages/utils/src/parquet/bundle-writer.ts` `createAnnotationsParquet`) is *already* lossy — it
+writes only the first hit's decoded label (`getFirstAnnotationIndex`, `:59-62`) and drops all
+scores, evidence, and secondary hits, without re-serializing the grammar. This is a **pre-existing,
+independent** data-loss bug orthogonal to the encoding contract, so it is not folded into this
+change (which would broaden the PR and risk). It is filed as
+[tsenoner/protspace_web#303](https://github.com/tsenoner/protspace_web/issues/303) (in the
+"ProtSpace Development" project, status **Ready**) and becomes a natural follow-up once the v2 codec
+exists: the exporter should re-serialize from the decoded `{labels, scores, evidence}` via the
+shared codec and stamp `format_version = 2`.
 
 ---
 
 ## 8. Testing (TDD — failing tests first)
 
 **Backend**
+
 - Codec round-trip property: `decode_field(encode_field(s)) == s` for arbitrary text incl. every
   reserved char, control chars, non-ASCII, the real `Ribosomal Protein L15; Chain: K; domain 2`,
   and `YojJ-like (1`.
@@ -251,12 +270,14 @@ lossless is **not** part of this change (noted for a future issue).
   distinct. (Replaces `test_unnamed_superfamily_inherits_topology`.)
 
 **Frontend**
+
 - Codec round-trip (mirror of the backend property).
 - `parseAnnotationValue` v2: encoded input → decoded label/evidence/scores; single-`|` unambiguity.
 - `splitCategoricalAnnotationValues` v2: plain split; legacy v1 tests retained for the v1 branch.
 - Version-detection test: v1 vs v2 branching.
 
 **Cross-repo end-to-end proof (the key test)**
+
 - A small **v2 `.parquetbundle` produced by the backend, read by the frontend**, asserting that a
   `;`-bearing name round-trips to exactly **one** category with the literal `;` restored — the exact
   #56 bug, proven fixed across the seam. Plus a v1 fixture that still renders via the legacy path.
@@ -282,8 +303,10 @@ changes; regenerating already-distributed bundles.
 
 ## 11. Open items to settle in the implementation plan
 
-1. Final `format_version` location (parquet KV metadata vs settings/info JSON) — after the 5-min
-   hyparquet metadata check.
-2. Exact Dash `serve` decode points (confirm which display paths re-parse names).
-3. Whether any non-CATH name source (GO/keyword) can carry a literal `%` today that the v2 encoder
-   must round-trip (corpus-check GO/keyword/EC names alongside CATH).
+1. Exact Dash `serve` decode points (confirm which display paths re-parse names).
+2. Whether any non-CATH name source (GO/keyword/EC/Pfam-clan) can carry a literal `%` today that the
+   v2 encoder must round-trip (corpus-check those name sources alongside CATH — the CATH scan already
+   showed 0 `%`, but the codec handles it regardless via `%`→`%25`).
+
+_Resolved during design:_ the `format_version` location — parquet file-level key-value metadata,
+verified end-to-end on pyarrow 20.0.0 (write) + hyparquet 1.26.0 (read); see §5.
