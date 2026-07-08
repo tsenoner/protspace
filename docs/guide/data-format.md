@@ -138,6 +138,40 @@ Evidence codes are recognized by pattern: any 2–5 uppercase letter code (e.g.,
 
 Evidence codes are displayed in the protein tooltip alongside the annotation value.
 
+### Encoding (Format v2)
+
+As of bundle format v2, annotation values containing special characters use percent-encoding to ensure reliable parsing while keeping `,` `(` `)` human-readable inside names and labels.
+
+**Encoding rules:**
+
+- Reserved characters — `%`, `;`, `|`, and control characters (0x00–0x1F, 0x7F) — are percent-encoded as `%XX` (uppercase hex)
+  - `%` → `%25`
+  - `;` (field separator) → `%3B`
+  - `|` (score/evidence separator) → `%7C`
+  - control chars (including newline, tab) → `%0A`, `%09`, etc.
+- Literal characters — `,` (score delimiter), `(`, `)` — stay unencoded for readability in names and labels
+
+**Example:**
+
+For a hypothetical protein with a CATH domain whose name contains a semicolon ("Superfamily; old"), a Pfam family with a comma in the name ("Kinase, serine"), and InterPro matches, a bundle v2 annotation might encode as:
+
+```
+1.10.490.10 (Superfamily%3B old)|300;PF00001 (Kinase, serine)|425.5
+```
+
+When displayed in ProtSpace, the decoded names render as "Superfamily; old" and "Kinase, serine", with the percent-encoding transparent to the user.
+
+**Version detection:**
+
+- A bundle's annotation format version is stored in the parquet key-value metadata of the `selected_annotations` table under the key `protspace_format_version`
+- Format version 2 is detected by reading this metadata via hyparquet's `parquetMetadata` (returns `"2"` as a string)
+- v1 bundles (no version key present, or version < 2) render using the legacy parser, which does not decode percent-encoded sequences
+- This ensures backward compatibility: existing v1 bundles load unchanged without requiring special-case handling
+
+**Known formatting:**
+
+- Unnamed CATH superfamilies from TED domains display the bare code without a decoding step (see [#57](https://github.com/tsenoner/protspace_web/issues/57))
+
 ## Creating Files
 
 Use the [Google Colab notebook](/guide/data-preparation) or [Python CLI](/guide/python-cli) to generate `.parquetbundle` files.
