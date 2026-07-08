@@ -76,3 +76,10 @@ class TestParsePfamClansTsv:
         assert mapping["PF00001"] == "CL0192 (GPCR_A)"
         assert mapping["PF00004"] == "CL0023 (P-loop_NTPase)"
         assert "PF00015" not in mapping  # No clan → not in mapping
+
+    def test_clan_name_with_pipe_is_encoded(self, tmp_path):
+        """Test that clan names with reserved characters like | and ; are percent-encoded."""
+        tsv_file = tmp_path / "clans.tsv"
+        tsv_file.write_text("PF00001\tCL0001\tName|with;reserved\n")
+        m = _parse_pfam_clans_tsv(tsv_file)
+        assert m["PF00001"] == "CL0001 (Name%7Cwith%3Breserved)"
