@@ -1,4 +1,4 @@
-import { parquetReadObjects, parquetMetadata } from 'hyparquet';
+import { parquetReadObjects, parquetMetadata, type FileMetaData } from 'hyparquet';
 import {
   BUNDLE_DELIMITER_BYTES,
   findBundleDelimiterPositions,
@@ -37,18 +37,18 @@ export interface BundleExtractionResult {
 }
 
 /**
- * Reads the `protspace_format_version` key-value metadata entry from a parquet
- * file's footer. `parquetMetadata` parses the footer synchronously from the
- * tail of the buffer, so this is cheap relative to the row-group decode done
- * by `parquetReadObjects` on the same buffer.
+ * Reads the `protspace_format_version` key-value metadata entry from an
+ * already-parsed parquet footer (part1's `FileMetaData`, produced once by
+ * `parquetMetadata` and reused for the subsequent `parquetReadObjects` call —
+ * avoids re-parsing the same footer twice).
  *
- * Returns `1` (legacy default) when the key is missing, non-numeric, or the
- * buffer can't be parsed as parquet metadata at all — this keeps v1/absent
- * bundles rendering exactly as before Task H2.
+ * Returns `1` (legacy default) when the key is missing, non-numeric, or
+ * lookup otherwise fails — this keeps v1/absent bundles rendering exactly as
+ * before Task H2.
  */
-function readFormatVersion(part1: ArrayBuffer): number {
+function readFormatVersion(metadata: FileMetaData): number {
   try {
-    const kv = parquetMetadata(part1).key_value_metadata ?? [];
+    const kv = metadata.key_value_metadata ?? [];
     const entry = kv.find((k) => k.key === FORMAT_VERSION_KEY);
     const v = entry?.value ? Number(entry.value) : 1;
     return Number.isFinite(v) ? v : 1;
@@ -106,17 +106,29 @@ export async function extractRowsFromParquetBundle(
   assertValidParquetMagic(part2);
   assertValidParquetMagic(part3);
 
-  // Read the format_version stamped in part1's footer (the annotations part) before
-  // it's decoded — same buffer `parquetReadObjects` below decodes, read synchronously
-  // while it's still non-null.
-  const formatVersion = readFormatVersion(part1);
+  // Parse part1's footer once (the annotations part), before it's decoded, and reuse
+  // the result both to read the format_version and as the `metadata` option below —
+  // hyparquet re-derives metadata from the buffer when `metadata` is omitted, so
+  // passing it explicitly avoids parsing the same footer twice. On parse failure,
+  // fall back to `formatVersion = 1` and let `parquetReadObjects` (without `metadata`)
+  // re-attempt the parse itself, surfacing the same error it would have before.
+  let part1Metadata: FileMetaData | null = null;
+  let formatVersion = 1;
+  try {
+    part1Metadata = parquetMetadata(part1);
+    formatVersion = readFormatVersion(part1Metadata);
+  } catch {
+    formatVersion = 1;
+  }
 
   // Decode sequentially and release each sliced buffer immediately after its decode completes.
   // hyparquet is CPU-bound on the single JS thread — Promise.all gives no real parallelism, only
   // interleaved async continuations that keep all three buffers + decode scratch live simultaneously.
   // Sequential decode ensures only one part's buffer is live at a time, cutting the transient
   // load-peak (critical for large datasets such as SwissProt 573 K where peak heap reached ~2.3 GB).
-  const selectedAnnotationsData = await parquetReadObjects({ file: part1 });
+  const selectedAnnotationsData = part1Metadata
+    ? await parquetReadObjects({ file: part1, metadata: part1Metadata })
+    : await parquetReadObjects({ file: part1 });
   part1 = null;
   const projectionsMetadataData = await parquetReadObjects({ file: part2 });
   part2 = null;

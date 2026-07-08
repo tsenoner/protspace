@@ -185,33 +185,31 @@ function appendSyntheticNACategory(
  *   "taxonomy_value"                 → { label: "taxonomy_value", scores: [], evidence: null }
  */
 /**
- * Dispatches to the v1 (paren-aware, raw label) or v2 (decodeField) parser based on
- * the bundle's `formatVersion`. Defaults to v1 so existing callers that don't yet
- * thread a format version keep byte-identical behavior (threaded end-to-end in
- * Task H2).
+ * Shared control flow for both bundle format versions. The only difference between
+ * v1 and v2 is whether the label is run through {@link decodeField} — v2 names are
+ * percent-encoded at the source (so `|` and `;` never appear inside a name), v1
+ * names are raw. `decodeLabel` is applied at every place the label string is
+ * produced (the no-pipe/trailing-pipe early return, the evidence branch, the
+ * non-numeric fallback, and the success return). Evidence and scores are never
+ * decoded in either version.
  */
-export const parseAnnotationValue = (
+const parseAnnotationValueImpl = (
   raw: string,
-  formatVersion = 1,
-): { label: string; scores: number[]; evidence: string | null } =>
-  formatVersion >= 2 ? parseAnnotationValueV2(raw) : parseAnnotationValueV1(raw);
-
-const parseAnnotationValueV1 = (
-  raw: string,
+  decodeLabel: (s: string) => string,
 ): { label: string; scores: number[]; evidence: string | null } => {
   const trimmed = raw.trim();
   if (!trimmed) return { label: '', scores: [], evidence: null };
 
   const lastPipe = trimmed.lastIndexOf('|');
   if (lastPipe === -1 || lastPipe === trimmed.length - 1) {
-    return { label: trimmed, scores: [], evidence: null };
+    return { label: decodeLabel(trimmed), scores: [], evidence: null };
   }
 
   const suffix = trimmed.substring(lastPipe + 1).trim();
 
   // Check for evidence code pattern (2–5 uppercase letters or ECO:digits)
   if (EVIDENCE_CODE_RE.test(suffix)) {
-    const label = trimmed.substring(0, lastPipe).trim();
+    const label = decodeLabel(trimmed.substring(0, lastPipe).trim());
     return { label, scores: [], evidence: suffix };
   }
 
@@ -223,52 +221,28 @@ const parseAnnotationValueV1 = (
     const num = Number(part.trim());
     if (!Number.isFinite(num)) {
       // Not numeric and not an evidence code — treat the full string as the label
-      return { label: trimmed, scores: [], evidence: null };
+      return { label: decodeLabel(trimmed), scores: [], evidence: null };
     }
     scores.push(num);
   }
 
-  const label = trimmed.substring(0, lastPipe).trim();
+  const label = decodeLabel(trimmed.substring(0, lastPipe).trim());
   return { label, scores, evidence: null };
 };
+
+const identity = (s: string): string => s;
 
 /**
- * v2 parser: names are percent-encoded at the source (bundle format v2), so `|`
- * and `;` never appear inside a name — the last `|` is always the single
- * structural separator between the (encoded) label and its score/evidence
- * suffix. Decode the label via {@link decodeField}; evidence tokens never
- * contain reserved characters (evidence codes match [A-Z]{2,5}|ECO:\d+) so
- * they need no decode. Numeric scores are parsed as-is.
+ * Dispatches to the shared parser with either the identity label decode (v1: raw
+ * label) or {@link decodeField} (v2: percent-decoded label) based on the bundle's
+ * `formatVersion`. Defaults to v1 so existing callers that don't yet thread a
+ * format version keep byte-identical behavior (threaded end-to-end in Task H2).
  */
-const parseAnnotationValueV2 = (
+export const parseAnnotationValue = (
   raw: string,
-): { label: string; scores: number[]; evidence: string | null } => {
-  const trimmed = raw.trim();
-  if (!trimmed) return { label: '', scores: [], evidence: null };
-
-  // In v2 no name contains '|', so there is at most one structural pipe.
-  const pipe = trimmed.lastIndexOf('|');
-  if (pipe === -1 || pipe === trimmed.length - 1) {
-    return { label: decodeField(trimmed), scores: [], evidence: null };
-  }
-
-  const suffix = trimmed.substring(pipe + 1).trim();
-  const label = decodeField(trimmed.substring(0, pipe).trim());
-
-  if (EVIDENCE_CODE_RE.test(suffix)) {
-    return { label, scores: [], evidence: suffix };
-  }
-
-  const scores: number[] = [];
-  for (const part of suffix.split(',')) {
-    const num = Number(part.trim());
-    if (!Number.isFinite(num)) {
-      return { label: decodeField(trimmed), scores: [], evidence: null };
-    }
-    scores.push(num);
-  }
-  return { label, scores, evidence: null };
-};
+  formatVersion = 1,
+): { label: string; scores: number[]; evidence: string | null } =>
+  parseAnnotationValueImpl(raw, formatVersion >= 2 ? decodeField : identity);
 
 /**
  * Split a categorical annotation cell on the top-level hit separator ';'.
