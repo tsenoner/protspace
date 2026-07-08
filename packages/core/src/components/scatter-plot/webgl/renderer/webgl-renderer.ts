@@ -8,7 +8,7 @@
  * Falls back to direct rendering if gamma pipeline is unavailable.
  */
 
-import type * as d3 from 'd3';
+import * as d3 from 'd3';
 import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
@@ -495,7 +495,7 @@ export class WebGLRenderer {
       dataDomain,
       pointSizeReference,
       selectionActive: this.selectionActive,
-      transform: resetView ? ({ x: 0, y: 0, k: 1 } as d3.ZoomTransform) : this.getTransform(),
+      transform: resetView ? d3.zoomIdentity : this.getTransform(),
       gamma: this.gamma,
     });
   }

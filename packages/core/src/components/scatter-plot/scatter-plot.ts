@@ -2160,7 +2160,7 @@ export class ProtspaceScatterplot extends LitElement {
     // is a separate, pre-existing concern.
     const badgesCanvas =
       resetView && !dataDomain
-        ? (this._dupOverlay.captureBadges(d3.zoomIdentity) ?? undefined)
+        ? this._dupOverlay.captureBadges(d3.zoomIdentity)
         : this._badgesCanvas;
     if (badgesCanvas && badgesCanvas.width > 0 && badgesCanvas.height > 0) {
       const ctx = webglCanvas.getContext('2d');
