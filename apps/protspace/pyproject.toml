@@ -1,12 +1,11 @@
 [project]
 name = "protspace"
-version = "4.4.0"
+version = "4.5.0"
 description = "A visualisation tool for protein embeddings from pLMs"
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
 license = "GPL-3.0"
 requires-python = ">=3.10"
-
 dependencies = [
     "h5py>=3.12.1",
     "scikit-learn>=1.6.1",
@@ -37,6 +36,10 @@ frontend = [
     "requests>=2.32.4",
 ]
 
+[project.scripts]
+protspace = "protspace.cli.app:app"
+
+
 [dependency-groups]
 dev = [
     "dash[testing]>=3",
@@ -62,9 +65,6 @@ dev = [
     "jupytext>=1.17.1",
     "pytest-cov>=7.0.0",
 ]
-
-[project.scripts]
-protspace = "protspace.cli.app:app"
 
 [build-system]
 requires = ["hatchling"]
