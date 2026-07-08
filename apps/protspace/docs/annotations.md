@@ -136,6 +136,33 @@ Codes are derived from [ECO (Evidence & Conclusion Ontology)](https://www.eviden
 
 Three databases (`cath`, `superfamily`, `panther`) resolve human-readable entry names via InterPro FTP XML (cached 7 days). `cath` has `G3DSA:` prefix removed; `signal_peptide` is converted to `True`/`False`.
 
+### Encoding (bundle format v2)
+
+Categorical annotation cells in the `.parquetbundle` follow the grammar:
+```
+accession (name)|score,score;accession2 (name2)|EVIDENCE
+```
+
+To preserve lossless parsing despite human-readable names containing structural characters (`|`, `;`), free-text tokens (names, labels, evidence codes) are **percent-encoded** over a minimal reserved set before assembly:
+
+| Reserved Set | Encoding |
+|--------------|----------|
+| `%` | → `%25` (escape character) |
+| `;` | → `%3B` (hit separator) |
+| `\|` | → `%7C` (label/score separator) |
+| Control chars `0x00-0x1F`, `0x7F` | → `%XX` (uppercase hex) |
+| `,`, `(`, `)` | LITERAL (not encoded) |
+
+Literal preservation of commas, parens, and parentheses keeps names readable and is safe: commas appear only after score delimiters (`|`), and parentheses are display sugar with fixed positions in the template.
+
+The bundle's annotations parquet table carries format metadata in its key-value headers:
+- `protspace_format_version`: `2`
+- `protspace_encoding`: `pct` (percent-encoding)
+
+These are readable via parquet tools and the frontend's hyparquet library (`parquetMetadata().key_value_metadata`), enabling forward compatibility if the encoding evolves.
+
+**CATH superfamily naming** (issue #57): The CATH database marks some superfamilies as unnamed ("waiting to be named"). Rather than fabricate a parent-topology name, unnamed superfamilies render as their bare code: e.g., `3.30.70.11` instead of `3.30.70.11 (Guessed parent topology)`. This preserves data fidelity and avoids misleading users.
+
 ### Derived Annotation
 
 | Name        | Source | Description                                               |
