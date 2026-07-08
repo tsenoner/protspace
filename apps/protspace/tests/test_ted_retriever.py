@@ -164,6 +164,46 @@ class TestTedRetriever:
             "2.60.40 (Immunoglobulin-like)|91.0" in result[0].annotations["ted_domains"]
         )
 
+    @patch(_CATH_NAMES_PATCH)
+    @patch(_REQUESTS_PATCH)
+    def test_ted_name_with_semicolon_is_encoded(self, mock_requests, mock_cath_names):
+        """CATH domain names containing ';' must be percent-encoded by the real emit path.
+
+        Regression guard for the `encode_field` wrap in `_format_domains`
+        (ted_retriever.py): exercises the real fetch_annotations -> _format_domains
+        -> _resolve_cath_name pipeline (with `get_cath_names` mocked to return a
+        `;`-bearing name) rather than a hand-built string, so reverting the wrap
+        (`f"{cath_label} ({name})|..."` instead of
+        `f"{cath_label} ({encode_field(name)})|..."`) would make this test fail.
+        """
+        from protspace.data.annotations.encoding import decode_field, encode_field
+
+        raw_name = "Immunoglobulin-like; Ig fold"
+        mock_cath_names.return_value = {"2.60.40.720": raw_name}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_alphafold_response(
+            [_make_domain("2.60.40.720", 95.1)]
+        )
+        mock_resp.raise_for_status = MagicMock()
+        mock_requests.get.return_value = mock_resp
+
+        retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
+        result = retriever.fetch_annotations()
+        ted_value = result[0].annotations["ted_domains"]
+
+        encoded_name = encode_field(raw_name)
+        assert ted_value == f"2.60.40.720 ({encoded_name})|95.1"
+        assert "%3B" in ted_value
+
+        # No raw ';' survives inside the emitted cell (the reserved
+        # domain-separator character), only its percent-encoded form.
+        assert ";" not in ted_value
+
+        # Decoding the emitted name restores the exact original (round-trip).
+        name_in_parens = ted_value.split("(", 1)[1].rsplit(")", 1)[0]
+        assert name_in_parens == encoded_name
+        assert decode_field(name_in_parens) == raw_name
+
 
 class TestTedConstants:
     def test_ted_annotations(self):

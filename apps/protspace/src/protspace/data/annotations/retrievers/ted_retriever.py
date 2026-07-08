@@ -5,6 +5,7 @@ import logging
 import requests
 from tqdm import tqdm
 
+from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
 
@@ -85,7 +86,7 @@ class TedRetriever(BaseAnnotationRetriever):
             if cath_label and cath_label != "-":
                 name = self._resolve_cath_name(cath_label)
                 if name:
-                    parts.append(f"{cath_label} ({name})|{plddt:.1f}")
+                    parts.append(f"{cath_label} ({encode_field(name)})|{plddt:.1f}")
                 else:
                     parts.append(f"{cath_label}|{plddt:.1f}")
             else:
