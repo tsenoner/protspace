@@ -35,6 +35,23 @@ def bundle(
         Path,
         typer.Option("-o", "--output", help="Output .parquetbundle file path."),
     ],
+    statistics: Annotated[
+        Path | None,
+        typer.Option(
+            "-s",
+            "--statistics",
+            help="Optional projection-statistics parquet file → 5th bundle part.",
+            exists=True,
+        ),
+    ] = None,
+    settings: Annotated[
+        Path | None,
+        typer.Option(
+            "--settings",
+            help="Optional settings JSON (e.g. auto-generated cluster styles) → 4th bundle part.",
+            exists=True,
+        ),
+    ] = None,
     verbose: Annotated[
         int,
         typer.Option("-v", "--verbose", count=True, help="Increase verbosity."),
@@ -49,9 +66,13 @@ def bundle(
     """
     setup_logging(verbose)
 
+    import json
+
     import pyarrow.parquet as pq
 
     from protspace.data.io.bundle import write_bundle
+
+    settings_obj = json.loads(settings.read_text()) if settings is not None else None
 
     metadata_path = projections / "projections_metadata.parquet"
     data_path = projections / "projections_data.parquet"
@@ -72,10 +93,16 @@ def bundle(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
+    statistics_table = (
+        pq.read_table(str(statistics)) if statistics is not None else None
+    )
+
     output_path = output.with_suffix(".parquetbundle")
     write_bundle(
         [annotations_table, metadata_table, data_table],
         output_path,
+        settings=settings_obj,
+        statistics=statistics_table,
     )
 
     typer.echo(f"Saved: {output_path}")

@@ -16,6 +16,14 @@ class Metric(str, Enum):
     manhattan = "manhattan"
 
 
+class ClusterSelection(str, Enum):
+    """How `--stats` chooses the cluster count K."""
+
+    elbow = "elbow"  # inertia elbow (default)
+    silhouette = "silhouette"  # max-silhouette K
+    both = "both"  # emit both clusterings
+
+
 # ---------------------------------------------------------------------------
 # Shared option types
 # ---------------------------------------------------------------------------

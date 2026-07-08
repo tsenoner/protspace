@@ -69,6 +69,7 @@ def _register_commands() -> None:
         prepare,
         project,
         serve,
+        stats,
         style,
     )
 

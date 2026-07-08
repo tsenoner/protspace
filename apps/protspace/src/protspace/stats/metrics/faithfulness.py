@@ -1,0 +1,347 @@
+"""Projection-faithfulness statistics vs. the source embedding.
+
+Two families (tagged by ``scope`` in each row's ``extra``):
+  local  — kNN-neighbourhood preservation: ``knn_overlap``, ``trustworthiness``,
+           ``continuity`` (do nearby points stay nearby?).
+  global — whole-layout preservation: ``random_triplet`` (relative-ordering
+           accuracy over random triplets) and ``spearman_distance`` (rank
+           correlation of all pairwise distances) — the mid/long-range structure
+           the local metrics miss.
+
+These compare a projection to its *source embedding*. The high-dimensional
+distance metric (the reducer's own metric, euclidean by default unless the
+projection was built with e.g. cosine) defines the embedding-space neighbourhoods
+for all three statistics, so trustworthiness and continuity form a consistent
+dual pair — both define the embedding's neighbourhoods by ``high_dim_metric`` and
+the coords' by euclidean (differing only in which space supplies ranks vs sets):
+
+  trustworthiness = penalises false neighbours (near in coords, far in embedding)
+  continuity      = penalises missed neighbours (near in embedding, far in coords)
+
+``sklearn.manifold.trustworthiness`` only applies its ``metric`` argument to the
+first (ranked) input, so continuity with a non-euclidean high-dim metric is not
+expressible via a single call; ``_continuity`` computes it with the same
+normalisation as sklearn (and is bit-identical when the metric is euclidean).
+
+Both build a full pairwise distance matrix (no ANN path), so above a sample
+threshold a fixed-seed shared subsample is used, and beyond a hard ceiling the
+statistic is skipped with a recorded marker.
+
+scikit-learn imports are function-local to keep CLI startup fast.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from protspace.stats._sampling import id_seed, sorted_subsample
+from protspace.stats.base import DEFAULT_SAMPLE_THRESHOLD, StatContext, StatRow
+
+DEFAULT_K = 15
+DEFAULT_HARD_CEILING = 20000
+DEFAULT_N_TRIPLETS_PER_POINT = 5
+
+
+def _knn_overlap(embedding, coords, k: int, metric: str) -> float:
+    from sklearn.neighbors import NearestNeighbors
+
+    n = embedding.shape[0]
+    hi = (
+        NearestNeighbors(n_neighbors=k + 1, metric=metric)
+        .fit(embedding)
+        .kneighbors(embedding, return_distance=False)
+    )
+    lo = (
+        NearestNeighbors(n_neighbors=k + 1, metric="euclidean")
+        .fit(coords)
+        .kneighbors(coords, return_distance=False)
+    )
+    total = 0
+    for i in range(n):
+        # Exclude self explicitly (not by slicing column 0): on coincident points
+        # self may not be the first returned neighbour.
+        hi_i = [j for j in hi[i] if j != i][:k]
+        lo_i = [j for j in lo[i] if j != i][:k]
+        total += len(set(hi_i).intersection(lo_i))
+    return float(total / (n * k))
+
+
+def _continuity(embedding, coords, k: int, metric: str) -> float:
+    """Continuity — the dual of ``sklearn.manifold.trustworthiness``.
+
+    High-dim neighbour sets use ``metric``; low-dim ranks use euclidean. Uses
+    sklearn's exact normalisation, so it is directly comparable to the
+    trustworthiness value and is bit-identical to
+    ``trustworthiness(coords, embedding, metric="euclidean")`` when ``metric`` is
+    euclidean. sklearn's ``trustworthiness`` only applies ``metric`` to its first
+    (ranked) argument, so continuity with a non-euclidean high-dim metric cannot
+    be expressed through it — hence this helper.
+    """
+    from sklearn.metrics import pairwise_distances
+    from sklearn.neighbors import NearestNeighbors
+
+    n = coords.shape[0]
+    # Ranks come from the low-dim (output) space, euclidean.
+    dist_lo = pairwise_distances(coords, metric="euclidean")
+    np.fill_diagonal(dist_lo, np.inf)
+    ind_lo = np.argsort(dist_lo, axis=1)
+    # Neighbour sets come from the high-dim (input) space, using hi_metric.
+    ind_hi = (
+        NearestNeighbors(n_neighbors=k, metric=metric)
+        .fit(embedding)
+        .kneighbors(return_distance=False)
+    )
+    inverted = np.zeros((n, n), dtype=int)
+    order = np.arange(n + 1)
+    inverted[order[:-1, np.newaxis], ind_lo] = order[1:]
+    ranks = inverted[order[:-1, np.newaxis], ind_hi] - k
+    c = np.sum(ranks[ranks > 0])
+    c = 1.0 - c * (2.0 / (n * k * (2.0 * n - 3.0 * k - 1.0)))
+    return float(c)
+
+
+def _random_triplet_accuracy(
+    embedding, coords, k_per_point: int, metric: str, rng
+) -> float:
+    """Global structure: fraction of random triplets (i, j, l) whose distance
+    ordering agrees between the embedding and the projection.
+
+    For each anchor i and two random others j, l: does "is j or l closer to i?"
+    match in high-dim (``metric``) and low-dim (euclidean)? 0.5 ≈ chance, 1.0 =
+    every relative ordering preserved. Samples ``k_per_point`` triplets per point
+    (O(n·k_per_point)), so it probes mid/long-range layout, unlike the kNN metrics.
+    """
+    from sklearn.metrics.pairwise import paired_distances
+
+    n = embedding.shape[0]
+    anchors = np.repeat(np.arange(n), k_per_point)
+    t = anchors.shape[0]
+    # Two DISTINCT others per anchor, neither equal to the anchor. Offsets in
+    # [1, n-1] added mod n never land on the anchor; drawing m's offset from
+    # [1, n-2] then skipping over j's offset guarantees j != m. This excludes
+    # self-pairs (distance 0), which would trivially agree and inflate the score.
+    off_j = rng.integers(1, n, t)
+    off_m = rng.integers(1, n - 1, t)
+    off_m += off_m >= off_j
+    j = (anchors + off_j) % n
+    m = (anchors + off_m) % n
+    emb_a, coords_a = embedding[anchors], coords[anchors]
+    d_hi_j = paired_distances(emb_a, embedding[j], metric=metric)
+    d_hi_m = paired_distances(emb_a, embedding[m], metric=metric)
+    d_lo_j = paired_distances(coords_a, coords[j], metric="euclidean")
+    d_lo_m = paired_distances(coords_a, coords[m], metric="euclidean")
+    agree = (d_hi_j < d_hi_m) == (d_lo_j < d_lo_m)
+    return float(np.mean(agree))
+
+
+def _rankdata_average(a: np.ndarray) -> np.ndarray:
+    """Average (midrank) ranks of a 1-D array — tied values share their mean rank.
+
+    Equivalent to ``scipy.stats.rankdata`` (no scipy dependency) and fully
+    vectorised, so it scales to the ~C(n,2) pairwise-distance vector. Midranks (not
+    argsort-of-argsort ordinal ranks) are what make this a true Spearman: with many
+    tied distances the ordinal version breaks ties by index, biasing the score and
+    — on an all-tied/collapsed layout — reporting a spurious perfect correlation.
+    """
+    a = np.asarray(a)
+    order = np.argsort(a, kind="stable")
+    sorted_a = a[order]
+    n = a.size
+    is_new = np.ones(n, dtype=bool)
+    np.not_equal(sorted_a[1:], sorted_a[:-1], out=is_new[1:])
+    group = np.cumsum(is_new) - 1  # tie-group id per sorted position
+    positions = np.arange(n, dtype=float)  # 0-based positions
+    avg_pos = np.bincount(group, weights=positions) / np.bincount(group)
+    ranks = np.empty(n, dtype=float)
+    ranks[order] = avg_pos[group] + 1.0  # 1-based midranks, back in input order
+    return ranks
+
+
+def _spearman_distance(embedding, coords, metric: str) -> float:
+    """Global structure: Spearman (rank) correlation between all pairwise
+    embedding distances (``metric``) and projection distances (euclidean).
+
+    Uses every unique pair (upper triangle), so it measures whether the *overall*
+    distance layout — not just local neighbourhoods — is preserved. Range [-1, 1],
+    higher = better. Computed with numpy midranks + Pearson (no scipy dependency).
+    """
+    from sklearn.metrics import pairwise_distances
+
+    n = embedding.shape[0]
+    iu = np.triu_indices(n, k=1)
+    hi = pairwise_distances(embedding, metric=metric)[iu]
+    lo = pairwise_distances(coords, metric="euclidean")[iu]
+    rank_hi = _rankdata_average(hi)
+    rank_lo = _rankdata_average(lo)
+    # A collapsed/degenerate space has all-tied distances → constant ranks →
+    # correlation undefined. Return NaN rather than a spurious perfect score.
+    if rank_hi.std() == 0.0 or rank_lo.std() == 0.0:
+        return float("nan")
+    return float(np.corrcoef(rank_hi, rank_lo)[0, 1])
+
+
+class FaithfulnessStatistic:
+    """kNN-overlap + trustworthiness + continuity of a projection vs its embedding."""
+
+    family = "faithfulness"
+    requires_embedding = True
+    embedding_space = False  # projection-only (compares projection vs embedding)
+
+    def compute(self, ctx: StatContext) -> list[StatRow]:
+        from sklearn.manifold import trustworthiness
+
+        if ctx.embedding is None:
+            return []
+        # Derive n WITHOUT upcasting: the guards below may bail, and past the
+        # ceiling every metric is skipped — a full float64 copy of a 570k-row
+        # embedding just to discard it would be pure waste.
+        emb_raw = np.asarray(ctx.embedding)
+        n = emb_raw.shape[0]
+        if n < 3:
+            return []
+
+        hard_ceiling = int(ctx.params.get("hard_ceiling", DEFAULT_HARD_CEILING))
+        base = {
+            "space_kind": ctx.space_kind,
+            "space_name": ctx.space_name,
+            "annotation": "",
+            "stat_family": self.family,
+            "label_kind": "none",
+            "metric_kind": "faithfulness",
+            # Faithfulness is a per-projection scalar: route it into the
+            # projection's info_json.quality, not the aggregate fifth part.
+            "destination": "projection_metadata",
+        }
+
+        # Bail before the canonical sort/copy below: past the ceiling every metric
+        # is skipped anyway, so sorting and copying emb/coords would be pure waste.
+        if n > hard_ceiling:
+            return [
+                StatRow(
+                    metric="knn_overlap",
+                    value=float("nan"),
+                    extra={
+                        "skipped": "n_too_large",
+                        "n": int(n),
+                        "hard_ceiling": hard_ceiling,
+                        "embedding": ctx.embedding_name,
+                    },
+                    **base,
+                )
+            ]
+
+        # Past the guards: upcast to float64 (now bounded by hard_ceiling rows) and
+        # resolve the embedding-aligned projection coords + ids.
+        emb = np.asarray(emb_raw, dtype=float)
+        # Use the projection coordinates ALIGNED to the embedding (id-intersection
+        # join), falling back to full coords only when no aligned view was built.
+        coords_src = (
+            ctx.embedding_coords if ctx.embedding_coords is not None else ctx.coords
+        )
+        coords = np.asarray(coords_src, dtype=float)
+        ids = ctx.embedding_ids if ctx.embedding_ids is not None else ctx.ids
+
+        # Canonicalise row order by id up front so EVERY metric depends only on the
+        # id-SET, not the input row order. The kNN/Spearman metrics are already
+        # order-invariant, but the position-based triplet sampling below is not — so
+        # sorting here (matching the id-derived subsample seed) makes random_triplet
+        # reproducible across differently-ordered inputs too.
+        canonical = np.argsort(np.asarray(ids), kind="stable")
+        emb = emb[canonical]
+        coords = coords[canonical]
+        ids = [ids[int(i)] for i in canonical]
+
+        k = int(ctx.params.get("k", DEFAULT_K))
+        sample_threshold = int(
+            ctx.params.get("sample_threshold", DEFAULT_SAMPLE_THRESHOLD)
+        )
+        hi_metric = ctx.high_dim_metric or "euclidean"
+
+        sampled = False
+        # Rows are already in canonical id order, so a positional draw is itself
+        # id-canonical and thus row-order invariant.
+        rng = np.random.default_rng(id_seed(ctx.rng_seed, ids))
+        idx = sorted_subsample(n, sample_threshold, rng)
+        if idx is not None:
+            emb = emb[idx]
+            coords = coords[idx]
+            n = len(idx)
+            sampled = True
+
+        # sklearn.manifold.trustworthiness requires n_neighbors < n / 2 (strict),
+        # else it raises. Clamp accordingly so trustworthiness/continuity are not
+        # silently dropped for small n; k+1 <= n keeps the kNN-overlap query valid.
+        k = max(1, min(k, (n - 1) // 2))
+        common = {
+            "k": k,
+            "seed": ctx.rng_seed,
+            "sampled": sampled,
+            "sample_size": int(n),
+            "embedding": ctx.embedding_name,
+        }
+        n_per_point = int(
+            ctx.params.get("n_triplets_per_point", DEFAULT_N_TRIPLETS_PER_POINT)
+        )
+        triplet_rng = np.random.default_rng(ctx.rng_seed)
+        # Two families, each entry (name, value_fn, extra). ``scope="local"`` are the
+        # kNN-neighbourhood metrics (trustworthiness/continuity are metric-consistent
+        # duals via ``_continuity``); ``scope="global"`` probe the whole-layout
+        # structure the local metrics miss. Each is best-effort — a failure drops
+        # only that row.
+        local = {"metric": hi_metric, "scope": "local"}
+        metrics = (
+            (
+                "knn_overlap",
+                lambda: _knn_overlap(emb, coords, k, hi_metric),
+                local,
+            ),
+            (
+                "trustworthiness",
+                lambda: float(
+                    trustworthiness(emb, coords, n_neighbors=k, metric=hi_metric)
+                ),
+                local,
+            ),
+            (
+                "continuity",
+                lambda: _continuity(emb, coords, k, hi_metric),
+                local,
+            ),
+            (
+                "random_triplet",
+                lambda: _random_triplet_accuracy(
+                    emb, coords, n_per_point, hi_metric, triplet_rng
+                ),
+                {
+                    "metric": hi_metric,
+                    "scope": "global",
+                    "n_triplets": int(n_per_point * n),
+                },
+            ),
+            (
+                "spearman_distance",
+                lambda: _spearman_distance(emb, coords, hi_metric),
+                {"metric": hi_metric, "scope": "global"},
+            ),
+        )
+        rows: list[StatRow] = []
+        for metric_name, value_fn, extra_extra in metrics:
+            try:
+                value = value_fn()
+            except Exception as exc:  # noqa: BLE001 - faithfulness is best-effort
+                # Record the gap instead of dropping it silently: e.g.
+                # ``random_triplet`` uses ``paired_distances``, which supports fewer
+                # metrics than the kNN path — an unsupported high-dim metric would
+                # otherwise leave quality with 4 of 5 metrics and no marker.
+                value = float("nan")
+                extra_extra = {**extra_extra, "skipped": type(exc).__name__}
+            rows.append(
+                StatRow(
+                    metric=metric_name,
+                    value=value,
+                    extra={**common, **extra_extra},
+                    **base,
+                )
+            )
+
+        return rows
