@@ -13,6 +13,7 @@ from typing import NamedTuple
 import requests
 from tqdm import tqdm
 
+from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
 
@@ -359,7 +360,7 @@ class InterProRetriever(BaseAnnotationRetriever):
 
                         # Format accession with name if available
                         if name:
-                            acc_with_name = f"{acc} ({name})"
+                            acc_with_name = f"{acc} ({encode_field(name)})"
                         else:
                             acc_with_name = acc
 

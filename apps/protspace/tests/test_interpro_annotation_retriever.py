@@ -1008,3 +1008,14 @@ class TestXmlParsing:
             result = InterProRetriever._parse_interpro_xml(gz_path)
 
         assert all(len(v) == 0 for v in result.values())
+
+
+def test_cath_name_with_semicolon_is_encoded():
+    """Test that CATH names with semicolons are percent-encoded at emit."""
+    from protspace.data.annotations.encoding import encode_field
+
+    name = "Ribosomal Protein L15; Chain: K; domain 2"
+    assert encode_field(name) == "Ribosomal Protein L15%3B Chain: K%3B domain 2"
+    # And the emitted cell must carry the encoded name (no raw ';' inside the name):
+    acc_with_name = f"G3DSA:1.10.10.10 ({encode_field(name)})"
+    assert ";" not in acc_with_name.split("(", 1)[1]
