@@ -149,7 +149,7 @@ As of bundle format v2, annotation values containing special characters use perc
   - `;` (field separator) → `%3B`
   - `|` (score/evidence separator) → `%7C`
   - control chars (including newline, tab) → `%0A`, `%09`, etc.
-- Literal characters — `,` (score delimiter), `(`, `)` — stay unencoded for readability in names and labels
+- Literal characters — `,` (score separator in suffix; literal in names), `(`, `)` — stay unencoded for readability
 
 **Example:**
 
