@@ -1,0 +1,58 @@
+"""Lossless percent-encoding for annotation value serialization (bundle format v2).
+
+Categorical annotation cells use the grammar
+``accession (name)|score,score;accession2 (name2)|EVIDENCE``. The structural
+characters ``;`` (hit separator) and ``|`` (label/score separator) also occur
+inside human names from external databases, which corrupts parsing. To keep the
+cell losslessly parseable, every free-text token (name, bare-text label,
+evidence) is percent-encoded over a minimal reserved set before assembly and
+decoded at display.
+
+Reserved set: ``%`` (escape), ``;``, ``|``, and all C0/DEL control chars
+(0x00-0x1F, 0x7F). ``,`` ``(`` ``)`` are deliberately NOT encoded: commas are
+positionally isolated after ``|`` and parens are display sugar, so leaving them
+literal keeps names maximally readable.
+"""
+
+import re
+
+import pyarrow as pa
+
+BUNDLE_FORMAT_VERSION = 2
+FORMAT_VERSION_KEY = b"protspace_format_version"
+ENCODING_KEY = b"protspace_encoding"
+
+# Chars that must be percent-encoded inside any free-text token.
+_RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
+_ENCODE_MAP = {c: f"%{ord(c):02X}" for c in _RESERVED}
+_DECODE_RE = re.compile(r"%([0-9A-Fa-f]{2})")
+
+
+def encode_field(s: str) -> str:
+    """Percent-encode the reserved set inside a free-text token. Lossless."""
+    if not s or not any(c in _ENCODE_MAP for c in s):
+        return s
+    return "".join(_ENCODE_MAP.get(c, c) for c in s)
+
+
+def decode_field(s: str) -> str:
+    """Inverse of :func:`encode_field`. A no-op on text without ``%``."""
+    if not s or "%" not in s:
+        return s
+    return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
+
+
+def stamp_format_version(table: pa.Table) -> pa.Table:
+    """Attach the bundle format version to a table's schema metadata.
+
+    pyarrow writes these as top-level parquet file key-value metadata, readable
+    by hyparquet on the frontend via ``parquetMetadata().key_value_metadata``.
+    """
+    existing = table.schema.metadata or {}
+    return table.replace_schema_metadata(
+        {
+            **existing,
+            FORMAT_VERSION_KEY: str(BUNDLE_FORMAT_VERSION).encode(),
+            ENCODING_KEY: b"pct",
+        }
+    )
