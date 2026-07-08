@@ -236,8 +236,9 @@ const parseAnnotationValueV1 = (
  * v2 parser: names are percent-encoded at the source (bundle format v2), so `|`
  * and `;` never appear inside a name — the last `|` is always the single
  * structural separator between the (encoded) label and its score/evidence
- * suffix. Decode the label (and the evidence token, which may itself carry
- * encoded characters) via {@link decodeField}; numeric scores are parsed as-is.
+ * suffix. Decode the label via {@link decodeField}; evidence tokens never
+ * contain reserved characters (evidence codes match [A-Z]{2,5}|ECO:\d+) so
+ * they need no decode. Numeric scores are parsed as-is.
  */
 const parseAnnotationValueV2 = (
   raw: string,

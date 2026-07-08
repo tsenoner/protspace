@@ -35,7 +35,7 @@ import { convertParquetToVisualizationDataOptimized } from './conversion';
  *       "projection_name": ["pca2", "pca2"],
  *       "identifier": ["P1", "P2"], "x": [0.0, 1.0], "y": [0.0, 1.0],
  *   })
- *   write_bundle([ann, meta, data], Path("packages/core/src/components/data-loader/"
+ *   write_bundle([ann, meta, data], Path("../protspace_web/packages/core/src/components/data-loader/"
  *       "utils/__fixtures__/v2-sample.parquetbundle"))
  *   PY
  */

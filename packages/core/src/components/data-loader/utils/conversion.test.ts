@@ -239,6 +239,20 @@ describe('parseAnnotationValue v2', () => {
       evidence: 'EXP',
     });
   });
+  it('v2 discriminating test: decodes encoded reserved char in label with evidence code', () => {
+    // Under v2, the label 'Cytop%3Blasm' (with encoded semicolon) should be decoded to 'Cytop;lasm'
+    const v2Result = parseAnnotationValue('Cytop%3Blasm|EXP', 2);
+    expect(v2Result).toEqual({
+      label: 'Cytop;lasm',
+      scores: [],
+      evidence: 'EXP',
+    });
+    // Under v1, the label would remain encoded as 'Cytop%3Blasm' (not decoded),
+    // but evidence code is still recognized
+    const v1Result = parseAnnotationValue('Cytop%3Blasm|EXP', 1);
+    expect(v1Result.label).toBe('Cytop%3Blasm');
+    expect(v1Result.evidence).toBe('EXP');
+  });
 });
 
 describe('splitCategoricalAnnotationValues v2', () => {
