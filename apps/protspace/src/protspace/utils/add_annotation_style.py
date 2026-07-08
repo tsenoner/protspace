@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from protspace.data.annotations.encoding import decode_field
 from protspace.utils.arrow_reader import ArrowReader
 
 ALLOWED_SHAPES = [
@@ -92,6 +93,11 @@ def _to_display_value(raw: str) -> list[str]:
        ``["familyA", "familyB"]`` (multi-label).
     2. **Pipe trim** – ``"value|source"`` becomes ``"value"``
        (the part after ``|`` is a source tag, e.g. ``IC``, ``SAM``).
+    3. **Percent-decode** – bundle format v2 percent-encodes ``;``/``|``/``%``
+       and control chars inside free-text names (see
+       ``protspace.data.annotations.encoding``); decode back to the literal
+       characters for human display. A no-op on values without ``%``, so
+       legacy (pre-v2) values pass through unchanged.
 
     Empty / whitespace-only parts are preserved as ``""`` (N/A sentinel).
     """
@@ -99,7 +105,7 @@ def _to_display_value(raw: str) -> list[str]:
     display: list[str] = []
     for part in parts:
         trimmed = part.split("|", 1)[0]
-        display.append(trimmed)
+        display.append(decode_field(trimmed))
     return display
 
 
