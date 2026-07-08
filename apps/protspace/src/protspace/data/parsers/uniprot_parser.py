@@ -51,6 +51,7 @@ from typing import Any
 
 import pandas as pd
 
+from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.http_utils import paginated_get
 
 # ECO evidence code mapping (ECO ID → short human-readable code)
@@ -269,7 +270,10 @@ class UniProtEntry:
     def keyword(self) -> list[str]:
         """Keyword IDs with names."""
         keywords = self.data.get("keywords", [])
-        return [f"{kw.get('id', '')} ({kw.get('name', '')})" for kw in keywords]
+        return [
+            f"{kw.get('id', '')} ({encode_field(kw.get('name', ''))})"
+            for kw in keywords
+        ]
 
     @property
     def keyword_id(self) -> list[str]:
@@ -307,7 +311,7 @@ class UniProtEntry:
         for comment in comments:
             for subloc in comment.get("subcellularLocations", []):
                 loc = subloc.get("location", {})
-                value = loc.get("value", "")
+                value = encode_field(loc.get("value", ""))
                 if value:
                     ev = self._best_evidence(loc.get("evidences", []))
                     if ev:
@@ -333,6 +337,7 @@ class UniProtEntry:
                     result = value.split(".", 1)[0]
                 else:
                     result = value
+                result = encode_field(result)
                 if ev:
                     result = f"{result}|{ev}"
                 return result
@@ -368,7 +373,7 @@ class UniProtEntry:
         """GO Biological Process terms, with evidence codes appended."""
         results = []
         for term in self.get_go_terms(aspect="P"):
-            value = term["term"]
+            value = encode_field(term["term"])
             ev = term.get("evidence", "")
             if ev:
                 value = f"{value}|{ev.split(':')[0]}"
@@ -380,7 +385,7 @@ class UniProtEntry:
         """GO Molecular Function terms, with evidence codes appended."""
         results = []
         for term in self.get_go_terms(aspect="F"):
-            value = term["term"]
+            value = encode_field(term["term"])
             ev = term.get("evidence", "")
             if ev:
                 value = f"{value}|{ev.split(':')[0]}"
@@ -392,7 +397,7 @@ class UniProtEntry:
         """GO Cellular Component terms, with evidence codes appended."""
         results = []
         for term in self.get_go_terms(aspect="C"):
-            value = term["term"]
+            value = encode_field(term["term"])
             ev = term.get("evidence", "")
             if ev:
                 value = f"{value}|{ev.split(':')[0]}"
