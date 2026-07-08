@@ -70,6 +70,7 @@ def bundle(
 
     import pyarrow.parquet as pq
 
+    from protspace.data.annotations.encoding import stamp_format_version
     from protspace.data.io.bundle import write_bundle
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
@@ -86,12 +87,16 @@ def bundle(
     metadata_table = pq.read_table(str(metadata_path))
     data_table = pq.read_table(str(data_path))
 
-    # Rename identifier column to protein_id if needed (bundle format)
+    # Rename identifier column to protein_id if needed (bundle format).
+    # Note: pa.Table.rename_columns() drops schema metadata, so the
+    # format-version stamp below must happen *after* this rename.
     col_names = annotations_table.column_names
     if "identifier" in col_names and "protein_id" not in col_names:
         annotations_table = annotations_table.rename_columns(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
+
+    annotations_table = stamp_format_version(annotations_table)
 
     statistics_table = (
         pq.read_table(str(statistics)) if statistics is not None else None
