@@ -17,6 +17,7 @@ from protspace.core.config import (
     NAN_COLOR,
 )
 from protspace.core.constants import standardize_missing
+from protspace.data.annotations.encoding import decode_field
 from protspace.utils.arrow_reader import ArrowReader
 
 
@@ -25,6 +26,16 @@ def generate_default_color(index: int, total: int) -> str:
     hue = index / total
     rgb = colorsys.hsv_to_rgb(hue, 0.8, 0.8)
     return f"rgba({int(rgb[0] * 255)}, {int(rgb[1] * 255)}, {int(rgb[2] * 255)}, 0.8)"
+
+
+def _decode_annotation_value(value):
+    """Decode a v2 percent-encoded annotation cell for display.
+
+    No-op on non-strings (e.g. missing/``None`` or numeric annotations).
+    """
+    if isinstance(value, str):
+        return decode_field(value)
+    return value
 
 
 def prepare_dataframe(
@@ -39,7 +50,9 @@ def prepare_dataframe(
         df["z"] = [coord["z"] for coord in df["coordinates"]]
 
     df[selected_annotation] = df["identifier"].apply(
-        lambda x: reader.get_protein_annotations(x).get(selected_annotation)
+        lambda x: _decode_annotation_value(
+            reader.get_protein_annotations(x).get(selected_annotation)
+        )
     )
     df[selected_annotation] = standardize_missing(df[selected_annotation])
 
