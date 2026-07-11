@@ -15,6 +15,16 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
  * set RUN_LIVE_E2E=1 to include it.
  */
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
+const TOUR_COMPLETED_STORAGE_STATE = {
+  cookies: [],
+  origins: [
+    {
+      origin: new URL(BASE_URL).origin,
+      localStorage: [{ name: 'driver.overviewTour', value: 'true' }],
+    },
+  ],
+};
+const EMPTY_STORAGE_STATE = { cookies: [], origins: [] };
 
 export default defineConfig({
   testDir: TEST_DIR,
@@ -51,6 +61,7 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
+    storageState: TOUR_COMPLETED_STORAGE_STATE,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -61,6 +72,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 720 },
+        storageState: EMPTY_STORAGE_STATE,
       },
       testMatch: /product-tour\.spec\.ts/,
     },

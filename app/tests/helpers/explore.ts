@@ -8,12 +8,8 @@ export async function dismissTourIfPresent(page: Page): Promise<void> {
   const tourDialog = page.getByRole('dialog', { name: 'Welcome to ProtSpace' });
   const skipButton = page.getByRole('button', { name: 'Skip' });
   const closeButton = page.getByRole('button', { name: 'Close' }).first();
-  const roleDialogVisible = await tourDialog
-    .waitFor({ state: 'visible', timeout: 1500 })
-    .then(() => true)
-    .catch(() => false);
 
-  if (roleDialogVisible) {
+  if (await tourDialog.isVisible()) {
     if (await skipButton.isVisible().catch(() => false)) {
       await skipButton.click();
     } else if (await closeButton.isVisible().catch(() => false)) {
@@ -42,6 +38,7 @@ export async function waitForExploreDataLoad(page: Page, timeout = 30_000): Prom
         | null;
       return (plot?.data?.protein_ids?.length ?? 0) > 0;
     },
+    undefined,
     { timeout, polling: 500 },
   );
   await page

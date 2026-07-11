@@ -350,10 +350,8 @@ async function dispatchSelectionDisabledNotification(page: Page): Promise<void> 
 
 test.describe('Dataset reload resets state (#178)', () => {
   test.beforeEach(async ({ page }) => {
-    // Suppress the product tour so it doesn't interfere
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await clearPersistedDataset(page);
+    // Each Playwright test receives a fresh context; shared storage state only
+    // seeds the completed product-tour key, so OPFS starts empty here.
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -415,9 +413,6 @@ test.describe('Dataset reload resets state (#178)', () => {
 
 test.describe('Persisted custom datasets in OPFS (#176)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await clearPersistedDataset(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -512,7 +507,6 @@ test.describe('Persisted dataset failure handling', () => {
     page,
   }) => {
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await clearPersistedDataset(page);
@@ -690,7 +684,6 @@ test.describe('Persisted dataset failure handling', () => {
     });
 
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -715,7 +708,6 @@ test.describe('Persisted dataset failure handling', () => {
     });
 
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -739,7 +731,6 @@ test.describe('Persisted dataset failure handling', () => {
 
   test('successful parquet exports show a Sonner toast', async ({ page }) => {
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -757,7 +748,6 @@ test.describe('Persisted dataset failure handling', () => {
     });
 
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -770,7 +760,6 @@ test.describe('Persisted dataset failure handling', () => {
 
   test('selection-disabled notifications use the shared Sonner path', async ({ page }) => {
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -783,9 +772,6 @@ test.describe('Persisted dataset failure handling', () => {
 
 test.describe('Unified app notifications', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await clearPersistedDataset(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);

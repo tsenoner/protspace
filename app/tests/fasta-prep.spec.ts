@@ -5,18 +5,6 @@ import { test, expect } from '@playwright/test';
 const FASTA = Array.from({ length: 25 }, (_, i) => `>P${10000 + i}\nMKTAYIAKQRQ`).join('\n') + '\n';
 const FAKE_BUNDLE_BYTES = new Uint8Array([0x50, 0x41, 0x52, 0x51]); // "PARQ"
 
-// Suppress the first-run product tour: its driver.js popover overlays /explore
-// and intercepts pointer events (e.g. the loading-overlay cancel button).
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('driver.overviewTour', 'true');
-    } catch {
-      /* localStorage unavailable */
-    }
-  });
-});
-
 test('FASTA prep can be cancelled from the loading overlay', async ({ page }) => {
   await page.route('**/api/prepare', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();

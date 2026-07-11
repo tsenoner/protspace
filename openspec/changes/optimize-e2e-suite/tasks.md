@@ -6,18 +6,20 @@
 
 ## 2. Execution Hygiene
 
-- [ ] 2.1 Seed product-tour completion through default Playwright storage state and preserve empty state for the product-tour project.
-- [ ] 2.2 Make shared tour cleanup non-blocking and remove the numeric-binning duplicate helper/setup.
-- [ ] 2.3 Correct every two-argument `waitForFunction` call that mistakenly passes timeout options as predicate data.
-- [ ] 2.4 Remove preparatory app navigations used only to mutate product-tour localStorage or clear already-isolated browser storage.
-- [ ] 2.5 Run focused projects and the default suite, then record the no-coverage-loss runtime comparison.
+- [x] 2.1 Seed product-tour completion through default Playwright storage state and preserve empty state for the product-tour project.
+- [x] 2.2 Make shared tour cleanup non-blocking and remove the numeric-binning duplicate helper/setup.
+- [x] 2.3 Correct every two-argument `waitForFunction` call that mistakenly passes timeout options as predicate data.
+- [x] 2.4 Remove preparatory app navigations used only to mutate product-tour localStorage or clear already-isolated browser storage.
+- [x] 2.5 Run focused projects and the default suite, then record the no-coverage-loss runtime comparison.
+
+Chunk A result: all 152 executions remained listed; the same-machine full run passed in 165.0 seconds versus the 392.8-second baseline (58% less wall time), and aggregate worker time fell from 1,417.6 to 761.7 seconds. Numeric-binning stayed 41/41 green while its aggregate time fell from 555.1 to 124.8 seconds (77% less).
 
 ## 3. Coverage and Reliability Policy
 
 - [ ] 3.1 Tag the deep-link refresh and History API restore journeys as `@cross-browser`; filter Firefox and WebKit projects to the tagged set.
 - [ ] 3.2 Merge or remove exact dataset notification/export duplicates while retaining every unique user-visible assertion.
 - [ ] 3.3 Remove redundant pure URL-normalization E2Es while retaining an application-level canonicalization journey.
-- [ ] 3.4 Replace the figure-editor absolute timing assertion with final-geometry and rendered-preview assertions.
+- [x] 3.4 Replace the figure-editor absolute timing assertion with final-geometry and rendered-preview assertions.
 - [ ] 3.5 Make the large-bundle project conditional on `RUN_LARGE_BUNDLE_E2E=1` and document the opt-in beside the project.
 - [ ] 3.6 Use CI-only retry and remove the Playwright browser-binary cache from the E2E workflow.
 

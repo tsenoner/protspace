@@ -30,7 +30,7 @@ async function openFigureEditor(page: Page): Promise<void> {
     const cb = document.querySelector('protspace-control-bar');
     cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
   });
-  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), {
+  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
     timeout: 5_000,
   });
   // Wait for the preview canvas to be created and have non-zero pixels.
@@ -42,6 +42,7 @@ async function openFigureEditor(page: Page): Promise<void> {
       const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
       return !!c && c.width > 0 && c.height > 0;
     },
+    undefined,
     { timeout: 5_000 },
   );
 }
@@ -183,8 +184,6 @@ async function findColoredRegion(page: Page): Promise<{
 
 test.describe('figure editor — geometric inset zoom', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -351,7 +350,7 @@ test.describe('figure editor — geometric inset zoom', () => {
     expect(ppm >>> 0).toBe(5906);
   });
 
-  test('high-frequency target resize does not stall the modal', async ({ page }) => {
+  test('high-frequency target resizes preserve final geometry and preview', async ({ page }) => {
     const region = await findColoredRegion(page);
     await setInsets(page, [
       {
@@ -363,10 +362,19 @@ test.describe('figure editor — geometric inset zoom', () => {
       },
     ]);
 
-    // Simulate the user dragging the inset's resize handle: 20 rapid target
-    // resizes within ~300 ms. The fast-path skip + rAF throttle should
-    // finish well inside the assertion timeout, even on slower machines.
-    const result = await page.evaluate(async () => {
+    const initialInsetRenderSize = await page.evaluate(() => {
+      const modal = document.querySelector('protspace-publish-modal') as
+        | (HTMLElement & { _lastInsetCanvases: HTMLCanvasElement[] })
+        | null;
+      const insetCanvas = modal?._lastInsetCanvases[0];
+      if (!insetCanvas) throw new Error('initial inset render missing');
+      return { width: insetCanvas.width, height: insetCanvas.height };
+    });
+
+    // Simulate the user dragging the inset's resize handle through 20 rapid
+    // target resizes. Correctness is the final state and usable preview; timing
+    // budgets belong in the dedicated perf suite, not on a shared CI runner.
+    await page.evaluate(async () => {
       const m = document.querySelector('protspace-publish-modal') as
         | (HTMLElement & {
             _state: { insets: Array<Record<string, unknown>> };
@@ -374,7 +382,6 @@ test.describe('figure editor — geometric inset zoom', () => {
           })
         | null;
       if (!m) throw new Error('modal missing');
-      const start = performance.now();
       for (let i = 0; i < 20; i++) {
         const w = 0.2 + i * 0.005;
         const h = 0.2 + i * 0.005;
@@ -386,17 +393,50 @@ test.describe('figure editor — geometric inset zoom', () => {
         m.requestUpdate();
         await new Promise((r) => requestAnimationFrame(r));
       }
-      return { elapsed: performance.now() - start };
     });
 
-    // 20 rAF ticks at 60 fps should be ~333 ms; allow generous headroom.
-    expect(result.elapsed).toBeLessThan(2_000);
-    // After settle (>120 ms idle), the modal should still be present and
-    // responsive — i.e., we didn't lock up on shader compiles.
-    await page.waitForTimeout(250);
-    const stillThere = await page.evaluate(
-      () => !!document.querySelector('protspace-publish-modal'),
-    );
-    expect(stillThere).toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate((initialSize) => {
+          const modal = document.querySelector('protspace-publish-modal') as
+            | (HTMLElement & {
+                shadowRoot: ShadowRoot;
+                _lastInsetCanvases: HTMLCanvasElement[];
+                _settleTimer: ReturnType<typeof setTimeout> | null;
+              })
+            | null;
+          const canvas = modal?.shadowRoot?.querySelector(
+            '.publish-preview-canvas',
+          ) as HTMLCanvasElement | null;
+          const insetCanvas = modal?._lastInsetCanvases[0];
+          return {
+            previewReady: Boolean(canvas && canvas.width > 0 && canvas.height > 0),
+            settled: modal?._settleTimer === null,
+            finalInsetRendered: Boolean(
+              insetCanvas &&
+              insetCanvas.width > initialSize.width * 1.4 &&
+              insetCanvas.height > initialSize.height * 1.4,
+            ),
+          };
+        }, initialInsetRenderSize),
+      )
+      .toEqual({ previewReady: true, settled: true, finalInsetRendered: true });
+
+    const finalRect = await page.evaluate(() => {
+      const modal = document.querySelector('protspace-publish-modal') as
+        | (HTMLElement & {
+            _state: {
+              insets: Array<{ targetRect: { x: number; y: number; w: number; h: number } }>;
+            };
+          })
+        | null;
+      if (!modal?._state.insets[0]) throw new Error('final inset missing');
+      return modal._state.insets[0].targetRect;
+    });
+
+    expect(finalRect.x).toBeCloseTo(0.55);
+    expect(finalRect.y).toBeCloseTo(0.55);
+    expect(finalRect.w).toBeCloseTo(0.295);
+    expect(finalRect.h).toBeCloseTo(0.295);
   });
 });

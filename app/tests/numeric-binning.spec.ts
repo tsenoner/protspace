@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
+import { dismissTourIfPresent } from './helpers/explore';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -14,44 +15,6 @@ const RAW_NUMERIC_BUNDLE_PATH = path.join(
   'phosphatase_no_binning.parquetbundle',
 );
 const REPLACEMENT_BUNDLE_PATH = path.join(SPEC_DIR, '..', 'public', 'data', '5K.parquetbundle');
-
-// Suppress the first-run product tour. Its driver.js overlay covers the viewport
-// and intercepts pointer events (notably over the query-builder dialog). The
-// dismissTourIfPresent() calls below still handle any tour that slips through.
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('driver.overviewTour', 'true');
-    } catch {
-      /* localStorage unavailable */
-    }
-  });
-});
-
-async function dismissTourIfPresent(page: Page): Promise<void> {
-  const tourDialog = page.getByRole('dialog', { name: 'Welcome to ProtSpace' });
-  const skipButton = page.getByRole('button', { name: 'Skip' });
-  const closeButton = page.getByRole('button', { name: 'Close' }).first();
-  const dialogVisible = await tourDialog
-    .waitFor({
-      state: 'visible',
-      timeout: 3000,
-    })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!dialogVisible) {
-    return;
-  }
-
-  if (await skipButton.isVisible().catch(() => false)) {
-    await skipButton.click();
-  } else if (await closeButton.isVisible().catch(() => false)) {
-    await closeButton.click();
-  }
-
-  await expect(tourDialog).toBeHidden();
-}
 
 async function loadBundleFromBytes(
   page: Page,
