@@ -123,17 +123,28 @@ breaking change.
 
 ## Migration sequencing & the freeze window
 
-Because filter-repo imports a _snapshot_, the cutover is a moment, not a range. Anything landing on
-protspace after the snapshot — but not carried as a branch — is stranded once the repo is archived.
+**The cutover is decoupled from feature work (Decision D5).** filter-repo imports a _snapshot_ and
+rewrites _all_ refs, so in-flight branches come across with it — the cutover does not wait on any PR.
+Anything landing on protspace after the snapshot that is _not_ carried as a branch is stranded once the
+repo is archived, so the freeze is about carrying branches, not draining PRs.
 
 ```
-  drain/carry all open branches ──▶ fetch origin/main (NOT the stale local) ──▶ filter-repo import
-        ──▶ merge into monorepo ──▶ archive protspace ──▶ first monorepo PR = format v2 (writer+reader+fixtures)
+  carry all open branches ──▶ fetch origin/main (NOT the stale 54-behind local) ──▶ filter-repo import
+     (plumbing only: workspace · prep→apps/prep · app→apps/web · CI; NO contract pkg yet)
+        ──▶ merge into monorepo ──▶ archive protspace
+        ──▶ FIRST monorepo feature PR = format v2: writer(#66) + reader(#306) + schema.json + fixtures, green together
 ```
 
-Order of operations, format-touching PRs first (see proposal table): land protspace #66 + web #306
-(and #295) before cutover so `schema.json`/fixtures are written once against v2; land or carry #55;
-land/close the unrelated #60/#233 on their own repos.
+Conflict surface with the `app→apps/web` / `services→apps/prep` moves (verified against the open PRs):
+
+- **#306 (v2 reader):** `packages`/`docs` only → no conflict with the moves. Stays an in-repo branch.
+- **#66 (v2 writer):** arrives pre-prefixed under `apps/protspace/` via filter-repo → no conflict.
+- **#233:** `packages` only → clean. **#295:** touches `app/`+`services/` → trivial path-move fixups
+  (git rename resolution), not logical conflicts; its owner re-targets post-cutover.
+- **#55 (Python-only):** carried by filter-repo under `apps/protspace/`; re-open as a monorepo PR.
+
+Cost of decoupling: a short window between cutover and the v2 PR with no bundle-contract test — which is
+exactly today's status quo (no shared test exists), so no regression.
 
 ## Decisions
 
@@ -157,8 +168,12 @@ easy_search` in `data/loaders/similarity.py`) → mmseqs2, which is **GPL-3.0** 
     _binary subprocess_ (mere aggregation) — a real code change, out of scope here.
   - **Caveat:** this is the conservative engineering read (keep GPL where GPL is linked); get a legal
     sanity-check on the `pymmseqs` linkage before publishing any license label.
-- **D5 — v2 timing:** land the coordinated v2 pair before cutover (simplest, contract written once) vs.
-  cutover-then-unify into one flagship PR (best demo of monorepo value, more git choreography). **Open — recommend land-first.**
+- **D5 — v2 timing:** **Decided: decouple.** Cut over first (plumbing only — no PR blocks it), let
+  filter-repo carry #66's branch in and keep #306 as an in-repo branch, then land v2 as the first
+  monorepo feature PR that _also_ debuts `schema.json` + fixtures. Neither slow (not land-first) nor
+  hard (no cross-repo rebase — both v2 halves are same-repo after import; the verified conflict surface
+  is trivial). Contract is written once, against v2. Rejected: land-first (blocks the merge on review)
+  and pre-cutover cross-repo unify (needless choreography).
 
 ## Risks
 

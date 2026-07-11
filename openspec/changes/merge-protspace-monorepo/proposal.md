@@ -46,17 +46,19 @@ removal of the GPL `pymmseqs` linkage (would be the only route to permissive Pyt
 
 ## Open PRs at cutover
 
-`git filter-repo` rewrites **all refs**, so PR _branches_ can be carried (path-prefixed) into the monorepo;
-GitHub PR objects (numbers, review threads, approvals) cannot move. Anything not landed or carried before
-archiving is stranded. Declare a short freeze on protspace at cutover, and drain format-touching PRs first
-to avoid writing the contract twice.
+**Cutover is decoupled from feature work (Decision D5): cut over first, no PR blocks it.** `git filter-repo`
+rewrites **all refs**, so in-flight branches come across path-prefixed; GitHub PR objects (numbers, review
+threads, approvals) cannot move. The freeze is about **carrying branches** before archiving the old repo,
+not draining PRs. Verified conflict surface: #306/#233 are `packages`-only (no conflict with the
+`app→apps/web` move); #66/#55 arrive pre-prefixed under `apps/protspace/`; only #295 needs trivial
+path-move fixups.
 
-| PR(s)                                                 | Interacts with contract?    | Handling                                                                                                                                                                                                             |
-| ----------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| protspace #66 (v2 writer) **+** web #306 (v2 reader)  | **Yes — the flagship case** | Land both before cutover so the monorepo is born on v2 and `schema.json`/fixtures describe v2. _Alt:_ cutover first, carry #66's branch via filter-repo, rebase #306, land as one unified writer+reader+fixtures PR. |
-| web #295 (projection statistics in bundle pipeline)   | Yes (format-adjacent)       | Land before cutover, or rebase after and ensure `schema.json` includes the stats columns.                                                                                                                            |
-| protspace #55 (EAT engine + `transfer`, Python-only)  | No                          | Land-first if review is close; else carry the branch through filter-repo and re-open in the monorepo.                                                                                                                |
-| protspace #60 (draft chore) · web #233 (context menu) | No                          | Unrelated — land or close on their own repos; no cutover interaction.                                                                                                                                                |
+| PR(s)                                                 | Handling                                                                                                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| protspace #66 (v2 writer) **+** web #306 (v2 reader)  | **The flagship.** Both live in the monorepo after import (#66 carried, #306 in-repo). Land v2 as the **first monorepo PR**, adding `schema.json`+fixtures with it — contract written once, against v2. |
+| web #295 (projection statistics in bundle pipeline)   | Touches `app/`+`services/`; owner re-targets onto post-cutover `apps/web`/`apps/prep` (path-move fixups). Fold its columns into `schema.json` when v2 lands.  |
+| protspace #55 (EAT engine + `transfer`, Python-only)  | Carried by filter-repo under `apps/protspace/`; re-open as a monorepo PR. (Landing it on old protspace first is fine too, but not required.)                  |
+| protspace #60 (draft chore) · web #233 (context menu) | Unrelated — carry or land/close; no cutover interaction.                                                                                                      |
 
 ## Capabilities
 
