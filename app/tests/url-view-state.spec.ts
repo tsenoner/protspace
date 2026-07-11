@@ -491,7 +491,7 @@ test.describe('URL-backed explore view state', () => {
   test(
     'normalizes duplicate, empty, and partially invalid view params',
     { tag: '@cross-browser' },
-    async ({ page }) => {
+    async ({ context }) => {
       // The three variants deliberately share setup but perform six full app
       // navigations. Keep a bounded budget without inheriting test.slow's 3x timeout.
       test.setTimeout(90_000);
@@ -500,12 +500,12 @@ test.describe('URL-backed explore view state', () => {
         {
           name: 'duplicate values',
           search: `annotation=${encodeURIComponent(targetAnnotation)}&annotation=${encodeURIComponent(demoDefaultAnnotation)}&projection=${encodeURIComponent(targetProjection)}&projection=${encodeURIComponent(demoDefaultProjection)}&foo=1`,
-          assertView: async () => {
-            await waitForView(page, {
+          assertView: async (variantPage: Page) => {
+            await waitForView(variantPage, {
               annotation: targetAnnotation,
               projection: targetProjection,
             });
-            const values = await page.evaluate(() => {
+            const values = await variantPage.evaluate(() => {
               const params = new URL(window.location.href).searchParams;
               return {
                 annotations: params.getAll('annotation'),
@@ -519,43 +519,54 @@ test.describe('URL-backed explore view state', () => {
         {
           name: 'empty values',
           search: 'annotation=&projection=%20&foo=1',
-          assertView: async () => {
-            const view = await getCurrentView(page);
-            await expectUrlParam(page, 'annotation', view.annotation ?? '');
-            await expectUrlParam(page, 'projection', view.projection ?? '');
+          assertView: async (variantPage: Page) => {
+            const view = await getCurrentView(variantPage);
+            await expectUrlParam(variantPage, 'annotation', view.annotation ?? '');
+            await expectUrlParam(variantPage, 'projection', view.projection ?? '');
           },
         },
         {
           name: 'one invalid value',
           search: `annotation=${encodeURIComponent(targetAnnotation)}&projection=bad_projection&foo=1`,
-          assertView: async () => {
-            await waitForView(page, { annotation: targetAnnotation });
-            const view = await getCurrentView(page);
+          assertView: async (variantPage: Page) => {
+            await waitForView(variantPage, { annotation: targetAnnotation });
+            const view = await getCurrentView(variantPage);
             expect(view.projection).not.toBe('bad_projection');
-            await expectUrlParam(page, 'annotation', targetAnnotation);
-            await expectUrlParam(page, 'projection', view.projection ?? '');
+            await expectUrlParam(variantPage, 'annotation', targetAnnotation);
+            await expectUrlParam(variantPage, 'projection', view.projection ?? '');
           },
         },
       ];
 
       for (const variant of cases) {
         await test.step(variant.name, async () => {
-          const seed = encodeURIComponent(variant.name);
-          await page.goto(`/explore?seed=${seed}`);
-          await waitForExploreDataLoad(page);
-          const historyLength = await page.evaluate(() => history.length);
+          // A fresh page per variant prevents WebKit from carrying a blank
+          // document across the preceding back-navigation lifecycle.
+          const variantPage = await context.newPage();
+          try {
+            const seed = encodeURIComponent(variant.name);
+            await variantPage.goto(`/explore?seed=${seed}`);
+            await waitForExploreDataLoad(variantPage);
+            const historyLength = await variantPage.evaluate(() => history.length);
 
-          await page.goto(`/explore?${variant.search}`);
-          await waitForExploreDataLoad(page);
-          await variant.assertView();
+            await variantPage.goto(`/explore?${variant.search}`);
+            await waitForExploreDataLoad(variantPage);
+            await variant.assertView(variantPage);
 
-          await expect(page).toHaveURL(/foo=1/);
-          await expect.poll(() => page.evaluate(() => history.length)).toBe(historyLength + 1);
+            await expect(variantPage).toHaveURL(/foo=1/);
+            await expect
+              .poll(() => variantPage.evaluate(() => history.length))
+              .toBe(historyLength + 1);
 
-          await page.goBack();
-          await expect
-            .poll(() => page.evaluate(() => `${window.location.pathname}${window.location.search}`))
-            .toBe(`/explore?seed=${seed}`);
+            await variantPage.goBack();
+            await expect
+              .poll(() =>
+                variantPage.evaluate(() => `${window.location.pathname}${window.location.search}`),
+              )
+              .toBe(`/explore?seed=${seed}`);
+          } finally {
+            await variantPage.close();
+          }
         });
       }
     },
