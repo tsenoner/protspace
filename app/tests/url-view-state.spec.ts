@@ -95,6 +95,22 @@ async function waitForView(
   }
 }
 
+async function traverseHistory(page: Page, delta: -1 | 1, expectedUrl: string): Promise<void> {
+  const [, traversedUrl] = await Promise.all([
+    page.waitForURL(expectedUrl, { timeout: 10_000 }),
+    page.evaluate(
+      (historyDelta) =>
+        new Promise<string>((resolve) => {
+          window.addEventListener('popstate', () => resolve(window.location.href), { once: true });
+          window.history.go(historyDelta);
+        }),
+      delta,
+    ),
+  ]);
+
+  expect(traversedUrl).toBe(expectedUrl);
+}
+
 async function selectAnnotation(page: Page, annotation: string): Promise<void> {
   await waitForExploreInteractionReady(page);
 
@@ -586,23 +602,29 @@ test.describe('URL-backed explore view state', () => {
         (annotation) => annotation !== initialView.annotation,
       );
 
+      expect(initialView.annotation).toBeTruthy();
+      expect(initialView.projection).toBeTruthy();
       expect(nextAnnotation).toBeTruthy();
 
+      const initialUrl = page.url();
       const initialHistoryLength = await page.evaluate(() => history.length);
       const stability = await captureExploreViewStability(page, async () => {
         await selectAnnotation(page, nextAnnotation!);
         await waitForView(page, { annotation: nextAnnotation! });
+        await expectUrlParam(page, 'annotation', nextAnnotation!);
+        await expectUrlParam(page, 'projection', initialView.projection!);
 
         const afterChangeHistoryLength = await page.evaluate(() => history.length);
         expect(afterChangeHistoryLength).toBe(initialHistoryLength + 1);
+        const changedUrl = page.url();
 
-        await page.goBack();
+        await traverseHistory(page, -1, initialUrl);
         await waitForView(page, {
           annotation: initialView.annotation ?? undefined,
           projection: initialView.projection ?? undefined,
         });
 
-        await page.goForward();
+        await traverseHistory(page, 1, changedUrl);
         await waitForView(page, {
           annotation: nextAnnotation!,
           projection: initialView.projection ?? undefined,

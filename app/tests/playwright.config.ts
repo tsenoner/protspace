@@ -132,6 +132,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Safari'],
         viewport: { width: 1280, height: 720 },
+        trace: process.env.CI ? 'retain-on-first-failure' : 'off',
       },
       testMatch: /url-view-state\.spec\.ts/,
     },

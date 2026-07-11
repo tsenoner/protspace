@@ -66,6 +66,8 @@ The full URL-state suite continues in Chromium. Firefox and WebKit projects use 
 
 Firefox additionally executes the OPFS persist/reload journey under `@opfs-browser`. Chromium covers it through the complete suite; the pinned Playwright WebKit build does not provide a usable OPFS implementation, so listing it there would create a permanent skip rather than coverage. The targeted matrix therefore covers query parsing, application wiring, refresh, History API behavior, file transfer, engine-specific navigation, and every usable filesystem implementation in the pinned Playwright browser builds. Queueing, instrumentation, and legend persistence remain covered in Chromium, where the complete application suite runs.
 
+The WebKit History API journey drives same-document traversal through `window.history.go()` and awaits both the one-shot `popstate` event and the exact expected URL. The final `failOnFlakyTests` gate exposed a first attempt where Playwright's protocol-level `page.goBack()` returned in 13 milliseconds without traversing; the retry took 539 milliseconds and succeeded. The journey also passed ten isolated and ten paired zero-retry stress repetitions, so there is no deterministic application defect to patch. In-document traversal bypasses the protocol-level traversal path that returned without traversing while retaining native browser history, React Router, application-view, DOM-identity, and no-reload coverage. The WebKit project retains a trace from the first failing attempt so a future failure contains the failed traversal rather than only its passing retry.
+
 **Alternative considered:** full tri-browser nightly and Chromium-only PR runs. Rejected because the current scheduled job is itself the slow and flaky path; 27 of the 36 extra executions validate application cases rather than engine differences, and WebKit-only history/legend repeats account for the dominant flake cluster.
 
 ### Decision: Prune by demonstrated overlap, not by raw test count
@@ -98,6 +100,7 @@ The Playwright browser-binary cache will be removed because upstream guidance st
 ## Risks / Trade-offs
 
 - **A browser-specific regression may occur outside the targeted compatibility journeys.** → Cover refresh/history and file transfer in every supported engine, cover OPFS in each engine that exposes it, and expand the tagged set only when a defect demonstrates another browser-specific risk.
+- **First-attempt WebKit tracing adds recording overhead.** → Limit it to the four compatibility journeys on CI and discard traces for passing attempts; keep the rest of the suite on first-retry tracing.
 - **Shared storage state could mask a first-run tour regression outside its project.** → Override storage state to empty in `product-tour` and keep its complete lifecycle suite.
 - **Removing duplicate E2Es could lose a subtly stronger assertion.** → Compare bodies before removal, retain/merge unique integration assertions, and verify deterministic transformation assertions at a focused lower layer before removing browser repetition.
 - **A lower timeout can expose a real slow operation.** → Treat timeout failures as actionable signal; use operation-specific limits and traces instead of returning to the test-level 180-second fallback.

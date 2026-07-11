@@ -52,6 +52,13 @@ The default E2E suite SHALL execute all retained critical application journeys i
 - **THEN** Chromium, Firefox, and WebKit include the scatterplot file-drop/runtime journey
 - **AND** Chromium and Firefox include the OPFS persist/reload journey
 
+#### Scenario: WebKit exercises History API compatibility
+
+- **WHEN** the WebKit compatibility project runs its navigation journeys
+- **THEN** the History API journey awaits browser-native `popstate` for back and forward traversal
+- **AND** it verifies both the exact traversed URL and the applied application view
+- **AND** a first-attempt WebKit failure retains its trace diagnostics
+
 ### Requirement: E2E coverage targets user-visible integration boundaries
 
 E2E scenarios SHALL be retained for behavior that depends on browser engines, real WebGL, filesystem persistence, navigation/history, file transfer, or cross-component application wiring. Pure transformation cases and exact duplicate application journeys MUST be covered at the lowest effective layer and MUST NOT require duplicate full-browser scenarios.
@@ -110,7 +117,7 @@ An E2E project that requires a local heavyweight fixture or live service not pre
 
 ### Requirement: Retries remain diagnostic
 
-The E2E configuration SHALL run with no retries during normal local development and SHALL permit at most one retry in CI, where the retry produces trace diagnostics without allowing a flaky test to pass the overall run.
+The E2E configuration SHALL run with no retries during normal local development and SHALL permit at most one retry in CI, where a failing attempt produces trace diagnostics without allowing a flaky test to pass the overall run.
 
 #### Scenario: A local E2E scenario fails
 
@@ -120,5 +127,5 @@ The E2E configuration SHALL run with no retries during normal local development 
 #### Scenario: A CI E2E scenario fails on its first attempt
 
 - **WHEN** `CI` is set and a Playwright scenario fails on its first attempt
-- **THEN** Playwright may retry it once with first-retry trace capture enabled
+- **THEN** Playwright may retry it once with either first-failure or first-retry trace capture enabled
 - **AND** the overall run fails even if the retry passes
