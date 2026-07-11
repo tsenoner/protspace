@@ -118,7 +118,7 @@ export default defineConfig({
     },
     {
       name: 'url-view-state-firefox',
-      grep: /@cross-browser/,
+      grep: /@cross-browser|@opfs-browser/,
       use: {
         ...devices['Desktop Firefox'],
         viewport: { width: 1280, height: 720 },

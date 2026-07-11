@@ -57,12 +57,14 @@ For predicates without an argument, calls use `waitForFunction(fn, undefined, op
 
 ### Decision: Separate application coverage from engine compatibility coverage
 
-The full URL-state suite continues in Chromium. Firefox and WebKit projects use `grep` against an explicit `@cross-browser` tag and execute two representative journeys:
+The full URL-state suite continues in Chromium. Firefox and WebKit projects use `grep` against explicit compatibility tags. Both execute four representative journeys:
 
 - applying a valid deep link and preserving it across refresh;
-- pushing URL state and restoring it across browser back/forward navigation.
+- normalizing duplicate, empty, and partially invalid view params without polluting history;
+- pushing URL state and restoring it across browser back/forward navigation;
+- importing a dropped bundle through the scatterplot/runtime boundary.
 
-These cover query parsing, application wiring, refresh, History API behavior, and engine-specific navigation. OPFS recovery, file-drop queueing, instrumentation, and legend persistence remain covered in Chromium, where the complete application suite runs.
+Firefox additionally executes the OPFS persist/reload journey under `@opfs-browser`. Chromium covers it through the complete suite; the pinned Playwright WebKit build does not provide a usable OPFS implementation, so listing it there would create a permanent skip rather than coverage. The targeted matrix therefore covers query parsing, application wiring, refresh, History API behavior, file transfer, engine-specific navigation, and every usable filesystem implementation in the pinned Playwright browser builds. Queueing, instrumentation, and legend persistence remain covered in Chromium, where the complete application suite runs.
 
 **Alternative considered:** full tri-browser nightly and Chromium-only PR runs. Rejected because the current scheduled job is itself the slow and flaky path; 27 of the 36 extra executions validate application cases rather than engine differences, and WebKit-only history/legend repeats account for the dominant flake cluster.
 
@@ -72,14 +74,14 @@ The first pruning pass is limited to:
 
 - exact duplicate notification/export scenarios in `dataset-reload` where a later scenario has stronger assertions;
 - a synthetic normalized `data-error` copy check already covered by notification unit tests, while retaining the real invalid-file import journey;
-- multiple pure URL-normalization E2Es already exhaustively covered in `url-state.test.ts`, retaining one invalid/canonicalization integration journey;
+- multiple pure URL-normalization E2Es already exhaustively covered in `url-state.test.ts`, consolidating duplicate-key, empty-value, and partial-validity wiring into one table-driven browser journey;
 - merging paired state-reset assertions that share the same setup and action.
 
 Large numeric/selection migrations are deferred. Although the audit found substantial lower-layer overlap, moving them safely requires component-level replacements and is a separate follow-up rather than an unreviewable deletion batch.
 
 ### Decision: Correctness suites do not enforce shared-runner micro-benchmarks
 
-The figure-editor rapid-resize scenario will assert that the final geometry is applied and a usable preview remains after a burst of updates. It will not assert an absolute two-second threshold on a shared SwiftShader runner. Dedicated `perf/` tooling remains responsible for timing budgets.
+The figure-editor rapid-resize scenario will assert that the final geometry is applied and a usable preview remains after a burst of updates. It retains a generous ten-second stall watchdog, but does not enforce the old two-second micro-benchmark on a shared SwiftShader runner. Dedicated `perf/` tooling remains responsible for tight timing budgets.
 
 ### Decision: Heavy fixture coverage is opt-in and retries are diagnostic
 
@@ -95,7 +97,7 @@ The Playwright browser-binary cache will be removed because upstream guidance st
 
 ## Risks / Trade-offs
 
-- **A browser-specific regression may occur outside the two compatibility journeys.** → Keep the selected journeys focused on engine-sensitive refresh/history behavior; expand the tagged set only when a defect demonstrates a browser-specific risk.
+- **A browser-specific regression may occur outside the targeted compatibility journeys.** → Cover refresh/history and file transfer in every supported engine, cover OPFS in each engine that exposes it, and expand the tagged set only when a defect demonstrates another browser-specific risk.
 - **Shared storage state could mask a first-run tour regression outside its project.** → Override storage state to empty in `product-tour` and keep its complete lifecycle suite.
 - **Removing duplicate E2Es could lose a subtly stronger assertion.** → Compare bodies before removal, retain/merge unique integration assertions, and verify deterministic transformation assertions at a focused lower layer before removing browser repetition.
 - **A lower timeout can expose a real slow operation.** → Treat timeout failures as actionable signal; use operation-specific limits and traces instead of returning to the test-level 180-second fallback.

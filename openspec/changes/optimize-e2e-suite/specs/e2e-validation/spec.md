@@ -37,13 +37,20 @@ An E2E helper that conditionally dismisses an optional UI element SHALL return w
 
 ### Requirement: Browser compatibility coverage is explicit
 
-The default E2E suite SHALL execute all retained critical application journeys in Chromium. Firefox and WebKit SHALL execute only scenarios explicitly tagged `@cross-browser`, and the tagged set SHALL cover a deep-link refresh journey and a History API back/forward journey.
+The default E2E suite SHALL execute all retained critical application journeys in Chromium. Firefox and WebKit SHALL execute only explicit compatibility scenarios. Both SHALL cover a deep-link refresh journey, consolidated duplicate/empty/partial-invalid URL normalization, a History API back/forward journey, and scatterplot file-drop/runtime wiring. Firefox SHALL additionally cover OPFS persistence through `@opfs-browser`; WebKit SHALL omit that scenario while the pinned Playwright build does not provide a usable OPFS implementation.
 
 #### Scenario: Listing the default URL projects
 
 - **WHEN** Playwright lists the Chromium, Firefox, and WebKit URL-state projects
 - **THEN** Chromium includes the complete retained URL-state suite
 - **AND** Firefox and WebKit each include only the tagged compatibility journeys
+- **AND** unusable WebKit OPFS coverage is excluded rather than reported as a permanent skip
+
+#### Scenario: A bundle crosses browser-owned import boundaries
+
+- **WHEN** the compatibility projects are listed
+- **THEN** Chromium, Firefox, and WebKit include the scatterplot file-drop/runtime journey
+- **AND** Chromium and Firefox include the OPFS persist/reload journey
 
 ### Requirement: E2E coverage targets user-visible integration boundaries
 
@@ -64,18 +71,18 @@ E2E scenarios SHALL be retained for behavior that depends on browser engines, re
 #### Scenario: URL normalization is exhaustively unit-tested
 
 - **WHEN** a URL case tests only deterministic query normalization already covered by focused unit tests
-- **THEN** the default suite retains at most one full-application integration case for that normalization class
+- **THEN** the default suite consolidates duplicate-key, empty-value, and partial-validity wiring into one table-driven full-application journey
 
 ### Requirement: Correctness tests use deterministic outcomes
 
-The correctness E2E suite MUST assert observable final state rather than absolute shared-runner elapsed time. Performance thresholds SHALL live in dedicated performance tooling.
+The correctness E2E suite MUST prioritize observable final state over shared-runner elapsed time. It MAY use a generous stall watchdog; tight performance thresholds SHALL live in dedicated performance tooling.
 
 #### Scenario: Figure-editor geometry receives rapid updates
 
 - **WHEN** the test applies a burst of target-geometry updates
 - **THEN** the final requested geometry is present
 - **AND** the preview remains rendered and usable
-- **AND** the correctness test does not fail solely because a shared runner exceeds an absolute millisecond threshold
+- **AND** a coarse watchdog detects a nonresponsive interaction without enforcing the old two-second micro-benchmark
 
 ### Requirement: Heavyweight fixture suites are explicit
 

@@ -24,6 +24,7 @@ Chunk A result (tasks 2.1–2.5): all 152 executions remained listed; the same-m
 - [x] 3.4 Replace the figure-editor absolute timing assertion with final-geometry and rendered-preview assertions.
 - [x] 3.5 Make the large-bundle project conditional on `RUN_LARGE_BUNDLE_E2E=1` and document the opt-in beside the project.
 - [x] 3.6 Use CI-only retry and remove the Playwright browser-binary cache from the E2E workflow.
+- [x] 3.7 Preserve the audited coverage boundary by consolidating three URL edge variants into one cross-browser journey, running file-drop wiring in all three engines, running OPFS persistence in Chromium/Firefox, and retaining a coarse figure-editor stall watchdog.
 
 ## 4. Verification and Delivery
 
@@ -35,3 +36,5 @@ Chunk A result (tasks 2.1–2.5): all 152 executions remained listed; the same-m
 - [x] 4.6 Commit coherent validated chunks and push `perf/249-e2e-suite` to origin.
 
 Chunk B result: the default inventory is 109 executions across 10 files, with 15 Chromium URL-state scenarios and two tagged scenarios in each non-Chromium project. `RUN_LARGE_BUNDLE_E2E=1` lists the heavyweight scenario while unset or `0` excludes it. All 33 changed browser journeys passed in 42.8 seconds, and the complete default suite passed 109/109 on first attempts in 89.4 seconds with no skips or flakes. Versus baseline, wall time fell 77% (392.8 to 89.4 seconds), aggregate worker time fell 68% (1,417.6 to 452.5 seconds), and execution count fell 28% (152 to 109). Validation also included 133 passing app unit tests (one intentional skip), strict OpenSpec validation, the full repository pre-commit gate, and three independent no-finding reviews after the reviewers' documentation-precision feedback was resolved.
+
+Coverage follow-up result: the default inventory is 115 executions. Chromium runs all 16 retained URL journeys; Firefox runs four `@cross-browser` journeys plus the supported `@opfs-browser` journey; WebKit runs the four supported `@cross-browser` journeys without a permanent OPFS skip. The three removed URL edge variants now execute as steps in one cross-browser live-app journey, and the figure-editor resize scenario retains a runner-side ten-second stall watchdog alongside its deterministic geometry/preview assertions. A two-worker, zero-retry local run passed 115/115 on first attempts in 217.3 seconds. The inventory remains 24% smaller than the 152-execution baseline while preserving the audited behavior and available-engine coverage boundaries.

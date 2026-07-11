@@ -372,9 +372,9 @@ test.describe('figure editor — geometric inset zoom', () => {
     });
 
     // Simulate the user dragging the inset's resize handle through 20 rapid
-    // target resizes. Correctness is the final state and usable preview; timing
-    // budgets belong in the dedicated perf suite, not on a shared CI runner.
-    await page.evaluate(async () => {
+    // target resizes. Keep a coarse responsiveness watchdog here while final
+    // geometry and a usable preview remain the correctness assertions.
+    const resizeOperation = page.evaluate(async () => {
       const m = document.querySelector('protspace-publish-modal') as
         | (HTMLElement & {
             _state: { insets: Array<Record<string, unknown>> };
@@ -382,6 +382,7 @@ test.describe('figure editor — geometric inset zoom', () => {
           })
         | null;
       if (!m) throw new Error('modal missing');
+      const startedAt = performance.now();
       for (let i = 0; i < 20; i++) {
         const w = 0.2 + i * 0.005;
         const h = 0.2 + i * 0.005;
@@ -393,7 +394,23 @@ test.describe('figure editor — geometric inset zoom', () => {
         m.requestUpdate();
         await new Promise((r) => requestAnimationFrame(r));
       }
+
+      return performance.now() - startedAt;
     });
+    let watchdog!: ReturnType<typeof setTimeout>;
+    const resizeDuration = await Promise.race([
+      resizeOperation,
+      new Promise<never>((_, reject) => {
+        watchdog = setTimeout(
+          () => reject(new Error('Rapid inset resize did not finish within 10 seconds.')),
+          10_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(watchdog));
+
+    // This is deliberately a stall detector rather than a shared-runner
+    // micro-benchmark. The old 2s threshold was flaky under SwiftShader load.
+    expect(resizeDuration).toBeLessThan(10_000);
 
     await expect
       .poll(() =>
