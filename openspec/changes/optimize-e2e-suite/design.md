@@ -81,13 +81,13 @@ Large numeric/selection migrations are deferred. Although the audit found substa
 
 ### Decision: Correctness suites do not enforce shared-runner micro-benchmarks
 
-The figure-editor rapid-resize scenario will assert that the final geometry is applied and a usable preview remains after a burst of updates. It retains a generous ten-second stall watchdog, but does not enforce the old two-second micro-benchmark on a shared SwiftShader runner. Dedicated `perf/` tooling remains responsible for tight timing budgets.
+The figure-editor rapid-resize scenario will assert that the final geometry is applied and a usable preview remains after a burst of updates. It retains a generous ten-second stall watchdog, but does not enforce the old two-second micro-benchmark on a shared SwiftShader runner. The threshold was not a stable product invariant: recent hosted runs repeatedly exceeded it while completing the interaction, including retry failures on June 28 and July 6 and a first-attempt failure on July 11. This change therefore makes no figure-editor performance-SLO claim; if the product defines one later, it should be measured in hardware-controlled performance tooling rather than this correctness suite.
 
 ### Decision: Heavy fixture coverage is opt-in and retries are diagnostic
 
-The large-bundle project will be present only when `RUN_LARGE_BUNDLE_E2E=1`, matching the existing live FASTA project pattern. A missing fixture will therefore not appear as a permanently skipped default scenario.
+The large-bundle project will be present only when `RUN_LARGE_BUNDLE_E2E=1`, and the live FASTA project only when `RUN_LIVE_E2E=1`. Exact comparisons prevent values such as `0` from accidentally enabling an opt-in project. A missing fixture or live backend will therefore not appear as a permanently skipped or failing default scenario.
 
-Retries will be `1` in CI and `0` locally. Local failures should surface immediately; CI retains one trace-producing retry while the reduced compatibility matrix removes the two most frequent WebKit retry sources.
+Retries will be `1` in CI and `0` locally. Local failures should surface immediately; CI retains one trace-producing retry while `failOnFlakyTests` ensures that a test which passes only on retry still fails the run. This preserves diagnostic artifacts without allowing instability to appear green, while the reduced compatibility matrix removes the two most frequent WebKit retry sources.
 
 ### Decision: Do not add sharding in this change
 

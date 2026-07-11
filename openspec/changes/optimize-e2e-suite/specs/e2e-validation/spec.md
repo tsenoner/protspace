@@ -84,9 +84,9 @@ The correctness E2E suite MUST prioritize observable final state over shared-run
 - **AND** the preview remains rendered and usable
 - **AND** a coarse watchdog detects a nonresponsive interaction without enforcing the old two-second micro-benchmark
 
-### Requirement: Heavyweight fixture suites are explicit
+### Requirement: Heavyweight and live suites are explicit
 
-An E2E project that requires a local heavyweight fixture not present in a normal checkout SHALL be excluded from the default project list and SHALL require an explicit environment opt-in.
+An E2E project that requires a local heavyweight fixture or live service not present in a normal checkout SHALL be excluded from the default project list and SHALL require its environment opt-in to equal `1` exactly.
 
 #### Scenario: The default suite is listed without the large fixture
 
@@ -98,9 +98,19 @@ An E2E project that requires a local heavyweight fixture not present in a normal
 - **WHEN** `RUN_LARGE_BUNDLE_E2E=1` and the documented fixture is available
 - **THEN** Playwright includes the large-bundle project
 
+#### Scenario: A false-like value is supplied for the live suite
+
+- **WHEN** `RUN_LIVE_E2E=0`
+- **THEN** Playwright excludes the live FASTA project
+
+#### Scenario: A developer opts into the live suite
+
+- **WHEN** `RUN_LIVE_E2E=1`
+- **THEN** Playwright includes the live FASTA project
+
 ### Requirement: Retries remain diagnostic
 
-The E2E configuration SHALL run with no retries during normal local development and SHALL permit at most one retry in CI, where the retry produces trace diagnostics.
+The E2E configuration SHALL run with no retries during normal local development and SHALL permit at most one retry in CI, where the retry produces trace diagnostics without allowing a flaky test to pass the overall run.
 
 #### Scenario: A local E2E scenario fails
 
@@ -111,3 +121,4 @@ The E2E configuration SHALL run with no retries during normal local development 
 
 - **WHEN** `CI` is set and a Playwright scenario fails on its first attempt
 - **THEN** Playwright may retry it once with first-retry trace capture enabled
+- **AND** the overall run fails even if the retry passes

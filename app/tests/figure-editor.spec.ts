@@ -382,7 +382,6 @@ test.describe('figure editor — geometric inset zoom', () => {
           })
         | null;
       if (!m) throw new Error('modal missing');
-      const startedAt = performance.now();
       for (let i = 0; i < 20; i++) {
         const w = 0.2 + i * 0.005;
         const h = 0.2 + i * 0.005;
@@ -394,11 +393,9 @@ test.describe('figure editor — geometric inset zoom', () => {
         m.requestUpdate();
         await new Promise((r) => requestAnimationFrame(r));
       }
-
-      return performance.now() - startedAt;
     });
     let watchdog!: ReturnType<typeof setTimeout>;
-    const resizeDuration = await Promise.race([
+    await Promise.race([
       resizeOperation,
       new Promise<never>((_, reject) => {
         watchdog = setTimeout(
@@ -407,10 +404,6 @@ test.describe('figure editor — geometric inset zoom', () => {
         );
       }),
     ]).finally(() => clearTimeout(watchdog));
-
-    // This is deliberately a stall detector rather than a shared-runner
-    // micro-benchmark. The old 2s threshold was flaky under SwiftShader load.
-    expect(resizeDuration).toBeLessThan(10_000);
 
     await expect
       .poll(() =>

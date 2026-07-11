@@ -10,7 +10,8 @@ The Playwright suite for issue #249 is no longer fully serial, but it still aver
 - Remove or merge E2E scenarios whose behavior is already covered by a stronger scenario in the same suite or by focused unit/component tests.
 - Replace the figure-editor's shared-runner wall-clock benchmark with a deterministic responsiveness/correctness assertion.
 - Treat fixture-dependent large-bundle coverage as an explicit opt-in suite instead of reporting a permanently skipped default test.
-- Keep retry artifacts diagnostic, with retries enabled in CI but not during normal local development.
+- Keep retry artifacts diagnostic, with retries enabled in CI but not during normal local development, and fail CI when a retry identifies a flaky test.
+- Require exact `=1` opt-ins for suites that depend on heavyweight fixtures or live services.
 
 ## Capabilities
 

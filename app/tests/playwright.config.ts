@@ -36,7 +36,8 @@ export default defineConfig({
 
   forbidOnly: !!process.env.CI,
 
-  // Keep one trace-producing retry on CI; local failures should surface immediately.
+  // Retries capture diagnostics but must not allow an unstable test to pass CI.
+  failOnFlakyTests: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
 
   // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the dev
@@ -185,7 +186,7 @@ export default defineConfig({
     // Live FASTA-prep flow against a real backend — opt-in via RUN_LIVE_E2E=1
     // (requires `docker compose up -d protspace-prep`; see fasta-prep.live.spec.ts
     // for the full prerequisites). Excluded from the default suite.
-    ...(process.env.RUN_LIVE_E2E
+    ...(process.env.RUN_LIVE_E2E === '1'
       ? [
           {
             name: 'fasta-prep-live',
