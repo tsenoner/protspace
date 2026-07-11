@@ -17,7 +17,7 @@ The default Playwright context for every non-tour project SHALL contain the pers
 
 ### Requirement: Conditional cleanup and polling are bounded
 
-An E2E helper that conditionally dismisses an optional UI element SHALL return without a positive wait when the element is absent. Every operation-specific `waitForFunction` timeout SHALL be passed as Playwright options rather than as predicate data.
+An E2E helper that conditionally dismisses an optional UI element SHALL return without a positive wait when the element is absent. Every operation-specific `waitForFunction` timeout SHALL be passed as Playwright options rather than as predicate data. A persisted-dataset readiness helper SHALL wait for successful load finalization rather than file presence alone.
 
 #### Scenario: Optional tour UI is absent
 
@@ -28,6 +28,12 @@ An E2E helper that conditionally dismisses an optional UI element SHALL return w
 
 - **WHEN** `waitForExploreDataLoad` does not observe plot data within its operation timeout
 - **THEN** the helper fails at that operation timeout instead of inheriting a larger test-level timeout
+
+#### Scenario: Persisted files exist while their load status is pending
+
+- **WHEN** an imported dataset has been written to OPFS but its metadata has not reached `success`
+- **THEN** the persistence readiness helper continues waiting
+- **AND** a reload does not race into the unfinished-dataset recovery path
 
 ### Requirement: Browser compatibility coverage is explicit
 
@@ -48,6 +54,12 @@ E2E scenarios SHALL be retained for behavior that depends on browser engines, re
 - **WHEN** one scenario is an exact duplicate and another contains all of its user-visible assertions plus stronger integration assertions
 - **THEN** the stronger E2E scenario is retained
 - **AND** the duplicate is removed or merged
+
+#### Scenario: A synthetic event checks deterministic notification copy
+
+- **WHEN** an E2E directly dispatches a normalized event only to check message mapping already covered by focused unit tests
+- **THEN** the real user-triggered integration journey is retained
+- **AND** the deterministic copy assertion remains at the lower layer instead of requiring another full-browser scenario
 
 #### Scenario: URL normalization is exhaustively unit-tested
 

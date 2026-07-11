@@ -4,11 +4,12 @@ Issue #249 was opened when the Playwright suite ran serially. PR #274 enabled fu
 
 The current default inventory is 116 logical scenarios and 152 Playwright executions. The multiplier comes from running all 18 `url-view-state` scenarios in Chromium, Firefox, and WebKit. In a representative clean CI run, `numeric-binning`, the three URL projects, and `dataset-reload` consumed 82.5% of aggregate worker time.
 
-Static and runtime inspection found three avoidable costs:
+Static and runtime inspection found four avoidable costs:
 
 1. Non-tour tests pre-disable the product tour but repeatedly wait 1.5–3 seconds for that absent dialog. Numeric-binning alone performs at least 126 such probes, costing at least 378 aggregate seconds.
 2. Four `page.waitForFunction` calls pass `{ timeout, polling }` as the predicate argument rather than the third options argument. The intended operation limit is therefore ignored; one OPFS first-attempt failure consumed the full 180-second slow-test budget in both local and CI evidence.
 3. Browser-engine compatibility coverage is mixed with application behavior coverage. Pure URL normalization and exact notification duplicates are exercised through full app loads despite focused Vitest coverage or a stronger E2E scenario already existing.
+4. The shared OPFS readiness helper returns when persisted files first exist, before the metadata status necessarily changes from `pending` to `success`. Navigating in that window causes the recovery flow to reject an otherwise valid dataset as unfinished.
 
 Constraints include real WebGL/OPFS behavior that cannot be represented completely in jsdom, documented support for Chromium/Firefox/Safari, CPU-bound SwiftShader rendering on hosted runners, and the need to retain targeted `--project=<name>` developer commands.
 
@@ -48,6 +49,12 @@ For predicates without an argument, calls use `waitForFunction(fn, undefined, op
 
 **Alternative considered:** convert every wait to `expect.poll`. Rejected for this change because it creates broad helper churn without additional runtime value; focused conversions remain reasonable when a wait is otherwise being redesigned.
 
+### Decision: Wait for persisted data to reach its semantic readiness state
+
+`waitForPersistedExploreDataset` will require both persisted files and finalized metadata. Current-schema metadata must report `lastLoadStatus: 'success'`; schema v1 remains accepted because it predates status tracking and represents data completed under the previous persistence implementation.
+
+**Alternative considered:** increase the subsequent Explore data-load timeout. Rejected because failure evidence showed the recovery banner for a `pending` dataset, not a restore that merely needed more processing time. Waiting on successful finalization removes the race at its source.
+
 ### Decision: Separate application coverage from engine compatibility coverage
 
 The full URL-state suite continues in Chromium. Firefox and WebKit projects use `grep` against an explicit `@cross-browser` tag and execute two representative journeys:
@@ -64,6 +71,7 @@ These cover query parsing, application wiring, refresh, History API behavior, an
 The first pruning pass is limited to:
 
 - exact duplicate notification/export scenarios in `dataset-reload` where a later scenario has stronger assertions;
+- a synthetic normalized `data-error` copy check already covered by notification unit tests, while retaining the real invalid-file import journey;
 - multiple pure URL-normalization E2Es already exhaustively covered in `url-state.test.ts`, retaining one invalid/canonicalization integration journey;
 - merging paired state-reset assertions that share the same setup and action.
 
@@ -89,7 +97,7 @@ The Playwright browser-binary cache will be removed because upstream guidance st
 
 - **A browser-specific regression may occur outside the two compatibility journeys.** → Keep the selected journeys focused on engine-sensitive refresh/history behavior; expand the tagged set only when a defect demonstrates a browser-specific risk.
 - **Shared storage state could mask a first-run tour regression outside its project.** → Override storage state to empty in `product-tour` and keep its complete lifecycle suite.
-- **Removing duplicate E2Es could lose a subtly stronger assertion.** → Compare bodies before removal and retain/merge every unique user-visible assertion into the surviving scenario.
+- **Removing duplicate E2Es could lose a subtly stronger assertion.** → Compare bodies before removal, retain/merge unique integration assertions, and verify deterministic transformation assertions at a focused lower layer before removing browser repetition.
 - **A lower timeout can expose a real slow operation.** → Treat timeout failures as actionable signal; use operation-specific limits and traces instead of returning to the test-level 180-second fallback.
 - **Local runtime varies with WebGL contention.** → Compare execution count, aggregate duration, first-attempt outcomes, and wall time using the same machine/command; do not claim CI improvement until Actions executes the pushed branch.
 

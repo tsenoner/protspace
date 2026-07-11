@@ -36,8 +36,8 @@ export default defineConfig({
 
   forbidOnly: !!process.env.CI,
 
-  // One retry locally absorbs the occasional WebGL/OPFS flake under parallel load.
-  retries: 1,
+  // Keep one trace-producing retry on CI; local failures should surface immediately.
+  retries: process.env.CI ? 1 : 0,
 
   // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the dev
   // server and OS; 50% of cores is a good balance. CI runners are smaller.
@@ -118,6 +118,7 @@ export default defineConfig({
     },
     {
       name: 'url-view-state-firefox',
+      grep: /@cross-browser/,
       use: {
         ...devices['Desktop Firefox'],
         viewport: { width: 1280, height: 720 },
@@ -126,20 +127,28 @@ export default defineConfig({
     },
     {
       name: 'url-view-state-webkit',
+      grep: /@cross-browser/,
       use: {
         ...devices['Desktop Safari'],
         viewport: { width: 1280, height: 720 },
       },
       testMatch: /url-view-state\.spec\.ts/,
     },
-    {
-      name: 'load-large-bundle',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1280, height: 720 },
-      },
-      testMatch: /load-large-bundle\.spec\.ts/,
-    },
+    // Fixture-dependent 573k-protein regression — copy
+    // protspace/data/other/sprot/sprot_50.parquetbundle to
+    // app/tests/fixtures/, then opt in via RUN_LARGE_BUNDLE_E2E=1.
+    ...(process.env.RUN_LARGE_BUNDLE_E2E === '1'
+      ? [
+          {
+            name: 'load-large-bundle',
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1280, height: 720 },
+            },
+            testMatch: /load-large-bundle\.spec\.ts/,
+          },
+        ]
+      : []),
     {
       name: 'figure-editor',
       use: {
