@@ -123,6 +123,22 @@ def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     return frequencies
 
 
+def _annotation_display_values(reader, annotation: str) -> set[str]:
+    """Display values for one annotation — the keys a styles file is keyed by.
+
+    Mirrors :func:`_to_display_value` (v2-decode, ``|`` suffix trim, ``;``
+    split), the exact transform :func:`generate_template` uses, so a styles
+    file built from the template validates and stores against the same keys the
+    plot/legend groups by — not the raw percent-encoded wire cells. NA-like
+    labels carry no reserved char, so they pass through unchanged.
+    """
+    decode = reader.get_format_version() >= 2
+    values: set[str] = set()
+    for raw in reader.get_all_annotation_values(annotation):
+        values.update(_to_display_value(str(raw), decode=decode))
+    return values
+
+
 def generate_template(input_file: str) -> dict:
     """Generate a pre-filled styles template from an input file.
 
@@ -186,8 +202,9 @@ def add_annotation_styles_parquet(
                 f"Annotation '{annotation}' does not exist in the protein data. Available annotations: {all_annotations}"
             )
 
-        # Check if all values exist for the annotation
-        all_values = {str(val) for val in reader.get_all_annotation_values(annotation)}
+        # Validate/store against display values (what the template exposes),
+        # not the raw percent-encoded wire cells, so a template round-trips.
+        all_values = _annotation_display_values(reader, annotation)
 
         # Add colors
         if "colors" in styles:
@@ -262,7 +279,7 @@ def add_annotation_styles_bundle(
                 f"Available annotations: {all_annotations}"
             )
 
-        all_values = {str(val) for val in reader.get_all_annotation_values(annotation)}
+        all_values = _annotation_display_values(reader, annotation)
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}

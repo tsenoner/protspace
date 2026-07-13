@@ -1,9 +1,30 @@
+import json
+from pathlib import Path
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pytest
+
+from protspace.data.annotations.encoding import encode_field, stamp_format_version
+from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.add_annotation_style import (
     _to_display_value,
+    add_annotation_styles_bundle,
+    add_annotation_styles_parquet,
     compute_value_frequencies,
+    generate_template,
 )
 from protspace.utils.arrow_reader import ArrowReader
 from protspace.visualization.plotting import create_plot, prepare_dataframe
+
+
+def _write_annotation_dir(directory: Path, column: str, cell: str) -> None:
+    """Write a minimal stamped v2 annotations parquet dir (one protein)."""
+    directory.mkdir(parents=True, exist_ok=True)
+    pq.write_table(
+        stamp_format_version(pa.table({"protein_id": ["P1"], column: [cell]})),
+        directory / "selected_annotations.parquet",
+    )
 
 
 def test_display_decodes_encoded_name():
@@ -100,3 +121,67 @@ def test_compute_value_frequencies_respects_version_gate():
     v1 = _make_reader("weird%1Fname", format_version=1)
     assert "weird\x1fname" in compute_value_frequencies(v2)["cath"]
     assert "weird%1Fname" in compute_value_frequencies(v1)["cath"]
+
+
+def test_style_template_roundtrips_for_encoded_name_parquet(tmp_path):
+    """A styles file built from `generate_template` (decoded keys) applies
+    cleanly via `style` for a name containing a reserved char: the display
+    value is the canonical style key, not the raw percent-encoded wire cell."""
+    display_name = "1.10.10.10 (Foo; Bar)"  # legitimate ';' in the name
+    src = tmp_path / "data"
+    _write_annotation_dir(src, "cath", encode_field(display_name))
+
+    # the template exposes the DECODED name
+    template = generate_template(str(src))
+    assert display_name in template["cath"]["colors"]
+
+    # styling by that decoded name succeeds and is stored under it
+    out = tmp_path / "styled"
+    add_annotation_styles_parquet(
+        str(src), {"cath": {"colors": {display_name: "#ff0000"}}}, str(out)
+    )
+    viz = json.loads((out / "visualization_state.json").read_text())
+    assert viz["annotation_colors"]["cath"][display_name] == "#ff0000"
+
+    # the raw percent-encoded wire cell is no longer a valid style key
+    with pytest.raises(ValueError):
+        add_annotation_styles_parquet(
+            str(src),
+            {"cath": {"colors": {encode_field(display_name): "#00ff00"}}},
+            str(tmp_path / "bad"),
+        )
+
+
+def test_style_bundle_roundtrips_for_encoded_name(tmp_path):
+    """The primary `style` path (bundle) applies a decoded-name color without
+    the pre-fix ValueError, and it round-trips back under the display key."""
+    display_name = "GO:1 (foo; bar)"
+    enc = encode_field(display_name)
+    ann = stamp_format_version(
+        pa.table({"protein_id": ["P1", "P2"], "go_bp": [enc, enc]})
+    )
+    meta = pa.table(
+        {"projection_name": ["pca2"], "dimensions": [2], "info_json": ["{}"]}
+    )
+    data = pa.table(
+        {
+            "projection_name": ["pca2", "pca2"],
+            "identifier": ["P1", "P2"],
+            "x": [0.0, 1.0],
+            "y": [0.0, 1.0],
+            "z": [None, None],
+        }
+    )
+    src = tmp_path / "d.parquetbundle"
+    write_bundle([ann, meta, data], src)
+
+    out = tmp_path / "styled.parquetbundle"
+    add_annotation_styles_bundle(
+        str(src), {"go_bp": {"colors": {display_name: "#123456"}}}, str(out)
+    )
+
+    styled = ArrowReader(Path(extract_bundle_to_dir(out)))
+    colors = styled.get_annotation_colors("go_bp")
+    # keyed by the decoded display name; #123456 is normalized to its rgba form
+    assert display_name in colors
+    assert "18, 52, 86" in colors[display_name]
