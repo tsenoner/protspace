@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, get_args
 
 import numpy as np
 import pyarrow as pa
@@ -17,15 +17,23 @@ import typer
 
 from protspace.cli.app import app, setup_logging
 from protspace.cli.common_options import Opt_Verbose
+from protspace.core.constants import MISSING_VALUE_TOKENS
+from protspace.utils.constants import METRIC_TYPES
 
 if TYPE_CHECKING:
     from protspace.analysis.classification import Rule
 
 logger = logging.getLogger(__name__)
 
+# Reuse the shared missing-value vocabulary ("", "nan", "none", "null", "NA",
+# "NaN") so transfer's notion of "missing" can't drift from the rest of
+# protspace.  This also makes a real float NaN missing (``str(nan) == "nan"``),
+# which a bare ``== ""`` check would treat as a present value.
+_MISSING = frozenset(MISSING_VALUE_TOKENS)
+
 
 def _is_missing(value) -> bool:
-    return value is None or str(value).strip() == ""
+    return value is None or str(value).strip() in _MISSING
 
 
 def run_transfer(
@@ -47,10 +55,12 @@ def run_transfer(
     from protspace.analysis.classification import classify
     from protspace.data.io.predictions import add_overlay_columns
 
+    # Full-table identifiers, materialized once: reused both for the has-embedding
+    # filter and for aligning every column's overlay (invariant across columns).
+    all_ids = [str(v) for v in annotations.column("identifier").to_pylist()]
+
     # Restrict classification to proteins that actually have an embedding.
-    has_emb = pa.array(
-        [str(v) in embeddings for v in annotations.column("identifier").to_pylist()]
-    )
+    has_emb = pa.array([i in embeddings for i in all_ids])
     embedded = annotations.filter(has_emb)
 
     if embedded.num_rows == 0:
@@ -59,10 +69,13 @@ def run_transfer(
             "(check that the --embeddings ids match the bundle identifiers)."
         )
 
-    query_idx, ref_idx = classify(embedded, query_rule, reference_rule)
-    # Materialize only the id column once (not the whole table); per-column values
-    # are pulled inside the loop. Avoids GB-scale Python lists at Swiss-Prot size.
+    # Materialize the embedded id column once (not the whole table); per-column
+    # values are pulled inside the loop. Avoids GB-scale Python lists at
+    # Swiss-Prot size, and is reused by both classify() and the transfer loop.
     id_list = [str(v) for v in embedded.column("identifier").to_pylist()]
+    query_idx, ref_idx = classify(
+        embedded, query_rule, reference_rule, identifiers=id_list
+    )
 
     out = annotations
     total_transferred = 0
@@ -105,7 +118,7 @@ def run_transfer(
             k=k,
             metric=metric,
         )
-        out = add_overlay_columns(out, column, preds)
+        out = add_overlay_columns(out, column, preds, identifiers=all_ids)
         total_transferred += len(preds)
         logger.info("Transferred %r to %d quer(ies)", column, len(preds))
 
@@ -190,8 +203,11 @@ def transfer(
         id_prefixes=reference_id_prefix or [], where=_parse_where(reference_where)
     )
 
-    if metric not in ("euclidean", "cosine"):
-        raise typer.BadParameter("--metric must be 'euclidean' or 'cosine'")
+    allowed_metrics = get_args(METRIC_TYPES)
+    if metric not in allowed_metrics:
+        raise typer.BadParameter(
+            f"--metric must be one of {', '.join(allowed_metrics)}"
+        )
     if k < 1:
         raise typer.BadParameter("--k must be >= 1")
 

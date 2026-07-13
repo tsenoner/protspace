@@ -64,8 +64,12 @@ def eat(
             lab = ref_labels[ref_i]
             d = float(neigh_dist[j])
             ri_by_label[lab] = ri_by_label.get(lab, 0.0) + similarity(d, metric)
-            if lab not in nearest_src or d < nearest_src[lab][0]:
-                nearest_src[lab] = (d, ref_ids[ref_i])
+            # Break exact-distance ties on the lexically smallest source id so the
+            # reported provenance is independent of the (arbitrary) neighbour order
+            # among equidistant references, matching the label tie-break below.
+            candidate = (d, ref_ids[ref_i])
+            if lab not in nearest_src or candidate < nearest_src[lab]:
+                nearest_src[lab] = candidate
         # Pick the highest-RI label; break ties deterministically by smallest
         # source distance, then lexically smallest label. This makes the choice
         # independent of the order of equidistant neighbours (whose argsort order

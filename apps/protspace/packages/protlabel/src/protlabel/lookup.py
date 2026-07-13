@@ -51,7 +51,9 @@ class Lookup:
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(
             path,
-            embeddings=self.embeddings.astype(np.float32),
+            # asarray, not astype: no copy of the (potentially multi-GB) matrix
+            # when it is already float32 (the common case).
+            embeddings=np.asarray(self.embeddings, dtype=np.float32),
             ids=np.asarray(self.ids, dtype=np.str_),
             labels=np.asarray(self.labels, dtype=np.str_),
             metric=np.asarray(self.metric, dtype=np.str_),
@@ -63,7 +65,9 @@ class Lookup:
         """Load a .npz sidecar (with pickling disabled)."""
         with np.load(path, allow_pickle=False) as data:
             return cls(
-                embeddings=data["embeddings"].astype(np.float32),
+                # asarray, not astype: the npz array is already float32 (save
+                # writes it as such), so this avoids a redundant full copy.
+                embeddings=np.asarray(data["embeddings"], dtype=np.float32),
                 ids=[str(x) for x in data["ids"]],
                 labels=[str(x) for x in data["labels"]],
                 metric=str(data["metric"]),

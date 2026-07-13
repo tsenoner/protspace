@@ -100,3 +100,16 @@ def test_source_is_nearest_neighbour_with_winning_label():
     preds = eat(query_emb, ["Q"], ref_emb, ref_ids, ref_labels, k=2)
     assert preds[0].label == "toxin"
     assert preds[0].source_id == "R_near"
+
+
+def test_source_id_for_equal_distance_same_label_is_order_independent():
+    # Two references carry the SAME winning label at exactly equal distance. The
+    # reported provenance must be the lexically smallest id regardless of the
+    # reference ordering (the label already wins; only which source is credited
+    # was previously argsort-order-dependent).
+    ref_emb = np.array([[1.0, 0.0], [-1.0, 0.0]], dtype=np.float32)  # both dist 1.0
+    query_emb = np.array([[0.0, 0.0]], dtype=np.float32)
+    forward = eat(query_emb, ["Q"], ref_emb, ["R_a", "R_b"], ["x", "x"], k=2)
+    reversed_ = eat(query_emb, ["Q"], ref_emb, ["R_b", "R_a"], ["x", "x"], k=2)
+    assert forward[0].source_id == "R_a"
+    assert reversed_[0].source_id == "R_a"

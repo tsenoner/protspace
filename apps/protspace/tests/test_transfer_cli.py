@@ -86,6 +86,36 @@ def test_run_transfer_predicts_for_query_with_missing_value():
     assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
 
 
+def test_run_transfer_treats_nan_as_missing():
+    # A float-typed target column with a real NaN (not a parquet null) must be
+    # treated as missing: the NaN query gets a prediction, and a NaN reference is
+    # never enrolled as the literal label "nan".
+    annotations = pa.table(
+        {
+            "identifier": ["TRINITY_1", "P00001", "P00002"],
+            "score": [float("nan"), 1.0, float("nan")],
+        }
+    )
+    embeddings = {
+        "TRINITY_1": np.array([0.0, 0.0], dtype=np.float32),
+        "P00001": np.array([0.05, 0.0], dtype=np.float32),
+        "P00002": np.array([9.0, 0.0], dtype=np.float32),
+    }
+    out = run_transfer(
+        annotations=annotations,
+        embeddings=embeddings,
+        transfer_columns=["score"],
+        query_rule=Rule(id_prefixes=["TRINITY_"]),
+        reference_rule=Rule(id_prefixes=["P0"]),
+        k=1,
+        metric="euclidean",
+    )
+    by_id = {r["identifier"]: r for r in out.to_pylist()}
+    # TRINITY_1 (NaN) is a query missing a value -> transferred the only real
+    # reference value (P00001's 1.0), never the P00002 NaN rendered as "nan".
+    assert by_id["TRINITY_1"]["score__pred_value"] == "1.0"
+
+
 def test_run_transfer_skips_proteins_without_embeddings():
     annotations, embeddings = _inputs()
     embeddings.pop("TRINITY_1")  # no embedding -> cannot be a query

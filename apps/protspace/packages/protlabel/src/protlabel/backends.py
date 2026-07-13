@@ -104,6 +104,8 @@ def nearest(
     queries = np.ascontiguousarray(queries, dtype=np.float32)
     refs = np.ascontiguousarray(refs, dtype=np.float32)
     n_refs = refs.shape[0]
+    if n_refs == 0:
+        raise ValueError("refs must contain at least one reference embedding")
     k = min(k, n_refs)
     k_pool = _rerank_pool_size(k, n_refs)
 
@@ -135,6 +137,10 @@ def nearest(
     #              matrix) keeps cosine at 1x reference memory, like euclidean.
     refs_sq = np.einsum("ij,ij->i", refs, refs)
     refs_norm = np.sqrt(refs_sq) if metric == "cosine" else None
+
+    # Row index for the per-chunk fancy-indexing; sliced to each block's length
+    # so it is allocated once rather than per chunk.
+    rows_full = np.arange(eff_chunk)[:, None]
 
     for start in range(0, queries.shape[0], eff_chunk):
         block = queries[start : start + eff_chunk]
@@ -168,7 +174,7 @@ def nearest(
         # high-norm) vectors. Reranking a too-narrow pool cannot recover a true
         # nearest the float32 selection dropped; see _rerank_pool_size.
         cand = np.argpartition(d, kth=k_pool - 1, axis=1)[:, :k_pool]  # unsorted pool
-        rows = np.arange(block.shape[0])[:, None]
+        rows = rows_full[: block.shape[0]]
         exact = _exact_distances(block, refs[cand], metric)  # (b, k_pool) float64
         order = np.argsort(exact, axis=1)[:, :k]  # true top-k, ascending by exact dist
         idx_out[start : start + block.shape[0]] = cand[rows, order]
