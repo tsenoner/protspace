@@ -183,3 +183,44 @@ def test_arrow_reader_reads_stamp_and_defaults_to_v1(tmp_path):
 
     # dict input without the marker also defaults to v1
     assert ArrowReader({"protein_data": {}}).get_format_version() == 1
+
+
+def test_replace_annotations_in_bundle_restamps_format_version(tmp_path):
+    """`transfer` / prediction-overlay rebuild the annotations table via
+    rename_columns/concat (which drop schema metadata), so the annotations-write
+    chokepoint must re-stamp — else a v2 bundle re-reads as v1 (raw %XX names)."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import (
+        read_bundle,
+        replace_annotations_in_bundle,
+        write_bundle,
+    )
+
+    ann = stamp_format_version(pa.table({"protein_id": ["P1"], "cath": ["a"]}))
+    meta = pa.table(
+        {"projection_name": ["pca2"], "dimensions": [2], "info_json": ["{}"]}
+    )
+    data = pa.table(
+        {
+            "projection_name": ["pca2"],
+            "identifier": ["P1"],
+            "x": [0.0],
+            "y": [0.0],
+            "z": [None],
+        }
+    )
+    src = tmp_path / "in.parquetbundle"
+    write_bundle([ann, meta, data], src)
+
+    # Simulate what transfer does: hand replace_* an UNSTAMPED table.
+    augmented = pa.table({"protein_id": ["P1"], "cath": ["a"]})
+    assert FORMAT_VERSION_KEY not in (augmented.schema.metadata or {})
+
+    out = tmp_path / "out.parquetbundle"
+    replace_annotations_in_bundle(src, out, augmented)
+
+    core_parts, _ = read_bundle(out)
+    footer_meta = pq.read_metadata(io.BytesIO(core_parts[0])).metadata
+    assert footer_meta[FORMAT_VERSION_KEY] == b"2"
