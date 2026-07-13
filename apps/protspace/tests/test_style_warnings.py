@@ -12,6 +12,8 @@ import pyarrow as pa
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.add_annotation_style import (
+    _CATEGORICAL_PALETTE_IDS,
+    _GRADIENT_PALETTE_IDS,
     _warn_if_bad_palette,
     _warn_if_numeric,
     add_annotation_styles_bundle,
@@ -141,15 +143,50 @@ def test_bad_palette_warns_on_unknown_id(caplog):
 
 
 def test_apply_styles_warns_on_gradient_palette_for_categorical(tmp_path, caplog):
-    bundle = _make_bundle(
-        tmp_path, ["P1", "P2"], {"family": ["kinase", "phosphatase"]}
-    )
+    bundle = _make_bundle(tmp_path, ["P1", "P2"], {"family": ["kinase", "phosphatase"]})
     with caplog.at_level(logging.WARNING):
         add_annotation_styles_bundle(
             str(bundle),
             {"family": {"selectedPaletteId": "viridis"}},
             str(tmp_path / "styled.parquetbundle"),
         )
-    assert any(
-        "family" in r.message and "viridis" in r.message for r in caplog.records
-    )
+    assert any("family" in r.message and "viridis" in r.message for r in caplog.records)
+
+
+# --- pinned contract: keep the Python palette catalog in sync with the frontend ---
+#
+# The authoritative source is the web frontend:
+#   protspace_web/packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
+#   protspace_web/packages/utils/src/visualization/numeric-binning.ts
+#                                                   (GRADIENT_COLOR_SCHEME_IDS)
+# These pins make the Python copy a deliberate, reviewed value: adding/removing/
+# renaming a palette here forces a matching update to docs/styling.md (Color
+# palettes) in the same change, and flags any accidental drift.
+
+_EXPECTED_CATEGORICAL_PALETTE_IDS = {
+    "kellys",
+    "okabeIto",
+    "tolBright",
+    "set2",
+    "dark2",
+    "tableau10",
+}
+_EXPECTED_GRADIENT_PALETTE_IDS = {"batlow", "viridis", "cividis", "inferno", "plasma"}
+
+
+def test_categorical_palette_ids_pinned():
+    assert set(_CATEGORICAL_PALETTE_IDS) == _EXPECTED_CATEGORICAL_PALETTE_IDS
+
+
+def test_gradient_palette_ids_pinned():
+    assert set(_GRADIENT_PALETTE_IDS) == _EXPECTED_GRADIENT_PALETTE_IDS
+
+
+def test_palette_id_sets_are_disjoint():
+    assert _CATEGORICAL_PALETTE_IDS.isdisjoint(_GRADIENT_PALETTE_IDS)
+
+
+def test_palette_defaults_belong_to_their_sets():
+    # Frontend defaults: categorical → 'kellys', numeric gradient → 'batlow'.
+    assert "kellys" in _CATEGORICAL_PALETTE_IDS
+    assert "batlow" in _GRADIENT_PALETTE_IDS
