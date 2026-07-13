@@ -20,6 +20,7 @@ from protspace.core.config import (
     SETTINGS_PANEL_WIDTH_PERCENT,
 )
 from protspace.core.constants import is_projection_3d
+from protspace.data.annotations.encoding import to_display_value
 from protspace.ui import styles
 from protspace.utils.arrow_reader import ArrowReader
 from protspace.visualization.molstar import get_molstar_data
@@ -293,12 +294,15 @@ def setup_callbacks(app):
         if selected_annotation is None or json_data is None:
             return []
         reader = get_reader(json_data)
+        # Present display values (v2-decoded, |suffix trimmed) so the picker
+        # matches the plot's categories and the keys styles are stored under.
+        decode = reader.should_decode()
         all_values = reader.get_all_annotation_values(selected_annotation)
-        unique_values = {v for v in all_values if pd.notna(v)}
+        unique_values = {
+            str(to_display_value(v, decode=decode)) for v in all_values if pd.notna(v)
+        }
         has_nan = any(pd.isna(v) for v in all_values)
-        options = [
-            {"label": str(val), "value": str(val)} for val in sorted(unique_values)
-        ]
+        options = [{"label": val, "value": val} for val in sorted(unique_values)]
         if has_nan:
             options.append({"label": "<NaN>", "value": "<NaN>"})
         return options
@@ -314,8 +318,16 @@ def setup_callbacks(app):
             raise PreventUpdate
         reader = get_reader(json_data)
 
-        # Get all annotation values to determine index for default color
-        all_values = sorted(reader.get_unique_annotation_values(selected_annotation))
+        # Get all annotation values to determine index for default color.
+        # Work in display space so the index matches the plot's category order
+        # and the lookup matches keys styles are stored under.
+        decode = reader.should_decode()
+        all_values = sorted(
+            {
+                str(to_display_value(v, decode=decode))
+                for v in reader.get_unique_annotation_values(selected_annotation)
+            }
+        )
 
         # Get existing colors
         annotation_colors = reader.get_annotation_colors(selected_annotation)

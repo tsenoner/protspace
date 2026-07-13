@@ -2,4 +2,6 @@
 # perf/ is intentionally excluded (Decision D3): a throwaway plotting util with its
 # own deps that does not import protspace.
 [tool.uv.workspace]
-members = ["apps/protspace", "apps/prep"]
+# protlabel (EAT engine) is a member of protspace upstream; since nested workspaces
+# aren't allowed, it joins the flat monorepo workspace directly.
+members = ["apps/protspace", "apps/protspace/packages/protlabel", "apps/prep"]

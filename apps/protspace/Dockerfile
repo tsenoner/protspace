@@ -22,6 +22,9 @@ ENV UV_LINK_MODE=copy \
 
 COPY pyproject.toml /src/
 COPY uv.lock /src/
+# Workspace members must be present for `uv sync --locked` to resolve the lock.
+COPY packages/protlabel/pyproject.toml /src/packages/protlabel/pyproject.toml
+COPY packages/protlabel/README.md /src/packages/protlabel/README.md
 
 RUN --mount=type=cache,target=/root/.cache <<EOT
 cd /src
@@ -29,15 +32,16 @@ uv sync \
     --all-extras \
     --locked \
     --no-dev \
-    --no-install-project
+    --no-install-workspace
 EOT
 
 COPY . /src
+# Install both local workspace packages (protlabel first, then protspace).
 RUN --mount=type=cache,target=/root/.cache \
     uv pip install \
     --python=$UV_PROJECT_ENVIRONMENT \
     --no-deps \
-    /src
+    /src/packages/protlabel /src
 
 #########################################################################
 FROM python:3.12-slim

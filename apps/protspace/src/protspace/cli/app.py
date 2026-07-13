@@ -71,6 +71,7 @@ def _register_commands() -> None:
         serve,
         stats,
         style,
+        transfer,
     )
 
 

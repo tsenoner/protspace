@@ -1008,3 +1008,45 @@ class TestXmlParsing:
             result = InterProRetriever._parse_interpro_xml(gz_path)
 
         assert all(len(v) == 0 for v in result.values())
+
+
+@patch("src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
+def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
+    """CATH names containing ';' must be percent-encoded by the real emit path.
+
+    Regression guard for the `encode_field` wrap in `_parse_interpro_results`
+    (interpro_retriever.py): exercises the real parse output rather than a
+    hand-built string, so reverting the wrap (`f"{acc} ({name})"` instead of
+    `f"{acc} ({encode_field(name)})"`) would make this test fail.
+    """
+    from protspace.data.annotations.encoding import decode_field, encode_field
+
+    md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+    annotations = ["cath"]
+
+    raw_name = "Ribosomal Protein L15; Chain: K; domain 2"
+    match = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
+    api_result = create_api_result(TEST_MD5, found=True, matches=[match])
+    api_results = [api_result]
+
+    mock_cath_names.return_value = {"1.10.10.10": raw_name}
+
+    retriever = InterProAnnotationRetriever(annotations=annotations)
+    result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+
+    assert len(result) == 1
+    cath_value = result[0].annotations["cath"]
+
+    # Emitted cell matches the real formatting exactly, with the name encoded.
+    encoded_name = encode_field(raw_name)
+    assert cath_value == f"G3DSA:1.10.10.10 ({encoded_name})|50.2"
+    assert "%3B" in cath_value
+
+    # No raw ';' survives inside the emitted cell (the reserved hit-separator
+    # character), only its percent-encoded form.
+    assert ";" not in cath_value
+
+    # Decoding the emitted name restores the exact original (round-trip).
+    name_in_parens = cath_value.split("(", 1)[1].rsplit(")", 1)[0]
+    assert name_in_parens == encoded_name
+    assert decode_field(name_in_parens) == raw_name

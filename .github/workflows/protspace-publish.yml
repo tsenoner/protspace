@@ -40,8 +40,8 @@ jobs:
         with:
           python-version-file: 'apps/protspace/pyproject.toml'
 
-      - name: Build Python Package
-        run: uv build
+      - name: Build Python Packages (protspace + protlabel)
+        run: uv build --all-packages
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

@@ -23,19 +23,21 @@ class TestParseCathNames:
         assert names["2.60.40"] == "Immunoglobulin-like"
         assert names["2.60.40.10"] == "Immunoglobulins"
 
-    def test_unnamed_superfamily_inherits_topology(self, tmp_path):
-        """Superfamily with empty name after ':' inherits parent topology name."""
+    def test_unnamed_superfamily_has_no_name(self, tmp_path):
+        """An unnamed superfamily must NOT inherit the parent topology name (#57)."""
         content = (
-            "3.40.50           1gotA00    :Rossmann fold\n"
-            "3.40.50.300       1gotA00    :\n"
+            "6.20.10           3s6xC01    :Laminin\n"
+            "6.20.10.10        1lmmA01    :\n"
+            "6.20.10.20        3s6xC01    :\n"
         )
         f = tmp_path / "cath-names.txt"
         f.write_text(content)
 
         names = _parse_cath_names(f)
 
-        assert names["3.40.50"] == "Rossmann fold"
-        assert names["3.40.50.300"] == "Rossmann fold"
+        assert names["6.20.10"] == "Laminin"  # topology keeps its name
+        assert "6.20.10.10" not in names  # unnamed → absent (bare code used)
+        assert "6.20.10.20" not in names  # siblings stay distinct
 
     def test_skips_comments_and_empty_lines(self, tmp_path):
         content = (

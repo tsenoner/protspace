@@ -17,6 +17,7 @@ from protspace.core.config import (
     NAN_COLOR,
 )
 from protspace.core.constants import standardize_missing
+from protspace.data.annotations.encoding import to_display_value
 from protspace.utils.arrow_reader import ArrowReader
 
 
@@ -30,7 +31,12 @@ def generate_default_color(index: int, total: int) -> str:
 def prepare_dataframe(
     reader: ArrowReader, selected_projection: str, selected_annotation: str
 ) -> pd.DataFrame:
-    """Prepare the dataframe for plotting."""
+    """Prepare the dataframe for plotting.
+
+    Annotation cells are reduced to their display value (``|`` suffix trimmed,
+    v2 cells percent-decoded) so the plot groups points by the same key the
+    style/legend uses. Decoding is gated on the bundle format version.
+    """
     projection_data = reader.get_projection_data(selected_projection)
     df = pd.DataFrame(projection_data)
     df["x"] = [coord["x"] for coord in df["coordinates"]]
@@ -38,8 +44,11 @@ def prepare_dataframe(
     if reader.get_projection_info(selected_projection)["dimensions"] == 3:
         df["z"] = [coord["z"] for coord in df["coordinates"]]
 
+    decode = reader.should_decode()
     df[selected_annotation] = df["identifier"].apply(
-        lambda x: reader.get_protein_annotations(x).get(selected_annotation)
+        lambda x: to_display_value(
+            reader.get_protein_annotations(x).get(selected_annotation), decode=decode
+        )
     )
     df[selected_annotation] = standardize_missing(df[selected_annotation])
 

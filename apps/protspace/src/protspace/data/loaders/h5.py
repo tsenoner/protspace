@@ -22,6 +22,28 @@ _UNIPROT_HEADER_RE = re.compile(
 )
 
 
+def split_h5_spec(spec: str) -> tuple[Path, str | None]:
+    """Parse an HDF5 input spec with an optional ``:name`` override.
+
+    ``file.h5:model_name`` -> ``(Path("file.h5"), "model_name")``.
+
+    Colon/Windows-safe: the split uses the LAST colon and is only taken when the
+    right side looks like a name (not a path separator) and the left side has a
+    file suffix.  So ``C:\\data\\emb.h5`` and ``C:\\data\\emb.h5:prot_t5`` parse
+    correctly instead of splitting on the drive-letter colon.
+    """
+    if ":" in spec:
+        last_colon = spec.rfind(":")
+        path_part, name_part = spec[:last_colon], spec[last_colon + 1 :]
+        if (
+            name_part
+            and not name_part.startswith(("/", "\\"))
+            and Path(path_part).suffix
+        ):
+            return Path(path_part), name_part
+    return Path(spec), None
+
+
 def parse_identifier(raw_key: str) -> str:
     """Extract protein identifier from an H5 key.
 

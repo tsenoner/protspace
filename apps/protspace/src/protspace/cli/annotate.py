@@ -57,6 +57,7 @@ def annotate(
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from protspace.data.annotations.encoding import stamp_format_version
     from protspace.data.annotations.manager import ProteinAnnotationManager
     from protspace.data.io.fasta import is_fasta_file
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
@@ -108,9 +109,12 @@ def annotate(
 
         df = strip_scores_from_df(df)
 
-    # Save as parquet
+    # Save as parquet. The cells are already percent-encoded (v2) by the emit
+    # sites, so stamp the format version here too — keeps the encoded/stamped
+    # invariant local to the producer, so a consumer that gates decoding on
+    # `protspace_format_version` reads an un-bundled annotate parquet correctly.
     output.parent.mkdir(parents=True, exist_ok=True)
-    table = pa.Table.from_pandas(df)
+    table = stamp_format_version(pa.Table.from_pandas(df))
     pq.write_table(table, str(output))
 
     typer.echo(f"Saved annotations for {len(headers)} proteins to {output}")

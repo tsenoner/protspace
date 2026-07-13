@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from protspace.data.annotations.encoding import to_display_value
 from protspace.utils.arrow_reader import ArrowReader
 
 ALLOWED_SHAPES = [
@@ -83,24 +84,22 @@ def _resolve_na(value: str, all_values: set[str]) -> str | None:
     return None
 
 
-def _to_display_value(raw: str) -> list[str]:
+def _to_display_value(raw: str, *, decode: bool = True) -> list[str]:
     """Convert a raw annotation value to its display name(s).
 
     Applies the same transformations the ProtSpace web frontend uses:
 
     1. **Semicolon split** – ``"familyA;familyB"`` becomes two entries
        ``["familyA", "familyB"]`` (multi-label).
-    2. **Pipe trim** – ``"value|source"`` becomes ``"value"``
-       (the part after ``|`` is a source tag, e.g. ``IC``, ``SAM``).
+    2. **Pipe trim + percent-decode** – each part is reduced to its display
+       value via :func:`protspace.data.annotations.encoding.to_display_value`
+       (drop the ``|source`` suffix; v2-decode the free-text name). ``decode``
+       gates the v2 percent-decode on the bundle format version, so legacy
+       (pre-v2) values pass through unchanged.
 
     Empty / whitespace-only parts are preserved as ``""`` (N/A sentinel).
     """
-    parts = raw.split(";")
-    display: list[str] = []
-    for part in parts:
-        trimmed = part.split("|", 1)[0]
-        display.append(trimmed)
-    return display
+    return [to_display_value(part, decode=decode) for part in raw.split(";")]
 
 
 def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
@@ -112,15 +111,32 @@ def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     Returns:
         ``{annotation_name: {display_value: count}}``
     """
+    decode = reader.should_decode()
     frequencies: dict[str, dict[str, int]] = {}
     for annotation in reader.get_all_annotations():
         raw_values = [str(v) for v in reader.get_all_annotation_values(annotation)]
         freq: dict[str, int] = {}
         for raw in raw_values:
-            for display in _to_display_value(raw):
+            for display in _to_display_value(raw, decode=decode):
                 freq[display] = freq.get(display, 0) + 1
         frequencies[annotation] = freq
     return frequencies
+
+
+def _annotation_display_values(reader, annotation: str) -> set[str]:
+    """Display values for one annotation — the keys a styles file is keyed by.
+
+    Mirrors :func:`_to_display_value` (v2-decode, ``|`` suffix trim, ``;``
+    split), the exact transform :func:`generate_template` uses, so a styles
+    file built from the template validates and stores against the same keys the
+    plot/legend groups by — not the raw percent-encoded wire cells. NA-like
+    labels carry no reserved char, so they pass through unchanged.
+    """
+    decode = reader.should_decode()
+    values: set[str] = set()
+    for raw in reader.get_all_annotation_values(annotation):
+        values.update(_to_display_value(str(raw), decode=decode))
+    return values
 
 
 def generate_template(input_file: str) -> dict:
@@ -186,8 +202,9 @@ def add_annotation_styles_parquet(
                 f"Annotation '{annotation}' does not exist in the protein data. Available annotations: {all_annotations}"
             )
 
-        # Check if all values exist for the annotation
-        all_values = {str(val) for val in reader.get_all_annotation_values(annotation)}
+        # Validate/store against display values (what the template exposes),
+        # not the raw percent-encoded wire cells, so a template round-trips.
+        all_values = _annotation_display_values(reader, annotation)
 
         # Add colors
         if "colors" in styles:
@@ -254,6 +271,14 @@ def add_annotation_styles_bundle(
     # Collect settings-level overrides from the styles input
     style_overrides: dict[str, dict] = {}
 
+    # Compute value frequencies once (used for validation below and for
+    # frequency-based zOrder). Its keys are the display values a style file is
+    # keyed by — the same set _annotation_display_values would build — so it
+    # doubles as the validation set without a second full-protein scan. Style
+    # updates only mutate visualization_state, not annotation values, so the
+    # frequencies stay valid for the zOrder pass afterwards.
+    value_frequencies = compute_value_frequencies(reader)
+
     for annotation, styles in annotation_styles.items():
         all_annotations = reader.get_all_annotations()
         if annotation not in all_annotations:
@@ -262,7 +287,7 @@ def add_annotation_styles_bundle(
                 f"Available annotations: {all_annotations}"
             )
 
-        all_values = {str(val) for val in reader.get_all_annotation_values(annotation)}
+        all_values = set(value_frequencies.get(annotation, {}))
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}
@@ -296,9 +321,6 @@ def add_annotation_styles_bundle(
                             f"'{annotation}'. Available values: {sorted(all_values)}"
                         )
                 reader.update_marker_shape(annotation, resolved, shape)
-
-    # Compute value frequencies for frequency-based zOrder
-    value_frequencies = compute_value_frequencies(reader)
 
     # Convert updated visualization_state back to settings_json
     viz_state = reader.data.get("visualization_state", {})
