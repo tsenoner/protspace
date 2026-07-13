@@ -33,15 +33,21 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: 'apps/protspace/uv.lock'
+          cache-dependency-glob: 'uv.lock'
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version-file: 'apps/protspace/pyproject.toml'
 
+      # Build ONLY protspace + protlabel (lock-step). NOT --all-packages: that
+      # also builds the private apps/prep member and lands dist/ at the workspace
+      # root, not apps/protspace/dist. --package can't repeat, so build each into
+      # the same working-directory dist/.
       - name: Build Python Packages (protspace + protlabel)
-        run: uv build --all-packages
+        run: |
+          uv build --package protlabel --out-dir dist
+          uv build --package protspace --out-dir dist
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
