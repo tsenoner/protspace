@@ -6,11 +6,11 @@
 
 ## 1. History import
 
-- [ ] 1.1 Fresh clone protspace from origin (NOT the stale local clone, which is 54 behind)
-- [ ] 1.2 `git filter-repo --to-subdirectory-filter apps/protspace` on the fresh clone (rewrites all refs)
-- [ ] 1.3 In protspace_web: add remote, fetch, `git merge --allow-unrelated-histories` onto the migration branch
+- [x] 1.1 Fresh clone protspace from origin (NOT the stale local clone, which is 54 behind)
+- [x] 1.2 `git filter-repo --to-subdirectory-filter apps/protspace` on the fresh clone (rewrites all refs)
+- [x] 1.3 In protspace_web: add remote, fetch, `git merge --allow-unrelated-histories` onto the migration branch
 - [ ] 1.4 Push carried branches (#66, #55, #60) — now under `apps/protspace/` — as monorepo branches; re-open as PRs
-- [ ] 1.5 Verify history/blame resolve under `apps/protspace/`
+- [x] 1.5 Verify history/blame resolve under `apps/protspace/`
 
 ### Re-syncing upstream protspace after import (if v2 or other commits land on old `main` while this PR is open)
 
