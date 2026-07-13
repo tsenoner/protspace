@@ -63,7 +63,6 @@ jobs:
           path: /tmp/.uv-tools
           key: uv-tools-${{ runner.os }}-psr-v9.11.1
           restore-keys: |
-            uv-tools-${{ runner.os }}-psr-v9.11.1
             uv-tools-${{ runner.os }}
 
       - name: Install Python Semantic Release

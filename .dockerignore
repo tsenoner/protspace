@@ -8,4 +8,3 @@
 **/dist
 **/.pytest_cache
 docs/.vitepress/cache
-docs/.vitepress/dist
