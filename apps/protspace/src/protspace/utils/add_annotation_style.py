@@ -1,8 +1,11 @@
 import json
+import logging
 from pathlib import Path
 
 from protspace.data.annotations.encoding import to_display_value
 from protspace.utils.arrow_reader import ArrowReader
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_SHAPES = [
     "circle",
@@ -139,6 +142,32 @@ def _annotation_display_values(reader, annotation: str) -> set[str]:
     return values
 
 
+def _warn_if_numeric(annotation: str, display_values) -> None:
+    """Warn when *annotation*'s values look numeric.
+
+    The CLI styling model is categorical-only, but the web frontend bins numeric
+    columns into gradient ranges — so per-value colors/shapes/pins set via the
+    CLI silently do not apply. Naming the column + its distinct-value count makes
+    that visible instead of a surprise. See ``docs/styling.md`` (Numeric
+    annotations).
+    """
+    from protspace.stats.annotation_select import _is_numeric
+
+    cleaned = [v for v in display_values if v not in _NA_LABELS]
+    if not _is_numeric(cleaned):
+        return
+    logger.warning(
+        "Annotation '%s' looks numeric (%d distinct values). `protspace style` is "
+        "categorical-only: per-value colors/shapes/pinnedValues will not apply and "
+        "--generate-template lists every number as its own category. Pre-bin it into "
+        "categorical ranges (e.g. length_fixed/length_quantile) or color it as a "
+        "continuous gradient in the web app (https://protspace.app/explore). "
+        "See docs/styling.md#numeric-annotations.",
+        annotation,
+        len(cleaned),
+    )
+
+
 def generate_template(input_file: str) -> dict:
     """Generate a pre-filled styles template from an input file.
 
@@ -161,6 +190,7 @@ def generate_template(input_file: str) -> dict:
 
     for annotation in sorted(reader.get_all_annotations()):
         freqs = frequencies.get(annotation, {})
+        _warn_if_numeric(annotation, freqs.keys())
         # Sort values by frequency descending
         sorted_values = sorted(
             freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True
@@ -205,6 +235,7 @@ def add_annotation_styles_parquet(
         # Validate/store against display values (what the template exposes),
         # not the raw percent-encoded wire cells, so a template round-trips.
         all_values = _annotation_display_values(reader, annotation)
+        _warn_if_numeric(annotation, all_values)
 
         # Add colors
         if "colors" in styles:
@@ -288,6 +319,7 @@ def add_annotation_styles_bundle(
             )
 
         all_values = set(value_frequencies.get(annotation, {}))
+        _warn_if_numeric(annotation, all_values)
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}

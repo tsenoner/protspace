@@ -22,6 +22,23 @@ protspace style data.parquetbundle styled.parquetbundle --annotation-styles styl
 protspace style styled.parquetbundle --dump-settings
 ```
 
+## Numeric annotations
+
+**`protspace style` is categorical-only.** Every value is treated as a discrete category, so the workflow above is meant for categorical columns (e.g. `major_group`, `ec`, `superfamily`). Applying it to a **numeric** column (`length`, pLDDT, a score) does not do what you expect:
+
+- `--generate-template` lists **every distinct number as its own category** — hundreds to thousands of rows to hand-color.
+- `colors` / `shapes` / `pinnedValues` only match values by exact string, so a range like `"200-300"` or an interpolated `"3.5"` raises `Value '…' does not exist`.
+- There is no continuous colormap, binning, or range-legend concept on the CLI side.
+
+`protspace style` now emits a **warning** when it detects a numeric column, naming it and its distinct-value count.
+
+**Two ways to color a numeric column instead:**
+
+1. **Pre-bin into categorical strings** before styling — turn the numbers into range labels (the shipped `length_fixed` / `length_quantile` annotations follow this pattern), then style the binned column like any other categorical.
+2. **Use the web app's continuous gradient** — [ProtSpace Web](https://protspace.app/explore) content-sniffs numeric columns and bins them client-side into a sequential gradient (`batlow` default; also viridis / cividis / inferno / plasma). The binning strategy and reverse-gradient toggle live in the UI only.
+
+If you *do* pass CLI styling keys for a numeric column, the web frontend reinterprets them: `colors` / `shapes` / `pinnedValues` are **ignored** (bin IDs never match your per-value keys), `maxVisibleValues` becomes the **target bin count**, and `selectedPaletteId` is reset unless it is one of the five gradient IDs (markers are always circles). See the [ProtSpace Web legend docs](https://github.com/tsenoner/protspace_web/blob/main/docs/explore/legend.md) for the numeric legend behavior.
+
 ## Styles JSON format
 
 Top-level keys are annotation names. Each annotation accepts the keys below.
