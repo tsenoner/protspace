@@ -147,6 +147,13 @@ def test_bad_palette_warns_on_unknown_id(caplog):
     assert "rainbow" in caplog.records[0].message
 
 
+def test_bad_palette_silent_for_non_string_id(caplog):
+    """A malformed (non-string) selectedPaletteId must not crash the membership test."""
+    with caplog.at_level(logging.WARNING):
+        _warn_if_bad_palette("family", {"selectedPaletteId": ["viridis"]})
+    assert caplog.records == []
+
+
 def test_apply_styles_warns_on_gradient_palette_for_categorical(tmp_path, caplog):
     bundle = _make_bundle(tmp_path, ["P1", "P2"], {"family": ["kinase", "phosphatase"]})
     with caplog.at_level(logging.WARNING):
@@ -158,15 +165,34 @@ def test_apply_styles_warns_on_gradient_palette_for_categorical(tmp_path, caplog
     assert any("family" in r.message and "viridis" in r.message for r in caplog.records)
 
 
+def test_apply_styles_skips_palette_warning_for_numeric_gradient(tmp_path, caplog):
+    """A gradient selectedPaletteId is the valid choice for a numeric column, so the
+    categorical-palette warning is suppressed — only the numeric advisory fires."""
+    bundle = _make_bundle(
+        tmp_path, ["P1", "P2", "P3"], {"length": ["100", "200", "300"]}
+    )
+    with caplog.at_level(logging.WARNING):
+        add_annotation_styles_bundle(
+            str(bundle),
+            {"length": {"selectedPaletteId": "viridis"}},
+            str(tmp_path / "styled.parquetbundle"),
+        )
+    messages = [r.message for r in caplog.records]
+    assert any("length" in m and "categorical-only" in m for m in messages)
+    assert not any("kellys" in m for m in messages)
+
+
 # --- pinned contract: keep the Python palette catalog in sync with the frontend ---
 #
 # The authoritative source is the web frontend:
 #   protspace_web/packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
 #   protspace_web/packages/utils/src/visualization/numeric-binning.ts
 #                                                   (GRADIENT_COLOR_SCHEME_IDS)
-# These pins make the Python copy a deliberate, reviewed value: adding/removing/
-# renaming a palette here forces a matching update to docs/styling.md (Color
-# palettes) in the same change, and flags any accidental drift.
+# These pins make the Python copy a deliberate, reviewed value: changing a palette
+# id trips a test, prompting a matching update to docs/styling.md (Color palettes)
+# and a re-check against the frontend. The test compares the catalog to a literal
+# copy here, so it guards accidental in-repo edits — it cannot read the frontend
+# and does not detect drift from the source of truth.
 
 _EXPECTED_CATEGORICAL_PALETTE_IDS = {
     "kellys",

@@ -79,7 +79,7 @@ Fill missing annotation values from the nearest annotated protein in embedding s
 
 ## ✨ Annotations
 
-Use `-a` to color-code proteins by UniProt, InterPro, or Taxonomy annotations. Groups (`default`, `all`, `uniprot`, `interpro`, `taxonomy`) and individual names can be mixed freely. If `-a` is omitted, the `default` group is used.
+Use `-a` to color-code proteins by UniProt, InterPro, Taxonomy, TED domain, and Biocentral prediction annotations. Groups (`default`, `all`, `uniprot`, `interpro`, `taxonomy`, `ted`, `biocentral`) and individual names can be mixed freely. If `-a` is omitted, the `default` group is used.
 
 ```bash
 protspace prepare -i data.h5 -m pca2                              # default annotations

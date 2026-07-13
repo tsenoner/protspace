@@ -269,7 +269,7 @@ uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With
 | `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |
 | `test_taxonomy_annotation_retriever.py` | 15 | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
-| `test_style_warnings.py` | 15 | `protspace style` warnings: numeric-column detection (#67) + `selectedPaletteId` validation (categorical vs gradient palette) + pinned palette-catalog contract |
+| `test_style_warnings.py` | 17 | `protspace style` warnings: numeric-column detection (#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
 | `test_h5_parse_identifier.py` | 9 | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | 9 | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
 | `test_ted_retriever.py` | 7 | TED domain retriever (mocked AlphaFold API, CATH names) |

@@ -152,8 +152,8 @@ def _annotation_display_values(reader, annotation: str) -> set[str]:
     return values
 
 
-def _warn_if_numeric(annotation: str, display_values) -> None:
-    """Warn when *annotation*'s values look numeric.
+def _warn_if_numeric(annotation: str, display_values) -> bool:
+    """Warn when *annotation*'s values look numeric; return whether they do.
 
     The CLI styling model is categorical-only, but the web frontend bins numeric
     columns into gradient ranges — so per-value colors/shapes/pins set via the
@@ -161,36 +161,40 @@ def _warn_if_numeric(annotation: str, display_values) -> None:
     that visible instead of a surprise. See ``docs/styling.md`` (Numeric
     annotations).
     """
-    from protspace.stats.annotation_select import _is_numeric
+    from protspace.stats.annotation_select import _is_missing, _is_numeric
 
-    cleaned = [v for v in display_values if v not in _NA_LABELS]
+    cleaned = [v for v in display_values if not _is_missing(v)]
     if not _is_numeric(cleaned):
-        return
+        return False
     logger.warning(
         "Annotation '%s' looks numeric (%d distinct values). `protspace style` is "
         "categorical-only: per-value colors/shapes/pinnedValues will not apply and "
         "--generate-template lists every number as its own category. Pre-bin it into "
-        "categorical ranges (e.g. length_fixed/length_quantile) or color it as a "
-        "continuous gradient in the web app (https://protspace.app/explore). "
+        "categorical range labels (e.g. '100-200') or color it as a continuous "
+        "gradient in the web app (https://protspace.app/explore). "
         "See docs/styling.md#numeric-annotations.",
         annotation,
         len(cleaned),
     )
+    return True
 
 
 def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
-    """Warn when a styles entry's ``selectedPaletteId`` is not a categorical palette.
+    """Warn when a categorical column's ``selectedPaletteId`` is not a categorical id.
 
-    ``selectedPaletteId`` sets the *categorical* palette only. The frontend silently
-    resets a gradient or unknown id to ``kellys``; numeric gradients are UI-only and
-    cannot be set from the CLI (see ``docs/styling.md`` — Color palettes). Naming the
-    offending id makes that reset visible instead of a surprise.
+    For a categorical column ``selectedPaletteId`` picks the palette, and the frontend
+    silently resets a gradient or unknown id to ``kellys`` (see ``docs/styling.md`` —
+    Color palettes). Naming the offending id makes that reset visible instead of a
+    surprise. A numeric column instead reads ``selectedPaletteId`` as its gradient, so
+    callers skip this check for numeric columns.
     """
     palette = styles.get("selectedPaletteId")
-    if not palette or palette in _CATEGORICAL_PALETTE_IDS:
+    if not isinstance(palette, str) or not palette:
+        return
+    if palette in _CATEGORICAL_PALETTE_IDS:
         return
     if palette in _GRADIENT_PALETTE_IDS:
-        reason = f"'{palette}' is a numeric gradient — gradients are UI-only"
+        reason = f"'{palette}' is a numeric gradient, not a categorical palette"
     else:
         reason = f"'{palette}' is not a known palette"
     logger.warning(
@@ -353,8 +357,11 @@ def add_annotation_styles_bundle(
             )
 
         all_values = set(value_frequencies.get(annotation, {}))
-        _warn_if_numeric(annotation, all_values)
-        _warn_if_bad_palette(annotation, styles)
+        # selectedPaletteId is the categorical palette; a numeric column reads it as
+        # its gradient instead (a gradient id applies — see docs/styling.md), so the
+        # categorical-palette check only runs when the column is not numeric.
+        if not _warn_if_numeric(annotation, all_values):
+            _warn_if_bad_palette(annotation, styles)
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}

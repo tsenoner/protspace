@@ -34,7 +34,7 @@ protspace style styled.parquetbundle --dump-settings
 
 **Two ways to color a numeric column instead:**
 
-1. **Pre-bin into categorical strings** before styling — turn the numbers into range labels (the shipped `length_fixed` / `length_quantile` annotations follow this pattern), then style the binned column like any other categorical.
+1. **Pre-bin into categorical strings** before styling — turn the numbers into range-label strings (e.g. `"100-200"`, or fixed/quantile buckets), then style the binned column like any other categorical.
 2. **Use the web app's continuous gradient** — [ProtSpace Web](https://protspace.app/explore) content-sniffs numeric columns and bins them client-side into a sequential gradient (`batlow` default; also viridis / cividis / inferno / plasma). The binning strategy and reverse-gradient toggle live in the UI only.
 
 If you *do* pass CLI styling keys for a numeric column, the web frontend reinterprets them: `colors` / `shapes` / `pinnedValues` are **ignored** (bin IDs never match your per-value keys), `maxVisibleValues` becomes the **target bin count**, and `selectedPaletteId` is reset unless it is one of the five gradient IDs (markers are always circles). See the [ProtSpace Web legend docs](https://github.com/tsenoner/protspace_web/blob/main/docs/explore/legend.md) for the numeric legend behavior.
@@ -113,7 +113,7 @@ Used for numeric annotations (see [Numeric annotations](#numeric-annotations)). 
 | `inferno` | Inferno | High-contrast sequential gradient        |
 | `plasma`  | Plasma  | Vivid sequential gradient                |
 
-> **Numeric gradients are UI-only.** The gradient for a numeric column lives in a separate per-annotation `numericSettings` object that `protspace style` does not write — pick it in the web UI's legend settings. Setting a gradient ID in `selectedPaletteId` does **not** color a numeric column: for a categorical column the frontend resets it to `kellys`, and for a numeric column `selectedPaletteId` is ignored entirely (the gradient comes from `numericSettings`, default `batlow`). `protspace style` warns when `selectedPaletteId` is a gradient or unknown ID.
+> **`selectedPaletteId` behaves differently per column type.** For a **categorical** column it picks the categorical palette, and a gradient or unknown ID silently resets to `kellys`. For a **numeric** column the frontend instead reads `selectedPaletteId` as the gradient: a gradient ID (`batlow` / `viridis` / `cividis` / `inferno` / `plasma`) is used as-is, and a categorical or unknown ID resets to `batlow`. What `protspace style` cannot set for a numeric column is the **binning** — the strategy and reverse-gradient toggle live in the per-annotation `numericSettings` object, which is UI-only. `protspace style` warns when `selectedPaletteId` is a gradient or unknown ID **on a categorical column** (where it would reset to `kellys`).
 
 ## Legend ordering
 
