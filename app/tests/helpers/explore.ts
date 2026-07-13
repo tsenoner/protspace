@@ -8,12 +8,8 @@ export async function dismissTourIfPresent(page: Page): Promise<void> {
   const tourDialog = page.getByRole('dialog', { name: 'Welcome to ProtSpace' });
   const skipButton = page.getByRole('button', { name: 'Skip' });
   const closeButton = page.getByRole('button', { name: 'Close' }).first();
-  const roleDialogVisible = await tourDialog
-    .waitFor({ state: 'visible', timeout: 1500 })
-    .then(() => true)
-    .catch(() => false);
 
-  if (roleDialogVisible) {
+  if (await tourDialog.isVisible()) {
     if (await skipButton.isVisible().catch(() => false)) {
       await skipButton.click();
     } else if (await closeButton.isVisible().catch(() => false)) {
@@ -42,6 +38,7 @@ export async function waitForExploreDataLoad(page: Page, timeout = 30_000): Prom
         | null;
       return (plot?.data?.protein_ids?.length ?? 0) > 0;
     },
+    undefined,
     { timeout, polling: 500 },
   );
   await page
@@ -109,7 +106,7 @@ export async function waitForPersistedExploreDataset(page: Page, timeout = 30_00
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    const hasPersistedDataset = await page.evaluate(async () => {
+    const hasReadyPersistedDataset = await page.evaluate(async () => {
       const storageWithDirectory = navigator.storage as StorageManager & {
         getDirectory?: () => Promise<FileSystemDirectoryHandle>;
       };
@@ -121,22 +118,30 @@ export async function waitForPersistedExploreDataset(page: Page, timeout = 30_00
       const root = await storageWithDirectory.getDirectory();
       try {
         const dir = await root.getDirectoryHandle('protspace-last-import');
-        await dir.getFileHandle('metadata.json');
+        const metadataHandle = await dir.getFileHandle('metadata.json');
         await dir.getFileHandle('dataset.bin');
-        return true;
+        const metadata = JSON.parse(await (await metadataHandle.getFile()).text()) as {
+          schemaVersion?: number;
+          lastLoadStatus?: string;
+        };
+
+        // Schema v1 predates load-status tracking and represents a dataset that
+        // completed under the previous persistence implementation. Current
+        // schema entries are reload-safe only after finalization marks success.
+        return metadata.schemaVersion === 1 || metadata.lastLoadStatus === 'success';
       } catch {
         return false;
       }
     });
 
-    if (hasPersistedDataset) {
+    if (hasReadyPersistedDataset) {
       return;
     }
 
     await page.waitForTimeout(250);
   }
 
-  throw new Error('Timed out waiting for the persisted OPFS dataset to be written.');
+  throw new Error('Timed out waiting for the persisted OPFS dataset load to finalize.');
 }
 
 export async function supportsExplorePersistedDataset(page: Page): Promise<boolean> {

@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-11
+goal: Reduce E2E feedback time and flaky retries without weakening critical
+  user-journey coverage.

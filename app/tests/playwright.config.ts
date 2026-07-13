@@ -15,6 +15,16 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
  * set RUN_LIVE_E2E=1 to include it.
  */
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
+const TOUR_COMPLETED_STORAGE_STATE = {
+  cookies: [],
+  origins: [
+    {
+      origin: new URL(BASE_URL).origin,
+      localStorage: [{ name: 'driver.overviewTour', value: 'true' }],
+    },
+  ],
+};
+const EMPTY_STORAGE_STATE = { cookies: [], origins: [] };
 
 export default defineConfig({
   testDir: TEST_DIR,
@@ -26,8 +36,9 @@ export default defineConfig({
 
   forbidOnly: !!process.env.CI,
 
-  // One retry locally absorbs the occasional WebGL/OPFS flake under parallel load.
-  retries: 1,
+  // Retries capture diagnostics but must not allow an unstable test to pass CI.
+  failOnFlakyTests: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
 
   // Headless WebGL (SwiftShader) is CPU-bound, so leave cores free for the dev
   // server and OS; 50% of cores is a good balance. CI runners are smaller.
@@ -51,6 +62,7 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
+    storageState: TOUR_COMPLETED_STORAGE_STATE,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -61,6 +73,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 720 },
+        storageState: EMPTY_STORAGE_STATE,
       },
       testMatch: /product-tour\.spec\.ts/,
     },
@@ -106,6 +119,7 @@ export default defineConfig({
     },
     {
       name: 'url-view-state-firefox',
+      grep: /@cross-browser|@opfs-browser/,
       use: {
         ...devices['Desktop Firefox'],
         viewport: { width: 1280, height: 720 },
@@ -114,20 +128,29 @@ export default defineConfig({
     },
     {
       name: 'url-view-state-webkit',
+      grep: /@cross-browser/,
       use: {
         ...devices['Desktop Safari'],
         viewport: { width: 1280, height: 720 },
+        trace: process.env.CI ? 'retain-on-first-failure' : 'off',
       },
       testMatch: /url-view-state\.spec\.ts/,
     },
-    {
-      name: 'load-large-bundle',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1280, height: 720 },
-      },
-      testMatch: /load-large-bundle\.spec\.ts/,
-    },
+    // Fixture-dependent 573k-protein regression — copy
+    // protspace/data/other/sprot/sprot_50.parquetbundle to
+    // app/tests/fixtures/, then opt in via RUN_LARGE_BUNDLE_E2E=1.
+    ...(process.env.RUN_LARGE_BUNDLE_E2E === '1'
+      ? [
+          {
+            name: 'load-large-bundle',
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1280, height: 720 },
+            },
+            testMatch: /load-large-bundle\.spec\.ts/,
+          },
+        ]
+      : []),
     {
       name: 'figure-editor',
       use: {
@@ -164,7 +187,7 @@ export default defineConfig({
     // Live FASTA-prep flow against a real backend — opt-in via RUN_LIVE_E2E=1
     // (requires `docker compose up -d protspace-prep`; see fasta-prep.live.spec.ts
     // for the full prerequisites). Excluded from the default suite.
-    ...(process.env.RUN_LIVE_E2E
+    ...(process.env.RUN_LIVE_E2E === '1'
       ? [
           {
             name: 'fasta-prep-live',

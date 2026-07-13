@@ -119,10 +119,8 @@ async function assertHighlightedElement(page: Page, target: StepTarget): Promise
 
 test.describe('Product Tour', () => {
   test.beforeEach(async ({ page }) => {
-    // Clear the localStorage key so the tour always auto-starts
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.removeItem('driver.overviewTour'));
-    // Navigate again so the page initialises with a clean slate
+    // This project's empty storage state lets the first navigation exercise
+    // the real first-visit path without a preparatory localStorage mutation.
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     // Wait for the tour to auto-start (there's an 800 ms delay after data-loaded)
