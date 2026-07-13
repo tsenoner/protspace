@@ -47,14 +47,10 @@ export interface BundleExtractionResult {
  * before Task H2.
  */
 function readFormatVersion(metadata: FileMetaData): number {
-  try {
-    const kv = metadata.key_value_metadata ?? [];
-    const entry = kv.find((k) => k.key === FORMAT_VERSION_KEY);
-    const v = entry?.value ? Number(entry.value) : 1;
-    return Number.isFinite(v) ? v : 1;
-  } catch {
-    return 1;
-  }
+  const kv = metadata.key_value_metadata ?? [];
+  const entry = kv.find((k) => k.key === FORMAT_VERSION_KEY);
+  const v = entry?.value ? Number(entry.value) : 1;
+  return Number.isFinite(v) ? v : 1;
 }
 
 /**
