@@ -86,6 +86,7 @@ interface CaptureablePlotElement extends HTMLElement {
       backgroundColor?: string;
       dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number };
       pointSizeReference?: { width: number; height: number };
+      resetView?: boolean;
     },
   ) => HTMLCanvasElement;
   getDataExtent?: (options?: {
@@ -372,6 +373,8 @@ export class ProtspacePublishModal extends LitElement {
         width: plotRect.w,
         height: plotRect.h,
         backgroundColor: bgColor,
+        // Always render the unzoomed, fit-all view in the editor (#294).
+        resetView: true,
       });
       this._plotCacheKey = cacheKey;
     }
@@ -616,6 +619,9 @@ export class ProtspacePublishModal extends LitElement {
             width: plotRect.w * pointScale,
             height: plotRect.h * pointScale,
           },
+          // dataDomain is derived from the full (default-view) extent, so the
+          // live zoom must not be re-applied on top of it (#294).
+          resetView: true,
         });
         this._insetRenderCache.set(key, canvas);
         this._lastInsetCanvases[i] = canvas;
@@ -722,6 +728,8 @@ export class ProtspacePublishModal extends LitElement {
       width: plotRect.w,
       height: plotRect.h,
       backgroundColor: bgColor,
+      // Export the unzoomed, fit-all view, matching the live preview (#294).
+      resetView: true,
     });
 
     // Per-inset geometric renders for the export.

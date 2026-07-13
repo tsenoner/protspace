@@ -8,7 +8,7 @@
  * Falls back to direct rendering if gamma pipeline is unavailable.
  */
 
-import type * as d3 from 'd3';
+import * as d3 from 'd3';
 import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
@@ -474,6 +474,10 @@ export class WebGLRenderer {
    * @param width Target width in CSS pixels (will be multiplied by DPR)
    * @param height Target height in CSS pixels
    * @param dpr Device pixel ratio to use (defaults to 1 for max resolution control)
+   * @param resetView When true, ignore the live zoom/pan transform and render
+   *   the default, fit-all view (identity transform) — what a double-click
+   *   reset shows. The figure editor uses this so it never inherits a stale
+   *   zoom. Defaults to false, preserving the current view for plain exports.
    * @returns 2D canvas containing the rendered frame
    */
   public renderToCanvas(
@@ -482,6 +486,7 @@ export class WebGLRenderer {
     dpr: number = 1,
     dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number },
     pointSizeReference?: { width: number; height: number },
+    resetView: boolean = false,
   ): HTMLCanvasElement {
     return this.exportRenderer.renderToCanvas(this.lastRenderedData, this.getConfig(), this.style, {
       width,
@@ -490,7 +495,7 @@ export class WebGLRenderer {
       dataDomain,
       pointSizeReference,
       selectionActive: this.selectionActive,
-      transform: this.getTransform(),
+      transform: resetView ? d3.zoomIdentity : this.getTransform(),
       gamma: this.gamma,
     });
   }

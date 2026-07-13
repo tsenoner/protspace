@@ -819,10 +819,14 @@ describe('<protspace-publish-modal> plot cache key', () => {
   });
 
   it('invalidates the plot cache when background toggles white ↔ transparent', async () => {
-    const captures: Array<{ bg: string }> = [];
+    const captures: Array<{ bg: string; resetView?: boolean }> = [];
     const fakePlotEl = {
-      captureAtResolution: (w: number, h: number, opts: { backgroundColor?: string }) => {
-        captures.push({ bg: opts.backgroundColor ?? '' });
+      captureAtResolution: (
+        w: number,
+        h: number,
+        opts: { backgroundColor?: string; resetView?: boolean },
+      ) => {
+        captures.push({ bg: opts.backgroundColor ?? '', resetView: opts.resetView });
         const c = document.createElement('canvas');
         c.width = w;
         c.height = h;
@@ -865,6 +869,9 @@ describe('<protspace-publish-modal> plot cache key', () => {
 
       expect(captures.some((c) => c.bg === '#ffffff')).toBe(true);
       expect(captures.some((c) => c.bg === 'rgba(0,0,0,0)')).toBe(true);
+      // #294: the editor preview always captures the default (unzoomed) view.
+      expect(captures.length).toBeGreaterThan(0);
+      expect(captures.every((c) => c.resetView === true)).toBe(true);
       modal.remove();
     } finally {
       HTMLCanvasElement.prototype.getContext = origGetContext;
