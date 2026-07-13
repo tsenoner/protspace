@@ -7,6 +7,23 @@
 
 # Annotation Reference
 
+## Annotation Value Format (v2 Encoding)
+
+As of bundle format v2, annotation values containing special characters use percent-encoding to ensure reliable parsing across sources. When reading the per-column descriptions below, note these encoding rules:
+
+- **Reserved characters** (`%`, `;`, `|`, control chars) are percent-encoded as `%XX` (uppercase hex)
+  - `%` → `%25` (for names/labels containing percent signs)
+  - `;` → `%3B` (field separator)
+  - `|` → `%7C` (score/evidence separator)
+  - Control chars (newline, tab, etc.) → `%0A`, `%09`, etc.
+- **Literal characters** (`,`, `(`, `)`) remain unencoded for readability
+
+Example: `PF00001 (Kinase, serine)|425.5` stores the comma in the name literally, but if a name contained a semicolon like "Superfamily; old", it would encode as `PF00001 (Superfamily%3B old)|425.5`.
+
+Format version 2 is marked in the parquet metadata of the `selected_annotations` table under the key `protspace_format_version`. Bundles without this key or with version < 2 are rendered using the legacy parser. See [Data Format Reference](/guide/data-format#encoding-format-v2) for more detail.
+
+## Sources
+
 ProtSpace annotations come from several sources. **Computational predictions** — from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation — what the value means, how it is produced, and what it looks like — with a link to the authoritative source.
 
 ## Predicted (Biocentral)
