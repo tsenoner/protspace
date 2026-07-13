@@ -1,6 +1,6 @@
 [project]
 name = "protlabel"
-version = "4.5.0"
+version = "4.6.0"
 description = "Embedding Annotation Transfer (EAT): nearest-neighbour label transfer in protein-language-model embedding space"
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
@@ -13,6 +13,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/tsenoner/protspace"
 Repository = "https://github.com/tsenoner/protspace"
+
 
 [build-system]
 requires = ["hatchling"]
