@@ -167,7 +167,7 @@ wheels = [
 
 [[package]]
 name = "biocentral-api"
-version = "1.2.0"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "biopython" },
@@ -178,9 +178,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/7f/0a0372ec3a911e56db69a8359c98482569dfc09df50aaff9c9f742e2e2d0/biocentral_api-1.2.0.tar.gz", hash = "sha256:87ad68b6c82852fb20138017ab7705bcd93dc37f06d8dc3699c11359c3a3d8dd", size = 74628, upload-time = "2026-05-13T08:31:43.833Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/2c/43f4893ef9b5b59ab3c9453a2e9ec197feb898dd65b6603fa817154ef407/biocentral_api-1.2.1.tar.gz", hash = "sha256:54974f9bdcf2d56a49dd855e90ca1f302f9f3ef3267a3d4a374cf3e687068b3f", size = 74878, upload-time = "2026-07-13T13:52:55.336Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/d3/f77e587d1774fa8fa7bdd3f8033564e94b37901fc06bfdaf70165eedeca8/biocentral_api-1.2.0-py3-none-any.whl", hash = "sha256:24cc9fd9a8a2c2b89f8d02ffedf901eed80e94e8cfafad32a62769bfc08d6f7b", size = 159298, upload-time = "2026-05-13T08:31:42.193Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/b7/2d5d66e244f0f3c2c29768fd131afd1163940359fc6e081b21dcb40ec21e/biocentral_api-1.2.1-py3-none-any.whl", hash = "sha256:7839b4e37dfd5ce663b8099034a43d9c42c5d74bb3956481487f4b11bbde0f9f", size = 159508, upload-time = "2026-07-13T13:52:53.749Z" },
 ]
 
 [[package]]
@@ -3285,7 +3285,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "biocentral-api", specifier = ">=1.1.2" },
+    { name = "biocentral-api", specifier = ">=1.2.1" },
     { name = "dash", marker = "extra == 'frontend'", specifier = ">=3" },
     { name = "dash-bootstrap-components", marker = "extra == 'frontend'", specifier = ">=1.6.0" },
     { name = "dash-daq", marker = "extra == 'frontend'", specifier = ">=0.5.0" },
