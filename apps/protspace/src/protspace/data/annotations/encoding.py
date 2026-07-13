@@ -41,6 +41,31 @@ def decode_field(s: str) -> str:
     return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
 
 
+def to_display_value(raw, *, decode: bool = True):
+    """Convert one raw annotation cell into its scalar human-display value.
+
+    The single shared display transform for both the Dash ``serve`` plot and
+    the ``style`` template, so grouping/legend/hover and style keys stay in the
+    same space:
+
+    1. **Pipe trim** – drop the ``|score``/``|evidence`` suffix
+       (``"cluster 3|0.53"`` → ``"cluster 3"``), so per-point score noise does
+       not shatter a category.
+    2. **Percent-decode** – v2 bundles percent-encode ``;``/``|``/``%`` and
+       control chars inside free-text names; decode back to the literal
+       characters for display.
+
+    ``decode`` gates step 2 on the bundle format version: pass
+    ``format_version >= 2``. A legacy (v1) value that legitimately contains a
+    literal ``%XX`` is then left untouched. Non-strings (missing/``None`` or
+    numeric annotations) pass through unchanged.
+    """
+    if not isinstance(raw, str):
+        return raw
+    label = raw.split("|", 1)[0]
+    return decode_field(label) if decode else label
+
+
 def stamp_format_version(table: pa.Table) -> pa.Table:
     """Attach the bundle format version to a table's schema metadata.
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from protspace.data.annotations.encoding import decode_field
+from protspace.data.annotations.encoding import to_display_value
 from protspace.utils.arrow_reader import ArrowReader
 
 ALLOWED_SHAPES = [
@@ -84,29 +84,22 @@ def _resolve_na(value: str, all_values: set[str]) -> str | None:
     return None
 
 
-def _to_display_value(raw: str) -> list[str]:
+def _to_display_value(raw: str, *, decode: bool = True) -> list[str]:
     """Convert a raw annotation value to its display name(s).
 
     Applies the same transformations the ProtSpace web frontend uses:
 
     1. **Semicolon split** – ``"familyA;familyB"`` becomes two entries
        ``["familyA", "familyB"]`` (multi-label).
-    2. **Pipe trim** – ``"value|source"`` becomes ``"value"``
-       (the part after ``|`` is a source tag, e.g. ``IC``, ``SAM``).
-    3. **Percent-decode** – bundle format v2 percent-encodes ``;``/``|``/``%``
-       and control chars inside free-text names (see
-       ``protspace.data.annotations.encoding``); decode back to the literal
-       characters for human display. A no-op on values without ``%``, so
-       legacy (pre-v2) values pass through unchanged.
+    2. **Pipe trim + percent-decode** – each part is reduced to its display
+       value via :func:`protspace.data.annotations.encoding.to_display_value`
+       (drop the ``|source`` suffix; v2-decode the free-text name). ``decode``
+       gates the v2 percent-decode on the bundle format version, so legacy
+       (pre-v2) values pass through unchanged.
 
     Empty / whitespace-only parts are preserved as ``""`` (N/A sentinel).
     """
-    parts = raw.split(";")
-    display: list[str] = []
-    for part in parts:
-        trimmed = part.split("|", 1)[0]
-        display.append(decode_field(trimmed))
-    return display
+    return [to_display_value(part, decode=decode) for part in raw.split(";")]
 
 
 def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
@@ -118,12 +111,13 @@ def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     Returns:
         ``{annotation_name: {display_value: count}}``
     """
+    decode = reader.get_format_version() >= 2
     frequencies: dict[str, dict[str, int]] = {}
     for annotation in reader.get_all_annotations():
         raw_values = [str(v) for v in reader.get_all_annotation_values(annotation)]
         freq: dict[str, int] = {}
         for raw in raw_values:
-            for display in _to_display_value(raw):
+            for display in _to_display_value(raw, decode=decode):
                 freq[display] = freq.get(display, 0) + 1
         frequencies[annotation] = freq
     return frequencies

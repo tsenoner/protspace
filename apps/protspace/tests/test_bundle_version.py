@@ -124,3 +124,62 @@ def test_cli_bundle_command_stamps_format_version(tmp_path):
     annotations_bytes = core_parts[0]
     footer_meta = pq.read_metadata(io.BytesIO(annotations_bytes)).metadata
     assert footer_meta[FORMAT_VERSION_KEY] == b"2"
+
+
+def test_annotate_command_stamps_format_version(tmp_path, monkeypatch):
+    """`protspace annotate` writes percent-encoded cells, so its parquet must
+    also carry the v2 stamp — a consumer that reads it un-bundled and gates
+    decoding on `protspace_format_version` then sees decoded names."""
+    import protspace.data.annotations.manager as mgr_mod
+    from protspace.cli.app import app
+
+    fasta = tmp_path / "in.fasta"
+    fasta.write_text(">P12345\nMKV\n>P67890\nAAA\n")
+
+    class _FakeManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def to_pd(self):
+            return pd.DataFrame(
+                {"identifier": ["P12345", "P67890"], "cath": ["a", "b"]}
+            )
+
+    monkeypatch.setattr(mgr_mod, "ProteinAnnotationManager", _FakeManager)
+
+    from typer.testing import CliRunner
+
+    out = tmp_path / "annotations.parquet"
+    result = CliRunner().invoke(app, ["annotate", "-i", str(fasta), "-o", str(out)])
+    assert result.exit_code == 0, result.output
+
+    footer_meta = pq.read_metadata(str(out)).metadata
+    assert footer_meta[FORMAT_VERSION_KEY] == b"2"
+
+
+def test_arrow_reader_reads_stamp_and_defaults_to_v1(tmp_path):
+    """The reader surfaces the stamp so display code can gate v2 decoding, and
+    falls back to v1 (no decode) when the stamp is absent."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.utils.arrow_reader import ArrowReader
+
+    stamped = tmp_path / "v2"
+    stamped.mkdir()
+    pq.write_table(
+        stamp_format_version(pa.table({"protein_id": ["P1"], "cath": ["x"]})),
+        stamped / "selected_annotations.parquet",
+    )
+    assert ArrowReader(stamped).get_format_version() == 2
+
+    plain = tmp_path / "v1"
+    plain.mkdir()
+    pq.write_table(
+        pa.table({"protein_id": ["P1"], "cath": ["x"]}),
+        plain / "selected_annotations.parquet",
+    )
+    assert ArrowReader(plain).get_format_version() == 1
+
+    # dict input without the marker also defaults to v1
+    assert ArrowReader({"protein_data": {}}).get_format_version() == 1

@@ -10,6 +10,23 @@ import pyarrow.parquet as pq
 logger = logging.getLogger(__name__)
 
 
+def _read_format_version(schema_metadata: dict | None) -> int:
+    """Extract the bundle format version from parquet schema metadata.
+
+    Returns 1 (legacy, un-encoded) when the stamp is absent or unparseable, so
+    display consumers only run the v2 percent-decode on genuinely v2 data.
+    """
+    from protspace.data.annotations.encoding import FORMAT_VERSION_KEY
+
+    raw = (schema_metadata or {}).get(FORMAT_VERSION_KEY)
+    if raw is None:
+        return 1
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 1
+
+
 class ArrowReader:
     """Read and manipulate ProtSpace data from Parquet files or a dict.
 
@@ -53,9 +70,11 @@ class ArrowReader:
             projections_data_path = self.data_path / "projections_data.parquet"
 
             if protein_annotations_path.exists():
-                self._protein_annotations_df = pq.read_table(
-                    str(protein_annotations_path)
-                ).to_pandas()
+                annotations_table = pq.read_table(str(protein_annotations_path))
+                self._protein_annotations_df = annotations_table.to_pandas()
+                self.data["format_version"] = _read_format_version(
+                    annotations_table.schema.metadata
+                )
             else:
                 self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
 
@@ -199,6 +218,19 @@ class ArrowReader:
         viz_state_path = output_path / "visualization_state.json"
         with open(viz_state_path, "w") as f:
             json.dump(self.data.get("visualization_state", {}), f, indent=2)
+
+    def get_format_version(self) -> int:
+        """Return the bundle format version (1 = legacy/un-encoded, 2 = v2).
+
+        Threaded through ``self.data`` so it survives the dict round-trip the
+        Dash ``serve`` store makes (``get_data()`` → ``json-data-store`` →
+        ``ArrowReader(dict)``). Display code gates the v2 percent-decode on
+        ``get_format_version() >= 2``.
+        """
+        try:
+            return int(self.data.get("format_version", 1))
+        except (TypeError, ValueError):
+            return 1
 
     def get_projection_names(self) -> list[str]:
         """Get list of projection names."""
