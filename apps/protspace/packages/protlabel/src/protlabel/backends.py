@@ -29,6 +29,12 @@ _METRICS = {"euclidean", "cosine"}
 _RERANK_OVERFETCH = 2  # multiplicative widening of the candidate pool
 _RERANK_PAD = 16  # additive floor so small k still over-fetches
 
+# Peak bytes-per-element the float64 rerank holds at once for its
+# (eff_chunk, k_pool, d) tensors: _exact_distances materialises two float64
+# copies simultaneously (the upcast candidates and their difference/normalised
+# form) = 16 B/elem; 24 leaves headroom for the transient f32->f64 upcast.
+_RERANK_PEAK_BYTES = 24
+
 
 def _rerank_pool_size(k: int, n_refs: int) -> int:
     """Number of float32-selected candidates to rerank in float64 for a top-k."""
@@ -82,9 +88,12 @@ def nearest(
     per-reference norm into the dot product rather than storing a normalized
     second copy) plus a few float32 ``(query_chunk, n_refs)`` temporaries, so the
     real peak is comparable to (not far below) that budget.  The exact-distance
-    recompute only touches the over-fetched candidate pool (a small multiple of
-    k, not n_refs), so peak memory remains close to the reference matrix itself,
-    making the function laptop-feasible at Swiss-Prot scale.
+    recompute touches the over-fetched candidate pool (a small multiple of k, not
+    n_refs); ``eff_chunk`` is additionally capped so those ``(eff_chunk, k_pool,
+    d)`` float64 temporaries also stay within ``max_block_bytes`` (they scale with
+    the embedding dim, so a small reference set queried at high dim would
+    otherwise blow the budget).  Peak memory therefore stays bounded — close to
+    the reference matrix at Swiss-Prot scale, laptop-feasible.
     """
     if metric not in _METRICS:
         raise ValueError(f"Unknown metric {metric!r}; expected 'euclidean' or 'cosine'")
@@ -98,10 +107,23 @@ def nearest(
     k = min(k, n_refs)
     k_pool = _rerank_pool_size(k, n_refs)
 
-    # Adaptively shrink the query chunk so the distance block stays within
-    # max_block_bytes (budgeting for a float64 = 8 bytes-per-element block).
-    bytes_per_row = max(1, n_refs * 8)
-    eff_chunk = max(1, min(chunk, max_block_bytes // bytes_per_row))
+    # Adaptively shrink the query chunk so BOTH per-chunk tensors stay within
+    # max_block_bytes:
+    #   * the (eff_chunk, n_refs) distance block (float64-sized = 8 B/row-elem),
+    #   * the (eff_chunk, k_pool, d) float64 rerank temporaries, which scale with
+    #     the embedding dim d (not n_refs), so the block budget alone leaves them
+    #     unbounded for small-reference / high-dim / many-query workloads.
+    dim = refs.shape[1]
+    block_row_bytes = max(1, n_refs * 8)
+    rerank_row_bytes = max(1, k_pool * dim * _RERANK_PEAK_BYTES)
+    eff_chunk = max(
+        1,
+        min(
+            chunk,
+            max_block_bytes // block_row_bytes,
+            max_block_bytes // rerank_row_bytes,
+        ),
+    )
 
     idx_out = np.empty((queries.shape[0], k), dtype=np.int64)
     dist_out = np.empty((queries.shape[0], k), dtype=np.float32)

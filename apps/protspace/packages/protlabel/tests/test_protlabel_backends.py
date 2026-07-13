@@ -169,6 +169,31 @@ def test_euclidean_recovers_true_nn_under_high_norm_cancellation():
     assert np.array_equal(idx[:, 0], gt)  # every query recovers its true anchor
 
 
+def test_rerank_pool_memory_bounded_for_small_refs_high_dim():
+    # The float64 rerank over-fetches k_pool candidates. With a small reference
+    # set (so the distance-block budget never shrinks the query chunk) but a
+    # large embedding dim, the (chunk, k_pool, d) float64 rerank temporaries can
+    # dwarf the reference matrix and blow past max_block_bytes — a small curated
+    # reference set queried with many high-dim vectors would then OOM. eff_chunk
+    # must bound that footprint too, not just the (chunk, n_refs) distance block.
+    import gc
+    import tracemalloc
+
+    rng = np.random.default_rng(0)
+    n_refs, d, n_q = 800, 2560, 2048  # references are only ~8 MB
+    refs = rng.standard_normal((n_refs, d)).astype(np.float32)
+    queries = rng.standard_normal((n_q, d)).astype(np.float32)
+    gc.collect()
+    tracemalloc.start()
+    tracemalloc.reset_peak()
+    nearest(queries, refs, k=1, metric="euclidean")  # default 256 MiB budget
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # Before eff_chunk accounted for the rerank pool this peaked at ~1.4 GB for
+    # an 8 MB reference matrix. Allow generous slack but well under that.
+    assert peak < 600 * 1024 * 1024, f"rerank peak {peak / 1024 / 1024:.0f} MB too high"
+
+
 def test_cosine_matches_reference_distances():
     rng = np.random.default_rng(8)
     refs = rng.standard_normal((25, 10)).astype(np.float32)
