@@ -17,14 +17,14 @@ Python package for dimensionality reduction of protein language model (pLM) embe
 uv sync --group dev
 git config core.hooksPath .githooks
 
-# Run tests (skip slow)
-uv run pytest tests/ -m "not slow"
+# Run tests (skip slow) — testpaths covers both protspace + protlabel
+uv run pytest -m "not slow"
 
 # Run all tests
-uv run pytest tests/
+uv run pytest
 
 # Lint
-uv run ruff check src/ tests/
+uv run ruff check src/ packages/ tests/
 
 # Run CLI
 uv run protspace prepare -i data/sizes/phosphatase.h5:prot_t5 -m pca2 -o output --no-scores
@@ -50,6 +50,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace stats` | Compute projection quality statistics (annotation-based cluster-validity + faithfulness) |
 | `protspace serve` | Launch Dash web frontend |
 | `protspace style` | Add annotation colors/styles |
+| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT) |
 
 ### protspace prepare Usage
 
@@ -175,6 +176,17 @@ src/protspace/
 └── wsgi.py                     # WSGI entry point for deployment
 ```
 
+### uv workspace: `protlabel` (EAT engine)
+
+This repo is a **uv workspace**. `protlabel` (PyPI, numpy-only) is the Embedding
+Annotation Transfer engine — a separate distribution in `packages/protlabel/`, **not**
+part of `protspace`. It imports nothing from `protspace` (enforced by
+`test_protlabel_boundary.py`); `protspace` depends on it as a workspace member and the two
+release in lock-step. Modules: `backends.py` (brute-force kNN), `reliability.py`
+(distance→confidence), `transfer.py` (`eat()`), `lookup.py` (`.npz` sidecar). The only
+protspace-side glue is `cli/transfer.py` and `data/io/predictions.py`. Build the whole
+workspace with `uv build --all-packages`.
+
 ## Dimensionality Reduction
 
 Six methods supported, all in `src/protspace/utils/reducers.py`:
@@ -229,10 +241,10 @@ Positional layout is `core(3) + settings? + statistics?`. When statistics are pr
 ## Testing
 
 ```bash
-uv run pytest tests/ -m "not slow"          # Fast tests (recommended during development)
-uv run pytest tests/                         # All tests
+uv run pytest -m "not slow"                  # Fast tests (recommended during development)
+uv run pytest                                # All tests (protspace + protlabel)
 uv run pytest tests/test_reducers.py -v      # Specific test file
-uv run pytest tests/ --cov=src/protspace     # With coverage
+uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With coverage
 ```
 
 ### Test Files
@@ -287,8 +299,8 @@ Located in `notebooks/`:
 ## Conventions
 
 - **Logging:** Configure once via `setup_logging()` in `cli/common_args.py`. Library modules use `logger = logging.getLogger(__name__)` only — no `logging.basicConfig()`.
-- **Imports:** src-layout (`src/protspace/`). Tests import from `protspace.*` or `src.protspace.*`.
-- **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ tests/`.
-- **Versioning:** python-semantic-release via `pyproject.toml`. Version in `pyproject.toml` + `__init__.py`.
-- **Build:** hatchling backend.
+- **Imports:** src-layout (`src/protspace/`; `protlabel` at `packages/protlabel/src/`). Tests import from `protspace.*` / `src.protspace.*` and `protlabel.*`.
+- **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ packages/ tests/`.
+- **Versioning:** python-semantic-release via `pyproject.toml`, lock-step across `protspace` + `protlabel`. Versions in `pyproject.toml`, `packages/protlabel/pyproject.toml`, and `src/protspace/__init__.py`.
+- **Build:** hatchling backend; uv workspace (`uv build --all-packages`).
 - **Git workflow:** Always create a feature branch and open a PR — never push directly to `main`.

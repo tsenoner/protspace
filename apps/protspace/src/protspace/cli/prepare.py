@@ -593,22 +593,9 @@ def prepare(
 
 def _parse_input_specs(raw_inputs: list[str]) -> list[tuple[Path, str | None]]:
     """Parse inputs with optional colon name override: file.h5:model_name."""
-    specs: list[tuple[Path, str | None]] = []
-    for raw in raw_inputs:
-        if ":" in raw:
-            last_colon = raw.rfind(":")
-            path_part, name_part = raw[:last_colon], raw[last_colon + 1 :]
-            if (
-                name_part
-                and not name_part.startswith(("/", "\\"))
-                and Path(path_part).suffix
-            ):
-                specs.append((Path(path_part), name_part))
-            else:
-                specs.append((Path(raw), None))
-        else:
-            specs.append((Path(raw), None))
-    return specs
+    from protspace.data.loaders import split_h5_spec
+
+    return [split_h5_spec(raw) for raw in raw_inputs]
 
 
 def _parse_embedders(embedder_arg: str | None) -> list[str]:
