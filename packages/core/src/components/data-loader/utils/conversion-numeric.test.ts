@@ -9,7 +9,7 @@ import {
 import { extractRowsFromParquetBundle } from './bundle';
 
 async function loadFixtureVisualizationData(fixtureName: string) {
-  const filePath = resolve(__dirname, '../../../../../../app/tests/fixtures', fixtureName);
+  const filePath = resolve(__dirname, '../../../../../../apps/web/tests/fixtures', fixtureName);
   const fileBuffer = readFileSync(filePath);
   const arrayBuffer = fileBuffer.buffer.slice(
     fileBuffer.byteOffset,
