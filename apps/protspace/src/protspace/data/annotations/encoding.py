@@ -40,13 +40,13 @@ def decode_field(s: str) -> str:
 
 
 def to_display_value(raw, *, decode: bool = True):
-    """Convert one annotation hit into its scalar human-display value.
+    """Convert a whole annotation cell into its scalar human-display value.
 
-    The shared per-hit transform behind every display path (the Dash ``serve``
+    The shared transform behind every display path (the Dash ``serve``
     plot/legend/hover, the style keys, and the ``style`` template), so they key
-    on the same value:
+    on the same value. Applied per hit (``;``-separated), then re-joined:
 
-    1. **Pipe trim** – drop the ``|score``/``|evidence`` suffix
+    1. **Pipe trim** – drop each hit's ``|score``/``|evidence`` suffix
        (``"cluster 3|0.53"`` → ``"cluster 3"``), so per-point score noise does
        not shatter a category.
     2. **Percent-decode** – v2 bundles percent-encode ``;``/``|``/``%`` and
@@ -58,15 +58,19 @@ def to_display_value(raw, *, decode: bool = True):
     literal ``%XX`` is then left untouched. Non-strings (missing/``None`` or
     numeric annotations) pass through unchanged.
 
-    Operates on a whole cell as one hit — the Dash plot passes the whole cell,
-    keeping a multi-hit ``A;B`` as one category. The ``style`` template instead
-    splits on ``;`` first (see ``add_annotation_style._to_display_value``) to
-    key each label separately, matching the web frontend's multi-label legend.
+    A multi-hit cell stays ONE category — every hit is score-stripped/decoded
+    and re-joined with ``;`` (``"A|0.9;B|0.8"`` → ``"A;B"``); dropping the
+    suffix per hit (not once on the whole cell) is what keeps hits 2+ from being
+    swallowed by the first hit's ``|``. The ``style`` template instead keeps the
+    hits as a list (see ``add_annotation_style._to_display_value``) to key each
+    label separately, matching the web frontend's multi-label legend.
     """
     if not isinstance(raw, str):
         return raw
-    label = raw.split("|", 1)[0]
-    return decode_field(label) if decode else label
+    hits = (hit.split("|", 1)[0] for hit in raw.split(";"))
+    if decode:
+        hits = (decode_field(hit) for hit in hits)
+    return ";".join(hits)
 
 
 def stamp_format_version(table: pa.Table) -> pa.Table:

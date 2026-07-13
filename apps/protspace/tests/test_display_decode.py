@@ -38,6 +38,25 @@ def test_display_multi_hit_and_plain():
     assert _to_display_value(raw) == ["A", "B"]
 
 
+def test_to_display_value_multi_hit_scored_keeps_all_hits():
+    """A multi-hit score-bearing cell keeps every hit as one category: the
+    ``|suffix`` is trimmed per hit (after the ``;`` split), not once on the
+    whole cell — otherwise the first hit's ``|`` swallows hits 2+."""
+    from protspace.data.annotations.encoding import to_display_value
+
+    # GO with evidence, InterPro with scores — both common multi-hit cells
+    assert (
+        to_display_value("apoptotic process|IDA;signal transduction|IEA")
+        == "apoptotic process;signal transduction"
+    )
+    assert to_display_value("IPR001 (Kinase)|0.9;IPR002 (SH2)|0.8") == (
+        "IPR001 (Kinase);IPR002 (SH2)"
+    )
+    # single-hit and no-suffix cells unchanged
+    assert to_display_value("cluster 3|0.53") == "cluster 3"
+    assert to_display_value("A;B") == "A;B"
+
+
 def test_display_decode_gated_off_leaves_percent_literal():
     """A legacy (v1) value with a literal ``%XX`` is NOT rewritten when decoding
     is gated off — the marker the PR added exists so display code can branch."""
@@ -83,6 +102,14 @@ def test_prepare_dataframe_decodes_annotation_value_for_serve_viewer():
     assert "%3B" not in value
     assert ";" in value
     assert "|" not in value  # score suffix trimmed
+
+
+def test_prepare_dataframe_preserves_all_hits_of_multi_hit_scored_cell():
+    """The serve plot must keep every hit of a multi-hit scored cell as one
+    category (regression: the whole-cell ``|`` trim dropped hits 2+)."""
+    reader = _make_reader("apoptotic process|IDA;signal transduction|IEA")
+    df = prepare_dataframe(reader, "pca2", "cath")
+    assert df["cath"].iloc[0] == "apoptotic process;signal transduction"
 
 
 def test_prepare_dataframe_does_not_decode_v1_bundle():
