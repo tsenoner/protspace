@@ -8,7 +8,7 @@ dependencies = [
   "uvicorn[standard]>=0.32",
   "python-multipart>=0.0.20",
   "anyio>=4.6",
-  "protspace>=0.6",
+  "protspace",
   "structlog>=24.1",
   "slowapi>=0.1.9",
 ]
@@ -35,3 +35,6 @@ addopts = "-ra -q"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+protspace = { workspace = true }

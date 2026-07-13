@@ -1,0 +1,10 @@
+{
+  "name": "@protspace/backend",
+  "private": true,
+  "version": "4.5.0",
+  "scripts": {
+    "test": "uv run pytest -m \"not slow and not integration\"",
+    "lint": "uv run ruff check",
+    "build": "uv build"
+  }
+}

@@ -31,10 +31,10 @@ Caveat: this holds only for **append-only** upstream `main`. If upstream **rebas
 - [x] 2.1 `git mv app apps/web`; update `pnpm-workspace.yaml` → `packages: [apps/web, packages/*]`
 - [x] 2.2 Fix web config globs referencing `app/`: `package.json` (`--filter @protspace/app`, `app/tests/playwright.config.ts`), `knip.jsonc` (`"app"` entry), any tsconfig path
 - [x] 2.3 `git mv services/protspace-prep apps/prep` (Decision D2); fix its Dockerfile/CI path references
-- [ ] 2.4 Add root `pyproject.toml` with `[tool.uv.workspace] members = ["apps/protspace", "apps/prep"]` (exclude `perf/` per Decision D3)
-- [ ] 2.5 Repoint `apps/prep/pyproject.toml`: drop `protspace>=0.6`, add `[tool.uv.sources] protspace = { workspace = true }`; `uv lock`
-- [ ] 2.6 Add `apps/protspace/package.json` turbo bridge (`test`/`lint`/`build` → `uv run …`)
-- [ ] 2.7 Confirm `turbo run test` runs both TS and Python; `uv sync` resolves the workspace
+- [x] 2.4 Add root `pyproject.toml` with `[tool.uv.workspace] members = ["apps/protspace", "apps/prep"]` (exclude `perf/` per Decision D3)
+- [x] 2.5 Repoint `apps/prep/pyproject.toml`: drop `protspace>=0.6`, add `[tool.uv.sources] protspace = { workspace = true }`; `uv lock`
+- [x] 2.6 Add `apps/protspace/package.json` turbo bridge (`test`/`lint`/`build` → `uv run …`)
+- [x] 2.7 Confirm `turbo run test` runs both TS and Python; `uv sync` resolves the workspace
 - [ ] 2.8 Re-target in-flight branches that touched moved dirs: #295 (`app/`→`apps/web`, `services/`→`apps/prep`) — trivial path-move fixups
 
 ## 3. Release & CI reconciliation
