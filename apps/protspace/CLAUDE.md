@@ -178,28 +178,14 @@ src/protspace/
 
 ### uv workspace: `protlabel` (EAT engine)
 
-This repo is a **uv workspace**. `protlabel` — the Embedding Annotation Transfer
-(EAT) engine — is a separate distribution developed as a workspace member, **not**
-part of the `protspace` package:
-
-```
-packages/protlabel/             # workspace member; PyPI: protlabel (numpy only)
-├── pyproject.toml              # own deps; built as its own wheel
-└── src/protlabel/
-    ├── reliability.py          # goPredSim distance→[0,1] confidence transform
-    ├── backends.py             # exact brute-force (chunked GEMM) kNN
-    ├── transfer.py             # kNN + label transfer + reliability index → eat()
-    └── lookup.py               # build / save / load the .npz reference sidecar
-```
-
-`protlabel` imports nothing from `protspace` (enforced by
-`packages/protlabel/tests/test_protlabel_boundary.py`). `protspace` depends on it via
-`[tool.uv.sources] protlabel = { workspace = true }` (local, editable in dev; from
-PyPI when published); the two are released in lock-step. The thin
-`protspace transfer` CLI (`src/protspace/cli/transfer.py`) and the overlay writer
-(`src/protspace/data/io/predictions.py`) are the only protspace-side glue —
-all distance math lives in `protlabel`. Run/build the whole workspace with
-`uv sync` / `uv build --all-packages`.
+This repo is a **uv workspace**. `protlabel` (PyPI, numpy-only) is the Embedding
+Annotation Transfer engine — a separate distribution in `packages/protlabel/`, **not**
+part of `protspace`. It imports nothing from `protspace` (enforced by
+`test_protlabel_boundary.py`); `protspace` depends on it as a workspace member and the two
+release in lock-step. Modules: `backends.py` (brute-force kNN), `reliability.py`
+(distance→confidence), `transfer.py` (`eat()`), `lookup.py` (`.npz` sidecar). The only
+protspace-side glue is `cli/transfer.py` and `data/io/predictions.py`. Build the whole
+workspace with `uv build --all-packages`.
 
 ## Dimensionality Reduction
 
