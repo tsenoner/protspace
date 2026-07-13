@@ -18,6 +18,7 @@ import typer
 
 from protspace.cli.app import app, setup_logging
 from protspace.cli.common_options import (
+    ClusterSelection,
     Metric,
     Opt_BatchSize,
     Opt_Eps,
@@ -113,6 +114,35 @@ Opt_Scores = Annotated[
         "--scores/--no-scores",
         help="Include annotation confidence scores.",
         rich_help_panel="Annotations",
+    ),
+]
+Opt_Stats = Annotated[
+    bool,
+    typer.Option(
+        "--stats/--no-stats",
+        help="Compute projection quality statistics (cluster-validity + "
+        "faithfulness); adds cluster_* membership columns (with per-point "
+        "silhouette confidence) + legend styles to the bundle. Opt-in (off by "
+        "default): can be slow on large runs.",
+        rich_help_panel="Output",
+    ),
+]
+Opt_ClusterSelection = Annotated[
+    ClusterSelection,
+    typer.Option(
+        "--cluster-selection",
+        help="With --stats, how to choose the cluster count K: 'elbow' (default), "
+        "'silhouette' (max-silhouette K), or 'both' (emit both clusterings).",
+        rich_help_panel="Output",
+    ),
+]
+Opt_StatsAnnotation = Annotated[
+    str,
+    typer.Option(
+        "--stats-annotation",
+        help="With --stats, which annotation column(s) to score: 'auto' (all "
+        "suitable categoricals) or a comma-separated list.",
+        rich_help_panel="Output",
     ),
 ]
 REFETCH_STAGES = frozenset(
@@ -290,6 +320,9 @@ def prepare(
     # Annotations
     annotations: Opt_Annotations = None,
     scores: Opt_Scores = True,
+    stats: Opt_Stats = False,
+    cluster_selection: Opt_ClusterSelection = ClusterSelection.elbow,
+    stats_annotation: Opt_StatsAnnotation = "auto",
     refetch: Opt_Refetch = None,
     # Output
     output: Opt_Output = Path("."),
@@ -313,6 +346,14 @@ def prepare(
         raise typer.BadParameter(
             "At least one of -i/--input or -q/--query is required."
         )
+
+    # --stats-annotation / --cluster-selection only do anything under --stats;
+    # a non-default value without --stats would be silently ignored, so reject it.
+    if not stats:
+        if stats_annotation.strip().lower() != "auto":
+            raise typer.BadParameter("--stats-annotation requires --stats.")
+        if cluster_selection != ClusterSelection.elbow:
+            raise typer.BadParameter("--cluster-selection requires --stats.")
 
     setup_logging(verbose)
 
@@ -505,6 +546,9 @@ def prepare(
             bundled=bundled,
             keep_tmp=keep_tmp,
             no_scores=not scores,
+            stats=stats,
+            cluster_selection=cluster_selection.value,
+            stats_annotation=stats_annotation,
             refetch_stages=refetch_stages,
             annotations=annotation_list,
             intermediate_dir=cache_dir,

@@ -6,7 +6,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from src.protspace.data.processors.base_processor import BaseProcessor
+from protspace.data.processors.base_processor import BaseProcessor
 
 # Use new name
 BaseDataProcessor = BaseProcessor  # For test compatibility
@@ -126,7 +126,7 @@ class TestCreateOutput:
 
 
 class TestSaveOutput:
-    @patch("src.protspace.data.processors.base_processor.pq.write_table")
+    @patch("protspace.data.processors.base_processor.pq.write_table")
     def test_save_output_separate_files(self, mock_write_table):
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
         tables = processor.create_output(
@@ -137,8 +137,24 @@ class TestSaveOutput:
             assert mock_write_table.call_count == 3
             mock_mkdir.assert_called()
 
+    def test_save_output_separate_files_writes_settings(self, tmp_path):
+        """Unbundled output must persist `settings` (e.g. auto cluster legend), not
+        silently drop it the way the bundled path preserves it as the 4th part."""
+        from protspace.data.io.bundle import read_settings_from_file
+
+        processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
+        tables = processor.create_output(
+            SAMPLE_METADATA, SAMPLE_REDUCTIONS, SAMPLE_HEADERS
+        )
+        settings = {"cluster_PCA_2": {"selectedPaletteId": "kellys", "categories": {}}}
+        out = tmp_path / "out"
+        processor.save_output(tables, out, bundled=False, settings=settings)
+
+        assert (out / "settings.parquet").exists()
+        assert read_settings_from_file(out / "settings.parquet") == settings
+
     def test_save_output_bundled(self, tmp_path):
-        from src.protspace.data.io.bundle import read_bundle
+        from protspace.data.io.bundle import read_bundle
 
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
         tables = processor.create_output(

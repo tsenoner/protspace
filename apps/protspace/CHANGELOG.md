@@ -1,6 +1,772 @@
 # CHANGELOG
 
 
+## v4.5.0 (2026-07-08)
+
+### Chores
+
+* chore(data): add 3FTx raw data spreadsheet
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`631a221`](https://github.com/tsenoner/protspace/commit/631a2214a61b307871aaa99c0f4bce10446ce2f5))
+
+* chore(data): trim JMB toxprot archive to embedding-based files
+
+Drop the sequence-similarity projection JSONs (toxins_seq_sim*.json) and
+the supplementary toxins_all.csv. The archive keeps the ProtT5
+embedding-based ProtSpace JSONs, toxins.csv (accessions + curated
+protein_category), and the reconstructed FASTAs. README updated to match.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`78c724d`](https://github.com/tsenoner/protspace/commit/78c724d2c01f68498078a227b0b81c7cc6c58c0e))
+
+* chore(data): stop tracking JMB toxprot embeddings .h5
+
+Keep the 22 MB ProtT5 .h5 out of git (it's reproducible from the mature
+FASTA via `protspace embed`). The rebuild script now reads the accession
+list from the tracked toxins.csv instead of the .h5, so the archive stays
+self-contained without the embeddings. README clarifies the .h5 is
+untracked and documents the toxins.csv vs toxins_all.csv column split.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`5ff64db`](https://github.com/tsenoner/protspace/commit/5ff64db27ca8d8b8fd4fd2f4da5ea86dd6b62459))
+
+* chore(data): archive original JMB 2025 toxprot dataset
+
+Restore the venom-toxin (ToxProt) dataset behind the original ProtSpace
+JMB 2025 figures (from commit 7c0442e, removed in the Oct 2025 cleanup)
+into data/jmb_2025/toxprot/ for backwards compatibility: ProtSpace JSONs
+(embedding + sequence-similarity projections), ProtT5 embeddings, and
+annotation CSVs.
+
+The input FASTA was never committed, so rebuild_mature_fasta.py
+reconstructs both full and signal-peptide-stripped sequences by
+re-fetching the 5,181 accessions from UniProt (5,179 recovered; 2 now
+obsolete). README documents the dataset and the exact DR parameters used.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`09c163e`](https://github.com/tsenoner/protspace/commit/09c163e7521b1fb63bfcc246e139e691502e1db5))
+
+* chore(toxprot-demo): track regenerated demo bundle
+
+Add the regenerated 7,831-protein toxprot demo bundle (ProtT5 + ESM2-650M,
+mature peptides) to the repo. data/toxins/ is whitelisted in .gitignore
+for exactly this purpose, matching the precedent of the legacy bundle
+files we deleted in the previous commit.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`6a977fd`](https://github.com/tsenoner/protspace/commit/6a977fdf85f8a2f9e7312d917122624deb5acbfa))
+
+* chore(toxprot-demo): swap ESMC→ESM2-650M, drop extras, restyle top-9
+
+- Use prot_t5 + esm2_650m as the two embedders (was prot_t5 + esmc_300m).
+- Trim the bundle to the original demo's 18 annotation columns: drop
+  signal_peptide (sequence was stripped in this pipeline so the SP
+  annotation no longer applies) plus the InterPro/taxonomy auxiliaries
+  brought in by the `interpro` and `taxonomy` annotation groups.
+- Reorder columns so protein_families is the first non-id column — the
+  web app picks the first non-id column as the default annotation.
+  Bundle also keeps ProtT5 — UMAP 2 as the first projection so it loads
+  by default.
+- Recompute the manual top-9 + __NA__ categories for pfam, ec,
+  superfamily, and cath from the new dataset (split on `;`, drop the
+  trailing `|score` / `|EVIDENCE`); preserve the hand-curated
+  protein_families styling byte-for-byte from the existing web bundle.
+- Drop stale tracked data/toxins legacy artifacts left over from the
+  pre-regeneration layout.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`750e7bd`](https://github.com/tsenoner/protspace/commit/750e7bd42a26d98869855a439bf10ec1b5b5e091))
+
+* chore(toxprot-demo): align main with project logging convention
+
+Apply code-review feedback on Task 6:
+- Use protspace.cli.app.setup_logging instead of logging.basicConfig.
+  This caps urllib3/requests at WARNING (else they spam DEBUG with
+  -v) and routes through the tqdm-aware handler so subprocess
+  progress bars don't get garbled.
+- Switch -v to action="count" for parity with `protspace prepare`'s
+  verbosity convention; default behaviour is unchanged (INFO).
+- Use shlex.join when logging the prepare invocation so the printed
+  command is copy-paste safe (METHODS contains a `;`).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`e47269a`](https://github.com/tsenoner/protspace/commit/e47269a9b31b20a2628d93f494511f1437622bff))
+
+* chore(toxprot-demo): wire main orchestration
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`90354a1`](https://github.com/tsenoner/protspace/commit/90354a10f5ae65ec4345002b2b04528205d27e49))
+
+* chore(toxprot-demo): clarify postprocess_bundle id-mapping + error msg
+
+Address code-review nits on Task 5:
+- Comment why we map mature lengths by protein_id rather than zipping
+  positionally — the prepare pipeline can reorder rows during
+  EmbeddingSet merging and dedup, so positional mapping would silently
+  corrupt lengths.
+- Enrich the missing-key error to include the bundle filename, the
+  size of the mature_lengths map, and the first 5 missing IDs — makes
+  the live-run debug path much shorter.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`f7c638f`](https://github.com/tsenoner/protspace/commit/f7c638f94f41dc9757ed73c7f3bf8ae944e4e667))
+
+* chore(toxprot-demo): post-process bundle with mature length + settings
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`d5f56e8`](https://github.com/tsenoner/protspace/commit/d5f56e8982c3b6fb6022906d56f506ea106983f4))
+
+* chore(toxprot-demo): tighten fetch_toxprot_tsv polish
+
+Address code-review nits on Task 4:
+- Document that the cache key is out_path only.
+- Use splitlines() instead of count("\n") so the empty-payload guard
+  doesn't fire spuriously if UniProt ever returns the data row without
+  a trailing newline.
+- Pass encoding="utf-8" explicitly to write_text for symmetry with the
+  decode step.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`af902e5`](https://github.com/tsenoner/protspace/commit/af902e5604998507f5cc4bbf8b74beadf2b2504b))
+
+* chore(toxprot-demo): stream UniProt TSV with sequence + signal_peptide
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`6d7e2b1`](https://github.com/tsenoner/protspace/commit/6d7e2b1505a6a26c007699acef5fb2a6be9d281f))
+
+* chore(toxprot-demo): write mature FASTA with SPs cleaved
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`a411e84`](https://github.com/tsenoner/protspace/commit/a411e846bba63efbce925fc42da6808b941228dc))
+
+* chore(toxprot-demo): scope ?<> uncertainty check to SIGNAL bounds
+
+Previously the uncertainty check ran against the entire Signal peptide
+field, so a cleanly-bounded SP with a /note or /evidence containing
+`?`, `<`, or `>` would be incorrectly skipped. Use the regex hit/miss
+itself as the uncertainty signal: SIGNAL_RE only matches digit bounds,
+so 0 hits + a SIGNAL keyword in the field == uncertain bounds. Also
+guard against blank Entry rows.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`b7fae48`](https://github.com/tsenoner/protspace/commit/b7fae48c70bda74b156ac7f37a063bb6e02796fb))
+
+* chore(toxprot-demo): parse signal peptides from UniProt TSV
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`c32396a`](https://github.com/tsenoner/protspace/commit/c32396aa960a396bd5049ba170cd2b81a42b1d8d))
+
+* chore(scripts): scaffold generate_toxprot_demo
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`8d5ca82`](https://github.com/tsenoner/protspace/commit/8d5ca82eff8f5a1b432267c36d18f232cabc0d18))
+
+* chore(scripts): add bundle inspector, fix h5 entry counter
+
+count_h5_rows previously summed len() across all datasets, which
+returned total residues (or entries × embedding_dim) instead of the
+number of proteins. Replaced with a single-sample inspection that
+reports entries, dimension, and dtype.
+
+inspect_bundle is a new helper that prints rows/cols/schema and a
+short preview for each table in a .parquetbundle, plus the settings
+keys when present. Reuses read_bundle from data.io.bundle.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`8518d28`](https://github.com/tsenoner/protspace/commit/8518d28d7c5a2ef9e73652ab8feecb9414885195))
+
+### Code Style
+
+* style(stats): CI ruff format check rejected an over-long _merge_annotations_with_columns call; wrap it to satisfy ruff format
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`f7c42d9`](https://github.com/tsenoner/protspace/commit/f7c42d944c50ae6a2a97d53bfcb0e9cbc80b5d46))
+
+* style: apply ruff format to projection-statistics files
+
+CI's `ruff format --check` flagged 9 files that were committed without
+running `ruff format` (`ruff check` lint passed, but the formatter check
+is a separate CI step). Pure formatting — no behavior change.
+Stats suite still 30 passed.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`c83cc27`](https://github.com/tsenoner/protspace/commit/c83cc274a8b5b899d86ead4b86e7b894b042482b))
+
+### Documentation
+
+* docs(stats): document annotation-based cluster-validity + --stats-annotation
+
+Update CLAUDE.md, docs/cli.md, README.md, and the prepare-bundle Colab
+notebook to describe the shipped feature: silhouette/DBI/CH validity is
+now scored per user-selected annotation on both the embedding and each
+projection (space_kind embedding|projection, annotation column in
+statistics.parquet), auto-clustering is no longer self-scored but
+instead reports ARI/NMI agreement with each annotation, and the new
+--stats-annotation (auto|comma-list) flag picks which columns to score
+on prepare and stats. Refresh the stats/ package-structure tree and the
+test-file table with current test counts (grep -c '^def test_'),
+including the new test_annotation_select.py and test_annotation_validity.py.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`6f22bd1`](https://github.com/tsenoner/protspace/commit/6f22bd1238f5a1447878ab441c112df3a8202dd0))
+
+* docs(stats): implementation plan for annotation-based cluster-validity
+
+8 TDD tasks: annotation dimension in the data model, suitability filter +
+label builder, AnnotationValidityStatistic (embedding + projection), ARI/NMI
+agreement folded into ClusterValidityStatistic, driver once-per-embedding
+pass, --stats-annotation on stats + prepare, docs.
+
+Refs: #31, #64, protspace_web#296
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`119ec3f`](https://github.com/tsenoner/protspace/commit/119ec3f45c0735b1ba5faeefb683f83a8d196382))
+
+* docs(stats): design spec for annotation-based cluster-validity
+
+Rework cluster-validity to score user-selected annotations (silhouette/DBI/CH
+on both the embedding and each projection) + ARI/NMI vs the auto-clusters,
+replacing the circular auto-KMeans self-validity. Keeps the group-detection
+membership columns. Gap/BIC k-selection deferred to #64.
+
+Refs: #31, #64, protspace_web#296
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`6d856ce`](https://github.com/tsenoner/protspace/commit/6d856cee2aeceec2f688b7fb215fc9191cac68b2))
+
+* docs(stats): document projection statistics (CLI, README, notebook)
+
+- docs/cli.md: add the `protspace stats` command, the `prepare --stats` flag,
+  `bundle -s/--settings`, and a "Projection Statistics" concept section.
+- README.md: quality-metrics feature bullet + stats step in the power-user workflow.
+- CLAUDE.md: stats command + usage, stats/ package tree, cli/stats.py, the 5-part
+  bundle layout (statistics part + settings in unbundled output), and stats
+  test-file rows.
+- ProtSpace_Preparation.ipynb: a "Quality statistics" cell pointing to the CLI
+  (the notebook installs from PyPI, so live-wiring the toggle waits for a release).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`07ab842`](https://github.com/tsenoner/protspace/commit/07ab842777ca7de5f683bca90f5ce17d74483970))
+
+* docs(plan): use chore: prefix for toxprot demo commits
+
+The script is dev tooling, not user-facing package functionality;
+chore: avoids triggering a minor bump from semantic-release.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`4fdfb49`](https://github.com/tsenoner/protspace/commit/4fdfb4984028ec088cb5f546c43067ac4164955f))
+
+* docs(plan): toxprot demo bundle regeneration implementation plan
+
+Seven-task TDD plan that scaffolds the orchestration script, builds
+parse_signal_peptides / write_mature_fasta / fetch_toxprot_tsv /
+postprocess_bundle with unit tests where they make sense, wires up
+main(), and finishes with a wipe + end-to-end verification step.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`fcae72f`](https://github.com/tsenoner/protspace/commit/fcae72fe1776a57d4fcf87be165c236fbf91c04b))
+
+* docs(spec): toxprot demo bundle regeneration design
+
+Design for recreating the demo .parquetbundle shipped at
+protspace_web/app/public/data.parquetbundle with two new behaviours:
+strip signal peptides before embedding, and add ESMC-300m alongside
+ProtT5. A standalone scripts/generate_toxprot_demo.py orchestrates
+fetch → strip → protspace prepare → length+settings post-process.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`5b59c4f`](https://github.com/tsenoner/protspace/commit/5b59c4fd6b1d8035f46f60b1c08b546e3f6ef8a7))
+
+* docs: clarify multi-DR-params syntax and notebook gap
+
+Follow-up to PR #48 review feedback.
+
+- docs/cli.md: rewrite -m flag description to spell out the
+  comma-vs-semicolon rule explicitly, add an "Overridable parameters"
+  subsection listing the 11 valid override keys with their abbreviations
+  and types, and extend "Projection Naming" with an example of the
+  parameter-suffix disambiguation behavior.
+- notebooks/ProtSpace_Preparation.ipynb: insert an informational markdown
+  cell pointing power users at the CLI for parameter sweeps, since the
+  toggle UI runs each method only once.
+
+No code or behavior changes; release-bot will not bump the version.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`bbd50c9`](https://github.com/tsenoner/protspace/commit/bbd50c940bd536c8f646f72f05a7ae6b7eea7fc7))
+
+### Features
+
+* feat(stats): prepare --stats-annotation flows selection into the pipeline
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`f268a5d`](https://github.com/tsenoner/protspace/commit/f268a5dcf012a061825b0b08655c29110fbecc8d))
+
+* feat(stats): stats --stats-annotation scores selected annotations
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`2d145ac`](https://github.com/tsenoner/protspace/commit/2d145aced500c5148291d4ebe50d955cbca97bcf))
+
+* feat(stats): driver runs annotation-validity on embedding + projections
+
+Threads an `annotations` kwarg through `compute_statistics` into every
+projection's StatContext, registers AnnotationValidityStatistic in the
+statistics registry, and adds a once-per-embedding pass that runs any
+statistic opting in via `embedding_space` (currently just
+annotation-validity) against the raw embedding as a separability
+ceiling. Also patches faithfulness.py's StatRow constructions with the
+now-required `annotation` field, and fixes the Task-1 test debt this
+exposed (_statrow helper + the 8→9 column schema assertion).
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`adb9d38`](https://github.com/tsenoner/protspace/commit/adb9d38dab6b77b57c99bf8d09ada829abbf9df2))
+
+* feat(stats): AnnotationValidityStatistic (silhouette/DBI/CH per annotation)
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`3f0731d`](https://github.com/tsenoner/protspace/commit/3f0731db3072eb70c43d2f071cc2090023b12241))
+
+* feat(stats): annotation selection + suitability filter
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`3570e7f`](https://github.com/tsenoner/protspace/commit/3570e7f64eba0d410156386094dcb60fb5a900f4))
+
+* feat(stats): add annotation dimension to StatRow + StatContext
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`a6e0210`](https://github.com/tsenoner/protspace/commit/a6e0210cb593a647f088065d624f36a4d713558d))
+
+* feat(stats): cluster-selection (elbow/silhouette/both), silhouette-as-score, global faithfulness
+
+Sub-branch of feat/projection-statistics for separate review.
+
+- --cluster-selection elbow|silhouette|both (prepare + stats): emit the elbow
+  clustering (`cluster_<proj>`), the max-silhouette-K clustering
+  (`cluster_silhouette_<proj>`), or both; validity rows carry the matching
+  label_kind (kmeans_elbow / kmeans_silhouette). kmeans_elbow optionally returns
+  the silhouette-optimal K + labels (computed only on request).
+- Per-point silhouette is now attached to the membership value as `cluster N|<sil>`
+  (the UniProt-ECO / InterPro-bit-score convention) instead of a separate
+  silhouette_<proj> column; gated by --no-scores. Legend builder strips the
+  suffix to recover the bare category.
+- Two global faithfulness metrics: random_triplet (relative-ordering accuracy
+  over random triplets) and spearman_distance (rank correlation of all pairwise
+  distances). Rows tagged scope=local|global.
+
+Tests updated for the single-column format; added cases for cluster-selection,
+score gating, global metrics, and silhouette-K selection. 572 fast tests pass.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`96aae0c`](https://github.com/tsenoner/protspace/commit/96aae0c3d9b1d1d7dfb350db9dc64c371b8bed9c))
+
+* feat(stats): auto-style cluster-membership columns (legend settings)
+
+Phase 2A.4 of route-projection-statistics. Generate a full LegendPersistedSettings
+envelope per cluster-membership column so clusters are colored when selected with no
+manual styling step.
+
+- carriage.build_cluster_legend_settings: for each categorical AnnotationColumn build
+  a complete envelope the frontend's sanitizeLegendSettingsEntry accepts —
+  maxVisibleValues / shapeSize / sortMode / hiddenValues / enableDuplicateStackUI /
+  selectedPaletteId + categories keyed by the exact label with a Kelly-palette
+  color, zOrder and shape. Numeric (silhouette) columns keep the default ramp.
+- prepare path: BaseProcessor.save_output gains settings=; the pipeline builds the
+  cluster styles from the report and writes them into the bundle's settings part.
+- prep path: `protspace stats --settings-out <json>` writes the styles; `protspace
+  bundle --settings <json>` folds them into the settings part.
+
+Tests: envelope validity (every required field/type + distinct palette colors);
+end-to-end stats --settings-out -> bundle --settings styles clusters in the settings
+part.
+
+Deferred (follow-up): preserving the generated cluster styles across a later
+`protspace style` rewrite (replace_settings_in_bundle) — a rare re-style path.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`ecd199a`](https://github.com/tsenoner/protspace/commit/ecd199a55fcad01545f28939d33e20d817941c4e))
+
+* feat(stats): per-protein cluster membership + silhouette as annotation columns
+
+Phase 2A of route-projection-statistics (tsenoner #61 review bullets 1-2): surface
+the elbow-K labelling and per-point silhouette as per-protein annotation columns
+so the frontend color-by control renders them with no new UI.
+
+- New AnnotationColumn output type (name, kind categorical|numeric, values keyed by
+  identifier); StatsReport carries an annotation_columns channel and add() routes
+  mixed StatRow / AnnotationColumn lists.
+- ClusterValidityStatistic emits `cluster_<projection>` (non-numeric "cluster N"
+  labels → categorical inference) and `silhouette_<projection>` (per-point
+  silhouette_samples over the full labelled set → numeric). Per-point silhouette is
+  O(n^2) with no subsample path, so it has its own hard-ceiling skip guard; both are
+  gated by the cluster_annotations param and emitted only for a genuine (>=2)
+  clustering with aligned ids.
+- carriage.merge_annotation_columns joins the columns onto the annotations frame by
+  identifier (absent proteins get no value); wired into the prepare pipeline before
+  create_output's .astype(str) so typing survives.
+- `protspace stats` gains -a/--annotations: enriches the annotations parquet in
+  place with the computed columns (stringified to match the prepare path), so the
+  prep `project -> stats -a -> bundle -a` flow carries them. Without -a the
+  expensive per-protein computation is skipped.
+
+Tests: validity per-protein outputs + ceiling guard + disable; carriage join +
+annotations-table typing; stats -a enrichment; end-to-end stats -a -> bundle -a
+ships cluster_/silhouette_ columns in the bundle's annotations part. Auto-styling
+(colored-without-manual-step) is the next increment; columns already color via the
+default palette when selected.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`033bffc`](https://github.com/tsenoner/protspace/commit/033bffc632f46b5a3bf153628b70bf3557e46422))
+
+* feat(stats): standalone `stats` enriches projection metadata with faithfulness
+
+The deployed prep pipeline builds bundles via standalone `protspace project` +
+`stats` + `bundle` subprocesses, not the in-process `prepare` pipeline. After the
+Phase-1A routing, `protspace stats` wrote faithfulness nowhere (only aggregate
+validity → statistics.parquet), so the prep path lost it.
+
+`protspace stats` now folds faithfulness into `projections_metadata.parquet` in
+place (parses each row's info_json, injects `quality`, preserves all other columns
+and the reducer's existing info, re-serialises). The existing `protspace bundle -p`
+then carries the enriched metadata into the bundle's 2nd part with no bundle/prep
+code change. statistics.parquet stays aggregate-only.
+
+This matches the spec scenario "the standalone stats path recomputes and merges it
+into projections_metadata" and makes Phase 1 deliver faithfulness end-to-end in the
+production prep flow.
+
+Tests: stats rewrites metadata.info_json.quality (columns/rows preserved, reducer
+info kept); end-to-end `stats` → `bundle -p` ships a bundle whose
+projections_metadata carries quality while the fifth part stays validity-only.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`7186a7d`](https://github.com/tsenoner/protspace/commit/7186a7d40248fd76fbb9649eca90555098988a03))
+
+* feat(stats): route faithfulness to projection metadata (info_json.quality)
+
+Phase 1A of route-projection-statistics: carry each statistic in the bundle
+part whose existing frontend consumer matches its granularity, instead of one
+opaque fifth part.
+
+- StatRow gains a `destination` (default "statistics_part", not a tidy-table
+  column); StatsReport.partition() groups rows by destination and to_arrow()
+  serialises only the statistics_part bucket -- the fifth part is now aggregate
+  cluster-validity only.
+- Faithfulness rows (kNN-overlap / trustworthiness / continuity, incl. the skip
+  row) are marked destination="projection_metadata".
+- New stats/carriage.py route_faithfulness_to_metadata() folds those rows into
+  each projection's info_json.quality (per-metric value + k/metric/sampling
+  provenance; NaN skip value -> null so info_json stays valid JSON). Wired into
+  ReductionPipeline._compute_statistics before create_output serialises info_json.
+- `protspace stats` stays a pure aggregate-only producer (faithfulness no longer
+  written to statistics.parquet); the prep stats+bundle path is unaffected.
+
+Tests: destination/partition/to_arrow restriction; faithfulness routing incl.
+skip row; carriage router (provenance, NaN->null, info_json round-trip,
+multi-embedding); end-to-end `protspace stats` aggregate-only. Existing
+fifth-part tests updated to the narrowed contract.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`95b3031`](https://github.com/tsenoner/protspace/commit/95b3031ef88625a222860d6b34da701da8bad25d))
+
+* feat(stats): add projection statistics (cluster-validity + faithfulness)
+
+Add a protspace.stats package computing per-projection statistics, baked
+into the .parquetbundle as an optional fifth part:
+
+- cluster_validity: KMeans + distance-to-chord elbow -> silhouette,
+  Davies-Bouldin, Calinski-Harabasz on the projection coordinates.
+- faithfulness: kNN-overlap + trustworthiness/continuity vs the source
+  embedding (high-dim metric from the reducer; large-n sampling guard).
+
+Tidy long-format table (8 cols: space_kind, space_name, stat_family,
+label_kind, metric, metric_kind, value, extra_json) — new statistics add
+rows, not columns. Registry mirrors the lazy REDUCERS pattern; sklearn
+imports stay function-local to preserve CLI startup.
+
+Bundle I/O carries an optional 5th statistics part (core+settings?+stats?)
+with a zero-byte settings slot keeping it unambiguous; read_bundle keeps
+its 2-tuple shape (new read_statistics_from_bundle accessor) and
+replace_settings_in_bundle preserves a trailing stats part so
+`protspace style` is non-lossy.
+
+Wiring: ReductionPipeline computes stats (best-effort, never fatal) behind
+prepare --stats/--no-stats; new `protspace stats` subcommand for the
+discrete path; `bundle -s/--statistics` folds a stats parquet in.
+
+Refs tsenoner/protspace_web#219
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`590306c`](https://github.com/tsenoner/protspace/commit/590306cc8eeee8b1832e5766d4d09e1e933c57d3))
+
+### Fixes
+
+* fix(test): colored CI output splits "--option" tokens with ANSI codes so the guard-message substring match failed; strip escape sequences before asserting (also wraps an over-long invoke arg list ruff format flagged)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`0b9f342`](https://github.com/tsenoner/protspace/commit/0b9f3420d0eb34d51ec8622fe2d1aa29b7c095d0))
+
+* fix(stats): spearman_distance used ordinal (index-broken) ranks, biasing on ties and reporting a spurious perfect score for collapsed layouts; use midranks and return NaN when distances are all-tied
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`e86b1d0`](https://github.com/tsenoner/protspace/commit/e86b1d07029abde51365f1e2f563cd1e662bc6f7))
+
+* fix(stats): stats -a rewrote the annotations parquet through a pandas round-trip that re-inferred dtypes (nullable int64 → float64 on untouched columns); append cluster columns onto the original Arrow table instead
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`caf1465`](https://github.com/tsenoner/protspace/commit/caf146575f181f51d77775845bfd6269045a924a))
+
+* fix(cli): prepare silently ignored --stats-annotation/--cluster-selection when --stats was off; reject a non-default value without --stats
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`cb70337`](https://github.com/tsenoner/protspace/commit/cb70337e44c76715cee29e2fd4d2c4ffabbc74ef))
+
+* fix(stats): an id-namespace mismatch silently added an all-empty cluster column and styled a phantom legend; warn and skip zero-match columns, and style only the columns that landed values
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`59c4e89`](https://github.com/tsenoner/protspace/commit/59c4e8980282a1309727e7290e6eb64b73ae8dc8))
+
+* fix(stats): _select_embedding silently picked embedding_sets[0] when several embeddings covered the ids with no source, scoring faithfulness against the wrong space; abstain (return None) on ambiguity
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`6775bcb`](https://github.com/tsenoner/protspace/commit/6775bcbeef7cfb65db33235f80571afe99a25fd8))
+
+* fix(stats): a faithfulness metric that raised (e.g. random_triplet on a metric paired_distances rejects) vanished silently from quality; record it as a skipped NaN row instead
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`af35475`](https://github.com/tsenoner/protspace/commit/af354753f3124d0c8325d80ff2562cb3172f4454))
+
+* fix(stats): kmeans_elbow drew its large-n fit/silhouette subsample positionally from the raw seed, making clusters depend on input row order; draw it id-canonically (id-seeded, canonical order) like the other metrics
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`7459587`](https://github.com/tsenoner/protspace/commit/7459587c0c96f7f84e6b75de558b6b1f305d4eea))
+
+* fix(stats): annotation validity scored value|score compound labels, splitting one category per evidence code; strip the score suffix to the bare category before scoring
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`35fe802`](https://github.com/tsenoner/protspace/commit/35fe8029049cab80300f306e0473ebc652f21dc1))
+
+* fix(stats): review + simplify pass on the projection-statistics engine
+
+Correctness (from /code-review):
+- driver `_align`: return None when a reduction has no ids and the row counts
+  differ, instead of falling through to positional indexing that IndexError'd
+  and silently dropped the projection's entire stats report.
+- validity: `--cluster-selection silhouette` on a degenerate/coincident
+  projection left no scorable silhouette-K, emptying the labellings so the
+  projection vanished from the report — now falls back to the elbow labelling.
+- pipeline `_compute_statistics`: build the fallible artifacts (to_arrow,
+  legend settings) before mutating the shared reductions/metadata, so a late
+  failure yields a clean "no stats" fallback rather than a half-enriched bundle.
+
+Cleanup (from /simplify + review):
+- bundle.py: extract `_parse_bundle` (single read+split+validate+normalize
+  seam) and `_table_to_parquet_bytes`; fold `read_settings_from_file`; this
+  also fixes `read_statistics_from_bundle` silently skipping the part-count
+  validation the other readers enforce.
+- driver `_align`: keep the embedding at native float32 (was upcast to float64
+  per projection); faithfulness bails before its upcast past the ceiling.
+- cli/stats: extract `_parse_info_json` (was duplicated); export
+  `read_statistics_from_bundle` from data/io.
+- docs: add `stats/_sampling.py` to the package tree; fix test counts.
+- tests: regression tests for the `_align` no-id guard and the
+  silhouette->elbow fallback.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`aaa452c`](https://github.com/tsenoner/protspace/commit/aaa452ceb407c27b606da1da57ae7c5cfcfef6d3))
+
+* fix(stats): review + simplify pass on annotation cluster-validity
+
+Correctness (from /code-review):
+- Honor explicit --stats-annotation names by bypassing the auto suitability
+  heuristic — it silently dropped documented high-cardinality columns like
+  ec_number, so the `major_group,ec_number` example scored only major_group.
+- Make annotation-validity subsampling id-canonical (shared id_seed) so the
+  once-per-embedding "separability ceiling" and each projection score the same
+  proteins above the 5000-point threshold instead of two different draws.
+- Recognize <N/A>/<NA>/NaT (and NA/null/none) missing sentinels so a missing
+  value is never scored as a phantom category.
+
+Cleanup (from /simplify + review):
+- Extract stats/_sampling.py (id_seed + sorted_subsample), reused by
+  faithfulness (behavior-identical) and annotation_validity.
+- suitable_annotations early-exits past the cardinality cap; the explicit
+  --stats-annotation path only inspects the named columns, not the whole frame.
+- Avoid the full-embedding float64 upcast + pre-subsample copy in the
+  once-per-embedding pass; extract _run_stats; reuse ann_frame instead of
+  re-reading the annotations parquet.
+- Shared CLUSTER_COLUMN_PREFIX constant; _resolve_id_col helper; push the
+  --stats-annotation parse into build_annotation_labels; drop a redundant
+  int() cast and dict copies.
+- Fix stale docstrings and CLAUDE.md test counts; add explicit-name +
+  subsample-determinism regression tests.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`b3922c7`](https://github.com/tsenoner/protspace/commit/b3922c7952dde5c48eb15031ccae2e5ffd031a90))
+
+* fix(stats): correct random-triplet sampling + simplify/harden extras
+
+Quality pass over the projection-stats "extras" (cluster-selection,
+silhouette-as-score, global faithfulness).
+
+Correctness
+- random_triplet: sample two DISTINCT others per anchor (j != m != anchor)
+  instead of drawing uniformly from [0, n). Self-pairs are distance-0 and
+  trivially "agree" in both spaces, biasing the accuracy score upward.
+
+Robustness / efficiency
+- faithfulness: return the n > hard_ceiling skip row BEFORE the canonical
+  sort/copy, so oversized inputs (metrics skipped anyway) don't pay a wasted
+  O(n log n) sort + two array copies.
+- cluster-validity: fall back to the 'elbow' default when the raw stats API
+  receives an unrecognised cluster_selection (the CLI already validates via a
+  Typer enum) instead of silently emitting no labelling at all.
+
+Simplify
+- model --cluster-selection as ClusterSelection(str, Enum) in common_options;
+  Typer auto-validates, deleting two duplicated manual validation blocks in
+  prepare.py + stats.py.
+- validity: carry selection_name in a _Labeling NamedTuple (drops the
+  reverse-derivation; shrinks _emit_labeling's signature 8 -> 5 args).
+- kmeans_elbow: unify the two duplicate ElbowResult return sites.
+- faithfulness: factor the 3x repeated local-scope extra dict.
+
+Docs
+- sync stale test-count table in CLAUDE.md (37->43, 11->12, 9->10).
+- sync driver.compute_statistics docstring params (cluster_selection,
+  include_scores, max_fit_sample, n_triplets_per_point, cluster_annotations).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`0ad7204`](https://github.com/tsenoner/protspace/commit/0ad7204681087cf1986022942f18190ae0d17bf7))
+
+* fix(stats): address adversarial review of the extras feature set
+
+- random_triplet was NOT row-order invariant for n<=sample_threshold (it samples
+  triplets by array position). Canonicalise emb/coords/ids by id up front in
+  FaithfulnessStatistic.compute so EVERY metric depends only on the id-set, in
+  both the subsampled and non-subsampled paths. Invariance test now parametrised
+  over both regimes and asserts all five metrics.
+- prepare: validate --cluster-selection before the expensive query/embed/similarity
+  stages (fail-fast), mirroring the stats command; add a CLI rejection test.
+- Refresh stale docs/help/comments that still referenced the removed separate
+  silhouette_<proj> column (carriage.py, cli/stats.py) and fix a "dense ranks"
+  comment (ordinal ranks) + hoist a repeated fancy-index in random_triplet.
+
+574 fast tests pass.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`3ff83da`](https://github.com/tsenoner/protspace/commit/3ff83dae01d4390e7a4cb09b49218bd31eb8968d))
+
+* fix(stats): harden projection-statistics correctness, scaling, and defaults
+
+Refinements to the not-yet-released stats subsystem from a /simplify pass, an
+xhigh /code-review, and researched fixes for the deferred review findings.
+
+Correctness:
+- base_processor.save_output: persist `settings` in the unbundled (--no-bundle)
+  branch too — cluster legend styles were silently dropped there.
+- cli/stats: union same-name -i inputs (merge_same_name_sets) so multi-file
+  same-embedding runs don't collapse to the last set; guard --settings-out to
+  require -a; write metadata/annotations parquet atomically (temp + rename);
+  infer 3D from z when projection metadata is absent.
+- faithfulness continuity: compute via a correct dual (`_continuity`) so the
+  embedding is ranked by the run's high-dim metric (was always euclidean);
+  bit-identical on the euclidean default path.
+- validity silhouette: report the aggregate as the exact per-point mean when the
+  per-point column is computed (was an inconsistent sampled estimate).
+- faithfulness subsample: select on canonical id order so scores are row-order
+  invariant (matching the already order-invariant seed).
+
+Scaling / cleanup:
+- kmeans_elbow: fit the K sweep on a bounded subsample (MiniBatchKMeans) +
+  predict above 50k points; full-batch unchanged below. Remove the write-only
+  silhouette_optimal_k cross-check and its duplicate silhouette compute.
+- Collapse duplicated faithfulness try/except into a loop; drop the
+  self._stats_settings side channel (return (table, settings)); remove a
+  redundant empty-table branch, a needless list copy, a double np.unique, and an
+  unused shape param; centralize the reduction `source` stamp via a closure.
+
+Behavior:
+- prepare: `--stats` now defaults to False (opt-in) — heavy compute + bundle
+  column/style injection should not run on every run.
+
+Adds regression tests (continuity dual, subsample determinism/order-invariance,
+silhouette consistency, unbundled settings, --settings-out guard). 565 tests pass.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`fc7a1cd`](https://github.com/tsenoner/protspace/commit/fc7a1cd7f440d3f2a00fbe5d34ee51398d4b8a76))
+
+### Performance Improvements
+
+* perf(stats): _align fancy-indexed a full copy of the embedding even when faithfulness skips it past the ceiling; return source arrays as views on an in-order identity match
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`e9b5b43`](https://github.com/tsenoner/protspace/commit/e9b5b43a48c4a35f62bba18bf25f3d223cc373a3))
+
+### Refactoring
+
+* refactor(stats): high_dim_metric stacked 'info.metric or default_metric or euclidean' redundantly; normalise default_metric once so the fallback lives in one place
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`41997f9`](https://github.com/tsenoner/protspace/commit/41997f96019c7241b3d7d24a3e2664acd3a4ca8f))
+
+* refactor(stats): the elbow _Labeling tuple was copy-pasted for the primary and fallback cases; build it via a local _elbow_labeling() helper
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`4fd8b01`](https://github.com/tsenoner/protspace/commit/4fd8b0173e88e12ef32e964448d05a38651147b2))
+
+* refactor(stats): DEFAULT_SAMPLE_THRESHOLD was defined identically in three metric modules; hoist it to stats.base and import it
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`f5b4dd0`](https://github.com/tsenoner/protspace/commit/f5b4dd04cfade3f22bb3b73f3c2aaff9f40b6472))
+
+* refactor(stats): annotation_select re-listed the missing-value tokens that standardize_missing hardcodes; share them via core.constants.MISSING_VALUE_TOKENS
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`fb7a3b9`](https://github.com/tsenoner/protspace/commit/fb7a3b9c312981c5b242c14d480020569807a3c0))
+
+* refactor(stats): address final-review nits (docstrings, validation, extra-copy, cleanups)
+
+Fixes six minor findings from the whole-branch review of the
+annotation-based cluster-validity feature: stale eight-column docstrings
+in stats/base.py, a strict "auto" guard in cli/stats.py that didn't match
+the parser's normalised comparison, a shared/aliased `extra` dict across
+StatRows in annotation_validity.py, an unused np.unique return in
+validity.py, a duplicated _clean() call in annotation_select.py, and a
+doc/notebook wording+formatting nit.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`35e3a28`](https://github.com/tsenoner/protspace/commit/35e3a282fafdc0206c9f0dc59065e266fc929d23))
+
+* refactor(stats): drop auto-cluster self-validity, add ARI/NMI agreement
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`1efa34c`](https://github.com/tsenoner/protspace/commit/1efa34c5b8ec9c1083651f410d54c8948116f343))
+
+* refactor(stats): rename elbow membership column to cluster_elbow_<proj> + sync docs
+
+- Rename the elbow clustering's membership column cluster_<proj> -> cluster_elbow_<proj>
+  so both selections are explicitly named (cluster_elbow_ / cluster_silhouette_).
+  The column name is the only provenance signal that survives to the frontend
+  (AnnotationColumn.extra is dropped at carriage), so name the method in it.
+- Bring docs + notebook current with the whole extras feature set (they only
+  reflected the base PR): --cluster-selection, silhouette-as-attached-score
+  (no separate silhouette_ column), and the local/global faithfulness split.
+  Updated docs/cli.md, CLAUDE.md, README.md, ProtSpace_Preparation.ipynb.
+
+574 fast tests pass.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`babba41`](https://github.com/tsenoner/protspace/commit/babba41893792893ed2899779b02f78186610792))
+
+### Testing
+
+* test(stats): test_base_data_processor imported via src.protspace.* while the new stats suite used protspace.*, duplicating module singletons under one pytest run; standardize this file on protspace.*
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`7c25c55`](https://github.com/tsenoner/protspace/commit/7c25c5508f1707e576df0eb6be896df04cd21181))
+
+* test(stats): legend-envelope test used isinstance-only checks so a bad value (e.g. maxVisibleValues=0) would pass; assert the actual field values
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`2d5457e`](https://github.com/tsenoner/protspace/commit/2d5457e2829f121505f015074e723d19582dc4fe))
+
+* test(stats): the global-metric test only asserted the by-construction [0,1]/[-1,1] bounds (vacuous); assert a faithful projection scores meaningfully high instead
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`af2d59f`](https://github.com/tsenoner/protspace/commit/af2d59f3ce8f72852f00421bda2527097f1f7aa0))
+
+* test(bundle): extract_bundle_to_dir was only tested stats-only; add a full 5-part case asserting both settings and statistics files land with correct content
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`f66a8a4`](https://github.com/tsenoner/protspace/commit/f66a8a423f3c900916e16b733c2b98e7365fb63d))
+
+* test(stats): no end-to-end test drove an explicit --stats-annotation list; add one asserting only the named columns are scored (not a silent auto fallback)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`1a56750`](https://github.com/tsenoner/protspace/commit/1a56750043202efa35ef4fae20ce9515290b0418))
+
+* test(stats): the _align positional-fallback positive branch (no ids, equal rowcounts) was untested; add a test that a wrong-order pairing would fail
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`5c6a033`](https://github.com/tsenoner/protspace/commit/5c6a033663c7f0e24da4bc47ecaaa85fb335491c))
+
+* test(stats): the kmeans_elbow subsample test asserted determinism at fixed row order only; add a row-permutation invariance test that locks in the id-canonical fix
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`940cb18`](https://github.com/tsenoner/protspace/commit/940cb18cf7504248a4b49ed2d6e490a9e96185c2))
+
+* test(stats): the annotation-validity determinism test reran with identical row order so couldn't catch a non-id-canonical subsample; add a row-permutation invariance test
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`a5a99c4`](https://github.com/tsenoner/protspace/commit/a5a99c4e9fe97f61946865b68373c70cd4d1810d))
+
+* test(stats): add annotation="" to carriage faith-row helper
+
+_faith_row() built StatRow(...) without the now-required `annotation`
+field, breaking 3 tests after the annotation-dimension schema change.
+Faithfulness rows are not annotation-scoped, so annotation="".
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`bae63a7`](https://github.com/tsenoner/protspace/commit/bae63a711255c125cc5946a2394c76db3d03f2dc))
+
+### Unknown
+
+* Merge pull request #61 from tsenoner/feat/projection-statistics
+
+feat(stats): projection statistics (cluster-validity + faithfulness) ([`03c2140`](https://github.com/tsenoner/protspace/commit/03c21403a7574a3048a4f42b786f187077cb271c))
+
+* Merge pull request #65 from tsenoner/feat/annotation-cluster-validity
+
+feat(stats): annotation-based cluster-validity + ARI/NMI agreement ([`17cf0d0`](https://github.com/tsenoner/protspace/commit/17cf0d0d748b5a32a98546046255fcc51f2560c5))
+
+* Merge pull request #63 from tsenoner/feat/projection-stats-extras
+
+feat(stats): cluster-selection, silhouette-as-score, global faithfulness metrics ([`0553202`](https://github.com/tsenoner/protspace/commit/05532028a6adc97313a47f69e24c4e90f3f57f5a))
+
+* Merge pull request #52 from tsenoner/feat/restore-jmb-2025-toxprot
+
+Archive original JMB 2025 toxprot dataset for backwards compatibility ([`bd1c55d`](https://github.com/tsenoner/protspace/commit/bd1c55d6ee00774b2d1ac3ad4dfacec6f14fbbc9))
+
+* Merge pull request #50 from tsenoner/feat/regenerate-toxprot-demo
+
+chore: regenerate toxprot demo bundle (ProtT5 + ESM2-650M, mature peptides) ([`db12e33`](https://github.com/tsenoner/protspace/commit/db12e33a46eb85a098be7005a63b86374f0c4b74))
+
+* Merge pull request #49 from tsenoner/docs/multi-dr-params-followup
+
+docs: clarify multi-DR-params syntax and notebook gap ([`7c69274`](https://github.com/tsenoner/protspace/commit/7c6927471d27a0e8ccf2aead31159edee6467375))
+
+
 ## v4.4.0 (2026-04-27)
 
 ### Documentation
