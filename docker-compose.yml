@@ -4,7 +4,8 @@
 services:
   protspace-prep:
     build:
-      context: ./apps/prep
+      context: .
+      dockerfile: apps/prep/Dockerfile
     image: protspace-prep:local
     restart: unless-stopped
     environment:

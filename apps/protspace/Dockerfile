@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.cache \
 #########################################################################
 FROM python:3.12-slim
 
-LABEL org.opencontainers.image.source=https://github.com/tsenoner/protspace
+LABEL org.opencontainers.image.source=https://github.com/tsenoner/protspace_web
 LABEL org.opencontainers.image.licenses=GPL-3.0
 
 SHELL ["sh", "-exc"]

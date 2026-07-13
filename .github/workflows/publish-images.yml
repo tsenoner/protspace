@@ -24,7 +24,7 @@ jobs:
       matrix:
         include:
           - name: protspace-prep
-            context: apps/prep
+            context: .
             dockerfile: apps/prep/Dockerfile
     steps:
       - name: Checkout

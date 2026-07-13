@@ -1,0 +1,11 @@
+# apps/prep builds from the repo root context; keep that context small.
+**/.venv
+**/node_modules
+.git
+**/__pycache__
+**/*.pyc
+**/.turbo
+**/dist
+**/.pytest_cache
+docs/.vitepress/cache
+docs/.vitepress/dist
