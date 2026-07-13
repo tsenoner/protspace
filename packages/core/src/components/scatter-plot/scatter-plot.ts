@@ -1358,7 +1358,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _getOpacity(point: PlotDataPoint): number {
     // Facade: two external consumers reach into this private member —
     // webgl-render-perf.ts (via a privacy cast, acknowledged debt) and
-    // app/tests/brush-selection.spec.ts:323. Do not rename or remove this
+    // apps/web/tests/brush-selection.spec.ts:323. Do not rename or remove this
     // method without migrating those callers first.
     // Delegates to the shared visibility model, which is the single opacity
     // authority.

@@ -12,11 +12,25 @@
 - [ ] 1.4 Push carried branches (#66, #55, #60) — now under `apps/protspace/` — as monorepo branches; re-open as PRs
 - [ ] 1.5 Verify history/blame resolve under `apps/protspace/`
 
+### Re-syncing upstream protspace after import (if v2 or other commits land on old `main` while this PR is open)
+
+`filter-repo --to-subdirectory-filter apps/protspace` is deterministic: same input commits + same filter → same rewritten SHAs. So already-imported commits stay common ancestors, and pulling new upstream work is an incremental merge, not a re-import:
+
+```
+# re-clone protspace main, re-run the SAME filter-repo, then in protspace_web on the migration branch:
+git fetch <re-filtered protspace>
+git merge protspace/main          # NO --allow-unrelated-histories this time
+```
+
+Git brings in only the new commits and conflicts only on genuinely overlapping content (v2/#66 is annotation-encoding, orthogonal to the path/CI/license plumbing here, so overlap ≈ 0).
+
+Caveat: this holds only for **append-only** upstream `main`. If upstream **rebases/force-pushes** `main` (rewriting existing SHAs), determinism breaks and the incremental merge fails — you're back to cherry-pick/re-import. This is what the 0.1 freeze protects.
+
 ## 2. Layout & workspace wiring
 
-- [ ] 2.1 `git mv app apps/web`; update `pnpm-workspace.yaml` → `packages: [apps/web, packages/*]`
-- [ ] 2.2 Fix web config globs referencing `app/`: `package.json` (`--filter @protspace/app`, `app/tests/playwright.config.ts`), `knip.jsonc` (`"app"` entry), any tsconfig path
-- [ ] 2.3 `git mv services/protspace-prep apps/prep` (Decision D2); fix its Dockerfile/CI path references
+- [x] 2.1 `git mv app apps/web`; update `pnpm-workspace.yaml` → `packages: [apps/web, packages/*]`
+- [x] 2.2 Fix web config globs referencing `app/`: `package.json` (`--filter @protspace/app`, `app/tests/playwright.config.ts`), `knip.jsonc` (`"app"` entry), any tsconfig path
+- [x] 2.3 `git mv services/protspace-prep apps/prep` (Decision D2); fix its Dockerfile/CI path references
 - [ ] 2.4 Add root `pyproject.toml` with `[tool.uv.workspace] members = ["apps/protspace", "apps/prep"]` (exclude `perf/` per Decision D3)
 - [ ] 2.5 Repoint `apps/prep/pyproject.toml`: drop `protspace>=0.6`, add `[tool.uv.sources] protspace = { workspace = true }`; `uv lock`
 - [ ] 2.6 Add `apps/protspace/package.json` turbo bridge (`test`/`lint`/`build` → `uv run …`)

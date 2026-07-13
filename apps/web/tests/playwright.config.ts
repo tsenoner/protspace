@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 const TEST_DIR = fileURLToPath(new URL('.', import.meta.url));
-const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 /**
  * Playwright configuration for ProtSpace app e2e tests (product tour, etc.).

@@ -66,8 +66,8 @@ jobs:
 
       - name: Copy docs to app dist
         run: |
-          mkdir -p app/dist/docs
-          cp -r docs/.vitepress/dist/* app/dist/docs/
+          mkdir -p apps/web/dist/docs
+          cp -r docs/.vitepress/dist/* apps/web/dist/docs/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -75,7 +75,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'app/dist'
+          path: 'apps/web/dist'
 
   # Deployment job
   deploy:

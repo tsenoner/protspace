@@ -6,7 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     paths:
-      - 'services/protspace-prep/**'
+      - 'apps/prep/**'
       - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
@@ -24,8 +24,8 @@ jobs:
       matrix:
         include:
           - name: protspace-prep
-            context: services/protspace-prep
-            dockerfile: services/protspace-prep/Dockerfile
+            context: apps/prep
+            dockerfile: apps/prep/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

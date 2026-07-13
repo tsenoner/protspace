@@ -5,7 +5,7 @@ import { GitHubIcon } from '@/components/icons/brand-icons';
 import { Button } from '@/components/ui/button';
 import { buildMailto } from '@/lib/support';
 import { cn } from '@/lib/utils';
-import { getNavigation } from '../../../config/navigation';
+import { getNavigation } from '../../../../config/navigation';
 
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 

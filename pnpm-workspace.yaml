@@ -1,6 +1,6 @@
 packages:
   - packages/*
-  - app
+  - apps/web
 
 onlyBuiltDependencies:
   - '@swc/core'
