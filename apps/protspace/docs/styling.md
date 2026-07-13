@@ -51,7 +51,7 @@ Top-level keys are annotation names. Each annotation accepts the keys below.
 | `maxVisibleValues`  | int      | `10`          | yes    | Legend entries shown before the "Other" bucket.                                                  |
 | `shapeSize`         | int      | `30`          | yes    | Marker size in the scatter plot.                                                                 |
 | `hiddenValues`      | string[] | `[]`          | yes    | Categories hidden from the plot.                                                                 |
-| `selectedPaletteId` | string   | `"kellys"`    | yes    | Color palette for categories without explicit colors.                                            |
+| `selectedPaletteId` | string   | `"kellys"`    | yes    | **Categorical** palette for categories without explicit colors — one of the six IDs in [Color palettes](#color-palettes). A gradient or unknown value silently falls back to `kellys`.                    |
 | `pinnedValues`      | string[] | —             | no     | Ordered list of values for legend positions 0..N-1. See [Legend ordering](#legend-ordering).     |
 | `zOrderSort`        | string   | —             | no     | Sort mode for zOrder assignment only (overrides `sortMode` for zOrder computation).              |
 
@@ -81,6 +81,39 @@ Missing values (`""`, `"<NA>"`, `"NaN"`) are normalized automatically — use an
   }
 }
 ```
+
+## Color palettes
+
+ProtSpace ships eleven built-in palettes, split by data type: **six categorical** palettes (discrete colors, one per category) and **five numeric gradients** (a continuous sequential scale). The two sets do not overlap and are not interchangeable — a numeric column can only use a gradient, and a categorical column can only use a categorical palette.
+
+The palettes are defined in the web frontend, the single source of truth: [`color-scheme.ts`](https://github.com/tsenoner/protspace_web/blob/main/packages/utils/src/visualization/color-scheme.ts) (`COLOR_SCHEMES`) and [`numeric-binning.ts`](https://github.com/tsenoner/protspace_web/blob/main/packages/utils/src/visualization/numeric-binning.ts) (`GRADIENT_COLOR_SCHEME_IDS`).
+
+### Categorical palettes (`selectedPaletteId`)
+
+Used for categorical annotations, for the "Other" bucket, and for cluster legends. Settable from the CLI via the `selectedPaletteId` key.
+
+| ID           | Name           | Notes                        |
+| ------------ | -------------- | ---------------------------- |
+| `kellys`     | Kelly's Colors | Maximum contrast (**default**) |
+| `okabeIto`   | Okabe-Ito      | Colorblind-safe              |
+| `tolBright`  | Tol Bright     | Colorblind-safe              |
+| `set2`       | Set2           | General-purpose categorical  |
+| `dark2`      | Dark2          | General-purpose categorical  |
+| `tableau10`  | Tableau 10     | General-purpose categorical  |
+
+### Numeric gradients
+
+Used for numeric annotations (see [Numeric annotations](#numeric-annotations)). The frontend bins the numbers and colors the bins along the gradient.
+
+| ID        | Name    | Notes                                    |
+| --------- | ------- | ---------------------------------------- |
+| `batlow`  | Batlow  | Scientific sequential gradient (**default**) |
+| `viridis` | Viridis | Perceptually uniform sequential gradient |
+| `cividis` | Cividis | Colorblind-friendly sequential gradient  |
+| `inferno` | Inferno | High-contrast sequential gradient        |
+| `plasma`  | Plasma  | Vivid sequential gradient                |
+
+> **Numeric gradients are UI-only.** The gradient for a numeric column lives in a separate per-annotation `numericSettings` object that `protspace style` does not write — pick it in the web UI's legend settings. Setting a gradient ID in `selectedPaletteId` does **not** color a numeric column: for a categorical column the frontend resets it to `kellys`, and for a numeric column `selectedPaletteId` is ignored entirely (the gradient comes from `numericSettings`, default `batlow`). `protspace style` warns when `selectedPaletteId` is a gradient or unknown ID.
 
 ## Legend ordering
 

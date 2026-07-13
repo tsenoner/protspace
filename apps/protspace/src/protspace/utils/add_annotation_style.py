@@ -30,6 +30,16 @@ _SETTINGS_KEYS = {
     "pinnedValues",
 }
 
+# Built-in palette IDs, mirrored from the web frontend — the source of truth:
+# protspace_web/packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
+# numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
+# categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
+# Keep this list in sync with those files.
+_CATEGORICAL_PALETTE_IDS = frozenset(
+    {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
+)
+_GRADIENT_PALETTE_IDS = frozenset({"batlow", "viridis", "cividis", "inferno", "plasma"})
+
 
 def load_annotation_styles(
     annotation_styles_input: str,
@@ -165,6 +175,30 @@ def _warn_if_numeric(annotation: str, display_values) -> None:
         "See docs/styling.md#numeric-annotations.",
         annotation,
         len(cleaned),
+    )
+
+
+def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
+    """Warn when a styles entry's ``selectedPaletteId`` is not a categorical palette.
+
+    ``selectedPaletteId`` sets the *categorical* palette only. The frontend silently
+    resets a gradient or unknown id to ``kellys``; numeric gradients are UI-only and
+    cannot be set from the CLI (see ``docs/styling.md`` — Color palettes). Naming the
+    offending id makes that reset visible instead of a surprise.
+    """
+    palette = styles.get("selectedPaletteId")
+    if not palette or palette in _CATEGORICAL_PALETTE_IDS:
+        return
+    if palette in _GRADIENT_PALETTE_IDS:
+        reason = f"'{palette}' is a numeric gradient — gradients are UI-only"
+    else:
+        reason = f"'{palette}' is not a known palette"
+    logger.warning(
+        "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
+        "'kellys'. Categorical palettes: %s. See docs/styling.md#color-palettes.",
+        annotation,
+        reason,
+        ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
     )
 
 
@@ -320,6 +354,7 @@ def add_annotation_styles_bundle(
 
         all_values = set(value_frequencies.get(annotation, {}))
         _warn_if_numeric(annotation, all_values)
+        _warn_if_bad_palette(annotation, styles)
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}

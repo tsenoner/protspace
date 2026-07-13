@@ -12,7 +12,9 @@ import pyarrow as pa
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.add_annotation_style import (
+    _warn_if_bad_palette,
     _warn_if_numeric,
+    add_annotation_styles_bundle,
     add_annotation_styles_parquet,
     generate_template,
 )
@@ -106,3 +108,48 @@ def test_apply_styles_warns_on_numeric_column(tmp_path, caplog):
             str(tmp_path / "out"),
         )
     assert any("length" in r.message for r in caplog.records)
+
+
+# --- _warn_if_bad_palette: selectedPaletteId must be a categorical id ------
+
+
+def test_bad_palette_silent_for_valid_categorical(caplog):
+    with caplog.at_level(logging.WARNING):
+        _warn_if_bad_palette("family", {"selectedPaletteId": "okabeIto"})
+    assert caplog.records == []
+
+
+def test_bad_palette_silent_when_absent(caplog):
+    with caplog.at_level(logging.WARNING):
+        _warn_if_bad_palette("family", {"colors": {"a": "#111111"}})
+    assert caplog.records == []
+
+
+def test_bad_palette_warns_on_gradient_id(caplog):
+    with caplog.at_level(logging.WARNING):
+        _warn_if_bad_palette("family", {"selectedPaletteId": "viridis"})
+    assert len(caplog.records) == 1
+    msg = caplog.records[0].message
+    assert "viridis" in msg and "gradient" in msg and "kellys" in msg
+
+
+def test_bad_palette_warns_on_unknown_id(caplog):
+    with caplog.at_level(logging.WARNING):
+        _warn_if_bad_palette("family", {"selectedPaletteId": "rainbow"})
+    assert len(caplog.records) == 1
+    assert "rainbow" in caplog.records[0].message
+
+
+def test_apply_styles_warns_on_gradient_palette_for_categorical(tmp_path, caplog):
+    bundle = _make_bundle(
+        tmp_path, ["P1", "P2"], {"family": ["kinase", "phosphatase"]}
+    )
+    with caplog.at_level(logging.WARNING):
+        add_annotation_styles_bundle(
+            str(bundle),
+            {"family": {"selectedPaletteId": "viridis"}},
+            str(tmp_path / "styled.parquetbundle"),
+        )
+    assert any(
+        "family" in r.message and "viridis" in r.message for r in caplog.records
+    )

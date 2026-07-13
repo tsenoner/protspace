@@ -12,11 +12,11 @@ Behavior is unchanged throughout — this is a docstring / decorator / option-me
 
 ## Workstreams at a glance
 
-| # | Workstream | Surface | Outcome |
-|---|-----------|---------|---------|
-| A | **CLI help restructure** | `src/protspace/cli/` | `prepare` reads as the entry point; stages/refine/view grouped; crisper summaries; consistent subcommand pages |
-| B | **Numeric styling clarity (#67)** | `docs/styling.md`, `utils/add_annotation_style.py` | Doc section on the categorical-only model; a warning when styling a numeric column |
-| C | **Docs & version refresh (#68)** | `README.md`, both `CLAUDE.md` | `transfer`/EAT + all 5 annotation sources surfaced; version prose → 4.7.0 |
+| # | Workstream                              | Surface                                                | Outcome                                                                                                          |
+| - | --------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| A | **CLI help restructure**          | `src/protspace/cli/`                                 | `prepare` reads as the entry point; stages/refine/view grouped; crisper summaries; consistent subcommand pages |
+| B | **Numeric styling clarity (#67)** | `docs/styling.md`, `utils/add_annotation_style.py` | Doc section on the categorical-only model; a warning when styling a numeric column                               |
+| C | **Docs & version refresh (#68)**  | `README.md`, both `CLAUDE.md`                      | `transfer`/EAT + all 5 annotation sources surfaced; version prose → 4.7.0                                     |
 
 Detailed per-file edits are in [Change inventory](#change-inventory) at the bottom; the sections below give the high-level design.
 
@@ -28,12 +28,12 @@ Detailed per-file edits are in [Change inventory](#change-inventory) at the bott
 
 Group the nine commands into four `rich_help_panel`s. Verified Typer 0.24.1 mechanics: **panel order = order each panel is first registered; within-panel order = registration order.** Both are controlled by the `@app.command(rich_help_panel=...)` string and the import order in `app.py::_register_commands()`.
 
-| Panel | Commands (in order) |
-|-------|---------------------|
-| `Start here` | `prepare` |
+| Panel                                   | Commands (in order)                                         |
+| --------------------------------------- | ----------------------------------------------------------- |
+| `Start here`                          | `prepare`                                                 |
 | `Pipeline stages · run individually` | `embed`, `project`, `annotate`, `stats`, `bundle` |
-| `Refine` | `transfer`, `style` |
-| `Visualize` | `serve` |
+| `Refine`                              | `transfer`, `style`                                     |
+| `Visualize`                           | `serve`                                                   |
 
 Reorder the `_register_commands()` imports to `prepare, embed, project, annotate, stats, bundle, transfer, style, serve` so panel and within-panel order fall out naturally.
 
@@ -58,17 +58,17 @@ Implementation note: confirm `prepare`'s actual output bundle path (or that `ser
 
 Replace each command's docstring **first line** (the detailed `\b` blocks below it stay unchanged). These drive both the command list and each command's own `-h` header.
 
-| Command | New summary |
-|---------|-------------|
-| `prepare` | Build a visualization bundle in one step (recommended). |
-| `embed` | FASTA → per-model HDF5 embeddings (Biocentral API). |
-| `project` | Embeddings → 2D projections (UMAP, t-SNE, PCA, …). |
-| `annotate` | Fetch UniProt / InterPro / taxonomy annotations. |
-| `stats` | Score projection quality (cluster validity + faithfulness). |
-| `bundle` | Merge projections + annotations → .parquetbundle. |
-| `transfer` | Fill missing annotations from nearest neighbours (EAT). |
-| `style` | Set colors, shapes & legend order on a bundle. |
-| `serve` | Run a local viewer (web app preferred: protspace.app/explore). |
+| Command      | New summary                                                    |
+| ------------ | -------------------------------------------------------------- |
+| `prepare`  | Build a visualization bundle in one step (recommended).        |
+| `embed`    | FASTA → per-model HDF5 embeddings (Biocentral API).           |
+| `project`  | Embeddings → 2D projections (UMAP, t-SNE, PCA, …).           |
+| `annotate` | Fetch UniProt / InterPro / taxonomy annotations.               |
+| `stats`    | Score projection quality (cluster validity + faithfulness).    |
+| `bundle`   | Merge projections + annotations → .parquetbundle.             |
+| `transfer` | Fill missing annotations from nearest neighbours (EAT).        |
+| `style`    | Set colors, shapes & legend order on a bundle.                 |
+| `serve`    | Run a local viewer (web app preferred: protspace.app/explore). |
 
 **Web app as the preferred explorer:** surface `https://protspace.app/explore` in the main-help quick-start (step 2) and in `serve`'s summary + full help, framing the hosted 2D explorer as recommended and local `serve` as the offline/local alternative. Most users should drag their `.parquetbundle` into the web app rather than run a local server.
 
@@ -125,21 +125,21 @@ Reconciled against the current branch: versions are **already 4.7.0** in `pyproj
 
 ## Change inventory
 
-| File | Change |
-|------|--------|
-| `src/protspace/cli/app.py` | New `help=` (header + `\b` quick-start featuring `protspace.app/explore`); reorder `_register_commands()` imports to pipeline order |
-| `src/protspace/cli/prepare.py` | `rich_help_panel="Start here"`; summary; verify option panels |
-| `src/protspace/cli/embed.py` | `rich_help_panel="Pipeline stages · run individually"`; summary |
-| `src/protspace/cli/project.py` | Same panel; summary (2D wording, no 3D); unify `-i`/`-o`/`-f` into `Input / Output` |
-| `src/protspace/cli/annotate.py` | Same panel; summary; use shared `Opt_Verbose` |
-| `src/protspace/cli/stats.py` | Same panel; summary; `Opt_Verbose`; group options into 3 panels |
-| `src/protspace/cli/bundle.py` | Same panel; summary; use shared `Opt_Verbose` |
-| `src/protspace/cli/transfer.py` | `rich_help_panel="Refine"`; summary; group `--query-*`/`--reference-*`/transfer panels |
-| `src/protspace/cli/style.py` | `rich_help_panel="Refine"`; summary |
-| `src/protspace/cli/serve.py` | `rich_help_panel="Visualize"`; summary + help recommend `protspace.app/explore` |
-| `src/protspace/cli/common_options.py` | `Opt_Verbose` gets `show_default=False` |
-| `src/protspace/utils/add_annotation_style.py` | Module logger; numeric-column warnings in template + apply paths |
-| `docs/styling.md` | "Numeric annotations" section (#67) |
-| `README.md` | 5 annotation sources; `transfer`/EAT bullet + example; 3rd Colab badge (#68) |
-| `protspace/CLAUDE.md` | Version → 4.7.0; add transfer notebook (#68) |
-| `../CLAUDE.md` | Version → 4.7.0; add `stats`/`transfer` to subcommand list (#68) |
+| File                                            | Change                                                                                                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/protspace/cli/app.py`                    | New`help=` (header + `\b` quick-start featuring `protspace.app/explore`); reorder `_register_commands()` imports to pipeline order |
+| `src/protspace/cli/prepare.py`                | `rich_help_panel="Start here"`; summary; verify option panels                                                                            |
+| `src/protspace/cli/embed.py`                  | `rich_help_panel="Pipeline stages · run individually"`; summary                                                                         |
+| `src/protspace/cli/project.py`                | Same panel; summary (2D wording, no 3D); unify`-i`/`-o`/`-f` into `Input / Output`                                                 |
+| `src/protspace/cli/annotate.py`               | Same panel; summary; use shared`Opt_Verbose`                                                                                             |
+| `src/protspace/cli/stats.py`                  | Same panel; summary;`Opt_Verbose`; group options into 3 panels                                                                           |
+| `src/protspace/cli/bundle.py`                 | Same panel; summary; use shared`Opt_Verbose`                                                                                             |
+| `src/protspace/cli/transfer.py`               | `rich_help_panel="Refine"`; summary; group `--query-*`/`--reference-*`/transfer panels                                               |
+| `src/protspace/cli/style.py`                  | `rich_help_panel="Refine"`; summary                                                                                                      |
+| `src/protspace/cli/serve.py`                  | `rich_help_panel="Visualize"`; summary + help recommend `protspace.app/explore`                                                        |
+| `src/protspace/cli/common_options.py`         | `Opt_Verbose` gets `show_default=False`                                                                                                |
+| `src/protspace/utils/add_annotation_style.py` | Module logger; numeric-column warnings in template + apply paths                                                                           |
+| `docs/styling.md`                             | "Numeric annotations" section (#67)                                                                                                        |
+| `README.md`                                   | 5 annotation sources;`transfer`/EAT bullet + example; 3rd Colab badge (#68)                                                              |
+| `protspace/CLAUDE.md`                         | Version → 4.7.0; add transfer notebook (#68)                                                                                              |
+| `../CLAUDE.md`                                | Version → 4.7.0; add`stats`/`transfer` to subcommand list (#68)                                                                       |
