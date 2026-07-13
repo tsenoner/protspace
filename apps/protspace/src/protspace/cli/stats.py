@@ -15,8 +15,8 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app, setup_logging
-from protspace.cli.common_options import ClusterSelection
+from protspace.cli.app import PANEL_STAGES, app, setup_logging
+from protspace.cli.common_options import ClusterSelection, Opt_Verbose
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
     return added
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_STAGES)
 def stats(
     input: Annotated[
         list[str],
@@ -200,6 +200,7 @@ def stats(
             "-i",
             "--input",
             help="HDF5 embedding file(s). Repeat for multi-embedding. Name override: -i file.h5:name",
+            rich_help_panel="Input",
         ),
     ],
     projections: Annotated[
@@ -209,11 +210,17 @@ def stats(
             "--projections",
             help="Directory with projections_metadata.parquet and projections_data.parquet.",
             exists=True,
+            rich_help_panel="Input",
         ),
     ],
     output: Annotated[
         Path,
-        typer.Option("-o", "--output", help="Output statistics.parquet path."),
+        typer.Option(
+            "-o",
+            "--output",
+            help="Output statistics.parquet path.",
+            rich_help_panel="Output",
+        ),
     ],
     annotations: Annotated[
         Path | None,
@@ -223,6 +230,7 @@ def stats(
             help="Annotations parquet to enrich in place with per-protein "
             "cluster-membership columns (per-point silhouette attached as |score). "
             "Omit to skip per-protein outputs.",
+            rich_help_panel="Input",
         ),
     ] = None,
     settings_out: Annotated[
@@ -231,14 +239,21 @@ def stats(
             "--settings-out",
             help="Write auto-generated cluster-membership legend styles here (JSON) "
             "for `protspace bundle --settings`. Only with -a/--annotations.",
+            rich_help_panel="Output",
         ),
     ] = None,
-    seed: Annotated[int, typer.Option("--seed", help="Random seed.")] = 42,
+    seed: Annotated[
+        int,
+        typer.Option(
+            "--seed", help="Random seed.", rich_help_panel="Clustering & scoring"
+        ),
+    ] = 42,
     metric: Annotated[
         str,
         typer.Option(
             "--metric",
             help="High-dim distance metric for faithfulness when the projection metadata omits one (e.g. PCA/MDS).",
+            rich_help_panel="Clustering & scoring",
         ),
     ] = "euclidean",
     cluster_selection: Annotated[
@@ -247,6 +262,7 @@ def stats(
             "--cluster-selection",
             help="How to choose the cluster count K: 'elbow' (default), 'silhouette' "
             "(max-silhouette K), or 'both' (emit both clusterings).",
+            rich_help_panel="Clustering & scoring",
         ),
     ] = ClusterSelection.elbow,
     stats_annotation: Annotated[
@@ -256,13 +272,12 @@ def stats(
             help="Which annotation column(s) to score for cluster-validity: "
             "'auto' (all suitable categoricals) or a comma-separated list. "
             "Requires -a/--annotations.",
+            rich_help_panel="Clustering & scoring",
         ),
     ] = "auto",
-    verbose: Annotated[
-        int, typer.Option("-v", "--verbose", count=True, help="Increase verbosity.")
-    ] = 0,
+    verbose: Opt_Verbose = 0,
 ) -> None:
-    """Compute cluster-validity + faithfulness statistics for each projection."""
+    """Score projection quality (cluster validity + faithfulness)."""
     setup_logging(verbose)
 
     # Cluster legend styles are only generated alongside the per-protein membership

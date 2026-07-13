@@ -5,10 +5,10 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app
+from protspace.cli.app import PANEL_REFINE, app
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_REFINE)
 def style(
     input_file: Annotated[
         str,
@@ -41,7 +41,7 @@ def style(
         ),
     ] = False,
 ) -> None:
-    """Add or update annotation styles (colors, shapes, legend ordering) in ProtSpace files."""
+    """Set colors, shapes & legend order on a bundle."""
     from protspace.utils.add_annotation_style import (
         add_annotation_styles,
         load_annotation_styles,

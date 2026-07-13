@@ -30,7 +30,13 @@ class ClusterSelection(str, Enum):
 
 Opt_Verbose = Annotated[
     int,
-    typer.Option("-v", "--verbose", count=True, help="Verbosity: -v=INFO, -vv=DEBUG."),
+    typer.Option(
+        "-v",
+        "--verbose",
+        count=True,
+        help="Verbosity: -v=INFO, -vv=DEBUG.",
+        show_default=False,
+    ),
 ]
 
 # Projection options (shared by prepare and project)

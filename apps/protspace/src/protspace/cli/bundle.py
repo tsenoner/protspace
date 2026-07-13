@@ -6,12 +6,13 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app, setup_logging
+from protspace.cli.app import PANEL_STAGES, app, setup_logging
+from protspace.cli.common_options import Opt_Verbose
 
 logger = logging.getLogger(__name__)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_STAGES)
 def bundle(
     projections: Annotated[
         Path,
@@ -52,12 +53,9 @@ def bundle(
             exists=True,
         ),
     ] = None,
-    verbose: Annotated[
-        int,
-        typer.Option("-v", "--verbose", count=True, help="Increase verbosity."),
-    ] = 0,
+    verbose: Opt_Verbose = 0,
 ) -> None:
-    """Combine projection and annotation parquet files into a .parquetbundle.
+    """Merge projections + annotations → .parquetbundle.
 
     \b
     Reads projections_metadata.parquet, projections_data.parquet from the

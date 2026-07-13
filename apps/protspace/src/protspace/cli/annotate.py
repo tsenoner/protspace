@@ -6,12 +6,13 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app, setup_logging
+from protspace.cli.app import PANEL_STAGES, app, setup_logging
+from protspace.cli.common_options import Opt_Verbose
 
 logger = logging.getLogger(__name__)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_STAGES)
 def annotate(
     input: Annotated[
         Path,
@@ -40,12 +41,9 @@ def annotate(
             "--scores/--no-scores", help="Include annotation confidence scores."
         ),
     ] = True,
-    verbose: Annotated[
-        int,
-        typer.Option("-v", "--verbose", count=True, help="Increase verbosity."),
-    ] = 0,
+    verbose: Opt_Verbose = 0,
 ) -> None:
-    """Fetch protein annotations from UniProt, InterPro, and taxonomy databases.
+    """Fetch UniProt / InterPro / taxonomy annotations.
 
     \b
     Extracts protein identifiers from the input file and fetches

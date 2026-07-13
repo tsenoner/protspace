@@ -6,13 +6,13 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app, setup_logging
+from protspace.cli.app import PANEL_STAGES, app, setup_logging
 from protspace.cli.common_options import Opt_BatchSize, Opt_Verbose
 
 logger = logging.getLogger(__name__)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_STAGES)
 def embed(
     input: Annotated[
         Path,
@@ -44,7 +44,7 @@ def embed(
     batch_size: Opt_BatchSize = 1000,
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """Generate protein embeddings from a FASTA file via Biocentral API.
+    """FASTA → per-model HDF5 embeddings (Biocentral API).
 
     \b
     Creates one HDF5 file per model in the output directory, with
