@@ -9,8 +9,9 @@
 ProtSpace is a visualization tool for exploring **protein embeddings** or **similarity matrices**. It projects high-dimensional protein language model data into 2D space, color-codes proteins by biological annotations, and exports publication-ready figures.
 
 - **Multiple projections**: PCA, UMAP, t-SNE, MDS, PaCMAP, LocalMAP
-- **Automatic annotations**: UniProt, InterPro, and Taxonomy
+- **Automatic annotations**: UniProt, InterPro, Taxonomy, TED domains, and Biocentral predictions
 - **Quality metrics** _(opt-in)_: annotation-based cluster-validity + faithfulness (local & global) via `--stats`
+- **Annotation transfer** _(EAT)_: fill missing annotations from the nearest reference proteins in embedding space via `protspace transfer`
 - **Structure viewer**: Integrated protein structure visualization
 - **Export**: PNG, PDF, SVG, HTML
 
@@ -25,6 +26,8 @@ ProtSpace is a visualization tool for exploring **protein embeddings** or **simi
 1. **Generate Protein Embeddings**: [![Open Embeddings In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ClickThrough_GenerateEmbeddings.ipynb)
 
 2. **Prepare ProtSpace Bundle**: [![Open Preparation In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb)
+
+3. **Transfer Annotations (EAT)**: [![Open Transfer In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Transfer.ipynb)
 
 
 ## 📦 Installation
@@ -63,9 +66,12 @@ protspace project -i embeddings/prot_t5.h5 -i embeddings/esm2_3b.h5 -m pca2,umap
 protspace annotate -i embeddings/prot_t5.h5 -a default -o annotations.parquet
 protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet   # optional: quality metrics
 protspace bundle -p projections/ -a annotations.parquet -s statistics.parquet -o output.parquetbundle
+protspace transfer -b output.parquetbundle -e embeddings/prot_t5.h5 -t superfamily -o transferred.parquetbundle   # optional: fill gaps via EAT
 ```
 
 Or compute quality metrics inline during `prepare` with `--stats` (opt-in): annotation-based cluster-validity + faithfulness per projection. See the [CLI Reference](docs/cli.md#projection-statistics---stats).
+
+Fill missing annotation values from the nearest annotated protein in embedding space with [`protspace transfer`](docs/cli.md#protspace-transfer) — Embedding Annotation Transfer (EAT).
 
 ## 📊 Example Output
 

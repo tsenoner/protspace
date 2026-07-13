@@ -2,7 +2,7 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Version:** 4.3.1
+- **Version:** 4.7.0
 - **Python:** >=3.10
 - **License:** GPL-3.0
 - **PyPI:** `pip install protspace`
@@ -287,6 +287,7 @@ Located in `notebooks/`:
 |----------|---------|
 | `ProtSpace_Preparation.ipynb` | Google Colab — upload embeddings, configure DR methods, generate .parquetbundle |
 | `ClickThrough_GenerateEmbeddings.ipynb` | Google Colab — generate embeddings from FASTA using ESM models |
+| `ProtSpace_Transfer.ipynb` | Google Colab — Embedding Annotation Transfer (EAT): fill missing annotations from nearest reference proteins |
 
 ## Dependencies
 
