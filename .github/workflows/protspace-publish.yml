@@ -98,7 +98,10 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
-          context: apps/protspace
+          # Root context: protspace is a workspace member; the image needs the
+          # root uv.lock + the protlabel member source (see apps/protspace/Dockerfile).
+          context: .
+          file: apps/protspace/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
