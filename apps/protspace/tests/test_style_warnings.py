@@ -1,8 +1,13 @@
-"""Numeric-column warning for `protspace style` (issue #67).
+"""Advisory warnings + palette contract for `protspace style`.
 
-The CLI styling model is categorical-only; the web frontend bins numeric columns
-into gradient ranges instead. Styling a numeric column via the CLI silently drops
-the user's per-value colors/shapes, so `protspace style` warns when it detects one.
+Covers three things:
+- the numeric-column warning (issue #67) — the CLI styling model is
+  categorical-only while the web frontend bins numeric columns into gradients, so
+  per-value colors/shapes set via the CLI are silently dropped;
+- the `selectedPaletteId` validation warning (gradient/unknown id → resets to
+  kellys in the frontend);
+- a pinned contract keeping the Python palette-id catalog reconciled with the
+  frontend source of truth (see the section at the bottom of this file).
 """
 
 import logging
