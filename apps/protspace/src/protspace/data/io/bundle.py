@@ -14,6 +14,7 @@ the fourth part's emptiness, not on the raw part count.
 import io
 import json
 import logging
+import os
 import tempfile
 from pathlib import Path
 
@@ -57,6 +58,43 @@ def _table_to_parquet_bytes(table: pa.Table) -> bytes:
     buf = io.BytesIO()
     pq.write_table(table, buf)
     return buf.getvalue()
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically (temp file + ``os.replace``).
+
+    The destination is never left truncated or partial on interrupt — it keeps
+    the old bytes until the rename completes, then atomically becomes the full
+    new bytes.  Critical for the in-place overwrite workflow that ``transfer``
+    documents (``-b results.parquetbundle -o results.parquetbundle``): a Ctrl+C
+    or crash mid-write can no longer destroy the user's bundle.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _check_no_delimiter(part_bytes: bytes) -> None:
+    """Guard: a serialized part must not contain the bundle delimiter.
+
+    If a value (e.g. an annotation string) happens to contain the reserved
+    delimiter byte string, the part split on read-back would be corrupted; fail
+    loudly at write time instead.
+    """
+    if PARQUET_BUNDLE_DELIMITER in part_bytes:
+        raise ValueError(
+            "Serialized parquet part contains the bundle delimiter "
+            f"{PARQUET_BUNDLE_DELIMITER!r}; a value includes this reserved byte "
+            "string and would corrupt the bundle on read."
+        )
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
@@ -131,25 +169,31 @@ def write_bundle(
             5th part.  When given without ``settings``, a zero-byte settings slot
             is written so the statistics part stays at position five.
     """
-    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    buf = io.BytesIO()
+    for i, table in enumerate(tables):
+        if i > 0:
+            buf.write(PARQUET_BUNDLE_DELIMITER)
+        part_bytes = _table_to_parquet_bytes(table)
+        _check_no_delimiter(part_bytes)
+        buf.write(part_bytes)
 
-    with open(bundle_path, "wb") as f:
-        for i, table in enumerate(tables):
-            if i > 0:
-                f.write(PARQUET_BUNDLE_DELIMITER)
-            f.write(_table_to_parquet_bytes(table))
+    # A settings slot must exist whenever statistics follow it, so the parts
+    # keep fixed positions (settings = 4th, statistics = 5th).
+    if settings is not None or statistics is not None:
+        buf.write(PARQUET_BUNDLE_DELIMITER)
+        if settings is not None:
+            settings_bytes = create_settings_parquet(settings)
+            _check_no_delimiter(settings_bytes)
+            buf.write(settings_bytes)
+        # else: zero-byte settings slot keeps statistics at position five
 
-        # A settings slot must exist whenever statistics follow it.
-        if settings is not None or statistics is not None:
-            f.write(PARQUET_BUNDLE_DELIMITER)
-            if settings is not None:
-                f.write(create_settings_parquet(settings))
-            # else: zero-byte settings slot
+    if statistics is not None:
+        buf.write(PARQUET_BUNDLE_DELIMITER)
+        stats_bytes = _table_to_parquet_bytes(statistics)
+        _check_no_delimiter(stats_bytes)
+        buf.write(stats_bytes)
 
-        if statistics is not None:
-            f.write(PARQUET_BUNDLE_DELIMITER)
-            f.write(_table_to_parquet_bytes(statistics))
-
+    _atomic_write_bytes(bundle_path, buf.getvalue())
     logger.info(f"Saved bundled output to: {bundle_path}")
 
 
@@ -166,14 +210,43 @@ def replace_settings_in_bundle(
     core, _, statistics = _parse_bundle(input_path)
 
     # core(3) + new settings, preserving a trailing statistics part if present.
-    new_parts = [*core, create_settings_parquet(settings)]
+    settings_bytes = create_settings_parquet(settings)
+    _check_no_delimiter(settings_bytes)
+    new_parts = [*core, settings_bytes]
     if statistics is not None:
         new_parts.append(statistics)
     new_content = PARQUET_BUNDLE_DELIMITER.join(new_parts)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as f:
-        f.write(new_content)
+    _atomic_write_bytes(output_path, new_content)
+
+
+def replace_annotations_in_bundle(
+    input_path: Path,
+    output_path: Path,
+    annotations_table: pa.Table,
+) -> None:
+    """Replace the annotations (1st) part of a bundle, preserving the rest.
+
+    Projection parts (2nd, 3rd) are kept byte-for-byte; existing settings (4th)
+    and statistics (5th) parts are carried over unchanged.
+    """
+    core, settings, statistics = _parse_bundle(input_path)
+
+    new_annotations_bytes = _table_to_parquet_bytes(annotations_table)
+    _check_no_delimiter(new_annotations_bytes)
+
+    # Preserve the projection parts byte-for-byte; keep the settings/statistics
+    # tail with the same zero-byte-settings sentinel write_bundle uses, so a
+    # statistics-bearing bundle round-trips without losing its 5th part.
+    new_parts = [new_annotations_bytes, core[1], core[2]]
+    if settings is not None or statistics is not None:
+        new_parts.append(settings if settings is not None else b"")
+    if statistics is not None:
+        new_parts.append(statistics)
+
+    _atomic_write_bytes(output_path, PARQUET_BUNDLE_DELIMITER.join(new_parts))
+
+    logger.info(f"Wrote bundle with updated annotations to: {output_path}")
 
 
 def create_settings_parquet(settings_dict: dict) -> bytes:

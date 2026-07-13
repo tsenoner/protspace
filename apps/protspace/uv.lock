@@ -7,6 +7,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "protlabel",
+    "protspace",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
@@ -2724,8 +2730,19 @@ wheels = [
 ]
 
 [[package]]
+name = "protlabel"
+version = "4.6.0"
+source = { editable = "packages/protlabel" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=1.23.0" }]
+
+[[package]]
 name = "protspace"
-version = "4.5.0"
+version = "4.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "biocentral-api" },
@@ -2733,6 +2750,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pacmap" },
     { name = "pandas" },
+    { name = "protlabel" },
     { name = "pyarrow" },
     { name = "pymmseqs" },
     { name = "requests" },
@@ -2798,6 +2816,7 @@ requires-dist = [
     { name = "pacmap", specifier = ">=0.8.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "plotly", marker = "extra == 'frontend'", specifier = ">=5.24.1" },
+    { name = "protlabel", editable = "packages/protlabel" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pymmseqs", specifier = ">=1.0.4" },
     { name = "python-dotenv", marker = "extra == 'frontend'", specifier = ">=1.0.1" },

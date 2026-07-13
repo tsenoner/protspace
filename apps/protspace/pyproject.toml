@@ -1,6 +1,6 @@
 [project]
 name = "protspace"
-version = "4.5.0"
+version = "4.6.0"
 description = "A visualisation tool for protein embeddings from pLMs"
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
@@ -20,6 +20,7 @@ dependencies = [
     "requests>=2.32.4",
     "typer>=0.24.1",
     "rich>=14.3.3",
+    "protlabel>=4.4.0",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,7 @@ frontend = [
 
 [project.scripts]
 protspace = "protspace.cli.app:app"
+
 
 
 [dependency-groups]
@@ -66,11 +68,25 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# protlabel (the EAT engine) is a separate distribution developed in-repo as a
+# uv workspace member. During development it resolves locally (editable); the
+# published protspace wheel depends on it from PyPI.
+
+[tool.uv.workspace]
+members = ["packages/protlabel"]
+
+[tool.uv.sources]
+protlabel = { workspace = true }
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/protspace"]
+
 
 [tool.pytest.ini_options]
+# Collect both the protspace tests and the protlabel workspace member's tests
+# so a bare `uv run pytest` runs the whole workspace.
+testpaths = ["tests", "packages/protlabel/tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests that require external services",
@@ -83,6 +99,7 @@ filterwarnings = [
     "ignore::RuntimeWarning:sklearn.utils.extmath:",
     "ignore:n_jobs value:UserWarning:umap:",
 ]
+
 
 [tool.ruff]
 target-version = "py310"
@@ -107,12 +124,28 @@ ignore = [
     "C901", # too complex
 ]
 
+[tool.ruff.lint.isort]
+# protlabel lives in the packages/protlabel workspace member (not src/), so
+# declare both packages first-party for stable import grouping.
+known-first-party = ["protspace", "protlabel"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
+"packages/*/tests/*" = ["ARG001", "F401", "F841", "F811"]  # same, for workspace-member tests
 "examples/notebook/*" = ["E402", "F811", "ARG001", "F841"]  # Jupyter notebooks: imports after config, cell re-imports, widget callback args
+
 
 [tool.semantic_release]
 assets = ["uv.lock"]
 build_command = "uv lock"
-version_toml = ["pyproject.toml:project.version"]
+# protspace and protlabel are released in lock-step (same version bump).
+version_toml = [
+    "pyproject.toml:project.version",
+    "packages/protlabel/pyproject.toml:project.version",
+]
 version_variables = ["src/protspace/__init__.py:__version__"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
