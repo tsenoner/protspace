@@ -117,8 +117,6 @@ function resetButton(page: Page) {
 test.describe('Dataset swap clears isolation state (#222)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
   });

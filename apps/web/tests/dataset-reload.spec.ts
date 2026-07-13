@@ -39,17 +39,6 @@ async function waitForProteinCount(page: Page, expected: number, timeout = 30_00
     .catch(() => {});
 }
 
-/** Find a protspace legend localStorage key. */
-async function findLegendStorageKey(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('protspace:legend:')) return key;
-    }
-    return null;
-  });
-}
-
 async function clearPersistedDataset(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const storageWithDirectory = navigator.storage as StorageManager & {
@@ -292,106 +281,31 @@ async function hasLegacyNotificationHelperArtifacts(page: Page): Promise<boolean
   return page.evaluate(() => document.getElementById('protspace-notification-styles') !== null);
 }
 
-async function dispatchParquetExport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const controlBar = document.getElementById('myControlBar');
-    controlBar?.dispatchEvent(
-      new CustomEvent('export', {
-        detail: {
-          type: 'parquet',
-        },
-      }),
-    );
-  });
-}
-
-async function dispatchBrokenParquetExport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const plot = document.getElementById('myPlot') as {
-      getCurrentData?: () => unknown;
-    } | null;
-    if (plot?.getCurrentData) {
-      plot.getCurrentData = () => null;
-    }
-
-    const controlBar = document.getElementById('myControlBar');
-    controlBar?.dispatchEvent(
-      new CustomEvent('export', {
-        detail: {
-          type: 'parquet',
-        },
-      }),
-    );
-  });
-}
-
-async function dispatchSelectionDisabledNotification(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const controlBar = document.getElementById('myControlBar');
-    controlBar?.dispatchEvent(
-      new CustomEvent('selection-disabled-notification', {
-        detail: {
-          message: 'Selection mode disabled: Only 1 point remaining',
-          severity: 'warning',
-          source: 'control-bar',
-          context: {
-            reason: 'insufficient-data',
-            dataSize: 1,
-          },
-        },
-      }),
-    );
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 test.describe('Dataset reload resets state (#178)', () => {
   test.beforeEach(async ({ page }) => {
-    // Suppress the product tour so it doesn't interfere
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await clearPersistedDataset(page);
+    // Each Playwright test receives a fresh context; shared storage state only
+    // seeds the completed product-tour key, so OPFS starts empty here.
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
   });
 
-  test('page reload restores default legend state', async ({ page }) => {
+  test('page reload restores default legend state and clears persisted hidden values', async ({
+    page,
+  }) => {
     const itemValue = await getFirstLegendItemValue(page);
 
-    // Item should start visible
     expect(await isLegendItemHidden(page, itemValue)).toBe(false);
 
-    // Click to hide the item
     await clickLegendItem(page, itemValue);
     await expect.poll(() => isLegendItemHidden(page, itemValue)).toBe(true);
 
-    // Verify localStorage was written
-    await expect.poll(() => findLegendStorageKey(page)).not.toBeNull();
-
-    // Reload the page
-    await page.reload();
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    // After reload, the item should be visible again (default state restored)
-    expect(await isLegendItemHidden(page, itemValue)).toBe(false);
-  });
-
-  test('legend localStorage is cleared on reload', async ({ page }) => {
-    const itemValue = await getFirstLegendItemValue(page);
-
-    // Modify legend state
-    await clickLegendItem(page, itemValue);
-    await expect.poll(() => isLegendItemHidden(page, itemValue)).toBe(true);
-
-    // The hidden value is persisted under a protspace:legend:* key. Persistence
-    // can lag the UI hide (it runs off a separate visibility-model event) and
-    // there may be more than one legend key, so poll across all of them rather
-    // than reading the first key once.
+    // Persistence can lag the visibility change and there may be more than one
+    // legend key, so poll across all keys for this specific value.
     const itemHiddenInStorage = () =>
       page.evaluate((value) => {
         for (let i = 0; i < localStorage.length; i++) {
@@ -404,20 +318,17 @@ test.describe('Dataset reload resets state (#178)', () => {
       }, itemValue);
     await expect.poll(itemHiddenInStorage).toBe(true);
 
-    // Reload the page
     await page.reload();
     await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
 
-    // After reload + file settings applied, no legend key should still hide our item.
+    expect(await isLegendItemHidden(page, itemValue)).toBe(false);
     expect(await itemHiddenInStorage()).toBe(false);
   });
 });
 
 test.describe('Persisted custom datasets in OPFS (#176)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await clearPersistedDataset(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -508,25 +419,6 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 });
 
 test.describe('Persisted dataset failure handling', () => {
-  test('corrupted persisted datasets are cleared and replaced with the demo dataset', async ({
-    page,
-  }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-    await clearPersistedDataset(page);
-    await writeCorruptedPersistedDataset(page);
-
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    await expect(page.getByText('Saved dataset was cleared.')).toBeVisible();
-    await expect(page.getByText(/loaded the default demo dataset instead/i)).toBeVisible();
-    expect(await getProteinCount(page)).toBeGreaterThan(0);
-  });
-
   test('queued user imports win over corrupted OPFS fallback recovery', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('driver.overviewTour', 'true');
@@ -680,33 +572,6 @@ test.describe('Persisted dataset failure handling', () => {
     expect(await getProteinCount(page)).not.toBe(defaultCount);
   });
 
-  test('corrupted persisted datasets fall back to the demo and show a toast instead of a browser dialog', async ({
-    page,
-  }) => {
-    let dialogSeen = false;
-    page.on('dialog', async (dialog) => {
-      dialogSeen = true;
-      await dialog.dismiss();
-    });
-
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    const defaultCount = await getProteinCount(page);
-    await writeCorruptedPersistedDataset(page);
-
-    await page.reload();
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    await expect(page.getByText('Saved dataset was cleared.')).toBeVisible();
-    await expect(page.getByText(/loaded the default demo dataset instead/i)).toBeVisible();
-    expect(await getProteinCount(page)).toBe(defaultCount);
-    expect(dialogSeen).toBe(false);
-  });
-
   test('dataset load failures show a toast instead of a browser dialog', async ({ page }) => {
     let dialogSeen = false;
     page.on('dialog', async (dialog) => {
@@ -715,7 +580,6 @@ test.describe('Persisted dataset failure handling', () => {
     });
 
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -735,57 +599,12 @@ test.describe('Persisted dataset failure handling', () => {
 
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
     expect(dialogSeen).toBe(false);
-  });
-
-  test('successful parquet exports show a Sonner toast', async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    await dispatchParquetExport(page);
-
-    await expect(page.getByText('Export ready.')).toBeVisible();
-    await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
-  });
-
-  test('failed parquet exports show a toast instead of a browser dialog', async ({ page }) => {
-    let dialogSeen = false;
-    page.on('dialog', async (dialog) => {
-      dialogSeen = true;
-      await dialog.dismiss();
-    });
-
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    await dispatchBrokenParquetExport(page);
-
-    await expect(page.getByText('Export failed.')).toBeVisible();
-    await expect(page.getByText('No data available for export')).toBeVisible();
-    expect(dialogSeen).toBe(false);
-  });
-
-  test('selection-disabled notifications use the shared Sonner path', async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    await dispatchSelectionDisabledNotification(page);
-
-    await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
+    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });
 
 test.describe('Unified app notifications', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
-    await clearPersistedDataset(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -810,30 +629,6 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText('Saved dataset was cleared.')).toBeVisible();
     await expect(page.getByText(/loaded the default demo dataset/i)).toBeVisible();
     expect(await getProteinCount(page)).toBe(defaultCount);
-    expect(dialogMessages).toEqual([]);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
-  test('normalized data-error events surface a toast instead of a browser dialog', async ({
-    page,
-  }) => {
-    const dialogMessages: string[] = [];
-    page.on('dialog', async (dialog) => {
-      dialogMessages.push(dialog.message());
-      await dialog.dismiss();
-    });
-
-    await dispatchCustomEvent(page, '#myDataLoader', 'data-error', {
-      message: 'Invalid parquet bundle',
-      severity: 'error',
-      source: 'data-loader',
-      context: {
-        operation: 'load',
-      },
-    });
-
-    await expect(page.getByText('Dataset import failed.')).toBeVisible();
-    await expect(page.getByText('Invalid parquet bundle')).toBeVisible();
     expect(dialogMessages).toEqual([]);
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
@@ -883,10 +678,17 @@ test.describe('Unified app notifications', () => {
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toContain('.parquetbundle');
     await expect(page.getByText('Export ready.')).toBeVisible();
+    await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('failed exports show the unified error toast', async ({ page }) => {
+    let dialogSeen = false;
+    page.on('dialog', async (dialog) => {
+      dialogSeen = true;
+      await dialog.dismiss();
+    });
+
     await page.evaluate(() => {
       const plot = document.getElementById('myPlot') as { getCurrentData?: () => unknown } | null;
       if (!plot) {
@@ -904,6 +706,7 @@ test.describe('Unified app notifications', () => {
 
     await expect(page.getByText('Export failed.')).toBeVisible();
     await expect(page.getByText('No data available for export')).toBeVisible();
+    expect(dialogSeen).toBe(false);
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });

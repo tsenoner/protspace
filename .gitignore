@@ -58,7 +58,7 @@ docs/superpowers/
 # playwright
 **/test-results
 /temp-videos
-/playwright-report
+**/playwright-report
 .playwright-mcp
 
 # Claude (config + CLI-generated OpenSpec skills/commands; run `openspec init` locally)

@@ -47,7 +47,6 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
     });
 
     await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await dismissTourIfPresent(page);
 
     // Open the import menu and set the file via the file input inside the data loader.
