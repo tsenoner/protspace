@@ -1,6 +1,93 @@
 # CHANGELOG
 
 
+## v4.7.0 (2026-07-13)
+
+### Fixes
+
+* fix(annotations): keep every hit of a multi-hit scored cell at display
+
+`to_display_value` trimmed the `|score`/`|evidence` suffix with a single
+`raw.split("|", 1)[0]` on the whole cell. In a multi-hit cell the first hit's
+`|` precedes the `;` separators, so everything after the first hit was dropped:
+`"apoptotic process|IDA;signal transduction|IEA"` collapsed to
+`"apoptotic process"`. This silently lost hits 2+ for every common multi-value
+scored annotation (GO bp/mf/cc, InterPro, TED, multi-EC) in the Dash `serve`
+plot/legend, and desynced it from the `;`-splitting style template.
+
+Trim the suffix per hit (after the `;` split), then re-join with `;`, so the
+whole multi-hit cell stays one score-stripped/decoded category
+(`"A|0.9;B|0.8"` → `"A;B"`). Single-hit and `--no-scores` cells are unchanged.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`ded3737`](https://github.com/tsenoner/protspace/commit/ded373746e547eec6f878e2670e9e78b1598d883))
+
+* fix(transfer): re-stamp bundle format version when replacing annotations
+
+`replace_annotations_in_bundle` wrote the new annotations table without a
+format-version stamp. `transfer` (and the prediction overlay) build that table
+via `rename_columns`/concat, which drop pyarrow schema metadata — so running
+`protspace transfer` on a v2 bundle emitted an unstamped annotations part.
+Consumers that gate decoding on `protspace_format_version` (the hyparquet
+frontend, Dash `serve`) then read it as v1 and render the transferred,
+already-encoded names with raw `%XX` escapes.
+
+Stamp at the single annotations-write chokepoint so no caller has to remember
+(same unconditional-v2 trust boundary as `cli/bundle`). Covered by
+test_replace_annotations_in_bundle_restamps_format_version.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`5bfcc37`](https://github.com/tsenoner/protspace/commit/5bfcc371f9f61d37c4b8ba10244426ce20c4a6db))
+
+* fix(style): key annotation styles by display value, not raw wire cell
+
+`generate_template` lists decoded display values, but `add_annotation_styles_*`
+validated and stored color/shape keys against the raw percent-encoded cells
+(`get_all_annotation_values`). For a v2 name containing `;`/`|`/`%` the two
+diverged, so a styles file built from the template raised "Value ... does not
+exist" and could not round-trip.
+
+Both style paths (parquet dir + bundle) now validate/store against the
+annotation's display values via a shared `_annotation_display_values` helper —
+the same `_to_display_value` transform the template uses — so keys match what
+the template exposes and what the plot/legend groups by. NA-like labels carry
+no reserved char and pass through unchanged, so NA handling is unaffected.
+
+Docs: note in styling.md that value keys are display values; tests cover the
+template→style round-trip for an encoded name on both the parquet and bundle
+paths.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`c6ec8e5`](https://github.com/tsenoner/protspace/commit/c6ec8e50d400d21805d95bf347f1b5fe9831a178))
+
+### Refactoring
+
+* refactor(annotations): simplify v2 encoding/display internals from review
+
+Quality cleanups from the /simplify pass (no behavior change):
+
+- `encode_field` uses a `str.maketrans` table (single C-level pass) instead of
+  a guard + per-char `dict.get` join; drop the now-redundant `not s` in
+  `decode_field`'s guard (`"%" not in ""` is already True).
+- Centralize the v2 decode gate as `ArrowReader.should_decode()` (uses the
+  `BUNDLE_FORMAT_VERSION` constant), replacing the five copy-pasted
+  `get_format_version() >= 2` literals across plotting/callbacks/style.
+- `add_annotation_styles_bundle`: hoist the single `compute_value_frequencies`
+  scan and reuse its keys for validation, dropping a second full-protein
+  scan+decode per styled annotation.
+- Drop the dead `if raw is None` branch in `_read_format_version` (`int(None)`
+  is already caught).
+- Correct the `to_display_value` docstring: it's the shared per-hit transform;
+  the `;` multi-label split is layered on only by the style template.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`47d3617`](https://github.com/tsenoner/protspace/commit/47d36178d087284b7c5aa73cdd111b6f8b479430))
+
+### Unknown
+
+* Merge pull request #66 from tsenoner/feat/annotation-encoding-v2
+
+feat: bundle format v2 — lossless annotation name encoding (#56, #57, #58) ([`005d056`](https://github.com/tsenoner/protspace/commit/005d0562264dd3e13db1927856b47db7ca29552b))
+
+* Merge remote-tracking branch 'origin/main' into feat/annotation-encoding-v2 ([`9133174`](https://github.com/tsenoner/protspace/commit/9133174acff5d87e29c35f309c26cc404dc9a079))
+
+
 ## v4.6.0 (2026-07-13)
 
 ### Chores
@@ -21,6 +108,22 @@ merge resolution discarded in favour of this branch's real-bundle integration
 test. No remaining reference to MagicMock in the file.
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`ea10ba7`](https://github.com/tsenoner/protspace/commit/ea10ba7288f87156e8b0fe79bd1bf8655f323604))
+
+* chore(transfer): drop lingering scipy mentions from protlabel after dependency removal
+
+The scipy dependency was removed earlier; backends.py and a test comment still
+named scipy.cdist as the comparison baseline. Reword to neutral phrasing so no
+scipy reference remains in the tree (the kNN path is pure numpy).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`bb0cfc2`](https://github.com/tsenoner/protspace/commit/bb0cfc2f3b87a370525951d564fae1c317d4b3ab))
+
+* chore(docs): remove EAT build plan + superseded draft; keep design spec ([`98b42f6`](https://github.com/tsenoner/protspace/commit/98b42f664869a8af082aa5652aeda5e95e955b3d))
+
+* chore(protlabel): scaffold EAT engine package + scipy dep
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`70881d7`](https://github.com/tsenoner/protspace/commit/70881d7b9992de29ad3b37c14ea09af48d4b060a))
+
+* chore(docs): add EAT annotation-transfer design spec + backend implementation plan ([`355cd3f`](https://github.com/tsenoner/protspace/commit/355cd3fbc7bd4f843a9ccbed1a5fd186acadd24a))
 
 ### Documentation
 
@@ -67,6 +170,189 @@ caveat (fresh 10K x 1024 ef-sweep: recall@1 0.33 -> 0.69 -> 0.98; 1st-2nd gap
 grid point, recall stays 1.0, and it fits the 4 GB target at dim 1024.
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`862b6b8`](https://github.com/tsenoner/protspace/commit/862b6b8f0e1f0b19626e1ac438abd61f3e564276))
+
+* docs(transfer): design for EAT visualization — source overlay + frontend spec
+
+Captures the Wed 2026-07-01 EAT UX decisions: re-add COL__pred_source as
+provenance (dashed connector line + tooltip, not a colour feature), keep
+predictions inline under a reserved __pred_ namespace (no bundle-format
+change), confidence as a selectable numeric annotation, and the answer to
+the DR question (queries are part of the joint DR). Doubles as the source
+for the protspace_web issues (#277 update + new provenance-lines issue).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`ce7cd5a`](https://github.com/tsenoner/protspace/commit/ce7cd5a39b6d000b6646852611cc53ebf8e4fff0))
+
+* docs(transfer): add usearch-vs-brute-force kNN scaling study + reproducible benchmark
+
+Substantiates the brute-force-default decision (PR #55 review): an empirical
+benchmark (packages/protlabel/benchmarks/bench_knn.py) of protlabel's exact
+chunked-GEMM kNN vs usearch HNSW across n_refs {1K,10K,100K} x dim {320,1024},
+plus literature context and a recommendation.
+
+Finding: brute-force wins end-to-end for protspace transfer's one-shot/batch
+usage (exact, no build, sub-ms to low-ms/query through Swiss-Prot scale). usearch
+only pays off for a persisted index reused across tens of thousands of queries,
+or as a memory lever (i8/f16 quantization) at full Swiss-Prot on a 4GB box.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`a7792de`](https://github.com/tsenoner/protspace/commit/a7792dec0254c3f994a08132dce155a1f39c338c))
+
+* docs: correct transfer --metric options (euclidean, cosine only) ([`21d508c`](https://github.com/tsenoner/protspace/commit/21d508ceef7de14c457f78fd183fc834f8cce24f))
+
+* docs: document protspace transfer + prediction overlay columns
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`0ee1354`](https://github.com/tsenoner/protspace/commit/0ee1354d28a3d29f68484848e72984708bc9fc61))
+
+* docs(annotations): document bundle format v2 encoding contract ([`13e0351`](https://github.com/tsenoner/protspace/commit/13e0351045339b0182894b1dc48ef5f1f9b57445))
+
+* docs(annotations): implementation plans for bundle format v2 (backend + frontend)
+
+TDD, task-by-task plans covering the shared percent-codec, all backend emit
+sites, #57 unnamed-superfamily fix, version stamp/detection, frontend v2 decode
+branch, and the cross-repo golden-fixture proof.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`baa766b`](https://github.com/tsenoner/protspace/commit/baa766b37ea8463dcdc8b645140ce12bacee353d))
+
+* docs(annotations): resolve v2 spec open items (version location + lossy export)
+
+- §5: format_version lives in parquet file-level key-value metadata; verified
+  end-to-end on pyarrow 20.0.0 (write) + hyparquet 1.26.0 (read).
+- §7: pre-existing lossy frontend export filed as protspace_web#303 (project
+  status Ready), out of scope for this change.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`70a1235`](https://github.com/tsenoner/protspace/commit/70a1235c6d8e5cc15c7addd11ed8fa3e6efc3a47))
+
+* docs(annotations): design for bundle format v2 name encoding (#56/#57/#58)
+
+Percent-encode a minimal reserved set (% ; | + control chars) inside a
+versioned flat STRING annotation cell; drop the fragile paren-depth/pipe
+heuristics; label unnamed CATH superfamilies by bare code (drop parent-
+topology inheritance). Backed by a deep-research pass + corpus scan +
+cross-repo code maps.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`0c641f9`](https://github.com/tsenoner/protspace/commit/0c641f93129c7a7a87a9d88937a9524416196d00))
+
+### Features
+
+* feat(transfer): emit COL__pred_source provenance column in EAT overlay
+
+Re-add the reference protein id each label was transferred from
+(Prediction.source_id) as a third per-cell overlay column, COL__pred_source,
+alongside COL__pred_value and COL__pred_confidence. PR #55 review dropped it as
+"noise for colouring"; the web EAT UX (connector line to the source, "transferred
+from <neighbour>" tooltip) needs it back as provenance — explicitly not a colour
+feature. The frontend reserves the __pred_ namespace and keeps these columns out
+of the annotation dropdown.
+
+- predictions.add_overlay_columns: write COL__pred_source (str, null for
+  non-predicted), replaced-not-duplicated on re-run.
+- tests: assert source present + aligned to the reference id (was: absent).
+- docs (annotations.md, cli.md), transfer notebook, and the EAT design spec
+  updated to describe three overlay columns.
+
+Design: docs/superpowers/specs/2026-07-04-eat-visualization-overlay-design.md
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`ac7d9d8`](https://github.com/tsenoner/protspace/commit/ac7d9d817f96b3f7f1f9d96e201391c88e2d8ae7))
+
+* feat(transfer): warn on zero transfers; validate --metric/--k early
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`a05e977`](https://github.com/tsenoner/protspace/commit/a05e977f051b5743bc290068f96c64c2116335d4))
+
+* feat: add 'protspace transfer' annotation-transfer subcommand
+
+Implements Task 9: the EAT orchestration core (run_transfer) and the
+'protspace transfer' Typer CLI command, wiring classification, nearest-
+neighbour lookup (protlabel.eat), and overlay-column writing into a single
+pipeline for filling missing annotation values from pLM embedding space.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`c9cae3f`](https://github.com/tsenoner/protspace/commit/c9cae3f537ec431108189f8121cbf0eb5bfe9e50))
+
+* feat: replace annotations part of a parquetbundle in place
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`5093f66`](https://github.com/tsenoner/protspace/commit/5093f6653841c4800ed7238f6818a86e022cdb1d))
+
+* feat: build per-cell prediction overlay columns
+
+Add `add_overlay_columns()` in `src/protspace/data/io/predictions.py`
+that appends three aligned Arrow columns (`COL__pred_value`,
+`COL__pred_confidence`, `COL__pred_source`) from a list of
+`protlabel.Prediction` objects, leaving the curated column untouched.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`94b4f0f`](https://github.com/tsenoner/protspace/commit/94b4f0fe0885d12b059dbd5cc45561f24d58ed37))
+
+* feat: query/reference classifier for annotation transfer
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`ae7fcc2`](https://github.com/tsenoner/protspace/commit/ae7fcc23011e69a40dc81ef2aec4a1093ce66549))
+
+* feat(protlabel): persistable Lookup sidecar + public API
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`796e5b1`](https://github.com/tsenoner/protspace/commit/796e5b1f51c485bc16f087ef0a5bc39e01024522))
+
+* feat(protlabel): kNN label transfer with reliability index
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`c07aef5`](https://github.com/tsenoner/protspace/commit/c07aef544315d99fe34b8fa2e2b177f691ff64d9))
+
+* feat(protlabel): chunked brute-force kNN backend
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`4e99e8d`](https://github.com/tsenoner/protspace/commit/4e99e8d6f88f9259a54bf791f55eaec845a14fef))
+
+* feat(protlabel): goPredSim reliability index transform
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`ee482ba`](https://github.com/tsenoner/protspace/commit/ee482ba37191ad4dd9f675440ab2c442713de385))
+
+* feat(style): decode v2-encoded names for backend display
+
+_to_display_value now decode_field()s each ;-split/|-trimmed part so
+percent-encoded characters (%3B, etc.) from bundle format v2 render as
+literal text in the Dash style/serve display path. The bundle on disk
+stays encoded; only display decodes. compute_value_frequencies already
+delegates to _to_display_value so it picks up decoding for free.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`b7a5849`](https://github.com/tsenoner/protspace/commit/b7a5849552a9c6c9c87295a38f87efbf59ca2a11))
+
+* feat(bundle): stamp format_version=2 in annotations parquet key-value metadata
+
+Wraps BaseProcessor._create_protein_annotations_table's output and the
+standalone `protspace bundle` subcommand's annotations table with
+stamp_format_version() so both write paths emit protspace_format_version=2 /
+protspace_encoding=pct as parquet footer key-value metadata.
+
+Found and fixed along the way: pa.Table.rename_columns() drops schema
+metadata, so in cli/bundle.py the stamp must be applied after the
+identifier->protein_id rename, not before. ([`b541a27`](https://github.com/tsenoner/protspace/commit/b541a27e5407e8dfa4900097fa3b1b5859f577a9))
+
+* feat(annotations): percent-encode EC + Pfam-clan names at emit
+
+Wrap EC enzyme names and Pfam clan names in encode_field() at their
+emit sites to percent-encode reserved structural chars (;|%) that would
+corrupt the bundle cell grammar. Tests verify that pipes and semicolons
+are encoded (e.g., "Name|with;reserved" → "Name%7Cwith%3Breserved").
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`229013b`](https://github.com/tsenoner/protspace/commit/229013b8fc302a2fe47945bf038149aadb578ce4))
+
+* feat(annotations): percent-encode UniProt keyword/subcellular/family/GO names
+
+Reserved chars (%;|control) inside free-text keyword names, subcellular
+locations, protein family descriptions, and GO term labels corrupted the
+`;`/`|`-delimited cell grammar. Wrap each emit point in UniProtEntry with
+encode_field so names round-trip losslessly via decode_field. ([`fc10103`](https://github.com/tsenoner/protspace/commit/fc101037d4190f0c68af0e067965a0647ac42c3b))
+
+* feat(annotations): percent-encode TED domain names at emit
+
+Wrap the TED domain human-readable `name` in `encode_field` before assembling
+`ted_domains` cells, matching Task C1's InterPro CATH fix. Names from the CATH
+names file can contain `;` (the domain hit-separator), which corrupted the
+`;`-joined cell grammar without encoding.
+
+Test drives the real fetch_annotations -> _format_domains -> _resolve_cath_name
+path with get_cath_names mocked to return a `;`-bearing name, asserting the
+emitted string encodes it (%3B present, no raw `;`) and decode_field restores
+the original — a bare encode_field() call would not catch a reverted wrap. ([`f7f20ef`](https://github.com/tsenoner/protspace/commit/f7f20efc0ec682fccbc2f4633d1b018a26d662be))
+
+* feat(annotations): percent-encode InterPro entry names at emit (#56/#58)
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`d40eaac`](https://github.com/tsenoner/protspace/commit/d40eaac3d47a6474766604d118aa1664653ae5d4))
+
+* feat(annotations): add v2 percent-encoding codec + version stamp helper ([`b286f25`](https://github.com/tsenoner/protspace/commit/b286f2569f57993858b1c48522406acbe0460365))
 
 ### Fixes
 
@@ -134,6 +420,105 @@ indices for most queries; over-selection recovers every true anchor.
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`045fe8b`](https://github.com/tsenoner/protspace/commit/045fe8b34fe8c58fbe3dddbd45ba65d1337ecb46))
 
+* fix(transfer): address review findings — atomicity, precision, security, robustness
+
+Resolve issues found in code review of the EAT transfer backend (PR #55):
+
+- predictions: make the overlay idempotent — drop existing <col>__pred_* columns
+  before re-appending, so re-running transfer replaces them instead of producing
+  a duplicate-column bundle that can no longer be read back
+- bundle: atomic writes (temp file + os.replace) in write_bundle and the
+  replace_* helpers, so an interrupted in-place overwrite (-b X -o X) can no
+  longer destroy the bundle; reject the reserved delimiter in serialized parts
+- backends: replace scipy.cdist with a pure-numpy BLAS GEMM path and recompute
+  the surviving top-k distances in float64 (precise for near-identical vectors);
+  guard cosine against zero-norm NaN
+- lookup: store float32 + unicode arrays, load with allow_pickle=False
+  (no pickle/RCE surface; lossless round-trip)
+- transfer/classification: materialize only the needed columns (no full
+  to_pylist); deterministic RI tie-break; translate input errors to BadParameter
+- cli: colon/Windows-safe -e/-i parsing via a shared split_h5_spec helper
+- docs/notebook: qualify the reliability-index formula per metric and k
+
+Adds tests for protlabel engine, overlay idempotency, atomic write, spec
+parsing, and CLI error handling. Full suite: 572 passed; ruff clean.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`9da7f4d`](https://github.com/tsenoner/protspace/commit/9da7f4d552690a9403a6425b07c0b81837fcf859))
+
+* fix(transfer): handle protein_id id column in real bundles; clearer errors
+
+- Normalize protein_id→identifier before run_transfer and rename back after
+  so real bundles (produced by protspace prepare) no longer KeyError.
+- Add ValueError when no bundle proteins match any embedding key.
+- Correct misleading comment in test_run_transfer_predicts_for_query_with_missing_value.
+- Add end-to-end regression test exercising the protein_id rename path.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`c708f90`](https://github.com/tsenoner/protspace/commit/c708f90f87e2714835d1ee288c6cea9279827541))
+
+* fix(protlabel): bound kNN per-chunk memory adaptively; guard k>=1
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`d494242`](https://github.com/tsenoner/protspace/commit/d494242b4350b5021211f7200fb4e7456e19550a))
+
+* fix(annotations): resolve PR66 review — serve style consistency, v2 decode gate, annotate stamp
+
+Addresses the three review findings on the bundle-format-v2 branch:
+
+- **serve style keys (high):** the Dash plot grouped points by the *decoded*
+  value while the style dropdown stored/looked up colors and shapes by the
+  *encoded* value, so a user's color choice was silently dropped for any name
+  containing `;`/`|`. serve now operates entirely in display space: the value
+  dropdown, color-picker preview, and stored style keys all use the shared
+  display value, matching the plot's categories.
+
+- **display decode (medium):** factor a single `encoding.to_display_value`
+  used by both the plot and the `style` template (unifying the `|`-suffix trim
+  so the stats `cluster N|score` cells match their `cluster N` auto-legend
+  styles), and gate the percent-decode on `format_version >= 2`. ArrowReader
+  now reads `protspace_format_version` from the annotations parquet metadata
+  and threads it through the serve dict round-trip, so a legacy v1 name with a
+  literal `%XX` is left untouched.
+
+- **annotate stamp (minor):** `protspace annotate` now stamps its parquet as
+  v2, so an un-bundled annotate output declares its encoding for any consumer
+  that gates decoding on the version.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`41f7b55`](https://github.com/tsenoner/protspace/commit/41f7b5599b053e6dde85b581cb76ef7e9032f1ff))
+
+* fix(serve): decode v2 percent-encoded annotation cells in plot legend/hover
+
+prepare_dataframe() built the plotly color/symbol/legend/hover column
+straight from the raw stored annotation cell, so encoded names showed
+%3B/%7C/%25 in the serve viewer instead of ;/|/%. Decode once at the
+single fetch site via a small _decode_annotation_value() helper (no-op
+on None/non-strings), mirroring the style path's existing decode. ([`d40dc78`](https://github.com/tsenoner/protspace/commit/d40dc7865194c7b2024b7e6046b19c1ce828a164))
+
+* fix(annotations): --no-scores also strips ted_domains pLDDT scores
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`bdddf1e`](https://github.com/tsenoner/protspace/commit/bdddf1eeb7bd78f55d9621fc280a016c17bfd8e5))
+
+* fix(annotations): stop fabricating names for unnamed CATH superfamilies (#57) ([`256edd8`](https://github.com/tsenoner/protspace/commit/256edd8f51f35bc35acff8dccdcf57702639e3a7))
+
+### Performance Improvements
+
+* perf(transfer): halve cosine kNN memory to 1x reference matrix; verify 4GB deploy fit
+
+The cosine path in backends.nearest held the reference matrix twice (raw + a
+normalized copy), so cosine at full Swiss-Prot / dim 1024 needed ~4.7 GB and would
+OOM a 4-core/4 GB deployed box. Fold the per-reference norm into the dot product
+(cos = q.r / (||q|| ||r||)) instead of storing a normalized copy, so cosine holds
+1x references like euclidean. Behaviour preserved (existing cosine equivalence +
+zero-vector tests stay green); _l2_normalize is now unused and removed.
+
+Measured in a docker --cpus=4 --memory=4g container (one fresh process per config):
+full Swiss-Prot (570K x 1024) now fits at ~3 GB peak for both metrics, ~7-10 ms/query
+on 4 arm64 cores. Adds packages/protlabel/benchmarks/bench_memory.py and folds the
+results into the research doc.
+
+Also clarifies in reliability.py that the backend never emits negative distances
+(euclidean is a clamped sqrt; cosine distance in [0,2]) — the guard is defensive.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`d5023ae`](https://github.com/tsenoner/protspace/commit/d5023aed3f69af0d74febde2d925ff4cf81ac0cd))
+
 ### Refactoring
 
 * refactor(transfer): simplify EAT classification, bundle I/O, and overlay
@@ -156,6 +541,85 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`045fe8b`](https://gith
 Adds round-trip tests for statistics-bearing bundle preservation.
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`34623d8`](https://github.com/tsenoner/protspace/commit/34623d8e65a6c3f1f9d689517ce62b3dd2aee647))
+
+* refactor(transfer): address PR #55 review — cosine default, bounded RI, protlabel as uv workspace member
+
+Addresses reviewer (t03i) feedback on the EAT backend:
+
+- Default metric for `protspace transfer` is now cosine (bounded, interpretable
+  confidence); euclidean stays opt-in. The protlabel engine keeps goPredSim-canonical
+  euclidean as its primitive default.
+- Reliability index clamps to [0,1], guards negative distance, and maps non-finite
+  (NaN/inf) distances to 0 so an invalid neighbour can't yield a high confidence.
+  (NaN->1.0 bug found by our own xhigh review; redundant clamp dropped.)
+- Drop the unused, heavy scipy dependency (only a docstring/test comment referenced it).
+- Extract protlabel into a uv workspace member (packages/protlabel) with its own
+  pyproject + dependencies (numpy only), published as its own distribution; protspace
+  depends on protlabel>=4.4.0. No-protspace-imports boundary enforced by a test;
+  lock-step versioning via semantic-release; CI + Docker build both packages.
+- Move protlabel's engine tests into the member (packages/protlabel/tests); a bare
+  `uv run pytest` covers both via testpaths.
+- Rewrite the design spec to as-built reality (cosine default, brute-force + query
+  batching, workspace architecture); drop the frontend (-> protspace_web), the
+  ProtTucker/faiss speculation, and hardware-specific benchmarks.
+
+Verified: 576 tests pass, ruff clean, `uv build --all-packages` produces both wheels
+with a clean dependency boundary (protlabel requires only numpy).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`7ea9eeb`](https://github.com/tsenoner/protspace/commit/7ea9eebaf0fb3a9a38028d8572f2226ccafb6e60))
+
+* refactor(transfer): drop __pred_source overlay column; keep numeric confidence
+
+The per-cell prediction overlay now writes only <col>__pred_value and
+<col>__pred_confidence. The reference id (source) is noise as a colour feature,
+so it is dropped from the bundle; it remains available on protlabel's Prediction.
+A legacy <col>__pred_source is dropped on re-run so older bundles are cleaned up.
+
+Keeping confidence as a separate numeric column lets the web frontend colour and
+threshold by reliability (gradient legend) — which inline label|score values do
+not enable (those render tooltip-only).
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`f7186f5`](https://github.com/tsenoner/protspace/commit/f7186f56812641558c49672500bdf785f80234af))
+
+* refactor(annotations): drop unused encoding metadata key, dedup GO properties, document bundle -a trust boundary
+
+- Remove write-only protspace_encoding parquet metadata key (redundant with
+  protspace_format_version, nothing reads it).
+- Extract _go_terms_encoded() helper to dedup go_bp/go_mf/go_cc parsing.
+- Document the bundle -a annotations trust boundary (assumed already
+  percent-encoded by the same-version annotate/prepare pipeline).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017A9q6QZuqfUSVQv5iPqnWf ([`cfcad06`](https://github.com/tsenoner/protspace/commit/cfcad06ad201528a135d700d22802bc1164798e6))
+
+### Testing
+
+* test: cover empty-predictions and unknown-id overlay edge cases ([`05194bf`](https://github.com/tsenoner/protspace/commit/05194bf989aadd055c832f85471222a75ec7cc3f))
+
+* test: cover neither-match exclusion and multi-prefix OR in classifier ([`bc8837e`](https://github.com/tsenoner/protspace/commit/bc8837e21ab882c3b26df3debe2c8fa52dc993ba))
+
+* test(protlabel): document RI tie-break and cover nearest-source selection
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`4b39cb8`](https://github.com/tsenoner/protspace/commit/4b39cb8cc9f5cb8eecf4e0288c464cfed2b1c34c))
+
+* test: assert stamp_format_version merges metadata; docs: trim redundant wording
+
+- test_annotation_encoding.py: seed schema metadata before stamping and
+  assert stamp_format_version preserves it alongside the new
+  protspace_format_version key, instead of only covering the fresh-table case.
+- annotations.md: "commas, parens, and parentheses" was redundant
+  (parens == parentheses); tighten to "commas and parentheses". ([`0a62211`](https://github.com/tsenoner/protspace/commit/0a622112a30a600310ba44d9d1476231f99ca55a))
+
+* test(annotations): backend end-to-end v2 bundle round-trip proof
+
+Proves a ';'-bearing CATH name survives write_bundle -> read_bundle
+losslessly: the encoded cell round-trips byte-for-byte, the literal ';'
+never leaks into the parsed name (only its %3B escape), the cell stays
+parseable as a single hit, and decode_field recovers the exact original
+string. Also asserts the annotations part still carries the v2
+format-version stamp. ([`62d1712`](https://github.com/tsenoner/protspace/commit/62d1712c1989dc5671b9fa84bf038008c40f3aa1))
+
+* test(annotations): make InterPro name-encoding test exercise the real emit path ([`ce52f66`](https://github.com/tsenoner/protspace/commit/ce52f6642b8d18fd02e86f7adec316883d7f1e07))
 
 ### Unknown
 
@@ -182,6 +646,8 @@ Resolve three conflicts introduced by the projection-statistics feature (#61):
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`7fa15d7`](https://github.com/tsenoner/protspace/commit/7fa15d7e1f8635c24cbe1e7db7aebef36e3584a3))
 
+* Merge branch 'main' into feat/eat-transfer-backend ([`72fa7b7`](https://github.com/tsenoner/protspace/commit/72fa7b7720790ee489ad7be6a6b1484dd0317c08))
+
 
 ## v4.5.0 (2026-07-08)
 
@@ -190,14 +656,6 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`7fa15d7`](https://gith
 * chore(data): add 3FTx raw data spreadsheet
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`631a221`](https://github.com/tsenoner/protspace/commit/631a2214a61b307871aaa99c0f4bce10446ce2f5))
-
-* chore(transfer): drop lingering scipy mentions from protlabel after dependency removal
-
-The scipy dependency was removed earlier; backends.py and a test comment still
-named scipy.cdist as the comparison baseline. Reword to neutral phrasing so no
-scipy reference remains in the tree (the kNN path is pure numpy).
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`bb0cfc2`](https://github.com/tsenoner/protspace/commit/bb0cfc2f3b87a370525951d564fae1c317d4b3ab))
 
 * chore(data): trim JMB toxprot archive to embedding-based files
 
@@ -232,14 +690,6 @@ re-fetching the 5,181 accessions from UniProt (5,179 recovered; 2 now
 obsolete). README documents the dataset and the exact DR parameters used.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com> ([`09c163e`](https://github.com/tsenoner/protspace/commit/09c163e7521b1fb63bfcc246e139e691502e1db5))
-
-* chore(docs): remove EAT build plan + superseded draft; keep design spec ([`98b42f6`](https://github.com/tsenoner/protspace/commit/98b42f664869a8af082aa5652aeda5e95e955b3d))
-
-* chore(protlabel): scaffold EAT engine package + scipy dep
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`70881d7`](https://github.com/tsenoner/protspace/commit/70881d7b9992de29ad3b37c14ea09af48d4b060a))
-
-* chore(docs): add EAT annotation-transfer design spec + backend implementation plan ([`355cd3f`](https://github.com/tsenoner/protspace/commit/355cd3fbc7bd4f843a9ccbed1a5fd186acadd24a))
 
 * chore(toxprot-demo): track regenerated demo bundle
 
@@ -423,37 +873,6 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`6d856ce`
   (the notebook installs from PyPI, so live-wiring the toggle waits for a release).
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`07ab842`](https://github.com/tsenoner/protspace/commit/07ab842777ca7de5f683bca90f5ce17d74483970))
-
-* docs(transfer): design for EAT visualization — source overlay + frontend spec
-
-Captures the Wed 2026-07-01 EAT UX decisions: re-add COL__pred_source as
-provenance (dashed connector line + tooltip, not a colour feature), keep
-predictions inline under a reserved __pred_ namespace (no bundle-format
-change), confidence as a selectable numeric annotation, and the answer to
-the DR question (queries are part of the joint DR). Doubles as the source
-for the protspace_web issues (#277 update + new provenance-lines issue).
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`ce7cd5a`](https://github.com/tsenoner/protspace/commit/ce7cd5a39b6d000b6646852611cc53ebf8e4fff0))
-
-* docs(transfer): add usearch-vs-brute-force kNN scaling study + reproducible benchmark
-
-Substantiates the brute-force-default decision (PR #55 review): an empirical
-benchmark (packages/protlabel/benchmarks/bench_knn.py) of protlabel's exact
-chunked-GEMM kNN vs usearch HNSW across n_refs {1K,10K,100K} x dim {320,1024},
-plus literature context and a recommendation.
-
-Finding: brute-force wins end-to-end for protspace transfer's one-shot/batch
-usage (exact, no build, sub-ms to low-ms/query through Swiss-Prot scale). usearch
-only pays off for a persisted index reused across tens of thousands of queries,
-or as a memory lever (i8/f16 quantization) at full Swiss-Prot on a 4GB box.
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`a7792de`](https://github.com/tsenoner/protspace/commit/a7792dec0254c3f994a08132dce155a1f39c338c))
-
-* docs: correct transfer --metric options (euclidean, cosine only) ([`21d508c`](https://github.com/tsenoner/protspace/commit/21d508ceef7de14c457f78fd183fc834f8cce24f))
-
-* docs: document protspace transfer + prediction overlay columns
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`0ee1354`](https://github.com/tsenoner/protspace/commit/0ee1354d28a3d29f68484848e72984708bc9fc61))
 
 * docs(plan): use chore: prefix for toxprot demo commits
 
@@ -689,72 +1108,6 @@ Refs tsenoner/protspace_web#219
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`590306c`](https://github.com/tsenoner/protspace/commit/590306cc8eeee8b1832e5766d4d09e1e933c57d3))
 
-* feat(transfer): emit COL__pred_source provenance column in EAT overlay
-
-Re-add the reference protein id each label was transferred from
-(Prediction.source_id) as a third per-cell overlay column, COL__pred_source,
-alongside COL__pred_value and COL__pred_confidence. PR #55 review dropped it as
-"noise for colouring"; the web EAT UX (connector line to the source, "transferred
-from <neighbour>" tooltip) needs it back as provenance — explicitly not a colour
-feature. The frontend reserves the __pred_ namespace and keeps these columns out
-of the annotation dropdown.
-
-- predictions.add_overlay_columns: write COL__pred_source (str, null for
-  non-predicted), replaced-not-duplicated on re-run.
-- tests: assert source present + aligned to the reference id (was: absent).
-- docs (annotations.md, cli.md), transfer notebook, and the EAT design spec
-  updated to describe three overlay columns.
-
-Design: docs/superpowers/specs/2026-07-04-eat-visualization-overlay-design.md
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`ac7d9d8`](https://github.com/tsenoner/protspace/commit/ac7d9d817f96b3f7f1f9d96e201391c88e2d8ae7))
-
-* feat(transfer): warn on zero transfers; validate --metric/--k early
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`a05e977`](https://github.com/tsenoner/protspace/commit/a05e977f051b5743bc290068f96c64c2116335d4))
-
-* feat: add 'protspace transfer' annotation-transfer subcommand
-
-Implements Task 9: the EAT orchestration core (run_transfer) and the
-'protspace transfer' Typer CLI command, wiring classification, nearest-
-neighbour lookup (protlabel.eat), and overlay-column writing into a single
-pipeline for filling missing annotation values from pLM embedding space.
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`c9cae3f`](https://github.com/tsenoner/protspace/commit/c9cae3f537ec431108189f8121cbf0eb5bfe9e50))
-
-* feat: replace annotations part of a parquetbundle in place
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`5093f66`](https://github.com/tsenoner/protspace/commit/5093f6653841c4800ed7238f6818a86e022cdb1d))
-
-* feat: build per-cell prediction overlay columns
-
-Add `add_overlay_columns()` in `src/protspace/data/io/predictions.py`
-that appends three aligned Arrow columns (`COL__pred_value`,
-`COL__pred_confidence`, `COL__pred_source`) from a list of
-`protlabel.Prediction` objects, leaving the curated column untouched.
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`94b4f0f`](https://github.com/tsenoner/protspace/commit/94b4f0fe0885d12b059dbd5cc45561f24d58ed37))
-
-* feat: query/reference classifier for annotation transfer
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`ae7fcc2`](https://github.com/tsenoner/protspace/commit/ae7fcc23011e69a40dc81ef2aec4a1093ce66549))
-
-* feat(protlabel): persistable Lookup sidecar + public API
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`796e5b1`](https://github.com/tsenoner/protspace/commit/796e5b1f51c485bc16f087ef0a5bc39e01024522))
-
-* feat(protlabel): kNN label transfer with reliability index
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`c07aef5`](https://github.com/tsenoner/protspace/commit/c07aef544315d99fe34b8fa2e2b177f691ff64d9))
-
-* feat(protlabel): chunked brute-force kNN backend
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`4e99e8d`](https://github.com/tsenoner/protspace/commit/4e99e8d6f88f9259a54bf791f55eaec845a14fef))
-
-* feat(protlabel): goPredSim reliability index transform
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`ee482ba`](https://github.com/tsenoner/protspace/commit/ee482ba37191ad4dd9f675440ab2c442713de385))
-
 ### Fixes
 
 * fix(test): colored CI output splits "--option" tokens with ANSI codes so the guard-message substring match failed; strip escape sequences before asserting (also wraps an over-long invoke arg list ruff format flagged)
@@ -938,69 +1291,11 @@ silhouette consistency, unbundled settings, --settings-out guard). 565 tests pas
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`fc7a1cd`](https://github.com/tsenoner/protspace/commit/fc7a1cd7f440d3f2a00fbe5d34ee51398d4b8a76))
 
-* fix(transfer): address review findings — atomicity, precision, security, robustness
-
-Resolve issues found in code review of the EAT transfer backend (PR #55):
-
-- predictions: make the overlay idempotent — drop existing <col>__pred_* columns
-  before re-appending, so re-running transfer replaces them instead of producing
-  a duplicate-column bundle that can no longer be read back
-- bundle: atomic writes (temp file + os.replace) in write_bundle and the
-  replace_* helpers, so an interrupted in-place overwrite (-b X -o X) can no
-  longer destroy the bundle; reject the reserved delimiter in serialized parts
-- backends: replace scipy.cdist with a pure-numpy BLAS GEMM path and recompute
-  the surviving top-k distances in float64 (precise for near-identical vectors);
-  guard cosine against zero-norm NaN
-- lookup: store float32 + unicode arrays, load with allow_pickle=False
-  (no pickle/RCE surface; lossless round-trip)
-- transfer/classification: materialize only the needed columns (no full
-  to_pylist); deterministic RI tie-break; translate input errors to BadParameter
-- cli: colon/Windows-safe -e/-i parsing via a shared split_h5_spec helper
-- docs/notebook: qualify the reliability-index formula per metric and k
-
-Adds tests for protlabel engine, overlay idempotency, atomic write, spec
-parsing, and CLI error handling. Full suite: 572 passed; ruff clean.
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`9da7f4d`](https://github.com/tsenoner/protspace/commit/9da7f4d552690a9403a6425b07c0b81837fcf859))
-
-* fix(transfer): handle protein_id id column in real bundles; clearer errors
-
-- Normalize protein_id→identifier before run_transfer and rename back after
-  so real bundles (produced by protspace prepare) no longer KeyError.
-- Add ValueError when no bundle proteins match any embedding key.
-- Correct misleading comment in test_run_transfer_predicts_for_query_with_missing_value.
-- Add end-to-end regression test exercising the protein_id rename path.
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`c708f90`](https://github.com/tsenoner/protspace/commit/c708f90f87e2714835d1ee288c6cea9279827541))
-
-* fix(protlabel): bound kNN per-chunk memory adaptively; guard k>=1
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`d494242`](https://github.com/tsenoner/protspace/commit/d494242b4350b5021211f7200fb4e7456e19550a))
-
 ### Performance Improvements
 
 * perf(stats): _align fancy-indexed a full copy of the embedding even when faithfulness skips it past the ceiling; return source arrays as views on an in-order identity match
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com> ([`e9b5b43`](https://github.com/tsenoner/protspace/commit/e9b5b43a48c4a35f62bba18bf25f3d223cc373a3))
-
-* perf(transfer): halve cosine kNN memory to 1x reference matrix; verify 4GB deploy fit
-
-The cosine path in backends.nearest held the reference matrix twice (raw + a
-normalized copy), so cosine at full Swiss-Prot / dim 1024 needed ~4.7 GB and would
-OOM a 4-core/4 GB deployed box. Fold the per-reference norm into the dot product
-(cos = q.r / (||q|| ||r||)) instead of storing a normalized copy, so cosine holds
-1x references like euclidean. Behaviour preserved (existing cosine equivalence +
-zero-vector tests stay green); _l2_normalize is now unused and removed.
-
-Measured in a docker --cpus=4 --memory=4g container (one fresh process per config):
-full Swiss-Prot (570K x 1024) now fits at ~3 GB peak for both metrics, ~7-10 ms/query
-on 4 arm64 cores. Adds packages/protlabel/benchmarks/bench_memory.py and folds the
-results into the research doc.
-
-Also clarifies in reliability.py that the backend never emits negative distances
-(euclidean is a clamped sqrt; cosine distance in [0,2]) — the guard is defensive.
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`d5023ae`](https://github.com/tsenoner/protspace/commit/d5023aed3f69af0d74febde2d925ff4cf81ac0cd))
 
 ### Refactoring
 
@@ -1051,45 +1346,6 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`1efa34c`](https://gith
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`babba41`](https://github.com/tsenoner/protspace/commit/babba41893792893ed2899779b02f78186610792))
 
-* refactor(transfer): address PR #55 review — cosine default, bounded RI, protlabel as uv workspace member
-
-Addresses reviewer (t03i) feedback on the EAT backend:
-
-- Default metric for `protspace transfer` is now cosine (bounded, interpretable
-  confidence); euclidean stays opt-in. The protlabel engine keeps goPredSim-canonical
-  euclidean as its primitive default.
-- Reliability index clamps to [0,1], guards negative distance, and maps non-finite
-  (NaN/inf) distances to 0 so an invalid neighbour can't yield a high confidence.
-  (NaN->1.0 bug found by our own xhigh review; redundant clamp dropped.)
-- Drop the unused, heavy scipy dependency (only a docstring/test comment referenced it).
-- Extract protlabel into a uv workspace member (packages/protlabel) with its own
-  pyproject + dependencies (numpy only), published as its own distribution; protspace
-  depends on protlabel>=4.4.0. No-protspace-imports boundary enforced by a test;
-  lock-step versioning via semantic-release; CI + Docker build both packages.
-- Move protlabel's engine tests into the member (packages/protlabel/tests); a bare
-  `uv run pytest` covers both via testpaths.
-- Rewrite the design spec to as-built reality (cosine default, brute-force + query
-  batching, workspace architecture); drop the frontend (-> protspace_web), the
-  ProtTucker/faiss speculation, and hardware-specific benchmarks.
-
-Verified: 576 tests pass, ruff clean, `uv build --all-packages` produces both wheels
-with a clean dependency boundary (protlabel requires only numpy).
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> ([`7ea9eeb`](https://github.com/tsenoner/protspace/commit/7ea9eebaf0fb3a9a38028d8572f2226ccafb6e60))
-
-* refactor(transfer): drop __pred_source overlay column; keep numeric confidence
-
-The per-cell prediction overlay now writes only <col>__pred_value and
-<col>__pred_confidence. The reference id (source) is noise as a colour feature,
-so it is dropped from the bundle; it remains available on protlabel's Prediction.
-A legacy <col>__pred_source is dropped on re-run so older bundles are cleaned up.
-
-Keeping confidence as a separate numeric column lets the web frontend colour and
-threshold by reliability (gradient legend) — which inline label|score values do
-not enable (those render tooltip-only).
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`f7186f5`](https://github.com/tsenoner/protspace/commit/f7186f56812641558c49672500bdf785f80234af))
-
 ### Testing
 
 * test(stats): test_base_data_processor imported via src.protspace.* while the new stats suite used protspace.*, duplicating module singletons under one pytest run; standardize this file on protspace.*
@@ -1132,14 +1388,6 @@ Faithfulness rows are not annotation-scoped, so annotation="".
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com> ([`bae63a7`](https://github.com/tsenoner/protspace/commit/bae63a711255c125cc5946a2394c76db3d03f2dc))
 
-* test: cover empty-predictions and unknown-id overlay edge cases ([`05194bf`](https://github.com/tsenoner/protspace/commit/05194bf989aadd055c832f85471222a75ec7cc3f))
-
-* test: cover neither-match exclusion and multi-prefix OR in classifier ([`bc8837e`](https://github.com/tsenoner/protspace/commit/bc8837e21ab882c3b26df3debe2c8fa52dc993ba))
-
-* test(protlabel): document RI tie-break and cover nearest-source selection
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com> ([`4b39cb8`](https://github.com/tsenoner/protspace/commit/4b39cb8cc9f5cb8eecf4e0288c464cfed2b1c34c))
-
 ### Unknown
 
 * Merge pull request #61 from tsenoner/feat/projection-statistics
@@ -1153,8 +1401,6 @@ feat(stats): annotation-based cluster-validity + ARI/NMI agreement ([`17cf0d0`](
 * Merge pull request #63 from tsenoner/feat/projection-stats-extras
 
 feat(stats): cluster-selection, silhouette-as-score, global faithfulness metrics ([`0553202`](https://github.com/tsenoner/protspace/commit/05532028a6adc97313a47f69e24c4e90f3f57f5a))
-
-* Merge branch 'main' into feat/eat-transfer-backend ([`72fa7b7`](https://github.com/tsenoner/protspace/commit/72fa7b7720790ee489ad7be6a6b1484dd0317c08))
 
 * Merge pull request #52 from tsenoner/feat/restore-jmb-2025-toxprot
 

@@ -2731,7 +2731,7 @@ wheels = [
 
 [[package]]
 name = "protlabel"
-version = "4.6.0"
+version = "4.7.0"
 source = { editable = "packages/protlabel" }
 dependencies = [
     { name = "numpy" },
@@ -2742,7 +2742,7 @@ requires-dist = [{ name = "numpy", specifier = ">=1.23.0" }]
 
 [[package]]
 name = "protspace"
-version = "4.6.0"
+version = "4.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "biocentral-api" },
