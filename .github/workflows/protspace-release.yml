@@ -1,9 +1,21 @@
-name: Release Workflow
+name: protspace Release
+
+# Single version authority for the protspace PyPI package (apps/protspace).
+# Runs semantic-release from apps/protspace on Python-only changes to main, then
+# dispatches protspace-publish. NEEDS a live Actions dry-run before trusting it
+# (OpenSpec task 3.4) and these repo secrets: RELEASE_APP_ID, RELEASE_APP_PRIVATE_KEY.
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'apps/protspace/**'
+      - '.github/workflows/protspace-release.yml'
+
+defaults:
+  run:
+    working-directory: apps/protspace
 
 jobs:
   release:
@@ -43,7 +55,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: "pyproject.toml"
+          python-version-file: 'apps/protspace/pyproject.toml'
 
       - name: Restore uv tools
         uses: actions/cache@v5

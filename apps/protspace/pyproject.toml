@@ -111,8 +111,12 @@ ignore = [
 "tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
 "examples/notebook/*" = ["E402", "F811", "ARG001", "F841"]  # Jupyter notebooks: imports after config, cell re-imports, widget callback args
 
+# Runs from apps/protspace (see .github/workflows/protspace-release.yml), so the
+# version paths stay relative to this file. In the uv workspace `uv lock` only writes
+# the ROOT lock, so semantic-release no longer manages the lock (assets=[]) and does
+# not build (publishing is handled by protspace-publish.yml); it only bumps the version.
 [tool.semantic_release]
-assets = ["uv.lock"]
-build_command = "uv lock"
+assets = []
+build_command = ""
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/protspace/__init__.py:__version__"]

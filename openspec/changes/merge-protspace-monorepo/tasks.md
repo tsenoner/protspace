@@ -39,9 +39,9 @@ Caveat: this holds only for **append-only** upstream `main`. If upstream **rebas
 
 ## 3. Release & CI reconciliation
 
-- [ ] 3.1 Move `python-semantic-release` config into `apps/protspace/pyproject.toml`; repoint `version_toml` / `version_variables` to the new paths
+- [x] 3.1 Move `python-semantic-release` config into `apps/protspace/pyproject.toml`; repoint `version_toml` / `version_variables` to the new paths
 - [x] 3.2 Fix protspace `Dockerfile` for `apps/protspace` build context (`COPY` paths, data path, `image.source` label); prep Dockerfile for `apps/prep`
-- [ ] 3.3 Merge the two workflow sets into one path-filtered set: PyPI release job runs only on `apps/protspace/**`; web deploy on `apps/web/**`+`packages/**`; prep image on `apps/prep/**`; tests via `turbo --affected` or path filters
+- [x] 3.3 Merge the two workflow sets into one path-filtered set: PyPI release job runs only on `apps/protspace/**`; web deploy on `apps/web/**`+`packages/**`; prep image on `apps/prep/**`; tests via `turbo --affected` or path filters
 - [ ] 3.4 Dry-run both publish paths on the migration branch (PyPI dry-run + a test prep image build) before archiving the old repo
 
 ## 4. Cutover & cleanup

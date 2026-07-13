@@ -1,8 +1,17 @@
-name: Publish
+name: protspace Publish
+
+# Dispatched by protspace-release.yml after a version bump. Builds the protspace
+# PyPI package (apps/protspace) and the legacy Dash image. NEEDS a live Actions
+# dry-run before archiving the old repo (OpenSpec task 3.4) and PyPI trusted
+# publishing configured for the `protspace` project on this repo.
 
 on:
   repository_dispatch:
     types: [trigger-publish]
+
+defaults:
+  run:
+    working-directory: apps/protspace
 
 jobs:
   pypi:
@@ -24,18 +33,20 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: 'apps/protspace/uv.lock'
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: "pyproject.toml"
+          python-version-file: 'apps/protspace/pyproject.toml'
 
       - name: Build Python Package
         run: uv build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: apps/protspace/dist
 
       - name: Upload dists to GitHub Release
         env:
@@ -49,7 +60,8 @@ jobs:
       packages: write
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
+      # Preserve the existing image identity ghcr.io/<owner>/protspace (not the repo name).
+      IMAGE_NAME: ${{ github.repository_owner }}/protspace
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -80,7 +92,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: apps/protspace
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
