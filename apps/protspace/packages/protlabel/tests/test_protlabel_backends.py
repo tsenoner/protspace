@@ -127,6 +127,48 @@ def test_euclidean_precise_for_near_identical_high_dim():
     assert dist[0, 0] == pytest.approx(expected, rel=1e-3)
 
 
+def test_euclidean_recovers_true_nn_under_high_norm_cancellation():
+    # High-norm pLM-like embeddings drive the GEMM distance
+    # ||q||^2 - 2 q.r + ||r||^2 into catastrophic cancellation: the tiny true
+    # distances from a query to a cluster of near-duplicate references collapse
+    # below the float32 rounding floor, so the float32 top-k *selection* becomes
+    # noise and can drop the true nearest. A float64 rerank of only the k
+    # selected candidates cannot recover a nearest that selection discarded, so
+    # the backend must over-select a wider candidate pool before the rerank.
+    rng = np.random.default_rng(0)
+    d = 512
+    n_queries = 24
+    n_decoys = 4  # near-duplicates competing with each true anchor in float32
+    offset = 300.0  # inflate norms so ||v||^2 ~ 4.6e7 (float32 ULP ~ 4 there)
+
+    anchors = (rng.standard_normal((n_queries, d)) * 5.0).astype(np.float32)
+    # Each query sits almost exactly on its anchor -> the anchor is the true NN.
+    queries = anchors + (rng.standard_normal((n_queries, d)) * 1e-3).astype(np.float32)
+    # Decoys hug each anchor but are strictly farther than the query-anchor gap.
+    decoys = (
+        anchors[:, None, :]
+        + (rng.standard_normal((n_queries, n_decoys, d)) * 5e-2).astype(np.float32)
+    ).reshape(n_queries * n_decoys, d)
+    refs = np.concatenate([anchors, decoys], axis=0)
+
+    # Inflate every norm into the cancellation regime.
+    refs = (refs + offset).astype(np.float32)
+    queries = (queries + offset).astype(np.float32)
+
+    # Ground truth in float64 (anchors occupy indices 0..n_queries-1).
+    refs64 = refs.astype(np.float64)
+    gt = np.array(
+        [
+            int(np.argmin(np.linalg.norm(refs64 - q, axis=1)))
+            for q in queries.astype(np.float64)
+        ]
+    )
+    assert np.array_equal(gt, np.arange(n_queries))  # sanity: anchors are the true NN
+
+    idx, _ = nearest(queries, refs, k=1, metric="euclidean")
+    assert np.array_equal(idx[:, 0], gt)  # every query recovers its true anchor
+
+
 def test_cosine_matches_reference_distances():
     rng = np.random.default_rng(8)
     refs = rng.standard_normal((25, 10)).astype(np.float32)

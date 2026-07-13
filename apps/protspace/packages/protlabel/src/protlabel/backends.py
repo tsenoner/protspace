@@ -19,14 +19,29 @@ import numpy as np
 
 _METRICS = {"euclidean", "cosine"}
 
+# The float32 GEMM distance loses precision to catastrophic cancellation for
+# high-norm pLM embeddings, so its top-k *selection* (argpartition) can drop a
+# true nearest whose float32 distance is noise.  The exact float64 rerank can
+# only reorder the candidates selection kept — it cannot recover a nearest that
+# was never selected.  So over-fetch a wider candidate pool before the rerank;
+# the pad gives small k (e.g. the default k=1) a real margin, the factor scales
+# it for larger k.  Cost is still O(b * k_pool * d) << the O(b * n_refs) GEMM.
+_RERANK_OVERFETCH = 2  # multiplicative widening of the candidate pool
+_RERANK_PAD = 16  # additive floor so small k still over-fetches
+
+
+def _rerank_pool_size(k: int, n_refs: int) -> int:
+    """Number of float32-selected candidates to rerank in float64 for a top-k."""
+    return min(n_refs, max(k * _RERANK_OVERFETCH, k + _RERANK_PAD))
+
 
 def _exact_distances(block: np.ndarray, sel: np.ndarray, metric: str) -> np.ndarray:
-    """Distances from each query (block[i]) to its k candidates (sel[i]) in float64.
+    """Distances from each query (block[i]) to its pool candidates (sel[i]) in float64.
 
-    The fast GEMM block selects the top-k candidates; this recomputes their
+    The fast GEMM block selects a candidate pool; this recomputes their
     distances by direct subtraction in float64 to avoid the catastrophic
     cancellation of ``||q||^2 - 2 q.r + ||r||^2`` for near-identical vectors.
-    Cost is O(b * k * d), not O(b * n_refs), so it is cheap.
+    Cost is O(b * k_pool * d), not O(b * n_refs), so it is cheap.
     """
     blk = block[:, None, :].astype(np.float64)  # (b, 1, d)
     sel = sel.astype(np.float64)  # (b, k, d)
@@ -67,9 +82,9 @@ def nearest(
     per-reference norm into the dot product rather than storing a normalized
     second copy) plus a few float32 ``(query_chunk, n_refs)`` temporaries, so the
     real peak is comparable to (not far below) that budget.  The exact-distance
-    recompute only touches the k surviving candidates, so peak memory remains
-    close to the reference matrix itself, making the function laptop-feasible at
-    Swiss-Prot scale.
+    recompute only touches the over-fetched candidate pool (a small multiple of
+    k, not n_refs), so peak memory remains close to the reference matrix itself,
+    making the function laptop-feasible at Swiss-Prot scale.
     """
     if metric not in _METRICS:
         raise ValueError(f"Unknown metric {metric!r}; expected 'euclidean' or 'cosine'")
@@ -81,6 +96,7 @@ def nearest(
     refs = np.ascontiguousarray(refs, dtype=np.float32)
     n_refs = refs.shape[0]
     k = min(k, n_refs)
+    k_pool = _rerank_pool_size(k, n_refs)
 
     # Adaptively shrink the query chunk so the distance block stays within
     # max_block_bytes (budgeting for a float64 = 8 bytes-per-element block).
@@ -123,13 +139,16 @@ def nearest(
                 )
                 np.clip(d, 0.0, 2.0, out=d)  # cosine distance in [0, 2]
 
-        # Select the k candidates with the fast (float32) block, then recompute
-        # their distances exactly in float64 and order by that — so the reported
-        # distance is precise even for near-identical vectors.
-        cand = np.argpartition(d, kth=k - 1, axis=1)[:, :k]  # unsorted top-k
+        # Over-fetch a candidate pool with the fast (float32) block, recompute
+        # the pool's distances exactly in float64, then take the true top-k from
+        # it — so both the *selection* and the reported distance are robust to
+        # the float32 GEMM's catastrophic cancellation for near-identical (or
+        # high-norm) vectors. Reranking a too-narrow pool cannot recover a true
+        # nearest the float32 selection dropped; see _rerank_pool_size.
+        cand = np.argpartition(d, kth=k_pool - 1, axis=1)[:, :k_pool]  # unsorted pool
         rows = np.arange(block.shape[0])[:, None]
-        exact = _exact_distances(block, refs[cand], metric)  # (b, k) float64
-        order = np.argsort(exact, axis=1)
+        exact = _exact_distances(block, refs[cand], metric)  # (b, k_pool) float64
+        order = np.argsort(exact, axis=1)[:, :k]  # true top-k, ascending by exact dist
         idx_out[start : start + block.shape[0]] = cand[rows, order]
         dist_out[start : start + block.shape[0]] = exact[rows, order].astype(np.float32)
 
