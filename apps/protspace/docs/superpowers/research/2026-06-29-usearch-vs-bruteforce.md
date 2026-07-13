@@ -12,8 +12,9 @@ brute-force default decision with measurements.
 **Keep exact brute-force as the only backend for now.** It is *exact* (recall = 1, which matters
 for label-transfer correctness), needs no index build, adds no dependency, and is sub-millisecond to
 low-millisecond per query in a batch through Swiss-Prot scale. In a benchmark over
-`n_refs ∈ {1K,10K,100K} × dim ∈ {320,1024}` with a 128-query batch, **brute-force beat usearch
-end-to-end at every point**, because usearch's HNSW build cost is amortised over too few queries.
+`n_refs ∈ {1K,10K,100K} × dim ∈ {1024,2560}` (ProtT5 and ESM2-3B) with a 128-query batch,
+**brute-force beat usearch end-to-end at every point**, because usearch's HNSW build cost is
+amortised over too few queries.
 
 **Reconsider an *optional* usearch backend only if a persisted, long-lived EAT service emerges** that
 builds one index over a large fixed reference set and answers many thousands of online single-vector
@@ -40,7 +41,7 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 ```
 
 > **Caveat — indicative numbers.** Apple M4 Pro, 14 cores, numpy 2.2.6 on Apple Accelerate BLAS
-> (multithreaded), usearch 2.25.3. Single run per cell, no repeats/medians, thermals uncontrolled.
+> (multithreaded), usearch 2.26.0. Single run per cell, no repeats/medians, thermals uncontrolled.
 > Treat as order-of-magnitude, not publication figures. The shapes (scaling, crossover) are robust;
 > the absolute milliseconds are not. Recall@1 here is measured on **random Gaussian vectors** — see
 > the recall caveat below, it is *not* representative of real embeddings.
@@ -49,18 +50,18 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 
 | n_refs | dim | method | build | per-query | recall@1 | peak RSS |
 |---:|---:|---|---:|---:|---:|---:|
-| 1 000 | 320 | brute-force | — | **0.004 ms** | 1.00 | 62 MB |
-| 1 000 | 320 | usearch | 0.02 s | 0.016 ms | 0.96 | 63 MB |
-| 1 000 | 1024 | brute-force | — | **0.010 ms** | 1.00 | 74 MB |
-| 1 000 | 1024 | usearch | 0.05 s | 0.049 ms | 0.88 | 78 MB |
-| 10 000 | 320 | brute-force | — | **0.031 ms** | 1.00 | 125 MB |
-| 10 000 | 320 | usearch | 0.64 s | 0.034 ms | 0.55 | 140 MB |
-| 10 000 | 1024 | brute-force | — | **0.117 ms** | 1.00 | 283 MB |
-| 10 000 | 1024 | usearch | 2.41 s | 0.133 ms | 0.37 | 325 MB |
-| 100 000 | 320 | brute-force | — | 0.471 ms | 1.00 | 796 MB |
-| 100 000 | 320 | usearch | 14.0 s | **0.077 ms** (6×) | 0.08* | 924 MB |
-| 100 000 | 1024 | brute-force | — | 1.167 ms | 1.00 | 2024 MB |
-| 100 000 | 1024 | usearch | 43.6 s | **0.211 ms** (5.5×) | 0.06* | 2256 MB |
+| 1 000 | 1024 | brute-force | — | **0.059 ms** | 1.00 | 116 MB |
+| 1 000 | 1024 | usearch | 0.04 s | 0.048 ms | 0.87 | 121 MB |
+| 1 000 | 2560 | brute-force | — | **0.122 ms** | 1.00 | 242 MB |
+| 1 000 | 2560 | usearch | 0.12 s | 0.107 ms | 0.91 | 252 MB |
+| 10 000 | 1024 | brute-force | — | **0.129 ms** | 1.00 | 326 MB |
+| 10 000 | 1024 | usearch | 2.20 s | 0.109 ms | 0.33 | 367 MB |
+| 10 000 | 2560 | brute-force | — | **0.213 ms** | 1.00 | 619 MB |
+| 10 000 | 2560 | usearch | 5.79 s | 0.237 ms | 0.21 | 719 MB |
+| 100 000 | 1024 | brute-force | — | 0.963 ms | 1.00 | 1889 MB |
+| 100 000 | 1024 | usearch | 36.6 s | **0.147 ms** (6.5×) | 0.08* | 2027 MB |
+| 100 000 | 2560 | brute-force | — | 2.138 ms | 1.00 | 3696 MB |
+| 100 000 | 2560 | usearch | 90.4 s | **0.493 ms** (4.3×) | 0.03* | 4394 MB |
 
 `*` random-data artifact at ef=64 — see below.
 
@@ -69,13 +70,13 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 - **Crossover / break-even.** With 128 queries in one batch, exact brute-force wins outright
   everywhere: its total cost (0 build + query) beats usearch's (build + query). usearch's per-query
   latency only pulls ahead at ~100K refs, but the build dominates: at 100K × 1024, each query saves
-  ~0.96 ms, so you'd need **~45 000 queries against the same fixed index** to repay the 43.6 s build.
+  ~0.82 ms, so you'd need **~45 000 queries against the same fixed index** to repay the 36.6 s build.
   → usearch makes sense only for a **persisted index reused across many queries**, never a one-shot
   transfer.
 - **Brute-force scaling.** Per-query time is linear in `n_refs · dim` (a dense GEMM): at dim=1024 it
-  goes 0.010 → 0.117 → 1.167 ms/query across 1K → 10K → 100K. Extrapolating to Swiss-Prot
-  (~570K × 1024) ≈ **6–7 ms/query** (~3.8 ms at dim 320) — fine for batch transfer, which is exactly
-  the chunked-GEMM backend's design point.
+  goes 0.059 → 0.129 → 0.963 ms/query across 1K → 10K → 100K (and 0.122 → 0.213 → 2.138 at dim 2560).
+  Extrapolating to Swiss-Prot ≈ **~5.5 ms/query** at 570K × 1024 (~12 ms at dim 2560) — fine for batch
+  transfer, which is exactly the chunked-GEMM backend's design point.
 - **Memory.** *(The `peak RSS` column in the table above is unreliable — that run measured several
   configs in one long-lived process, and process RSS is a monotonic high-water mark, so later rows
   are inflated by earlier ones. Use the clean per-process measurement under "Deployment envelope"
@@ -84,9 +85,9 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 - **Recall caveat (important).** The low recall@1 at ef=64 (0.06–0.96) is largely a **random-vector
   artifact**, not a usearch defect: i.i.d. Gaussian vectors are near-orthogonal in high dim, so the
   true top-1 is a near-tie among many almost-equidistant candidates (measured 1st–2nd-neighbour gap
-  ≈ 0.012 in cosine distance). The benchmark confirmed an ef sweep recovers recall as expected
-  (10K × 320: recall@1 0.59 → 0.86 → 0.99 as ef 64 → 256 → 1024), and that the returned top-1 is
-  inside the exact top-5 ~94 % of the time at ef=64. **Real pLM embeddings have cluster structure
+  ≈ 0.008 in cosine distance at dim 1024). The benchmark confirmed an ef sweep recovers recall as
+  expected (10K × 1024: recall@1 0.33 → 0.69 → 0.98 as ef 64 → 256 → 1024), and that the returned
+  top-1 is inside the exact top-5 ~83 % of the time at ef=64. **Real pLM embeddings have cluster structure
   (a clear nearest neighbour), so production recall would be far higher at the same ef.** Still, for
   *label transfer* where the nearest neighbour's label is copied, exactness is the safe default.
 

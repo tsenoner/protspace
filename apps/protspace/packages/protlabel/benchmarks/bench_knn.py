@@ -4,7 +4,9 @@ vs approximate HNSW kNN (usearch) on this machine.
 Run (usearch + psutil are not project dependencies — pull them just for the run):
   cd <repo> && uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_knn.py
 
-Grid: n_refs in {1000, 10000, 100000}; dim in {320, 1024}; n_queries=128; cosine; k=1.
+Grid: n_refs in {1000, 10000, 100000}; dim in {1024, 2560}; n_queries=128; cosine; k=1.
+Dims are pLM-relevant: 1024 = ProtT5 (the transfer default), 2560 = ESM2-3B (the
+large-model / memory-ceiling case the research doc discusses).
 Timings use time.perf_counter. BLAS is warmed up once before timing.
 peak_mb is whole-process peak RSS sampled during each method's build+query window
 (best-effort; includes interpreter + shared ref/query arrays baseline).
@@ -44,7 +46,7 @@ N_QUERIES = 128
 K = 1
 SEED = 0
 
-GRID = [(n, d) for n in (1_000, 10_000, 100_000) for d in (320, 1024)]
+GRID = [(n, d) for n in (1_000, 10_000, 100_000) for d in (1024, 2560)]
 
 
 class PeakRSS:
