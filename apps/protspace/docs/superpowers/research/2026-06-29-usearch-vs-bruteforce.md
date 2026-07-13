@@ -12,14 +12,14 @@ brute-force default decision with measurements.
 **Keep exact brute-force as the only backend for now.** It is *exact* (recall = 1, which matters
 for label-transfer correctness), needs no index build, adds no dependency, and is sub-millisecond to
 low-millisecond per query in a batch through Swiss-Prot scale. In a benchmark over
-`n_refs ∈ {1K,10K,100K} × dim ∈ {1024,2560}` (ProtT5 and ESM2-3B) with a 128-query batch,
-**brute-force beat usearch end-to-end at every point**, because usearch's HNSW build cost is
-amortised over too few queries.
+`n_refs ∈ {1K,10K,100K} × dim ∈ {960,1024,1152,1280,2560}` (spanning ESMC-300M, ProtT5, ESMC-600M,
+ESM2-650M, ESM2-3B) with a 128-query batch, **brute-force beat usearch end-to-end at every point**,
+because usearch's HNSW build cost is amortised over too few queries.
 
 **Reconsider an *optional* usearch backend only if a persisted, long-lived EAT service emerges** that
 builds one index over a large fixed reference set and answers many thousands of online single-vector
 lookups. Two things would drive that decision, and only at scale:
-- **Per-query speed:** usearch was ~5–6× faster *per query* at 100K refs — but you need
+- **Per-query speed:** usearch was ~6–7× faster *per query* at 100K refs — but you need
   ~tens of thousands of queries against the same fixed index to repay the build.
 - **Memory (the stronger argument for the 4-core/4 GB target):** full Swiss-Prot at dim 1024 now
   **fits** — measured ~3 GB peak in a 4 GB container, *after* a fix that stops the cosine path from
@@ -48,20 +48,41 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 
 ## Results (cosine, 128-query batch, k=1)
 
+Dims: 960 = ESMC-300M, 1024 = ProtT5 (transfer default), 1152 = ESMC-600M, 1280 = ESM2-650M,
+2560 = ESM2-3B.
+
 | n_refs | dim | method | build | per-query | recall@1 | peak RSS |
 |---:|---:|---|---:|---:|---:|---:|
-| 1 000 | 1024 | brute-force | — | **0.059 ms** | 1.00 | 116 MB |
-| 1 000 | 1024 | usearch | 0.04 s | 0.048 ms | 0.87 | 121 MB |
-| 1 000 | 2560 | brute-force | — | **0.122 ms** | 1.00 | 242 MB |
-| 1 000 | 2560 | usearch | 0.12 s | 0.107 ms | 0.91 | 252 MB |
-| 10 000 | 1024 | brute-force | — | **0.129 ms** | 1.00 | 326 MB |
-| 10 000 | 1024 | usearch | 2.20 s | 0.109 ms | 0.33 | 367 MB |
-| 10 000 | 2560 | brute-force | — | **0.213 ms** | 1.00 | 619 MB |
-| 10 000 | 2560 | usearch | 5.79 s | 0.237 ms | 0.21 | 719 MB |
-| 100 000 | 1024 | brute-force | — | 0.963 ms | 1.00 | 1889 MB |
-| 100 000 | 1024 | usearch | 36.6 s | **0.147 ms** (6.5×) | 0.08* | 2027 MB |
-| 100 000 | 2560 | brute-force | — | 2.138 ms | 1.00 | 3696 MB |
-| 100 000 | 2560 | usearch | 90.4 s | **0.493 ms** (4.3×) | 0.03* | 4394 MB |
+| 1 000 | 960 | brute-force | — | **0.042 ms** | 1.00 | 113 MB |
+| 1 000 | 960 | usearch | 0.05 s | 0.041 ms | 0.91 | 117 MB |
+| 1 000 | 1024 | brute-force | — | **0.046 ms** | 1.00 | 148 MB |
+| 1 000 | 1024 | usearch | 0.05 s | 0.042 ms | 0.91 | 152 MB |
+| 1 000 | 1152 | brute-force | — | **0.054 ms** | 1.00 | 186 MB |
+| 1 000 | 1152 | usearch | 0.05 s | 0.049 ms | 0.88 | 191 MB |
+| 1 000 | 1280 | brute-force | — | **0.061 ms** | 1.00 | 229 MB |
+| 1 000 | 1280 | usearch | 0.06 s | 0.056 ms | 0.91 | 234 MB |
+| 1 000 | 2560 | brute-force | — | **0.116 ms** | 1.00 | 314 MB |
+| 1 000 | 2560 | usearch | 0.11 s | 0.103 ms | 0.93 | 324 MB |
+| 10 000 | 960 | brute-force | — | **0.110 ms** | 1.00 | 393 MB |
+| 10 000 | 960 | usearch | 2.15 s | 0.107 ms | 0.33 | 432 MB |
+| 10 000 | 1024 | brute-force | — | **0.117 ms** | 1.00 | 472 MB |
+| 10 000 | 1024 | usearch | 2.27 s | 0.118 ms | 0.31 | 513 MB |
+| 10 000 | 1152 | brute-force | — | **0.121 ms** | 1.00 | 560 MB |
+| 10 000 | 1152 | usearch | 2.69 s | 0.110 ms | 0.35 | 606 MB |
+| 10 000 | 1280 | brute-force | — | **0.135 ms** | 1.00 | 657 MB |
+| 10 000 | 1280 | usearch | 2.90 s | 0.130 ms | 0.25 | 708 MB |
+| 10 000 | 2560 | brute-force | — | **0.202 ms** | 1.00 | 853 MB |
+| 10 000 | 2560 | usearch | 5.75 s | 0.240 ms | 0.23 | 953 MB |
+| 100 000 | 960 | brute-force | — | 0.921 ms | 1.00 | 1952 MB |
+| 100 000 | 960 | usearch | 35.7 s | **0.139 ms** (6.6×) | 0.07* | 2108 MB |
+| 100 000 | 1024 | brute-force | — | 1.093 ms | 1.00 | 1913 MB |
+| 100 000 | 1024 | usearch | 37.5 s | **0.154 ms** (7.1×) | 0.07* | 2159 MB |
+| 100 000 | 1152 | brute-force | — | 1.118 ms | 1.00 | 2066 MB |
+| 100 000 | 1152 | usearch | 42.3 s | **0.157 ms** (7.1×) | 0.04* | 2360 MB |
+| 100 000 | 1280 | brute-force | — | 1.150 ms | 1.00 | 2304 MB |
+| 100 000 | 1280 | usearch | 45.9 s | **0.169 ms** (6.8×) | 0.06* | 2627 MB |
+| 100 000 | 2560 | brute-force | — | 1.720 ms | 1.00 | 3794 MB |
+| 100 000 | 2560 | usearch | 91.1 s | **0.300 ms** (5.7×) | 0.02* | 4219 MB |
 
 `*` random-data artifact at ef=64 — see below.
 
@@ -70,19 +91,20 @@ uv run --with usearch --with psutil python packages/protlabel/benchmarks/bench_k
 - **Crossover / break-even.** With 128 queries in one batch, exact brute-force wins outright
   everywhere: its total cost (0 build + query) beats usearch's (build + query). usearch's per-query
   latency only pulls ahead at ~100K refs, but the build dominates: at 100K × 1024, each query saves
-  ~0.82 ms, so you'd need **~45 000 queries against the same fixed index** to repay the 36.6 s build.
+  ~0.94 ms, so you'd need **~40 000 queries against the same fixed index** to repay the 37.5 s build.
   → usearch makes sense only for a **persisted index reused across many queries**, never a one-shot
   transfer.
 - **Brute-force scaling.** Per-query time is linear in `n_refs · dim` (a dense GEMM): at dim=1024 it
-  goes 0.059 → 0.129 → 0.963 ms/query across 1K → 10K → 100K (and 0.122 → 0.213 → 2.138 at dim 2560).
-  Extrapolating to Swiss-Prot ≈ **~5.5 ms/query** at 570K × 1024 (~12 ms at dim 2560) — fine for batch
-  transfer, which is exactly the chunked-GEMM backend's design point.
+  goes 0.046 → 0.117 → 1.093 ms/query across 1K → 10K → 100K (and 0.116 → 0.202 → 1.720 at dim 2560);
+  the intermediate ESM dims (960/1152/1280) interpolate as expected. Extrapolating to Swiss-Prot ≈
+  **~6 ms/query** at 570K × 1024 (~10 ms at dim 2560) — fine for batch transfer, which is exactly the
+  chunked-GEMM backend's design point.
 - **Memory.** *(The `peak RSS` column in the table above is unreliable — that run measured several
   configs in one long-lived process, and process RSS is a monotonic high-water mark, so later rows
   are inflated by earlier ones. Use the clean per-process measurement under "Deployment envelope"
   below instead.)* The reference matrix is the binding constraint: f32 references are ~2.3 GB
   (dim 1024) to ~5.8 GB (dim 2560) at full Swiss-Prot.
-- **Recall caveat (important).** The low recall@1 at ef=64 (0.06–0.96) is largely a **random-vector
+- **Recall caveat (important).** The low recall@1 at ef=64 (0.02–0.93) is largely a **random-vector
   artifact**, not a usearch defect: i.i.d. Gaussian vectors are near-orthogonal in high dim, so the
   true top-1 is a near-tie among many almost-equidistant candidates (measured 1st–2nd-neighbour gap
   ≈ 0.008 in cosine distance at dim 1024). The benchmark confirmed an ef sweep recovers recall as
@@ -152,7 +174,7 @@ on 4 arm64 cores (expect ~2–3× on a slower Intel VM — still fine for batch 
 | 4-core/4 GB deployed VM, references ≤ ~100–200K | **exact brute-force** — sub-ms/low-ms per query, fits memory |
 | 4 GB VM, full Swiss-Prot (570K), dim ≤ 1024 | **exact brute-force** — measured ~3 GB peak (after the cosine 1×-memory fix), fits; ~7–10 ms/query on 4 cores |
 | 4 GB VM, Swiss-Prot at dim 2560 (ESM2-3B) | references alone are ~5.8 GB → won't fit f32 → use a smaller model, fp16 references, or (future) usearch `i8`/`f16` quantization |
-| Always-on EAT service: one fixed index, ≫10K online single-vector lookups | **optional usearch backend** — its ~5–6× per-query speedup and on-disk index amortise the build |
+| Always-on EAT service: one fixed index, ≫10K online single-vector lookups | **optional usearch backend** — its ~6–7× per-query speedup and on-disk index amortise the build |
 
 **Conclusion:** the brute-force default the reviewer favoured is the right call, and the measurements
 back it. An optional usearch backend is a *future* item justified by either (a) a persisted
