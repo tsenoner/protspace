@@ -13,6 +13,8 @@ from pathlib import Path
 
 import requests
 
+from protspace.data.annotations.encoding import encode_field
+
 logger = logging.getLogger(__name__)
 
 # ExPASy ENZYME database for EC name resolution
@@ -185,7 +187,7 @@ class UniProtTransformer:
                 ec_num, evidence = ec, ""
             name = ec_name_map.get(ec_num, "")
             if name:
-                entry = f"{ec_num} ({name})"
+                entry = f"{ec_num} ({encode_field(name)})"
             else:
                 entry = ec_num
             if evidence:

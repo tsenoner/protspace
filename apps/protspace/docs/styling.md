@@ -40,6 +40,8 @@ Top-level keys are annotation names. Each annotation accepts the keys below.
 
 **Stored** keys are persisted in the output bundle. **Non-stored** (processing-only) keys are consumed during generation — only their effects (the resulting categories with `zOrder`, `color`, `shape`) are written.
 
+> **Value keys are display values.** In `colors`/`shapes`/`pinnedValues`/`hiddenValues`, a *value* is the human-readable category as `--generate-template` lists it and as the legend shows it — the percent-decoded name with any `|score` suffix trimmed, not the raw wire cell. A template therefore round-trips even when a name legitimately contains `;`, `|`, or `%` (bundle format v2 percent-encodes those on the wire; see [Annotation Reference](annotations.md#encoding-bundle-format-v2)).
+
 ### N/A values
 
 Missing values (`""`, `"<NA>"`, `"NaN"`) are normalized automatically — use any form in the styles file. In the output bundle N/A is stored with the key `__NA__` (the frontend's internal format).

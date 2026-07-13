@@ -614,6 +614,11 @@ class TestEcTransformation:
 
         assert result["ec"] == "1.1.1.1 (Alcohol dehydrogenase)"
 
+    def test_ec_name_with_semicolon_encoded(self):
+        """Test that EC names with reserved characters like ; are percent-encoded."""
+        out = UniProtTransformer.transform_ec("1.1.1.1", {"1.1.1.1": "Foo; bar"})
+        assert out == "1.1.1.1 (Foo%3B bar)"
+
 
 class TestEcNameMapParsing:
     """Test parsing of ExPASy enzyme.dat format."""

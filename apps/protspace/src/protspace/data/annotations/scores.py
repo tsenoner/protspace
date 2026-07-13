@@ -27,6 +27,8 @@ SCORE_BEARING_COLUMNS = [
     "panther",
     "prosite",
     "prints",
+    # TED structural domains (pLDDT confidence)
+    "ted_domains",
 ]
 
 

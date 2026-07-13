@@ -9,6 +9,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import (
     SETTINGS_FILENAME,
     STATISTICS_FILENAME,
@@ -197,7 +198,7 @@ class BaseProcessor:
 
         df = df.fillna("").astype(str)
 
-        return pa.Table.from_pandas(df)
+        return stamp_format_version(pa.Table.from_pandas(df))
 
     def _create_projections_metadata_table(
         self, reductions: list[dict[str, Any]]

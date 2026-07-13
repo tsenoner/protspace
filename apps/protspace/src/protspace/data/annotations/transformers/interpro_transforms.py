@@ -13,6 +13,8 @@ from pathlib import Path
 
 import requests
 
+from protspace.data.annotations.encoding import encode_field
+
 logger = logging.getLogger(__name__)
 
 PFAM_CLANS_URL = (
@@ -65,7 +67,9 @@ def _parse_pfam_clans_tsv(path: Path) -> dict[str, str]:
             pfam_acc = parts[0]
             clan_id = parts[1]
             clan_name = parts[2] if len(parts) > 2 else ""
-            mapping[pfam_acc] = f"{clan_id} ({clan_name})" if clan_name else clan_id
+            mapping[pfam_acc] = (
+                f"{clan_id} ({encode_field(clan_name)})" if clan_name else clan_id
+            )
     return mapping
 
 

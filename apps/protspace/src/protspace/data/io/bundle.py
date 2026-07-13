@@ -21,6 +21,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.data.annotations.encoding import stamp_format_version
+
 logger = logging.getLogger(__name__)
 
 PARQUET_BUNDLE_DELIMITER = b"---PARQUET_DELIMITER---"
@@ -231,6 +233,15 @@ def replace_annotations_in_bundle(
     and statistics (5th) parts are carried over unchanged.
     """
     core, settings, statistics = _parse_bundle(input_path)
+
+    # Re-stamp the format version at this single annotations-write chokepoint.
+    # pyarrow table ops (rename_columns, concat) drop schema metadata, and
+    # callers (transfer, prediction overlay) build the replacement table from
+    # exactly such ops — so without this the stamp is silently lost and a v2
+    # bundle re-reads as v1 (raw %XX names). Trust boundary: the replacement
+    # cells originate from the same v2 pipeline as the input bundle, the same
+    # assumption `cli/bundle` makes when it stamps unconditionally.
+    annotations_table = stamp_format_version(annotations_table)
 
     new_annotations_bytes = _table_to_parquet_bytes(annotations_table)
     _check_no_delimiter(new_annotations_bytes)
