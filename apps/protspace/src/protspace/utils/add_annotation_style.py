@@ -111,7 +111,7 @@ def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     Returns:
         ``{annotation_name: {display_value: count}}``
     """
-    decode = reader.get_format_version() >= 2
+    decode = reader.should_decode()
     frequencies: dict[str, dict[str, int]] = {}
     for annotation in reader.get_all_annotations():
         raw_values = [str(v) for v in reader.get_all_annotation_values(annotation)]
@@ -132,7 +132,7 @@ def _annotation_display_values(reader, annotation: str) -> set[str]:
     plot/legend groups by — not the raw percent-encoded wire cells. NA-like
     labels carry no reserved char, so they pass through unchanged.
     """
-    decode = reader.get_format_version() >= 2
+    decode = reader.should_decode()
     values: set[str] = set()
     for raw in reader.get_all_annotation_values(annotation):
         values.update(_to_display_value(str(raw), decode=decode))
@@ -271,6 +271,14 @@ def add_annotation_styles_bundle(
     # Collect settings-level overrides from the styles input
     style_overrides: dict[str, dict] = {}
 
+    # Compute value frequencies once (used for validation below and for
+    # frequency-based zOrder). Its keys are the display values a style file is
+    # keyed by — the same set _annotation_display_values would build — so it
+    # doubles as the validation set without a second full-protein scan. Style
+    # updates only mutate visualization_state, not annotation values, so the
+    # frequencies stay valid for the zOrder pass afterwards.
+    value_frequencies = compute_value_frequencies(reader)
+
     for annotation, styles in annotation_styles.items():
         all_annotations = reader.get_all_annotations()
         if annotation not in all_annotations:
@@ -279,7 +287,7 @@ def add_annotation_styles_bundle(
                 f"Available annotations: {all_annotations}"
             )
 
-        all_values = _annotation_display_values(reader, annotation)
+        all_values = set(value_frequencies.get(annotation, {}))
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}
@@ -313,9 +321,6 @@ def add_annotation_styles_bundle(
                             f"'{annotation}'. Available values: {sorted(all_values)}"
                         )
                 reader.update_marker_shape(annotation, resolved, shape)
-
-    # Compute value frequencies for frequency-based zOrder
-    value_frequencies = compute_value_frequencies(reader)
 
     # Convert updated visualization_state back to settings_json
     viz_state = reader.data.get("visualization_state", {})

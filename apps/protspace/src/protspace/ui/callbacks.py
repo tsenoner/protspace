@@ -296,7 +296,7 @@ def setup_callbacks(app):
         reader = get_reader(json_data)
         # Present display values (v2-decoded, |suffix trimmed) so the picker
         # matches the plot's categories and the keys styles are stored under.
-        decode = reader.get_format_version() >= 2
+        decode = reader.should_decode()
         all_values = reader.get_all_annotation_values(selected_annotation)
         unique_values = {
             str(to_display_value(v, decode=decode)) for v in all_values if pd.notna(v)
@@ -321,7 +321,7 @@ def setup_callbacks(app):
         # Get all annotation values to determine index for default color.
         # Work in display space so the index matches the plot's category order
         # and the lookup matches keys styles are stored under.
-        decode = reader.get_format_version() >= 2
+        decode = reader.should_decode()
         all_values = sorted(
             {
                 str(to_display_value(v, decode=decode))

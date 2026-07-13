@@ -19,10 +19,8 @@ def _read_format_version(schema_metadata: dict | None) -> int:
     from protspace.data.annotations.encoding import FORMAT_VERSION_KEY
 
     raw = (schema_metadata or {}).get(FORMAT_VERSION_KEY)
-    if raw is None:
-        return 1
     try:
-        return int(raw)
+        return int(raw)  # int(None) raises TypeError → caught below → 1
     except (TypeError, ValueError):
         return 1
 
@@ -231,6 +229,16 @@ class ArrowReader:
             return int(self.data.get("format_version", 1))
         except (TypeError, ValueError):
             return 1
+
+    def should_decode(self) -> bool:
+        """Whether display code should percent-decode annotation cells.
+
+        True only for v2+ bundles; the single home for the version→policy gate
+        so display sites can't drift or hardcode the threshold.
+        """
+        from protspace.data.annotations.encoding import BUNDLE_FORMAT_VERSION
+
+        return self.get_format_version() >= BUNDLE_FORMAT_VERSION
 
     def get_projection_names(self) -> list[str]:
         """Get list of projection names."""

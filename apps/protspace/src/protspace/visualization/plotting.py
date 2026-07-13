@@ -44,7 +44,7 @@ def prepare_dataframe(
     if reader.get_projection_info(selected_projection)["dimensions"] == 3:
         df["z"] = [coord["z"] for coord in df["coordinates"]]
 
-    decode = reader.get_format_version() >= 2
+    decode = reader.should_decode()
     df[selected_annotation] = df["identifier"].apply(
         lambda x: to_display_value(
             reader.get_protein_annotations(x).get(selected_annotation), decode=decode

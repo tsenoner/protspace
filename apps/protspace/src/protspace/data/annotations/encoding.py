@@ -23,30 +23,28 @@ FORMAT_VERSION_KEY = b"protspace_format_version"
 
 # Chars that must be percent-encoded inside any free-text token.
 _RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
-_ENCODE_MAP = {c: f"%{ord(c):02X}" for c in _RESERVED}
+_ENCODE_TABLE = str.maketrans({c: f"%{ord(c):02X}" for c in _RESERVED})
 _DECODE_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 
 
 def encode_field(s: str) -> str:
     """Percent-encode the reserved set inside a free-text token. Lossless."""
-    if not s or not any(c in _ENCODE_MAP for c in s):
-        return s
-    return "".join(_ENCODE_MAP.get(c, c) for c in s)
+    return s.translate(_ENCODE_TABLE)
 
 
 def decode_field(s: str) -> str:
     """Inverse of :func:`encode_field`. A no-op on text without ``%``."""
-    if not s or "%" not in s:
+    if "%" not in s:
         return s
     return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
 
 
 def to_display_value(raw, *, decode: bool = True):
-    """Convert one raw annotation cell into its scalar human-display value.
+    """Convert one annotation hit into its scalar human-display value.
 
-    The single shared display transform for both the Dash ``serve`` plot and
-    the ``style`` template, so grouping/legend/hover and style keys stay in the
-    same space:
+    The shared per-hit transform behind every display path (the Dash ``serve``
+    plot/legend/hover, the style keys, and the ``style`` template), so they key
+    on the same value:
 
     1. **Pipe trim** – drop the ``|score``/``|evidence`` suffix
        (``"cluster 3|0.53"`` → ``"cluster 3"``), so per-point score noise does
@@ -59,6 +57,11 @@ def to_display_value(raw, *, decode: bool = True):
     ``format_version >= 2``. A legacy (v1) value that legitimately contains a
     literal ``%XX`` is then left untouched. Non-strings (missing/``None`` or
     numeric annotations) pass through unchanged.
+
+    Operates on a whole cell as one hit — the Dash plot passes the whole cell,
+    keeping a multi-hit ``A;B`` as one category. The ``style`` template instead
+    splits on ``;`` first (see ``add_annotation_style._to_display_value``) to
+    key each label separately, matching the web frontend's multi-label legend.
     """
     if not isinstance(raw, str):
         return raw
