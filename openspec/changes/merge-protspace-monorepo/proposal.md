@@ -53,12 +53,12 @@ not draining PRs. Verified conflict surface: #306/#233 are `packages`-only (no c
 `app→apps/web` move); #66/#55 arrive pre-prefixed under `apps/protspace/`; only #295 needs trivial
 path-move fixups.
 
-| PR(s)                                                 | Handling                                                                                                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PR(s)                                                 | Handling                                                                                                                                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | protspace #66 (v2 writer) **+** web #306 (v2 reader)  | **The flagship.** Both live in the monorepo after import (#66 carried, #306 in-repo). Land v2 as the **first monorepo PR**, adding `schema.json`+fixtures with it — contract written once, against v2. |
-| web #295 (projection statistics in bundle pipeline)   | Touches `app/`+`services/`; owner re-targets onto post-cutover `apps/web`/`apps/prep` (path-move fixups). Fold its columns into `schema.json` when v2 lands.  |
-| protspace #55 (EAT engine + `transfer`, Python-only)  | Carried by filter-repo under `apps/protspace/`; re-open as a monorepo PR. (Landing it on old protspace first is fine too, but not required.)                  |
-| protspace #60 (draft chore) · web #233 (context menu) | Unrelated — carry or land/close; no cutover interaction.                                                                                                      |
+| web #295 (projection statistics in bundle pipeline)   | Touches `app/`+`services/`; owner re-targets onto post-cutover `apps/web`/`apps/prep` (path-move fixups). Fold its columns into `schema.json` when v2 lands.                                           |
+| protspace #55 (EAT engine + `transfer`, Python-only)  | Carried by filter-repo under `apps/protspace/`; re-open as a monorepo PR. (Landing it on old protspace first is fine too, but not required.)                                                           |
+| protspace #60 (draft chore) · web #233 (context menu) | Unrelated — carry or land/close; no cutover interaction.                                                                                                                                               |
 
 ## Capabilities
 

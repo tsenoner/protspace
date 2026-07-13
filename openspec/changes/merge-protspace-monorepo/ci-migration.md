@@ -10,10 +10,10 @@ repo (OpenSpec task 3.4/4.3). The web/prep pipeline already has its own secrets 
 Copy these from the old `protspace` repo's settings into
 `protspace_web` → Settings → Secrets and variables → Actions:
 
-| Secret | Used by | Purpose |
-| --- | --- | --- |
-| `RELEASE_APP_ID` | `protspace-release.yml` | GitHub App ID. python-semantic-release authenticates as this App to push the version-bump commit, tag, and GitHub Release, and to dispatch `protspace-publish`. |
-| `RELEASE_APP_PRIVATE_KEY` | `protspace-release.yml` | Private key (PEM) for the same App. |
+| Secret                    | Used by                 | Purpose                                                                                                                                                         |
+| ------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RELEASE_APP_ID`          | `protspace-release.yml` | GitHub App ID. python-semantic-release authenticates as this App to push the version-bump commit, tag, and GitHub Release, and to dispatch `protspace-publish`. |
+| `RELEASE_APP_PRIVATE_KEY` | `protspace-release.yml` | Private key (PEM) for the same App.                                                                                                                             |
 
 The GitHub App behind `RELEASE_APP_*` must be **installed on `protspace_web`**
 with **Contents: read & write** (push commits/tags/releases and fire the
@@ -31,12 +31,12 @@ scopes the OIDC trusted-publish and any future protection rules).
 Publishing uses OIDC (`id-token: write`), not a `PYPI_API_TOKEN`. On PyPI, project
 **`protspace`** → Settings → Publishing, add a trusted publisher:
 
-| Field | Value |
-| --- | --- |
-| Owner | `<repository_owner>` (same org/user) |
-| Repository | `protspace_web` |
-| Workflow | `protspace-publish.yml` |
-| Environment | `pypi` |
+| Field       | Value                                |
+| ----------- | ------------------------------------ |
+| Owner       | `<repository_owner>` (same org/user) |
+| Repository  | `protspace_web`                      |
+| Workflow    | `protspace-publish.yml`              |
+| Environment | `pypi`                               |
 
 Keep the old `protspace` repo as a trusted publisher until cutover is verified,
 then remove it. (protlabel is published from the same job; if it becomes its own
