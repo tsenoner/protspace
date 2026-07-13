@@ -173,9 +173,7 @@ def write_bundle(
     for i, table in enumerate(tables):
         if i > 0:
             buf.write(PARQUET_BUNDLE_DELIMITER)
-        table_buf = io.BytesIO()
-        pq.write_table(table, table_buf)
-        part_bytes = table_buf.getvalue()
+        part_bytes = _table_to_parquet_bytes(table)
         _check_no_delimiter(part_bytes)
         buf.write(part_bytes)
 
@@ -212,7 +210,9 @@ def replace_settings_in_bundle(
     core, _, statistics = _parse_bundle(input_path)
 
     # core(3) + new settings, preserving a trailing statistics part if present.
-    new_parts = [*core, create_settings_parquet(settings)]
+    settings_bytes = create_settings_parquet(settings)
+    _check_no_delimiter(settings_bytes)
+    new_parts = [*core, settings_bytes]
     if statistics is not None:
         new_parts.append(statistics)
     new_content = PARQUET_BUNDLE_DELIMITER.join(new_parts)
@@ -227,23 +227,22 @@ def replace_annotations_in_bundle(
 ) -> None:
     """Replace the annotations (1st) part of a bundle, preserving the rest.
 
-    Projection parts (2nd, 3rd) are kept byte-for-byte; an existing settings
-    (4th) part is carried over unchanged.
+    Projection parts (2nd, 3rd) are kept byte-for-byte; existing settings (4th)
+    and statistics (5th) parts are carried over unchanged.
     """
-    with open(input_path, "rb") as f:
-        content = f.read()
+    core, settings, statistics = _parse_bundle(input_path)
 
-    parts = content.split(PARQUET_BUNDLE_DELIMITER)
-    if len(parts) < 3 or len(parts) > 4:
-        raise ValueError(f"Expected 3 or 4 parts in parquetbundle, found {len(parts)}")
-
-    buf = io.BytesIO()
-    pq.write_table(annotations_table, buf)
-    new_annotations_bytes = buf.getvalue()
+    new_annotations_bytes = _table_to_parquet_bytes(annotations_table)
     _check_no_delimiter(new_annotations_bytes)
-    new_parts = [new_annotations_bytes, parts[1], parts[2]]
-    if len(parts) == 4:
-        new_parts.append(parts[3])
+
+    # Preserve the projection parts byte-for-byte; keep the settings/statistics
+    # tail with the same zero-byte-settings sentinel write_bundle uses, so a
+    # statistics-bearing bundle round-trips without losing its 5th part.
+    new_parts = [new_annotations_bytes, core[1], core[2]]
+    if settings is not None or statistics is not None:
+        new_parts.append(settings if settings is not None else b"")
+    if statistics is not None:
+        new_parts.append(statistics)
 
     _atomic_write_bytes(output_path, PARQUET_BUNDLE_DELIMITER.join(new_parts))
 

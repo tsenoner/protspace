@@ -24,11 +24,21 @@ from protlabel import Prediction
 
 
 def add_overlay_columns(
-    annotations: pa.Table, column: str, predictions: Sequence[Prediction]
+    annotations: pa.Table,
+    column: str,
+    predictions: Sequence[Prediction],
+    *,
+    identifiers: list[str] | None = None,
 ) -> pa.Table:
-    """Append COL__pred_value / COL__pred_confidence / COL__pred_source, by identifier."""
+    """Append COL__pred_value / COL__pred_confidence / COL__pred_source, by identifier.
+
+    ``identifiers`` may be a pre-materialized list of the string identifier
+    column (same order as ``annotations``) to avoid re-materializing it on every
+    call when overlaying several columns onto the same table.
+    """
     by_query = {p.query_id: p for p in predictions}
-    identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
+    if identifiers is None:
+        identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
 
     values: list[str | None] = []
     confidences: list[float | None] = []

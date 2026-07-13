@@ -20,25 +20,31 @@ class Rule:
     where: list[tuple[str, str]] = field(default_factory=list)  # (column, substring)
 
 
-def _matches(rule: Rule, identifier: str, row: dict[str, str]) -> bool:
+def _matches(rule: Rule, identifier: str, column_data: dict[str, list], i: int) -> bool:
     if any(identifier.startswith(p) for p in rule.id_prefixes):
         return True
     for column, substring in rule.where:
-        if column not in row:
-            raise KeyError(f"Classification column {column!r} not in annotations")
-        value = row[column]
+        value = column_data[column][i]
         if value is not None and substring.lower() in str(value).lower():
             return True
     return False
 
 
 def classify(
-    annotations: pa.Table, query_rule: Rule, reference_rule: Rule
+    annotations: pa.Table,
+    query_rule: Rule,
+    reference_rule: Rule,
+    *,
+    identifiers: list[str] | None = None,
 ) -> tuple[list[int], list[int]]:
     """Return (query_indices, reference_indices) into the annotations table.
 
     Query classification takes precedence: a protein matching both rules is a
     query. Raises ValueError if the query rule matches nothing.
+
+    ``identifiers`` may be a pre-materialized list of the string identifier
+    column (same order as ``annotations``) to avoid re-materializing it when the
+    caller already has it.
     """
     columns = set(annotations.column_names)
     # Validate where-columns up front so an empty table still raises KeyError.
@@ -50,7 +56,8 @@ def classify(
     # Materialize only the columns the rules actually need (identifier + any
     # where-columns) instead of the whole table — the latter is ~GB-scale at
     # Swiss-Prot row counts.
-    identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
+    if identifiers is None:
+        identifiers = [str(v) for v in annotations.column("identifier").to_pylist()]
     where_columns = {
         column for rule in (query_rule, reference_rule) for column, _ in rule.where
     }
@@ -59,10 +66,9 @@ def classify(
     query_indices: list[int] = []
     reference_indices: list[int] = []
     for i, identifier in enumerate(identifiers):
-        row = {c: column_data[c][i] for c in where_columns}
-        if _matches(query_rule, identifier, row):
+        if _matches(query_rule, identifier, column_data, i):
             query_indices.append(i)
-        elif _matches(reference_rule, identifier, row):
+        elif _matches(reference_rule, identifier, column_data, i):
             reference_indices.append(i)
 
     if not query_indices:

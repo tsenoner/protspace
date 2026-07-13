@@ -118,3 +118,46 @@ def test_preserves_settings_when_present(tmp_path):
 
     _parts, settings = read_bundle(out)
     assert settings == {"foo": 1}
+
+
+def test_preserves_statistics_part_when_present(tmp_path):
+    # A statistics-bearing (5-part) bundle must round-trip: replacing annotations
+    # keeps both the settings and the statistics parts intact.
+    from protspace.data.io.bundle import read_statistics_from_bundle
+
+    src = tmp_path / "in.parquetbundle"
+    out = tmp_path / "out.parquetbundle"
+    stats = pa.table({"metric": ["silhouette"], "value": [0.7]})
+    write_bundle(_tables(), src, settings={"foo": 1}, statistics=stats)
+
+    new_annotations = pa.table(
+        {"identifier": ["A", "B"], "cat": ["x", "y"], "cat__pred_value": [None, "z"]}
+    )
+    replace_annotations_in_bundle(src, out, new_annotations)
+
+    parts, settings = read_bundle(out)
+    assert "cat__pred_value" in _read_part(parts[0]).column_names
+    assert settings == {"foo": 1}
+    stats_bytes = read_statistics_from_bundle(out)
+    assert stats_bytes is not None
+    assert _read_part(stats_bytes).to_pydict()["metric"] == ["silhouette"]
+
+
+def test_preserves_statistics_with_zero_byte_settings_slot(tmp_path):
+    # Statistics without settings uses a zero-byte settings slot; replacing
+    # annotations must keep the sentinel so statistics stay at position five.
+    from protspace.data.io.bundle import read_statistics_from_bundle
+
+    src = tmp_path / "in.parquetbundle"
+    out = tmp_path / "out.parquetbundle"
+    stats = pa.table({"metric": ["silhouette"], "value": [0.7]})
+    write_bundle(_tables(), src, statistics=stats)
+
+    new_annotations = pa.table({"identifier": ["A", "B"], "cat": ["x", "y"]})
+    replace_annotations_in_bundle(src, out, new_annotations)
+
+    _parts, settings = read_bundle(out)
+    assert settings is None  # zero-byte settings slot preserved
+    stats_bytes = read_statistics_from_bundle(out)
+    assert stats_bytes is not None
+    assert _read_part(stats_bytes).to_pydict()["metric"] == ["silhouette"]
