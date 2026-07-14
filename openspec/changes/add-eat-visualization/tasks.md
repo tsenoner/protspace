@@ -99,6 +99,10 @@
 - [x] 8.4 Verify the checked-in fixture byte-for-byte against the issue #277 comment 4902936797
       asset and run the focused real phosphatase EAT Playwright flow with recorded archive and bundle
       SHA-256 evidence.
-- [ ] 8.5 Run targeted suites, type/lint/strict OpenSpec, `pnpm test:ci`, focused linked-data
+- [x] 8.5 Run targeted suites, type/lint/strict OpenSpec, `pnpm test:ci`, focused linked-data
       Playwright, and `pnpm precommit`; commit and push coherently, update the PR description, reply
       to and resolve all four threads with immutable evidence, and re-fetch thread-aware state.
+      Implementation commit `794563c` passed 1,757 unit tests with one intentional skip, the exact
+      issue-linked phosphatase Playwright flow, strict OpenSpec validation, and staged precommit.
+      All four threads were answered with immutable evidence and resolved; the subsequent
+      thread-aware fetch found zero unresolved threads and no new comments.
