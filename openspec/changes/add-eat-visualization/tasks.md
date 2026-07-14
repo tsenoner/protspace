@@ -47,10 +47,10 @@
 
 - [x] 5.1 Add the supplied phosphatase EAT bundle as a compact test fixture and verify real decoder
       normalization, counts, confidence range, sources, reserved-column hiding, and round-trip.
-- [ ] 5.2 Add browser coverage for toggle/threshold keyboard behavior, filled-versus-hollow output,
+- [x] 5.2 Add browser coverage for toggle/threshold keyboard behavior, filled-versus-hollow output,
       tooltip, legend counts, predicted/source connectors, fan-out status, dismissal, projection
       changes, and image export.
-- [ ] 5.3 Run targeted suites throughout, then full Vitest/E2E coverage and `pnpm precommit`; resolve
+- [x] 5.3 Run targeted suites throughout, then full Vitest/E2E coverage and `pnpm precommit`; resolve
       every local failure before publishing.
 
 ## 6. Publication and review closure
