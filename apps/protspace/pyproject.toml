@@ -1,0 +1,154 @@
+[project]
+name = "protspace"
+version = "4.7.0"
+description = "A visualisation tool for protein embeddings from pLMs"
+authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "h5py>=3.12.1",
+    "scikit-learn>=1.6.1",
+    "umap-learn>=0.5.10",
+    "pacmap>=0.8.0",
+    "numpy>=1.23.0",
+    "pandas>=2.0.0",
+    "tqdm>=4.67.1",
+    "pymmseqs>=1.0.4",
+    "pyarrow>=20.0.0",
+    "biocentral-api>=1.1.2",
+    "requests>=2.32.4",
+    "typer>=0.24.1",
+    "rich>=14.3.3",
+    "protlabel>=4.4.0",
+]
+
+[project.optional-dependencies]
+frontend = [
+    "gunicorn>=23.0.0",
+    "python-dotenv>=1.0.1",
+    "dash>=3",
+    "dash-bootstrap-components>=1.6.0",
+    "dash-daq>=0.5.0",
+    "dash-iconify>=0.1.2",
+    "plotly>=5.24.1",
+    "kaleido>=0.2.1,!=0.2.1.post1",
+    "dash-molstar>=1.3.0",
+    "requests>=2.32.4",
+]
+
+[project.scripts]
+protspace = "protspace.cli.app:app"
+
+
+
+
+[dependency-groups]
+dev = [
+    "dash[testing]>=3",
+    "webdriver-manager>=4.0.1",
+    "biopython>=1.84",
+    "cairosvg>=2.7.1",
+    "dash-mantine-components>=0.14.5",
+    "dash-treeview-antd>=0.0.1",
+    "holoviews>=1.19.1",
+    "hvplot>=0.11.0",
+    "ijson>=3.3.0",
+    "jupyter>=1.1.1",
+    "jupyter-black>=0.4.0",
+    "jupyter-bokeh>=4.0.5",
+    "panel>=1.5.2",
+    "pyarrow>=20.0.0",
+    "ruff>=0.6.9",
+    "xarray>=2024.9.0",
+    "torch>=2.2,<3.0",
+    "seaborn>=0.13.2",
+    "pytest>=8.3.3",
+    "polars>=1.26.0",
+    "jupytext>=1.17.1",
+    "pytest-cov>=7.0.0",
+]
+
+# protlabel (the EAT engine) is a separate distribution developed in-repo. It is a
+# member of the monorepo root uv workspace (see the root pyproject.toml) — apps/protspace
+# cannot declare its own [tool.uv.workspace] because nested workspaces are not allowed.
+# During development protlabel resolves locally; the published protspace wheel depends
+# on it from PyPI.
+[tool.uv.sources]
+protlabel = { workspace = true }
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/protspace"]
+
+
+[tool.pytest.ini_options]
+# Collect both the protspace tests and the protlabel workspace member's tests
+# so a bare `uv run pytest` runs the whole workspace.
+testpaths = ["tests", "packages/protlabel/tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests that require external services",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:parmed.*:",
+    "ignore::DeprecationWarning:selenium.*:",
+    "ignore::DeprecationWarning:kaleido.*:",
+    "ignore::DeprecationWarning:dash_molstar.*:",
+    "ignore::RuntimeWarning:sklearn.utils.extmath:",
+    "ignore:n_jobs value:UserWarning:umap:",
+]
+
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    "B", # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "ARG001", # unused-function-args
+    "F401", # unused-import
+    "F841", # unused-variable
+]
+ignore = [
+    "E501", # line too long, handled by black
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+]
+
+[tool.ruff.lint.isort]
+# protlabel lives in the packages/protlabel workspace member (not src/), so
+# declare both packages first-party for stable import grouping.
+known-first-party = ["protspace", "protlabel"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
+"packages/*/tests/*" = ["ARG001", "F401", "F841", "F811"]  # same, for workspace-member tests
+"examples/notebook/*" = ["E402", "F811", "ARG001", "F841"]  # Jupyter notebooks: imports after config, cell re-imports, widget callback args
+
+# Runs from apps/protspace (see .github/workflows/protspace-release.yml), so the
+# version paths stay relative to this file. In the monorepo uv workspace `uv lock`
+# only writes the ROOT lock, so semantic-release no longer manages the lock (assets=[])
+# and does not build (publishing is handled by protspace-publish.yml); it only bumps
+# the versions. protspace + protlabel stay lock-step (same bump).
+[tool.semantic_release]
+assets = []
+build_command = ""
+version_toml = [
+    "pyproject.toml:project.version",
+    "packages/protlabel/pyproject.toml:project.version",
+]
+version_variables = ["src/protspace/__init__.py:__version__"]
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

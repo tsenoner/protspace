@@ -1,0 +1,53 @@
+# OS
+.DS_Store
+
+# IDE / tools
+/.vscode
+/.claude
+/.playwright-mcp
+/.ruff_cache
+
+# Project-specific
+/docs/publication
+
+# --- data ---
+# Ignore all data directories except 3FTx, Pla2g2, toxins, and jmb_2025
+/data/*
+!/data/3FTx
+!/data/Pla2g2
+!/data/toxins
+!/data/jmb_2025
+# Always ignore pdb subdirectories, tmp subdirectories, and .h5 files everywhere
+**/pdb/
+**/tmp/
+**/*.h5
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Testing / coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+.pytest_cache/
+
+# Environments
+.env
+.venv
+venv/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Logs
+*.log

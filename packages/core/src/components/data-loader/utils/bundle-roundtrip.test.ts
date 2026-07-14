@@ -22,7 +22,7 @@ function loadArrayBuffer(filePath: string): ArrayBuffer {
  */
 describe('round-trip with real data files', () => {
   it('should successfully export 5K.parquetbundle after loading', async () => {
-    const filePath = resolve(__dirname, '../../../../../../app/public/data/5K.parquetbundle');
+    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Extract from the bundle
@@ -43,7 +43,7 @@ describe('round-trip with real data files', () => {
   });
 
   it('should successfully export with settings after loading 5K.parquetbundle', async () => {
-    const filePath = resolve(__dirname, '../../../../../../app/public/data/5K.parquetbundle');
+    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Extract from the bundle
@@ -99,7 +99,7 @@ describe('round-trip with real data files', () => {
   it('should preserve raw numeric annotations through export/import', async () => {
     const filePath = resolve(
       __dirname,
-      '../../../../../../app/tests/fixtures/phosphatase_no_binning.parquetbundle',
+      '../../../../../../apps/web/tests/fixtures/phosphatase_no_binning.parquetbundle',
     );
     const arrayBuffer = loadArrayBuffer(filePath);
 
@@ -247,7 +247,7 @@ describe('metadata preservation through round-trip', () => {
   }
 
   it('should preserve projection metadata fields through export/import cycle (5K)', async () => {
-    const filePath = resolve(__dirname, '../../../../../../app/public/data/5K.parquetbundle');
+    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Load original
@@ -291,7 +291,7 @@ describe('metadata preservation through round-trip', () => {
   });
 
   it('should preserve projection metadata fields (n_components, svd_solver, etc.)', async () => {
-    const filePath = resolve(__dirname, '../../../../../../app/public/data/5K.parquetbundle');
+    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Load original

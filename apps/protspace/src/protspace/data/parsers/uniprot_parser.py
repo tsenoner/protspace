@@ -1,0 +1,603 @@
+"""
+UniProt JSON Parser - Extract data from UniProt API responses.
+
+AVAILABLE PROPERTIES:
+=====================
+entry                    - Primary UniProt accession number
+entry_name               - UniProtKB entry name (e.g., 'P53_HUMAN')
+uniprot_kb_id            - UniProtKB ID (e.g., 'CCR9_HUMAN')
+gene_primary             - Primary gene name
+gene_name                - Gene name (alias for gene_primary)
+organism_name            - Organism scientific name
+organism_id              - NCBI Taxonomy ID
+protein_name             - Recommended protein name
+xref_proteomes           - Proteome identifiers (list)
+lineage                  - Taxonomic lineage (list)
+virus_hosts              - Virus host information (list)
+sequence                 - Amino acid sequence
+length                   - Sequence length in amino acids
+mass                     - Molecular weight in Daltons
+fragment                 - Fragment type (if sequence is partial)
+ft_non_adj               - Non-adjacent residues (list)
+ft_non_std               - Non-standard residues (list)
+ft_non_ter               - Non-terminal residues
+annotation_score         - Annotation quality score (1-5)
+keyword                  - Keyword names (list)
+keyword_id               - Keyword IDs (list)
+protein_existence        - Protein existence level
+reviewed                 - 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed
+uniparc_id               - UniParc identifier
+cc_subcellular_location  - Subcellular location values (list)
+protein_families         - Protein family description
+ec                       - EC numbers (list)
+go                       - All Gene Ontology terms (list of dicts)
+go_bp                    - GO Biological Process terms (list)
+go_mf                    - GO Molecular Function terms (list)
+go_cc                    - GO Cellular Component terms (list)
+go_id                    - GO term IDs only (list)
+date_created             - Entry creation date
+date_modified            - Last modification date
+date_sequence_modified   - Last sequence modification date
+version                  - Entry version number
+ft_disulfid              - Disulfide bond (list)
+ft_glycosylation         - Glycosylation (list)
+ft_lipidation            - Lipidation (list)
+ft_mod_res               - Modified residue (list)
+ft_signal                - Signal peptide
+xref_pdb                 - PDB cross-references (list)
+"""
+
+from typing import Any
+
+import pandas as pd
+
+from protspace.data.annotations.encoding import encode_field
+from protspace.data.annotations.retrievers.http_utils import paginated_get
+
+# ECO evidence code mapping (ECO ID → short human-readable code)
+ECO_TO_SHORT: dict[str, str] = {
+    "ECO:0000269": "EXP",  # Experimental evidence
+    "ECO:0000303": "TAS",  # Traceable author statement
+    "ECO:0000305": "IC",  # Curator inference
+    "ECO:0000250": "ISS",  # Sequence similarity
+    "ECO:0000255": "SAM",  # Sequence analysis method
+    "ECO:0000256": "SAM",  # Sequence analysis method (variant)
+    "ECO:0000259": "SAM",  # Sequence analysis method (variant)
+    "ECO:0000312": "IMP",  # Imported
+    "ECO:0000313": "IEA",  # Electronic annotation
+    "ECO:0007669": "IEA",  # Electronic annotation (variant)
+    "ECO:0007744": "HDA",  # High throughput direct assay
+    "ECO:0000244": "COMB",  # Combinatorial evidence
+}
+
+EVIDENCE_PRIORITY: list[str] = [
+    "EXP",
+    "HDA",
+    "IDA",
+    "TAS",
+    "NAS",
+    "IC",
+    "ISS",
+    "SAM",
+    "COMB",
+    "IMP",
+    "IEA",
+]
+
+# List of all available properties for validation
+AVAILABLE_PROPERTIES = [
+    "entry",
+    "entry_name",
+    "uniprot_kb_id",
+    "gene_primary",
+    "gene_name",
+    "organism_name",
+    "organism_id",
+    "protein_name",
+    "xref_proteomes",
+    "lineage",
+    "virus_hosts",
+    "sequence",
+    "length",
+    "mass",
+    "fragment",
+    "ft_non_adj",
+    "ft_non_std",
+    "ft_non_ter",
+    "annotation_score",
+    "keyword",
+    "keyword_id",
+    "protein_existence",
+    "reviewed",
+    "uniparc_id",
+    "cc_subcellular_location",
+    "protein_families",
+    "ec",
+    "go",
+    "go_bp",
+    "go_mf",
+    "go_cc",
+    "go_id",
+    "date_created",
+    "date_modified",
+    "date_sequence_modified",
+    "version",
+    "ft_disulfid",
+    "ft_glycosylation",
+    "ft_lipidation",
+    "ft_mod_res",
+    "ft_signal",
+    "xref_pdb",
+]
+
+
+class UniProtEntry:
+    """Parser for UniProt JSON entries from the REST API."""
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        """Initialize with raw JSON data from UniProt API.
+
+        Args:
+            data: Raw JSON data from UniProt API
+        """
+        self.data = data
+
+    # --- Names & Taxonomy ---
+
+    @property
+    def entry(self) -> str:
+        """Primary UniProt accession number."""
+        return self.data.get("primaryAccession", "")
+
+    @property
+    def entry_name(self) -> str:
+        """UniProtKB entry name (e.g., 'P53_HUMAN')."""
+        return self.data.get("uniProtkbId", "")
+
+    @property
+    def uniprot_kb_id(self) -> str:
+        """UniProtKB ID (e.g., 'CCR9_HUMAN')."""
+        return self.data.get("uniProtkbId", "")
+
+    @property
+    def gene_primary(self) -> str:
+        """Primary gene name."""
+        genes = self.data.get("genes", [])
+        if genes and "geneName" in genes[0]:
+            return genes[0]["geneName"].get("value", "")
+        return ""
+
+    @property
+    def gene_name(self) -> str:
+        """Gene name (alias for gene_primary)."""
+        return self.gene_primary
+
+    @property
+    def organism_name(self) -> str:
+        """Organism scientific name."""
+        return self.data.get("organism", {}).get("scientificName", "")
+
+    @property
+    def organism_id(self) -> int:
+        """NCBI Taxonomy ID."""
+        return self.data.get("organism", {}).get("taxonId", 0)
+
+    @property
+    def protein_name(self) -> str:
+        """Recommended protein name."""
+        desc = self.data.get("proteinDescription", {})
+        rec_name = desc.get("recommendedName", {})
+        full_name = rec_name.get("fullName", "")
+        return self._extract_name_value(full_name)
+
+    @property
+    def xref_proteomes(self) -> list[str]:
+        """Proteome identifiers."""
+        proteomes = self.get_cross_references("Proteomes")
+        return [p.get("id", "") for p in proteomes]
+
+    @property
+    def lineage(self) -> list[str]:
+        """Taxonomic lineage."""
+        return self.data.get("organism", {}).get("lineage", [])
+
+    @property
+    def virus_hosts(self) -> list[str]:
+        """Virus host information."""
+        hosts = self.data.get("organismHosts", [])
+        return [host.get("scientificName", "") for host in hosts]
+
+    # --- Sequence ---
+
+    @property
+    def sequence(self) -> str:
+        """Amino acid sequence."""
+        return self.data.get("sequence", {}).get("value", "")
+
+    @property
+    def length(self) -> int:
+        """Sequence length in amino acids."""
+        return self.data.get("sequence", {}).get("length", 0)
+
+    @property
+    def mass(self) -> int:
+        """Molecular weight in Daltons."""
+        return self.data.get("sequence", {}).get("molWeight", 0)
+
+    @property
+    def fragment(self) -> str:
+        """Fragment type (if sequence is partial).
+
+        Returns 'fragment' if the protein is a fragment, empty string otherwise.
+        The flag field may contain 'Fragment', 'Precursor', or 'Fragment,Precursor'.
+        """
+        flag = self.data.get("proteinDescription", {}).get("flag", "")
+        if "Fragment" in flag:
+            return "fragment"
+        return ""
+
+    @property
+    def ft_non_adj(self) -> list[str]:
+        """Non-adjacent residues."""
+        annotations = self.get_annotations("Non-adjacent residues")
+        return [
+            f"{ann['location']['start']['value']}-{ann['location']['end']['value']}"
+            for ann in annotations
+        ]
+
+    @property
+    def ft_non_std(self) -> list[int]:
+        """Non-standard residues."""
+        annotations = self.get_annotations("Non-standard residue")
+        return [ann["location"]["start"]["value"] for ann in annotations]
+
+    @property
+    def ft_non_ter(self) -> int | None:
+        """Non-terminal residues."""
+        annotations = self.get_annotations("Non-terminal residue")
+        if annotations:
+            return annotations[0]["location"]["start"]["value"]
+        return None
+
+    # --- Miscellaneous ---
+
+    @property
+    def annotation_score(self) -> float:
+        """Annotation quality score (1-5)."""
+        return self.data.get("annotationScore", 0.0)
+
+    @property
+    def keyword(self) -> list[str]:
+        """Keyword IDs with names."""
+        keywords = self.data.get("keywords", [])
+        return [
+            f"{kw.get('id', '')} ({encode_field(kw.get('name', ''))})"
+            for kw in keywords
+        ]
+
+    @property
+    def keyword_id(self) -> list[str]:
+        """Keyword IDs."""
+        keywords = self.data.get("keywords", [])
+        return [kw.get("id", "") for kw in keywords]
+
+    @property
+    def protein_existence(self) -> str:
+        """Protein existence level."""
+        return self.data.get("proteinExistence", "")
+
+    @property
+    def reviewed(self) -> str:
+        """Returns 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed."""
+        entry_type = self.data.get("entryType", "").lower()
+        # Check for "UniProtKB reviewed" or "swiss-prot", but not "unreviewed"
+        is_reviewed = "swiss-prot" in entry_type or (
+            "reviewed" in entry_type and "unreviewed" not in entry_type
+        )
+        return "Swiss-Prot" if is_reviewed else "TrEMBL"
+
+    @property
+    def uniparc_id(self) -> str:
+        """UniParc identifier."""
+        return self.data.get("extraAttributes", {}).get("uniParcId", "")
+
+    # --- Subcellular Location ---
+
+    @property
+    def cc_subcellular_location(self) -> list[str]:
+        """Subcellular location values, with evidence codes appended when available."""
+        comments = self.get_comments("SUBCELLULAR LOCATION")
+        locations = []
+        for comment in comments:
+            for subloc in comment.get("subcellularLocations", []):
+                loc = subloc.get("location", {})
+                value = encode_field(loc.get("value", ""))
+                if value:
+                    ev = self._best_evidence(loc.get("evidences", []))
+                    if ev:
+                        value = f"{value}|{ev}"
+                    locations.append(value)
+        return locations
+
+    # --- Family & Domains ---
+
+    @property
+    def protein_families(self) -> str:
+        """Protein family description, with evidence code appended when available."""
+        comments = self.get_comments("SIMILARITY")
+        for comment in comments:
+            for text in comment.get("texts", []):
+                value = text.get("value", "")
+                ev = self._best_evidence(text.get("evidences", []))
+                prefix = "Belongs to the "
+                if value.startswith(prefix):
+                    value = value[len(prefix) :]
+                # Stop at the first dot, if any
+                if "." in value:
+                    result = value.split(".", 1)[0]
+                else:
+                    result = value
+                result = encode_field(result)
+                if ev:
+                    result = f"{result}|{ev}"
+                return result
+        return ""
+
+    # --- Function ---
+
+    @property
+    def ec(self) -> list[str]:
+        """EC numbers, with evidence codes appended when available."""
+        desc = self.data.get("proteinDescription", {})
+        ec_numbers = desc.get("recommendedName", {}).get("ecNumbers", [])
+        for alt in desc.get("alternativeNames", []):
+            ec_numbers.extend(alt.get("ecNumbers", []))
+        result = []
+        for ec in ec_numbers:
+            value = ec.get("value", "")
+            ev = self._best_evidence(ec.get("evidences", []))
+            if ev:
+                value = f"{value}|{ev}"
+            result.append(value)
+        return result
+
+    # --- Gene Ontology ---
+
+    @property
+    def go(self) -> list[dict[str, str]]:
+        """All Gene Ontology terms."""
+        return self.get_go_terms()
+
+    def _go_terms_encoded(self, aspect: str) -> list[str]:
+        """Encode GO terms for the given aspect, with evidence codes appended."""
+        results = []
+        for term in self.get_go_terms(aspect=aspect):
+            value = encode_field(term["term"])
+            ev = term.get("evidence", "")
+            if ev:
+                value = f"{value}|{ev.split(':')[0]}"
+            results.append(value)
+        return results
+
+    @property
+    def go_bp(self) -> list[str]:
+        """GO Biological Process terms, with evidence codes appended."""
+        return self._go_terms_encoded("P")
+
+    @property
+    def go_mf(self) -> list[str]:
+        """GO Molecular Function terms, with evidence codes appended."""
+        return self._go_terms_encoded("F")
+
+    @property
+    def go_cc(self) -> list[str]:
+        """GO Cellular Component terms, with evidence codes appended."""
+        return self._go_terms_encoded("C")
+
+    @property
+    def go_id(self) -> list[str]:
+        """GO term IDs only."""
+        return [term["id"] for term in self.get_go_terms()]
+
+    # --- Dates & Versions ---
+
+    @property
+    def date_created(self) -> str:
+        """Entry creation date."""
+        return self.data.get("entryAudit", {}).get("firstPublicDate", "")
+
+    @property
+    def date_modified(self) -> str:
+        """Last modification date."""
+        return self.data.get("entryAudit", {}).get("lastAnnotationUpdateDate", "")
+
+    @property
+    def date_sequence_modified(self) -> str:
+        """Last sequence modification date."""
+        return self.data.get("entryAudit", {}).get("lastSequenceUpdateDate", "")
+
+    @property
+    def version(self) -> int:
+        """Entry version number."""
+        return self.data.get("entryAudit", {}).get("entryVersion", 0)
+
+    # --- PTM / Processing ---
+
+    @property
+    def ft_disulfid(self) -> list[str]:
+        """Disulfide bond annotations."""
+        annotations = self.get_annotations("Disulfide bond")
+        return [
+            f"{ann['location']['start']['value']}-{ann['location']['end']['value']}"
+            for ann in annotations
+        ]
+
+    @property
+    def ft_glycosylation(self) -> list[dict[int, str]]:
+        """Glycosylation annotations."""
+        annotations = self.get_annotations("Glycosylation")
+        return [
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
+        ]
+
+    @property
+    def ft_lipidation(self) -> list[dict[int, str]]:
+        """Lipidation annotations."""
+        annotations = self.get_annotations("Lipidation")
+        return [
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
+        ]
+
+    @property
+    def ft_mod_res(self) -> list[dict[int, str]]:
+        """Modified residue annotations."""
+        annotations = self.get_annotations("Modified residue")
+        return [
+            {int(ann["location"]["start"]["value"]): ann.get("description", "")}
+            for ann in annotations
+        ]
+
+    @property
+    def ft_signal(self) -> str:
+        """Signal peptide annotations."""
+        annotations = self.get_annotations("Signal")
+        if annotations:
+            loc = annotations[0]["location"]
+            return f"{loc['start']['value']}-{loc['end']['value']}"
+        return ""
+
+    # --- External: 3D Structure ---
+
+    @property
+    def xref_pdb(self) -> list[str]:
+        """PDB cross-references."""
+        return [f["id"] for f in self.get_cross_references("PDB")]
+
+    # --- Core Methods ---
+
+    def get_annotations(
+        self, annotation_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Get annotations, optionally filtered by type."""
+        annotations = self.data.get("annotations", [])
+        if annotation_type:
+            return [f for f in annotations if f.get("type") == annotation_type]
+        return annotations
+
+    def get_comments(self, comment_type: str | None = None) -> list[dict[str, Any]]:
+        """Get comments, optionally filtered by type."""
+        comments = self.data.get("comments", [])
+        if comment_type:
+            return [c for c in comments if c.get("commentType") == comment_type]
+        return comments
+
+    def get_cross_references(self, database: str | None = None) -> list[dict[str, Any]]:
+        """Get cross-references, optionally filtered by database."""
+        xrefs = self.data.get("uniProtKBCrossReferences", [])
+        if database:
+            return [x for x in xrefs if x.get("database") == database]
+        return xrefs
+
+    def get_go_terms(self, aspect: str | None = None) -> list[dict[str, str]]:
+        """Get GO terms, optionally filtered by aspect (P/F/C)."""
+        go_refs = self.get_cross_references("GO")
+        result = []
+        for go in go_refs:
+            props = {p["key"]: p["value"] for p in go.get("properties", [])}
+            term = {
+                "id": go.get("id", ""),
+                "term": props.get("GoTerm", ""),
+                "evidence": props.get("GoEvidenceType", ""),
+            }
+            if aspect:
+                if term["term"].startswith(f"{aspect}:"):
+                    result.append(term)
+            else:
+                result.append(term)
+        return result
+
+    @staticmethod
+    def _extract_name_value(name: Any) -> str:
+        """Extract a displayable name from UniProt name fields."""
+        if isinstance(name, dict):
+            return name.get("value", "")
+        if isinstance(name, str):
+            return name
+        return ""
+
+    @staticmethod
+    def _best_evidence(evidences: list[dict]) -> str:
+        """Return the highest-priority short evidence code from a list of evidence objects.
+
+        Each evidence object has an 'evidenceCode' key with an ECO ID.
+        Returns empty string if the list is empty.
+        """
+        if not evidences:
+            return ""
+        codes = [
+            ECO_TO_SHORT.get(e.get("evidenceCode", ""), e.get("evidenceCode", ""))
+            for e in evidences
+        ]
+        for priority in EVIDENCE_PRIORITY:
+            if priority in codes:
+                return priority
+        # Unknown code — return the first one
+        return codes[0] if codes else ""
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"UniProtEntry({self.entry})"
+
+
+def fetch_uniprot_data(
+    accessions: list[str], properties: list[str] | None = None
+) -> pd.DataFrame:
+    """
+    Fetch UniProt entries and extract specified properties into a DataFrame.
+
+    Args:
+        accessions: List of UniProt accession numbers
+        properties: List of property names to extract. If None, extracts all available.
+                    Use AVAILABLE_PROPERTIES to see all options.
+
+    Returns:
+        DataFrame with one row per accession and columns for each property
+
+    Example:
+        >>> df = fetch_uniprot_data(
+        ...     ["P04637", "P53_HUMAN"],
+        ...     properties=["entry", "protein_name", "organism_name", "length"]
+        ... )
+    """
+
+    # Validate properties
+    if properties is None:
+        properties = AVAILABLE_PROPERTIES
+    else:
+        invalid = [p for p in properties if p not in AVAILABLE_PROPERTIES]
+        if invalid:
+            raise ValueError(
+                f"Invalid properties: {invalid}. Available: {AVAILABLE_PROPERTIES}"
+            )
+
+    # Fetch records via UniProt REST API
+    results = paginated_get(
+        "https://rest.uniprot.org/uniprotkb/accessions",
+        params={"accessions": ",".join(accessions)},
+    )
+    entries = [UniProtEntry(record) for record in results]
+
+    # Extract properties
+    data = []
+    for entry in entries:
+        row = {}
+        for prop in properties:
+            try:
+                row[prop] = getattr(entry, prop)
+            except (KeyError, AttributeError, IndexError):
+                row[prop] = None
+        data.append(row)
+
+    return pd.DataFrame(data)

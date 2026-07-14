@@ -1,4 +1,6 @@
 **/node_modules/**
+**/.venv/**
+**/.pytest_cache/**
 **/dist/**
 **/build/**
 **/.turbo/**
@@ -11,3 +13,8 @@
 **/*.ipynb
 **/examples/scatterplot-vite/dist/**
 **/*lock.yaml
+
+# Imported Python app — has its own toolchain (ruff) and is re-synced verbatim
+# from upstream via filter-repo. Keep it out of the web prettier pass so
+# re-syncs stay byte-for-byte and conflict-free (data JSON must not be reflowed).
+apps/protspace/

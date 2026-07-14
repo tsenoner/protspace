@@ -34,7 +34,7 @@ ProtSpace processes everything locally in your browser:
 
 - **No uploads**: Files never leave your computer
 - **No tracking**: We don't collect any usage data
-- **Open source**: Fully transparent [codebase on GitHub](https://github.com/tsenoner/protspace_web)
+- **Open source**: Fully transparent [codebase on GitHub](https://github.com/tsenoner/protspace)
 
 ## Use Cases
 

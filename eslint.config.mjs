@@ -9,7 +9,7 @@ export default [
   {
     files: [
       'packages/**/*.{ts,tsx}',
-      'app/src/**/*.{ts,tsx}',
+      'apps/web/src/**/*.{ts,tsx}',
       'examples/**/*.{ts,tsx}',
       'docs/**/*.{ts,tsx}',
       '*.mjs',

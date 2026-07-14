@@ -3,7 +3,13 @@ name: CI - Code Quality
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'apps/protspace/**'
+      - 'apps/prep/**'
   pull_request:
+    paths-ignore:
+      - 'apps/protspace/**'
+      - 'apps/prep/**'
   workflow_dispatch:
 
 jobs:
