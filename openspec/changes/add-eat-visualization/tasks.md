@@ -78,5 +78,8 @@
       full, filtered, and isolated views.
 - [x] 7.4 Restrict confidence-threshold input to visibility/style redraw work and add call-count
       regressions excluding quadtree rebuild and `data-change` recount paths.
-- [ ] 7.5 Run targeted and required full verification, push the remediation commits, reply to and
-      resolve all five review threads with evidence, and re-fetch thread-aware review state.
+- [x] 7.5 Run targeted and required full verification, push the remediation commits, reply to and
+      resolve all five review threads with evidence, and re-fetch thread-aware review state. Commit
+      `bd4904d` passed 1,751 unit tests with one intentional skip, the focused real-EAT Playwright
+      regression, strict OpenSpec validation, and `pnpm precommit`; all five threads were answered
+      and resolved, and the subsequent thread-aware fetch found zero unresolved or new comments.
