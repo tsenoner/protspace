@@ -61,12 +61,12 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /tmp/.uv-tools
-          key: uv-tools-${{ runner.os }}-psr-v9.11.1
+          key: uv-tools-${{ runner.os }}-psr-v10.6.1
           restore-keys: |
             uv-tools-${{ runner.os }}
 
       - name: Install Python Semantic Release
-        run: uv tool install python-semantic-release@v9.11.1
+        run: uv tool install python-semantic-release@v10.6.1
 
       - name: Run Semantic Release
         id: semantic_release

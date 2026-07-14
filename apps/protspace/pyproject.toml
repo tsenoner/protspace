@@ -139,6 +139,12 @@ known-first-party = ["protspace", "protlabel"]
 # and does not build (publishing is handled by protspace-publish.yml); it only bumps
 # the versions. protspace + protlabel stay lock-step (same bump).
 [tool.semantic_release]
+# Monorepo scoping (requires python-semantic-release >= 10, pinned in
+# protspace-release.yml): count ONLY commits that touch this package dir
+# (apps/protspace) so unrelated web/frontend feat/fix commits don't inflate
+# protspace's version or changelog. tag_format stays the repo-wide default
+# `v{version}` (protspace is the primary package; protlabel ships lock-step).
+commit_parser = "conventional-monorepo"
 assets = []
 build_command = ""
 version_toml = [
@@ -146,6 +152,14 @@ version_toml = [
     "packages/protlabel/pyproject.toml:project.version",
 ]
 version_variables = ["src/protspace/__init__.py:__version__"]
+
+[tool.semantic_release.commit_parser_options]
+path_filters = ["."]
+
+[tool.semantic_release.changelog]
+# Keep the v9 full-regenerate behavior; the existing CHANGELOG has no v10
+# update-mode insertion marker.
+mode = "init"
 
 
 [build-system]
