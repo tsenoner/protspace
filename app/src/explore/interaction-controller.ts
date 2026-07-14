@@ -116,11 +116,8 @@ export function createInteractionController({
         return;
       }
 
-      const currentView = plotElement.getCurrentData();
-      const visibleProteinIds = new Set<string>(
-        (currentView?.protein_ids ?? data.protein_ids) as readonly string[],
-      );
-      const request = eatProvenance.resolve(data, annotation, proteinId, visibleProteinIds);
+      const interactableProteinIds = plotElement.getInteractableProteinIds();
+      const request = eatProvenance.resolve(data, annotation, proteinId, interactableProteinIds);
       if (request) {
         plotElement.setProvenanceConnectors(request);
       } else {

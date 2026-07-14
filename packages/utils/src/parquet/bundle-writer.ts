@@ -21,12 +21,27 @@ import {
   getEatCompanionColumn,
   isEatConfidenceAnnotationKey,
 } from '../visualization/eat-overlay.js';
+import { encodeAnnotationField } from './annotation-codec.js';
+
+const ANNOTATION_FORMAT_VERSION = '2';
+const ANNOTATION_FORMAT_VERSION_KEY = 'protspace_format_version';
 
 /** Column data format for parquetWriteBuffer */
 interface ColumnData {
   name: string;
   data: (string | number | boolean | null)[];
   type?: 'STRING' | 'INT32' | 'INT64' | 'DOUBLE' | 'FLOAT' | 'BOOLEAN';
+}
+
+function serializeCategoricalValue(
+  label: string,
+  evidence: string | null | undefined,
+  scores: readonly number[] | null | undefined,
+): string {
+  const encodedLabel = encodeAnnotationField(label);
+  if (evidence) return `${encodedLabel}|${evidence}`;
+  if (scores && scores.length > 0) return `${encodedLabel}|${scores.join(',')}`;
+  return encodedLabel;
 }
 
 /**
@@ -68,11 +83,17 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
         continue;
       }
 
-      // The bundle's categorical format is semicolon-delimited. Reconstruct the complete curated
-      // cell so exporting a materialized EAT view cannot discard secondary annotations.
-      const cellValues = getProteinAnnotationIndices(annotationIndices, i)
-        .map((index) => annotation.values[index])
-        .filter((value): value is string => value !== undefined);
+      // Reconstruct the v2 wire cell positionally so decoded labels, evidence, and scores survive
+      // export without structural semicolons/pipes being reinterpreted on reload.
+      const cellValues = getProteinAnnotationIndices(annotationIndices, i).flatMap(
+        (valueIndex, cellIndex) => {
+          const value = annotation.values[valueIndex];
+          if (value == null) return [];
+          const evidence = data.annotation_evidence?.[annotationName]?.[i]?.[cellIndex];
+          const scores = data.annotation_scores?.[annotationName]?.[i]?.[cellIndex];
+          return [serializeCategoricalValue(value, evidence, scores)];
+        },
+      );
       values[i] = cellValues.length > 0 ? cellValues.join(';') : null;
     }
 
@@ -87,7 +108,7 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       columnData.push(
         {
           name: getEatCompanionColumn(annotationName, 'value'),
-          data: predictedCells.map((cell) => cell?.value ?? null),
+          data: predictedCells.map((cell) => (cell ? encodeAnnotationField(cell.value) : null)),
           type: 'STRING',
         },
         {
@@ -97,14 +118,17 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
         },
         {
           name: getEatCompanionColumn(annotationName, 'source'),
-          data: predictedCells.map((cell) => cell?.source ?? null),
+          data: predictedCells.map((cell) => (cell ? encodeAnnotationField(cell.source) : null)),
           type: 'STRING',
         },
       );
     }
   }
 
-  return parquetWriteBuffer({ columnData });
+  return parquetWriteBuffer({
+    columnData,
+    kvMetadata: [{ key: ANNOTATION_FORMAT_VERSION_KEY, value: ANNOTATION_FORMAT_VERSION }],
+  });
 }
 
 /**

@@ -128,6 +128,13 @@ consistent.
 - **WHEN** a transferred cell's confidence is below the configured threshold
 - **THEN** its opacity is reduced to a non-zero value rather than the point disappearing
 
+#### Scenario: Threshold input lifecycle
+
+- **WHEN** the user changes the confidence threshold repeatedly in the same annotation view
+- **THEN** the system invalidates style and visibility state and redraws the points
+- **AND** it does not rebuild plot geometry or the quadtree
+- **AND** it does not request an unchanged population recount through `data-change`
+
 #### Scenario: Hidden category wins
 
 - **WHEN** a transferred point's effective category is hidden in the legend
@@ -156,23 +163,25 @@ column-level model-prediction badge.
 - **WHEN** the user hovers an observed protein
 - **THEN** no per-cell EAT provenance block is shown for that annotation
 
-### Requirement: Legend reports observed and transferred populations
+### Requirement: Legend accounts for observed, transferred, and unannotated populations
 
 For an active EAT base annotation with the overlay enabled, the legend SHALL render a distinct
-“Predicted (transferred)” section with filled “Observed” and hollow “Predicted by EAT” swatches and
-live counts from the current filtered/isolation view. This section SHALL not replace or reuse the
-column-level predicted badge.
+“Predicted (transferred)” section with filled “Observed,” hollow “Predicted by EAT,” and explicit
+“Unannotated” rows with live counts from the current filtered/isolation view. Observed plus
+transferred plus unannotated SHALL equal the represented protein population. This section SHALL not
+replace or reuse the column-level predicted badge.
 
 #### Scenario: Full dataset counts
 
 - **WHEN** an EAT base annotation is active in the full dataset
-- **THEN** the legend reports observed and transferred counts whose sum equals the number of proteins
-  represented by that annotation view
+- **THEN** the legend reports observed, transferred, and unannotated counts whose sum equals the
+  number of proteins represented by that annotation view
 
 #### Scenario: Constrained-view counts
 
 - **WHEN** filtering or isolation changes the visible protein set
-- **THEN** the observed and transferred counts update to the constrained view
+- **THEN** the observed, transferred, and unannotated counts update to the constrained view
+- **AND** their sum equals the constrained represented population
 
 #### Scenario: Non-EAT or disabled view
 
@@ -203,3 +212,12 @@ materialized view, and SHALL omit synthetic confidence annotations.
 - **THEN** curated base cells remain missing where originally missing
 - **AND** every valid prediction value, confidence, and source is preserved in its companion column
 - **AND** no synthetic confidence column is written
+
+#### Scenario: Golden v2 structural round-trip
+
+- **WHEN** a backend-produced v2 bundle containing EAT cells, literal structural characters in
+  labels, evidence suffixes, score suffixes, and multi-hit categorical cells is exported and loaded
+  again
+- **THEN** the annotations parquet remains stamped `protspace_format_version=2`
+- **AND** every protein retains the same annotation set, evidence, and score companions
+- **AND** every EAT value, confidence, and source companion is preserved

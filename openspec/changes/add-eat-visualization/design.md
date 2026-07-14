@@ -90,6 +90,11 @@ inputs, preserving hidden-mask reuse and deterministic hit testing.
 Confidence is displayed as a percentage but described as a reliability index/ranking. The UI does
 not call it probability or accuracy.
 
+Threshold input changes invalidate only visibility/style caches and redraw GPU alpha. Because the
+contract keeps below-threshold points non-zero and interactive, threshold changes do not rebuild
+plot geometry or the quadtree and do not emit the population-bearing `data-change` event consumed
+by the legend.
+
 Alternative considered: applying confidence in `style-getters.ts` was rejected because WebGL hit
 testing, visible counts, depth ordering, and exports now share the visibility model by design.
 
@@ -128,10 +133,13 @@ coordinates through current scales, and draws dashed, round-capped, non-scaling 
 recomputation; data, projection, plane, scale, filter, and isolation changes rerender endpoints.
 
 The app interaction controller caches a source-to-query index per data reference and base
-annotation. A predicted click creates one query-to-source pair. A source click filters candidates to
-the current visible view, sorts by descending confidence then protein id, and sends at most 20 pairs
-with “showing N of M” metadata. Missing/off-view endpoints produce no invalid geometry and an
-accessible explanatory status.
+annotation. It also caches interactable protein-id membership by the scatter plot's stable current-
+view/visibility identity, invalidating only when filtered/isolation membership or the authoritative
+visibility inputs change. A predicted click creates one query-to-source pair. A source click filters
+candidates to endpoints whose authoritative rendered opacity is non-zero, sorts by descending
+confidence then protein id, and sends at most 20 pairs with “showing N of M” metadata.
+Legend-hidden and off-view endpoints produce no invalid geometry and an accessible explanatory
+status.
 
 Connector endpoints replace `highlightedProteinIds` while active. Empty-space click, annotation or
 overlay changes, data replacement, deselection, Escape, and an accessible close button clear both
@@ -142,12 +150,16 @@ Alternative considered: drawing connectors in WebGL was rejected because SVG alr
 interaction overlays and supplies zoom transforms, vector strokes, DOM accessibility, and simpler
 deterministic tests.
 
-### D7. Reconstruct storage on bundle export and fingerprint the side-channel
+### D7. Reconstruct v2 storage on bundle export and fingerprint the side-channel
 
-The bundle writer skips synthetic confidence annotations. For each EAT base, predicted positions are
-serialized as missing in `BASE`, then the writer reconstructs all three companion columns from
-`annotation_predicted`. This remains correct even if the caller passes display-materialized data.
-Round-trip tests compare every prediction cell and curated base cell.
+The bundle writer skips synthetic confidence annotations. It serializes every categorical column
+with the v2 codec: labels percent-encode structural `%`, `;`, and `|` characters; positional
+evidence or numeric-score suffixes are reconstructed; multi-hit values use structural semicolons;
+and the annotations parquet footer is stamped `protspace_format_version=2`. For each EAT base,
+predicted positions are serialized as missing in `BASE`, then the writer reconstructs all three EAT
+companion columns from `annotation_predicted`. This remains correct even if the caller passes
+display-materialized data. A golden backend-produced v2 fixture write/reload regression compares
+per-protein annotation sets, evidence, scores, and every prediction companion.
 
 Slicing copies `annotation_predicted` in protein order. Dataset hashing includes sorted
 base/protein/value/confidence/source tuples so bundles with identical curated annotations but
@@ -171,8 +183,9 @@ run before every commit.
   counts, and test incomplete/out-of-range cases.
 - **Overlay materialization could contaminate export** → Reconstruct curated bases and companions
   from `annotation_predicted`; test export from both raw and materialized views.
-- **A popular source could create DOM or visual overload** → Filter to visible candidates and cap
-  deterministically at 20 highest-confidence links with an explicit N-of-M status.
+- **A popular source could create DOM or visual overload** → Cache authoritative interactable-view
+  membership, filter both endpoints, and cap deterministically at 20 highest-confidence links with
+  an explicit N-of-M status.
 - **Hollow glyphs can become illegible at small point sizes** → Use the shader's derivative-based
   signed-distance anti-aliasing, retain a minimum ring width, and assert live/export shader parity.
 - **Confidence could be misread as calibrated probability** → Use “reliability index” language and

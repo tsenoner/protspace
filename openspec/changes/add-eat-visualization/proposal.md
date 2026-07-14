@@ -15,13 +15,14 @@ biology as ground truth in figures intended for scientific publication.
 - Add a persisted EAT overlay mode and confidence threshold beside annotation selection.
 - Coalesce transferred values into the active categorical view without changing curated data;
   render observed points filled and transferred points as confidence-weighted hollow markers.
-- Add EAT-specific tooltip provenance and an observed-versus-transferred legend section with live
-  counts.
+- Add EAT-specific tooltip provenance and an observed-versus-transferred-versus-missing legend
+  section with live counts that account for the complete represented population.
 - Add bidirectional, capped provenance connectors between transferred proteins and their source
   proteins, including projection/plane recomputation, connected-point emphasis, empty-click and
   keyboard dismissal, and an accessible fan-out summary.
 - Preserve the EAT distinction in live WebGL, grayscale, PNG export, filtered/isolation views,
-  settings persistence, dataset hashing, slicing, and lossless bundle round-trips.
+  settings persistence, dataset hashing, slicing, and lossless v2 bundle round-trips, including
+  structural label escaping, evidence/score suffixes, and format metadata.
 - Add focused unit, integration, shader/export, settings, and browser tests using the supplied real
   phosphatase EAT bundle.
 

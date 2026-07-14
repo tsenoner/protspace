@@ -65,3 +65,18 @@
       finish with all review threads resolved and all required checks green. PR #315 code quality
       and documentation checks passed on `02d8faf`; manually dispatched full Playwright run
       29328322734 passed on the same SHA because the PR workflow's `run-e2e` label is unavailable.
+
+## 7. Independent review remediation
+
+- [x] 7.1 Serialize categorical annotations with v2 structural encoding, positional evidence/score
+      suffixes, and footer version metadata; add a golden v2 EAT write/reload regression comparing
+      all per-protein annotation sets and companion channels.
+- [x] 7.2 Cache provenance interactable-view membership by stable scatter-view identity, invalidate
+      on authoritative visibility changes, and test repeated clicks plus hidden endpoints in both
+      directions.
+- [x] 7.3 Report unannotated EAT cells explicitly and test the three-way population invariant for
+      full, filtered, and isolated views.
+- [x] 7.4 Restrict confidence-threshold input to visibility/style redraw work and add call-count
+      regressions excluding quadtree rebuild and `data-change` recount paths.
+- [ ] 7.5 Run targeted and required full verification, push the remediation commits, reply to and
+      resolve all five review threads with evidence, and re-fetch thread-aware review state.

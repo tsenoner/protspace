@@ -147,6 +147,12 @@ export const layoutStyles = css`
     background: transparent;
   }
 
+  .eat-swatch.missing {
+    background: transparent;
+    border-style: dotted;
+    opacity: 0.65;
+  }
+
   .legend-items {
     display: flex;
     flex-direction: column;

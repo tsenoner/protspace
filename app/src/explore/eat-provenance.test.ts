@@ -34,7 +34,9 @@ describe('EatProvenanceResolver', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
 
-    expect(resolver.resolve(data, 'family', 'query-0', new Set(data.protein_ids))).toEqual({
+    expect(
+      resolver.resolve(data, 'family', 'query-0', new Set([...data.protein_ids, 'other-source'])),
+    ).toEqual({
       pairs: [
         {
           sourceProteinId: 'other-source',
@@ -44,6 +46,27 @@ describe('EatProvenanceResolver', () => {
       ],
       totalCandidates: 1,
     });
+  });
+
+  it('rejects a predicted click when its source endpoint is legend-hidden', () => {
+    const data = makeData();
+    const resolver = new EatProvenanceResolver();
+    const interactable = new Set([...data.protein_ids, 'other-source']);
+    interactable.delete('other-source');
+
+    expect(resolver.resolve(data, 'family', 'query-0', interactable)).toBeNull();
+  });
+
+  it('rejects a source click when the predicted endpoint is legend-hidden', () => {
+    const data = makeData();
+    const resolver = new EatProvenanceResolver();
+    const interactable = new Set(data.protein_ids);
+    interactable.delete('query-0');
+
+    const request = resolver.resolve(data, 'ec', 'source', interactable);
+
+    expect(request?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-0');
+    expect(request?.totalCandidates).toBe(23);
   });
 
   it('filters to the visible view, orders deterministically, and caps fan-out at 20', () => {

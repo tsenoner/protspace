@@ -20,9 +20,10 @@ SHALL emphasize both endpoints without changing protein selection semantics.
 ### Requirement: Source proteins connect to a bounded query fan-out
 
 Clicking a source protein SHALL connect it to transferred queries that name it as source for the
-active base annotation. Candidates SHALL be restricted to the current visible view, ordered by
-descending confidence with protein id as deterministic tie-breaker, and capped at 20. The UI SHALL
-report the shown and total candidate counts.
+active base annotation. Both source and target endpoints SHALL be restricted to the authoritative
+rendered/interactable view (including legend visibility), ordered by descending confidence with
+protein id as deterministic tie-breaker, and capped at 20. The UI SHALL report the shown and total
+candidate counts.
 
 #### Scenario: Source below fan-out cap
 
@@ -39,6 +40,12 @@ report the shown and total candidate counts.
 
 - **WHEN** multiple candidates at the cap boundary have equal confidence
 - **THEN** their protein ids determine a stable ascending order
+
+#### Scenario: Legend-hidden endpoint
+
+- **WHEN** either the source or predicted target has zero opacity because its effective legend
+  category is hidden
+- **THEN** no provenance pair is created for that endpoint in either click direction
 
 ### Requirement: Connectors track view geometry without zoom-time rebuilds
 
@@ -89,10 +96,20 @@ highlights.
 ### Requirement: Connector lookup scales with repeated interaction
 
 The application SHALL build the source-to-query lookup at most once per visualization-data reference
-and active base annotation, and SHALL reuse it for subsequent clicks until those inputs change.
+and active base annotation. It SHALL cache authoritative interactable-view membership by stable view
+and visibility identity and reuse both caches for subsequent clicks until their respective inputs
+change.
 
 #### Scenario: Repeated source clicks
 
 - **WHEN** several sources are clicked under the same data and annotation
 - **THEN** the application reuses the existing source index rather than rescanning all prediction
   cells for every click
+- **AND** it reuses interactable membership rather than rereading every protein id in the unchanged
+  view
+
+#### Scenario: View membership invalidation
+
+- **WHEN** filtering, isolation, annotation, legend visibility, or another authoritative
+  interactivity input changes
+- **THEN** the next provenance click rebuilds interactable membership for the new view exactly once

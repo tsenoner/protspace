@@ -63,6 +63,7 @@ type ScatterplotInternals = HTMLElement & {
   };
   _processData(): void;
   _getVisiblePointCount(): number;
+  getInteractableProteinIds(): ReadonlySet<string>;
   _scheduleNumericAnnotationRefresh(): void;
   _getCurrentDisplayData(options?: {
     includeFilteredProteinIds?: boolean;
@@ -391,6 +392,21 @@ describe('scatter-plot visible point count', () => {
     expect(sp._plotData.originalIndices).toBe(before.originalIndices);
 
     expect(sp._getVisiblePointCount()).toBe(6); // cache reused, same answer
+  });
+
+  it('reuses interactable membership until authoritative visibility changes', () => {
+    const sp = makeScatter();
+    sp._processData();
+
+    const first = sp.getInteractableProteinIds();
+    const repeated = sp.getInteractableProteinIds();
+    expect(repeated).toBe(first);
+    expect([...first]).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+
+    sp.hiddenAnnotationValues = ['B'];
+    const hiddenChanged = sp.getInteractableProteinIds();
+    expect(hiddenChanged).not.toBe(first);
+    expect([...hiddenChanged]).toEqual(['p0', 'p1', 'p2']);
   });
 });
 

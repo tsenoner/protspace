@@ -48,11 +48,12 @@ export class EatProvenanceResolver {
     visibleProteinIds: ReadonlySet<string>,
   ): ProvenanceConnectorRequest | null {
     const proteinIndex = this.getProteinIndex(data).get(clickedProteinId);
-    if (proteinIndex === undefined) return null;
+    if (proteinIndex === undefined || !visibleProteinIds.has(clickedProteinId)) return null;
 
     const predictedCell: PredictedCell | null =
       data.annotation_predicted?.[annotation]?.[proteinIndex] ?? null;
     if (predictedCell) {
+      if (!visibleProteinIds.has(predictedCell.source)) return null;
       return {
         pairs: [
           {

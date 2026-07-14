@@ -185,9 +185,8 @@ export class ProtspaceScatterplot extends LitElement {
   // visibility model.
   private _visibilityModelCache: VisibilityModel | null = null;
   private _visibilityModelKey: VisibilityModelMemoKey | null = null;
-  // Memoized count of INTERACTIVE plot points (opacityOf > 0) for the
-  // bottom-left indicator — the points the user can actually see/interact
-  // with. Keyed on the visibility inputs that affect interactivity: the
+  // Memoized INTERACTIVE plot ids (opacityOf > 0), shared by the bottom-left
+  // count and provenance interaction. Keyed on the visibility inputs that affect interactivity: the
   // hidden-mask inputs (data, selectedAnnotation, hiddenAnnotationValues)
   // AND selection/highlight + the three opacities, because a configured
   // fadedOpacity of 0 makes non-selected points non-interactive, so a
@@ -195,20 +194,19 @@ export class ProtspaceScatterplot extends LitElement {
   // (originalIndices ref + length), NOT the container ref: a projection
   // switch clones _plotData (new container, same originalIndices) and must
   // reuse the cache since interactivity is independent of x/y coordinates.
-  private _visiblePointCountCache: number | null = null;
+  private _interactableProteinIdsCache: ReadonlySet<string> | null = null;
   private _visiblePointCountKey: {
     originalIndices: Int32Array | null;
     plotLength: number;
     data: VisualizationData | null;
     selectedAnnotation: string;
     hiddenAnnotationValues: string[];
-    selectedProteinIds: string[];
-    highlightedProteinIds: string[];
+    selectedProteinIds: string[] | null;
+    highlightedProteinIds: string[] | null;
     baseOpacity: number;
     selectedOpacity: number;
     fadedOpacity: number;
     eatOverlayEnabled: boolean;
-    eatConfidenceThreshold: number;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   // F-17: advanced on every quadtree rebuild and folded into the virtualization
@@ -640,11 +638,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._refreshStyleGettersCache(changedProperties);
     this._reconcileSelectionOverlays(changedProperties);
     this._reconcileTooltipMeasurement(changedProperties);
-    if (
-      this.data &&
-      (changedProperties.has('eatOverlayEnabled') ||
-        changedProperties.has('eatConfidenceThreshold'))
-    ) {
+    if (this.data && changedProperties.has('eatOverlayEnabled')) {
       this.dispatchEvent(
         new CustomEvent('data-change', {
           detail: { data: this.getCurrentData() ?? this._getMaterializedData() ?? this.data },
@@ -797,14 +791,15 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _rebuildStyleAndSignature(changedProperties: Map<string, unknown>) {
-    if (
+    const visibilityMembershipChanged =
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
       changedProperties.has('otherAnnotationValues') ||
-      changedProperties.has('eatOverlayEnabled') ||
-      changedProperties.has('eatConfidenceThreshold')
-    ) {
-      this._scheduleQuadtreeRebuild();
+      changedProperties.has('eatOverlayEnabled');
+    if (visibilityMembershipChanged || changedProperties.has('eatConfidenceThreshold')) {
+      // Threshold changes only vary non-zero predicted alpha, so membership and geometry are
+      // unchanged. Keep range-input updates off the O(N) spatial-index path.
+      if (visibilityMembershipChanged) this._scheduleQuadtreeRebuild();
       this._webglRenderer?.invalidateStyleCache();
       this._updateStyleSignature();
       this._webglRenderer?.setStyleSignature(this._styleSig);
@@ -1562,7 +1557,7 @@ export class ProtspaceScatterplot extends LitElement {
    * (which clonePlotData()s a new container sharing the same originalIndices)
    * reuses the cache — interactivity is independent of x/y coordinates.
    */
-  private _getVisiblePointCount(): number {
+  private _getInteractableProteinIds(): ReadonlySet<string> {
     const data =
       this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
       this._getMaterializedData() ??
@@ -1571,55 +1566,61 @@ export class ProtspaceScatterplot extends LitElement {
     const baseOpacity = this._mergedConfig.baseOpacity;
     const selectedOpacity = this._mergedConfig.selectedOpacity;
     const fadedOpacity = this._mergedConfig.fadedOpacity;
+    // Selection/highlight only changes zero/non-zero membership when faded opacity is zero.
+    // Under the default non-zero fade, connector-owned highlight updates reuse this cache.
+    const selectedProteinIdsKey = fadedOpacity === 0 ? this.selectedProteinIds : null;
+    const highlightedProteinIdsKey = fadedOpacity === 0 ? this.highlightedProteinIds : null;
 
     const key = this._visiblePointCountKey;
     if (
-      this._visiblePointCountCache !== null &&
+      this._interactableProteinIdsCache !== null &&
       key &&
       key.originalIndices === pd.originalIndices &&
       key.plotLength === pd.length &&
       key.data === data &&
       key.selectedAnnotation === this.selectedAnnotation &&
       key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
-      key.selectedProteinIds === this.selectedProteinIds &&
-      key.highlightedProteinIds === this.highlightedProteinIds &&
+      key.selectedProteinIds === selectedProteinIdsKey &&
+      key.highlightedProteinIds === highlightedProteinIdsKey &&
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === this.eatOverlayEnabled &&
-      key.eatConfidenceThreshold === this.eatConfidenceThreshold
+      key.eatOverlayEnabled === this.eatOverlayEnabled
     ) {
-      return this._visiblePointCountCache;
+      return this._interactableProteinIdsCache;
     }
 
     const model = this._getVisibilityModel();
     const oi = pd.originalIndices;
     const sp = this._scratchPoint;
-    let count = 0;
+    const proteinIds = new Set<string>();
     for (let s = 0; s < pd.length; s++) {
       const origIdx = oi ? oi[s] : s;
       sp.id = pd.proteinIds[origIdx];
       sp.originalIndex = origIdx;
       // x/y intentionally NOT set: isInteractive → opacityOf → isHidden /
       // baseOpacityOf read only id + originalIndex, never coordinates.
-      if (model.isInteractive(sp)) count++;
+      if (model.isInteractive(sp)) proteinIds.add(sp.id);
     }
-    this._visiblePointCountCache = count;
+    this._interactableProteinIdsCache = proteinIds;
     this._visiblePointCountKey = {
       originalIndices: pd.originalIndices,
       plotLength: pd.length,
       data,
       selectedAnnotation: this.selectedAnnotation,
       hiddenAnnotationValues: this.hiddenAnnotationValues,
-      selectedProteinIds: this.selectedProteinIds,
-      highlightedProteinIds: this.highlightedProteinIds,
+      selectedProteinIds: selectedProteinIdsKey,
+      highlightedProteinIds: highlightedProteinIdsKey,
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
       eatOverlayEnabled: this.eatOverlayEnabled,
-      eatConfidenceThreshold: this.eatConfidenceThreshold,
     };
-    return count;
+    return proteinIds;
+  }
+
+  private _getVisiblePointCount(): number {
+    return this._getInteractableProteinIds().size;
   }
 
   private _getDepth(point: PlotDataPoint): number {
@@ -2251,6 +2252,11 @@ export class ProtspaceScatterplot extends LitElement {
 
   getMaterializedData(): VisualizationData | null {
     return this._getMaterializedData();
+  }
+
+  /** Stable authoritative membership for points currently rendered with non-zero opacity. */
+  getInteractableProteinIds(): ReadonlySet<string> {
+    return this._getInteractableProteinIds();
   }
 
   /**

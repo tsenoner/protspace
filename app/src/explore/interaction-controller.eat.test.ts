@@ -18,12 +18,13 @@ function makeData(): VisualizationData {
 
 function setup() {
   const data = makeData();
+  const interactableProteinIds = new Set(data.protein_ids);
   const plotElement = {
     data,
     selectedAnnotation: 'ec',
     selectedProteinIds: [],
     eatOverlayEnabled: true,
-    getCurrentData: () => data,
+    getInteractableProteinIds: vi.fn(() => interactableProteinIds),
     setProvenanceConnectors: vi.fn(),
     clearProvenanceConnectors: vi.fn(),
   };
@@ -63,5 +64,17 @@ describe('interaction controller EAT provenance', () => {
 
     expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
     expect(plotElement.setProvenanceConnectors).not.toHaveBeenCalled();
+  });
+
+  it('reuses the scatter plot interactable-membership cache across repeated clicks', () => {
+    const { controller, plotElement } = setup();
+
+    controller.handleProteinClick({ detail: { proteinId: 'query' } } as unknown as Event);
+    controller.handleProteinClick({ detail: { proteinId: 'source' } } as unknown as Event);
+
+    expect(plotElement.getInteractableProteinIds).toHaveBeenCalledTimes(2);
+    expect(plotElement.getInteractableProteinIds.mock.results[1]?.value).toBe(
+      plotElement.getInteractableProteinIds.mock.results[0]?.value,
+    );
   });
 });

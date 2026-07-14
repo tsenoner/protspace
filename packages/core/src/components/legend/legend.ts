@@ -18,8 +18,6 @@ import {
   getAnnotationMeta,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
-  getProteinAnnotationIndices,
-  isNAValue,
 } from '@protspace/utils';
 import type { LegendSettingsMap } from '@protspace/utils';
 
@@ -63,6 +61,7 @@ import {
   computeOtherConcreteValues,
 } from './legend-helpers';
 import { buildAnnotationValueList } from './annotation-values';
+import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
 
 // Dialogs
 import {
@@ -152,7 +151,7 @@ export class ProtspaceLegend extends LitElement {
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
-  @state() private _eatCounts: { observed: number; predicted: number } | null = null;
+  @state() private _eatCounts: EatPopulationCounts | null = null;
   @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
   private _keyboardReorderSnapshot: {
@@ -1079,31 +1078,9 @@ export class ProtspaceLegend extends LitElement {
   private _computeEatCounts(
     data: ScatterplotData,
     selectedAnnotation: string,
-  ): { observed: number; predicted: number } | null {
-    const predictedCells = data.annotation_predicted?.[selectedAnnotation];
+  ): EatPopulationCounts | null {
     const overlayEnabled = this._scatterplotController.scatterplot?.eatOverlayEnabled ?? false;
-    if (!overlayEnabled || !predictedCells) return null;
-    const annotation = data.annotations[selectedAnnotation];
-    const rows = data.annotation_data[selectedAnnotation];
-    if (!annotation || !rows) return null;
-    let observed = 0;
-    let predicted = 0;
-    for (let index = 0; index < data.protein_ids.length; index++) {
-      if (predictedCells[index]) {
-        predicted += 1;
-        continue;
-      }
-      const indices = getProteinAnnotationIndices(rows, index);
-      if (
-        indices.some((valueIndex) => {
-          const value = annotation.values[valueIndex];
-          return value != null && !isNAValue(value);
-        })
-      ) {
-        observed += 1;
-      }
-    }
-    return { observed, predicted };
+    return computeEatPopulationCounts(data, selectedAnnotation, overlayEnabled);
   }
 
   private _ensureSortModeDefaults(): void {
@@ -2125,6 +2102,11 @@ export class ProtspaceLegend extends LitElement {
                   <span class="eat-swatch predicted" aria-hidden="true"></span>
                   <span>Predicted by EAT</span>
                   <strong>${this._eatCounts.predicted}</strong>
+                </div>
+                <div class="eat-legend-row">
+                  <span class="eat-swatch missing" aria-hidden="true"></span>
+                  <span>Unannotated</span>
+                  <strong>${this._eatCounts.missing}</strong>
                 </div>
               </section>
             `
