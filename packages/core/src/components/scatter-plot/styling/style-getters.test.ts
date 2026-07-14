@@ -24,7 +24,9 @@ describe('style-getters', () => {
         },
       },
       annotation_data: { family: new Int32Array([0, 0]) },
-      annotation_predicted: { family: [false, true] },
+      annotation_predicted: {
+        family: [null, { value: 'A', confidence: 0.8, source: 'observed' }],
+      },
     };
     const baseConfig: StyleConfig = {
       selectedProteinIds: [],

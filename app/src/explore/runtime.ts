@@ -261,6 +261,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   addTrackedEventListener(
     lifecycle,
     plotElement,
+    'protein-click',
+    interactionController.handleProteinClick,
+  );
+  addTrackedEventListener(
+    lifecycle,
+    plotElement,
     'data-isolation',
     interactionController.updateLegend,
   );

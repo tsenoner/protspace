@@ -1,0 +1,79 @@
+// @vitest-environment jsdom
+
+import { describe, expect, it, vi } from 'vitest';
+
+vi.hoisted(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+  }
+});
+
+import './scatter-plot';
+import type { ProtspaceScatterplot } from './scatter-plot';
+
+type ConnectorSeam = {
+  _connectorOverlay: {
+    set: ReturnType<typeof vi.fn>;
+    clear: ReturnType<typeof vi.fn>;
+    render: ReturnType<typeof vi.fn>;
+    hasActiveRequest: ReturnType<typeof vi.fn>;
+  };
+  _reconcileProvenanceConnectors(changed: Map<string, unknown>): void;
+};
+
+function makePlot() {
+  const plot = document.createElement('protspace-scatterplot') as ProtspaceScatterplot;
+  const overlay = {
+    set: vi.fn(),
+    clear: vi.fn(),
+    render: vi.fn(),
+    hasActiveRequest: vi.fn(() => true),
+  };
+  (plot as unknown as ConnectorSeam)._connectorOverlay = overlay;
+  return { plot, overlay, seam: plot as unknown as ConnectorSeam };
+}
+
+describe('scatter-plot provenance connector contract', () => {
+  it('caps requests at 20 and replaces highlighted ids with connector endpoints', () => {
+    const { plot, overlay } = makePlot();
+    const pairs = Array.from({ length: 25 }, (_, index) => ({
+      sourceProteinId: 'source',
+      targetProteinId: `target-${index}`,
+      confidence: 1 - index / 100,
+    }));
+
+    plot.setProvenanceConnectors({ pairs, totalCandidates: 25 });
+
+    expect(overlay.set).toHaveBeenCalledWith({ pairs: pairs.slice(0, 20), totalCandidates: 25 });
+    expect(plot.highlightedProteinIds).toEqual([
+      'source',
+      ...pairs.slice(0, 20).map((pair) => pair.targetProteinId),
+    ]);
+  });
+
+  it('clears connector-owned highlights and stale state on an annotation change', () => {
+    const { plot, overlay, seam } = makePlot();
+    plot.highlightedProteinIds = ['source', 'target'];
+
+    seam._reconcileProvenanceConnectors(new Map([['selectedAnnotation', 'ec']]));
+
+    expect(overlay.clear).toHaveBeenCalledOnce();
+    expect(plot.highlightedProteinIds).toEqual([]);
+  });
+
+  it('rerenders geometry for projection and filter changes', () => {
+    const { overlay, seam } = makePlot();
+
+    seam._reconcileProvenanceConnectors(
+      new Map([
+        ['selectedProjectionIndex', 0],
+        ['filteredProteinIds', []],
+      ]),
+    );
+
+    expect(overlay.render).toHaveBeenCalledOnce();
+  });
+});

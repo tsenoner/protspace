@@ -9,6 +9,7 @@ import type {
 import { getProteinAnnotationIndices } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getLegendErrorNotification } from './notifications';
+import { EatProvenanceResolver } from './eat-provenance';
 
 interface InteractionControllerOptions {
   legendElement: ProtspaceLegend;
@@ -22,6 +23,7 @@ export interface InteractionController {
   updateSelectedProteinDisplay(proteinId: string | null): void;
   getSelectedProteins(): string[];
   handleSelectionChange(event: Event): void;
+  handleProteinClick(event: Event): void;
   handlePlotDataChange(): void;
   handleLegendError(event: Event): void;
   handleStructureLoad(event: Event): void;
@@ -37,6 +39,7 @@ export function createInteractionController({
   structureViewer,
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
+  const eatProvenance = new EatProvenanceResolver();
 
   const updateSelectedProteinDisplay = (proteinId: string | null) => {
     if (!selectedProteinElement) {
@@ -104,6 +107,26 @@ export function createInteractionController({
 
       updateSelectedProteinDisplay(null);
     },
+    handleProteinClick(event) {
+      const proteinId = (event as CustomEvent<{ proteinId?: string }>).detail?.proteinId;
+      const data = plotElement.data;
+      const annotation = plotElement.selectedAnnotation;
+      if (!proteinId || !data || !annotation || !plotElement.eatOverlayEnabled) {
+        plotElement.clearProvenanceConnectors();
+        return;
+      }
+
+      const currentView = plotElement.getCurrentData();
+      const visibleProteinIds = new Set<string>(
+        (currentView?.protein_ids ?? data.protein_ids) as readonly string[],
+      );
+      const request = eatProvenance.resolve(data, annotation, proteinId, visibleProteinIds);
+      if (request) {
+        plotElement.setProvenanceConnectors(request);
+      } else {
+        plotElement.clearProvenanceConnectors();
+      }
+    },
     handlePlotDataChange() {
       selectedProteins = plotElement.selectedProteinIds || [];
       updateLegend();
@@ -132,6 +155,7 @@ export function createInteractionController({
       updateSelectedProteinDisplay(null);
     },
     handleAnnotationChange() {
+      plotElement.clearProvenanceConnectors();
       // Synchronously clear the plot's hidden set for the newly selected
       // annotation. The core legend owns per-annotation visibility: it persists
       // hidden categories (saveSettings/loadSettings, keyed by datasetHash +

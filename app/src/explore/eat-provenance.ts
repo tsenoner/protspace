@@ -1,0 +1,98 @@
+import type { ProvenanceConnectorRequest } from '@protspace/core';
+import type { PredictedCell, VisualizationData } from '@protspace/utils';
+
+interface SourceCandidate {
+  targetProteinId: string;
+  confidence: number;
+}
+
+type SourceIndex = ReadonlyMap<string, readonly SourceCandidate[]>;
+
+const MAX_PROVENANCE_CONNECTORS = 20;
+
+/**
+ * Resolves EAT clicks without rescanning every transferred cell on repeated source interactions.
+ * WeakMap ownership ensures replaced datasets and their indexes can be garbage-collected together.
+ */
+export class EatProvenanceResolver {
+  private readonly sourceIndexes = new WeakMap<VisualizationData, Map<string, SourceIndex>>();
+  private readonly proteinIndexes = new WeakMap<VisualizationData, ReadonlyMap<string, number>>();
+
+  getSourceIndex(data: VisualizationData, annotation: string): SourceIndex {
+    let byAnnotation = this.sourceIndexes.get(data);
+    if (!byAnnotation) {
+      byAnnotation = new Map();
+      this.sourceIndexes.set(data, byAnnotation);
+    }
+    const cached = byAnnotation.get(annotation);
+    if (cached) return cached;
+
+    const mutable = new Map<string, SourceCandidate[]>();
+    const cells = data.annotation_predicted?.[annotation] ?? [];
+    for (let proteinIndex = 0; proteinIndex < cells.length; proteinIndex++) {
+      const cell = cells[proteinIndex];
+      const targetProteinId = data.protein_ids[proteinIndex];
+      if (!cell || !targetProteinId) continue;
+      const candidates = mutable.get(cell.source) ?? [];
+      candidates.push({ targetProteinId, confidence: cell.confidence });
+      mutable.set(cell.source, candidates);
+    }
+    byAnnotation.set(annotation, mutable);
+    return mutable;
+  }
+
+  resolve(
+    data: VisualizationData,
+    annotation: string,
+    clickedProteinId: string,
+    visibleProteinIds: ReadonlySet<string>,
+  ): ProvenanceConnectorRequest | null {
+    const proteinIndex = this.getProteinIndex(data).get(clickedProteinId);
+    if (proteinIndex === undefined) return null;
+
+    const predictedCell: PredictedCell | null =
+      data.annotation_predicted?.[annotation]?.[proteinIndex] ?? null;
+    if (predictedCell) {
+      return {
+        pairs: [
+          {
+            sourceProteinId: predictedCell.source,
+            targetProteinId: clickedProteinId,
+            confidence: predictedCell.confidence,
+          },
+        ],
+        totalCandidates: 1,
+      };
+    }
+
+    const visibleCandidates = (this.getSourceIndex(data, annotation).get(clickedProteinId) ?? [])
+      .filter((candidate) => visibleProteinIds.has(candidate.targetProteinId))
+      .sort((left, right) => {
+        const confidenceOrder = right.confidence - left.confidence;
+        if (confidenceOrder !== 0) return confidenceOrder;
+        return left.targetProteinId < right.targetProteinId
+          ? -1
+          : left.targetProteinId > right.targetProteinId
+            ? 1
+            : 0;
+      });
+    if (visibleCandidates.length === 0) return null;
+
+    return {
+      pairs: visibleCandidates.slice(0, MAX_PROVENANCE_CONNECTORS).map((candidate) => ({
+        sourceProteinId: clickedProteinId,
+        targetProteinId: candidate.targetProteinId,
+        confidence: candidate.confidence,
+      })),
+      totalCandidates: visibleCandidates.length,
+    };
+  }
+
+  private getProteinIndex(data: VisualizationData): ReadonlyMap<string, number> {
+    const cached = this.proteinIndexes.get(data);
+    if (cached) return cached;
+    const index = new Map(data.protein_ids.map((proteinId, position) => [proteinId, position]));
+    this.proteinIndexes.set(data, index);
+    return index;
+  }
+}

@@ -33,13 +33,13 @@
 
 ## 4. Provenance connectors
 
-- [ ] 4.1 Implement and unit-test a dedicated connector overlay controller for id lookup,
+- [x] 4.1 Implement and unit-test a dedicated connector overlay controller for id lookup,
       plane-mapped/scaled geometry, dashed non-scaling lines, summaries, missing endpoints, and
       rerender-versus-transform behavior.
-- [ ] 4.2 Add scatter-plot connector APIs, endpoint highlighting, projection/plane/filter/isolation
+- [x] 4.2 Add scatter-plot connector APIs, endpoint highlighting, projection/plane/filter/isolation
       recomputation, empty-click/Escape/close/deselect clearing, status UI, styles, and component
       tests.
-- [ ] 4.3 Add app interaction wiring with a per-data/per-annotation inverted source index,
+- [x] 4.3 Add app interaction wiring with a per-data/per-annotation inverted source index,
       active-column lookup, visible-view filtering, deterministic confidence ordering, 20-line cap,
       and interaction tests.
 

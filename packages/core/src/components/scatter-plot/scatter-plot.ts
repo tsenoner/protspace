@@ -54,6 +54,17 @@ import {
   PlotInteractionController,
   type PlotInteractionHost,
 } from './interaction/plot-interaction-controller';
+import {
+  ConnectorOverlayController,
+  type ProvenanceConnectorRequest,
+  type ProvenanceConnectorStatus,
+} from './provenance/connector-overlay-controller';
+
+export type {
+  ProvenanceConnectorPair,
+  ProvenanceConnectorRequest,
+  ProvenanceConnectorStatus,
+} from './provenance/connector-overlay-controller';
 
 // Visualization is only needed for viewport culling on very large datasets.
 // For <= MAX_POINTS_DIRECT_RENDER we can render the full set once and then pan/zoom via uniforms
@@ -147,6 +158,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _shapeMapping: Record<string, string> | null = null;
   @state() private _canvasKey = 0;
   @state() private _numericRecomputeRunning = false;
+  @state() private _connectorStatus: ProvenanceConnectorStatus | null = null;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -235,6 +247,22 @@ export class ProtspaceScatterplot extends LitElement {
     onPointActivate: (e, p) => this._handleClick(e, p),
     onHover: (e, p) => this._handleMouseOver(e, p),
     onHoverEnd: () => this._clearHoverState(),
+  });
+
+  private _connectorOverlay = new ConnectorOverlayController({
+    getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
+    getPlotData: () => this._plotData,
+    getScales: () => this._scales,
+    onStatusChange: (status) => {
+      if (
+        this._connectorStatus?.shown === status?.shown &&
+        this._connectorStatus?.total === status?.total &&
+        this._connectorStatus?.missingEndpoints === status?.missingEndpoints
+      ) {
+        return;
+      }
+      this._connectorStatus = status;
+    },
   });
 
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
@@ -481,6 +509,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.addEventListener('dragenter', this.handleDragEnter);
     this.addEventListener('dragleave', this.handleDragLeave);
     this.addEventListener('drop', this.handleDrop);
+    window.addEventListener('keydown', this._handleConnectorKeydown);
   }
 
   disconnectedCallback() {
@@ -502,6 +531,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelDebounce();
     this._dupOverlay.cancelCompute();
     this._dupOverlay.clearBadges();
+    this._connectorOverlay.clear();
     this._webglRenderer?.destroy();
     // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
     // down the d3 brush + lasso (F-07).
@@ -514,7 +544,14 @@ export class ProtspaceScatterplot extends LitElement {
     this.removeEventListener('dragenter', this.handleDragEnter);
     this.removeEventListener('dragleave', this.handleDragLeave);
     this.removeEventListener('drop', this.handleDrop);
+    window.removeEventListener('keydown', this._handleConnectorKeydown);
   }
+
+  private _handleConnectorKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this._connectorOverlay.hasActiveRequest()) {
+      this.clearProvenanceConnectors();
+    }
+  };
 
   private handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -599,6 +636,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._reconcileConfigMerge(changedProperties);
     this._rebuildStyleAndSignature(changedProperties);
     this._reconcileSelectionMode(changedProperties);
+    this._reconcileProvenanceConnectors(changedProperties);
     this._refreshStyleGettersCache(changedProperties);
     this._reconcileSelectionOverlays(changedProperties);
     this._reconcileTooltipMeasurement(changedProperties);
@@ -614,6 +652,29 @@ export class ProtspaceScatterplot extends LitElement {
           composed: true,
         }),
       );
+    }
+  }
+
+  private _reconcileProvenanceConnectors(changedProperties: Map<string, unknown>): void {
+    const contextChanged =
+      changedProperties.has('data') ||
+      changedProperties.has('selectedAnnotation') ||
+      (changedProperties.has('eatOverlayEnabled') && !this.eatOverlayEnabled) ||
+      (changedProperties.has('selectedProteinIds') && this.selectedProteinIds.length === 0);
+    if (contextChanged) {
+      this.clearProvenanceConnectors();
+      return;
+    }
+
+    if (
+      changedProperties.has('_plotData') ||
+      changedProperties.has('selectedProjectionIndex') ||
+      changedProperties.has('projectionPlane') ||
+      changedProperties.has('filteredProteinIds') ||
+      changedProperties.has('filtersActive') ||
+      changedProperties.has('config')
+    ) {
+      this._connectorOverlay.render();
     }
   }
 
@@ -869,6 +930,7 @@ export class ProtspaceScatterplot extends LitElement {
       }
       this._syncWebglSelectionActive();
     }
+    this._connectorOverlay.render();
   }
 
   private _processData() {
@@ -1209,6 +1271,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._scheduleQuadtreeRebuild();
     this._renderPlot();
     this._updateSelectionOverlays();
+    this._connectorOverlay.render();
   }
 
   // HiDPI setup and quality handled by WebGLRenderer
@@ -1760,7 +1823,10 @@ export class ProtspaceScatterplot extends LitElement {
 
     const [mouseX, mouseY] = d3.pointer(event);
     const nearestPoint = this.pickInteractivePointAt(mouseX, mouseY);
-    if (!nearestPoint) return;
+    if (!nearestPoint) {
+      this.clearProvenanceConnectors();
+      return;
+    }
 
     // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
     if (this._dupOverlay.maybeSpiderfyPoint(nearestPoint)) return;
@@ -1910,9 +1976,50 @@ export class ProtspaceScatterplot extends LitElement {
               </div>
             `
           : ''}
+        ${this._connectorStatus
+          ? html`
+              <div class="connector-status" role="status" aria-live="polite">
+                <span>${this._formatConnectorStatus(this._connectorStatus)}</span>
+                <button
+                  type="button"
+                  aria-label="Close provenance connections"
+                  @click=${this.clearProvenanceConnectors}
+                >
+                  ×
+                </button>
+              </div>
+            `
+          : ''}
       </div>
     `;
   }
+
+  private _formatConnectorStatus(status: ProvenanceConnectorStatus): string {
+    const base = `Showing ${status.shown} of ${status.total} provenance connection${status.total === 1 ? '' : 's'}`;
+    if (status.missingEndpoints === 0) return base;
+    return `${base} · ${status.missingEndpoints} connection${status.missingEndpoints === 1 ? '' : 's'} unavailable outside the current view`;
+  }
+
+  /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */
+  setProvenanceConnectors(request: ProvenanceConnectorRequest): void {
+    const pairs = request.pairs.slice(0, 20);
+    const endpointIds = new Set<string>();
+    for (const pair of pairs) {
+      endpointIds.add(pair.sourceProteinId);
+      endpointIds.add(pair.targetProteinId);
+    }
+    this.highlightedProteinIds = [...endpointIds];
+    this._connectorOverlay.set({ ...request, pairs });
+  }
+
+  /** Clear EAT connector geometry, status, and connector-owned endpoint highlights. */
+  clearProvenanceConnectors = (): void => {
+    const wasActive = this._connectorOverlay.hasActiveRequest();
+    this._connectorOverlay.clear();
+    if (wasActive && this.highlightedProteinIds.length > 0) {
+      this.highlightedProteinIds = [];
+    }
+  };
 
   private _updateStyleSignature() {
     const cfg = this._mergedConfig;

@@ -178,6 +178,79 @@ const scatterplotStylesCore = css`
     pointer-events: all;
     cursor: pointer;
   }
+
+  /* EAT provenance connectors (SVG overlay). Geometry inherits the parent zoom transform. */
+  .connector-lines-layer {
+    pointer-events: none;
+  }
+
+  .eat-provenance-connector {
+    stroke: #475569;
+    stroke-width: 1.5px;
+    stroke-dasharray: 5 4;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.82;
+  }
+
+  .eat-provenance-endpoint {
+    fill: none;
+    stroke: #0f766e;
+    stroke-width: 2.5px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .connector-status {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 50%;
+    z-index: var(--z-overlay);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    max-width: min(32rem, calc(100% - 2rem));
+    padding: 0.25rem 0.375rem 0.25rem 0.625rem;
+    box-sizing: border-box;
+    transform: translateX(-50%);
+    background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
+    border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
+    box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
+    color: #334155;
+    font-size: 0.6875rem;
+    font-weight: var(--font-medium);
+    border-radius: 0.375rem;
+  }
+
+  .connector-status span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .connector-status button {
+    display: grid;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex: 0 0 auto;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: #475569;
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .connector-status button:hover,
+  .connector-status button:focus-visible {
+    background: #e2e8f0;
+    color: #0f172a;
+    outline: none;
+  }
 `;
 
 export const scatterplotStyles = [tokens, overlayMixins, scatterplotStylesCore];
