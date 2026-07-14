@@ -52,23 +52,25 @@ storage keys SHALL NOT be serialized as ordinary annotations.
 
 ### Requirement: EAT overlay controls are conditional, accessible, and persisted
 
-The control bar SHALL provide an EAT overlay switch beside annotation selection and a native
-confidence-threshold control. The controls SHALL be enabled only for datasets with normalized EAT
-cells, SHALL default to overlay enabled and threshold `0.50`, and SHALL synchronize with the scatter
-plot. Optional `eatOverlayEnabled` and `eatConfidenceThreshold` bundle settings SHALL validate,
-normalize, write even when they are the only settings, and apply on dataset load.
+For datasets with normalized EAT cells, the control bar SHALL provide an EAT overlay switch beside
+annotation selection and a native confidence-threshold control. The accessible fieldset SHALL
+default to overlay enabled and threshold `0.50` and SHALL synchronize with the scatter plot. The
+complete fieldset SHALL be absent for datasets without usable EAT cells. Optional
+`eatOverlayEnabled` and `eatConfidenceThreshold` bundle settings SHALL validate, normalize, write
+even when they are the only settings, and apply on dataset load.
 
 #### Scenario: EAT-capable dataset
 
 - **WHEN** a dataset with normalized EAT cells loads without embedded EAT settings
 - **THEN** the switch is enabled and on, the threshold is `50%`, and both controls have accessible
   names and keyboard behavior
+- **AND** the controls are contained by an accessible EAT-labelled group
 
 #### Scenario: Dataset without EAT
 
 - **WHEN** a dataset without normalized EAT cells loads
-- **THEN** the EAT controls are disabled and expose an explanation that no transferred annotations
-  are available
+- **THEN** the complete EAT control group is absent from the rendered DOM and accessibility tree
+- **AND** no empty group spacing or orphaned EAT label remains
 
 #### Scenario: Embedded settings round-trip
 
@@ -144,6 +146,13 @@ consistent.
 
 - **WHEN** a transferred point is highlighted as a connector endpoint
 - **THEN** it receives selected opacity while retaining hollow geometry
+
+#### Scenario: Opacity-tier membership invalidation
+
+- **WHEN** `baseOpacity`, `selectedOpacity`, or `fadedOpacity` is configured at zero and selection
+  or highlight changes which opacity tier applies to a point
+- **THEN** cached interactable membership is recomputed and reflects the new zero/non-zero state
+- **AND** when all tiers are positive, highlight-only changes reuse the default membership cache
 
 ### Requirement: Tooltip communicates per-cell EAT provenance
 

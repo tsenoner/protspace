@@ -6,6 +6,8 @@ import { dismissTourIfPresent } from './helpers/explore';
 const EAT_FIXTURE = fileURLToPath(
   new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
 );
+// Exact asset from issue #277 comment 4902936797. Bundle SHA-256:
+// 06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33.
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -210,11 +212,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   const controlBar = page.locator('protspace-control-bar');
   const plot = page.locator('protspace-scatterplot');
+  const eatGroup = controlBar.getByRole('group', { name: 'Embedding Annotation Transfer' });
   const eatToggle = controlBar.getByRole('checkbox', { name: 'EAT' });
   const threshold = controlBar.getByRole('slider', {
     name: 'Minimum EAT reliability index',
   });
 
+  await expect(eatGroup).toBeVisible();
   await expect(eatToggle).toBeChecked();
   await expect(eatToggle).toBeEnabled();
   await expect(threshold).toHaveValue('0.5');

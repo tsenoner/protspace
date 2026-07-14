@@ -22,8 +22,10 @@ SHALL emphasize both endpoints without changing protein selection semantics.
 Clicking a source protein SHALL connect it to transferred queries that name it as source for the
 active base annotation. Both source and target endpoints SHALL be restricted to the authoritative
 rendered/interactable view (including legend visibility), ordered by descending confidence with
-protein id as deterministic tie-breaker, and capped at 20. The UI SHALL report the shown and total
-candidate counts.
+protein id as deterministic tie-breaker, and capped at 20. Source candidates SHALL be ordered once
+when their cached index is constructed; each click SHALL scan and count visible candidates while
+materializing at most 20 pairs, without per-click sorting or a full filtered-candidate allocation.
+The UI SHALL report the shown and total candidate counts.
 
 #### Scenario: Source below fan-out cap
 
@@ -40,6 +42,14 @@ candidate counts.
 
 - **WHEN** multiple candidates at the cap boundary have equal confidence
 - **THEN** their protein ids determine a stable ascending order
+
+#### Scenario: Repeated high-fan-out source click
+
+- **WHEN** a source with a large candidate list is clicked repeatedly in one stable data and
+  annotation view
+- **THEN** the cached deterministic ordering is reused without another sort
+- **AND** each resolution allocates only the bounded connector result while still counting all
+  visible candidates
 
 #### Scenario: Legend-hidden endpoint
 
@@ -92,6 +102,11 @@ highlights.
 - **WHEN** the active annotation changes, the overlay turns off, the dataset is replaced, or protein
   selection becomes empty
 - **THEN** stale connector state and connector-owned highlights clear
+
+#### Scenario: Endpoint category becomes hidden
+
+- **WHEN** an active pair's source or target category becomes legend-hidden
+- **THEN** the active connector request and connector-owned highlights clear immediately
 
 ### Requirement: Connector lookup scales with repeated interaction
 

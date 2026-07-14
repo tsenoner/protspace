@@ -35,7 +35,7 @@ interactive PoC are the behavioral inputs. No external runtime dependency is nee
 - Changing EAT inference, nearest-neighbor search, metric, `k`, calibration, or backend output.
 - Adding out-of-sample projection, multi-source transfer, persisted metric metadata, or a new bundle
   part/version.
-- Changing the existing column-level `⚡ Predicted` annotation metadata badge.
+- Changing the existing column-level predicted-annotation metadata badge.
 - Exporting transient provenance connector lines into publication figures; hollow marker semantics
   are exported, while connectors remain an exploratory interaction overlay.
 
@@ -95,6 +95,12 @@ contract keeps below-threshold points non-zero and interactive, threshold change
 plot geometry or the quadtree and do not emit the population-bearing `data-change` event consumed
 by the legend.
 
+Interactable-membership caching keys selection and highlight identities whenever any supported
+observed opacity tier (`baseOpacity`, `selectedOpacity`, or `fadedOpacity`) is non-interactive
+(`<= 0`). If every tier is positive, selection and highlight can only restyle points and the
+default connector-highlight fast path reuses membership. EAT confidence opacity has a positive
+floor, while selected EAT endpoints still follow the same selected-opacity tier.
+
 Alternative considered: applying confidence in `style-getters.ts` was rejected because WebGL hit
 testing, visible counts, depth ordering, and exports now share the visibility model by design.
 
@@ -119,10 +125,13 @@ number in `[0,1]`; normalization drops invalid optional values while retaining o
 settings. The writer gate recognizes EAT-only settings.
 
 The control bar exposes a switch beside annotation selection and a native range input (`0..1`, step
-`0.05`). Both are disabled with an explanation when the dataset has no EAT channel; the threshold is
-disabled while the overlay is off. Auto-sync updates scatter state and emits one
-`eat-overlay-change` contract. Loading embedded settings applies both plot and control state;
-parquet export writes the current values.
+`0.05`) only when the loaded dataset has at least one normalized EAT cell. A non-EAT dataset omits
+the complete fieldset so it contributes no irrelevant focus targets, accessibility-tree content,
+or empty responsive-grid spacing. The supported fieldset reuses the existing control-bar fieldset,
+legend, label, typography, spacing, colour, and native-input patterns; it introduces no decorative
+emoji. The threshold is disabled while the overlay is off. Auto-sync updates scatter state and
+emits one `eat-overlay-change` contract. Loading embedded settings applies both plot and control
+state; parquet export writes the current values.
 
 ### D6. Keep provenance pairs as ids in a dedicated SVG controller
 
@@ -133,17 +142,22 @@ coordinates through current scales, and draws dashed, round-capped, non-scaling 
 recomputation; data, projection, plane, scale, filter, and isolation changes rerender endpoints.
 
 The app interaction controller caches a source-to-query index per data reference and base
-annotation. It also caches interactable protein-id membership by the scatter plot's stable current-
-view/visibility identity, invalidating only when filtered/isolation membership or the authoritative
-visibility inputs change. A predicted click creates one query-to-source pair. A source click filters
-candidates to endpoints whose authoritative rendered opacity is non-zero, sorts by descending
-confidence then protein id, and sends at most 20 pairs with “showing N of M” metadata.
+annotation. Each source list is sorted once while that cached index is constructed, by descending
+confidence then protein id. It also caches interactable protein-id membership by the scatter plot's
+stable current-view/visibility identity, invalidating only when filtered/isolation membership or
+the authoritative visibility inputs change. A predicted click creates one query-to-source pair. A
+source click scans its already ordered list once, counts interactable candidates, and materializes
+only the first 20 pairs; it neither re-sorts nor allocates a full filtered candidate array.
+Legend-hidden and off-view endpoints produce no invalid geometry and an accessible “showing N of M”
+status.
 Legend-hidden and off-view endpoints produce no invalid geometry and an accessible explanatory
 status.
 
 Connector endpoints replace `highlightedProteinIds` while active. Empty-space click, annotation or
-overlay changes, data replacement, deselection, Escape, and an accessible close button clear both
-lines and connector highlights. Dashed stroke, endpoint emphasis, text status, and keyboard
+overlay changes, data replacement, deselection, authoritative category-interactivity changes,
+Escape, and an accessible close button clear both lines and connector highlights. Clearing on
+legend visibility change prevents a previously valid pair from remaining stale after either its
+source or target becomes hidden. Dashed stroke, endpoint emphasis, text status, and keyboard
 dismissal make the feature non-colour-dependent.
 
 Alternative considered: drawing connectors in WebGL was rejected because SVG already owns
@@ -171,9 +185,14 @@ correctness and display-local connector visibility.
 Tests cover companion recognition and invalid data, optimized and small conversion paths, synthetic
 confidence, slicing/hash/export/settings, visibility precedence and threshold boundaries, WebGL
 attribute/staging/shader behavior, tooltip and legend output, connector geometry and fan-out, and
-control accessibility. The supplied 832-protein phosphatase bundle becomes a compact checked-in
-fixture for real decoder/conversion and browser-flow coverage. Full precommit and relevant E2E tests
-run before every commit.
+control accessibility. The exact 832-protein phosphatase asset linked from issue #277 comment
+4902936797 is the checked-in browser fixture: its source ZIP SHA-256 is
+`b302a3c81f898c789f201ed0bc3c614ebd24c01db237f749f0a983ccd9954080`, and the contained/check-in
+bundle SHA-256 is `06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33`.
+The browser flow verifies the accessible supported controls, transfer counts and hollow staging,
+toggle/threshold behavior, tooltip provenance, both connector directions, projection recomputation,
+dismissal, responsive layout, and encoded PNG/export. Full precommit and relevant E2E tests run
+before every commit.
 
 ## Risks / Trade-offs
 
@@ -184,8 +203,9 @@ run before every commit.
 - **Overlay materialization could contaminate export** → Reconstruct curated bases and companions
   from `annotation_predicted`; test export from both raw and materialized views.
 - **A popular source could create DOM or visual overload** → Cache authoritative interactable-view
-  membership, filter both endpoints, and cap deterministically at 20 highest-confidence links with
-  an explicit N-of-M status.
+  membership, pre-order each cached source list once, scan with bounded result allocation, filter
+  both endpoints, and cap deterministically at 20 highest-confidence links with an explicit N-of-M
+  status.
 - **Hollow glyphs can become illegible at small point sizes** → Use the shader's derivative-based
   signed-distance anti-aliasing, retain a minimum ring width, and assert live/export shader parity.
 - **Confidence could be misread as calibrated probability** → Use “reliability index” language and

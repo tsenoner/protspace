@@ -632,37 +632,34 @@ export class ProtspaceControlBar extends LitElement {
             </div>
           </div>
 
-          <fieldset
-            class="eat-controls"
-            title=${this._hasEatData
-              ? 'Show transferred annotations and adjust the reliability threshold'
-              : 'No transferred annotations are available in this dataset'}
-          >
-            <legend class="sr-only">Embedding Annotation Transfer</legend>
-            <label class="eat-switch">
-              <input
-                type="checkbox"
-                .checked=${this.eatOverlayEnabled}
-                ?disabled=${!this._hasEatData}
-                @change=${this._handleEatOverlayToggle}
-              />
-              <span aria-hidden="true">⚡</span>
-              EAT
-            </label>
-            <label class="eat-threshold">
-              <span>Reliability ${Math.round(this.eatConfidenceThreshold * 100)}%</span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                .value=${String(this.eatConfidenceThreshold)}
-                ?disabled=${!this._hasEatData || !this.eatOverlayEnabled}
-                aria-label="Minimum EAT reliability index"
-                @input=${this._handleEatThresholdInput}
-              />
-            </label>
-          </fieldset>
+          ${this._hasEatData
+            ? html`
+                <fieldset class="eat-controls">
+                  <legend class="sr-only">Embedding Annotation Transfer</legend>
+                  <label class="eat-switch">
+                    <input
+                      type="checkbox"
+                      .checked=${this.eatOverlayEnabled}
+                      @change=${this._handleEatOverlayToggle}
+                    />
+                    EAT
+                  </label>
+                  <label class="eat-threshold">
+                    <span>Reliability ${Math.round(this.eatConfidenceThreshold * 100)}%</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      .value=${String(this.eatConfidenceThreshold)}
+                      ?disabled=${!this.eatOverlayEnabled}
+                      aria-label="Minimum EAT reliability index"
+                      @input=${this._handleEatThresholdInput}
+                    />
+                  </label>
+                </fieldset>
+              `
+            : ''}
 
           <!-- Annotation selection -->
           <div class="control-group">

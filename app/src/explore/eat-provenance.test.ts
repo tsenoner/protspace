@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import { EatProvenanceResolver } from './eat-provenance';
 
-function makeData(): VisualizationData {
-  const proteinIds = ['source', ...Array.from({ length: 24 }, (_, index) => `query-${index}`)];
+function makeData(queryCount = 24): VisualizationData {
+  const proteinIds = [
+    'source',
+    ...Array.from({ length: queryCount }, (_, index) => `query-${index}`),
+  ];
   return {
     protein_ids: proteinIds,
     projections: [{ name: 'pca', data: new Float32Array(proteinIds.length * 2), dimension: 2 }],
@@ -20,7 +23,7 @@ function makeData(): VisualizationData {
         null,
         ...proteinIds.slice(1).map((_, index) => ({
           value: `EC-${index}`,
-          confidence: 1 - index / 100,
+          confidence: 1 - index / (queryCount + 1),
           source: 'source',
         })),
       ],
@@ -96,6 +99,43 @@ describe('EatProvenanceResolver', () => {
 
     expect(second).toBe(first);
     expect(otherAnnotation).not.toBe(first);
+  });
+
+  it('reuses cached ordering and bounded allocation for repeated large fan-out clicks', () => {
+    const data = makeData(50_000);
+    const resolver = new EatProvenanceResolver();
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    const sourceIndex = resolver.getSourceIndex(data, 'ec');
+    const sortCallsAfterIndexBuild = sortSpy.mock.calls.length;
+    const cachedCandidates = sourceIndex.get('source');
+    if (!cachedCandidates) throw new Error('large-fan-out source was not indexed');
+
+    Object.defineProperties(cachedCandidates, {
+      filter: {
+        value: () => {
+          throw new Error('source resolution must not allocate a full filtered candidate array');
+        },
+      },
+      slice: {
+        value: () => {
+          throw new Error('source resolution must not slice the full cached candidate list');
+        },
+      },
+      sort: {
+        value: () => {
+          throw new Error('source resolution must not re-sort cached candidates');
+        },
+      },
+    });
+
+    const visible = new Set(data.protein_ids);
+    for (let click = 0; click < 3; click++) {
+      const request = resolver.resolve(data, 'ec', 'source', visible);
+      expect(request?.totalCandidates).toBe(50_000);
+      expect(request?.pairs).toHaveLength(20);
+      expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
+    }
+    expect(sortSpy).toHaveBeenCalledTimes(sortCallsAfterIndexBuild);
   });
 
   it('breaks equal-confidence ties by ascending protein id', () => {

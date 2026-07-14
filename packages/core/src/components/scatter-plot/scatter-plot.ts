@@ -653,6 +653,7 @@ export class ProtspaceScatterplot extends LitElement {
     const contextChanged =
       changedProperties.has('data') ||
       changedProperties.has('selectedAnnotation') ||
+      changedProperties.has('hiddenAnnotationValues') ||
       (changedProperties.has('eatOverlayEnabled') && !this.eatOverlayEnabled) ||
       (changedProperties.has('selectedProteinIds') && this.selectedProteinIds.length === 0);
     if (contextChanged) {
@@ -1549,10 +1550,10 @@ export class ProtspaceScatterplot extends LitElement {
    * the user can actually see and interact with. `_plotData` is already
    * physically culled by isolation and query filters; this further drops
    * legend-hidden points AND selection-faded points whose configured
-   * fadedOpacity is 0 (faded-to-0 == invisible, exactly what the WebGL renderer
-   * and hit-test treat as non-interactive). The memo key therefore includes
-   * selection/highlight + the three opacities (fadedOpacity-0 makes selection
-   * affect interactivity), and keys plot-data on (originalIndices ref + length)
+   * any selected/base/faded tier is 0 (opacity 0 == invisible, exactly what the
+   * WebGL renderer and hit-test treat as non-interactive). The memo key therefore
+   * includes selection/highlight whenever any supported tier can cross the
+   * interactive boundary, and keys plot-data on (originalIndices ref + length)
    * rather than the `_plotData` container ref so a pure projection switch
    * (which clonePlotData()s a new container sharing the same originalIndices)
    * reuses the cache — interactivity is independent of x/y coordinates.
@@ -1566,10 +1567,11 @@ export class ProtspaceScatterplot extends LitElement {
     const baseOpacity = this._mergedConfig.baseOpacity;
     const selectedOpacity = this._mergedConfig.selectedOpacity;
     const fadedOpacity = this._mergedConfig.fadedOpacity;
-    // Selection/highlight only changes zero/non-zero membership when faded opacity is zero.
-    // Under the default non-zero fade, connector-owned highlight updates reuse this cache.
-    const selectedProteinIdsKey = fadedOpacity === 0 ? this.selectedProteinIds : null;
-    const highlightedProteinIdsKey = fadedOpacity === 0 ? this.highlightedProteinIds : null;
+    // Selection/highlight can change membership whenever any opacity tier is non-interactive.
+    // Under the default all-positive tiers, connector-owned highlights reuse this cache.
+    const allOpacityTiersInteractive = baseOpacity > 0 && selectedOpacity > 0 && fadedOpacity > 0;
+    const selectedProteinIdsKey = allOpacityTiersInteractive ? null : this.selectedProteinIds;
+    const highlightedProteinIdsKey = allOpacityTiersInteractive ? null : this.highlightedProteinIds;
 
     const key = this._visiblePointCountKey;
     if (

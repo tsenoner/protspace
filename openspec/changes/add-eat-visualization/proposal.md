@@ -12,7 +12,8 @@ biology as ground truth in figures intended for scientific publication.
   source triples into a lossless per-protein prediction channel.
 - Keep raw EAT storage columns out of ordinary annotation selection while exposing a deliberate,
   labelled numeric confidence annotation.
-- Add a persisted EAT overlay mode and confidence threshold beside annotation selection.
+- Add a persisted EAT overlay mode and confidence threshold beside annotation selection only when
+  the loaded dataset contains usable EAT predictions.
 - Coalesce transferred values into the active categorical view without changing curated data;
   render observed points filled and transferred points as confidence-weighted hollow markers.
 - Add EAT-specific tooltip provenance and an observed-versus-transferred-versus-missing legend
@@ -23,8 +24,8 @@ biology as ground truth in figures intended for scientific publication.
 - Preserve the EAT distinction in live WebGL, grayscale, PNG export, filtered/isolation views,
   settings persistence, dataset hashing, slicing, and lossless v2 bundle round-trips, including
   structural label escaping, evidence/score suffixes, and format metadata.
-- Add focused unit, integration, shader/export, settings, and browser tests using the supplied real
-  phosphatase EAT bundle.
+- Add focused unit, integration, shader/export, settings, and browser tests using the exact
+  phosphatase EAT bundle linked from issue #277 comment 4902936797.
 
 ## Capabilities
 

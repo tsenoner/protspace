@@ -64,6 +64,24 @@ describe('scatter-plot provenance connector contract', () => {
     expect(plot.highlightedProteinIds).toEqual([]);
   });
 
+  it.each(['source', 'target'])(
+    'clears an active pair when its %s category is hidden',
+    (endpoint) => {
+      const { plot, overlay, seam } = makePlot();
+      plot.setProvenanceConnectors({
+        pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+        totalCandidates: 1,
+      });
+      overlay.clear.mockClear();
+
+      plot.hiddenAnnotationValues = [`hidden-${endpoint}`];
+      seam._reconcileProvenanceConnectors(new Map([['hiddenAnnotationValues', []]]));
+
+      expect(overlay.clear).toHaveBeenCalledOnce();
+      expect(plot.highlightedProteinIds).toEqual([]);
+    },
+  );
+
   it('rerenders geometry for projection and filter changes', () => {
     const { overlay, seam } = makePlot();
 

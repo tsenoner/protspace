@@ -10,6 +10,16 @@ type SourceIndex = ReadonlyMap<string, readonly SourceCandidate[]>;
 
 const MAX_PROVENANCE_CONNECTORS = 20;
 
+function compareSourceCandidates(left: SourceCandidate, right: SourceCandidate): number {
+  const confidenceOrder = right.confidence - left.confidence;
+  if (confidenceOrder !== 0) return confidenceOrder;
+  return left.targetProteinId < right.targetProteinId
+    ? -1
+    : left.targetProteinId > right.targetProteinId
+      ? 1
+      : 0;
+}
+
 /**
  * Resolves EAT clicks without rescanning every transferred cell on repeated source interactions.
  * WeakMap ownership ensures replaced datasets and their indexes can be garbage-collected together.
@@ -37,6 +47,7 @@ export class EatProvenanceResolver {
       candidates.push({ targetProteinId, confidence: cell.confidence });
       mutable.set(cell.source, candidates);
     }
+    for (const candidates of mutable.values()) candidates.sort(compareSourceCandidates);
     byAnnotation.set(annotation, mutable);
     return mutable;
   }
@@ -66,26 +77,25 @@ export class EatProvenanceResolver {
       };
     }
 
-    const visibleCandidates = (this.getSourceIndex(data, annotation).get(clickedProteinId) ?? [])
-      .filter((candidate) => visibleProteinIds.has(candidate.targetProteinId))
-      .sort((left, right) => {
-        const confidenceOrder = right.confidence - left.confidence;
-        if (confidenceOrder !== 0) return confidenceOrder;
-        return left.targetProteinId < right.targetProteinId
-          ? -1
-          : left.targetProteinId > right.targetProteinId
-            ? 1
-            : 0;
-      });
-    if (visibleCandidates.length === 0) return null;
+    const candidates = this.getSourceIndex(data, annotation).get(clickedProteinId) ?? [];
+    const pairs = [];
+    let totalCandidates = 0;
+    for (const candidate of candidates) {
+      if (!visibleProteinIds.has(candidate.targetProteinId)) continue;
+      totalCandidates++;
+      if (pairs.length < MAX_PROVENANCE_CONNECTORS) {
+        pairs.push({
+          sourceProteinId: clickedProteinId,
+          targetProteinId: candidate.targetProteinId,
+          confidence: candidate.confidence,
+        });
+      }
+    }
+    if (totalCandidates === 0) return null;
 
     return {
-      pairs: visibleCandidates.slice(0, MAX_PROVENANCE_CONNECTORS).map((candidate) => ({
-        sourceProteinId: clickedProteinId,
-        targetProteinId: candidate.targetProteinId,
-        confidence: candidate.confidence,
-      })),
-      totalCandidates: visibleCandidates.length,
+      pairs,
+      totalCandidates,
     };
   }
 

@@ -83,3 +83,22 @@
       `bd4904d` passed 1,751 unit tests with one intentional skip, the focused real-EAT Playwright
       regression, strict OpenSpec validation, and `pnpm precommit`; all five threads were answered
       and resolved, and the subsequent thread-aware fetch found zero unresolved or new comments.
+
+## 8. Follow-up review remediation
+
+- [x] 8.1 Pre-order each cached provenance source list once, resolve repeated high-fan-out clicks
+      with a single visibility/count scan and bounded 20-pair allocation, and add a large structural
+      regression that rejects per-click sort/filter allocation.
+- [x] 8.2 Clear active connectors on authoritative legend-interactivity changes, correct
+      interactable-cache membership keys for zero `baseOpacity`, `selectedOpacity`, and
+      `fadedOpacity` tiers while preserving the all-positive fast path, and add lifecycle/cache
+      regressions.
+- [x] 8.3 Capability-gate the complete EAT control group for non-EAT datasets, retain accessible
+      fieldset/labels for supported datasets using existing control-bar patterns, remove both
+      PR-added emoji occurrences, and add rendered component/browser assertions.
+- [x] 8.4 Verify the checked-in fixture byte-for-byte against the issue #277 comment 4902936797
+      asset and run the focused real phosphatase EAT Playwright flow with recorded archive and bundle
+      SHA-256 evidence.
+- [ ] 8.5 Run targeted suites, type/lint/strict OpenSpec, `pnpm test:ci`, focused linked-data
+      Playwright, and `pnpm precommit`; commit and push coherently, update the PR description, reply
+      to and resolve all four threads with immutable evidence, and re-fetch thread-aware state.
