@@ -47,6 +47,14 @@ key and preserve both annotations.
   proteins and N/A for other proteins
 - **AND** markers are filled numeric markers rather than EAT hollow categorical markers
 
+#### Scenario: Selected confidence retains runtime identity
+
+- **WHEN** the generated confidence annotation is selected and numeric bins are materialized for
+  display
+- **THEN** the materialized annotation retains its explicit EAT-confidence runtime role and base
+  annotation identity
+- **AND** exporting that selected view omits the generated key from wire annotations
+
 #### Scenario: Confidence label and explanation
 
 - **WHEN** the synthetic confidence annotation is displayed in the selector or legend
@@ -255,3 +263,12 @@ materialized view, and SHALL omit synthetic confidence annotations.
   without EAT companions for its base
 - **THEN** export and reload preserve every user annotation value
 - **AND** only explicitly generated runtime confidence annotations are omitted from storage
+
+#### Scenario: Selected-confidence export and reload
+
+- **WHEN** an EAT bundle selects its generated confidence annotation, exports the resulting
+  materialized visualization data, and reloads it
+- **THEN** no generated confidence key is present in the annotations wire table
+- **AND** reload reconstructs exactly one generated confidence annotation with the same explicit
+  role and base identity
+- **AND** every EAT value, confidence, and source companion remains unchanged

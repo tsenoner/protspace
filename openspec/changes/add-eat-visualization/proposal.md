@@ -12,7 +12,8 @@ biology as ground truth in figures intended for scientific publication.
   source triples into a lossless per-protein prediction channel.
 - Keep raw EAT storage columns out of ordinary annotation selection while exposing a deliberate,
   explicitly identified numeric confidence annotation without consuming a legitimate user column
-  that happens to share its preferred suffix.
+  that happens to share its preferred suffix; preserve that identity through numeric display
+  materialization and selected-view export.
 - Add a persisted EAT overlay mode and confidence threshold beside annotation selection only when
   the loaded dataset contains usable EAT predictions.
 - Coalesce transferred values into the active categorical view without changing curated data;
@@ -21,7 +22,7 @@ biology as ground truth in figures intended for scientific publication.
   section with live counts that account for the complete represented population.
 - Add bidirectional, capped provenance connectors between transferred proteins and their source
   proteins, including projection/plane recomputation, connected-point emphasis, empty-click and
-  keyboard dismissal, and an accessible fan-out summary.
+  keyboard dismissal, exact-view cache ownership, and an accessible fan-out summary.
 - Preserve the EAT distinction in live WebGL, grayscale, PNG export, filtered/isolation views,
   settings persistence and OPFS reload, dataset hashing, slicing, and lossless v1/v2 bundle
   round-trips, including structural label escaping, evidence/score suffixes, collision-safe runtime

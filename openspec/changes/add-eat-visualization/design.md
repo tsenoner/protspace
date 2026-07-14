@@ -68,7 +68,9 @@ when that name already belongs to a user annotation. The generated `Annotation` 
 runtime metadata identifying its EAT-confidence role and base annotation; serialization and display
 metadata use that identity instead of suffix spelling. A real numeric or categorical column ending
 in `__eat_confidence` remains an ordinary annotation and round-trips unchanged. Synthetic keys are
-selectable but only explicitly marked generated entries are omitted from bundle output.
+selectable but only explicitly marked generated entries are omitted from bundle output. Numeric
+display materialization merges its derived bins into the source annotation rather than replacing
+the source object, so runtime identity survives selection, `getCurrentData()`, and export.
 
 Base categorical metadata includes the stable union of observed categories followed by any
 prediction-only categories. Raw `annotation_data` remains curated. When the overlay is enabled and a
@@ -153,7 +155,10 @@ recomputation; data, projection, plane, scale, filter, and isolation changes rer
 Ordinary dismissal clears request/geometry while retaining the current-view index for reuse. Dataset
 replacement uses a distinct cache invalidation operation that releases both the indexed `PlotData`
 reference and its id-to-slot map, preventing the prior million-row view from being retained when no
-new connector is created.
+new connector is created. Every overlay render observes current `PlotData` identity before its
+inactive-request fast return: an exact identity match retains the stable-view index, while a
+filtered, isolated, or projection-replaced identity releases the prior reference and map without
+building a replacement index until a connector request needs one.
 
 The app interaction controller caches a source-to-query index per data reference and base
 annotation. Each source list is sorted once while that cached index is constructed, by descending
@@ -186,7 +191,9 @@ deterministic tests.
 The bundle writer skips synthetic confidence annotations. It serializes every categorical column
 with the v2 codec: labels percent-encode structural `%`, `;`, and `|` characters; positional
 evidence or numeric-score suffixes are reconstructed; multi-hit values use structural semicolons;
-and the annotations parquet footer is stamped `protspace_format_version=2`. For each EAT base,
+and the annotations parquet footer is stamped `protspace_format_version=2`. Runtime identity remains
+attached when a selected numeric confidence view is materialized, so writer omission does not depend
+on whether export receives raw or display-materialized data. For each EAT base,
 predicted positions are serialized as missing in `BASE`, then the writer reconstructs all three EAT
 companion columns from `annotation_predicted`. This remains correct even if the caller passes
 display-materialized data. A golden backend-produced v2 fixture write/reload regression compares
@@ -217,8 +224,9 @@ before every commit.
   detected base columns, materialize only the selected base column, and cache by stable references.
 - **Invalid companion data could disappear silently** → Enforce one validity rule, warn once with
   counts, and test incomplete/out-of-range cases.
-- **Overlay materialization could contaminate export** → Reconstruct curated bases and companions
-  from `annotation_predicted`; test export from both raw and materialized views.
+- **Overlay or numeric materialization could contaminate export** → Reconstruct curated bases and
+  companions from `annotation_predicted`, preserve runtime annotation identity through derived
+  numeric bins, and test export from raw, overlay-materialized, and selected-confidence views.
 - **A popular source could create DOM or visual overload** → Cache authoritative interactable-view
   membership, pre-order each cached source list once, scan with bounded result allocation, filter
   both endpoints, and cap deterministically at 20 highest-confidence links with an explicit N-of-M

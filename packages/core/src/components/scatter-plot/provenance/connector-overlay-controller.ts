@@ -73,13 +73,16 @@ export class ConnectorOverlayController {
   render(): void {
     const overlay = this.deps.getOverlayGroup();
     const request = this.request;
+    const plotData = this.deps.getPlotData();
+    if (this.indexedPlotData !== null && plotData !== this.indexedPlotData) {
+      this.invalidateDataCache();
+    }
     if (!overlay || !request) {
       if (overlay) overlay.selectAll('.connector-lines-layer').remove();
       this.deps.onStatusChange(null);
       return;
     }
 
-    const plotData = this.deps.getPlotData();
     const scales = this.deps.getScales();
     const idToSlot = this.getIdToSlot(plotData);
 

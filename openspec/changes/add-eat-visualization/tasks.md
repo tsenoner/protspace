@@ -126,3 +126,14 @@
       added-line emoji audit returned zero matches, all four threads were answered and resolved,
       the subsequent thread-aware fetch found zero unresolved or new comments, and exact-head code
       quality/documentation CI passed in run 29334857815.
+
+## 10. Materialization and inactive-view remediation
+
+- [x] 10.1 Preserve generated confidence runtime identity through numeric materialization and add a
+      selected-confidence export/reload regression proving no synthetic wire column or duplicate
+      runtime annotation.
+- [x] 10.2 Observe exact `PlotData` identity before inactive connector-render returns, release stale
+      view references without rebuilding, and add stable-versus-replaced lifecycle coverage.
+- [ ] 10.3 Run targeted and full verification, preserve the linked fixture and emoji-free diff,
+      push coherent commits, update PR evidence, reply to and resolve both threads, and re-fetch
+      thread-aware state.

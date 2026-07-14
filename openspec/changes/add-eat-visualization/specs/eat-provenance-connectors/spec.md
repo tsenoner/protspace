@@ -142,3 +142,11 @@ change.
 - **THEN** the connector controller releases both the prior `PlotData` reference and its id-to-slot
   membership map
 - **AND** ordinary dismissal within a stable view retains the lookup for repeated-click reuse
+
+#### Scenario: Inactive rendered view replacement
+
+- **WHEN** a connector index is built and dismissed, then filtering, isolation, or projection
+  replacement causes an inactive render with a different `PlotData` identity
+- **THEN** the controller releases the prior plot reference and id-to-slot membership map
+- **AND** it does not build the replacement index until another connector request is activated
+- **AND** an inactive render of the exact same stable view retains the reusable index

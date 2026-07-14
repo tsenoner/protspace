@@ -3,6 +3,7 @@ import {
   createParquetBundle,
   getProteinAnnotationIndices,
   materializeEatOverlay,
+  materializeVisualizationData,
 } from '@protspace/utils';
 import {
   convertParquetToVisualizationData,
@@ -409,6 +410,62 @@ describe('EAT companion normalization', () => {
       expect(reloadedRuntime[0]?.[1].runtime?.baseAnnotation).toBe('ec');
     },
   );
+
+  it('omits selected materialized confidence from wire data and reconstructs one runtime view', async () => {
+    const original = convertParquetToVisualizationData([
+      {
+        identifier: 'P1',
+        projection_name: 'umap',
+        x: 0,
+        y: 0,
+        ec: '1.1.1.1',
+        ec__pred_value: null,
+        ec__pred_confidence: null,
+        ec__pred_source: null,
+      },
+      {
+        identifier: 'P2',
+        projection_name: 'umap',
+        x: 1,
+        y: 1,
+        ec: null,
+        ec__pred_value: '2.2.2.2',
+        ec__pred_confidence: 0.8,
+        ec__pred_source: 'P1',
+      },
+    ]);
+    const confidenceEntry = Object.entries(original.annotations).find(
+      ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
+    );
+    expect(confidenceEntry).toBeDefined();
+    const [confidenceKey, confidenceAnnotation] = confidenceEntry!;
+
+    const selectedView = materializeVisualizationData(original, {}, 10, confidenceKey);
+    expect(selectedView.annotations[confidenceKey].kind).toBe('categorical');
+    expect(selectedView.annotations[confidenceKey].runtime).toEqual(confidenceAnnotation.runtime);
+
+    const extraction = await extractRowsFromParquetBundle(createParquetBundle(selectedView));
+    expect(extraction.annotationsById.get('P2')).not.toHaveProperty(confidenceKey);
+    expect(extraction.annotationsById.get('P2')).toMatchObject({
+      ec: null,
+      ec__pred_value: '2.2.2.2',
+      ec__pred_source: 'P1',
+    });
+    expect(extraction.annotationsById.get('P2')?.ec__pred_confidence).toBeCloseTo(0.8, 5);
+
+    const reloaded = convertParquetToVisualizationData(extraction);
+    const reloadedRuntime = Object.entries(reloaded.annotations).filter(
+      ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
+    );
+    expect(Object.keys(reloaded.annotations).sort()).toEqual(['ec', confidenceKey].sort());
+    expect(reloadedRuntime).toHaveLength(1);
+    expect(reloadedRuntime[0]?.[1].runtime).toEqual(confidenceAnnotation.runtime);
+    expect(reloaded.annotation_predicted?.ec[1]).toMatchObject({
+      value: '2.2.2.2',
+      source: 'P1',
+    });
+    expect(reloaded.annotation_predicted?.ec[1]?.confidence).toBeCloseTo(0.8, 5);
+  });
 
   it('round-trips curated missing cells and companions from a materialized overlay', async () => {
     const original = convertParquetToVisualizationData([

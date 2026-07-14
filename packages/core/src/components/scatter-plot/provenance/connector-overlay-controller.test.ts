@@ -138,6 +138,63 @@ describe('ConnectorOverlayController', () => {
     expect(proteinIdReads).toBe(plotData.length * 3);
   });
 
+  it('releases a cleared view on inactive replacement without building the next index', () => {
+    let proteinIdReads = 0;
+    const observeReads = (ids: readonly string[]) =>
+      new Proxy(ids, {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) proteinIdReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
+    let currentPlotData: PlotData = {
+      ...plotData,
+      proteinIds: observeReads(plotData.proteinIds),
+    };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => currentPlotData,
+      getScales: () => scales,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    const request = {
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    };
+    const cache = controller as unknown as {
+      indexedPlotData: PlotData | null;
+      idToSlot: Map<string, number>;
+    };
+
+    controller.set(request);
+    expect(proteinIdReads).toBe(3);
+    controller.clear();
+    controller.render();
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+    expect(cache.idToSlot.size).toBe(3);
+    expect(proteinIdReads).toBe(3);
+
+    currentPlotData = {
+      length: 1,
+      xs: new Float32Array([3]),
+      ys: new Float32Array([6]),
+      zs: null,
+      originalIndices: null,
+      proteinIds: observeReads(['source']),
+    };
+    controller.render();
+    expect(cache.indexedPlotData).toBeNull();
+    expect(cache.idToSlot.size).toBe(0);
+    expect(proteinIdReads).toBe(3);
+
+    controller.set(request);
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+    expect([...cache.idToSlot.keys()]).toEqual(['source']);
+    expect(proteinIdReads).toBe(4);
+  });
+
   it('clears geometry and status', () => {
     const statusSpy = vi.fn();
     controller = new ConnectorOverlayController({
