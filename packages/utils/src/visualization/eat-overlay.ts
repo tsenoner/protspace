@@ -57,33 +57,6 @@ export function hasEatPredictions(
   return Object.values(data.annotation_predicted).some((cells) => cells.some(Boolean));
 }
 
-export function isProteinPredicted(
-  data: VisualizationData,
-  proteinIdx: number,
-  annotationKey: string,
-  overlayEnabled: boolean,
-): boolean {
-  return overlayEnabled && getPredictedCell(data, proteinIdx, annotationKey) !== null;
-}
-
-function isMissingAnnotationCell(
-  data: VisualizationData,
-  annotationKey: string,
-  proteinIdx: number,
-): boolean {
-  const annotation = data.annotations[annotationKey];
-  const rows = data.annotation_data[annotationKey];
-  if (!annotation || !rows) return true;
-  const indices = getProteinAnnotationIndices(rows, proteinIdx);
-  return (
-    indices.length === 0 ||
-    indices.every((index) => {
-      const value = annotation.values[index];
-      return value == null || isNAValue(value);
-    })
-  );
-}
-
 function cloneWithPredictions(
   source: AnnotationData,
   predictedCells: readonly (PredictedCell | null)[],
@@ -141,5 +114,15 @@ export function isCuratedAnnotationMissing(
   annotationKey: string,
   proteinIdx: number,
 ): boolean {
-  return isMissingAnnotationCell(data, annotationKey, proteinIdx);
+  const annotation = data.annotations[annotationKey];
+  const rows = data.annotation_data[annotationKey];
+  if (!annotation || !rows) return true;
+  const indices = getProteinAnnotationIndices(rows, proteinIdx);
+  return (
+    indices.length === 0 ||
+    indices.every((index) => {
+      const value = annotation.values[index];
+      return value == null || isNAValue(value);
+    })
+  );
 }

@@ -5,6 +5,7 @@ import type {
   ProtspaceStructureViewer,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
 import type { EffectiveExploreView } from './view-state';
 
@@ -92,7 +93,7 @@ function applyPlotState(
   plotElement.filteredProteinIds = [];
   plotElement.filtersActive = false;
   plotElement.eatOverlayEnabled = true;
-  plotElement.eatConfidenceThreshold = 0.5;
+  plotElement.eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   plotElement.requestUpdate('data', previousData);
 }
 
@@ -102,7 +103,7 @@ function applyControlBarState(controlBar: ProtspaceControlBar, initialView: Reso
   controlBar.tooltipAnnotations = [...initialView.tooltip];
   controlBar.selectionMode = false;
   controlBar.selectedProteinsCount = 0;
-  controlBar.applyEatSettings(true, 0.5);
+  controlBar.applyEatSettings(true, DEFAULT_EAT_CONFIDENCE_THRESHOLD);
   controlBar.requestUpdate();
 }
 

@@ -21,6 +21,7 @@ import {
   materializePlotDataPoint,
   gatherPlotData,
   materializeEatOverlay,
+  DEFAULT_EAT_CONFIDENCE_THRESHOLD,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -134,7 +135,7 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
   @property({ type: Number, attribute: 'eat-confidence-threshold' })
-  eatConfidenceThreshold = 0.5;
+  eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
