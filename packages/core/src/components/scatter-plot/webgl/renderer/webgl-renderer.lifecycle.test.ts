@@ -28,6 +28,7 @@ const styleGetters = (): WebGLStyleGetters => ({
   getOpacity: () => 1,
   getDepth: () => 0,
   getShape: () => 'circle',
+  isPredicted: () => false,
 });
 
 const getTransform = () => d3.zoomIdentity;

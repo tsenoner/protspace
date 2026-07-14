@@ -25,7 +25,7 @@
       preserving numeric, filter, isolation, and data-change behavior with tests.
 - [x] 3.2 Extend the authoritative visibility model with confidence and threshold semantics, memo
       keys, precedence, hit-testing, and boundary tests.
-- [ ] 3.3 Carry an explicit predicted flag through style getters, shared live/export WebGL staging,
+- [x] 3.3 Carry an explicit predicted flag through style getters, shared live/export WebGL staging,
       buffers, attribute layout, and signed-distance shaders; verify hollow geometry and live/export
       parity with unit tests.
 - [x] 3.4 Add tooltip provenance, reliability-index wording/bar, EAT legend subsection and live

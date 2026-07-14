@@ -10,6 +10,7 @@ function mockGL() {
     'a_depth',
     'a_labelCount',
     'a_shape',
+    'a_predicted',
   ];
   return {
     program,
@@ -22,7 +23,7 @@ function mockGL() {
 }
 
 describe('resolvePointLocations', () => {
-  it('resolves all six attributes by their shader names', () => {
+  it('resolves all point attributes by their shader names', () => {
     const { gl, program } = mockGL();
     const { attribs } = resolvePointLocations(gl, program);
     expect(attribs).toEqual({
@@ -32,6 +33,7 @@ describe('resolvePointLocations', () => {
       depth: 3,
       labelCount: 4,
       shape: 5,
+      predicted: 6,
     });
   });
 

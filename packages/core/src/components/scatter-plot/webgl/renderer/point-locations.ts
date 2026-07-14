@@ -18,6 +18,7 @@ export function resolvePointLocations(
       depth: gl.getAttribLocation(program, 'a_depth'),
       labelCount: gl.getAttribLocation(program, 'a_labelCount'),
       shape: gl.getAttribLocation(program, 'a_shape'),
+      predicted: gl.getAttribLocation(program, 'a_predicted'),
     },
     uniforms: {
       resolution: gl.getUniformLocation(program, 'u_resolution'),

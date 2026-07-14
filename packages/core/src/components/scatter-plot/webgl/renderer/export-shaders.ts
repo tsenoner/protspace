@@ -18,6 +18,7 @@ in vec4 a_color;
 in float a_depth;
 in float a_labelCount;
 in float a_shape;
+in float a_predicted;
 
 uniform vec2 u_resolution;
 uniform vec3 u_transform;
@@ -27,6 +28,7 @@ uniform float u_gamma;
 out vec4 v_color;
 out float v_labelCount;
 flat out float v_shape;
+flat out float v_predicted;
 flat out int v_pointIndex;
 
 void main() {
@@ -43,6 +45,7 @@ void main() {
   v_color = vec4(linearColor, a_color.a);
   v_labelCount = a_labelCount;
   v_shape = a_shape;
+  v_predicted = a_predicted;
   v_pointIndex = gl_VertexID;
 }`;
 
@@ -52,6 +55,7 @@ precision highp float;
 in vec4 v_color;
 in float v_labelCount;
 flat in float v_shape;
+flat in float v_predicted;
 flat in int v_pointIndex;
 
 uniform sampler2D u_labelColors;
@@ -107,6 +111,11 @@ void main() {
   // screen-space derivatives of the distance field.
   float aa = fwidth(edgeDist);
   float shapeAlpha = smoothstep(0.0, aa, edgeDist);
+  if (v_predicted > 0.5) {
+    float ringWidth = max(0.14, aa * 2.0);
+    float interior = smoothstep(ringWidth, ringWidth + aa, edgeDist);
+    shapeAlpha *= 1.0 - interior;
+  }
   if (shapeAlpha < 0.001) discard;
 
   // Early-out for hidden points (alpha=0). These remain in GPU arrays to
@@ -139,7 +148,7 @@ void main() {
   // Darken near the edge to mimic a border/outline.
   // Skip for faded points (low alpha) where the darkening is disproportionately visible.
   float strokeWidth = 0.15;
-  if (v_color.a > 0.5 && max(edgeDist, 0.0) < strokeWidth) {
+  if (v_predicted < 0.5 && v_color.a > 0.5 && max(edgeDist, 0.0) < strokeWidth) {
     finalColor = finalColor * 0.5;
   }
 

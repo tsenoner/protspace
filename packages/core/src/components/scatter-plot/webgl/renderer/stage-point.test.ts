@@ -10,6 +10,7 @@ function arrays(capacity: number): StagePointArrays {
     depths: new Float32Array(capacity),
     labelCounts: new Float32Array(capacity),
     shapes: new Float32Array(capacity),
+    predicted: new Float32Array(capacity),
     labelColorData: new Uint8Array(capacity * 8 * 4),
   };
 }
@@ -18,6 +19,7 @@ const style = {
   getColors: () => ['#ff0000'],
   getPointSize: () => 36, // sqrt(36)/3 = 2
   getShape: () => 'circle', // shapeIndex 0
+  isPredicted: () => false,
 } as unknown as StagePointStyle;
 
 describe('stagePoint', () => {
@@ -46,6 +48,7 @@ describe('stagePoint', () => {
     expect(a.depths[1]).toBeCloseTo(0.7);
     expect(a.labelCounts[1]).toBe(1);
     expect(a.shapes[1]).toBe(0);
+    expect(a.predicted[1]).toBe(0);
   });
 
   it('applies DIAMOND_SIZE_SCALE for shapeIndex 2 (diamond)', () => {
@@ -54,11 +57,13 @@ describe('stagePoint', () => {
       getColors: () => ['#00ff00'],
       getPointSize: () => 36,
       getShape: () => 'diamond',
+      isPredicted: () => true,
     } as never;
     const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
     stagePoint(a, 0, sp, 0, 0, 1, 0, diamond, 1, 1);
     // size=2, base=max(1,2*2*1*1)=4, diamond → 4*1.25=5
     expect(a.sizes[0]).toBeCloseTo(5);
+    expect(a.predicted[0]).toBe(1);
   });
 
   it('sizeScaleFactor scales basePointSize (export parity)', () => {

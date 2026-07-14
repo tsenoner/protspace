@@ -14,6 +14,7 @@ export interface WebGLStyleGetters {
   getOpacity: (point: PlotDataPoint) => number;
   getDepth: (point: PlotDataPoint) => number;
   getShape: (point: PlotDataPoint) => string;
+  isPredicted: (point: PlotDataPoint) => boolean;
 }
 
 /**
@@ -27,7 +28,7 @@ export interface FramebufferResources {
   height: number;
 }
 
-/** Attribute locations for the point shader program (six attributes). */
+/** Attribute locations for the point shader program. */
 export interface PointAttribLocations {
   dataPosition: number;
   size: number;
@@ -35,6 +36,7 @@ export interface PointAttribLocations {
   depth: number;
   labelCount: number;
   shape: number;
+  predicted: number;
 }
 
 /** Uniform locations for the point shader program (seven uniforms). */

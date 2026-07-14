@@ -24,6 +24,7 @@ const style = (): WebGLStyleGetters => ({
   getOpacity: () => 1,
   getDepth: () => 0,
   getShape: () => 'circle',
+  isPredicted: () => false,
 });
 
 type ExportRendererSeam = {

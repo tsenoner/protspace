@@ -12,6 +12,47 @@ import type { VisualizationData, PlotDataPoint } from '@protspace/utils';
  */
 
 describe('style-getters', () => {
+  describe('EAT glyph classification', () => {
+    const data: VisualizationData = {
+      protein_ids: ['observed', 'predicted'],
+      projections: [{ name: 'test', data: new Float32Array(6), dimension: 3 }],
+      annotations: {
+        family: {
+          values: ['A'],
+          colors: ['#ff0000'],
+          shapes: ['circle'],
+        },
+      },
+      annotation_data: { family: new Int32Array([0, 0]) },
+      annotation_predicted: { family: [false, true] },
+    };
+    const baseConfig: StyleConfig = {
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'family',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: null,
+      colorMapping: null,
+      shapeMapping: null,
+      sizes: { base: 10 },
+      opacities: { base: 1, selected: 1, faded: 0.3 },
+    };
+
+    it('classifies only transferred points while the EAT overlay is enabled', () => {
+      const getters = createStyleGetters(data, { ...baseConfig, eatOverlayEnabled: true });
+
+      expect(getters.isPredicted({ id: 'observed', x: 0, y: 0, originalIndex: 0 })).toBe(false);
+      expect(getters.isPredicted({ id: 'predicted', x: 0, y: 0, originalIndex: 1 })).toBe(true);
+    });
+
+    it('uses solid glyphs when the EAT overlay is disabled', () => {
+      const getters = createStyleGetters(data, { ...baseConfig, eatOverlayEnabled: false });
+
+      expect(getters.isPredicted({ id: 'predicted', x: 0, y: 0, originalIndex: 1 })).toBe(false);
+    });
+  });
+
   describe('N/A value handling', () => {
     const createMockData = (annotationValues: (string | null)[]): VisualizationData => ({
       protein_ids: annotationValues.map((_, i) => `protein_${i}`),

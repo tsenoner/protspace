@@ -365,6 +365,7 @@ export class ExportRenderer {
       depths,
       labelCounts,
       shapes,
+      predicted,
       labelColorData,
       pointCount,
       selectedStartIndex,
@@ -385,6 +386,7 @@ export class ExportRenderer {
     const depthBuffer = gl.createBuffer();
     const labelCountBuffer = gl.createBuffer();
     const shapeBuffer = gl.createBuffer();
+    const predictedBuffer = gl.createBuffer();
     const labelColorTexture = gl.createTexture();
 
     gl.bindBuffer(gl.ARRAY_BUFFER, dataPositionBuffer);
@@ -404,6 +406,9 @@ export class ExportRenderer {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, shapeBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, shapes.subarray(0, pointCount), gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, predictedBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, predicted.subarray(0, pointCount), gl.STATIC_DRAW);
 
     // Setup label color texture
     gl.bindTexture(gl.TEXTURE_2D, labelColorTexture);
@@ -435,6 +440,7 @@ export class ExportRenderer {
         depth: depthBuffer,
         labelCount: labelCountBuffer,
         shape: shapeBuffer,
+        predicted: predictedBuffer,
       },
       attribs,
     );
@@ -527,6 +533,7 @@ export class ExportRenderer {
     gl.deleteBuffer(depthBuffer);
     gl.deleteBuffer(labelCountBuffer);
     gl.deleteBuffer(shapeBuffer);
+    gl.deleteBuffer(predictedBuffer);
     gl.deleteTexture(labelColorTexture);
     gl.deleteProgram(pointProgram);
     if (gammaCorrectionProgram) gl.deleteProgram(gammaCorrectionProgram);
@@ -553,6 +560,7 @@ export class ExportRenderer {
     depths: Float32Array;
     labelCounts: Float32Array;
     shapes: Float32Array;
+    predicted: Float32Array;
     labelColorData: Uint8Array;
     pointCount: number;
     selectedStartIndex: number;
@@ -564,6 +572,7 @@ export class ExportRenderer {
     const depths = new Float32Array(capacity);
     const labelCounts = new Float32Array(capacity);
     const shapes = new Float32Array(capacity);
+    const predicted = new Float32Array(capacity);
     const requiredPixels = capacity * MAX_LABELS;
     const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
     const labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
@@ -584,6 +593,7 @@ export class ExportRenderer {
       depths,
       labelCounts,
       shapes,
+      predicted,
       labelColorData,
     };
 
@@ -640,6 +650,7 @@ export class ExportRenderer {
       depths,
       labelCounts,
       shapes,
+      predicted,
       labelColorData,
       pointCount: count,
       selectedStartIndex,

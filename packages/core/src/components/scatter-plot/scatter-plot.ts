@@ -463,6 +463,7 @@ export class ProtspaceScatterplot extends LitElement {
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
         getDepth: (p: PlotDataPoint) => this._getDepth(p),
         getShape: (p: PlotDataPoint) => this._getPointShape(p),
+        isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
       },
       this._handleWebglContextLost,
     );
@@ -1589,6 +1590,7 @@ export class ProtspaceScatterplot extends LitElement {
           selected: this._mergedConfig.selectedOpacity,
           faded: this._mergedConfig.fadedOpacity,
         },
+        eatOverlayEnabled: this.eatOverlayEnabled,
       },
       this._getVisibilityModel(),
     );
