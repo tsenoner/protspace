@@ -1,8 +1,11 @@
 import json
+import logging
 from pathlib import Path
 
 from protspace.data.annotations.encoding import to_display_value
 from protspace.utils.arrow_reader import ArrowReader
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_SHAPES = [
     "circle",
@@ -26,6 +29,16 @@ _SETTINGS_KEYS = {
     "zOrderSort",
     "pinnedValues",
 }
+
+# Built-in palette IDs, mirrored from the web frontend — the source of truth:
+# protspace_web/packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
+# numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
+# categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
+# Keep this list in sync with those files.
+_CATEGORICAL_PALETTE_IDS = frozenset(
+    {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
+)
+_GRADIENT_PALETTE_IDS = frozenset({"batlow", "viridis", "cividis", "inferno", "plasma"})
 
 
 def load_annotation_styles(
@@ -139,6 +152,60 @@ def _annotation_display_values(reader, annotation: str) -> set[str]:
     return values
 
 
+def _warn_if_numeric(annotation: str, display_values) -> bool:
+    """Warn when *annotation*'s values look numeric; return whether they do.
+
+    The CLI styling model is categorical-only, but the web frontend bins numeric
+    columns into gradient ranges — so per-value colors/shapes/pins set via the
+    CLI silently do not apply. Naming the column + its distinct-value count makes
+    that visible instead of a surprise. See ``docs/styling.md`` (Numeric
+    annotations).
+    """
+    from protspace.stats.annotation_select import _is_missing, _is_numeric
+
+    cleaned = [v for v in display_values if not _is_missing(v)]
+    if not _is_numeric(cleaned):
+        return False
+    logger.warning(
+        "Annotation '%s' looks numeric (%d distinct values). `protspace style` is "
+        "categorical-only: per-value colors/shapes/pinnedValues will not apply and "
+        "--generate-template lists every number as its own category. Pre-bin it into "
+        "categorical range labels (e.g. '100-200') or color it as a continuous "
+        "gradient in the web app (https://protspace.app/explore). "
+        "See docs/styling.md#numeric-annotations.",
+        annotation,
+        len(cleaned),
+    )
+    return True
+
+
+def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
+    """Warn when a categorical column's ``selectedPaletteId`` is not a categorical id.
+
+    For a categorical column ``selectedPaletteId`` picks the palette, and the frontend
+    silently resets a gradient or unknown id to ``kellys`` (see ``docs/styling.md`` —
+    Color palettes). Naming the offending id makes that reset visible instead of a
+    surprise. A numeric column instead reads ``selectedPaletteId`` as its gradient, so
+    callers skip this check for numeric columns.
+    """
+    palette = styles.get("selectedPaletteId")
+    if not isinstance(palette, str) or not palette:
+        return
+    if palette in _CATEGORICAL_PALETTE_IDS:
+        return
+    if palette in _GRADIENT_PALETTE_IDS:
+        reason = f"'{palette}' is a numeric gradient, not a categorical palette"
+    else:
+        reason = f"'{palette}' is not a known palette"
+    logger.warning(
+        "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
+        "'kellys'. Categorical palettes: %s. See docs/styling.md#color-palettes.",
+        annotation,
+        reason,
+        ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
+    )
+
+
 def generate_template(input_file: str) -> dict:
     """Generate a pre-filled styles template from an input file.
 
@@ -161,6 +228,7 @@ def generate_template(input_file: str) -> dict:
 
     for annotation in sorted(reader.get_all_annotations()):
         freqs = frequencies.get(annotation, {})
+        _warn_if_numeric(annotation, freqs.keys())
         # Sort values by frequency descending
         sorted_values = sorted(
             freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True
@@ -205,6 +273,7 @@ def add_annotation_styles_parquet(
         # Validate/store against display values (what the template exposes),
         # not the raw percent-encoded wire cells, so a template round-trips.
         all_values = _annotation_display_values(reader, annotation)
+        _warn_if_numeric(annotation, all_values)
 
         # Add colors
         if "colors" in styles:
@@ -288,6 +357,11 @@ def add_annotation_styles_bundle(
             )
 
         all_values = set(value_frequencies.get(annotation, {}))
+        # selectedPaletteId is the categorical palette; a numeric column reads it as
+        # its gradient instead (a gradient id applies — see docs/styling.md), so the
+        # categorical-palette check only runs when the column is not numeric.
+        if not _warn_if_numeric(annotation, all_values):
+            _warn_if_bad_palette(annotation, styles)
 
         # Extract settings-level keys for this annotation
         overrides = {k: v for k, v in styles.items() if k in _SETTINGS_KEYS}

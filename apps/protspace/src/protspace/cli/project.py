@@ -6,11 +6,10 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app, setup_logging
+from protspace.cli.app import PANEL_STAGES, app, setup_logging
 from protspace.cli.common_options import (
     Metric,
     Opt_Eps,
-    Opt_Fasta,
     Opt_FpRatio,
     Opt_LearningRate,
     Opt_MaxIter,
@@ -29,7 +28,7 @@ from protspace.cli.common_options import (
 logger = logging.getLogger(__name__)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_STAGES)
 def project(
     input: Annotated[
         list[str],
@@ -37,17 +36,29 @@ def project(
             "-i",
             "--input",
             help="HDF5 file(s). Repeat for multi-embedding. Colon syntax: -i file.h5:name",
+            rich_help_panel="Input / Output",
         ),
     ],
     methods: Opt_Methods = None,
     output: Annotated[
         Path,
         typer.Option(
-            "-o", "--output", help="Output directory for projection parquet files."
+            "-o",
+            "--output",
+            help="Output directory for projection parquet files.",
+            rich_help_panel="Input / Output",
         ),
     ] = Path("."),
     similarity: Opt_Similarity = False,
-    fasta: Opt_Fasta = None,
+    fasta: Annotated[
+        Path | None,
+        typer.Option(
+            "-f",
+            "--fasta",
+            help="FASTA for -s/--similarity when input is HDF5.",
+            rich_help_panel="Input / Output",
+        ),
+    ] = None,
     metric: Opt_Metric = Metric.euclidean,
     random_state: Opt_RandomState = 42,
     n_neighbors: Opt_NNeighbors = 25,
@@ -61,7 +72,7 @@ def project(
     eps: Opt_Eps = 1e-3,
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """Run dimensionality reduction on HDF5 embeddings.
+    """Embeddings → 2D projections (UMAP, t-SNE, PCA, …).
 
     \b
     Outputs projections_metadata.parquet and projections_data.parquet

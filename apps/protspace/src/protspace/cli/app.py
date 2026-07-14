@@ -6,9 +6,28 @@ import typer
 
 logger = logging.getLogger(__name__)
 
+# Command help panels. Panels render in the order they are first registered
+# (see _register_commands below); commands appear within a panel in registration
+# order. Defined here so every command references the exact same string.
+PANEL_START = "Start here"
+PANEL_STAGES = "Pipeline stages · run individually"
+PANEL_REFINE = "Refine"
+PANEL_VISUALIZE = "Visualize"
+
+_HELP = """ProtSpace — turn protein language model embeddings into an interactive visualization.
+
+Most users only need 'prepare' to build a bundle, then explore it in the browser at https://protspace.app/explore.
+
+\b
+Quick start:
+  1. protspace prepare -i embeddings.h5 -m pca2,umap2 -o out/
+  2. Drag out/data.parquetbundle onto https://protspace.app/explore   (recommended)
+     — or view it locally:  protspace serve out/data.parquetbundle
+"""
+
 app = typer.Typer(
     name="protspace",
-    help="ProtSpace — interactive visualization of protein language model embeddings.",
+    help=_HELP,
     no_args_is_help=True,
     pretty_exceptions_enable=True,
     pretty_exceptions_show_locals=False,
@@ -61,17 +80,24 @@ def setup_logging(verbosity: int) -> None:
 
 
 def _register_commands() -> None:
-    """Register all subcommands on the typer app."""
-    from protspace.cli import (  # noqa: F401
-        annotate,
-        bundle,
-        embed,
+    """Register all subcommands on the typer app.
+
+    Import order defines both the panel order and the within-panel command
+    order in ``protspace --help``, so it follows the pipeline flow:
+    prepare (entry point) → stages → refine → visualize.
+    """
+    # Order is load-bearing (drives help panel/command order), so keep it as-is
+    # rather than letting isort alphabetize it.
+    from protspace.cli import (  # noqa: F401, I001
         prepare,
+        embed,
         project,
-        serve,
+        annotate,
         stats,
-        style,
+        bundle,
         transfer,
+        style,
+        serve,
     )
 
 

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 import typer
 
-from protspace.cli.app import app, setup_logging
+from protspace.cli.app import PANEL_START, app, setup_logging
 from protspace.cli.common_options import (
     ClusterSelection,
     Metric,
@@ -294,7 +294,7 @@ def _embed_all(
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_START)
 def prepare(
     # Input
     input: Opt_Input = None,
@@ -333,9 +333,10 @@ def prepare(
     # General
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """Prepare protein data for visualization (full pipeline).
+    """Build a visualization bundle in one step (recommended).
 
     \b
+    Runs the whole pipeline: embed → project → annotate → (stats) → bundle.
     Requires at least one of:  -i/--input  or  -q/--query
     Comma-separated args (-e, -m, -a) must not contain spaces.
     """

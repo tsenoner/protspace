@@ -15,7 +15,7 @@ import numpy as np
 import pyarrow as pa
 import typer
 
-from protspace.cli.app import app, setup_logging
+from protspace.cli.app import PANEL_REFINE, app, setup_logging
 from protspace.cli.common_options import Opt_Verbose
 from protspace.core.constants import MISSING_VALUE_TOKENS
 from protspace.utils.constants import METRIC_TYPES
@@ -130,11 +130,16 @@ def run_transfer(
     return out
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_REFINE)
 def transfer(
     bundle: Annotated[
         Path,
-        typer.Option("-b", "--bundle", help="Input .parquetbundle to annotate."),
+        typer.Option(
+            "-b",
+            "--bundle",
+            help="Input .parquetbundle to annotate.",
+            rich_help_panel="Input / Output",
+        ),
     ],
     embeddings: Annotated[
         str,
@@ -142,41 +147,76 @@ def transfer(
             "-e",
             "--embeddings",
             help="HDF5 embeddings, optional :name suffix (e.g. emb.h5:prot_t5).",
+            rich_help_panel="Input / Output",
         ),
     ],
     transfer_columns: Annotated[
         list[str],
         typer.Option(
-            "-t", "--transfer", help="Annotation column to transfer (repeat)."
+            "-t",
+            "--transfer",
+            help="Annotation column to transfer (repeat).",
+            rich_help_panel="Transfer",
         ),
     ],
     output: Annotated[
         Path,
-        typer.Option("-o", "--output", help="Output .parquetbundle path."),
+        typer.Option(
+            "-o",
+            "--output",
+            help="Output .parquetbundle path.",
+            rich_help_panel="Input / Output",
+        ),
     ],
     query_id_prefix: Annotated[
-        list[str] | None, typer.Option("--query-id-prefix")
+        list[str] | None,
+        typer.Option(
+            "--query-id-prefix",
+            help="Only transfer to query IDs with this prefix (repeatable).",
+            rich_help_panel="Query filters (which proteins receive labels)",
+        ),
     ] = None,
     query_where: Annotated[
         list[str] | None,
-        typer.Option("--query-where", help="col~substr"),
+        typer.Option(
+            "--query-where",
+            help="Restrict queries to rows where col contains substr (col~substr, repeatable).",
+            rich_help_panel="Query filters (which proteins receive labels)",
+        ),
     ] = None,
     reference_id_prefix: Annotated[
-        list[str] | None, typer.Option("--reference-id-prefix")
+        list[str] | None,
+        typer.Option(
+            "--reference-id-prefix",
+            help="Only use references whose ID has this prefix (repeatable).",
+            rich_help_panel="Reference filters (which proteins provide labels)",
+        ),
     ] = None,
     reference_where: Annotated[
         list[str] | None,
-        typer.Option("--reference-where", help="col~substr"),
+        typer.Option(
+            "--reference-where",
+            help="Restrict references to rows where col contains substr (col~substr, repeatable).",
+            rich_help_panel="Reference filters (which proteins provide labels)",
+        ),
     ] = None,
     k: Annotated[
-        int, typer.Option("--k", help="Neighbours considered (default 1).")
+        int,
+        typer.Option(
+            "--k", help="Neighbours considered (default 1).", rich_help_panel="Transfer"
+        ),
     ] = 1,
     metric: Annotated[
-        str, typer.Option("--metric", help="cosine | euclidean (default cosine).")
+        str,
+        typer.Option(
+            "--metric",
+            help="cosine | euclidean (default cosine).",
+            rich_help_panel="Transfer",
+        ),
     ] = "cosine",
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """Transfer annotations to query proteins from nearest reference neighbours."""
+    """Fill missing annotations from nearest neighbours (EAT)."""
     setup_logging(verbose)
 
     import io

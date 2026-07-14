@@ -6,12 +6,12 @@ from typing import Annotated
 
 import typer
 
-from protspace.cli.app import app
+from protspace.cli.app import PANEL_VISUALIZE, app
 
 DEFAULT_PORT = 8050
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_VISUALIZE)
 def serve(
     data: Annotated[
         Path,
@@ -33,7 +33,13 @@ def serve(
         ),
     ] = None,
 ) -> None:
-    """Launch the Dash web frontend for interactive visualization."""
+    """Run a local viewer (web app preferred: protspace.app/explore).
+
+    \b
+    Most users should explore bundles in the hosted 2D viewer at
+    https://protspace.app/explore — drag & drop, nothing to install.
+    Use this command for offline/local viewing; it also renders 3D projections.
+    """
     warnings.filterwarnings("ignore", category=SyntaxWarning)
 
     from protspace.main import main

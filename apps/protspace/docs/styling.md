@@ -22,6 +22,23 @@ protspace style data.parquetbundle styled.parquetbundle --annotation-styles styl
 protspace style styled.parquetbundle --dump-settings
 ```
 
+## Numeric annotations
+
+**`protspace style` is categorical-only.** Every value is treated as a discrete category, so the workflow above is meant for categorical columns (e.g. `major_group`, `ec`, `superfamily`). Applying it to a **numeric** column (`length`, pLDDT, a score) does not do what you expect:
+
+- `--generate-template` lists **every distinct number as its own category** — hundreds to thousands of rows to hand-color.
+- `colors` / `shapes` / `pinnedValues` only match values by exact string, so a range like `"200-300"` or an interpolated `"3.5"` raises `Value '…' does not exist`.
+- There is no continuous colormap, binning, or range-legend concept on the CLI side.
+
+`protspace style` now emits a **warning** when it detects a numeric column, naming it and its distinct-value count.
+
+**Two ways to color a numeric column instead:**
+
+1. **Pre-bin into categorical strings** before styling — turn the numbers into range-label strings (e.g. `"100-200"`, or fixed/quantile buckets), then style the binned column like any other categorical.
+2. **Use the web app's continuous gradient** — [ProtSpace Web](https://protspace.app/explore) content-sniffs numeric columns and bins them client-side into a sequential gradient (`batlow` default; also viridis / cividis / inferno / plasma). The binning strategy and reverse-gradient toggle live in the UI only.
+
+If you *do* pass CLI styling keys for a numeric column, the web frontend reinterprets them: `colors` / `shapes` / `pinnedValues` are **ignored** (bin IDs never match your per-value keys), `maxVisibleValues` becomes the **target bin count**, and `selectedPaletteId` is reset unless it is one of the five gradient IDs (markers are always circles). See the [ProtSpace Web legend docs](https://github.com/tsenoner/protspace_web/blob/main/docs/explore/legend.md) for the numeric legend behavior.
+
 ## Styles JSON format
 
 Top-level keys are annotation names. Each annotation accepts the keys below.
@@ -34,7 +51,7 @@ Top-level keys are annotation names. Each annotation accepts the keys below.
 | `maxVisibleValues`  | int      | `10`          | yes    | Legend entries shown before the "Other" bucket.                                                  |
 | `shapeSize`         | int      | `30`          | yes    | Marker size in the scatter plot.                                                                 |
 | `hiddenValues`      | string[] | `[]`          | yes    | Categories hidden from the plot.                                                                 |
-| `selectedPaletteId` | string   | `"kellys"`    | yes    | Color palette for categories without explicit colors.                                            |
+| `selectedPaletteId` | string   | `"kellys"`    | yes    | **Categorical** palette for categories without explicit colors — one of the six IDs in [Color palettes](#color-palettes). A gradient or unknown value silently falls back to `kellys`.                    |
 | `pinnedValues`      | string[] | —             | no     | Ordered list of values for legend positions 0..N-1. See [Legend ordering](#legend-ordering).     |
 | `zOrderSort`        | string   | —             | no     | Sort mode for zOrder assignment only (overrides `sortMode` for zOrder computation).              |
 
@@ -64,6 +81,39 @@ Missing values (`""`, `"<NA>"`, `"NaN"`) are normalized automatically — use an
   }
 }
 ```
+
+## Color palettes
+
+ProtSpace ships eleven built-in palettes, split by data type: **six categorical** palettes (discrete colors, one per category) and **five numeric gradients** (a continuous sequential scale). The two sets do not overlap and are not interchangeable — a numeric column can only use a gradient, and a categorical column can only use a categorical palette.
+
+The palettes are defined in the web frontend, the single source of truth: [`color-scheme.ts`](https://github.com/tsenoner/protspace_web/blob/main/packages/utils/src/visualization/color-scheme.ts) (`COLOR_SCHEMES`) and [`numeric-binning.ts`](https://github.com/tsenoner/protspace_web/blob/main/packages/utils/src/visualization/numeric-binning.ts) (`GRADIENT_COLOR_SCHEME_IDS`).
+
+### Categorical palettes (`selectedPaletteId`)
+
+Used for categorical annotations, for the "Other" bucket, and for cluster legends. Settable from the CLI via the `selectedPaletteId` key.
+
+| ID           | Name           | Notes                        |
+| ------------ | -------------- | ---------------------------- |
+| `kellys`     | Kelly's Colors | Maximum contrast (**default**) |
+| `okabeIto`   | Okabe-Ito      | Colorblind-safe              |
+| `tolBright`  | Tol Bright     | Colorblind-safe              |
+| `set2`       | Set2           | General-purpose categorical  |
+| `dark2`      | Dark2          | General-purpose categorical  |
+| `tableau10`  | Tableau 10     | General-purpose categorical  |
+
+### Numeric gradients
+
+Used for numeric annotations (see [Numeric annotations](#numeric-annotations)). The frontend bins the numbers and colors the bins along the gradient.
+
+| ID        | Name    | Notes                                    |
+| --------- | ------- | ---------------------------------------- |
+| `batlow`  | Batlow  | Scientific sequential gradient (**default**) |
+| `viridis` | Viridis | Perceptually uniform sequential gradient |
+| `cividis` | Cividis | Colorblind-friendly sequential gradient  |
+| `inferno` | Inferno | High-contrast sequential gradient        |
+| `plasma`  | Plasma  | Vivid sequential gradient                |
+
+> **`selectedPaletteId` behaves differently per column type.** For a **categorical** column it picks the categorical palette, and a gradient or unknown ID silently resets to `kellys`. For a **numeric** column the frontend instead reads `selectedPaletteId` as the gradient: a gradient ID (`batlow` / `viridis` / `cividis` / `inferno` / `plasma`) is used as-is, and a categorical or unknown ID resets to `batlow`. What `protspace style` cannot set for a numeric column is the **binning** — the strategy and reverse-gradient toggle live in the per-annotation `numericSettings` object, which is UI-only. `protspace style` warns when `selectedPaletteId` is a gradient or unknown ID **on a categorical column** (where it would reset to `kellys`).
 
 ## Legend ordering
 

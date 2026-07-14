@@ -2,7 +2,7 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Version:** 4.3.1
+- **Version:** 4.7.0
 - **Python:** >=3.10
 - **License:** MIT
 - **PyPI:** `pip install protspace`
@@ -269,6 +269,7 @@ uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With
 | `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |
 | `test_taxonomy_annotation_retriever.py` | 15 | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
+| `test_style_warnings.py` | 17 | `protspace style` warnings: numeric-column detection (#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
 | `test_h5_parse_identifier.py` | 9 | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | 9 | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
 | `test_ted_retriever.py` | 7 | TED domain retriever (mocked AlphaFold API, CATH names) |
@@ -287,6 +288,7 @@ Located in `notebooks/`:
 |----------|---------|
 | `ProtSpace_Preparation.ipynb` | Google Colab — upload embeddings, configure DR methods, generate .parquetbundle |
 | `ClickThrough_GenerateEmbeddings.ipynb` | Google Colab — generate embeddings from FASTA using ESM models |
+| `ProtSpace_Transfer.ipynb` | Google Colab — Embedding Annotation Transfer (EAT): fill missing annotations from nearest reference proteins |
 
 ## Dependencies
 
