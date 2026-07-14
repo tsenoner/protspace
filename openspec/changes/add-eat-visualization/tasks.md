@@ -55,7 +55,7 @@
 
 ## 6. Publication and review closure
 
-- [ ] 6.1 Push `agent/277-eat-overlay` and open a draft PR with a validated semantic title, links to
+- [x] 6.1 Push `agent/277-eat-overlay` and open a draft PR with a validated semantic title, links to
       #277 and #300, scientific behavior summary, design decisions, screenshots, and test evidence.
 - [ ] 6.2 Commission an independent review in another Codex task, require actionable findings to be
       left as GitHub review comments, and address or explicitly resolve every thread.
