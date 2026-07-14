@@ -89,6 +89,39 @@ describe('ConnectorOverlayController', () => {
     expect(overlay.attr('transform')).toBe('translate(10,20) scale(2)');
   });
 
+  it('caches the protein lookup until the PlotData identity changes', () => {
+    let currentPlotData = plotData;
+    let proteinIdReads = 0;
+    const observedProteinIds = new Proxy(plotData.proteinIds, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) proteinIdReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    currentPlotData = { ...plotData, proteinIds: observedProteinIds };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => currentPlotData,
+      getScales: () => scales,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    const request = {
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    };
+
+    controller.set(request);
+    expect(proteinIdReads).toBe(plotData.length);
+    controller.render();
+    expect(proteinIdReads).toBe(plotData.length);
+
+    currentPlotData = { ...currentPlotData };
+    controller.render();
+    expect(proteinIdReads).toBe(plotData.length * 2);
+  });
+
   it('clears geometry and status', () => {
     const statusSpy = vi.fn();
     controller = new ConnectorOverlayController({

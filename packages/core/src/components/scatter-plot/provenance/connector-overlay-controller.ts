@@ -41,6 +41,8 @@ interface ResolvedConnector extends ProvenanceConnectorPair {
  */
 export class ConnectorOverlayController {
   private request: ProvenanceConnectorRequest | null = null;
+  private indexedPlotData: PlotData | null = null;
+  private idToSlot = new Map<string, number>();
 
   constructor(private readonly deps: ConnectorOverlayDeps) {}
 
@@ -73,10 +75,7 @@ export class ConnectorOverlayController {
 
     const plotData = this.deps.getPlotData();
     const scales = this.deps.getScales();
-    const idToSlot = new Map<string, number>();
-    for (let slot = 0; slot < plotData.length; slot++) {
-      idToSlot.set(plotDataId(plotData, slot), slot);
-    }
+    const idToSlot = this.getIdToSlot(plotData);
 
     const resolved: ResolvedConnector[] = [];
     if (scales) {
@@ -132,5 +131,18 @@ export class ConnectorOverlayController {
       total: request.totalCandidates,
       missingEndpoints: request.pairs.length - resolved.length,
     });
+  }
+
+  /** Build the O(N) protein lookup only when the rendered PlotData identity changes. */
+  private getIdToSlot(plotData: PlotData): ReadonlyMap<string, number> {
+    if (plotData === this.indexedPlotData) return this.idToSlot;
+
+    const idToSlot = new Map<string, number>();
+    for (let slot = 0; slot < plotData.length; slot++) {
+      idToSlot.set(plotDataId(plotData, slot), slot);
+    }
+    this.indexedPlotData = plotData;
+    this.idToSlot = idToSlot;
+    return idToSlot;
   }
 }

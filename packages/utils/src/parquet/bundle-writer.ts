@@ -16,7 +16,7 @@ import type { VisualizationData, BundleSettings } from '../types';
 import { BUNDLE_DELIMITER_BYTES } from './constants';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
-import { getFirstAnnotationIndex } from '../visualization/annotation-data-access.js';
+import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
 import {
   getEatCompanionColumn,
   isEatConfidenceAnnotationKey,
@@ -63,14 +63,17 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
     // Convert indices back to actual annotation values
     const values: (string | null)[] = new Array(data.protein_ids.length);
     for (let i = 0; i < data.protein_ids.length; i++) {
-      // Take first annotation value (primary); getFirstAnnotationIndex handles
-      // both Int32Array and number[][] storage shapes.
-      const idx = getFirstAnnotationIndex(annotationIndices, i);
-      values[i] = data.annotation_predicted?.[annotationName]?.[i]
-        ? null
-        : idx >= 0
-          ? (annotation.values[idx] ?? null)
-          : null;
+      if (data.annotation_predicted?.[annotationName]?.[i]) {
+        values[i] = null;
+        continue;
+      }
+
+      // The bundle's categorical format is semicolon-delimited. Reconstruct the complete curated
+      // cell so exporting a materialized EAT view cannot discard secondary annotations.
+      const cellValues = getProteinAnnotationIndices(annotationIndices, i)
+        .map((index) => annotation.values[index])
+        .filter((value): value is string => value !== undefined);
+      values[i] = cellValues.length > 0 ? cellValues.join(';') : null;
     }
 
     columnData.push({

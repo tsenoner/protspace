@@ -173,6 +173,12 @@ export const responsiveStyles = css`
      Import/Export still read as menus rather than immediate actions. */
   @media (max-width: 600px) {
     /* --breakpoint-sm */
+    .control-bar {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+    }
+
     .left-controls {
       display: grid;
       grid-template-columns: minmax(0, 1fr);

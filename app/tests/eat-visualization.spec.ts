@@ -93,6 +93,117 @@ async function getProteinScreenPosition(
   }, proteinId);
 }
 
+async function sampleEncodedExportMarkers(page: Page): Promise<{
+  predicted: number[];
+  observed: number[];
+  predictedNearestNeighbor: number;
+  observedNearestNeighbor: number;
+}> {
+  return page.evaluate(async () => {
+    const plot = document.querySelector('protspace-scatterplot') as
+      | (HTMLElement & {
+          _plotData?: {
+            length: number;
+            xs: Float32Array;
+            ys: Float32Array;
+            originalIndices: Int32Array | null;
+          };
+          data?: {
+            annotation_predicted?: Record<string, Array<unknown | null>>;
+          };
+          captureAtResolution?: (
+            width: number,
+            height: number,
+            options: { resetView: boolean },
+          ) => HTMLCanvasElement;
+          getDataExtent?: (options: { padded: boolean }) => {
+            xMin: number;
+            xMax: number;
+            yMin: number;
+            yMax: number;
+          } | null;
+          getRenderInfo?: (
+            width: number,
+            height: number,
+          ) => {
+            marginLeft: number;
+            marginRight: number;
+            marginTop: number;
+            marginBottom: number;
+          } | null;
+        })
+      | null;
+    const plotData = plot?._plotData;
+    const predictedCells = plot?.data?.annotation_predicted?.ec;
+    const extent = plot?.getDataExtent?.({ padded: true });
+    const width = 800;
+    const height = 600;
+    const margins = plot?.getRenderInfo?.(width, height);
+    if (!plotData || !predictedCells || !extent || !margins || !plot?.captureAtResolution) {
+      throw new Error('Export geometry is not ready');
+    }
+
+    const positions = Array.from({ length: plotData.length }, (_, slot) => ({
+      slot,
+      x:
+        margins.marginLeft +
+        ((plotData.xs[slot] - extent.xMin) / (extent.xMax - extent.xMin)) *
+          (width - margins.marginLeft - margins.marginRight),
+      y:
+        margins.marginTop +
+        ((extent.yMax - plotData.ys[slot]) / (extent.yMax - extent.yMin)) *
+          (height - margins.marginTop - margins.marginBottom),
+    }));
+    const withIsolation = positions.map((position) => ({
+      ...position,
+      nearestNeighbor: Math.min(
+        ...positions
+          .filter((other) => other.slot !== position.slot)
+          .map((other) => Math.hypot(other.x - position.x, other.y - position.y)),
+      ),
+    }));
+    const mostIsolated = (isPredicted: boolean) =>
+      withIsolation
+        .filter(({ slot }) => {
+          const proteinIndex = plotData.originalIndices?.[slot] ?? slot;
+          return (predictedCells[proteinIndex] !== null) === isPredicted;
+        })
+        .sort((a, b) => b.nearestNeighbor - a.nearestNeighbor)[0];
+    const predictedPoint = mostIsolated(true);
+    const observedPoint = mostIsolated(false);
+    if (!predictedPoint || !observedPoint) throw new Error('No export marker pair was available');
+
+    // Exercise the same off-screen renderer used by PNG export, encode it as PNG, and decode the
+    // resulting bitmap before sampling. This catches regressions where only the live shader is wired.
+    const exportCanvas = plot.captureAtResolution(width, height, { resetView: true });
+    const png = await new Promise<Blob>((resolve, reject) => {
+      exportCanvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('PNG encoding failed'))),
+        'image/png',
+      );
+    });
+    const bitmap = await createImageBitmap(png);
+    const decoded = document.createElement('canvas');
+    decoded.width = bitmap.width;
+    decoded.height = bitmap.height;
+    const context = decoded.getContext('2d');
+    if (!context) throw new Error('PNG decoding context is unavailable');
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+
+    const sample = ({ x, y }: { x: number; y: number }): number[] => {
+      const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+      return Array.from(rgba);
+    };
+    return {
+      predicted: sample(predictedPoint),
+      observed: sample(observedPoint),
+      predictedNearestNeighbor: predictedPoint.nearestNeighbor,
+      observedNearestNeighbor: observedPoint.nearestNeighbor,
+    };
+  });
+}
+
 test('renders and explores EAT transfers from the real phosphatase bundle', async ({ page }) => {
   await loadEatFixture(page);
   await selectEcAnnotation(page);
@@ -224,15 +335,42 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       .querySelectorAll('.left-controls > .control-group')[1]
       .getBoundingClientRect();
     return {
+      viewportWidth: window.innerWidth,
+      controlLeft: element.getBoundingClientRect().left,
+      controlRight: element.getBoundingClientRect().right,
       projectionBottom: projection.bottom,
+      projectionLeft: projection.left,
+      projectionRight: projection.right,
       eatTop: eat.top,
       eatBottom: eat.bottom,
+      eatLeft: eat.left,
+      eatRight: eat.right,
       annotationTop: annotation.top,
+      annotationLeft: annotation.left,
+      annotationRight: annotation.right,
     };
   });
+  expect(mobileRows.controlLeft).toBeGreaterThanOrEqual(0);
+  expect(mobileRows.controlRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+  expect(mobileRows.projectionLeft).toBeGreaterThanOrEqual(0);
+  expect(mobileRows.projectionRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+  expect(mobileRows.eatLeft).toBeGreaterThanOrEqual(0);
+  expect(mobileRows.eatRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+  expect(mobileRows.annotationLeft).toBeGreaterThanOrEqual(0);
+  expect(mobileRows.annotationRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
   expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.eatTop);
   expect(mobileRows.eatBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
   await page.setViewportSize({ width: 1280, height: 720 });
+
+  const exportMarkers = await sampleEncodedExportMarkers(page);
+  const distanceFromWhite = ([red, green, blue]: number[]) =>
+    Math.abs(255 - red) + Math.abs(255 - green) + Math.abs(255 - blue);
+  expect(exportMarkers.predictedNearestNeighbor).toBeGreaterThan(8);
+  expect(exportMarkers.observedNearestNeighbor).toBeGreaterThan(8);
+  expect(exportMarkers.predicted[3]).toBe(255);
+  expect(exportMarkers.observed[3]).toBe(255);
+  expect(distanceFromWhite(exportMarkers.predicted)).toBeLessThan(20);
+  expect(distanceFromWhite(exportMarkers.observed)).toBeGreaterThan(60);
 
   await controlBar.getByRole('button', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');

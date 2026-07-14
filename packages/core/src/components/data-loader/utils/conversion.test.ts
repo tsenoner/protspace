@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { createParquetBundle, materializeEatOverlay } from '@protspace/utils';
+import {
+  createParquetBundle,
+  getProteinAnnotationIndices,
+  materializeEatOverlay,
+} from '@protspace/utils';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
@@ -239,7 +243,7 @@ describe('EAT companion normalization', () => {
         projection_name: 'umap',
         x: 0,
         y: 0,
-        ec: '1.1.1.1',
+        ec: '1.1.1.1;2.2.2.2',
         ec__pred_value: '9.9.9.9',
         ec__pred_confidence: 0.99,
         ec__pred_source: 'REF0',
@@ -313,7 +317,7 @@ describe('EAT companion normalization', () => {
         projection_name: 'umap',
         x: 0,
         y: 0,
-        ec: '1.1.1.1',
+        ec: '1.1.1.1;2.2.2.2',
         ec__pred_value: null,
         ec__pred_confidence: null,
         ec__pred_source: null,
@@ -329,10 +333,20 @@ describe('EAT companion normalization', () => {
         ec__pred_source: 'P1',
       },
     ]);
+    expect(
+      getProteinAnnotationIndices(original.annotation_data.ec, 0).map(
+        (index) => original.annotations.ec.values[index],
+      ),
+    ).toEqual(['1.1.1.1', '2.2.2.2']);
     const displayed = materializeEatOverlay(original, 'ec', true);
-    const reloaded = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(createParquetBundle(displayed)),
-    );
+    expect(
+      getProteinAnnotationIndices(displayed.annotation_data.ec, 0).map(
+        (index) => displayed.annotations.ec.values[index],
+      ),
+    ).toEqual(['1.1.1.1', '2.2.2.2']);
+    const extracted = await extractRowsFromParquetBundle(createParquetBundle(displayed));
+    expect(extracted.annotationsById.get('P1')?.ec).toBe('1.1.1.1;2.2.2.2');
+    const reloaded = convertParquetToVisualizationData(extracted);
 
     expect(reloaded.annotation_predicted?.ec[1]).toMatchObject({
       value: '1.1.1.1',
@@ -342,6 +356,9 @@ describe('EAT companion normalization', () => {
     expect(reloaded.numeric_annotation_data?.ec__eat_confidence?.[1]).toBeCloseTo(0.8, 5);
     expect(reloaded.annotations).not.toHaveProperty('ec__pred_value');
     const ecValues = reloaded.annotations.ec.values;
+    expect(
+      getProteinAnnotationIndices(reloaded.annotation_data.ec, 0).map((index) => ecValues[index]),
+    ).toEqual(['1.1.1.1', '2.2.2.2']);
     const p2Index = (reloaded.annotation_data.ec as Int32Array)[1];
     expect(ecValues[p2Index]).toBe('__NA__');
   });
