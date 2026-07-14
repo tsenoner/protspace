@@ -105,6 +105,48 @@ export const layoutStyles = css`
     box-sizing: border-box;
   }
 
+  .eat-legend {
+    width: calc(100% - 1rem);
+    box-sizing: border-box;
+    margin: 0.125rem 0 0.375rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--legend-border);
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--legend-text-color) 3%, transparent);
+  }
+
+  .eat-legend-title {
+    margin-bottom: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--legend-text-secondary);
+  }
+
+  .eat-legend-row {
+    display: grid;
+    grid-template-columns: 0.8rem 1fr auto;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--legend-text-color);
+  }
+
+  .eat-swatch {
+    width: 0.55rem;
+    height: 0.55rem;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    box-sizing: border-box;
+  }
+
+  .eat-swatch.observed {
+    background: currentColor;
+  }
+
+  .eat-swatch.predicted {
+    background: transparent;
+  }
+
   .legend-items {
     display: flex;
     flex-direction: column;

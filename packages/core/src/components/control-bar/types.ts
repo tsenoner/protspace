@@ -2,7 +2,11 @@
  * Control bar-related type definitions
  */
 
-import type { NumericAnnotationDisplaySettingsMap, AnnotationData } from '@protspace/utils';
+import type {
+  NumericAnnotationDisplaySettingsMap,
+  AnnotationData,
+  AnnotationPredictedData,
+} from '@protspace/utils';
 
 export type LegendSortModeLike =
   | 'size-asc'
@@ -41,6 +45,7 @@ export interface ProtspaceData {
   annotation_data?: Record<string, AnnotationData>;
   numeric_annotation_data?: Record<string, (number | null)[]>;
   protein_ids?: string[];
+  annotation_predicted?: AnnotationPredictedData;
 }
 
 export interface DataChangeDetail {
@@ -61,6 +66,8 @@ export interface ScatterplotElementLike extends Element {
   numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
   annotationSortModes?: Record<string, LegendSortModeLike>;
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
+  eatOverlayEnabled?: boolean;
+  eatConfidenceThreshold?: number;
 
   runWebGLRenderPerfMeasurements?: (
     iterations?: number,

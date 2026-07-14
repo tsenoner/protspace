@@ -12,6 +12,7 @@ export interface IScatterplotElement extends Element {
   getCurrentData(options?: { includeFilteredProteinIds?: boolean }): ScatterplotData | null;
   getMaterializedData?(): ScatterplotData | null;
   selectedAnnotation: string;
+  eatOverlayEnabled?: boolean;
 
   // Annotation values (using scatterplot's property names)
   hiddenAnnotationValues: string[];

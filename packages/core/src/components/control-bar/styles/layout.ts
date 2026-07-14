@@ -49,6 +49,52 @@ export const layoutStyles = css`
     min-width: 0;
   }
 
+  .eat-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin: 0;
+    padding: 4px 8px;
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius);
+    min-width: 0;
+  }
+
+  .eat-switch,
+  .eat-threshold {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  .eat-switch input,
+  .eat-threshold input {
+    accent-color: var(--primary);
+  }
+
+  .eat-threshold {
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+
+  .eat-threshold input[type='range'] {
+    width: 88px;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .projection-container,
   .filter-container,
   .export-container {

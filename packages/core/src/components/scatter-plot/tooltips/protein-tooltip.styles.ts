@@ -162,4 +162,40 @@ export const proteinTooltipStyles = css`
     font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
   }
+
+  .eat-provenance {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0.125rem 0 0.25rem;
+    padding: 0.375rem;
+    border-radius: 0.375rem;
+    background: #f8fafc;
+  }
+
+  .eat-provenance-heading,
+  .eat-provenance-source {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    color: #475569;
+  }
+
+  .eat-provenance-source {
+    display: block;
+    color: #64748b;
+  }
+
+  .eat-confidence-track {
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e2e8f0;
+  }
+
+  .eat-confidence-track > span {
+    display: block;
+    height: 100%;
+    background: #7c3aed;
+  }
 `;

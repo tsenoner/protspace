@@ -209,6 +209,8 @@ export function createExportHandler({
             legendSettings: legendElement.getAllPersistedSettings(),
             exportOptions: {},
             publishState: loadPublishState() ?? undefined,
+            eatOverlayEnabled: plotElement.eatOverlayEnabled,
+            eatConfidenceThreshold: plotElement.eatConfidenceThreshold,
           };
         }
 

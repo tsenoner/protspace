@@ -14,21 +14,21 @@
 
 - [x] 2.1 Extend bundle settings types, validation, normalization, EAT-only write gating, and tests
       for defaults, valid fields, and independently invalid optional fields.
-- [ ] 2.2 Add accessible EAT overlay and threshold controls, event/auto-sync contracts, conditional
+- [x] 2.2 Add accessible EAT overlay and threshold controls, event/auto-sync contracts, conditional
       enablement, dataset reset behavior, responsive styling, and component tests.
-- [ ] 2.3 Apply embedded EAT settings on dataset load and export current EAT settings from the app,
+- [x] 2.3 Apply embedded EAT settings on dataset load and export current EAT settings from the app,
       with controller tests.
 
 ## 3. Overlay semantics and publication rendering
 
-- [ ] 3.1 Integrate effective EAT category materialization into scatter-plot caches and invalidation,
+- [x] 3.1 Integrate effective EAT category materialization into scatter-plot caches and invalidation,
       preserving numeric, filter, isolation, and data-change behavior with tests.
-- [ ] 3.2 Extend the authoritative visibility model with confidence and threshold semantics, memo
+- [x] 3.2 Extend the authoritative visibility model with confidence and threshold semantics, memo
       keys, precedence, hit-testing, and boundary tests.
 - [ ] 3.3 Carry an explicit predicted flag through style getters, shared live/export WebGL staging,
       buffers, attribute layout, and signed-distance shaders; verify hollow geometry and live/export
       parity with unit tests.
-- [ ] 3.4 Add tooltip provenance, reliability-index wording/bar, EAT legend subsection and live
+- [x] 3.4 Add tooltip provenance, reliability-index wording/bar, EAT legend subsection and live
       constrained-view counts, plus rendering and accessibility tests.
 
 ## 4. Provenance connectors

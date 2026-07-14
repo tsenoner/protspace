@@ -20,6 +20,7 @@ import {
   plotDataId,
   materializePlotDataPoint,
   gatherPlotData,
+  materializeEatOverlay,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -86,6 +87,8 @@ type VisibilityModelMemoKey = {
   baseOpacity: number;
   selectedOpacity: number;
   fadedOpacity: number;
+  eatOverlayEnabled: boolean;
+  eatConfidenceThreshold: number;
 };
 
 // Default configuration moved to config.ts
@@ -118,6 +121,9 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'filters-active' }) filtersActive = false;
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
   @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
+  @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
+  @property({ type: Number, attribute: 'eat-confidence-threshold' })
+  eatConfidenceThreshold = 0.5;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -189,6 +195,8 @@ export class ProtspaceScatterplot extends LitElement {
     baseOpacity: number;
     selectedOpacity: number;
     fadedOpacity: number;
+    eatOverlayEnabled: boolean;
+    eatConfidenceThreshold: number;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   // F-17: advanced on every quadtree rebuild and folded into the virtualization
@@ -270,6 +278,7 @@ export class ProtspaceScatterplot extends LitElement {
   // wholesale, so comparing the selected annotation's settings ref is sound
   // (a numeric rebin yields a new ref -> fast-path miss -> JSON path re-materializes).
   private _lastMaterializedSelectedAnnotation: string | null = null;
+  private _lastMaterializedEatOverlayEnabled = true;
   private _lastMaterializedSelectedSettings:
     | NumericAnnotationDisplaySettingsMap[string]
     | undefined = undefined;
@@ -344,6 +353,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._lastMaterializedSource === this.data &&
       this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
       this._lastMaterializedSelectedAnnotation === this.selectedAnnotation &&
+      this._lastMaterializedEatOverlayEnabled === this.eatOverlayEnabled &&
       this._lastMaterializedSelectedSettings === selectedNumericSettings
     ) {
       return this._materializedDataCache;
@@ -364,6 +374,7 @@ export class ProtspaceScatterplot extends LitElement {
       selectedNumericType,
       numericAnnotationSettings: selectedNumericSettings ?? null,
       annotationKeys: Object.keys(sourceData.annotations),
+      eatOverlayEnabled: this.eatOverlayEnabled,
     });
 
     if (
@@ -375,15 +386,20 @@ export class ProtspaceScatterplot extends LitElement {
       return this._materializedDataCache;
     }
 
-    this._materializedDataCache = materializeVisualizationData(
-      sourceData,
-      this.numericAnnotationSettings,
-      DEFAULT_NUMERIC_BIN_COUNT,
+    this._materializedDataCache = materializeEatOverlay(
+      materializeVisualizationData(
+        sourceData,
+        this.numericAnnotationSettings,
+        DEFAULT_NUMERIC_BIN_COUNT,
+        this.selectedAnnotation,
+      ),
       this.selectedAnnotation,
+      this.eatOverlayEnabled,
     );
     this._lastMaterializedSource = this.data;
     this._lastMaterializedNumericValues = selectedNumericValuesCacheRef;
     this._lastMaterializedSelectedAnnotation = this.selectedAnnotation ?? null;
+    this._lastMaterializedEatOverlayEnabled = this.eatOverlayEnabled;
     this._lastMaterializedSelectedSettings = selectedNumericSettings;
     this._materializedDataCacheKey = cacheKey;
     return this._materializedDataCache;
@@ -585,6 +601,19 @@ export class ProtspaceScatterplot extends LitElement {
     this._refreshStyleGettersCache(changedProperties);
     this._reconcileSelectionOverlays(changedProperties);
     this._reconcileTooltipMeasurement(changedProperties);
+    if (
+      this.data &&
+      (changedProperties.has('eatOverlayEnabled') ||
+        changedProperties.has('eatConfidenceThreshold'))
+    ) {
+      this.dispatchEvent(
+        new CustomEvent('data-change', {
+          detail: { data: this.getCurrentData() ?? this._getMaterializedData() ?? this.data },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
   }
 
   /**
@@ -709,7 +738,9 @@ export class ProtspaceScatterplot extends LitElement {
     if (
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
-      changedProperties.has('otherAnnotationValues')
+      changedProperties.has('otherAnnotationValues') ||
+      changedProperties.has('eatOverlayEnabled') ||
+      changedProperties.has('eatConfidenceThreshold')
     ) {
       this._scheduleQuadtreeRebuild();
       this._webglRenderer?.invalidateStyleCache();
@@ -722,7 +753,8 @@ export class ProtspaceScatterplot extends LitElement {
       // order and enabling the fast color-only update path.
       if (
         changedProperties.has('selectedAnnotation') ||
-        changedProperties.has('otherAnnotationValues')
+        changedProperties.has('otherAnnotationValues') ||
+        changedProperties.has('eatOverlayEnabled')
       ) {
         this._webglRenderer?.invalidatePositionCache();
       }
@@ -748,6 +780,8 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
+      changedProperties.has('eatOverlayEnabled') ||
+      changedProperties.has('eatConfidenceThreshold') ||
       changedProperties.has('config')
     ) {
       this._styleGettersCache = this._buildStyleGetters();
@@ -1414,7 +1448,9 @@ export class ProtspaceScatterplot extends LitElement {
       key.highlightedProteinIds === this.highlightedProteinIds &&
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
-      key.fadedOpacity === fadedOpacity
+      key.fadedOpacity === fadedOpacity &&
+      key.eatOverlayEnabled === this.eatOverlayEnabled &&
+      key.eatConfidenceThreshold === this.eatConfidenceThreshold
     ) {
       return this._visibilityModelCache;
     }
@@ -1427,6 +1463,8 @@ export class ProtspaceScatterplot extends LitElement {
         selectedProteinIds: this.selectedProteinIds,
         highlightedProteinIds: this.highlightedProteinIds,
         opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
+        eatOverlayEnabled: this.eatOverlayEnabled,
+        eatConfidenceThreshold: this.eatConfidenceThreshold,
       },
       this._visibilityModelCache ?? undefined,
     );
@@ -1441,6 +1479,8 @@ export class ProtspaceScatterplot extends LitElement {
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
+      eatOverlayEnabled: this.eatOverlayEnabled,
+      eatConfidenceThreshold: this.eatConfidenceThreshold,
     };
     return model;
   }
@@ -1481,7 +1521,9 @@ export class ProtspaceScatterplot extends LitElement {
       key.highlightedProteinIds === this.highlightedProteinIds &&
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
-      key.fadedOpacity === fadedOpacity
+      key.fadedOpacity === fadedOpacity &&
+      key.eatOverlayEnabled === this.eatOverlayEnabled &&
+      key.eatConfidenceThreshold === this.eatConfidenceThreshold
     ) {
       return this._visiblePointCountCache;
     }
@@ -1510,6 +1552,8 @@ export class ProtspaceScatterplot extends LitElement {
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
+      eatOverlayEnabled: this.eatOverlayEnabled,
+      eatConfidenceThreshold: this.eatConfidenceThreshold,
     };
     return count;
   }
@@ -1576,6 +1620,7 @@ export class ProtspaceScatterplot extends LitElement {
       point.originalIndex,
       this.selectedAnnotation,
       this.tooltipAnnotations,
+      this.eatOverlayEnabled,
     );
     this._tooltipData = { x, y, view };
 
@@ -1600,6 +1645,7 @@ export class ProtspaceScatterplot extends LitElement {
           point.originalIndex,
           this.selectedAnnotation,
           this.tooltipAnnotations,
+          this.eatOverlayEnabled,
         )
       : null;
     this.dispatchEvent(
@@ -1868,7 +1914,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _updateStyleSignature() {
     const cfg = this._mergedConfig;
-    const parts = [`ps:${cfg.pointSize}`, `annot:${this.selectedAnnotation}`];
+    const parts = [
+      `ps:${cfg.pointSize}`,
+      `annot:${this.selectedAnnotation}`,
+      `eat:${this.eatOverlayEnabled ? 1 : 0}`,
+      `eat-threshold:${this.eatConfidenceThreshold}`,
+    ];
     this._styleSig = parts.join('|');
   }
 

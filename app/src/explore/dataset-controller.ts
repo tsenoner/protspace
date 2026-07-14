@@ -143,10 +143,18 @@ export function createDatasetController({
       const shouldApplyEmbeddedFileSettings = settings && loadMeta.kind !== 'opfs';
       if (shouldApplyEmbeddedFileSettings) {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
+        const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
+        const eatConfidenceThreshold = settings.eatConfidenceThreshold ?? 0.5;
+        controlBar.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
+        plotElement.eatOverlayEnabled = eatOverlayEnabled;
+        plotElement.eatConfidenceThreshold = eatConfidenceThreshold;
       }
 
       controlBar.hasFileSettings =
-        settings != null && Object.keys(settings.legendSettings).length > 0;
+        settings != null &&
+        (Object.keys(settings.legendSettings).length > 0 ||
+          settings.eatOverlayEnabled !== undefined ||
+          settings.eatConfidenceThreshold !== undefined);
 
       if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);

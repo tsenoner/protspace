@@ -60,6 +60,54 @@ function baseInputs(overrides: Partial<VisibilityInputs> = {}): VisibilityInputs
 }
 
 describe('computeVisibilityModel', () => {
+  describe('EAT reliability opacity', () => {
+    it('maps confidence endpoints and fades values below the threshold without hiding them', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      data.annotation_predicted = {
+        annot: [
+          { value: 'A', confidence: 0, source: 'ref' },
+          { value: 'B', confidence: 1, source: 'ref' },
+        ],
+      };
+      const full = computeVisibilityModel(
+        baseInputs({ data, eatOverlayEnabled: true, eatConfidenceThreshold: 0 }),
+      );
+      expect(full.opacityOf(point('p0', 0))).toBe(0.25);
+      expect(full.opacityOf(point('p1', 1))).toBe(0.9);
+
+      const thresholded = computeVisibilityModel(
+        baseInputs({ data, eatOverlayEnabled: true, eatConfidenceThreshold: 0.5 }),
+      );
+      expect(thresholded.opacityOf(point('p0', 0))).toBe(0.25 * 0.35);
+      expect(thresholded.isInteractive(point('p0', 0))).toBe(true);
+    });
+
+    it('keeps hidden precedence and lets endpoint highlight win', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      data.annotation_predicted = {
+        annot: [null, { value: 'B', confidence: 0.1, source: 'p0' }],
+      };
+      const highlighted = computeVisibilityModel(
+        baseInputs({
+          data,
+          eatOverlayEnabled: true,
+          highlightedProteinIds: ['p1'],
+        }),
+      );
+      expect(highlighted.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+
+      const hidden = computeVisibilityModel(
+        baseInputs({
+          data,
+          eatOverlayEnabled: true,
+          highlightedProteinIds: ['p1'],
+          hiddenAnnotationValues: ['B'],
+        }),
+      );
+      expect(hidden.opacityOf(point('p1', 1))).toBe(0);
+    });
+  });
+
   // ── Rule 1 — hidden ⇒ opacity exactly 0 ───────────────────────────────────
   describe('rule 1: hidden points have opacity exactly 0', () => {
     it('Int32Array: hidden value yields exactly 0 (Object.is)', () => {

@@ -24,6 +24,7 @@ import './annotation-select';
 import './query-builder';
 import type { FilterQuery } from './query-types';
 import { createCondition } from './query-types';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, hasEatPredictions } from '@protspace/utils';
 
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
@@ -57,6 +58,10 @@ export class ProtspaceControlBar extends LitElement {
   currentDatasetName: string = '';
   @property({ type: Boolean, attribute: 'current-dataset-is-demo' })
   currentDatasetIsDemo: boolean = false;
+  @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
+  @property({ type: Number, attribute: 'eat-confidence-threshold' })
+  eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+  @state() private _hasEatData = false;
 
   @state() private _selectionDisabled: boolean = false;
 
@@ -280,6 +285,39 @@ export class ProtspaceControlBar extends LitElement {
       composed: true,
     });
     this.dispatchEvent(customEvent);
+  }
+
+  public applyEatSettings(enabled: boolean, threshold: number): void {
+    this.eatOverlayEnabled = enabled;
+    this.eatConfidenceThreshold = threshold;
+    if (this.autoSync && this._scatterplotElement) {
+      this._scatterplotElement.eatOverlayEnabled = enabled;
+      this._scatterplotElement.eatConfidenceThreshold = threshold;
+    }
+  }
+
+  private _emitEatOverlayChange(): void {
+    this.applyEatSettings(this.eatOverlayEnabled, this.eatConfidenceThreshold);
+    this.dispatchEvent(
+      new CustomEvent('eat-overlay-change', {
+        detail: {
+          enabled: this.eatOverlayEnabled,
+          confidenceThreshold: this.eatConfidenceThreshold,
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _handleEatOverlayToggle(event: Event): void {
+    this.eatOverlayEnabled = (event.currentTarget as HTMLInputElement).checked;
+    this._emitEatOverlayChange();
+  }
+
+  private _handleEatThresholdInput(event: Event): void {
+    this.eatConfidenceThreshold = Number((event.currentTarget as HTMLInputElement).value);
+    this._emitEatOverlayChange();
   }
 
   private handleAnnotationSelected(event: CustomEvent<{ annotation: string }>) {
@@ -512,6 +550,8 @@ export class ProtspaceControlBar extends LitElement {
     // filter channel is reset in parallel by applyPlotState.
     this.filterQuery = [];
     this.filterActive = false;
+    this.eatOverlayEnabled = true;
+    this.eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   }
 
   private openFileDialog() {
@@ -591,6 +631,38 @@ export class ProtspaceControlBar extends LitElement {
                 : ''}
             </div>
           </div>
+
+          <fieldset
+            class="eat-controls"
+            title=${this._hasEatData
+              ? 'Show transferred annotations and adjust the reliability threshold'
+              : 'No transferred annotations are available in this dataset'}
+          >
+            <legend class="sr-only">Embedding Annotation Transfer</legend>
+            <label class="eat-switch">
+              <input
+                type="checkbox"
+                .checked=${this.eatOverlayEnabled}
+                ?disabled=${!this._hasEatData}
+                @change=${this._handleEatOverlayToggle}
+              />
+              <span aria-hidden="true">⚡</span>
+              EAT
+            </label>
+            <label class="eat-threshold">
+              <span>Reliability ${Math.round(this.eatConfidenceThreshold * 100)}%</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                .value=${String(this.eatConfidenceThreshold)}
+                ?disabled=${!this._hasEatData || !this.eatOverlayEnabled}
+                aria-label="Minimum EAT reliability index"
+                @input=${this._handleEatThresholdInput}
+              />
+            </label>
+          </fieldset>
 
           <!-- Annotation selection -->
           <div class="control-group">
@@ -1351,6 +1423,7 @@ export class ProtspaceControlBar extends LitElement {
     this.annotations = Object.keys(data.annotations || {}).filter(
       (a) => !TOOLTIP_ONLY_ANNOTATIONS.has(a),
     );
+    this._hasEatData = hasEatPredictions(data);
 
     // Default selections if invalid
     if (!this.selectedProjection || !this.projections.includes(this.selectedProjection)) {
@@ -1395,6 +1468,13 @@ export class ProtspaceControlBar extends LitElement {
 
         if ('selectionMode' in scatterplot) {
           this.selectionMode = Boolean(scatterplot.selectionMode);
+        }
+
+        if (scatterplot.eatOverlayEnabled !== undefined) {
+          this.eatOverlayEnabled = scatterplot.eatOverlayEnabled;
+        }
+        if (scatterplot.eatConfidenceThreshold !== undefined) {
+          this.eatConfidenceThreshold = scatterplot.eatConfidenceThreshold;
         }
 
         if ('selectedProteinIds' in scatterplot) {

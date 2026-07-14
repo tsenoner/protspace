@@ -41,6 +41,12 @@ import type {
   VisualizationData,
 } from '@protspace/utils';
 import { toInternalValue } from '@protspace/utils';
+import {
+  EAT_BELOW_THRESHOLD_FACTOR,
+  EAT_MAX_OPACITY,
+  EAT_MIN_OPACITY,
+  getPredictedCell,
+} from '@protspace/utils';
 
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
@@ -51,6 +57,8 @@ export interface VisibilityInputs {
   selectedProteinIds: string[];
   highlightedProteinIds: string[];
   opacities: { base: number; selected: number; faded: number };
+  eatOverlayEnabled?: boolean;
+  eatConfidenceThreshold?: number;
 }
 
 export interface VisibilityModel {
@@ -186,6 +194,8 @@ export function computeVisibilityModel(
     selectedProteinIds,
     highlightedProteinIds,
     opacities,
+    eatOverlayEnabled = false,
+    eatConfidenceThreshold = 0.5,
   } = inputs;
 
   const selectedIdsSet = new Set(selectedProteinIds);
@@ -246,6 +256,18 @@ export function computeVisibilityModel(
     const isHighlighted = highlightedIdsSet.has(point.id);
     if (isSelected || isHighlighted) return opacities.selected;
     if (hasSelection && !isSelected) return opacities.faded;
+    if (eatOverlayEnabled) {
+      const predicted = data
+        ? getPredictedCell(data, point.originalIndex, selectedAnnotation)
+        : null;
+      if (predicted) {
+        const confidenceOpacity =
+          EAT_MIN_OPACITY + (EAT_MAX_OPACITY - EAT_MIN_OPACITY) * predicted.confidence;
+        return predicted.confidence < eatConfidenceThreshold
+          ? confidenceOpacity * EAT_BELOW_THRESHOLD_FACTOR
+          : confidenceOpacity;
+      }
+    }
     return opacities.base;
   };
 

@@ -91,6 +91,8 @@ function applyPlotState(
   // stale protein ids onto the new dataset.
   plotElement.filteredProteinIds = [];
   plotElement.filtersActive = false;
+  plotElement.eatOverlayEnabled = true;
+  plotElement.eatConfidenceThreshold = 0.5;
   plotElement.requestUpdate('data', previousData);
 }
 
@@ -100,6 +102,7 @@ function applyControlBarState(controlBar: ProtspaceControlBar, initialView: Reso
   controlBar.tooltipAnnotations = [...initialView.tooltip];
   controlBar.selectionMode = false;
   controlBar.selectedProteinsCount = 0;
+  controlBar.applyEatSettings(true, 0.5);
   controlBar.requestUpdate();
 }
 

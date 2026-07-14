@@ -50,7 +50,9 @@ export function getPredictedCell(
   return data.annotation_predicted?.[annotationKey]?.[proteinIdx] ?? null;
 }
 
-export function hasEatPredictions(data: VisualizationData | null | undefined): boolean {
+export function hasEatPredictions(
+  data: Pick<VisualizationData, 'annotation_predicted'> | null | undefined,
+): boolean {
   if (!data?.annotation_predicted) return false;
   return Object.values(data.annotation_predicted).some((cells) => cells.some(Boolean));
 }

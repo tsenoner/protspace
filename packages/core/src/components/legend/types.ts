@@ -1,5 +1,5 @@
 import type { LegendErrorEventDetail, LegendErrorSource } from './legend.events';
-import type { AnnotationData } from '@protspace/utils';
+import type { AnnotationData, AnnotationPredictedData } from '@protspace/utils';
 
 /**
  * A legend item representing a category.
@@ -42,6 +42,7 @@ export interface ScatterplotData {
   >;
   annotation_data: Record<string, AnnotationData>;
   numeric_annotation_data?: Record<string, (number | null)[]>;
+  annotation_predicted?: AnnotationPredictedData;
   projections?: Array<{ name: string }>;
 }
 
@@ -85,6 +86,7 @@ export interface LegendDataInput {
   annotations?: ScatterplotData['annotations'];
   protein_ids?: string[];
   numeric_annotation_data?: ScatterplotData['numeric_annotation_data'];
+  annotation_predicted?: ScatterplotData['annotation_predicted'];
 }
 
 export type { LegendErrorEventDetail, LegendErrorSource };

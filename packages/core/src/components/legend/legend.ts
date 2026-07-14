@@ -18,6 +18,8 @@ import {
   getAnnotationMeta,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
+  getProteinAnnotationIndices,
+  isNAValue,
 } from '@protspace/utils';
 import type { LegendSettingsMap } from '@protspace/utils';
 
@@ -150,6 +152,7 @@ export class ProtspaceLegend extends LitElement {
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
+  @state() private _eatCounts: { observed: number; predicted: number } | null = null;
   @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
   private _keyboardReorderSnapshot: {
@@ -1012,6 +1015,7 @@ export class ProtspaceLegend extends LitElement {
       annotations: data.annotations,
       protein_ids: data.protein_ids,
       numeric_annotation_data: data.numeric_annotation_data,
+      annotation_predicted: data.annotation_predicted,
     };
     this.selectedAnnotation = selectedAnnotation;
     this.annotationData = {
@@ -1024,6 +1028,7 @@ export class ProtspaceLegend extends LitElement {
       numericMetadata: data.annotations[selectedAnnotation].numericMetadata,
     };
     this._updateAnnotationValues(data, selectedAnnotation);
+    this._eatCounts = this._computeEatCounts(data, selectedAnnotation);
     this.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -1069,6 +1074,36 @@ export class ProtspaceLegend extends LitElement {
     const colData = data.annotation_data[selectedAnnotation];
     const values = data.annotations[selectedAnnotation].values;
     this.annotationValues = buildAnnotationValueList(colData, values, data.protein_ids.length);
+  }
+
+  private _computeEatCounts(
+    data: ScatterplotData,
+    selectedAnnotation: string,
+  ): { observed: number; predicted: number } | null {
+    const predictedCells = data.annotation_predicted?.[selectedAnnotation];
+    const overlayEnabled = this._scatterplotController.scatterplot?.eatOverlayEnabled ?? false;
+    if (!overlayEnabled || !predictedCells) return null;
+    const annotation = data.annotations[selectedAnnotation];
+    const rows = data.annotation_data[selectedAnnotation];
+    if (!annotation || !rows) return null;
+    let observed = 0;
+    let predicted = 0;
+    for (let index = 0; index < data.protein_ids.length; index++) {
+      if (predictedCells[index]) {
+        predicted += 1;
+        continue;
+      }
+      const indices = getProteinAnnotationIndices(rows, index);
+      if (
+        indices.some((valueIndex) => {
+          const value = annotation.values[valueIndex];
+          return value != null && !isNAValue(value);
+        })
+      ) {
+        observed += 1;
+      }
+    }
+    return { observed, predicted };
   }
 
   private _ensureSortModeDefaults(): void {
@@ -2077,6 +2112,23 @@ export class ProtspaceLegend extends LitElement {
                 : undefined,
           },
         )}
+        ${this._eatCounts
+          ? html`
+              <section class="eat-legend" aria-label="Transferred annotation counts">
+                <div class="eat-legend-title">Predicted (transferred)</div>
+                <div class="eat-legend-row">
+                  <span class="eat-swatch observed" aria-hidden="true"></span>
+                  <span>Observed</span>
+                  <strong>${this._eatCounts.observed}</strong>
+                </div>
+                <div class="eat-legend-row">
+                  <span class="eat-swatch predicted" aria-hidden="true"></span>
+                  <span>Predicted by EAT</span>
+                  <strong>${this._eatCounts.predicted}</strong>
+                </div>
+              </section>
+            `
+          : ''}
         ${LegendRenderer.renderLegendContent(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}

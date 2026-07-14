@@ -85,6 +85,22 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
             >
           </div>`
         : ''}
+      ${block.predicted
+        ? html`
+            <div class="eat-provenance">
+              <div class="eat-provenance-heading">
+                <span>Predicted (transferred)</span>
+                <strong>${Math.round(block.predicted.confidence * 100)}%</strong>
+              </div>
+              <div class="eat-confidence-track" aria-label="EAT reliability index">
+                <span style=${`width: ${block.predicted.confidence * 100}%`}></span>
+              </div>
+              <div class="eat-provenance-source">
+                Reliability index · source ${block.predicted.source}
+              </div>
+            </div>
+          `
+        : ''}
       ${block.displayValues.map((value, idx) => {
         const scores = block.scores[idx];
         const evidence = block.evidence[idx];
