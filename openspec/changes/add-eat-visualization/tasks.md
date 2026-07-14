@@ -118,6 +118,11 @@
       selected-opacity pairs, with an authoritative lifecycle regression.
 - [x] 9.4 Apply normalized embedded EAT settings after OPFS dataset resets with documented embedded-
       settings precedence and a controller restore regression.
-- [ ] 9.5 Run targeted and full verification, preserve the exact linked fixture and emoji-free diff,
+- [x] 9.5 Run targeted and full verification, preserve the exact linked fixture and emoji-free diff,
       push coherent commits, update PR evidence, reply to and resolve all four threads, and re-fetch
-      thread-aware state.
+      thread-aware state. Implementation commit `903a6dd` passed 1,765 unit tests with one
+      intentional skip, the exact issue-linked phosphatase Playwright flow, strict OpenSpec
+      validation, and staged precommit. The linked fixture retained SHA-256 `06bacd7a...9ba33`, the
+      added-line emoji audit returned zero matches, all four threads were answered and resolved,
+      the subsequent thread-aware fetch found zero unresolved or new comments, and exact-head code
+      quality/documentation CI passed in run 29334857815.
