@@ -17,6 +17,10 @@ import { BUNDLE_DELIMITER_BYTES } from './constants';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
 import { getFirstAnnotationIndex } from '../visualization/annotation-data-access.js';
+import {
+  getEatCompanionColumn,
+  isEatConfidenceAnnotationKey,
+} from '../visualization/eat-overlay.js';
 
 /** Column data format for parquetWriteBuffer */
 interface ColumnData {
@@ -40,6 +44,9 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
 
   // Add annotation columns
   for (const [annotationName, annotation] of Object.entries(data.annotations)) {
+    // Runtime-only numeric view over the prediction side-channel.
+    if (isEatConfidenceAnnotationKey(annotationName)) continue;
+
     if (isNumericAnnotation(annotation)) {
       const values = data.numeric_annotation_data?.[annotationName] ?? [];
       columnData.push({
@@ -59,7 +66,11 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       // Take first annotation value (primary); getFirstAnnotationIndex handles
       // both Int32Array and number[][] storage shapes.
       const idx = getFirstAnnotationIndex(annotationIndices, i);
-      values[i] = idx >= 0 ? (annotation.values[idx] ?? null) : null;
+      values[i] = data.annotation_predicted?.[annotationName]?.[i]
+        ? null
+        : idx >= 0
+          ? (annotation.values[idx] ?? null)
+          : null;
     }
 
     columnData.push({
@@ -67,6 +78,27 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       data: values,
       type: 'STRING',
     });
+
+    const predictedCells = data.annotation_predicted?.[annotationName];
+    if (predictedCells?.some(Boolean)) {
+      columnData.push(
+        {
+          name: getEatCompanionColumn(annotationName, 'value'),
+          data: predictedCells.map((cell) => cell?.value ?? null),
+          type: 'STRING',
+        },
+        {
+          name: getEatCompanionColumn(annotationName, 'confidence'),
+          data: predictedCells.map((cell) => cell?.confidence ?? null),
+          type: 'FLOAT',
+        },
+        {
+          name: getEatCompanionColumn(annotationName, 'source'),
+          data: predictedCells.map((cell) => cell?.source ?? null),
+          type: 'STRING',
+        },
+      );
+    }
   }
 
   return parquetWriteBuffer({ columnData });
@@ -158,7 +190,10 @@ function hasBundleSettings(settings: BundleSettings | undefined): settings is Bu
 
   return (
     Object.keys(settings.legendSettings).length > 0 ||
-    Object.keys(settings.exportOptions).length > 0
+    Object.keys(settings.exportOptions).length > 0 ||
+    settings.publishState !== undefined ||
+    settings.eatOverlayEnabled !== undefined ||
+    settings.eatConfidenceThreshold !== undefined
   );
 }
 

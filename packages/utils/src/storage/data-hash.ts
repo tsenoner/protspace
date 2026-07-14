@@ -4,6 +4,7 @@
  */
 
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
+import type { PredictedCell } from '../types.js';
 
 interface DatasetHashInput {
   protein_ids: string[];
@@ -27,6 +28,7 @@ interface DatasetHashInput {
     }
   >;
   numeric_annotation_data?: Record<string, (number | null)[]>;
+  annotation_predicted?: Record<string, readonly (PredictedCell | null)[]>;
 }
 
 interface NumericMetadataFingerprintInput {
@@ -171,7 +173,31 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
     })
     .join('\x01');
 
-  return [sortedIds.join('\x00'), annotationFingerprint].join('\x02');
+  const predictionFingerprint = Object.entries(data.annotation_predicted ?? {})
+    .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
+    .map(([annotationName, cells]) => {
+      const ordered = cells
+        .map((cell, index) => ({ cell, index, proteinId: proteinIds[index] ?? '' }))
+        .sort(
+          (left, right) =>
+            left.proteinId.localeCompare(right.proteinId) || left.index - right.index,
+        );
+      let hash = 0xcbf29ce484222325n;
+      let count = 0;
+      for (const { cell, proteinId } of ordered) {
+        if (!cell) continue;
+        count += 1;
+        hash = appendFNV1a64(
+          hash,
+          [proteinId, cell.value, String(cell.confidence), cell.source].join('\x1f'),
+        );
+        hash = appendFNV1a64(hash, '\x1e');
+      }
+      return `${annotationName}::${count}::${hash.toString(16).padStart(16, '0')}`;
+    })
+    .join('\x01');
+
+  return [sortedIds.join('\x00'), annotationFingerprint, predictionFingerprint].join('\x02');
 }
 
 export function generateDatasetHash(input: string[] | DatasetHashInput): string {

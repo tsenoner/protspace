@@ -15,6 +15,8 @@
  * Keep this registry in sync with the backend reference when the annotation set changes.
  */
 
+import { getEatBaseAnnotationKey } from './eat-overlay.js';
+
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
 
 export interface AnnotationMeta {
@@ -374,6 +376,17 @@ export function prettifyAnnotationName(column: string): string {
 export function getAnnotationMeta(column: string): AnnotationMeta {
   const known = ANNOTATION_METADATA[column];
   if (known) return known;
+  const eatBase = getEatBaseAnnotationKey(column);
+  if (eatBase) {
+    const base = getAnnotationMeta(eatBase);
+    return {
+      label: `${base.label} — EAT confidence`,
+      source: base.source,
+      isPredicted: false,
+      description:
+        'Embedding Annotation Transfer reliability index from 0 to 1. This is a ranking signal, not a calibrated probability.',
+    };
+  }
   return {
     label: prettifyAnnotationName(column),
     source: 'Other',
@@ -394,10 +407,10 @@ export function isPredictedAnnotation(column: string): boolean {
 
 /** Friendly display label for an annotation (registry label, else prettified column name). */
 export function annotationLabel(column: string): string {
-  return ANNOTATION_METADATA[column]?.label ?? prettifyAnnotationName(column);
+  return getAnnotationMeta(column).label;
 }
 
 /** Source/group for an annotation (registry source, else `Other`). */
 export function annotationSource(column: string): AnnotationSource {
-  return ANNOTATION_METADATA[column]?.source ?? 'Other';
+  return getAnnotationMeta(column).source;
 }

@@ -42,6 +42,18 @@ export interface Annotation {
  */
 export type AnnotationData = Int32Array | readonly (readonly number[])[];
 
+/** A value transferred from a reference protein by Embedding Annotation Transfer (EAT). */
+export interface PredictedCell {
+  value: string;
+  /** Bounded EAT reliability index. This is not a calibrated probability. */
+  confidence: number;
+  /** Protein identifier from which the value was transferred. */
+  source: string;
+}
+
+/** Per-base-annotation EAT cells, aligned to `protein_ids`. */
+export type AnnotationPredictedData = Record<string, readonly (PredictedCell | null)[]>;
+
 export interface Projection {
   name: string;
   metadata?: Record<string, unknown> & { dimension?: 2 | 3 };
@@ -60,6 +72,8 @@ export interface VisualizationData {
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
   numeric_annotation_data?: Record<string, (number | null)[]>;
+  /** Display-independent EAT provenance, keyed by the curated base annotation. */
+  annotation_predicted?: AnnotationPredictedData;
   annotation_scores?: Record<string, (number[] | null)[][]>;
   annotation_evidence?: Record<string, (string | null)[][]>;
 }
@@ -185,6 +199,10 @@ export interface BundleSettings {
   exportOptions: ExportOptionsMap;
   /** Serialised publish/figure editor state. Free-form JSON — validated on load. */
   publishState?: Record<string, unknown>;
+  /** Whether transferred values are coalesced into their curated base annotation. */
+  eatOverlayEnabled?: boolean;
+  /** Minimum EAT reliability index before transferred markers receive their full alpha. */
+  eatConfidenceThreshold?: number;
 }
 
 /**

@@ -1,18 +1,18 @@
 ## 1. EAT data model and normalization
 
-- [ ] 1.1 Add shared `PredictedCell`/EAT types, naming and metadata helpers, display
+- [x] 1.1 Add shared `PredictedCell`/EAT types, naming and metadata helpers, display
       materialization, provenance accessors, and focused unit tests.
-- [ ] 1.2 Normalize valid companion triples in small, optimized, and separated conversion paths;
+- [x] 1.2 Normalize valid companion triples in small, optimized, and separated conversion paths;
       exclude the reserved namespace; create union categories and synthetic confidence data; test
       missing, invalid, curated-precedence, prediction-only, and legacy cases.
-- [ ] 1.3 Thread prediction cells through slicing and dataset hashing, including alignment and
+- [x] 1.3 Thread prediction cells through slicing and dataset hashing, including alignment and
       prediction-sensitive fingerprint tests.
-- [ ] 1.4 Reconstruct curated bases and all three companions in the bundle writer, omit synthetic
+- [x] 1.4 Reconstruct curated bases and all three companions in the bundle writer, omit synthetic
       confidence keys, and add raw/materialized lossless round-trip tests.
 
 ## 2. Persisted controls and application state
 
-- [ ] 2.1 Extend bundle settings types, validation, normalization, EAT-only write gating, and tests
+- [x] 2.1 Extend bundle settings types, validation, normalization, EAT-only write gating, and tests
       for defaults, valid fields, and independently invalid optional fields.
 - [ ] 2.2 Add accessible EAT overlay and threshold controls, event/auto-sync contracts, conditional
       enablement, dataset reset behavior, responsive styling, and component tests.
@@ -45,7 +45,7 @@
 
 ## 5. Real-data and end-to-end verification
 
-- [ ] 5.1 Add the supplied phosphatase EAT bundle as a compact test fixture and verify real decoder
+- [x] 5.1 Add the supplied phosphatase EAT bundle as a compact test fixture and verify real decoder
       normalization, counts, confidence range, sources, reserved-column hiding, and round-trip.
 - [ ] 5.2 Add browser coverage for toggle/threshold keyboard behavior, filled-versus-hollow output,
       tooltip, legend counts, predicted/source connectors, fan-out status, dismissal, projection

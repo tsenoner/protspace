@@ -140,6 +140,40 @@ describe('generateDatasetHash', () => {
     expect(generateDatasetHash(baseDataset)).not.toBe(generateDatasetHash(changedNumericDataset));
   });
 
+  it('changes when EAT value, confidence, or source changes', () => {
+    const base = {
+      protein_ids: ['P1', 'P2'],
+      annotations: {},
+      annotation_predicted: {
+        ec: [null, { value: '1.1.1.1', confidence: 0.8, source: 'P1' }],
+      },
+    };
+    expect(generateDatasetHash(base)).not.toBe(
+      generateDatasetHash({
+        ...base,
+        annotation_predicted: {
+          ec: [null, { value: '1.1.1.1', confidence: 0.81, source: 'P1' }],
+        },
+      }),
+    );
+    expect(generateDatasetHash(base)).not.toBe(
+      generateDatasetHash({
+        ...base,
+        annotation_predicted: {
+          ec: [null, { value: '2.2.2.2', confidence: 0.8, source: 'P1' }],
+        },
+      }),
+    );
+    expect(generateDatasetHash(base)).not.toBe(
+      generateDatasetHash({
+        ...base,
+        annotation_predicted: {
+          ec: [null, { value: '1.1.1.1', confidence: 0.8, source: 'REF' }],
+        },
+      }),
+    );
+  });
+
   it('ignores materialized numeric bin labels when raw numeric data is unchanged', () => {
     const baseDataset = {
       protein_ids: ['P1', 'P2', 'P3'],

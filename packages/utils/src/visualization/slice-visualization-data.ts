@@ -50,6 +50,7 @@ export function sliceVisualizationDataByIndices(
       ]),
     ),
     numeric_annotation_data: sliceRecord(data.numeric_annotation_data),
+    annotation_predicted: sliceRecord(data.annotation_predicted),
     annotation_scores: sliceRecord(data.annotation_scores),
     annotation_evidence: sliceRecord(data.annotation_evidence),
   };

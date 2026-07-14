@@ -180,6 +180,19 @@ export function isNormalizedBundleSettings(obj: unknown): obj is BundleSettings 
     return false;
   }
 
+  if (settings.eatOverlayEnabled !== undefined && typeof settings.eatOverlayEnabled !== 'boolean') {
+    return false;
+  }
+  if (
+    settings.eatConfidenceThreshold !== undefined &&
+    (typeof settings.eatConfidenceThreshold !== 'number' ||
+      !Number.isFinite(settings.eatConfidenceThreshold) ||
+      settings.eatConfidenceThreshold < 0 ||
+      settings.eatConfidenceThreshold > 1)
+  ) {
+    return false;
+  }
+
   return (
     isValidLegendSettingsMap(settings.legendSettings) &&
     isValidExportOptionsMap(settings.exportOptions)
@@ -311,6 +324,8 @@ export function normalizeBundleSettings(
         options.sanitizePublishState && obj.publishState !== undefined
           ? (options.sanitizePublishState(obj.publishState) as Record<string, unknown>)
           : obj.publishState,
+      eatOverlayEnabled: obj.eatOverlayEnabled,
+      eatConfidenceThreshold: obj.eatConfidenceThreshold,
     };
   }
 
@@ -342,6 +357,15 @@ export function normalizeBundleSettings(
         legendSettings: sanitizedLegendSettings,
         exportOptions: sanitizedExportOptions,
         publishState,
+        eatOverlayEnabled:
+          typeof settings.eatOverlayEnabled === 'boolean' ? settings.eatOverlayEnabled : undefined,
+        eatConfidenceThreshold:
+          typeof settings.eatConfidenceThreshold === 'number' &&
+          Number.isFinite(settings.eatConfidenceThreshold) &&
+          settings.eatConfidenceThreshold >= 0 &&
+          settings.eatConfidenceThreshold <= 1
+            ? settings.eatConfidenceThreshold
+            : undefined,
       };
     }
   }

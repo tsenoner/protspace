@@ -1,6 +1,17 @@
-import type { Annotation, AnnotationData, VisualizationData } from '@protspace/utils';
+import type {
+  Annotation,
+  AnnotationData,
+  PredictedCell,
+  VisualizationData,
+  EAT_COMPANION_SUFFIXES,
+} from '@protspace/utils';
 import {
   COLOR_SCHEMES,
+  getEatConfidenceAnnotationKey,
+  getProteinAnnotationIndices,
+  isCuratedAnnotationMissing,
+  isNAValue,
+  parseEatCompanionColumn,
   sanitizeValue,
   normalizeMissingValue,
   NA_VALUE,
@@ -138,6 +149,162 @@ function createCategoricalAnnotation(
     values: uniqueValues,
     colors,
     shapes,
+  };
+}
+
+function readCategoricalStorageValue(
+  data: VisualizationData,
+  annotationKey: string,
+  proteinIdx: number,
+): string | null {
+  const annotation = data.annotations[annotationKey];
+  const rows = data.annotation_data[annotationKey];
+  if (!annotation || !rows || annotation.kind !== 'categorical') return null;
+  const values = getProteinAnnotationIndices(rows, proteinIdx)
+    .map((index) => annotation.values[index])
+    .filter((value): value is string => value != null && !isNAValue(value))
+    .map((value) => normalizeMissingValue(value))
+    .filter((value): value is string => value != null)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values.join(';') : null;
+}
+
+function remapCategoricalStorage(
+  source: AnnotationData,
+  oldValues: readonly (string | null)[],
+  valueToNewIndex: ReadonlyMap<string, number>,
+): AnnotationData {
+  const remap = (index: number): number => {
+    if (index < 0) return -1;
+    const value = oldValues[index];
+    return value == null ? -1 : (valueToNewIndex.get(value) ?? -1);
+  };
+  if (source instanceof Int32Array) {
+    const result = new Int32Array(source.length);
+    for (let i = 0; i < source.length; i++) result[i] = remap(source[i]);
+    return result;
+  }
+  return source.map((indices) => indices.map(remap).filter((index) => index >= 0));
+}
+
+/**
+ * Collapse backend EAT companion columns into the typed side-channel used by the renderer.
+ * This is intentionally the final conversion-boundary step so small, optimized, and separated
+ * decoder paths all share exactly one validity rule.
+ */
+function normalizeEatCompanionColumns(data: VisualizationData): VisualizationData {
+  const groups = new Map<string, Partial<Record<keyof typeof EAT_COMPANION_SUFFIXES, string>>>();
+  const reservedColumns = new Set<string>();
+  for (const column of Object.keys(data.annotations)) {
+    const parsed = parseEatCompanionColumn(column);
+    if (!parsed) continue;
+    reservedColumns.add(column);
+    const group = groups.get(parsed.base) ?? {};
+    group[parsed.kind] = column;
+    groups.set(parsed.base, group);
+  }
+  if (groups.size === 0) return data;
+
+  const annotations = { ...data.annotations };
+  const annotation_data = { ...data.annotation_data };
+  const numeric_annotation_data = { ...data.numeric_annotation_data };
+  const annotation_scores = { ...data.annotation_scores };
+  const annotation_evidence = { ...data.annotation_evidence };
+  const annotation_predicted = { ...data.annotation_predicted };
+
+  for (const column of reservedColumns) {
+    delete annotations[column];
+    delete annotation_data[column];
+    delete numeric_annotation_data[column];
+    delete annotation_scores[column];
+    delete annotation_evidence[column];
+  }
+
+  for (const [base, group] of groups) {
+    if (!group.value || !group.confidence || !group.source) {
+      console.warn(`Ignored incomplete EAT companion schema for annotation "${base}".`);
+      continue;
+    }
+    const baseAnnotation = annotations[base];
+    const baseRows = annotation_data[base];
+    const confidences = data.numeric_annotation_data?.[group.confidence];
+    if (!baseAnnotation || baseAnnotation.kind !== 'categorical' || !baseRows || !confidences) {
+      console.warn(`Ignored invalid EAT companion schema for annotation "${base}".`);
+      continue;
+    }
+
+    const cells = new Array<PredictedCell | null>(data.protein_ids.length).fill(null);
+    const predictionOnlyValues: string[] = [];
+    const knownValues = new Set(
+      baseAnnotation.values.filter((value): value is string => value != null && !isNAValue(value)),
+    );
+    let invalidCount = 0;
+    for (let i = 0; i < data.protein_ids.length; i++) {
+      if (!isCuratedAnnotationMissing(data, base, i)) continue;
+      const value = readCategoricalStorageValue(data, group.value, i);
+      const source = readCategoricalStorageValue(data, group.source, i);
+      const confidence = confidences[i];
+      if (
+        value == null ||
+        source == null ||
+        typeof confidence !== 'number' ||
+        !Number.isFinite(confidence) ||
+        confidence < 0 ||
+        confidence > 1
+      ) {
+        if (value != null || source != null || confidence != null) invalidCount += 1;
+        continue;
+      }
+      cells[i] = { value, confidence, source };
+      if (!knownValues.has(value)) {
+        knownValues.add(value);
+        predictionOnlyValues.push(value);
+      }
+    }
+    if (invalidCount > 0) {
+      console.warn(`Ignored ${invalidCount} invalid EAT row(s) for annotation "${base}".`);
+    }
+    if (!cells.some(Boolean)) continue;
+
+    const oldValues = baseAnnotation.values;
+    const observedValues = oldValues.filter(
+      (value): value is string => value != null && !isNAValue(value),
+    );
+    const hadNA = oldValues.some((value) => value != null && isNAValue(value));
+    const values = [...observedValues, ...predictionOnlyValues, ...(hadNA ? [NA_VALUE] : [])];
+    const valueToNewIndex = new Map(values.map((value, index) => [value, index]));
+    const previousStyle = new Map(
+      oldValues.map((value, index) => [
+        value,
+        { color: baseAnnotation.colors[index], shape: baseAnnotation.shapes[index] },
+      ]),
+    );
+    const colors = values.map(
+      (value, index) =>
+        previousStyle.get(value)?.color ??
+        COLOR_SCHEMES.kellys[index % COLOR_SCHEMES.kellys.length],
+    );
+    const shapes = values.map((value) => previousStyle.get(value)?.shape ?? 'circle');
+
+    annotations[base] = { ...baseAnnotation, values, colors, shapes };
+    annotation_data[base] = remapCategoricalStorage(baseRows, oldValues, valueToNewIndex);
+    annotation_predicted[base] = cells;
+
+    const confidenceKey = getEatConfidenceAnnotationKey(base);
+    annotations[confidenceKey] = createNumericAnnotation('float');
+    numeric_annotation_data[confidenceKey] = cells.map((cell) => cell?.confidence ?? null);
+  }
+
+  return {
+    ...data,
+    annotations,
+    annotation_data,
+    numeric_annotation_data,
+    annotation_scores,
+    annotation_evidence,
+    annotation_predicted:
+      Object.keys(annotation_predicted).length > 0 ? annotation_predicted : undefined,
   };
 }
 
@@ -387,9 +554,9 @@ export function convertParquetToVisualizationData(
   const hasXY = columnNames.includes('x') && columnNames.includes('y');
 
   if (hasProjectionName && hasXY) {
-    return convertBundleFormatData(rows, columnNames, meta);
+    return normalizeEatCompanionColumns(convertBundleFormatData(rows, columnNames, meta));
   }
-  return convertLegacyFormatData(rows, columnNames);
+  return normalizeEatCompanionColumns(convertLegacyFormatData(rows, columnNames));
 }
 
 export function convertParquetToVisualizationDataOptimized(
@@ -403,7 +570,9 @@ export function convertParquetToVisualizationDataOptimized(
     if (dataSize < 10000) {
       return Promise.resolve(convertParquetToVisualizationData(input, projectionsMetadata));
     }
-    return convertLargeDatasetOptimizedRaw(input, projectionsMetadata);
+    return convertLargeDatasetOptimizedRaw(input, projectionsMetadata).then(
+      normalizeEatCompanionColumns,
+    );
   }
 
   // New path: separated extraction shape from extractRowsFromParquetBundle
@@ -411,7 +580,7 @@ export function convertParquetToVisualizationDataOptimized(
   if (numProjectionRows < 10000) {
     return Promise.resolve(convertParquetToVisualizationData(input));
   }
-  return convertLargeDatasetOptimized(input);
+  return convertLargeDatasetOptimized(input).then(normalizeEatCompanionColumns);
 }
 
 async function convertLargeDatasetOptimizedRaw(

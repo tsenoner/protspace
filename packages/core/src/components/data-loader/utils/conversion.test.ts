@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnotationValue, splitCategoricalAnnotationValues } from './conversion';
+import { createParquetBundle, materializeEatOverlay } from '@protspace/utils';
+import {
+  convertParquetToVisualizationData,
+  convertParquetToVisualizationDataOptimized,
+  parseAnnotationValue,
+  splitCategoricalAnnotationValues,
+} from './conversion';
+import { extractRowsFromParquetBundle } from './bundle';
 
 describe('parseAnnotationValue', () => {
   it('parses label without pipe as full string with empty scores', () => {
@@ -221,5 +228,178 @@ describe('splitCategoricalAnnotationValues', () => {
   it('returns an empty array for missing cells', () => {
     expect(splitCategoricalAnnotationValues(null)).toEqual([]);
     expect(splitCategoricalAnnotationValues('')).toEqual([]);
+  });
+});
+
+describe('EAT companion normalization', () => {
+  it('normalizes valid transfers, preserves curated precedence, and hides storage columns', () => {
+    const data = convertParquetToVisualizationData([
+      {
+        identifier: 'P1',
+        projection_name: 'umap',
+        x: 0,
+        y: 0,
+        ec: '1.1.1.1',
+        ec__pred_value: '9.9.9.9',
+        ec__pred_confidence: 0.99,
+        ec__pred_source: 'REF0',
+      },
+      {
+        identifier: 'P2',
+        projection_name: 'umap',
+        x: 1,
+        y: 1,
+        ec: null,
+        ec__pred_value: '1.1.1.1',
+        ec__pred_confidence: 0.8,
+        ec__pred_source: 'P1',
+      },
+      {
+        identifier: 'P3',
+        projection_name: 'umap',
+        x: 2,
+        y: 2,
+        ec: null,
+        ec__pred_value: '2.2.2.2',
+        ec__pred_confidence: 0.35,
+        ec__pred_source: 'P1',
+      },
+      {
+        identifier: 'P4',
+        projection_name: 'umap',
+        x: 3,
+        y: 3,
+        ec: null,
+        ec__pred_value: '3.3.3.3',
+        ec__pred_confidence: 1.1,
+        ec__pred_source: 'P1',
+      },
+    ]);
+
+    expect(Object.keys(data.annotations)).not.toContain('ec__pred_value');
+    expect(Object.keys(data.annotations)).not.toContain('ec__pred_confidence');
+    expect(Object.keys(data.annotations)).not.toContain('ec__pred_source');
+    expect(data.annotation_predicted?.ec).toEqual([
+      null,
+      { value: '1.1.1.1', confidence: 0.8, source: 'P1' },
+      { value: '2.2.2.2', confidence: 0.35, source: 'P1' },
+      null,
+    ]);
+    expect(data.annotations.ec.values).toEqual(['1.1.1.1', '2.2.2.2', '__NA__']);
+    expect(data.numeric_annotation_data?.ec__eat_confidence).toEqual([null, 0.8, 0.35, null]);
+  });
+
+  it('removes incomplete reserved companions without creating ambiguous predictions', () => {
+    const data = convertParquetToVisualizationData([
+      {
+        identifier: 'P1',
+        projection_name: 'umap',
+        x: 0,
+        y: 0,
+        ec: null,
+        ec__pred_value: '1.1.1.1',
+      },
+    ]);
+
+    expect(data.annotations).toHaveProperty('ec');
+    expect(data.annotations).not.toHaveProperty('ec__pred_value');
+    expect(data.annotation_predicted).toBeUndefined();
+  });
+
+  it('round-trips curated missing cells and companions from a materialized overlay', async () => {
+    const original = convertParquetToVisualizationData([
+      {
+        identifier: 'P1',
+        projection_name: 'umap',
+        x: 0,
+        y: 0,
+        ec: '1.1.1.1',
+        ec__pred_value: null,
+        ec__pred_confidence: null,
+        ec__pred_source: null,
+      },
+      {
+        identifier: 'P2',
+        projection_name: 'umap',
+        x: 1,
+        y: 1,
+        ec: null,
+        ec__pred_value: '1.1.1.1',
+        ec__pred_confidence: 0.8,
+        ec__pred_source: 'P1',
+      },
+    ]);
+    const displayed = materializeEatOverlay(original, 'ec', true);
+    const reloaded = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(createParquetBundle(displayed)),
+    );
+
+    expect(reloaded.annotation_predicted?.ec[1]).toMatchObject({
+      value: '1.1.1.1',
+      source: 'P1',
+    });
+    expect(reloaded.annotation_predicted?.ec[1]?.confidence).toBeCloseTo(0.8, 5);
+    expect(reloaded.numeric_annotation_data?.ec__eat_confidence?.[1]).toBeCloseTo(0.8, 5);
+    expect(reloaded.annotations).not.toHaveProperty('ec__pred_value');
+    const ecValues = reloaded.annotations.ec.values;
+    const p2Index = (reloaded.annotation_data.ec as Int32Array)[1];
+    expect(ecValues[p2Index]).toBe('__NA__');
+  });
+
+  it('normalizes EAT in the optimized merged-row path', async () => {
+    const rows = Array.from({ length: 10_000 }, (_, index) => ({
+      identifier: `P${index}`,
+      projection_name: 'umap',
+      x: index,
+      y: index,
+      ec: index === 1 ? null : '1.1.1.1',
+      ec__pred_value: index === 1 ? '2.2.2.2' : null,
+      ec__pred_confidence: index === 1 ? 0.7 : null,
+      ec__pred_source: index === 1 ? 'P0' : null,
+    }));
+
+    const data = await convertParquetToVisualizationDataOptimized(rows);
+    expect(data.annotation_predicted?.ec[1]).toEqual({
+      value: '2.2.2.2',
+      confidence: 0.7,
+      source: 'P0',
+    });
+    expect(data.annotations).not.toHaveProperty('ec__pred_value');
+  });
+
+  it('normalizes EAT in the optimized separated-bundle path', async () => {
+    const projections = Array.from({ length: 10_000 }, (_, index) => ({
+      identifier: `P${index}`,
+      projection_name: 'umap',
+      x: index,
+      y: index,
+    }));
+    const annotationsById = new Map(
+      projections.map((row, index) => [
+        row.identifier,
+        {
+          identifier: row.identifier,
+          ec: index === 1 ? null : '1.1.1.1',
+          ec__pred_value: index === 1 ? '2.2.2.2' : null,
+          ec__pred_confidence: index === 1 ? 0.7 : null,
+          ec__pred_source: index === 1 ? 'P0' : null,
+        },
+      ]),
+    );
+
+    const data = await convertParquetToVisualizationDataOptimized({
+      projections,
+      annotationsById,
+      projectionIdColumn: 'identifier',
+      annotationIdColumn: 'identifier',
+      projectionsMetadata: [],
+      settings: null,
+    });
+    expect(data.annotation_predicted?.ec[1]).toEqual({
+      value: '2.2.2.2',
+      confidence: 0.7,
+      source: 'P0',
+    });
+    expect(data.annotations).not.toHaveProperty('ec__pred_source');
   });
 });
