@@ -12,14 +12,17 @@ from typing import TYPE_CHECKING, Annotated
 
 if TYPE_CHECKING:
     from protspace.data.embedding.biocentral import EmbedConfig
+    from protspace.data.embedding.local import LocalEmbedConfig
     from protspace.data.processors.pipeline import PipelineConfig
 
 import typer
 
 from protspace.cli.app import PANEL_START, app, setup_logging
 from protspace.cli.common_options import (
+    Backend,
     ClusterSelection,
     Metric,
+    Opt_Backend,
     Opt_BatchSize,
     Opt_Eps,
     Opt_Fasta,
@@ -250,9 +253,10 @@ def _embed_all(
     embedders: list[str],
     fasta_path: Path,
     cache_dir: Path | None,
-    embed_config: EmbedConfig | None,
+    embed_config: EmbedConfig | LocalEmbedConfig | None,
     embedding_sets: list,
     *,
+    backend: str = "biocentral",
     force_reembed: bool = False,
 ) -> list[str]:
     """Embed all models, return list of cache-hit model names."""
@@ -270,6 +274,7 @@ def _embed_all(
         emb_set = embed_fasta(
             fasta_path,
             emb_name,
+            backend=backend,
             embed_config=embed_config,
             embedding_cache=emb_cache,
         )
@@ -302,7 +307,8 @@ def prepare(
     fasta: Opt_Fasta = None,
     # Embedding
     embedder: Opt_Embedder = None,
-    batch_size: Opt_BatchSize = 1000,
+    backend: Opt_Backend = Backend.biocentral,
+    batch_size: Opt_BatchSize = None,
     # Projection
     methods: Opt_Methods = None,
     similarity: Opt_Similarity = False,
@@ -413,7 +419,6 @@ def prepare(
         return
 
     # --- Build embedding sets ---
-    from protspace.data.embedding.biocentral import EmbedConfig
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
     from protspace.data.loaders.query import (
@@ -421,7 +426,22 @@ def prepare(
         query_uniprot,
     )
 
-    embed_config = EmbedConfig(batch_size=batch_size)
+    if backend == Backend.local:
+        from protspace.data.embedding.local import LocalEmbedConfig
+
+        embed_config = (
+            LocalEmbedConfig(batch_size=batch_size)
+            if batch_size is not None
+            else LocalEmbedConfig()
+        )
+    else:
+        from protspace.data.embedding.biocentral import EmbedConfig
+
+        embed_config = (
+            EmbedConfig(batch_size=batch_size)
+            if batch_size is not None
+            else EmbedConfig()
+        )
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
 
@@ -456,6 +476,7 @@ def prepare(
                 cache_dir,
                 embed_config,
                 embedding_sets,
+                backend=backend.value,
                 force_reembed="embed" in refetch_stages,
             )
             fasta_for_similarity = fasta_path
@@ -483,6 +504,7 @@ def prepare(
                         cache_dir,
                         embed_config,
                         embedding_sets,
+                        backend=backend.value,
                         force_reembed="embed" in refetch_stages,
                     )
                     fasta_for_similarity = path
@@ -631,7 +653,7 @@ def _write_run_log(
     query: str | None,
     input_specs: list[tuple[Path, str | None]],
     embedders: list[str],
-    embed_config: EmbedConfig,
+    embed_config: EmbedConfig | LocalEmbedConfig,
     pipeline_config: PipelineConfig,
     similarity: bool,
     scores: bool,

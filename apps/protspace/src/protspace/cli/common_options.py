@@ -24,6 +24,13 @@ class ClusterSelection(str, Enum):
     both = "both"  # emit both clusterings
 
 
+class Backend(str, Enum):
+    """Which engine computes the embeddings from FASTA sequences."""
+
+    biocentral = "biocentral"  # remote Biocentral API (default)
+    local = "local"  # on-device GPU/CPU via transformers ([local] extra)
+
+
 # ---------------------------------------------------------------------------
 # Shared option types
 # ---------------------------------------------------------------------------
@@ -126,10 +133,28 @@ Opt_Eps = Annotated[
 ]
 
 # Embedding options (shared by prepare and embed)
-Opt_BatchSize = Annotated[
-    int,
+Opt_Backend = Annotated[
+    Backend,
     typer.Option(
-        help="Sequences per Biocentral API call.", rich_help_panel="Embedding"
+        "-b",
+        "--backend",
+        help=(
+            "Embedding engine: 'biocentral' (remote API, default) or 'local' "
+            "(on-device GPU/CPU; needs `pip install protspace[local]`)."
+        ),
+        rich_help_panel="Embedding",
+    ),
+]
+
+Opt_BatchSize = Annotated[
+    int | None,
+    typer.Option(
+        min=1,
+        help=(
+            "Sequences per batch. Backend default when unset: 1000 "
+            "(Biocentral API call) or 8 (local GPU micro-batch)."
+        ),
+        rich_help_panel="Embedding",
     ),
 ]
 

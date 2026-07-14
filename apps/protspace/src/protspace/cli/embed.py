@@ -7,7 +7,12 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import PANEL_STAGES, app, setup_logging
-from protspace.cli.common_options import Opt_BatchSize, Opt_Verbose
+from protspace.cli.common_options import (
+    Backend,
+    Opt_Backend,
+    Opt_BatchSize,
+    Opt_Verbose,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,24 +46,21 @@ def embed(
         Path,
         typer.Option("-o", "--output", help="Output directory (one H5 per model)."),
     ],
-    batch_size: Opt_BatchSize = 1000,
+    backend: Opt_Backend = Backend.biocentral,
+    batch_size: Opt_BatchSize = None,
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """FASTA → per-model HDF5 embeddings (Biocentral API).
+    """FASTA → per-model HDF5 embeddings.
 
     \b
-    Creates one HDF5 file per model in the output directory, with
-    model_name written to the H5 root attributes.
+    Creates one HDF5 file per model in the output directory, with model_name
+    written to the H5 root attributes. Embeddings are computed via the remote
+    Biocentral API (default) or on a local GPU/CPU with --backend local.
     """
     setup_logging(verbose)
 
     import h5py
 
-    from protspace.data.embedding.biocentral import (
-        EmbedConfig,
-        embed_sequences,
-        resolve_embedder,
-    )
     from protspace.data.io.fasta import parse_fasta
 
     sequences = parse_fasta(input)
@@ -66,16 +68,39 @@ def embed(
         raise typer.BadParameter(f"No sequences found in {input}")
 
     output.mkdir(parents=True, exist_ok=True)
-    embed_config = EmbedConfig(batch_size=batch_size)
+
+    if backend == Backend.local:
+        from protspace.data.embedding.local import LocalEmbedConfig, embed_sequences
+
+        embed_config = (
+            LocalEmbedConfig(batch_size=batch_size)
+            if batch_size is not None
+            else LocalEmbedConfig()
+        )
+
+        def resolve(name: str) -> str:
+            return name  # local backend takes the short key directly
+    else:
+        from protspace.data.embedding.biocentral import (
+            EmbedConfig,
+            embed_sequences,
+            resolve_embedder,
+        )
+
+        embed_config = (
+            EmbedConfig(batch_size=batch_size)
+            if batch_size is not None
+            else EmbedConfig()
+        )
+        resolve = resolve_embedder
 
     for model_name in embedder:
-        resolved = resolve_embedder(model_name)
         h5_path = output / f"{model_name}.h5"
 
-        logger.info(f"Embedding with {model_name} → {h5_path}")
+        logger.info(f"Embedding with {model_name} ({backend.value}) → {h5_path}")
         embed_sequences(
             sequences,
-            resolved,
+            resolve(model_name),
             h5_path,
             embed_config=embed_config,
         )
