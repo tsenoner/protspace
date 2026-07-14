@@ -1,5 +1,5 @@
 {
-  "name": "protspace_web",
+  "name": "protspace",
   "private": true,
   "description": "ProtSpace interactive protein visualization components",
   "packageManager": "pnpm@10.24.0",

@@ -153,7 +153,7 @@ const Privacy = () => {
                 </a>{' '}
                 or open an issue on{' '}
                 <a
-                  href="https://github.com/tsenoner/protspace_web"
+                  href="https://github.com/tsenoner/protspace"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

@@ -16,7 +16,7 @@ const Footer = () => {
           {/* Links */}
           <div className="flex items-center gap-6">
             <a
-              href="https://github.com/tsenoner/protspace_web"
+              href="https://github.com/tsenoner/protspace"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"

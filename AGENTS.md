@@ -1,4 +1,4 @@
-# Agent Instructions — protspace_web
+# Agent Instructions — protspace
 
 Canonical instructions for **all** AI coding agents (Codex, Claude Code, Cursor, Copilot, etc.)
 working in this repository. This file is the single source of truth; tool-specific files

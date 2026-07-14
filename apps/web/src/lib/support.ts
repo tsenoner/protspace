@@ -14,7 +14,7 @@
 export const SUPPORT_EMAIL = 'hello@protspace.app';
 
 /** Project repository, used to build prefilled bug-report issue links. */
-export const GITHUB_REPO_URL = 'https://github.com/tsenoner/protspace_web';
+export const GITHUB_REPO_URL = 'https://github.com/tsenoner/protspace';
 
 /**
  * Upper bound on the error/stack text embedded in a bug report. Keeps the

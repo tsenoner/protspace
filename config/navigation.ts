@@ -50,7 +50,7 @@ export const getNavigation = (mode: Environment): NavItem[] => {
     },
     {
       text: 'GitHub',
-      link: 'https://github.com/tsenoner/protspace_web',
+      link: 'https://github.com/tsenoner/protspace',
       internal: false,
       target: '_blank',
       icon: 'github',

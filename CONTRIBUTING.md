@@ -56,7 +56,7 @@ pnpm precommit
 
 Before reporting a bug:
 
-- Search [existing issues](https://github.com/tsenoner/protspace_web/issues?q=label%3Abug) to avoid duplicates
+- Search [existing issues](https://github.com/tsenoner/protspace/issues?q=label%3Abug) to avoid duplicates
 - Verify you're using the latest version
 - Confirm the issue is reproducible
 
@@ -72,13 +72,13 @@ Before reporting a bug:
 
 **Security vulnerabilities:** Contact maintainers privately; do not open public issues.
 
-[Create bug report →](https://github.com/tsenoner/protspace_web/issues/new)
+[Create bug report →](https://github.com/tsenoner/protspace/issues/new)
 
 ### Feature Requests
 
 Before suggesting an enhancement:
 
-- Search [existing issues](https://github.com/tsenoner/protspace_web/issues) for similar requests
+- Search [existing issues](https://github.com/tsenoner/protspace/issues) for similar requests
 - Consider if it fits the project scope
 - Ensure it benefits most users, not just specific use cases
 
@@ -91,15 +91,15 @@ Before suggesting an enhancement:
 - **Use cases:** Real-world scenarios where this is needed
 - **Examples:** Screenshots, mockups, or references from other projects
 
-[Create feature request →](https://github.com/tsenoner/protspace_web/issues/new)
+[Create feature request →](https://github.com/tsenoner/protspace/issues/new)
 
 ### Questions
 
 For general questions:
 
-1. Check [existing issues](https://github.com/tsenoner/protspace_web/issues)
-2. Search the [documentation](https://github.com/tsenoner/protspace_web/tree/main/docs)
-3. If unresolved, [open a new issue](https://github.com/tsenoner/protspace_web/issues/new) with context and environment details
+1. Check [existing issues](https://github.com/tsenoner/protspace/issues)
+2. Search the [documentation](https://github.com/tsenoner/protspace/tree/main/docs)
+3. If unresolved, [open a new issue](https://github.com/tsenoner/protspace/issues/new) with context and environment details
 
 ## Code Contributions
 
@@ -301,7 +301,7 @@ test(core): add integration tests for data loader
 
 ## Code of Conduct
 
-This project follows our [Code of Conduct](https://github.com/tsenoner/protspace_web/blob/main/CODE_OF_CONDUCT.md). We expect all contributors to:
+This project follows our [Code of Conduct](https://github.com/tsenoner/protspace/blob/main/CODE_OF_CONDUCT.md). We expect all contributors to:
 
 - Be respectful and constructive
 - Welcome diverse perspectives
@@ -314,6 +314,6 @@ Report unacceptable behavior to project maintainers.
 
 ## Getting Help
 
-- 📖 [Documentation](https://github.com/tsenoner/protspace_web/tree/main/docs)
-- 🐛 [Bug Reports](https://github.com/tsenoner/protspace_web/issues?q=label%3Abug)
-- 💡 [Feature Requests](https://github.com/tsenoner/protspace_web/issues?q=label%3Aenhancement)
+- 📖 [Documentation](https://github.com/tsenoner/protspace/tree/main/docs)
+- 🐛 [Bug Reports](https://github.com/tsenoner/protspace/issues?q=label%3Abug)
+- 💡 [Feature Requests](https://github.com/tsenoner/protspace/issues?q=label%3Aenhancement)
