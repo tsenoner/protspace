@@ -60,6 +60,12 @@ export class ConnectorOverlayController {
     this.deps.onStatusChange(null);
   }
 
+  /** Release lookup state owned by the previous dataset without weakening stable-view reuse. */
+  invalidateDataCache(): void {
+    this.indexedPlotData = null;
+    this.idToSlot = new Map();
+  }
+
   hasActiveRequest(): boolean {
     return this.request !== null;
   }

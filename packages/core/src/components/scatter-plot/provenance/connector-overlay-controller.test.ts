@@ -89,7 +89,7 @@ describe('ConnectorOverlayController', () => {
     expect(overlay.attr('transform')).toBe('translate(10,20) scale(2)');
   });
 
-  it('caches the protein lookup until the PlotData identity changes', () => {
+  it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {
     let currentPlotData = plotData;
     let proteinIdReads = 0;
     const observedProteinIds = new Proxy(plotData.proteinIds, {
@@ -114,12 +114,28 @@ describe('ConnectorOverlayController', () => {
 
     controller.set(request);
     expect(proteinIdReads).toBe(plotData.length);
-    controller.render();
+    const cache = controller as unknown as {
+      indexedPlotData: PlotData | null;
+      idToSlot: Map<string, number>;
+    };
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+    expect([...cache.idToSlot.keys()].sort()).toEqual(['outside', 'source', 'target']);
+
+    controller.clear();
+    controller.set(request);
     expect(proteinIdReads).toBe(plotData.length);
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+
+    controller.invalidateDataCache();
+    expect(cache.indexedPlotData).toBeNull();
+    expect(cache.idToSlot.size).toBe(0);
+
+    controller.set(request);
+    expect(proteinIdReads).toBe(plotData.length * 2);
 
     currentPlotData = { ...currentPlotData };
     controller.render();
-    expect(proteinIdReads).toBe(plotData.length * 2);
+    expect(proteinIdReads).toBe(plotData.length * 3);
   });
 
   it('clears geometry and status', () => {

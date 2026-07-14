@@ -108,6 +108,13 @@ highlights.
 - **WHEN** an active pair's source or target category becomes legend-hidden
 - **THEN** the active connector request and connector-owned highlights clear immediately
 
+#### Scenario: Connector highlight makes an endpoint non-interactable
+
+- **WHEN** connector-owned highlighting applies a configured zero selected-opacity tier to a
+  previously interactable source or target
+- **THEN** the pair is suppressed after post-highlight authoritative revalidation
+- **AND** no connector geometry, status, or connector-owned highlight remains for an empty request
+
 ### Requirement: Connector lookup scales with repeated interaction
 
 The application SHALL build the source-to-query lookup at most once per visualization-data reference
@@ -128,3 +135,10 @@ change.
 - **WHEN** filtering, isolation, annotation, legend visibility, or another authoritative
   interactivity input changes
 - **THEN** the next provenance click rebuilds interactable membership for the new view exactly once
+
+#### Scenario: Dataset lookup cache invalidation
+
+- **WHEN** the scatter plot replaces its dataset and clears connector context
+- **THEN** the connector controller releases both the prior `PlotData` reference and its id-to-slot
+  membership map
+- **AND** ordinary dismissal within a stable view retains the lookup for repeated-click reuse

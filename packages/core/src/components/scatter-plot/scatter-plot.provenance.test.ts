@@ -20,7 +20,10 @@ type ConnectorSeam = {
     clear: ReturnType<typeof vi.fn>;
     render: ReturnType<typeof vi.fn>;
     hasActiveRequest: ReturnType<typeof vi.fn>;
+    invalidateDataCache: ReturnType<typeof vi.fn>;
   };
+  _mergedConfig: { selectedOpacity: number };
+  _getInteractableProteinIds(): ReadonlySet<string>;
   _reconcileProvenanceConnectors(changed: Map<string, unknown>): void;
 };
 
@@ -31,6 +34,7 @@ function makePlot() {
     clear: vi.fn(),
     render: vi.fn(),
     hasActiveRequest: vi.fn(() => true),
+    invalidateDataCache: vi.fn(),
   };
   (plot as unknown as ConnectorSeam)._connectorOverlay = overlay;
   return { plot, overlay, seam: plot as unknown as ConnectorSeam };
@@ -62,6 +66,16 @@ describe('scatter-plot provenance connector contract', () => {
 
     expect(overlay.clear).toHaveBeenCalledOnce();
     expect(plot.highlightedProteinIds).toEqual([]);
+    expect(overlay.invalidateDataCache).not.toHaveBeenCalled();
+  });
+
+  it('releases the dataset-owned lookup when data identity changes', () => {
+    const { overlay, seam } = makePlot();
+
+    seam._reconcileProvenanceConnectors(new Map([['data', undefined]]));
+
+    expect(overlay.clear).toHaveBeenCalledOnce();
+    expect(overlay.invalidateDataCache).toHaveBeenCalledOnce();
   });
 
   it.each(['source', 'target'])(
@@ -93,5 +107,24 @@ describe('scatter-plot provenance connector contract', () => {
     );
 
     expect(overlay.render).toHaveBeenCalledOnce();
+  });
+
+  it('suppresses a pair that becomes non-interactable under connector-owned highlighting', () => {
+    const { plot, overlay, seam } = makePlot();
+    seam._mergedConfig = { ...seam._mergedConfig, selectedOpacity: 0 };
+    seam._getInteractableProteinIds = vi.fn(() => {
+      expect(plot.highlightedProteinIds).toEqual(['source', 'target']);
+      return new Set();
+    });
+
+    plot.setProvenanceConnectors({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    expect(seam._getInteractableProteinIds).toHaveBeenCalledOnce();
+    expect(overlay.set).not.toHaveBeenCalled();
+    expect(overlay.clear).toHaveBeenCalledOnce();
+    expect(plot.highlightedProteinIds).toEqual([]);
   });
 });

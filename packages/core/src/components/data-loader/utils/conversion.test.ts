@@ -10,7 +10,59 @@ import {
   parseAnnotationValue,
   splitCategoricalAnnotationValues,
 } from './conversion';
-import { extractRowsFromParquetBundle } from './bundle';
+import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
+
+function makeCollisionExtraction(
+  formatVersion: number,
+  options: { withEat: boolean },
+): BundleExtractionResult {
+  const eatP1 = options.withEat
+    ? {
+        ec: '1.1.1.1',
+        ec__pred_value: null,
+        ec__pred_confidence: null,
+        ec__pred_source: null,
+      }
+    : {};
+  const eatP2 = options.withEat
+    ? {
+        ec: null,
+        ec__pred_value: '2.2.2.2',
+        ec__pred_confidence: 0.8,
+        ec__pred_source: 'P1',
+      }
+    : {};
+  const annotationsById = new Map([
+    [
+      'P1',
+      {
+        identifier: 'P1',
+        ec__eat_confidence: 0.125,
+        ...eatP1,
+      },
+    ],
+    [
+      'P2',
+      {
+        identifier: 'P2',
+        ec__eat_confidence: 0.875,
+        ...eatP2,
+      },
+    ],
+  ]);
+  return {
+    projections: [
+      { identifier: 'P1', projection_name: 'umap', x: 0, y: 0 },
+      { identifier: 'P2', projection_name: 'umap', x: 1, y: 1 },
+    ],
+    annotationsById,
+    projectionIdColumn: 'identifier',
+    annotationIdColumn: 'identifier',
+    projectionsMetadata: [],
+    settings: null,
+    formatVersion,
+  };
+}
 
 describe('parseAnnotationValue', () => {
   it('parses label without pipe as full string with empty scores', () => {
@@ -309,6 +361,54 @@ describe('EAT companion normalization', () => {
     expect(data.annotations).not.toHaveProperty('ec__pred_value');
     expect(data.annotation_predicted).toBeUndefined();
   });
+
+  it.each([1, 2])(
+    'round-trips a non-EAT v%s user annotation ending in the reserved-looking suffix',
+    async (formatVersion) => {
+      const original = convertParquetToVisualizationData(
+        makeCollisionExtraction(formatVersion, { withEat: false }),
+      );
+      const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
+      const reloaded = convertParquetToVisualizationData(extraction);
+
+      expect(original.annotations.ec__eat_confidence.runtime).toBeUndefined();
+      expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
+      expect(reloaded.annotations.ec__eat_confidence.runtime).toBeUndefined();
+      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+    },
+  );
+
+  it.each([1, 2])(
+    'round-trips EAT v%s without overwriting a user confidence-suffix annotation',
+    async (formatVersion) => {
+      const original = convertParquetToVisualizationData(
+        makeCollisionExtraction(formatVersion, { withEat: true }),
+      );
+      const runtimeConfidence = Object.entries(original.annotations).find(
+        ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
+      );
+
+      expect(original.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(runtimeConfidence?.[0]).toBe('ec__eat_confidence__runtime_2');
+      expect(runtimeConfidence?.[1].runtime?.baseAnnotation).toBe('ec');
+
+      const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
+      const reloaded = convertParquetToVisualizationData(extraction);
+      const reloadedRuntime = Object.entries(reloaded.annotations).filter(
+        ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
+      );
+
+      expect(extraction.formatVersion).toBe(2);
+      expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
+      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(reloaded.annotation_predicted?.ec).toEqual([
+        null,
+        { value: '2.2.2.2', confidence: expect.closeTo(0.8, 5), source: 'P1' },
+      ]);
+      expect(reloadedRuntime).toHaveLength(1);
+      expect(reloadedRuntime[0]?.[1].runtime?.baseAnnotation).toBe('ec');
+    },
+  );
 
   it('round-trips curated missing cells and companions from a materialized overlay', async () => {
     const original = convertParquetToVisualizationData([

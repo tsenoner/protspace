@@ -62,10 +62,13 @@ because it would permit inconsistent validity and missing-value rules.
 
 ### D2. Provide a deliberate synthetic confidence annotation and a display-only overlay
 
-For every normalized base column, conversion adds a numeric runtime annotation with a stable
-`BASE__eat_confidence` key and values `confidence | null`. Annotation metadata recognizes this key
-and labels it “<base label> — EAT confidence,” with text explaining the reliability index. Synthetic
-keys are selectable but never serialized as bundle columns.
+For every normalized base column, conversion adds a numeric runtime annotation with values
+`confidence | null`. It prefers the `BASE__eat_confidence` key, but allocates a distinct internal key
+when that name already belongs to a user annotation. The generated `Annotation` carries explicit
+runtime metadata identifying its EAT-confidence role and base annotation; serialization and display
+metadata use that identity instead of suffix spelling. A real numeric or categorical column ending
+in `__eat_confidence` remains an ordinary annotation and round-trips unchanged. Synthetic keys are
+selectable but only explicitly marked generated entries are omitted from bundle output.
 
 Base categorical metadata includes the stable union of observed categories followed by any
 prediction-only categories. Raw `annotation_data` remains curated. When the overlay is enabled and a
@@ -77,6 +80,8 @@ view; disabling the overlay immediately returns to curated indices.
 Alternatives considered: mutating base annotation rows during conversion was rejected because the
 off state and lossless export need the curated representation; teaching every consumer to coalesce
 independently was rejected because it would fork legend, tooltip, visibility, and filter semantics.
+Rejecting an otherwise valid EAT bundle solely because a user chose the preferred synthetic name
+was also rejected; collision-safe allocation preserves both meanings without data loss.
 
 ### D3. Extend the authoritative visibility model for confidence
 
@@ -133,6 +138,11 @@ emoji. The threshold is disabled while the overlay is off. Auto-sync updates sca
 emits one `eat-overlay-change` contract. Loading embedded settings applies both plot and control
 state; parquet export writes the current values.
 
+Embedded EAT settings have the same precedence for direct imports and OPFS replay: normalized bundle
+values are applied after dataset-reset defaults, and absent fields fall back to enabled and `0.50`.
+Unlike legend customization, EAT state has no separate per-dataset browser persistence channel, so
+OPFS MUST replay the embedded values rather than silently retaining reset defaults.
+
 ### D6. Keep provenance pairs as ids in a dedicated SVG controller
 
 A `ConnectorOverlayController`, peer to the duplicate-stack controller, stores id pairs plus summary
@@ -140,6 +150,10 @@ metadata. At render time it builds a current plot id-to-slot map, resolves plane
 coordinates through current scales, and draws dashed, round-capped, non-scaling SVG lines in a
 `connector-lines-layer` child of the already transformed overlay group. Pan/zoom therefore needs no
 recomputation; data, projection, plane, scale, filter, and isolation changes rerender endpoints.
+Ordinary dismissal clears request/geometry while retaining the current-view index for reuse. Dataset
+replacement uses a distinct cache invalidation operation that releases both the indexed `PlotData`
+reference and its id-to-slot map, preventing the prior million-row view from being retained when no
+new connector is created.
 
 The app interaction controller caches a source-to-query index per data reference and base
 annotation. Each source list is sorted once while that cached index is constructed, by descending
@@ -157,8 +171,11 @@ Connector endpoints replace `highlightedProteinIds` while active. Empty-space cl
 overlay changes, data replacement, deselection, authoritative category-interactivity changes,
 Escape, and an accessible close button clear both lines and connector highlights. Clearing on
 legend visibility change prevents a previously valid pair from remaining stale after either its
-source or target becomes hidden. Dashed stroke, endpoint emphasis, text status, and keyboard
-dismissal make the feature non-colour-dependent.
+source or target becomes hidden. Because connector-owned highlighting applies the selected-opacity
+tier, the scatter plot revalidates candidate endpoints after installing those highlights; if the
+configured selected opacity makes either endpoint non-interactable, that pair is suppressed and an
+empty request clears the highlight/status instead of drawing to invisible points. Dashed stroke,
+endpoint emphasis, text status, and keyboard dismissal make the feature non-colour-dependent.
 
 Alternative considered: drawing connectors in WebGL was rejected because SVG already owns
 interaction overlays and supplies zoom transforms, vector strokes, DOM accessibility, and simpler
@@ -211,7 +228,8 @@ before every commit.
 - **Confidence could be misread as calibrated probability** → Use “reliability index” language and
   percentage formatting only as a bounded display representation.
 - **Existing selection/highlight behavior could conflict with connectors** → Connector highlights
-  use the currently unused highlight channel, never mutate selection, and are cleared independently.
+  use the currently unused highlight channel, never mutate selection, are cleared independently,
+  and are followed by an authoritative endpoint-validity check.
 
 ## Migration Plan
 

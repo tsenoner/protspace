@@ -40,6 +40,10 @@ export interface ProtspaceData {
           count: number;
         }>;
       };
+      runtime?: {
+        role: 'eat-confidence';
+        baseAnnotation: string;
+      };
     }
   >;
   annotation_data?: Record<string, AnnotationData>;

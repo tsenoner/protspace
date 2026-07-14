@@ -650,14 +650,16 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _reconcileProvenanceConnectors(changedProperties: Map<string, unknown>): void {
+    const datasetChanged = changedProperties.has('data');
     const contextChanged =
-      changedProperties.has('data') ||
+      datasetChanged ||
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
       (changedProperties.has('eatOverlayEnabled') && !this.eatOverlayEnabled) ||
       (changedProperties.has('selectedProteinIds') && this.selectedProteinIds.length === 0);
     if (contextChanged) {
       this.clearProvenanceConnectors();
+      if (datasetChanged) this._connectorOverlay.invalidateDataCache();
       return;
     }
 
@@ -2012,6 +2014,31 @@ export class ProtspaceScatterplot extends LitElement {
       endpointIds.add(pair.targetProteinId);
     }
     this.highlightedProteinIds = [...endpointIds];
+
+    // Connector highlights use selectedOpacity. Revalidate after applying them because a zero
+    // selected tier can make every otherwise-valid endpoint non-interactable.
+    if (this._mergedConfig.selectedOpacity <= 0) {
+      const interactableProteinIds = this._getInteractableProteinIds();
+      const validPairs = pairs.filter(
+        (pair) =>
+          interactableProteinIds.has(pair.sourceProteinId) &&
+          interactableProteinIds.has(pair.targetProteinId),
+      );
+      if (validPairs.length !== pairs.length) {
+        const validEndpointIds = new Set<string>();
+        for (const pair of validPairs) {
+          validEndpointIds.add(pair.sourceProteinId);
+          validEndpointIds.add(pair.targetProteinId);
+        }
+        this.highlightedProteinIds = [...validEndpointIds];
+        if (validPairs.length === 0) {
+          this._connectorOverlay.clear();
+          return;
+        }
+        this._connectorOverlay.set({ ...request, pairs: validPairs });
+        return;
+      }
+    }
     this._connectorOverlay.set({ ...request, pairs });
   }
 

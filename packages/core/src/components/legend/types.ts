@@ -38,6 +38,7 @@ export interface ScatterplotData {
       colors?: string[];
       shapes?: string[];
       numericMetadata?: LegendAnnotationData['numericMetadata'];
+      runtime?: LegendAnnotationData['runtime'];
     }
   >;
   annotation_data: Record<string, AnnotationData>;
@@ -54,6 +55,10 @@ export interface LegendAnnotationData {
   kind?: 'categorical' | 'numeric';
   sourceKind?: 'categorical' | 'numeric';
   numericType?: 'int' | 'float';
+  runtime?: {
+    role: 'eat-confidence';
+    baseAnnotation: string;
+  };
   numericMetadata?: {
     strategy: 'linear' | 'quantile' | 'logarithmic';
     binCount: number;

@@ -35,7 +35,10 @@ only when the curated base cell is missing.
 For every normalized EAT base column, the system SHALL expose one synthetic selectable numeric
 annotation labelled “<base label> — EAT confidence.” Its values SHALL be the raw reliability indices
 for transferred cells and null for all other proteins. Raw confidence companion names and synthetic
-storage keys SHALL NOT be serialized as ordinary annotations.
+storage keys SHALL NOT be serialized as ordinary annotations. Generated confidence annotations
+SHALL carry explicit runtime identity; suffix spelling alone SHALL NOT classify a user annotation as
+synthetic. When the preferred generated key collides, the loader SHALL allocate a distinct internal
+key and preserve both annotations.
 
 #### Scenario: Selecting EAT confidence
 
@@ -49,6 +52,14 @@ storage keys SHALL NOT be serialized as ordinary annotations.
 - **WHEN** the synthetic confidence annotation is displayed in the selector or legend
 - **THEN** it has an EAT-specific friendly label and explains that the value is a reliability index,
   not a calibrated probability
+
+#### Scenario: User annotation shares the preferred synthetic suffix
+
+- **WHEN** an EAT or non-EAT v1/v2 bundle contains a real numeric or categorical annotation named
+  `BASE__eat_confidence`
+- **THEN** that user annotation remains ordinary data and round-trips without loss
+- **AND** an EAT base uses a separately identified runtime annotation rather than overwriting or
+  suppressing the user column
 
 ### Requirement: EAT overlay controls are conditional, accessible, and persisted
 
@@ -76,6 +87,13 @@ even when they are the only settings, and apply on dataset load.
 
 - **WHEN** a bundle is exported with overlay disabled and threshold `0.75`, then reloaded
 - **THEN** both the control bar and scatter plot restore disabled overlay state and threshold `0.75`
+
+#### Scenario: Embedded settings restore from OPFS
+
+- **WHEN** a persisted bundle with overlay disabled and threshold `0.75` is replayed from OPFS
+- **THEN** its normalized embedded EAT settings override dataset-reset defaults in both the control
+  bar and scatter plot
+- **AND** settings absent from the bundle retain the enabled and `0.50` defaults
 
 #### Scenario: Invalid optional setting
 
@@ -230,3 +248,10 @@ materialized view, and SHALL omit synthetic confidence annotations.
 - **THEN** the annotations parquet remains stamped `protspace_format_version=2`
 - **AND** every protein retains the same annotation set, evidence, and score companions
 - **AND** every EAT value, confidence, and source companion is preserved
+
+#### Scenario: Collision-safe v1 and v2 round-trip
+
+- **WHEN** v1 or v2 data contains a legitimate annotation ending in `__eat_confidence`, with or
+  without EAT companions for its base
+- **THEN** export and reload preserve every user annotation value
+- **AND** only explicitly generated runtime confidence annotations are omitted from storage

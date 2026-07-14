@@ -4,7 +4,12 @@ import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
 import { handleDropdownEscape } from '../../utils/dropdown-helpers';
 import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
-import { annotationLabel, getAnnotationMeta, isPredictedAnnotation } from '@protspace/utils';
+import {
+  annotationLabel,
+  getAnnotationMeta,
+  isPredictedAnnotation,
+  type Annotation,
+} from '@protspace/utils';
 import '../common/info-popover';
 
 /**
@@ -15,6 +20,8 @@ class ProtspaceAnnotationSelect extends LitElement {
   static styles = annotationSelectStyles;
 
   @property({ type: Array }) annotations: string[] = [];
+  @property({ type: Object }) annotationDefinitions: Record<string, Pick<Annotation, 'runtime'>> =
+    {};
   @property({ type: String, attribute: 'selected-annotation' }) selectedAnnotation: string = '';
   @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String }) placeholder: string = 'Select annotation';
@@ -153,7 +160,7 @@ class ProtspaceAnnotationSelect extends LitElement {
    * Categorize annotations using the shared utility.
    */
   private categorizeAnnotations(annotations: string[]): GroupedAnnotation[] {
-    return groupAnnotations(annotations);
+    return groupAnnotations(annotations, this.annotationDefinitions);
   }
 
   /**
@@ -174,7 +181,9 @@ class ProtspaceAnnotationSelect extends LitElement {
         annotations: group.annotations.filter(
           (annotation) =>
             annotation.toLowerCase().includes(queryLower) ||
-            annotationLabel(annotation).toLowerCase().includes(queryLower),
+            annotationLabel(annotation, this.annotationDefinitions[annotation])
+              .toLowerCase()
+              .includes(queryLower),
         ),
       }))
       .filter((group) => group.annotations.length > 0); // Remove empty categories
@@ -194,7 +203,10 @@ class ProtspaceAnnotationSelect extends LitElement {
   render() {
     const filtered = this.getFilteredGroupedAnnotations();
     const displayText = this.selectedAnnotation
-      ? annotationLabel(this.selectedAnnotation)
+      ? annotationLabel(
+          this.selectedAnnotation,
+          this.annotationDefinitions[this.selectedAnnotation],
+        )
       : this.placeholder;
 
     return html`
@@ -247,7 +259,8 @@ class ProtspaceAnnotationSelect extends LitElement {
                                 const isHighlighted = itemIndex === this.highlightIndex;
                                 const isSelected = annotation === this.selectedAnnotation;
                                 const isInTooltip = this.tooltipAnnotations.includes(annotation);
-                                const meta = getAnnotationMeta(annotation);
+                                const definition = this.annotationDefinitions[annotation];
+                                const meta = getAnnotationMeta(annotation, definition);
                                 const hasDocs = meta.description.length > 0 || !!meta.docsUrl;
                                 return html`
                                   <div
@@ -273,12 +286,12 @@ class ProtspaceAnnotationSelect extends LitElement {
                                           placement="side"
                                           .description=${meta.description}
                                           docs-url=${meta.docsUrl ?? ''}
-                                          label=${annotationLabel(annotation)}
+                                          label=${annotationLabel(annotation, definition)}
                                           @click=${(e: Event) => e.stopPropagation()}
                                         ></protspace-info-popover>`
                                       : ''}
                                     <span class="dropdown-item-label"
-                                      >${annotationLabel(annotation)}</span
+                                      >${annotationLabel(annotation, definition)}</span
                                     >
                                     ${isPredictedAnnotation(annotation)
                                       ? html`<span

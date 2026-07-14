@@ -15,6 +15,7 @@
  * Keep this registry in sync with the backend reference when the annotation set changes.
  */
 
+import type { Annotation } from '../types.js';
 import { getEatBaseAnnotationKey } from './eat-overlay.js';
 
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
@@ -373,10 +374,18 @@ export function prettifyAnnotationName(column: string): string {
  * synthesized entry: a prettified label, `Other` source, empty description (so no docs popover is
  * shown), and a predicted flag derived from the `predicted_` prefix convention.
  */
-export function getAnnotationMeta(column: string): AnnotationMeta {
+export function getAnnotationMeta(
+  column: string,
+  annotation?: Pick<Annotation, 'runtime'>,
+): AnnotationMeta {
   const known = ANNOTATION_METADATA[column];
   if (known) return known;
-  const eatBase = getEatBaseAnnotationKey(column);
+  const eatBase =
+    annotation?.runtime?.role === 'eat-confidence'
+      ? annotation.runtime.baseAnnotation
+      : annotation === undefined
+        ? getEatBaseAnnotationKey(column)
+        : null;
   if (eatBase) {
     const base = getAnnotationMeta(eatBase);
     return {
@@ -406,11 +415,14 @@ export function isPredictedAnnotation(column: string): boolean {
 }
 
 /** Friendly display label for an annotation (registry label, else prettified column name). */
-export function annotationLabel(column: string): string {
-  return getAnnotationMeta(column).label;
+export function annotationLabel(column: string, annotation?: Pick<Annotation, 'runtime'>): string {
+  return getAnnotationMeta(column, annotation).label;
 }
 
 /** Source/group for an annotation (registry source, else `Other`). */
-export function annotationSource(column: string): AnnotationSource {
-  return getAnnotationMeta(column).source;
+export function annotationSource(
+  column: string,
+  annotation?: Pick<Annotation, 'runtime'>,
+): AnnotationSource {
+  return getAnnotationMeta(column, annotation).source;
 }

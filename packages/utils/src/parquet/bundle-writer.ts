@@ -17,10 +17,7 @@ import { BUNDLE_DELIMITER_BYTES } from './constants';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
 import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
-import {
-  getEatCompanionColumn,
-  isEatConfidenceAnnotationKey,
-} from '../visualization/eat-overlay.js';
+import { getEatCompanionColumn } from '../visualization/eat-overlay.js';
 import { encodeAnnotationField } from './annotation-codec.js';
 
 const ANNOTATION_FORMAT_VERSION = '2';
@@ -60,7 +57,7 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
   // Add annotation columns
   for (const [annotationName, annotation] of Object.entries(data.annotations)) {
     // Runtime-only numeric view over the prediction side-channel.
-    if (isEatConfidenceAnnotationKey(annotationName)) continue;
+    if (annotation.runtime?.role === 'eat-confidence') continue;
 
     if (isNumericAnnotation(annotation)) {
       const values = data.numeric_annotation_data?.[annotationName] ?? [];

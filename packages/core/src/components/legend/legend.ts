@@ -1025,6 +1025,7 @@ export class ProtspaceLegend extends LitElement {
       kind: data.annotations[selectedAnnotation].kind,
       sourceKind: data.annotations[selectedAnnotation].sourceKind,
       numericMetadata: data.annotations[selectedAnnotation].numericMetadata,
+      runtime: data.annotations[selectedAnnotation].runtime,
     };
     this._updateAnnotationValues(data, selectedAnnotation);
     this._eatCounts = this._computeEatCounts(data, selectedAnnotation);
@@ -1065,6 +1066,7 @@ export class ProtspaceLegend extends LitElement {
           kind: annotationInfo.kind,
           sourceKind: annotationInfo.sourceKind,
           numericMetadata: annotationInfo.numericMetadata,
+          runtime: annotationInfo.runtime,
         }
       : { name: '', values: [] };
   }
@@ -2043,9 +2045,12 @@ export class ProtspaceLegend extends LitElement {
 
   render() {
     const activeName = this.annotationName || this.annotationData.name || '';
-    const title = activeName ? annotationLabel(activeName) : 'Legend';
+    const activeAnnotation = activeName
+      ? (this.data?.annotations?.[activeName] ?? this.annotationData)
+      : undefined;
+    const title = activeName ? annotationLabel(activeName, activeAnnotation) : 'Legend';
     const predicted = activeName ? isPredictedAnnotation(activeName) : false;
-    const meta = activeName ? getAnnotationMeta(activeName) : undefined;
+    const meta = activeName ? getAnnotationMeta(activeName, activeAnnotation) : undefined;
     const hasDocs = !!meta && (meta.description.length > 0 || !!meta.docsUrl);
 
     return html`

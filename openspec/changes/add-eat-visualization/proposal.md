@@ -11,7 +11,8 @@ biology as ground truth in figures intended for scientific publication.
 - Reserve the `__pred_` companion-column namespace and normalize valid EAT value, confidence, and
   source triples into a lossless per-protein prediction channel.
 - Keep raw EAT storage columns out of ordinary annotation selection while exposing a deliberate,
-  labelled numeric confidence annotation.
+  explicitly identified numeric confidence annotation without consuming a legitimate user column
+  that happens to share its preferred suffix.
 - Add a persisted EAT overlay mode and confidence threshold beside annotation selection only when
   the loaded dataset contains usable EAT predictions.
 - Coalesce transferred values into the active categorical view without changing curated data;
@@ -22,8 +23,9 @@ biology as ground truth in figures intended for scientific publication.
   proteins, including projection/plane recomputation, connected-point emphasis, empty-click and
   keyboard dismissal, and an accessible fan-out summary.
 - Preserve the EAT distinction in live WebGL, grayscale, PNG export, filtered/isolation views,
-  settings persistence, dataset hashing, slicing, and lossless v2 bundle round-trips, including
-  structural label escaping, evidence/score suffixes, and format metadata.
+  settings persistence and OPFS reload, dataset hashing, slicing, and lossless v1/v2 bundle
+  round-trips, including structural label escaping, evidence/score suffixes, collision-safe runtime
+  annotation identity, and format metadata.
 - Add focused unit, integration, shader/export, settings, and browser tests using the exact
   phosphatase EAT bundle linked from issue #277 comment 4902936797.
 

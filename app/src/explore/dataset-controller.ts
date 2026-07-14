@@ -140,9 +140,10 @@ export function createDatasetController({
 
       await loadData(data);
 
-      const shouldApplyEmbeddedFileSettings = settings && loadMeta.kind !== 'opfs';
-      if (shouldApplyEmbeddedFileSettings) {
+      if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
+      }
+      if (settings) {
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
         const eatConfidenceThreshold = settings.eatConfidenceThreshold ?? 0.5;
         controlBar.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);

@@ -139,6 +139,18 @@ describe('label and source helpers', () => {
     expect(meta.description).toContain('reliability index');
     expect(meta.description).toContain('not a calibrated probability');
   });
+
+  it('distinguishes runtime EAT confidence from a user column with the same suffix', () => {
+    const userMeta = getAnnotationMeta('ec__eat_confidence', { runtime: undefined });
+    expect(userMeta.label).toBe('Ec eat confidence');
+    expect(userMeta.source).toBe('Other');
+
+    const runtimeMeta = getAnnotationMeta('ec__eat_confidence__runtime_2', {
+      runtime: { role: 'eat-confidence', baseAnnotation: 'ec' },
+    });
+    expect(runtimeMeta.label).toBe('EC number — EAT confidence');
+    expect(runtimeMeta.source).toBe('UniProt');
+  });
 });
 
 describe('prettifyAnnotationName', () => {

@@ -106,3 +106,18 @@
       issue-linked phosphatase Playwright flow, strict OpenSpec validation, and staged precommit.
       All four threads were answered with immutable evidence and resolved; the subsequent
       thread-aware fetch found zero unresolved threads and no new comments.
+
+## 9. Exact-head edge remediation
+
+- [x] 9.1 Give generated confidence annotations explicit runtime identity, allocate a collision-safe
+      internal key, serialize real suffix-sharing annotations, and add EAT/non-EAT v1/v2 lossless
+      round-trip regressions.
+- [x] 9.2 Add dataset-scoped connector lookup invalidation that releases retained plot/map state
+      without sacrificing stable-view reuse, with controller and scatter lifecycle regressions.
+- [x] 9.3 Revalidate connector endpoints after connector-owned highlighting and suppress zero-
+      selected-opacity pairs, with an authoritative lifecycle regression.
+- [x] 9.4 Apply normalized embedded EAT settings after OPFS dataset resets with documented embedded-
+      settings precedence and a controller restore regression.
+- [ ] 9.5 Run targeted and full verification, preserve the exact linked fixture and emoji-free diff,
+      push coherent commits, update PR evidence, reply to and resolve all four threads, and re-fetch
+      thread-aware state.

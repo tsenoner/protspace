@@ -667,6 +667,7 @@ export class ProtspaceControlBar extends LitElement {
             <protspace-annotation-select
               id="annotation-select"
               .annotations=${this.annotations}
+              .annotationDefinitions=${this._currentData?.annotations ?? {}}
               .selectedAnnotation=${this.selectedAnnotation}
               .tooltipAnnotations=${this.tooltipAnnotations}
               @annotation-select=${this.handleAnnotationSelected}

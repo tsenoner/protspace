@@ -31,6 +31,11 @@ export interface Annotation {
   sourceKind?: AnnotationKind;
   numericType?: NumericAnnotationType;
   numericMetadata?: NumericAnnotationMetadata;
+  /** Runtime-only identity for derived annotations that must never be persisted as user data. */
+  runtime?: {
+    role: 'eat-confidence';
+    baseAnnotation: string;
+  };
 }
 
 /**

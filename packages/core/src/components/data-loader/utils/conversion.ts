@@ -130,14 +130,30 @@ function* valuesForColumn(rows: Rows, column: string): Iterable<unknown> {
   }
 }
 
-function createNumericAnnotation(numericType: 'int' | 'float'): Annotation {
+function createNumericAnnotation(
+  numericType: 'int' | 'float',
+  runtime?: Annotation['runtime'],
+): Annotation {
   return {
     kind: 'numeric',
     numericType,
     values: [],
     colors: [],
     shapes: [],
+    runtime,
   };
+}
+
+function allocateEatConfidenceAnnotationKey(
+  annotations: Readonly<Record<string, Annotation>>,
+  base: string,
+): string {
+  const preferred = getEatConfidenceAnnotationKey(base);
+  if (!(preferred in annotations)) return preferred;
+
+  let suffix = 2;
+  while (`${preferred}__runtime_${suffix}` in annotations) suffix += 1;
+  return `${preferred}__runtime_${suffix}`;
 }
 
 function createCategoricalAnnotation(
@@ -292,8 +308,11 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
     annotation_data[base] = remapCategoricalStorage(baseRows, oldValues, valueToNewIndex);
     annotation_predicted[base] = cells;
 
-    const confidenceKey = getEatConfidenceAnnotationKey(base);
-    annotations[confidenceKey] = createNumericAnnotation('float');
+    const confidenceKey = allocateEatConfidenceAnnotationKey(annotations, base);
+    annotations[confidenceKey] = createNumericAnnotation('float', {
+      role: 'eat-confidence',
+      baseAnnotation: base,
+    });
     numeric_annotation_data[confidenceKey] = cells.map((cell) => cell?.confidence ?? null);
   }
 
