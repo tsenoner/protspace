@@ -19,9 +19,8 @@ separate maintenance buys nothing.
 ## What Changes
 
 - **Merge `protspace` into this repo** as `apps/protspace`, preserving git history via `git filter-repo`.
-  Original repo is archived. **Not a repo-wide relicense** — the Python side stays GPL-3.0 because it
-  links a GPL dependency (`pymmseqs`/mmseqs2, not ours to relicense); the repo is split-licensed by
-  directory (GPL-3.0 Python, MIT TS). See design Decision D4.
+  Original repo is archived. The whole repo is **MIT** — `pymmseqs`/mmseqs2 are both MIT, so the Python
+  side carries no GPL dependency and needs no separate license. See design Decision D4.
 - **Move `services/protspace-prep` → `apps/prep`** (apps = deployables), in the same change so paths/CI
   churn once.
 - **One uv workspace** with two real Python members: `apps/protspace` and `apps/prep`.
@@ -41,8 +40,7 @@ separate maintenance buys nothing.
 Non-goals: no change to either app's runtime behavior (structural merge only); no bundle-format redesign
 (the contract pins whatever format ships at cutover); **no TS type codegen** from the schema (deferred —
 fixtures + schema-equality tests are the initial guardrail); no `schema_version` metadata/reader branching
-(additive-only evolution until a real breaking change forces it); **no repo-wide relicense** and no
-removal of the GPL `pymmseqs` linkage (would be the only route to permissive Python — out of scope).
+(additive-only evolution until a real breaking change forces it).
 
 ## Open PRs at cutover
 

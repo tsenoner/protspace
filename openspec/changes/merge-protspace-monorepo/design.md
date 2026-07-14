@@ -27,20 +27,20 @@ branching; touching `deploy-protspace-backend` (it deploys built images, unchang
 ## Target layout
 
 ```
-protspace_web/                 (monorepo, split-licensed — see Decision D4)
+protspace_web/                 (monorepo, uniformly MIT-licensed — see Decision D4)
 ├─ apps/
 │  ├─ web/                      # was app/  (@protspace/app, vite)          — MIT
-│  ├─ protspace/                # was protspace repo (uv member, PyPI: lib+CLI+legacy Dash) — GPL-3.0
+│  ├─ protspace/                # was protspace repo (uv member, PyPI: lib+CLI+legacy Dash) — MIT
 │  │  └─ package.json           # thin turbo bridge → uv run {pytest,ruff,build}
-│  └─ prep/                     # was services/protspace-prep (uv member, FastAPI) — GPL-3.0
+│  └─ prep/                     # was services/protspace-prep (uv member, FastAPI) — MIT
 ├─ packages/
 │  ├─ core/ utils/ react-bridge # TS libs, unchanged                        — MIT
 │  └─ bundle-contract/          # schema.json + fixtures/*.parquetbundle
 ├─ pnpm-workspace.yaml          # packages: [apps/web, packages/*]
 ├─ turbo.json                   # existing tasks; now also sees apps/protspace
 ├─ pyproject.toml               # NEW root: [tool.uv.workspace] members=[apps/protspace, apps/prep]
-├─ LICENSE                      # MIT (TS/root) + per-directory LICENSE files for GPL Python dirs
-└─ (per-dir LICENSE in apps/protspace, apps/prep = GPL-3.0)
+├─ LICENSE                      # MIT (TS/root); per-directory MIT LICENSE files under the Python apps
+└─ (per-dir LICENSE in apps/protspace, apps/prep = MIT)
 ```
 
 ## Migration mechanics
@@ -153,21 +153,16 @@ exactly today's status quo (no shared test exists), so no regression.
   (apps = deployables convention; done in the same change so paths/CI churn once, not twice).
 - **D3 — Is `perf/` a workspace member?** It's a throwaway plotting util with its own deps. Leave it out
   of the uv workspace unless it starts importing `protspace`. **Recommend: exclude.**
-- **D4 — License:** **Decided: split-license per directory, not a repo-wide relicense.** A whole-repo
-  permissive relicense is _not available_: `protspace` imports `pymmseqs` (`from pymmseqs.commands import
-easy_search` in `data/loaders/similarity.py`) → mmseqs2, which is **GPL-3.0** and not ours to relicense.
-  Importing it is linking, so the combined Python work stays GPL regardless of the label on our own files.
-  - `apps/protspace` → **GPL-3.0** (linked GPL dep).
-  - `apps/prep` → **GPL-3.0** (imports `protspace`, a GPL work → derivative).
-  - `apps/web`, `packages/*` → **MIT** (separate process; reads `.parquetbundle` client-side and calls
-    prep over HTTP — both arm's-length under GPL-3.0, not AGPL, so no copyleft reaches the frontend).
-    The parquetbundle/HTTP boundary is the GPL firewall.
-  - Carry per-directory `LICENSE` files; fix the pre-existing mismatch (root LICENSE is Apache-2.0 while
-    `@protspace/core`/`utils` declare MIT) by settling the TS side on **MIT**.
-  - Escaping GPL on the Python side would require replacing the `pymmseqs` _import_ with an mmseqs
-    _binary subprocess_ (mere aggregation) — a real code change, out of scope here.
-  - **Caveat:** this is the conservative engineering read (keep GPL where GPL is linked); get a legal
-    sanity-check on the `pymmseqs` linkage before publishing any license label.
+- **D4 — License:** **Decided: repo-wide MIT.** An earlier draft split-licensed the Python side as
+  GPL-3.0 on the belief that `protspace`'s `pymmseqs` import (`from pymmseqs.commands import easy_search`
+  in `data/loaders/similarity.py`) linked a GPL mmseqs2. That premise was wrong: both
+  [`pymmseqs`](https://github.com/heispv/pymmseqs) and upstream
+  [mmseqs2](https://github.com/soedinglab/MMseqs2) are **MIT**, so no GPL dependency is linked and
+  nothing forces copyleft.
+  - `apps/protspace`, `apps/prep`, `apps/web`, `packages/*` → all **MIT**.
+  - Root `LICENSE` plus each per-directory `LICENSE` are MIT; the whole repo is uniformly MIT.
+  - **Verified:** `pymmseqs` (heispv/pymmseqs) and mmseqs2 (soedinglab/MMseqs2) both publish MIT
+    license metadata — there is no copyleft dependency to accommodate.
 - **D5 — v2 timing:** **Decided: decouple.** Cut over first (plumbing only — no PR blocks it), let
   filter-repo carry #66's branch in and keep #306 as an in-repo branch, then land v2 as the first
   monorepo feature PR that _also_ debuts `schema.json` + fixtures. Neither slow (not land-first) nor

@@ -4,7 +4,7 @@ Python package for dimensionality reduction of protein language model (pLM) embe
 
 - **Version:** 4.3.1
 - **Python:** >=3.10
-- **License:** GPL-3.0
+- **License:** MIT
 - **PyPI:** `pip install protspace`
 - **GitHub:** https://github.com/tsenoner/protspace
 

@@ -48,4 +48,4 @@ index is needed at Swiss-Prot scale.
 
 ## License
 
-GPL-3.0 — part of the [ProtSpace](https://github.com/tsenoner/protspace) project.
+MIT — part of the [ProtSpace](https://github.com/tsenoner/protspace) project.

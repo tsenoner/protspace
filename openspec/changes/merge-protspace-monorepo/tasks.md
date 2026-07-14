@@ -46,7 +46,7 @@ Caveat: this holds only for **append-only** upstream `main`. If upstream **rebas
 
 ## 4. Cutover & cleanup
 
-- [ ] 4.1 Apply split-license (Decision D4): per-directory `LICENSE` (GPL-3.0 in `apps/protspace`+`apps/prep`, MIT for TS/root); fix root Apache-vs-MIT mismatch → MIT; correct `license` fields + image labels; get legal sanity-check on the `pymmseqs` GPL linkage
+- [x] 4.1 Apply repo-wide MIT (Decision D4): MIT `LICENSE` in every app dir + TS/root; MIT `license` fields + image labels. (`pymmseqs`/mmseqs2 verified MIT, so no GPL to accommodate.)
 - [ ] 4.2 Merge the migration (plumbing) branch; run full `turbo build`/`test`, prep tests, and an end-to-end prep→bundle→web-read smoke
 - [ ] 4.3 Archive the `protspace` GitHub repo; update README/badges/Colab links pointing at the old repo
 

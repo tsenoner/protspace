@@ -4,7 +4,7 @@ version = "4.7.0"
 description = "Embedding Annotation Transfer (EAT): nearest-neighbour label transfer in protein-language-model embedding space"
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
-license = "GPL-3.0"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.23.0",
