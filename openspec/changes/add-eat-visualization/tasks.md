@@ -1,0 +1,63 @@
+## 1. EAT data model and normalization
+
+- [ ] 1.1 Add shared `PredictedCell`/EAT types, naming and metadata helpers, display
+      materialization, provenance accessors, and focused unit tests.
+- [ ] 1.2 Normalize valid companion triples in small, optimized, and separated conversion paths;
+      exclude the reserved namespace; create union categories and synthetic confidence data; test
+      missing, invalid, curated-precedence, prediction-only, and legacy cases.
+- [ ] 1.3 Thread prediction cells through slicing and dataset hashing, including alignment and
+      prediction-sensitive fingerprint tests.
+- [ ] 1.4 Reconstruct curated bases and all three companions in the bundle writer, omit synthetic
+      confidence keys, and add raw/materialized lossless round-trip tests.
+
+## 2. Persisted controls and application state
+
+- [ ] 2.1 Extend bundle settings types, validation, normalization, EAT-only write gating, and tests
+      for defaults, valid fields, and independently invalid optional fields.
+- [ ] 2.2 Add accessible EAT overlay and threshold controls, event/auto-sync contracts, conditional
+      enablement, dataset reset behavior, responsive styling, and component tests.
+- [ ] 2.3 Apply embedded EAT settings on dataset load and export current EAT settings from the app,
+      with controller tests.
+
+## 3. Overlay semantics and publication rendering
+
+- [ ] 3.1 Integrate effective EAT category materialization into scatter-plot caches and invalidation,
+      preserving numeric, filter, isolation, and data-change behavior with tests.
+- [ ] 3.2 Extend the authoritative visibility model with confidence and threshold semantics, memo
+      keys, precedence, hit-testing, and boundary tests.
+- [ ] 3.3 Carry an explicit predicted flag through style getters, shared live/export WebGL staging,
+      buffers, attribute layout, and signed-distance shaders; verify hollow geometry and live/export
+      parity with unit tests.
+- [ ] 3.4 Add tooltip provenance, reliability-index wording/bar, EAT legend subsection and live
+      constrained-view counts, plus rendering and accessibility tests.
+
+## 4. Provenance connectors
+
+- [ ] 4.1 Implement and unit-test a dedicated connector overlay controller for id lookup,
+      plane-mapped/scaled geometry, dashed non-scaling lines, summaries, missing endpoints, and
+      rerender-versus-transform behavior.
+- [ ] 4.2 Add scatter-plot connector APIs, endpoint highlighting, projection/plane/filter/isolation
+      recomputation, empty-click/Escape/close/deselect clearing, status UI, styles, and component
+      tests.
+- [ ] 4.3 Add app interaction wiring with a per-data/per-annotation inverted source index,
+      active-column lookup, visible-view filtering, deterministic confidence ordering, 20-line cap,
+      and interaction tests.
+
+## 5. Real-data and end-to-end verification
+
+- [ ] 5.1 Add the supplied phosphatase EAT bundle as a compact test fixture and verify real decoder
+      normalization, counts, confidence range, sources, reserved-column hiding, and round-trip.
+- [ ] 5.2 Add browser coverage for toggle/threshold keyboard behavior, filled-versus-hollow output,
+      tooltip, legend counts, predicted/source connectors, fan-out status, dismissal, projection
+      changes, and image export.
+- [ ] 5.3 Run targeted suites throughout, then full Vitest/E2E coverage and `pnpm precommit`; resolve
+      every local failure before publishing.
+
+## 6. Publication and review closure
+
+- [ ] 6.1 Push `agent/277-eat-overlay` and open a draft PR with a validated semantic title, links to
+      #277 and #300, scientific behavior summary, design decisions, screenshots, and test evidence.
+- [ ] 6.2 Commission an independent review in another Codex task, require actionable findings to be
+      left as GitHub review comments, and address or explicitly resolve every thread.
+- [ ] 6.3 Monitor new GitHub feedback and CI, diagnose and fix failures locally before pushing, and
+      finish with all review threads resolved and all required checks green.
