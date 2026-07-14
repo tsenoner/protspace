@@ -57,7 +57,11 @@
 
 - [x] 6.1 Push `agent/277-eat-overlay` and open a draft PR with a validated semantic title, links to
       #277 and #300, scientific behavior summary, design decisions, screenshots, and test evidence.
-- [ ] 6.2 Commission an independent review in another Codex task, require actionable findings to be
-      left as GitHub review comments, and address or explicitly resolve every thread.
-- [ ] 6.3 Monitor new GitHub feedback and CI, diagnose and fix failures locally before pushing, and
-      finish with all review threads resolved and all required checks green.
+- [x] 6.2 Commission an independent review in another Codex task, require actionable findings to be
+      left as GitHub review comments, and address or explicitly resolve every thread. Review task
+      `019f6045-1eea-76c3-88a2-e8148db39f38` posted four actionable threads; commit `02d8faf`
+      added regressions for all four, replied with evidence, and resolved every thread.
+- [x] 6.3 Monitor new GitHub feedback and CI, diagnose and fix failures locally before pushing, and
+      finish with all review threads resolved and all required checks green. PR #315 code quality
+      and documentation checks passed on `02d8faf`; manually dispatched full Playwright run
+      29328322734 passed on the same SHA because the PR workflow's `run-e2e` label is unavailable.
