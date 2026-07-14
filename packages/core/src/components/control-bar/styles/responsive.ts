@@ -173,6 +173,31 @@ export const responsiveStyles = css`
      Import/Export still read as menus rather than immediate actions. */
   @media (max-width: 600px) {
     /* --breakpoint-sm */
+    .left-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      width: 100%;
+    }
+
+    .left-controls > .control-group,
+    .left-controls > .eat-controls {
+      width: 100%;
+    }
+
+    .eat-controls {
+      box-sizing: border-box;
+    }
+
+    .eat-threshold {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .eat-threshold input[type='range'] {
+      flex: 1;
+      min-width: 4rem;
+    }
+
     .right-controls .dropdown-trigger {
       justify-content: space-between;
       gap: var(--spacing-2xs, 0.25rem);
