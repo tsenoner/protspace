@@ -42,9 +42,10 @@ Publishing uses OIDC (`id-token: write`), not a `PYPI_API_TOKEN`. On PyPI, proje
 | Environment | `pypi`                               |
 
 Remove the legacy repo's stale trusted-publisher entry once the new one is
-verified. (protlabel is published from the same job; if it becomes its own
-PyPI project it needs its own trusted-publisher entry — today it ships under the
-protspace release.)
+verified. **`protlabel` is a separate PyPI project** (also at 4.7.1), uploaded by
+the same publish job — so add the identical trusted publisher (owner `tsenoner`,
+repo `protspace`, workflow `protspace-publish.yml`, env `pypi`) on the
+[`protlabel`](https://pypi.org/project/protlabel/) project as well.
 
 ## GHCR image — no secret to move
 
