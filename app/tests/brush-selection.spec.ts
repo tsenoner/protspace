@@ -121,6 +121,7 @@ async function enableSelectionMode(page: Page): Promise<boolean> {
       const plot = document.querySelector('#myPlot') as any;
       return !!plot?.selectionMode && !!plot?._interaction?._brush;
     },
+    undefined,
     { timeout: 5_000 },
   );
 
@@ -158,8 +159,6 @@ async function waitForSelection(
 
 test.describe('Brush selection works at all zoom levels (#189)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -367,8 +366,6 @@ async function setSelectionTool(page: Page, tool: 'rectangle' | 'lasso'): Promis
 
 test.describe('Lasso selection (#208)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await page.evaluate(() => localStorage.setItem('driver.overviewTour', 'true'));
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);

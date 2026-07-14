@@ -88,6 +88,36 @@ function build(): string {
   lines.push('');
   lines.push('# Annotation Reference');
   lines.push('');
+  lines.push('## Annotation Value Format (v2 Encoding)');
+  lines.push('');
+  lines.push(
+    'As of bundle format v2, annotation values containing special characters use percent-encoding ' +
+      'to ensure reliable parsing across sources. When reading the per-column descriptions below, ' +
+      'note these encoding rules:',
+  );
+  lines.push('');
+  lines.push('- **Reserved characters** (`%`, `;`, `|`, control chars) are percent-encoded as `%XX` (uppercase hex)');
+  lines.push('  - `%` → `%25` (for names/labels containing percent signs)');
+  lines.push('  - `;` → `%3B` (field separator)');
+  lines.push('  - `|` → `%7C` (score/evidence separator)');
+  lines.push('  - Control chars (newline, tab, etc.) → `%0A`, `%09`, etc.');
+  lines.push('- **Literal characters** (`,`, `(`, `)`) remain unencoded for readability');
+  lines.push('');
+  lines.push(
+    'Example: `PF00001 (Kinase, serine)|425.5` stores the comma in the name literally, ' +
+      'but if a name contained a semicolon like "Superfamily; old", it would encode as ' +
+      '`PF00001 (Superfamily%3B old)|425.5`.',
+  );
+  lines.push('');
+  lines.push(
+    'Format version 2 is marked in the parquet metadata of the `selected_annotations` table ' +
+      'under the key `protspace_format_version`. Bundles without this key or with version < 2 ' +
+      'are rendered using the legacy parser. See [Data Format Reference](/guide/data-format#encoding-format-v2) ' +
+      'for more detail.',
+  );
+  lines.push('');
+  lines.push('## Sources');
+  lines.push('');
   lines.push(
     'ProtSpace annotations come from several sources. **Computational predictions** — from a ' +
       'machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius ' +

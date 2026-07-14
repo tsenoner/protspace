@@ -20,6 +20,7 @@ import {
 import { validateRowsBasic } from './validation';
 import { findColumn, materializeMergedRows, type BundleExtractionResult } from './bundle';
 import type { Rows, GenericRow } from './types';
+import { decodeField } from './annotation-codec';
 
 /**
  * Fast yield using MessageChannel instead of setTimeout(0).
@@ -350,22 +351,32 @@ function appendSyntheticNACategory(
  *   "GO:0005524|ATP binding"         → { label: "GO:0005524|ATP binding", scores: [], evidence: null }
  *   "taxonomy_value"                 → { label: "taxonomy_value", scores: [], evidence: null }
  */
-export const parseAnnotationValue = (
+/**
+ * Shared control flow for both bundle format versions. The only difference between
+ * v1 and v2 is whether the label is run through {@link decodeField} — v2 names are
+ * percent-encoded at the source (so `|` and `;` never appear inside a name), v1
+ * names are raw. `decodeLabel` is applied at every place the label string is
+ * produced (the no-pipe/trailing-pipe early return, the evidence branch, the
+ * non-numeric fallback, and the success return). Evidence and scores are never
+ * decoded in either version.
+ */
+const parseAnnotationValueImpl = (
   raw: string,
+  decodeLabel: (s: string) => string,
 ): { label: string; scores: number[]; evidence: string | null } => {
   const trimmed = raw.trim();
   if (!trimmed) return { label: '', scores: [], evidence: null };
 
   const lastPipe = trimmed.lastIndexOf('|');
   if (lastPipe === -1 || lastPipe === trimmed.length - 1) {
-    return { label: trimmed, scores: [], evidence: null };
+    return { label: decodeLabel(trimmed), scores: [], evidence: null };
   }
 
   const suffix = trimmed.substring(lastPipe + 1).trim();
 
   // Check for evidence code pattern (2–5 uppercase letters or ECO:digits)
   if (EVIDENCE_CODE_RE.test(suffix)) {
-    const label = trimmed.substring(0, lastPipe).trim();
+    const label = decodeLabel(trimmed.substring(0, lastPipe).trim());
     return { label, scores: [], evidence: suffix };
   }
 
@@ -377,14 +388,28 @@ export const parseAnnotationValue = (
     const num = Number(part.trim());
     if (!Number.isFinite(num)) {
       // Not numeric and not an evidence code — treat the full string as the label
-      return { label: trimmed, scores: [], evidence: null };
+      return { label: decodeLabel(trimmed), scores: [], evidence: null };
     }
     scores.push(num);
   }
 
-  const label = trimmed.substring(0, lastPipe).trim();
+  const label = decodeLabel(trimmed.substring(0, lastPipe).trim());
   return { label, scores, evidence: null };
 };
+
+const identity = (s: string): string => s;
+
+/**
+ * Dispatches to the shared parser with either the identity label decode (v1: raw
+ * label) or {@link decodeField} (v2: percent-decoded label) based on the bundle's
+ * `formatVersion`. Defaults to v1 so existing callers that don't yet thread a
+ * format version keep byte-identical behavior (threaded end-to-end in Task H2).
+ */
+export const parseAnnotationValue = (
+  raw: string,
+  formatVersion = 1,
+): { label: string; scores: number[]; evidence: string | null } =>
+  parseAnnotationValueImpl(raw, formatVersion >= 2 ? decodeField : identity);
 
 /**
  * Split a categorical annotation cell on the top-level hit separator ';'.
@@ -444,15 +469,25 @@ function splitOnTopLevelSemicolons(value: string): string[] {
  * containing ';' stay intact), then trims each token and drops empty or missing-value tokens.
  *
  * @param rawValue - the raw cell value; non-strings are normalized then stringified.
+ * @param formatVersion - bundle format version; v2 names are percent-encoded at the
+ *   source so they never carry a raw ';', making the paren-aware scan unnecessary.
+ *   Defaults to 1 so existing callers keep v1 (paren-aware) behavior until Task H2
+ *   threads the real version through.
  * @returns the trimmed, non-missing hit strings, in source order.
  */
-export function splitCategoricalAnnotationValues(rawValue: unknown): string[] {
+export function splitCategoricalAnnotationValues(rawValue: unknown, formatVersion = 1): string[] {
   // First-level: normalize the whole cell. Returns null if the entire cell is missing.
   const cellNormalized = normalizeMissingValue(rawValue);
   if (cellNormalized == null) return [];
 
-  // Split on top-level ';' (paren-aware), trim, drop empty/missing tokens.
-  return splitOnTopLevelSemicolons(String(cellNormalized))
+  // v2: names carry no raw ';' (percent-encoded at the source), so a plain split
+  // suffices. v1: paren-aware split, since raw names may legitimately contain ';'.
+  const parts =
+    formatVersion >= 2
+      ? String(cellNormalized).split(';')
+      : splitOnTopLevelSemicolons(String(cellNormalized));
+
+  return parts
     .map((part) => part.trim())
     .filter((part) => part !== '' && normalizeMissingValue(part) !== null);
 }
@@ -546,6 +581,10 @@ export function convertParquetToVisualizationData(
   const meta: Rows | undefined = Array.isArray(input)
     ? projectionsMetadata
     : input.projectionsMetadata;
+  // Raw `Rows` input is always a non-bundle (plain .parquet / legacy test) read → v1.
+  // `BundleExtractionResult` carries the version detected from the bundle's parquet
+  // key-value metadata by `extractRowsFromParquetBundle` (bundle.ts).
+  const formatVersion = Array.isArray(input) ? 1 : input.formatVersion;
 
   validateRowsBasic(rows);
 
@@ -554,9 +593,11 @@ export function convertParquetToVisualizationData(
   const hasXY = columnNames.includes('x') && columnNames.includes('y');
 
   if (hasProjectionName && hasXY) {
-    return normalizeEatCompanionColumns(convertBundleFormatData(rows, columnNames, meta));
+    return normalizeEatCompanionColumns(
+      convertBundleFormatData(rows, columnNames, meta, formatVersion),
+    );
   }
-  return normalizeEatCompanionColumns(convertLegacyFormatData(rows, columnNames));
+  return normalizeEatCompanionColumns(convertLegacyFormatData(rows, columnNames, formatVersion));
 }
 
 export function convertParquetToVisualizationDataOptimized(
@@ -590,10 +631,11 @@ async function convertLargeDatasetOptimizedRaw(
   const columnNames = Object.keys(rows[0]);
   const hasProjectionName = columnNames.includes('projection_name');
   const hasXY = columnNames.includes('x') && columnNames.includes('y');
+  // Raw `Rows` input is always a non-bundle (plain .parquet / legacy test) read → v1.
   if (hasProjectionName && hasXY) {
-    return convertBundleFormatDataOptimized(rows, columnNames, projectionsMetadata);
+    return convertBundleFormatDataOptimized(rows, columnNames, projectionsMetadata, 1);
   }
-  return convertLegacyFormatData(rows, columnNames);
+  return convertLegacyFormatData(rows, columnNames, 1);
 }
 
 async function convertLargeDatasetOptimized(
@@ -604,6 +646,7 @@ async function convertLargeDatasetOptimized(
     annotationsById,
     projectionIdColumn,
     projectionsMetadata,
+    formatVersion,
   } = extraction;
   const columnNames = Object.keys(projectionRows[0]);
   const hasProjectionName = columnNames.includes('projection_name');
@@ -624,17 +667,19 @@ async function convertLargeDatasetOptimized(
       projectionIdColumn,
       annotationColumnNames,
       projectionsMetadata,
+      formatVersion,
     );
   }
   // Legacy format: materialize rows (should not happen with bundle extraction, but safe fallback)
   const rows = materializeMergedRows(extraction);
-  return convertLegacyFormatData(rows, columnNames);
+  return convertLegacyFormatData(rows, columnNames, formatVersion);
 }
 
 function convertBundleFormatData(
   rows: Rows,
   columnNames: string[],
   projectionsMetadata?: Rows,
+  formatVersion = 1,
 ): VisualizationData {
   const proteinIdCol =
     findColumn(columnNames, ['identifier', 'protein_id', 'id', 'protein', 'uniprot']) ||
@@ -737,7 +782,7 @@ function convertBundleFormatData(
 
     for (const row of baseProjectionData) {
       const proteinId = row[proteinIdCol] != null ? String(row[proteinIdCol]) : '';
-      const rawValues = splitCategoricalAnnotationValues(row[annotationCol]);
+      const rawValues = splitCategoricalAnnotationValues(row[annotationCol], formatVersion);
 
       if (rawValues.length === 0) {
         annotationMap.set(proteinId, []);
@@ -750,7 +795,7 @@ function convertBundleFormatData(
       const scores: (number[] | null)[] = [];
       const evidences: (string | null)[] = [];
       for (const raw of rawValues) {
-        const parsed = parseAnnotationValue(raw);
+        const parsed = parseAnnotationValue(raw, formatVersion);
         labels.push(parsed.label);
         scores.push(parsed.scores.length > 0 ? parsed.scores : null);
         evidences.push(parsed.evidence);
@@ -812,6 +857,7 @@ async function convertBundleFormatDataOptimized(
   rows: Rows,
   columnNames: string[],
   projectionsMetadata?: Rows,
+  formatVersion = 1,
 ): Promise<VisualizationData> {
   const chunkSize = 50000;
   const proteinIdCol =
@@ -896,6 +942,7 @@ async function convertBundleFormatDataOptimized(
     columnNames,
     proteinIdCol,
     uniqueProteinIds,
+    formatVersion,
   );
 
   return {
@@ -920,6 +967,7 @@ async function convertBundleFormatDataOptimizedSeparated(
   projectionIdCol: string,
   annotationColumnNames: string[],
   projectionsMetadata?: Rows,
+  formatVersion = 1,
 ): Promise<VisualizationData> {
   const chunkSize = 50000;
 
@@ -993,6 +1041,7 @@ async function convertBundleFormatDataOptimizedSeparated(
     annotationColumnNames,
     projectionIdCol,
     uniqueProteinIds,
+    formatVersion,
   );
 
   return {
@@ -1006,7 +1055,11 @@ async function convertBundleFormatDataOptimizedSeparated(
   };
 }
 
-function convertLegacyFormatData(rows: Rows, columnNames: string[]): VisualizationData {
+function convertLegacyFormatData(
+  rows: Rows,
+  columnNames: string[],
+  formatVersion = 1,
+): VisualizationData {
   const proteinIdCol =
     findColumn(columnNames, ['identifier', 'protein_id', 'id', 'protein', 'uniprot']) ||
     columnNames[0];
@@ -1067,7 +1120,7 @@ function convertLegacyFormatData(rows: Rows, columnNames: string[]): Visualizati
     }
 
     const rawValues: string[][] = rows.map((row) =>
-      splitCategoricalAnnotationValues(row[annotationCol]),
+      splitCategoricalAnnotationValues(row[annotationCol], formatVersion),
     );
 
     let columnHasScores = false;
@@ -1077,7 +1130,7 @@ function convertLegacyFormatData(rows: Rows, columnNames: string[]): Visualizati
       const scores: (number[] | null)[] = [];
       const evidences: (string | null)[] = [];
       for (const raw of valueArray) {
-        const p = parseAnnotationValue(raw);
+        const p = parseAnnotationValue(raw, formatVersion);
         labels.push(p.label);
         scores.push(p.scores.length > 0 ? p.scores : null);
         evidences.push(p.evidence);
@@ -1268,6 +1321,7 @@ interface ExtractedAnnotations {
 async function extractAnnotationsByProtein(
   rowByProteinIdx: ReadonlyArray<GenericRow | undefined>,
   annotationColumns: string[],
+  formatVersion = 1,
 ): Promise<ExtractedAnnotations> {
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
@@ -1338,7 +1392,7 @@ async function extractAnnotationsByProtein(
     const parseCell = (raw: unknown): ParsedCell => {
       const cached = parseCache.get(raw);
       if (cached !== undefined) return cached;
-      const rawValues = splitCategoricalAnnotationValues(raw);
+      const rawValues = splitCategoricalAnnotationValues(raw, formatVersion);
       const n = rawValues.length;
       if (n === 0) {
         parseCache.set(raw, EMPTY_CELL);
@@ -1348,7 +1402,7 @@ async function extractAnnotationsByProtein(
       let scores: (number[] | null)[] | null = null;
       let evidence: (string | null)[] | null = null;
       for (let k = 0; k < n; k++) {
-        const parsed = parseAnnotationValue(rawValues[k]);
+        const parsed = parseAnnotationValue(rawValues[k], formatVersion);
         labels[k] = parsed.label;
         if (parsed.scores.length > 0) {
           if (!scores) scores = new Array<number[] | null>(n).fill(null);
@@ -1486,6 +1540,7 @@ async function extractAnnotationsOptimized(
   columnNames: string[],
   proteinIdCol: string,
   uniqueProteinIds: string[],
+  formatVersion = 1,
 ): Promise<ExtractedAnnotations> {
   const allIdColumns = getIdColumnsSet(proteinIdCol);
   const annotationColumns = columnNames.filter((c) => !allIdColumns.has(c));
@@ -1503,7 +1558,7 @@ async function extractAnnotationsOptimized(
     if (idx !== undefined) rowByProteinIdx[idx] = row;
   }
 
-  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns);
+  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns, formatVersion);
 }
 
 /**
@@ -1516,6 +1571,7 @@ async function extractAnnotationsOptimizedSeparated(
   annotationColumnNames: string[],
   projectionIdCol: string,
   uniqueProteinIds: string[],
+  formatVersion = 1,
 ): Promise<ExtractedAnnotations> {
   const allIdColumns = getIdColumnsSet(projectionIdCol);
   const annotationColumns = annotationColumnNames.filter((c) => !allIdColumns.has(c));
@@ -1535,5 +1591,5 @@ async function extractAnnotationsOptimizedSeparated(
     rowByProteinIdx[p] = annotationsById.get(uniqueProteinIds[p]);
   }
 
-  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns);
+  return extractAnnotationsByProtein(rowByProteinIdx, annotationColumns, formatVersion);
 }

@@ -6,7 +6,8 @@ import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
 } from './conversion';
-import { extractRowsFromParquetBundle } from './bundle';
+import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
+import type { GenericRow, Rows } from './types';
 
 async function loadFixtureVisualizationData(fixtureName: string) {
   const filePath = resolve(__dirname, '../../../../../../app/tests/fixtures', fixtureName);
@@ -676,6 +677,53 @@ describe('annotation_data storage shape', () => {
     // Frequency-based ordering is unaffected by memoization: 'Active' and 'Bind'
     // each occur 7500 times (3/4 of 10000), 'Solo' 2500 — so Solo sorts last.
     expect(values.indexOf('Solo')).toBeGreaterThan(values.indexOf('Active'));
+  });
+
+  it('threads formatVersion 2 from BundleExtractionResult through the optimized separated path (Task H2)', async () => {
+    // v2 bundles percent-encode structural characters inside names at the source, so a
+    // name that legitimately contains ';' round-trips as e.g. 'Foo%3B bar' instead of the
+    // raw (unsafe-to-split-on) 'Foo; bar'. Decoding must happen AFTER splitting the cell on
+    // ';' (never before — decoding first would reintroduce a literal ';' that then gets
+    // mis-split), which is exactly what parseAnnotationValueV2/splitCategoricalAnnotationValues
+    // (formatVersion >= 2) already implement. This test only exercises the THREADING: does a
+    // real BundleExtractionResult's `formatVersion: 2` actually reach those functions through
+    // the optimized (>=10000 rows) conversion path, the same path the worker and main-thread
+    // bundle loaders use in production (data-loader.ts / decode.worker.ts pass the whole
+    // `extraction` object straight into `convertParquetToVisualizationDataOptimized`).
+    const numProteins = 10000;
+    const projections: Rows = Array.from({ length: numProteins }, (_, i) => ({
+      projection_name: 'UMAP',
+      identifier: `P${i + 1}`,
+      x: i,
+      y: i,
+    }));
+    const annotationsById = new Map<string, GenericRow>();
+    for (let i = 0; i < numProteins; i++) {
+      annotationsById.set(`P${i + 1}`, {
+        identifier: `P${i + 1}`,
+        cath: 'X (Foo%3B bar)|1.0',
+      });
+    }
+
+    const extraction: BundleExtractionResult = {
+      projections,
+      annotationsById,
+      projectionIdColumn: 'identifier',
+      annotationIdColumn: 'identifier',
+      projectionsMetadata: [{ projection_name: 'UMAP', dimensions: 2 }],
+      settings: null,
+      formatVersion: 2,
+    };
+
+    const result = await convertParquetToVisualizationDataOptimized(extraction);
+
+    const values = result.annotations.cath.values;
+    // Decoded, single category — the percent-encoded ';' is restored as a literal ';'.
+    expect(values).toContain('X (Foo; bar)');
+    // Must not be shattered into fragments (would happen if decode ran before split).
+    expect(values).not.toContain('X (Foo');
+    // Must not still carry the raw percent-encoding (would happen if v1 defaulted silently).
+    expect(values).not.toContain('X (Foo%3B bar)');
   });
 });
 

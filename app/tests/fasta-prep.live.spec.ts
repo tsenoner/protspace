@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
  *   - `app/.env.development` sets VITE_PREP_API_BASE=http://localhost:8000
  *
  * Run:
- *   cd app && npx playwright test --config=tests/playwright.config.ts \
+ *   cd app && RUN_LIVE_E2E=1 npx playwright test --config=tests/playwright.config.ts \
  *     --project=fasta-prep-live
  */
 
