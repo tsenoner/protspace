@@ -170,7 +170,7 @@ When displayed in ProtSpace, the decoded names render as "Superfamily; old" and 
 
 **Known formatting:**
 
-- Unnamed CATH superfamilies from TED domains display the bare code without a decoding step (see [#57](https://github.com/tsenoner/protspace_web/issues/57))
+- Unnamed CATH superfamilies from TED domains display the bare code without a decoding step (see [#57](https://github.com/tsenoner/protspace/issues/57))
 
 ## Creating Files
 

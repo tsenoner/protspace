@@ -162,7 +162,7 @@ describe('v1 bundle format-version detection regression', () => {
   it('detects an existing v1 fixture as formatVersion 1 via the real footer read (not the catch->1 fallback)', async () => {
     const filePath = resolve(
       __dirname,
-      '../../../../../../app/tests/fixtures/data_custom.parquetbundle',
+      '../../../../../../apps/web/tests/fixtures/data_custom.parquetbundle',
     );
     const buf = readFileSync(filePath);
     const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);

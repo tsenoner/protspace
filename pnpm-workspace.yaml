@@ -1,6 +1,7 @@
 packages:
   - packages/*
-  - app
+  - apps/web
+  - apps/protspace
 
 onlyBuiltDependencies:
   - '@swc/core'

@@ -3,10 +3,12 @@ name: Publish container images
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    # No tag trigger: protspace releases push `v*` tags to THIS repo, and the
+    # prep image must not build/publish on them (it deploys by digest on main,
+    # and a `v4.7.1` tag would otherwise mint a mislabeled protspace-prep image).
   pull_request:
     paths:
-      - 'services/protspace-prep/**'
+      - 'apps/prep/**'
       - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
@@ -24,8 +26,8 @@ jobs:
       matrix:
         include:
           - name: protspace-prep
-            context: services/protspace-prep
-            dockerfile: services/protspace-prep/Dockerfile
+            context: .
+            dockerfile: apps/prep/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

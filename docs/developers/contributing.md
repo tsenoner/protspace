@@ -5,7 +5,7 @@ Guide for developers who want to contribute to ProtSpace.
 ## Repository Structure
 
 ```
-protspace_web/
+protspace/
 ├── app/                    # Demo application (Vite + React)
 │   ├── src/
 │   │   ├── pages/          # React pages
@@ -45,8 +45,8 @@ protspace_web/
 
 ```bash
 # Clone repository
-git clone https://github.com/tsenoner/protspace_web.git
-cd protspace_web
+git clone https://github.com/tsenoner/protspace.git
+cd protspace
 
 # Install dependencies
 pnpm install
@@ -252,9 +252,9 @@ Edit files in `docs/` folder.
 
 ## Getting Help
 
-- [GitHub Issues](https://github.com/tsenoner/protspace_web/issues) - Bug reports
-- [GitHub Discussions](https://github.com/tsenoner/protspace_web/discussions) - Questions
+- [GitHub Issues](https://github.com/tsenoner/protspace/issues) - Bug reports
+- [GitHub Discussions](https://github.com/tsenoner/protspace/discussions) - Questions
 
 ## License
 
-Apache 2.0 - See [LICENSE](https://github.com/tsenoner/protspace_web/blob/main/LICENSE)
+MIT - See [LICENSE](https://github.com/tsenoner/protspace/blob/main/LICENSE)

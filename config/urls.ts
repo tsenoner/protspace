@@ -5,7 +5,7 @@
  */
 
 // Development server ports.
-// Single source of truth: the app's Vite proxy (app/vite.config.ts) forwards `/docs` here, and the
+// Single source of truth: the app's Vite proxy (apps/web/vite.config.ts) forwards `/docs` here, and the
 // VitePress dev server reads `docs` from this constant (docs/.vitepress/config.mts) with
 // `strictPort` so it fails loudly instead of silently bumping to a port the proxy can't reach.
 export const PORTS = {

@@ -1,0 +1,107 @@
+name: protspace Publish
+
+# Dispatched by protspace-release.yml after a version bump. Builds the protspace
+# PyPI package (apps/protspace) and the legacy Dash image. NEEDS a live Actions
+# dry-run before archiving the old repo (OpenSpec task 3.4) and PyPI trusted
+# publishing configured for the `protspace` project on this repo.
+
+on:
+  repository_dispatch:
+    types: [trigger-publish]
+
+defaults:
+  run:
+    working-directory: apps/protspace
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/protspace
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.client_payload.tag }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: 'apps/protspace/pyproject.toml'
+
+      # Build ONLY protspace + protlabel (lock-step). NOT --all-packages: that
+      # also builds the private apps/prep member and lands dist/ at the workspace
+      # root, not apps/protspace/dist. --package can't repeat, so build each into
+      # the same working-directory dist/.
+      - name: Build Python Packages (protspace + protlabel)
+        run: |
+          uv build --package protlabel --out-dir dist
+          uv build --package protspace --out-dir dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: apps/protspace/dist
+
+      - name: Upload dists to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.event.client_payload.tag }} dist/* --clobber
+
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      # Preserve the existing image identity ghcr.io/<owner>/protspace (not the repo name).
+      IMAGE_NAME: ${{ github.repository_owner }}/protspace
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.client_payload.tag }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ github.event.client_payload.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.client_payload.tag }}
+            type=semver,pattern={{major}},value=${{ github.event.client_payload.tag }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          # Root context: protspace is a workspace member; the image needs the
+          # root uv.lock + the protlabel member source (see apps/protspace/Dockerfile).
+          context: .
+          file: apps/protspace/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

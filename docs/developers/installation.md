@@ -60,8 +60,8 @@ To contribute or modify ProtSpace:
 
 ```bash
 # Clone repository
-git clone https://github.com/tsenoner/protspace_web.git
-cd protspace_web
+git clone https://github.com/tsenoner/protspace.git
+cd protspace
 
 # Install dependencies
 pnpm install

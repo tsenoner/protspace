@@ -52,7 +52,7 @@ In development, the app server (`localhost:8080`) proxies `/docs` requests to th
 - No CORS issues when navigating between app and docs
 - Simplified configuration (same URL structure in both environments)
 
-The proxy is configured in `app/vite.config.ts`.
+The proxy is configured in `apps/web/vite.config.ts`.
 
 ## Note
 

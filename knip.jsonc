@@ -1,6 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema-jsonc.json",
   "treatConfigHintsAsErrors": true,
+  // apps/protspace is a Python (uv) workspace member bridged into turbo via a thin
+  // package.json; it has no JS/TS graph for knip to analyze.
+  "ignoreWorkspaces": ["apps/protspace"],
   "workspaces": {
     ".": {
       // Perf Playwright specs are not auto-discovered (perf playwright.config.ts
@@ -26,7 +29,7 @@
       // `src/index.ts` is plugin-discovered; duplicating it trips config-hint errors.
       "project": ["src/**/*.ts"],
     },
-    "app": {
+    "apps/web": {
       // Keep the runtime graph rooted from App and layer Playwright specs on top.
       "entry": ["src/App.tsx", "tests/**/*.spec.ts"],
       "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"],

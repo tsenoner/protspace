@@ -118,11 +118,11 @@ The optional settings table is included when you export with "Include legend/exp
 
 ### How can I contribute?
 
-See [CONTRIBUTING.md](https://github.com/tsenoner/protspace_web/blob/main/CONTRIBUTING.md) on GitHub.
+See [CONTRIBUTING.md](https://github.com/tsenoner/protspace/blob/main/CONTRIBUTING.md) on GitHub.
 
 ### Where do I report bugs?
 
-[GitHub Issues](https://github.com/tsenoner/protspace_web/issues)
+[GitHub Issues](https://github.com/tsenoner/protspace/issues)
 
 ### Can I request features?
 
@@ -151,5 +151,5 @@ BibTeX:
 
 ## Still Have Questions?
 
-- **GitHub Discussions**: [Ask the community](https://github.com/tsenoner/protspace_web/discussions)
-- **Issues**: [Report bugs](https://github.com/tsenoner/protspace_web/issues)
+- **GitHub Discussions**: [Ask the community](https://github.com/tsenoner/protspace/discussions)
+- **Issues**: [Report bugs](https://github.com/tsenoner/protspace/issues)

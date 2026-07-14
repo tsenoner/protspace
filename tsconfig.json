@@ -21,7 +21,7 @@
   "include": [],
   "references": [
     {
-      "path": "./app"
+      "path": "./apps/web"
     },
     {
       "path": "./packages/core"

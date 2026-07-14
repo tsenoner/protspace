@@ -45,8 +45,8 @@ See the [Python ProtSpace repository](https://github.com/tsenoner/protspace) for
 ## 🔧 Development
 
 ```bash
-git clone https://github.com/tsenoner/protspace_web.git
-cd protspace_web
+git clone https://github.com/tsenoner/protspace.git
+cd protspace
 pnpm install
 pnpm dev  # App: http://localhost:8080 | Docs: http://localhost:5174/docs/
 ```

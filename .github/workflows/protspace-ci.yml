@@ -1,0 +1,68 @@
+name: protspace CI (Python)
+
+# protspace is a uv workspace member under apps/protspace. GitHub only runs
+# workflows from the root .github/workflows, so this lives here (not nested) and
+# path-filters to protspace changes. Run steps use working-directory: apps/protspace;
+# uv detects the workspace root and uses the root lock.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/protspace/**'
+      - '.github/workflows/protspace-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/protspace/**'
+      - '.github/workflows/protspace-ci.yml'
+
+defaults:
+  run:
+    working-directory: apps/protspace
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: 'apps/protspace/pyproject.toml'
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff check
+        run: uv run ruff check src/ packages/ tests/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ packages/ tests/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest -m "not slow" -q

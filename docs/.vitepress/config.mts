@@ -111,7 +111,7 @@ export default defineConfig({
       // },
     ],
 
-    socialLinks: [{ icon: 'github', link: 'https://github.com/tsenoner/protspace_web' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/tsenoner/protspace' }],
 
     footer: {
       message: 'Released under the Apache 2.0 License.',
@@ -123,7 +123,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: 'https://github.com/tsenoner/protspace_web/edit/main/docs/:path',
+      pattern: 'https://github.com/tsenoner/protspace/edit/main/docs/:path',
       text: 'Edit this page on GitHub',
     },
   },
