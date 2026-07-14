@@ -3,7 +3,9 @@ name: Publish container images
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    # No tag trigger: protspace releases push `v*` tags to THIS repo, and the
+    # prep image must not build/publish on them (it deploys by digest on main,
+    # and a `v4.7.1` tag would otherwise mint a mislabeled protspace-prep image).
   pull_request:
     paths:
       - 'apps/prep/**'
