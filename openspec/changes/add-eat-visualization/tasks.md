@@ -190,6 +190,12 @@
       current counts/rendering slice-based; cover filtered and isolated zero-prediction slices.
 - [x] 12.2c Reuse one stable protein-index order across numeric and EAT hashing and add a 500k-row
       sparse-track regression that rejects per-track row-object materialization and sorting.
+- [x] 12.2d Classify dense, typed, and sparse annotation storage through one shared multi-label guard
+      so sparse multi-hit EAT rows keep incompatible legend shape selection disabled; cover the
+      four-label materialized fixture shape without scanning the full protein column.
+- [x] 12.2e Retain bounded off-view provenance pair identities independently of current view
+      membership, count unresolved pairs once, and cover filter/isolation expansion in both click
+      directions plus overlay materialization when an endpoint re-enters the view.
 - [ ] 12.3 Run focused and full verification, mandated precommit, strict OpenSpec, exact EAT
-      Playwright, push coherent commits, reply to and resolve the new review thread with immutable
-      evidence, update exact-head PR evidence, and re-request clean independent final-head review.
+      Playwright, push coherent commits, reply to and resolve the new review threads with immutable
+      evidence, update exact-head PR evidence, and request fresh independent final-head review.

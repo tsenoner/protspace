@@ -133,7 +133,6 @@ export function createInteractionController({
         originalIndex,
         (candidateId, candidateIndex) =>
           plotElement.isProteinLegendEligible(candidateId, candidateIndex),
-        (candidateIndex) => plotElement.isProteinInCurrentView(candidateIndex),
       );
       if (request) {
         plotElement.setProvenanceConnectors(request);

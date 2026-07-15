@@ -70,6 +70,37 @@ describe('ConnectorOverlayController', () => {
     expect(status).toEqual({ shown: 1, total: 8, missingEndpoints: 1 });
   });
 
+  it('materializes a retained pair when an off-view endpoint re-enters the view', () => {
+    let currentPlotData: PlotData = {
+      length: 1,
+      xs: new Float32Array([1]),
+      ys: new Float32Array([4]),
+      zs: null,
+      originalIndices: null,
+      proteinIds: ['source'],
+    };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => currentPlotData,
+      getScales: () => scales,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.9 }],
+      totalCandidates: 1,
+    });
+    expect(svg.querySelectorAll('line.eat-provenance-connector')).toHaveLength(0);
+    expect(status).toEqual({ shown: 0, total: 1, missingEndpoints: 1 });
+
+    currentPlotData = plotData;
+    controller.render();
+
+    expect(svg.querySelectorAll('line.eat-provenance-connector')).toHaveLength(1);
+    expect(status).toEqual({ shown: 1, total: 1, missingEndpoints: 0 });
+  });
+
   it('adds resolver-known filtered or isolated candidates to unavailable status', () => {
     controller.set({
       pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.9 }],

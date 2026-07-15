@@ -78,8 +78,10 @@ base EAT column is selected, scatter-plot materialization clones only that selec
 storage and replaces missing slots with predicted category indices. A compact single-valued base
 remains an `Int32Array`; uncommon multi-hit predictions are stored as sparse row overrides rather
 than boxing every protein into a child array. The result is cached by data, annotation, overlay
-state, and numeric settings. The legend and styling consume this materialized view; disabling the
-overlay immediately returns to curated indices.
+state, and numeric settings. Shared annotation-data guards classify multi-label capability across
+typed, dense, and sparse storage; sparse classification scans only exceptional overrides so legend
+shape gating does not regress to an all-row walk. The legend and styling consume this materialized
+view; disabling the overlay immediately returns to curated indices.
 
 Alternatives considered: mutating base annotation rows during conversion was rejected because the
 off state and lossless export need the curated representation; teaching every consumer to coalesce
@@ -169,10 +171,10 @@ stable current-view/visibility identity, invalidating only when filtered/isolati
 the authoritative visibility inputs change. A predicted click creates one query-to-source pair. A
 source click scans its already ordered list once, counts interactable candidates, and materializes
 only the first 20 pairs; it neither re-sorts nor allocates a full filtered candidate array.
-Legend-hidden and off-view endpoints produce no invalid geometry and an accessible “showing N of M”
-status.
-Legend-hidden and off-view endpoints produce no invalid geometry and an accessible explanatory
-status.
+Legend-hidden endpoints are excluded at click time. Bounded, otherwise eligible id pairs remain in
+the request across filtering and isolation so an endpoint can reappear without another click; the
+overlay resolves current-view availability dynamically and produces no invalid geometry plus an
+accessible explanatory status.
 
 Connector endpoints replace `highlightedProteinIds` while active. Empty-space click, annotation or
 overlay changes, data replacement, deselection, authoritative category-interactivity changes,
@@ -254,9 +256,10 @@ connector spec; rendered measurement is used to validate that behavior before ch
 
 Provenance receives the click detail's global `originalIndex` directly. The resolver retains only
 its annotation-scoped reverse source index and evaluates legend eligibility separately from
-filtered/isolation membership. Off-view eligible candidates remain in the request as unavailable
-status, while legend-hidden candidates are excluded. Source indices computed during normalization
-make the predicted-to-source path O(1) without a million-entry dataset-wide id map.
+filtered/isolation membership. Off-view eligible candidates retain their bounded pair identities;
+the overlay counts an unresolved pair once and resolves it if the view later expands, while
+legend-hidden candidates are excluded. Source indices computed during normalization make the
+predicted-to-source path O(1) without a million-entry dataset-wide id map.
 
 EAT-capable annotation keys are derived from the authoritative loaded scatter-plot dataset, not a
 filtered or isolated `data-change` slice. Counts, visibility, and rendering continue to consume the

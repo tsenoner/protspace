@@ -12,7 +12,7 @@ export interface ProvenanceConnectorRequest {
   pairs: readonly ProvenanceConnectorPair[];
   /** Number of legend-eligible candidates before the deterministic fan-out cap. */
   totalCandidates: number;
-  /** Legend-eligible candidates whose endpoint is outside the filtered/isolated view. */
+  /** Unavailable candidates not already represented by retained id pairs. */
   unavailableCandidates?: number;
 }
 

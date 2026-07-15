@@ -35,15 +35,12 @@ function makeData(queryCount = 24): VisualizationData {
 
 describe('EatProvenanceResolver', () => {
   const allLegendEligible = () => true;
-  const allInCurrentView = () => true;
 
   it('uses the active annotation cell for a predicted-to-source click', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
 
-    expect(
-      resolver.resolve(data, 'family', 'query-0', 1, allLegendEligible, allInCurrentView),
-    ).toEqual({
+    expect(resolver.resolve(data, 'family', 'query-0', 1, allLegendEligible)).toEqual({
       pairs: [
         {
           sourceProteinId: 'query-1',
@@ -60,14 +57,7 @@ describe('EatProvenanceResolver', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
     expect(
-      resolver.resolve(
-        data,
-        'ec',
-        'query-0',
-        1,
-        (proteinId) => proteinId !== 'source',
-        allInCurrentView,
-      ),
+      resolver.resolve(data, 'ec', 'query-0', 1, (proteinId) => proteinId !== 'source'),
     ).toBeNull();
   });
 
@@ -80,33 +70,25 @@ describe('EatProvenanceResolver', () => {
       'source',
       0,
       (proteinId) => proteinId !== 'query-0',
-      allInCurrentView,
     );
 
     expect(request?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-0');
     expect(request?.totalCandidates).toBe(23);
   });
 
-  it('filters to the visible view, orders deterministically, and caps fan-out at 20', () => {
+  it('orders deterministically and caps retained fan-out identities at 20', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
-    const request = resolver.resolve(
-      data,
-      'ec',
-      'source',
-      0,
-      allLegendEligible,
-      (proteinIndex) => proteinIndex !== 3,
-    );
+    const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
 
     expect(request?.totalCandidates).toBe(24);
-    expect(request?.unavailableCandidates).toBe(1);
+    expect(request?.unavailableCandidates).toBe(0);
     expect(request?.pairs).toHaveLength(20);
-    expect(request?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-2');
+    expect(request?.pairs.map((pair) => pair.targetProteinId)).toContain('query-2');
     expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
     expect(request?.pairs.map((pair) => pair.targetProteinId).slice(-2)).toEqual([
+      'query-18',
       'query-19',
-      'query-20',
     ]);
   });
 
@@ -150,14 +132,7 @@ describe('EatProvenanceResolver', () => {
     });
 
     for (let click = 0; click < 3; click++) {
-      const request = resolver.resolve(
-        data,
-        'ec',
-        'source',
-        0,
-        allLegendEligible,
-        allInCurrentView,
-      );
+      const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
       expect(request?.totalCandidates).toBe(50_000);
       expect(request?.pairs).toHaveLength(20);
       expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
@@ -173,7 +148,7 @@ describe('EatProvenanceResolver', () => {
     cells[2].confidence = 0.99;
     const resolver = new EatProvenanceResolver();
 
-    const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, allInCurrentView);
+    const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
 
     expect(request?.pairs.slice(0, 2).map((pair) => pair.targetProteinId)).toEqual([
       'query-0',
@@ -185,7 +160,7 @@ describe('EatProvenanceResolver', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
 
-    const request = resolver.resolve(data, 'ec', 'query-7', 8, allLegendEligible, allInCurrentView);
+    const request = resolver.resolve(data, 'ec', 'query-7', 8, allLegendEligible);
 
     expect(request?.pairs[0]).toMatchObject({
       sourceProteinId: 'source',
@@ -194,30 +169,27 @@ describe('EatProvenanceResolver', () => {
   });
 
   it.each(['filtering', 'isolation'])(
-    'retains endpoints removed by %s as unavailable in both click directions',
+    'retains endpoint identities across %s expansion in both click directions',
     () => {
-      const data = makeData();
+      const data = makeData(1);
       const resolver = new EatProvenanceResolver();
-      const sourceRequest = resolver.resolve(
-        data,
-        'ec',
-        'source',
-        0,
-        allLegendEligible,
-        (proteinIndex) => proteinIndex !== 1,
-      );
-      const targetRequest = resolver.resolve(
-        data,
-        'ec',
-        'query-0',
-        1,
-        allLegendEligible,
-        (proteinIndex) => proteinIndex !== 0,
-      );
+      const sourceRequest = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
+      const targetRequest = resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible);
 
-      expect(sourceRequest).toMatchObject({ totalCandidates: 24, unavailableCandidates: 1 });
-      expect(targetRequest).toMatchObject({ totalCandidates: 1, unavailableCandidates: 1 });
-      expect(targetRequest?.pairs).toEqual([]);
+      for (const request of [sourceRequest, targetRequest]) {
+        expect(request).toMatchObject({
+          totalCandidates: 1,
+          unavailableCandidates: 0,
+          pairs: [
+            {
+              sourceProteinId: 'source',
+              targetProteinId: 'query-0',
+            },
+          ],
+        });
+        expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
+        expect(getProvenanceConnectorStatus(request!, 1).missingEndpoints).toBe(0);
+      }
     },
   );
 
@@ -229,7 +201,6 @@ describe('EatProvenanceResolver', () => {
       'query-0',
       1,
       allLegendEligible,
-      (proteinIndex) => proteinIndex !== 0,
     );
     expect(request).not.toBeNull();
 
@@ -250,7 +221,7 @@ describe('EatProvenanceResolver', () => {
     ];
     const resolver = new EatProvenanceResolver();
 
-    const request = resolver.resolve(data, 'ec', 'query', 1, allLegendEligible, allInCurrentView);
+    const request = resolver.resolve(data, 'ec', 'query', 1, allLegendEligible);
 
     expect(request?.pairs[0]).toMatchObject({
       sourceProteinId: sourceId,

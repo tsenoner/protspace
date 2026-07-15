@@ -206,6 +206,14 @@ curated missing category.
   exceptional rows as multi-value overrides
 - **AND** retained multi-value allocation grows with exceptional rows rather than total proteins
 
+#### Scenario: Sparse multi-hit prediction disables incompatible shape selection
+
+- **WHEN** overlay materialization stores a transferred protein with multiple category indices in a
+  sparse override
+- **THEN** the legend classifies the selected annotation as multi-label
+- **AND** shape selection remains unavailable exactly as it does for dense multi-label annotations
+- **AND** classification work scales with sparse overrides rather than total proteins
+
 #### Scenario: Hollow outline follows point size
 
 - **WHEN** a user increases or decreases legend point size

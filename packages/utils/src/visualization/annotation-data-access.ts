@@ -6,6 +6,18 @@ export function isSparseMultiValueAnnotationData(
   return 'kind' in data && data.kind === 'sparse-multi';
 }
 
+/** Return whether any protein has more than one categorical value. */
+export function isMultilabelAnnotationData(data: AnnotationData): boolean {
+  if (isSparseMultiValueAnnotationData(data)) {
+    for (const values of data.overrides.values()) {
+      if (values.length > 1) return true;
+    }
+    return false;
+  }
+  if (data instanceof Int32Array) return false;
+  return data.some((values) => values.length > 1);
+}
+
 /**
  * Returns the list of category indices for a given protein.
  * - For Int32Array storage: a fresh single-element array (or `[]` if missing).

@@ -3,6 +3,7 @@ import {
   getProteinAnnotationIndices,
   getProteinAnnotationCount,
   getFirstAnnotationIndex,
+  isMultilabelAnnotationData,
   sliceAnnotationData,
 } from './annotation-data-access';
 
@@ -70,6 +71,16 @@ describe('annotation-data-access', () => {
       expect(getProteinAnnotationIndices(data, 2)).toEqual([]);
     });
 
+    it('detects multilabel rows by scanning only sparse overrides', () => {
+      expect(isMultilabelAnnotationData(data)).toBe(true);
+      expect(
+        isMultilabelAnnotationData({
+          ...data,
+          overrides: new Map([[1, [1]]]),
+        }),
+      ).toBe(false);
+    });
+
     it('remaps surviving overrides while slicing', () => {
       const sliced = sliceAnnotationData(data, [3, 1]);
       expect(getProteinAnnotationIndices(sliced, 0)).toEqual([2]);
@@ -111,6 +122,13 @@ describe('annotation-data-access', () => {
       const data = Int32Array.from([1, 2]);
       const sliced = sliceAnnotationData(data, [0, 99]);
       expect(Array.from(sliced as Int32Array)).toEqual([1, -1]);
+    });
+  });
+
+  describe('isMultilabelAnnotationData', () => {
+    it('distinguishes typed single-value and dense multilabel storage', () => {
+      expect(isMultilabelAnnotationData(Int32Array.from([0, 1]))).toBe(false);
+      expect(isMultilabelAnnotationData([[0], [1, 2]])).toBe(true);
     });
   });
 });

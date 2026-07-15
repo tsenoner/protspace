@@ -21,10 +21,11 @@ SHALL emphasize both endpoints without changing protein selection semantics.
 
 Clicking a source protein SHALL connect it to transferred queries that name it as source for the
 active base annotation. Legend-ineligible endpoints SHALL be excluded, while otherwise eligible
-endpoints removed by filtering or isolation SHALL remain in the total and accessible unavailable
-count. Renderable pairs SHALL be ordered by descending confidence with protein id as deterministic
-tie-breaker and capped at 20. Source candidates SHALL be ordered once
-when their cached index is constructed; each click SHALL scan and count visible candidates while
+endpoints removed by filtering or isolation SHALL retain their bounded id pairs, remain in the
+total, and contribute once to accessible unavailable status until they re-enter the view. Pairs
+SHALL be ordered by descending confidence with protein id as deterministic tie-breaker and capped
+at 20. Source candidates SHALL be ordered once
+when their cached index is constructed; each click SHALL scan and count legend-eligible candidates while
 materializing at most 20 pairs, without per-click sorting or a full filtered-candidate allocation.
 The UI SHALL report the shown and total candidate counts.
 
@@ -82,6 +83,8 @@ rebuilding their data join.
   endpoint is outside the current view
 - **AND** the unavailable candidate remains in the total in either click direction, including when
   zero lines can be drawn
+- **AND** its retained id pair resolves into a line without another click if filtering or isolation
+  later restores the endpoint, in either click direction
 
 #### Scenario: Filtered point retains global identity
 
