@@ -93,6 +93,7 @@ export class EatProvenanceResolver {
     clickedProteinId: string,
     clickedProteinIndex: number,
     isLegendEligible: (proteinId: string, proteinIndex: number) => boolean,
+    isInCurrentView: (proteinIndex: number) => boolean = () => true,
   ): ProvenanceConnectorRequest | null {
     if (!isLegendEligible(clickedProteinId, clickedProteinIndex)) return null;
 
@@ -106,25 +107,33 @@ export class EatProvenanceResolver {
       if (sourceProteinIndex >= 0 && !isLegendEligible(predictedCell.source, sourceProteinIndex)) {
         return null;
       }
+      const sourceInCurrentView = sourceProteinIndex >= 0 && isInCurrentView(sourceProteinIndex);
       return {
-        pairs: [
-          {
-            sourceProteinId: predictedCell.source,
-            targetProteinId: clickedProteinId,
-            confidence: predictedCell.confidence,
-          },
-        ],
+        pairs: sourceInCurrentView
+          ? [
+              {
+                sourceProteinId: predictedCell.source,
+                targetProteinId: clickedProteinId,
+                confidence: predictedCell.confidence,
+              },
+            ]
+          : [],
         totalCandidates: 1,
-        unavailableCandidates: 0,
+        unavailableCandidates: sourceInCurrentView ? 0 : 1,
       };
     }
 
     const candidates = this.getSourceIndex(data, annotation).get(clickedProteinId) ?? [];
     const pairs = [];
     let totalCandidates = 0;
+    let unavailableCandidates = 0;
     for (const candidate of candidates) {
       if (!isLegendEligible(candidate.targetProteinId, candidate.targetProteinIndex)) continue;
       totalCandidates++;
+      if (!isInCurrentView(candidate.targetProteinIndex)) {
+        unavailableCandidates++;
+        continue;
+      }
       if (pairs.length < MAX_PROVENANCE_CONNECTORS) {
         pairs.push({
           sourceProteinId: clickedProteinId,
@@ -138,7 +147,7 @@ export class EatProvenanceResolver {
     return {
       pairs,
       totalCandidates,
-      unavailableCandidates: 0,
+      unavailableCandidates,
     };
   }
 }

@@ -92,6 +92,49 @@ describe('EatProvenanceResolver', () => {
     ]);
   });
 
+  it.each(['filtering', 'isolation'])(
+    'fills the visible fan-out cap and restores confidence order after %s expands',
+    () => {
+      const data = makeData();
+      const resolver = new EatProvenanceResolver();
+      let queryTwoVisible = false;
+      const isInCurrentView = (proteinIndex: number) => queryTwoVisible || proteinIndex !== 3;
+
+      const constrained = resolver.resolve(
+        data,
+        'ec',
+        'source',
+        0,
+        allLegendEligible,
+        isInCurrentView,
+      );
+      expect(constrained).toMatchObject({
+        totalCandidates: 24,
+        unavailableCandidates: 1,
+      });
+      expect(constrained?.pairs).toHaveLength(20);
+      expect(constrained?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-2');
+      expect(constrained?.pairs.map((pair) => pair.targetProteinId)).toContain('query-20');
+
+      queryTwoVisible = true;
+      const expanded = resolver.resolve(
+        data,
+        'ec',
+        'source',
+        0,
+        allLegendEligible,
+        isInCurrentView,
+      );
+      expect(expanded).toMatchObject({
+        totalCandidates: 24,
+        unavailableCandidates: 0,
+      });
+      expect(expanded?.pairs).toHaveLength(20);
+      expect(expanded?.pairs.map((pair) => pair.targetProteinId)).toContain('query-2');
+      expect(expanded?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-20');
+    },
+  );
+
   it('reuses one source index for the same data reference and annotation', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
@@ -169,14 +212,29 @@ describe('EatProvenanceResolver', () => {
   });
 
   it.each(['filtering', 'isolation'])(
-    'retains endpoint identities across %s expansion in both click directions',
+    're-resolves semantic clicks across %s expansion in both click directions',
     () => {
       const data = makeData(1);
       const resolver = new EatProvenanceResolver();
-      const sourceRequest = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
-      const targetRequest = resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible);
+      const constrained = [
+        resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, (index) => index === 0),
+        resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible, (index) => index === 1),
+      ];
 
-      for (const request of [sourceRequest, targetRequest]) {
+      for (const request of constrained) {
+        expect(request).toEqual({
+          totalCandidates: 1,
+          unavailableCandidates: 1,
+          pairs: [],
+        });
+        expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
+      }
+
+      const expanded = [
+        resolver.resolve(data, 'ec', 'source', 0, allLegendEligible),
+        resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible),
+      ];
+      for (const request of expanded) {
         expect(request).toMatchObject({
           totalCandidates: 1,
           unavailableCandidates: 0,
@@ -187,7 +245,6 @@ describe('EatProvenanceResolver', () => {
             },
           ],
         });
-        expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
         expect(getProvenanceConnectorStatus(request!, 1).missingEndpoints).toBe(0);
       }
     },
@@ -201,6 +258,7 @@ describe('EatProvenanceResolver', () => {
       'query-0',
       1,
       allLegendEligible,
+      (index) => index === 1,
     );
     expect(request).not.toBeNull();
 

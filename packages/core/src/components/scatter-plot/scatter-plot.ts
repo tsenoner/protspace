@@ -2043,6 +2043,11 @@ export class ProtspaceScatterplot extends LitElement {
     this._connectorOverlay.set({ ...request, pairs });
   }
 
+  /** Whether a semantic app-level provenance click still has an active render request. */
+  hasActiveProvenanceConnectors(): boolean {
+    return this._connectorOverlay.hasActiveRequest();
+  }
+
   /** Clear EAT connector geometry, status, and connector-owned endpoint highlights. */
   clearProvenanceConnectors = (): void => {
     const wasActive = this._connectorOverlay.hasActiveRequest();

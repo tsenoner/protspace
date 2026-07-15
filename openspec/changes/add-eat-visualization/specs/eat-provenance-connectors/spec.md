@@ -21,13 +21,14 @@ SHALL emphasize both endpoints without changing protein selection semantics.
 
 Clicking a source protein SHALL connect it to transferred queries that name it as source for the
 active base annotation. Legend-ineligible endpoints SHALL be excluded, while otherwise eligible
-endpoints removed by filtering or isolation SHALL retain their bounded id pairs, remain in the
-total, and contribute once to accessible unavailable status until they re-enter the view. Pairs
-SHALL be ordered by descending confidence with protein id as deterministic tie-breaker and capped
-at 20. Source candidates SHALL be ordered once
-when their cached index is constructed; each click SHALL scan and count legend-eligible candidates while
-materializing at most 20 pairs, without per-click sorting or a full filtered-candidate allocation.
-The UI SHALL report the shown and total candidate counts.
+endpoints removed by filtering or isolation SHALL remain in the total and contribute once to
+accessible unavailable status until they re-enter the view. Pairs SHALL be ordered by descending
+confidence with protein id as deterministic tie-breaker and capped at the first 20 currently
+drawable candidates. Off-view candidates SHALL NOT consume that visible cap. Source candidates
+SHALL be ordered once when their cached index is constructed; each click or active-view change SHALL
+scan and count legend-eligible candidates while materializing at most 20 pairs, without per-click
+sorting or a full filtered-candidate allocation. The UI SHALL report the shown and total candidate
+counts.
 
 #### Scenario: Source below fan-out cap
 
@@ -39,6 +40,15 @@ The UI SHALL report the shown and total candidate counts.
 - **WHEN** a clicked source has 63 visible transferred queries
 - **THEN** connectors render for the 20 highest-confidence queries
 - **AND** the status reports “showing 20 of 63”
+
+#### Scenario: Off-view candidate inside the confidence cap
+
+- **WHEN** a source has more than 20 visible eligible queries and filtering or isolation removes one
+  of the 20 highest-confidence targets
+- **THEN** the next highest-confidence visible target is promoted so 20 connectors still render
+- **AND** the removed target remains in the total and contributes once to unavailable status
+- **AND** expanding the view re-resolves the active semantic click to restore the original
+  confidence-ordered top 20 without another click
 
 #### Scenario: Deterministic confidence tie
 
@@ -83,8 +93,8 @@ rebuilding their data join.
   endpoint is outside the current view
 - **AND** the unavailable candidate remains in the total in either click direction, including when
   zero lines can be drawn
-- **AND** its retained id pair resolves into a line without another click if filtering or isolation
-  later restores the endpoint, in either click direction
+- **AND** the retained semantic click re-resolves into a line without another click if filtering or
+  isolation later restores the endpoint, in either click direction
 
 #### Scenario: Filtered point retains global identity
 
@@ -131,9 +141,9 @@ highlights.
 ### Requirement: Connector lookup scales with repeated interaction
 
 The application SHALL build the source-to-query lookup at most once per visualization-data reference
-and active base annotation. It SHALL cache authoritative interactable-view membership by stable view
-and visibility identity and reuse both caches for subsequent clicks until their respective inputs
-change.
+and active base annotation. It SHALL retain only a bounded semantic click descriptor for active
+provenance and reuse the source lookup for subsequent clicks and view-change re-resolution until
+the data or annotation changes.
 
 #### Scenario: Repeated source clicks
 
