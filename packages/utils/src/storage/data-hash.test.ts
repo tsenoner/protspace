@@ -384,4 +384,45 @@ describe('generateDatasetHash', () => {
 
     expect(generateDatasetHash(orderedDataset)).toBe(generateDatasetHash(reorderedDataset));
   });
+
+  it('reuses one numeric index order for 500k EAT rows without per-track object maps', () => {
+    const size = 500_000;
+    const forbidMap = <T>(values: T[], label: string): T[] =>
+      new Proxy(values, {
+        get(target, property, receiver) {
+          if (property === 'map')
+            throw new Error(`${label} must stream through shared index order`);
+          return Reflect.get(target, property, receiver);
+        },
+      });
+    const proteinIds = forbidMap(
+      Array.from({ length: size }, (_, index) => `P${String(size - index).padStart(6, '0')}`),
+      'protein ids',
+    );
+    const predictions = forbidMap<{ value: string; confidence: number; source: string } | null>(
+      new Array(size).fill(null),
+      'prediction cells',
+    );
+    predictions[size - 1] = {
+      value: '1.1.1.1',
+      confidence: 0.9,
+      source: proteinIds[0],
+    };
+    const confidence = new Array<number | null>(size).fill(null);
+    confidence[size - 1] = 0.9;
+
+    const hash = generateDatasetHash({
+      protein_ids: proteinIds,
+      annotations: {
+        ec__eat_confidence: {
+          kind: 'numeric',
+          values: [],
+        },
+      },
+      numeric_annotation_data: { ec__eat_confidence: confidence },
+      annotation_predicted: { ec: predictions },
+    });
+
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+  });
 });

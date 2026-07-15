@@ -22,6 +22,18 @@ export interface ProvenanceConnectorStatus {
   missingEndpoints: number;
 }
 
+export function getProvenanceConnectorStatus(
+  request: ProvenanceConnectorRequest,
+  resolvedPairCount: number,
+): ProvenanceConnectorStatus {
+  const shown = Math.max(0, Math.min(request.pairs.length, Math.trunc(resolvedPairCount)));
+  return {
+    shown,
+    total: request.totalCandidates,
+    missingEndpoints: (request.unavailableCandidates ?? 0) + (request.pairs.length - shown),
+  };
+}
+
 interface ConnectorOverlayDeps {
   getOverlayGroup: () => Selection<SVGGElement, unknown, null, undefined> | null;
   getPlotData: () => PlotData;
@@ -138,12 +150,7 @@ export class ConnectorOverlayController {
       .attr('cy', (endpoint) => endpoint.y)
       .attr('r', 7);
 
-    this.deps.onStatusChange({
-      shown: resolved.length,
-      total: request.totalCandidates,
-      missingEndpoints:
-        (request.unavailableCandidates ?? 0) + (request.pairs.length - resolved.length),
-    });
+    this.deps.onStatusChange(getProvenanceConnectorStatus(request, resolved.length));
   }
 
   /** Build the O(N) protein lookup only when the rendered PlotData identity changes. */

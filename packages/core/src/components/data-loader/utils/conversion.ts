@@ -9,6 +9,7 @@ import {
   COLOR_SCHEMES,
   getEatConfidenceAnnotationKey,
   getProteinAnnotationIndices,
+  isSparseMultiValueAnnotationData,
   isCuratedAnnotationMissing,
   isNAValue,
   parseEatCompanionColumn,
@@ -209,6 +210,17 @@ function remapCategoricalStorage(
     const result = new Int32Array(source.length);
     for (let i = 0; i < source.length; i++) result[i] = remap(source[i]);
     return result;
+  }
+  if (isSparseMultiValueAnnotationData(source)) {
+    const base = remapCategoricalStorage(source.base, oldValues, valueToNewIndex) as Int32Array;
+    const overrides = new Map<number, readonly number[]>();
+    for (const [proteinIndex, indices] of source.overrides) {
+      overrides.set(
+        proteinIndex,
+        indices.map(remap).filter((index) => index >= 0),
+      );
+    }
+    return { kind: 'sparse-multi', base, overrides, length: base.length };
   }
   return source.map((indices) => indices.map(remap).filter((index) => index >= 0));
 }

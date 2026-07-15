@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
+import { getProvenanceConnectorStatus } from '../../../../packages/core/src/components/scatter-plot/provenance/connector-overlay-controller';
 import { EatProvenanceResolver } from './eat-provenance';
 
 function makeData(queryCount = 24): VisualizationData {
@@ -27,7 +28,7 @@ function makeData(queryCount = 24): VisualizationData {
           source: 'source',
         })),
       ],
-      family: [null, { value: 'PF1', confidence: 0.4, source: 'other-source' }],
+      family: [null, { value: 'PF1', confidence: 0.4, source: 'query-1' }],
     },
   };
 }
@@ -45,13 +46,13 @@ describe('EatProvenanceResolver', () => {
     ).toEqual({
       pairs: [
         {
-          sourceProteinId: 'other-source',
+          sourceProteinId: 'query-1',
           targetProteinId: 'query-0',
           confidence: 0.4,
         },
       ],
       totalCandidates: 1,
-      unavailableCandidates: 1,
+      unavailableCandidates: 0,
     });
   });
 
@@ -216,8 +217,28 @@ describe('EatProvenanceResolver', () => {
 
       expect(sourceRequest).toMatchObject({ totalCandidates: 24, unavailableCandidates: 1 });
       expect(targetRequest).toMatchObject({ totalCandidates: 1, unavailableCandidates: 1 });
+      expect(targetRequest?.pairs).toEqual([]);
     },
   );
+
+  it('counts a filtered source once from resolver through accessible overlay status', () => {
+    const data = makeData();
+    const request = new EatProvenanceResolver().resolve(
+      data,
+      'ec',
+      'query-0',
+      1,
+      allLegendEligible,
+      (proteinIndex) => proteinIndex !== 0,
+    );
+    expect(request).not.toBeNull();
+
+    expect(getProvenanceConnectorStatus(request!, 0)).toEqual({
+      shown: 0,
+      total: 1,
+      missingEndpoints: 1,
+    });
+  });
 
   it('resolves a producer-decoded reserved-character source id exactly', () => {
     const sourceId = 'P0|ref;literal%3B';

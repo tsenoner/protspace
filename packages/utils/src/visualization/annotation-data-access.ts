@@ -1,4 +1,10 @@
-import type { AnnotationData } from '../types.js';
+import type { AnnotationData, SparseMultiValueAnnotationData } from '../types.js';
+
+export function isSparseMultiValueAnnotationData(
+  data: AnnotationData,
+): data is SparseMultiValueAnnotationData {
+  return 'kind' in data && data.kind === 'sparse-multi';
+}
 
 /**
  * Returns the list of category indices for a given protein.
@@ -12,6 +18,13 @@ export function getProteinAnnotationIndices(
   data: AnnotationData,
   proteinIdx: number,
 ): readonly number[] {
+  if (isSparseMultiValueAnnotationData(data)) {
+    const override = data.overrides.get(proteinIdx);
+    if (override) return override;
+    if (proteinIdx < 0 || proteinIdx >= data.base.length) return [];
+    const value = data.base[proteinIdx];
+    return value < 0 ? [] : [value];
+  }
   if (data instanceof Int32Array) {
     if (proteinIdx < 0 || proteinIdx >= data.length) return [];
     const value = data[proteinIdx];
@@ -22,6 +35,12 @@ export function getProteinAnnotationIndices(
 }
 
 export function getProteinAnnotationCount(data: AnnotationData, proteinIdx: number): number {
+  if (isSparseMultiValueAnnotationData(data)) {
+    const override = data.overrides.get(proteinIdx);
+    if (override) return override.length;
+    if (proteinIdx < 0 || proteinIdx >= data.base.length) return 0;
+    return data.base[proteinIdx] < 0 ? 0 : 1;
+  }
   if (data instanceof Int32Array) {
     if (proteinIdx < 0 || proteinIdx >= data.length) return 0;
     return data[proteinIdx] < 0 ? 0 : 1;
@@ -35,6 +54,12 @@ export function getProteinAnnotationCount(data: AnnotationData, proteinIdx: numb
  * Allocation-free: prefer this on hot paths (per-point coloring, sorting).
  */
 export function getFirstAnnotationIndex(data: AnnotationData, proteinIdx: number): number {
+  if (isSparseMultiValueAnnotationData(data)) {
+    const override = data.overrides.get(proteinIdx);
+    if (override) return override[0] ?? -1;
+    if (proteinIdx < 0 || proteinIdx >= data.base.length) return -1;
+    return data.base[proteinIdx];
+  }
   if (data instanceof Int32Array) {
     if (proteinIdx < 0 || proteinIdx >= data.length) return -1;
     return data[proteinIdx];
@@ -49,6 +74,17 @@ export function getFirstAnnotationIndex(data: AnnotationData, proteinIdx: number
  * Returns the same storage shape as the input.
  */
 export function sliceAnnotationData(data: AnnotationData, indices: number[]): AnnotationData {
+  if (isSparseMultiValueAnnotationData(data)) {
+    const base = sliceAnnotationData(data.base, indices) as Int32Array;
+    const overrides = new Map<number, readonly number[]>();
+    for (let outputIndex = 0; outputIndex < indices.length; outputIndex++) {
+      const override = data.overrides.get(indices[outputIndex]);
+      if (override) overrides.set(outputIndex, override);
+    }
+    return overrides.size > 0
+      ? { kind: 'sparse-multi', base, overrides, length: base.length }
+      : base;
+  }
   if (data instanceof Int32Array) {
     const out = new Int32Array(indices.length);
     for (let i = 0; i < indices.length; i++) {

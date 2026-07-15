@@ -5,6 +5,7 @@ import type { ProtspaceControlBar } from './control-bar';
 
 type ControlBarDataSeam = ProtspaceControlBar & {
   _handleDataChange(event: Event): void;
+  _scatterplotElement: (HTMLElement & { data?: unknown }) | null;
 };
 
 function setData(control: ProtspaceControlBar, annotationPredicted?: Array<unknown | null>): void {
@@ -118,4 +119,40 @@ describe('control-bar EAT controls', () => {
     await control.updateComplete;
     expect(control.shadowRoot!.querySelector('.eat-controls')).not.toBeNull();
   });
+
+  it.each(['filtering', 'isolation'])(
+    'retains stable EAT capability when a %s slice has no predicted rows',
+    async () => {
+      const control = document.createElement('protspace-control-bar') as ProtspaceControlBar;
+      control.autoSync = false;
+      const stableData = {
+        protein_ids: ['P1', 'P2'],
+        projections: [],
+        annotations: {
+          ec: { values: ['1.1.1.1'] },
+          family: { values: ['PF1'] },
+        },
+        annotation_data: {
+          ec: new Int32Array([0, 0]),
+          family: new Int32Array([0, 0]),
+        },
+        annotation_predicted: {
+          ec: [null, { value: '1.1.1.1', confidence: 0.7, source: 'P1' }],
+        },
+      };
+      const scatterplot = document.createElement('div') as HTMLElement & { data?: unknown };
+      scatterplot.data = stableData;
+      (control as ControlBarDataSeam)._scatterplotElement = scatterplot;
+      document.body.append(control);
+
+      setData(control, [null]);
+      await control.updateComplete;
+
+      expect(control.shadowRoot!.querySelector('.eat-controls')).not.toBeNull();
+      const annotationSelect = control.shadowRoot!.querySelector(
+        'protspace-annotation-select',
+      ) as HTMLElement & { eatAnnotations?: string[] };
+      expect(annotationSelect.eatAnnotations).toContain('ec');
+    },
+  );
 });

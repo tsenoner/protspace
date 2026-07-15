@@ -1319,7 +1319,8 @@ export class ProtspaceControlBar extends LitElement {
     const { data } = (event as CustomEvent<DataChangeDetail>).detail || {};
     if (!data) return;
 
-    this._updateOptionsFromData(data);
+    const stableData = (this._scatterplotElement as ScatterplotElementLike | null)?.data ?? data;
+    this._updateOptionsFromData(data, stableData);
 
     // Update protein ids for search
     try {
@@ -1437,14 +1438,14 @@ export class ProtspaceControlBar extends LitElement {
     );
   }
 
-  private _updateOptionsFromData(data: ProtspaceData) {
+  private _updateOptionsFromData(data: ProtspaceData, capabilityData: ProtspaceData = data) {
     // Update projections and annotations
     this.projectionsMeta = data.projections || [];
     this.projections = this.projectionsMeta.map((p) => p.name) || [];
     this.annotations = Object.keys(data.annotations || {}).filter(
       (a) => !TOOLTIP_ONLY_ANNOTATIONS.has(a),
     );
-    this._eatAnnotationKeys = Object.entries(data.annotation_predicted ?? {})
+    this._eatAnnotationKeys = Object.entries(capabilityData.annotation_predicted ?? {})
       .filter(([, cells]) => cells.some(Boolean))
       .map(([annotation]) => annotation);
 

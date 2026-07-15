@@ -42,10 +42,22 @@ export interface Annotation {
  * Per-protein annotation indices.
  * - `Int32Array`: strictly single-valued column. `data[proteinIdx]` is the
  *   index, or `-1` when the protein has no value for this column.
- * - `(readonly number[])[]`: multi-valued column. `data[proteinIdx]` is the
+ * - `SparseMultiValueAnnotationData`: compact single-value base plus overrides for the uncommon
+ *   multi-valued rows.
+ * - `(readonly number[])[]`: densely multi-valued column. `data[proteinIdx]` is the
  *   list of indices; an empty array means missing.
  */
-export type AnnotationData = Int32Array | readonly (readonly number[])[];
+export interface SparseMultiValueAnnotationData {
+  readonly kind: 'sparse-multi';
+  readonly base: Int32Array;
+  readonly overrides: ReadonlyMap<number, readonly number[]>;
+  readonly length: number;
+}
+
+export type AnnotationData =
+  | Int32Array
+  | SparseMultiValueAnnotationData
+  | readonly (readonly number[])[];
 
 /** A value transferred from a reference protein by Embedding Annotation Transfer (EAT). */
 export interface PredictedCell {

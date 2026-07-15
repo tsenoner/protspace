@@ -76,7 +76,16 @@ function appendFNV1a64(hash: bigint, value: string): bigint {
   return nextHash;
 }
 
-function buildNumericFingerprint(values: Array<number | null>): string {
+function buildProteinIndexOrder(proteinIds: readonly string[]): number[] {
+  const order = Array.from({ length: proteinIds.length }, (_, index) => index);
+  order.sort((left, right) => proteinIds[left].localeCompare(proteinIds[right]) || left - right);
+  return order;
+}
+
+function buildNumericFingerprint(
+  values: Array<number | null>,
+  proteinIndexOrder?: readonly number[],
+): string {
   if (values.length === 0) {
     return '';
   }
@@ -86,7 +95,8 @@ function buildNumericFingerprint(values: Array<number | null>): string {
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
 
-  for (const value of values) {
+  for (let position = 0; position < values.length; position++) {
+    const value = values[proteinIndexOrder?.[position] ?? position];
     const serialized = value == null ? 'null' : String(value);
     hash = appendFNV1a64(hash, serialized);
     hash = appendFNV1a64(hash, '\x1f');
@@ -133,7 +143,8 @@ function buildNumericMetadataFingerprint(
 
 function buildDatasetFingerprint(data: DatasetHashInput): string {
   const proteinIds = Array.isArray(data.protein_ids) ? data.protein_ids : [];
-  const sortedIds = [...proteinIds].sort();
+  const proteinIndexOrder = buildProteinIndexOrder(proteinIds);
+  const sortedIds = proteinIndexOrder.map((index) => proteinIds[index]);
   const annotationFingerprint = Object.entries(data.annotations ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([annotationName, annotation]) => {
@@ -148,19 +159,8 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
       const numericFingerprint =
         numericValues.length > 0
           ? buildNumericFingerprint(
-              proteinIds.length === numericValues.length
-                ? proteinIds
-                    .map((proteinId, index) => ({
-                      proteinId,
-                      index,
-                      value: numericValues[index] ?? null,
-                    }))
-                    .sort(
-                      (left, right) =>
-                        left.proteinId.localeCompare(right.proteinId) || left.index - right.index,
-                    )
-                    .map((entry) => entry.value)
-                : numericValues,
+              numericValues,
+              proteinIds.length === numericValues.length ? proteinIndexOrder : undefined,
             )
           : buildNumericMetadataFingerprint(annotation.numericMetadata);
 
@@ -177,16 +177,10 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
   const predictionFingerprint = Object.entries(data.annotation_predicted ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([annotationName, cells]) => {
-      const ordered = cells
-        .map((cell, index) => ({ cell, index, proteinId: proteinIds[index] ?? '' }))
-        .sort(
-          (left, right) =>
-            left.proteinId.localeCompare(right.proteinId) || left.index - right.index,
-        );
       let hash = 0xcbf29ce484222325n;
       let count = 0;
-      for (const { cell, proteinId } of ordered) {
-        if (!cell) continue;
+      const appendCell = (cell: PredictedCell | null, proteinId: string): void => {
+        if (!cell) return;
         count += 1;
         hash = appendFNV1a64(
           hash,
@@ -200,6 +194,12 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
           ].join('\x1f'),
         );
         hash = appendFNV1a64(hash, '\x1e');
+      };
+      for (let index = proteinIds.length; index < cells.length; index++) {
+        appendCell(cells[index], '');
+      }
+      for (const index of proteinIndexOrder) {
+        appendCell(cells[index] ?? null, proteinIds[index]);
       }
       return `${annotationName}::${count}::${hash.toString(16).padStart(16, '0')}`;
     })

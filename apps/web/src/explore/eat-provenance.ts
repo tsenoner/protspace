@@ -108,14 +108,13 @@ export class EatProvenanceResolver {
         return null;
       }
       const sourceInCurrentView = sourceProteinIndex >= 0 && isInCurrentView(sourceProteinIndex);
+      const pair = {
+        sourceProteinId: predictedCell.source,
+        targetProteinId: clickedProteinId,
+        confidence: predictedCell.confidence,
+      };
       return {
-        pairs: [
-          {
-            sourceProteinId: predictedCell.source,
-            targetProteinId: clickedProteinId,
-            confidence: predictedCell.confidence,
-          },
-        ],
+        pairs: sourceInCurrentView ? [pair] : [],
         totalCandidates: 1,
         unavailableCandidates: sourceInCurrentView ? 0 : 1,
       };

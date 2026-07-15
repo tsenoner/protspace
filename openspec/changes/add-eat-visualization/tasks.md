@@ -174,3 +174,22 @@
       its parent matched the remote head. All seven reviewer threads and the owner summary received
       immutable-SHA/test evidence; all seven threads were resolved, the PR description was updated,
       and the subsequent GraphQL fetch found zero unresolved threads or new comments/reviews.
+
+## 12. Final-head CI and overlap remediation
+
+- [x] 12.1 Seed the configured ARPACK PCA solver rather than relying on its random starting vector,
+      report the effective random state, and require byte-identical repeated output so Python 3.10,
+      3.11, and 3.12 exercise genuinely deterministic behavior instead of a widened tolerance.
+- [x] 12.2 Keep known off-view provenance candidates disjoint from drawable pairs and add an
+      integrated predicted-query to filtered-source resolver/overlay regression that reports one
+      unavailable connection exactly once.
+- [x] 12.2a Preserve compact single-value annotation storage with sparse multi-hit overrides and
+      add a million-row structural regression proving retained boxing scales only with exceptional
+      rows.
+- [x] 12.2b Derive EAT capability markers and controls from the stable loaded dataset while keeping
+      current counts/rendering slice-based; cover filtered and isolated zero-prediction slices.
+- [x] 12.2c Reuse one stable protein-index order across numeric and EAT hashing and add a 500k-row
+      sparse-track regression that rejects per-track row-object materialization and sorting.
+- [ ] 12.3 Run focused and full verification, mandated precommit, strict OpenSpec, exact EAT
+      Playwright, push coherent commits, reply to and resolve the new review thread with immutable
+      evidence, update exact-head PR evidence, and re-request clean independent final-head review.

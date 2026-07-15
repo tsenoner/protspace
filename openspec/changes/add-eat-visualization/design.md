@@ -75,9 +75,11 @@ the source object, so runtime identity survives selection, `getCurrentData()`, a
 Base categorical metadata includes the stable union of observed categories followed by any
 prediction-only categories. Raw `annotation_data` remains curated. When the overlay is enabled and a
 base EAT column is selected, scatter-plot materialization clones only that selected column's index
-storage and replaces missing slots with predicted category indices. The result is cached by data,
-annotation, overlay state, and numeric settings. The legend and styling consume this materialized
-view; disabling the overlay immediately returns to curated indices.
+storage and replaces missing slots with predicted category indices. A compact single-valued base
+remains an `Int32Array`; uncommon multi-hit predictions are stored as sparse row overrides rather
+than boxing every protein into a child array. The result is cached by data, annotation, overlay
+state, and numeric settings. The legend and styling consume this materialized view; disabling the
+overlay immediately returns to curated indices.
 
 Alternatives considered: mutating base annotation rows during conversion was rejected because the
 off state and lossless export need the curated representation; teaching every consumer to coalesce
@@ -204,6 +206,11 @@ base/protein/value/confidence/source tuples so bundles with identical curated an
 different transfers cannot share persisted settings. Filtering/isolation retains global lookup
 correctness and display-local connector visibility.
 
+Hashing computes one protein-id-sorted index permutation and reuses it for every raw numeric and EAT
+prediction track. Tracks stream values and cells through that order rather than allocating and
+sorting one object per protein per track, keeping synchronous load-path auxiliary memory bounded at
+the 500,000 to 1,000,000-point target.
+
 ### D8. Validate in vertical slices and with the real bundle
 
 Tests cover companion recognition and invalid data, optimized and small conversion paths, synthetic
@@ -250,6 +257,11 @@ its annotation-scoped reverse source index and evaluates legend eligibility sepa
 filtered/isolation membership. Off-view eligible candidates remain in the request as unavailable
 status, while legend-hidden candidates are excluded. Source indices computed during normalization
 make the predicted-to-source path O(1) without a million-entry dataset-wide id map.
+
+EAT-capable annotation keys are derived from the authoritative loaded scatter-plot dataset, not a
+filtered or isolated `data-change` slice. Counts, visibility, and rendering continue to consume the
+slice; capability markers and controls remain stable while a constrained view temporarily contains
+no predicted rows.
 
 Transfer is also a v1/v2 migration boundary. The Python CLI detects legacy annotation metadata,
 selects transfer labels under v1 semantics, then parenthesis-aware parses and v2-encodes every

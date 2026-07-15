@@ -133,6 +133,14 @@ even when they are the only settings, and apply on dataset load.
   confidence view
 - **THEN** the complete EAT control group is absent without leaving responsive-grid spacing
 
+#### Scenario: Constrained view temporarily has no transferred rows
+
+- **WHEN** filtering or isolation reduces an EAT-capable dataset to a population with no predicted
+  rows
+- **THEN** capable annotation markers and selected-base EAT controls remain available from the
+  stable loaded dataset
+- **AND** population counts and rendering still reflect only the constrained view
+
 #### Scenario: Dataset without EAT
 
 - **WHEN** a dataset without normalized EAT cells loads
@@ -189,6 +197,14 @@ curated missing category.
 - **WHEN** a transferred companion cell contains two structural semicolon-separated labels
 - **THEN** overlay materialization assigns both category indices to that protein
 - **AND** live and exported markers use the existing multi-label segmentation with both hues
+
+#### Scenario: Sparse multi-hit prediction at target scale
+
+- **WHEN** a 500,000 to 1,000,000-row single-valued base has only a small number of multi-valued
+  transferred cells
+- **THEN** overlay materialization retains compact single-value storage and stores only those
+  exceptional rows as multi-value overrides
+- **AND** retained multi-value allocation grows with exceptional rows rather than total proteins
 
 #### Scenario: Hollow outline follows point size
 
@@ -310,6 +326,13 @@ and SHALL omit synthetic confidence annotations.
 - **WHEN** two datasets have identical protein ids and curated annotations but different EAT source
   or confidence data
 - **THEN** they produce different dataset hashes
+
+#### Scenario: Target-scale cache fingerprinting
+
+- **WHEN** a 500,000 to 1,000,000-row dataset contains EAT predictions and generated raw confidence
+  data
+- **THEN** dataset hashing reuses one stable protein-index order across those tracks
+- **AND** it does not allocate or sort a full row-object array per prediction or numeric track
 
 #### Scenario: Lossless round-trip from enabled overlay
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { VisualizationData } from '../types';
 import {
+  getProteinAnnotationIndices,
+  isSparseMultiValueAnnotationData,
+} from './annotation-data-access';
+import {
   getEatBaseAnnotationKey,
   getEatConfidenceAnnotationKey,
   hasEatPredictions,
@@ -64,7 +68,34 @@ describe('EAT overlay helpers', () => {
 
     const materialized = materializeEatOverlay(data, 'ec', true);
 
-    expect(materialized.annotation_data.ec).toEqual([[0], [1, 2], [3]]);
+    expect(isSparseMultiValueAnnotationData(materialized.annotation_data.ec)).toBe(true);
+    expect(getProteinAnnotationIndices(materialized.annotation_data.ec, 0)).toEqual([0]);
+    expect(getProteinAnnotationIndices(materialized.annotation_data.ec, 1)).toEqual([1, 2]);
+    expect(getProteinAnnotationIndices(materialized.annotation_data.ec, 2)).toEqual([3]);
     expect(data.annotation_data.ec).toBeInstanceOf(Int32Array);
+  });
+
+  it('retains compact storage when one million-row column has one multi-hit prediction', () => {
+    const size = 1_000_000;
+    const data = createData();
+    data.protein_ids = new Array(size).fill('protein');
+    data.annotation_data.ec = new Int32Array(size).fill(0);
+    data.annotations.ec.values = ['1.1.1.1', '2.2.2.2'];
+    data.annotation_predicted!.ec = new Array(size).fill(null);
+    data.annotation_predicted!.ec[size - 1] = {
+      value: '1.1.1.1;2.2.2.2',
+      values: ['1.1.1.1', '2.2.2.2'],
+      confidence: 0.9,
+      source: 'reference',
+    };
+
+    const rows = materializeEatOverlay(data, 'ec', true).annotation_data.ec;
+
+    expect(isSparseMultiValueAnnotationData(rows)).toBe(true);
+    if (!isSparseMultiValueAnnotationData(rows)) throw new Error('expected sparse storage');
+    expect(rows.base).toBeInstanceOf(Int32Array);
+    expect(rows.base.byteLength).toBe(size * Int32Array.BYTES_PER_ELEMENT);
+    expect(rows.overrides.size).toBe(1);
+    expect(rows.overrides.get(size - 1)).toEqual([0, 1]);
   });
 });

@@ -1,5 +1,9 @@
 import type { AnnotationData, PredictedCell, VisualizationData } from '../types.js';
-import { getFirstAnnotationIndex, getProteinAnnotationIndices } from './annotation-data-access.js';
+import {
+  getFirstAnnotationIndex,
+  getProteinAnnotationIndices,
+  isSparseMultiValueAnnotationData,
+} from './annotation-data-access.js';
 import { isNAValue } from './missing-values.js';
 
 export const EAT_COMPANION_SUFFIXES = {
@@ -81,15 +85,22 @@ function cloneWithPredictions(
       (cell) => cell !== null && getPredictedCellValues(cell).length > 1,
     );
     if (hasMultiValuePrediction) {
-      const clone = Array.from(source, (index) => (index >= 0 ? [index] : []));
+      const base = source.slice();
+      const overrides = new Map<number, readonly number[]>();
       for (let i = 0; i < predictedCells.length; i++) {
         const cell = predictedCells[i];
         if (!cell) continue;
-        clone[i] = getPredictedCellValues(cell)
+        const indices = getPredictedCellValues(cell)
           .map((value) => valueToIndex.get(value) ?? -1)
           .filter((index) => index >= 0);
+        if (indices.length > 1) {
+          base[i] = indices[0];
+          overrides.set(i, indices);
+        } else if (indices.length === 1) {
+          base[i] = indices[0];
+        }
       }
-      return clone;
+      return { kind: 'sparse-multi', base, overrides, length: base.length };
     }
     const clone = source.slice();
     for (let i = 0; i < predictedCells.length; i++) {
@@ -97,6 +108,26 @@ function cloneWithPredictions(
       if (cell) clone[i] = valueToIndex.get(getPredictedCellValues(cell)[0]) ?? clone[i];
     }
     return clone;
+  }
+
+  if (isSparseMultiValueAnnotationData(source)) {
+    const base = source.base.slice();
+    const overrides = new Map(source.overrides);
+    for (let i = 0; i < predictedCells.length; i++) {
+      const cell = predictedCells[i];
+      if (!cell) continue;
+      const indices = getPredictedCellValues(cell)
+        .map((value) => valueToIndex.get(value) ?? -1)
+        .filter((index) => index >= 0);
+      if (indices.length > 1) {
+        base[i] = indices[0];
+        overrides.set(i, indices);
+      } else if (indices.length === 1) {
+        base[i] = indices[0];
+        overrides.delete(i);
+      }
+    }
+    return { kind: 'sparse-multi', base, overrides, length: base.length };
   }
 
   const clone = source.slice();
