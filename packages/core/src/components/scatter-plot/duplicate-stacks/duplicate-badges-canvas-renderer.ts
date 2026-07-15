@@ -15,8 +15,10 @@ import { pointInWindow, type ViewportWindow } from './duplicate-stack-viewport';
 /** Badge geometry/style constants — verbatim from the original inline literals. */
 export const BADGE_RADIUS = 9;
 export const BADGE_OFFSET = { x: 10, y: -10 } as const;
-const BADGE_FONT =
-  '700 10px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+const BADGE_FONT_FAMILY =
+  'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+const BADGE_FONT_SIZE = 10;
+const BADGE_FONT = `700 ${BADGE_FONT_SIZE}px ${BADGE_FONT_FAMILY}`;
 const BADGE_STROKE = 'rgba(255, 255, 255, 0.9)';
 const BADGE_LINE_WIDTH = 1.5;
 export const BADGE_EXPANDED_FILL = 'rgba(59, 130, 246, 0.9)';
@@ -106,6 +108,54 @@ export class DuplicateBadgesCanvasRenderer {
       ctx.fillStyle = isExpanded ? BADGE_EXPANDED_FILL : BADGE_DEFAULT_FILL;
       ctx.beginPath();
       ctx.arc(x, y, BADGE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = BADGE_TEXT_FILL;
+      ctx.fillText(String(s.points.length), x, y);
+    }
+  }
+
+  /**
+   * Draw badges for a figure-export capture (#301/#302). Unlike render():
+   * - the canvas is already sized to the OUTPUT physical pixel dims, so we
+   *   draw in raw device pixels (identity transform, no devicePixelRatio);
+   * - stack px/py are final output-canvas pixels (projected through the
+   *   export scales by the caller) — no live zoom-transform math;
+   * - all geometry (radius, offset, font, line width) is multiplied by
+   *   `badgeScale` (dpr × sizeScaleFactor), the same uniform factor the
+   *   exported dots' sizes use, so badge-to-dot proportions match the live
+   *   view at any output size — and stay uniform in x/y (circles stay round).
+   */
+  renderExport(stacks: RenderDuplicateStack[], badgeScale: number): void {
+    const canvas = this.deps.getCanvas();
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const expandedKey = this.deps.getExpandedKey();
+    const radius = BADGE_RADIUS * badgeScale;
+    const offsetX = BADGE_OFFSET.x * badgeScale;
+    const offsetY = BADGE_OFFSET.y * badgeScale;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${BADGE_FONT_SIZE * badgeScale}px ${BADGE_FONT_FAMILY}`;
+    ctx.lineWidth = BADGE_LINE_WIDTH * badgeScale;
+    ctx.strokeStyle = BADGE_STROKE;
+
+    for (let i = 0; i < stacks.length; i++) {
+      const s = stacks[i];
+      const x = s.px + offsetX;
+      const y = s.py + offsetY;
+      const isExpanded = s.key === expandedKey;
+
+      ctx.fillStyle = isExpanded ? BADGE_EXPANDED_FILL : BADGE_DEFAULT_FILL;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
