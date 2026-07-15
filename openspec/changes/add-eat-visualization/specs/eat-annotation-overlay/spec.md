@@ -305,26 +305,26 @@ column-level model-prediction badge.
 - **WHEN** the user hovers an observed protein
 - **THEN** no per-cell EAT provenance block is shown for that annotation
 
-### Requirement: Legend accounts for observed, transferred, and unannotated populations
+### Requirement: Legend accounts for observed, transferred, and no-annotation populations
 
 For an active EAT base annotation with the overlay enabled, the legend SHALL render a distinct
 “Predicted (transferred)” section with filled “Observed,” hollow “Predicted by EAT,” and explicit
 “No annotation” rows with live counts from the current filtered/isolation view. The no-annotation
 row SHALL explain that it contains proteins with neither an observed value nor an EAT prediction for
 the selected annotation. Observed plus
-transferred plus unannotated SHALL equal the represented protein population. This section SHALL not
+transferred plus no-annotation SHALL equal the represented protein population. This section SHALL not
 replace or reuse the column-level predicted badge.
 
 #### Scenario: Full dataset counts
 
 - **WHEN** an EAT base annotation is active in the full dataset
-- **THEN** the legend reports observed, transferred, and unannotated counts whose sum equals the
+- **THEN** the legend reports observed, transferred, and no-annotation counts whose sum equals the
   number of proteins represented by that annotation view
 
 #### Scenario: Constrained-view counts
 
 - **WHEN** filtering or isolation changes the visible protein set
-- **THEN** the observed, transferred, and unannotated counts update to the constrained view
+- **THEN** the observed, transferred, and no-annotation counts update to the constrained view
 - **AND** their sum equals the constrained represented population
 
 #### Scenario: Non-EAT or disabled view

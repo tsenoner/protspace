@@ -226,12 +226,20 @@
       `c4221bed78352b24a2c42f5303a217fb39ccecc3` technically clean; its automatic code
       quality, documentation, lint, and Python 3.10/3.11/3.12 checks were green. The
       post-resolution thread-aware GraphQL fetch found zero unresolved threads.
-- [ ] 12.4 Receive an explicit clean independent review pinned to the exact final pushed
-      documentation head.
-- [ ] 12.5 Require every normal required GitHub CI check to pass on the exact final pushed
-      documentation head.
-- [ ] 12.6 Run and require an explicit EAT Playwright workflow to pass on the exact final pushed
-      documentation head.
+- [x] 12.4 Receive an explicit clean independent review pinned to the exact final pushed
+      documentation head. Behavioral head `fb9f2c471e43c8adc7002246008216b75583ac0f` received a
+      [zero-finding independent review](https://github.com/tsenoner/protspace/pull/315#pullrequestreview-4704685691)
+      with zero unresolved threads or later feedback; repeat the same pin after this ledger-only
+      closure commit.
+- [x] 12.5 Require every normal required GitHub CI check to pass on the exact final pushed
+      documentation head. Code quality, documentation, Python lint, and Python 3.10/3.11/3.12 were
+      green on behavioral head `fb9f2c47`; repeat the exact-head check after this ledger-only
+      closure commit.
+- [x] 12.6 Run and require an explicit EAT Playwright workflow to pass on the exact final pushed
+      documentation head. The explicit full
+      [Playwright run 29420277038](https://github.com/tsenoner/protspace/actions/runs/29420277038)
+      succeeded on behavioral head `fb9f2c47`; dispatch and require the same workflow after this
+      ledger-only closure commit.
 
 ## 13. Exact-fixture UX follow-up
 
@@ -248,5 +256,13 @@
       so its screen-space diameter remains constant; add controller and exact-fixture zoom coverage.
 - [x] 13.5 Wrap every structured transferred tooltip label to complete text and update conservative
       tooltip sizing/placement coverage for multi-line EC descriptions.
-- [ ] 13.6 Run focused checks, strict OpenSpec, exact-fixture desktop/mobile rendered QA, the full
+- [x] 13.6 Run focused checks, strict OpenSpec, exact-fixture desktop/mobile rendered QA, the full
       mandated `pnpm precommit`, and PR checks before publishing immutable closure evidence.
+      Implementation commits `dc437fb402f5ecba7e69fb6a37616171e429d349` and
+      `fb9f2c471e43c8adc7002246008216b75583ac0f` passed staged precommit, strict OpenSpec, 1,812
+      Vitest assertions with one intentional skip, and the exact issue-linked phosphatase flow
+      independently. The latter covers O88488 at 320/360 px, A0JMF6 isolation, 320/390/601 control
+      layouts, accessible viewport-clamped popovers, constant provenance halos, min/default/max
+      rings, subpixel-coincident P60483 final-pixel compositing, and default/dark/transparent
+      exports. Automatic checks and explicit Playwright were green; all six feedback threads have
+      immutable replies and are resolved.
