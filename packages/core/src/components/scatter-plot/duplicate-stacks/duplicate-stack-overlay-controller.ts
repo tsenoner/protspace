@@ -34,7 +34,15 @@ import {
   DuplicateBadgesCanvasRenderer,
 } from './duplicate-badges-canvas-renderer';
 import { SpiderfyLayer } from './spiderfy-layer';
-import type { ViewportDuplicateStack } from './duplicate-stack-types';
+import type {
+  ViewportDuplicateStack,
+  RenderDuplicateStack,
+  BadgeCaptureProjection,
+} from './duplicate-stack-types';
+import {
+  computeFullExtentDuplicateStacks,
+  type FullExtentDuplicateStack,
+} from './duplicate-stack-full-extent';
 import type { QuadtreeIndex } from '../interaction/quadtree-index';
 
 // Duplicate stack UI performance tuning (target: M1 MacBook + Chrome)
@@ -50,6 +58,14 @@ interface DuplicateStackOverlayDeps {
   getScales: () => { x: (n: number) => number; y: (n: number) => number } | null;
   getPlotData: () => PlotData;
   getQuadtree: () => QuadtreeIndex;
+  /**
+   * Slot list the quadtree was last rebuilt with (legend/filter-visible slots,
+   * scatter-plot.ts _buildQuadtree). The full-extent capture compute iterates
+   * this against the raw PlotData arrays — NEVER via quadtree traversal (~93×
+   * slower at 570k points, research doc 04). Null until the first quadtree
+   * build (or after an empty-data build); capture then renders no badges.
+   */
+  getVisibleSlots: () => ArrayLike<number> | null;
   isEnabled: () => boolean; // _mergedConfig.enableDuplicateStackUI
   isSelectionMode: () => boolean;
   getColor: (p: PlotDataPoint) => string; // _getColors(p)[0] ?? '#888888'
@@ -69,6 +85,15 @@ export class DuplicateStackOverlayController {
   private expandedAnchor: { stackKey: string; x: number; y: number } | null = null;
   private debounceId: number | null = null;
   private cacheKey: string | null = null;
+  // Lazily-computed full-extent duplicate-stack set for figure-export capture
+  // (#301) — data-space only; projected through the EXPORT scales per capture.
+  // Cleared independently in BOTH resetState() and resetCacheKey(): the
+  // enableDuplicateStackUI toggle fires only the latter (scatter-plot.ts:699).
+  // A capture landing inside the ≤1-frame window of a RAF-deferred quadtree
+  // rebuild sees either a stale-but-safe slot list or none (no badges that
+  // instant) — self-correcting on the next capture; same latency the live
+  // overlay already has (research doc 01).
+  private fullExtentStacks: FullExtentDuplicateStack[] | null = null;
   private computeJobId = 0;
   private computing = false;
   private readonly badges: DuplicateBadgesCanvasRenderer;
@@ -94,41 +119,67 @@ export class DuplicateStackOverlayController {
     });
   }
 
+  /** Compute-on-first-capture cache of the full-extent stack set (#301). */
+  private ensureFullExtentStacks(): FullExtentDuplicateStack[] {
+    if (this.fullExtentStacks) return this.fullExtentStacks;
+    const slots = this.deps.getVisibleSlots();
+    if (!slots) return []; // host hasn't built the slot list yet — don't cache
+    this.fullExtentStacks = computeFullExtentDuplicateStacks(this.deps.getPlotData(), slots);
+    return this.fullExtentStacks;
+  }
+
   /**
-   * Render the current duplicate-stack badges into a fresh off-screen canvas
-   * using `transform` instead of the live zoom, leaving the on-screen badge
-   * canvas untouched. The figure editor passes `d3.zoomIdentity` so the captured
-   * badges line up with the unzoomed, fit-all points (#294) — the live badge
-   * canvas is positioned for the live zoom/pan and would otherwise be composited
-   * at the wrong place. The canvas is sized exactly like the live badge canvas
-   * (config size × devicePixelRatio) so the caller's existing draw-image stretch
-   * behaves identically. Returns null (so the caller skips compositing) when the
-   * overlay is disabled or no stacks are currently in view.
+   * Render the duplicate-stack badges for a fit-all figure-export capture
+   * into a fresh off-screen canvas sized to the OUTPUT geometry, leaving the
+   * on-screen badge canvas untouched.
    *
-   * Coverage note: badges reflect the stacks computed for the last live viewport
-   * (`ensureForViewport` queries only the visible region for perf), so a capture
-   * taken while the live plot is zoomed in shows that region's badges — the same
-   * coverage as the live overlay, now drawn at their correct fit-all positions.
+   * Coverage (#301): badges come from a lazily-computed, cached full-extent
+   * stack set (every legend/filter-visible slot across the whole data
+   * extent) — NOT the viewport-scoped `this.stacks` the live overlay
+   * maintains — so a capture taken while the live plot is zoomed in still
+   * shows every stack, subject to the existing top-N cap (cullAndCapStacks).
+   *
+   * Geometry (#302): the canvas is sized to `projection.width × height` (the
+   * export render's physical pixel dims), positions are projected through
+   * `projection.scales` (the SAME ExportRenderer.createExportScales mapping
+   * the exported dots use), and badge geometry scales by
+   * `projection.badgeScale` (dpr × sizeScaleFactor, the dots' own factor) —
+   * so the caller composites 1:1 with no stretch and badges stay round and
+   * centered on their dots at any output size/aspect.
+   *
+   * Returns null (the caller skips compositing) when the overlay is disabled,
+   * no visible-slot list exists yet, or nothing would render.
    */
-  captureBadges(transform: ZoomTransform): HTMLCanvasElement | null {
+  captureBadges(projection: BadgeCaptureProjection): HTMLCanvasElement | null {
     if (!this.deps.isEnabled()) return null;
-    const config = this.deps.getConfig();
-    const win = computeViewportWindow(transform, config, DUPLICATE_BADGES_VIEWPORT_PADDING);
-    const stacksToRender = cullAndCapStacks(this.stacks, win, this.expandedKey, this.byKey);
+
+    const fullStacks = this.ensureFullExtentStacks();
+    if (fullStacks.length === 0) return null;
+
+    const projected: RenderDuplicateStack[] = fullStacks.map((s) => ({
+      key: s.key,
+      px: projection.scales.x(s.x),
+      py: projection.scales.y(s.y),
+      points: s.points,
+    }));
+    const byKey = new Map<string, RenderDuplicateStack>(projected.map((s) => [s.key, s]));
+    const width = Math.max(1, Math.floor(projection.width));
+    const height = Math.max(1, Math.floor(projection.height));
+    const win: ViewportWindow = { minX: 0, maxX: width, minY: 0, maxY: height };
+    const stacksToRender = cullAndCapStacks(projected, win, this.expandedKey, byKey);
     if (stacksToRender.length === 0) return null;
 
-    const dpr = window.devicePixelRatio || 1;
     const target = document.createElement('canvas');
-    target.width = Math.max(1, Math.floor(config.width * dpr));
-    target.height = Math.max(1, Math.floor(config.height * dpr));
+    target.width = width;
+    target.height = height;
 
     const renderer = new DuplicateBadgesCanvasRenderer({
       getCanvas: () => target,
-      getTransform: () => transform,
-      getSize: () => ({ width: config.width, height: config.height }),
+      getTransform: () => ({ x: 0, y: 0, k: 1 }), // unused by renderExport
+      getSize: () => ({ width, height }), // unused by renderExport
       getExpandedKey: () => this.expandedKey,
     });
-    renderer.render(stacksToRender);
+    renderer.renderExport(stacksToRender, projection.badgeScale);
     return target;
   }
 
@@ -157,12 +208,15 @@ export class DuplicateStackOverlayController {
   }
 
   /**
-   * Invalidate only the viewport cache key (next overlay update recomputes) —
-   * verbatim from the config-toggle path, which reset the cache without
-   * clearing the live stacks/maps.
+   * Invalidate the viewport cache key (next overlay update recomputes) AND
+   * the full-extent capture cache. The enableDuplicateStackUI config toggle
+   * calls ONLY this hook (scatter-plot._reconcileConfigMerge), deliberately
+   * without resetState() — so the capture cache must clear here
+   * independently (#301). The live stacks/maps are intentionally kept.
    */
   resetCacheKey(): void {
     this.cacheKey = null;
+    this.fullExtentStacks = null;
   }
 
   resetState(): void {
@@ -172,6 +226,7 @@ export class DuplicateStackOverlayController {
     this.expandedKey = null;
     this.expandedAnchor = null;
     this.cacheKey = null;
+    this.fullExtentStacks = null;
     this.spiderfy.reset();
   }
 
