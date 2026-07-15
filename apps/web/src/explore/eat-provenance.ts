@@ -107,9 +107,12 @@ export class EatProvenanceResolver {
       if (sourceProteinIndex >= 0 && !isLegendEligible(predictedCell.source, sourceProteinIndex)) {
         return null;
       }
-      const sourceInCurrentView = sourceProteinIndex >= 0 && isInCurrentView(sourceProteinIndex);
+      const pairInCurrentView =
+        sourceProteinIndex >= 0 &&
+        isInCurrentView(sourceProteinIndex) &&
+        isInCurrentView(clickedProteinIndex);
       return {
-        pairs: sourceInCurrentView
+        pairs: pairInCurrentView
           ? [
               {
                 sourceProteinId: predictedCell.source,
@@ -119,18 +122,19 @@ export class EatProvenanceResolver {
             ]
           : [],
         totalCandidates: 1,
-        unavailableCandidates: sourceInCurrentView ? 0 : 1,
+        unavailableCandidates: pairInCurrentView ? 0 : 1,
       };
     }
 
     const candidates = this.getSourceIndex(data, annotation).get(clickedProteinId) ?? [];
+    const sourceInCurrentView = isInCurrentView(clickedProteinIndex);
     const pairs = [];
     let totalCandidates = 0;
     let unavailableCandidates = 0;
     for (const candidate of candidates) {
       if (!isLegendEligible(candidate.targetProteinId, candidate.targetProteinIndex)) continue;
       totalCandidates++;
-      if (!isInCurrentView(candidate.targetProteinIndex)) {
+      if (!sourceInCurrentView || !isInCurrentView(candidate.targetProteinIndex)) {
         unavailableCandidates++;
         continue;
       }

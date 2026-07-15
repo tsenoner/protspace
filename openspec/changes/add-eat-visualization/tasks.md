@@ -199,6 +199,9 @@
 - [x] 12.2f Re-resolve the active semantic source click through the cached confidence ordering when
       filter/isolation membership changes, so off-view top-ranked candidates do not consume the
       20-line visible cap; cover hide-top-20, promotion, expansion, and explicit dismissal.
+- [x] 12.2g When either endpoint leaves the view, materialize only drawable pairs and count every
+      unavailable semantic connection independently of the 20-line cap; cover clicked-source and
+      predicted-query directions under filtering and isolation without full candidate allocation.
 - [ ] 12.3 Run focused and full verification, mandated precommit, strict OpenSpec, exact EAT
       Playwright, push coherent commits, reply to and resolve the new review threads with immutable
       evidence, update exact-head PR evidence, and request fresh independent final-head review.

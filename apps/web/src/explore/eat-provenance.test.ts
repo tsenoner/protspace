@@ -135,6 +135,32 @@ describe('EatProvenanceResolver', () => {
     },
   );
 
+  it.each(['filtering', 'isolation'])(
+    'counts every semantic fan-out connection when the source leaves during %s',
+    () => {
+      const data = makeData();
+      const request = new EatProvenanceResolver().resolve(
+        data,
+        'ec',
+        'source',
+        0,
+        allLegendEligible,
+        (proteinIndex) => proteinIndex !== 0,
+      );
+
+      expect(request).toEqual({
+        pairs: [],
+        totalCandidates: 24,
+        unavailableCandidates: 24,
+      });
+      expect(getProvenanceConnectorStatus(request!, 0)).toEqual({
+        shown: 0,
+        total: 24,
+        missingEndpoints: 24,
+      });
+    },
+  );
+
   it('reuses one source index for the same data reference and annotation', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
@@ -246,6 +272,30 @@ describe('EatProvenanceResolver', () => {
           ],
         });
         expect(getProvenanceConnectorStatus(request!, 1).missingEndpoints).toBe(0);
+      }
+    },
+  );
+
+  it.each(['filtering', 'isolation'])(
+    'counts a predicted-query connection once when either endpoint leaves during %s',
+    () => {
+      const data = makeData(1);
+      const resolver = new EatProvenanceResolver();
+      for (const retainedIndex of [0, 1]) {
+        const request = resolver.resolve(
+          data,
+          'ec',
+          'query-0',
+          1,
+          allLegendEligible,
+          (index) => index === retainedIndex,
+        );
+        expect(request).toEqual({
+          pairs: [],
+          totalCandidates: 1,
+          unavailableCandidates: 1,
+        });
+        expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
       }
     },
   );

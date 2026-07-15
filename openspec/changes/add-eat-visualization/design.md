@@ -170,7 +170,10 @@ confidence then protein id. A predicted click creates one query-to-source pair. 
 its already ordered list once, counts legend-eligible candidates, and materializes only the first 20
 pairs whose endpoints are in the current view; it neither re-sorts nor allocates a full filtered
 candidate array. Off-view candidates remain in the total and contribute once to unavailable status,
-but do not consume the 20-line visible cap.
+but do not consume the 20-line visible cap. If the clicked source itself leaves the view, every
+legend-eligible semantic connection is unavailable: re-resolution emits no drawable pairs and
+reports the full candidate total without allocating those pairs. A predicted-query request likewise
+materializes its single pair only while both endpoints are in view.
 
 The interaction controller retains one bounded semantic click descriptor (dataset, annotation,
 protein id, and global index) while the core overlay request remains active. Filter and isolation

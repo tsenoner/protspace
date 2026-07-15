@@ -50,6 +50,14 @@ counts.
 - **AND** expanding the view re-resolves the active semantic click to restore the original
   confidence-ordered top 20 without another click
 
+#### Scenario: Clicked source leaves the current view
+
+- **WHEN** a source click has 24 legend-eligible queries and filtering or isolation removes the
+  clicked source while the queries remain visible
+- **THEN** re-resolution materializes zero drawable pairs and reports all 24 semantic connections
+  unavailable
+- **AND** it counts the candidates by scanning the cached ordering without allocating 24 pairs
+
 #### Scenario: Deterministic confidence tie
 
 - **WHEN** multiple candidates at the cap boundary have equal confidence

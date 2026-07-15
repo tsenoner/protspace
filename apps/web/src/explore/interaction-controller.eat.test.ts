@@ -150,6 +150,75 @@ describe('interaction controller EAT provenance', () => {
     },
   );
 
+  it.each(['filtering', 'isolation'])(
+    'reports every semantic source connection unavailable when the source leaves during %s',
+    () => {
+      const { controller, currentView, plotElement } = setup(makeFanoutData());
+      controller.handleProteinClick({
+        detail: { proteinId: 'source', point: { originalIndex: 0 } },
+      } as unknown as Event);
+
+      currentView.delete(0);
+      controller.handlePlotDataChange();
+
+      expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
+        pairs: [],
+        totalCandidates: 24,
+        unavailableCandidates: 24,
+      });
+
+      currentView.add(0);
+      controller.handlePlotDataChange();
+
+      const restored = plotElement.setProvenanceConnectors.mock.lastCall?.[0];
+      expect(restored).toMatchObject({
+        totalCandidates: 24,
+        unavailableCandidates: 0,
+      });
+      expect(restored.pairs).toHaveLength(20);
+      expect(restored.pairs[0]).toMatchObject({
+        sourceProteinId: 'source',
+        targetProteinId: 'query-0',
+      });
+    },
+  );
+
+  it.each(['filtering', 'isolation'])(
+    'reports one unavailable predicted-query connection when either endpoint leaves during %s',
+    () => {
+      for (const removedIndex of [0, 1]) {
+        const { controller, currentView, plotElement } = setup();
+        controller.handleProteinClick({
+          detail: { proteinId: 'query', point: { originalIndex: 1 } },
+        } as unknown as Event);
+
+        currentView.delete(removedIndex);
+        controller.handlePlotDataChange();
+
+        expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
+          pairs: [],
+          totalCandidates: 1,
+          unavailableCandidates: 1,
+        });
+
+        currentView.add(removedIndex);
+        controller.handlePlotDataChange();
+
+        expect(plotElement.setProvenanceConnectors.mock.lastCall?.[0]).toEqual({
+          pairs: [
+            {
+              sourceProteinId: 'source',
+              targetProteinId: 'query',
+              confidence: 0.83,
+            },
+          ],
+          totalCandidates: 1,
+          unavailableCandidates: 0,
+        });
+      }
+    },
+  );
+
   it('does not resurrect a dismissed semantic click on a later data change', () => {
     const { controller, plotElement } = setup();
     controller.handleProteinClick({
