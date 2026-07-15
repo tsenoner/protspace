@@ -175,10 +175,12 @@ even when they are the only settings, and apply on dataset load.
 When the overlay is enabled and an EAT base annotation is active, the effective category SHALL be
 the curated value when present and otherwise the transferred value. Observed cells SHALL remain
 filled. Transferred cells SHALL use the same category mapping but render as hollow, anti-aliased
-markers with a clearly legible outline whose screen-space thickness grows proportionally with point
-size. Multi-valued transferred cells SHALL retain every decoded label and use the existing
-multi-label marker segmentation. Disabling the overlay SHALL return transferred cells to their
-curated missing category.
+markers with a clearly legible, bounded outline that remains responsive to point size while
+preserving a visible hollow interior. The interior SHALL use an opaque plot-surface knockout so
+overlapping observed or transferred markers cannot fill the hollow cue by showing through it.
+Multi-valued transferred cells SHALL retain every decoded label and use the existing multi-label
+marker segmentation. Disabling the overlay SHALL return transferred cells to their curated missing
+category.
 
 #### Scenario: Observed and transferred category share a hue
 
@@ -214,12 +216,23 @@ curated missing category.
 - **AND** shape selection remains unavailable exactly as it does for dense multi-label annotations
 - **AND** classification work scales with sparse overrides rather than total proteins
 
-#### Scenario: Hollow outline follows point size
+#### Scenario: Hollow outline remains legible across point sizes
 
 - **WHEN** a user increases or decreases legend point size
 - **THEN** the hollow transferred outline remains visibly thicker than the anti-alias fringe
-- **AND** its screen-space thickness changes proportionally with the marker diameter in live and
-  exported rendering
+- **AND** a visible hollow interior remains at the minimum, default, and maximum supported sizes
+- **AND** its responsive thickness is bounded rather than required to scale linearly with marker
+  diameter, with identical live and exported rendering
+
+#### Scenario: Hollow cue survives overlapping markers
+
+- **WHEN** a transferred marker is painted over one or more observed or transferred markers
+- **THEN** its opaque plot-surface interior masks the earlier marker pixels
+- **AND** the final composited live and exported marker remains visibly hollow
+- **AND** the canonical painter order places transferred markers after ordinary markers within the
+  same interaction tier while preserving selected points as the top tier
+- **AND** transparent export keeps non-marker pixels transparent while retaining the live
+  plot-surface colour inside transferred markers
 
 #### Scenario: Overlay disabled
 

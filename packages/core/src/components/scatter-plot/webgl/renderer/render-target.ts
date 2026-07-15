@@ -44,6 +44,8 @@ interface PointDrawStateParams {
   dpr: number;
   /** Effective gamma (u_gamma); 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
+  /** Resolved plot-surface color in sRGB, used to mask overlapping marker interiors. */
+  knockoutColor: readonly [number, number, number];
   /** Max labels per point (u_maxLabels). */
   maxLabels: number;
   /** Label color texture atlas width in texels. */
@@ -85,6 +87,7 @@ export function bindPointDrawState(
   gl.uniform3f(uniforms.transform, params.transform.x, params.transform.y, params.transform.k);
   gl.uniform1f(uniforms.dpr, params.dpr);
   gl.uniform1f(uniforms.gamma, params.gamma);
+  gl.uniform3f(uniforms.knockoutColor, ...params.knockoutColor);
   gl.uniform1i(uniforms.maxLabels, params.maxLabels);
   gl.uniform2f(
     uniforms.labelTextureSize,

@@ -45,7 +45,7 @@ import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import { computeExtent, computePaddedExtent } from './data-extent';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, type StagePointArrays, MAX_LABELS } from './stage-point';
-import { buildPaintOrder } from './point-staging';
+import { buildPaintOrder, composePaintDepth } from './point-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -90,6 +90,8 @@ interface ExportRenderOptions {
   transform: d3.ZoomTransform;
   /** Live gamma value; downgraded to 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
+  /** Plot-surface/interior marker color in sRGB. */
+  knockoutColor?: readonly [number, number, number];
 }
 
 export class ExportRenderer {
@@ -481,6 +483,7 @@ export class ExportRenderer {
         height,
         dpr,
         gamma,
+        options.knockoutColor ?? [1, 1, 1],
         exportTransform,
         labelColorTexture,
         labelColorData.length,
@@ -516,6 +519,7 @@ export class ExportRenderer {
         height,
         dpr,
         gamma,
+        options.knockoutColor ?? [1, 1, 1],
         exportTransform,
         labelColorTexture,
         labelColorData.length,
@@ -608,7 +612,11 @@ export class ExportRenderer {
       sp.x = xs[i];
       sp.y = ys[i];
       sp.originalIndex = origIdx;
-      depthScratch[i] = style.getDepth(sp);
+      depthScratch[i] = composePaintDepth(
+        style.getDepth(sp),
+        style.getOpacity(sp),
+        style.isPredicted(sp),
+      );
     }
 
     const { selectedStartIndex } = buildPaintOrder(
@@ -669,6 +677,7 @@ export class ExportRenderer {
     height: number,
     dpr: number,
     gamma: number,
+    knockoutColor: readonly [number, number, number],
     transform: d3.ZoomTransform,
     labelColorTexture: WebGLTexture | null,
     labelColorDataLength: number,
@@ -682,6 +691,7 @@ export class ExportRenderer {
       transform: { x: transform.x, y: transform.y, k: transform.k },
       dpr,
       gamma,
+      knockoutColor,
       maxLabels: MAX_LABELS,
       labelTextureWidth: LABEL_TEXTURE_WIDTH,
       labelColorDataLength,

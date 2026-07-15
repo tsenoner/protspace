@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { TooltipView } from '@protspace/utils';
 import { estimateTooltipHeight } from './tooltip-height-estimate';
+import { computeTooltipStyle } from './tooltip-position';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -172,5 +173,29 @@ describe('estimateTooltipHeight', () => {
 
     expect(longTransfer).toBeGreaterThan(shortTransfer);
     expect(longObserved).toBe(shortObserved);
+  });
+
+  it('conservatively reserves more wrapped lines at a 320 px viewport tooltip width', () => {
+    const longEc = '3.1.3.67 (phosphatidylinositol-3,4,5-trisphosphate 3-phosphatase)';
+    const predicted = { value: longEc, confidence: 0.87, source: 'P0C5E4' };
+    const view = makeView({
+      proteinName: ['Phosphatidylinositol phosphatase PTPRQ'],
+      geneName: ['Ptprq'],
+      blocks: [makeBlock({ displayValues: [longEc, longEc, longEc, longEc], predicted })],
+    });
+
+    const narrowHeight = estimateTooltipHeight(view, 290);
+    expect(narrowHeight).toBeGreaterThan(estimateTooltipHeight(view, 350));
+
+    const style = computeTooltipStyle({
+      x: 300,
+      y: 380,
+      height: narrowHeight,
+      viewportWidth: 320,
+      viewportHeight: 400,
+    });
+    const top = Number(style.match(/top: ([\d.-]+)px/)?.[1]);
+    expect(top).toBeGreaterThanOrEqual(15);
+    expect(top + narrowHeight).toBeLessThanOrEqual(385);
   });
 });

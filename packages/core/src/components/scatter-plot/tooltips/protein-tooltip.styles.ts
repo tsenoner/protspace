@@ -20,6 +20,7 @@ export const proteinTooltipStyles = css`
   }
 
   .tooltip {
+    box-sizing: border-box;
     background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
     border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
     border-radius: 0.5rem;
@@ -28,7 +29,7 @@ export const proteinTooltipStyles = css`
       0 10px 40px rgba(0, 0, 0, 0.1);
     font-size: 0.875rem;
     min-width: 200px;
-    max-width: 350px;
+    max-width: var(--protspace-tooltip-effective-width, 350px);
     width: max-content;
     word-wrap: break-word;
     overflow: hidden;

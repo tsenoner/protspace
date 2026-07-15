@@ -169,6 +169,26 @@ export const responsiveStyles = css`
     }
   }
 
+  /* Keep projection and annotation readable while giving the wider EAT fieldset its own row. */
+  @media (max-width: 950px) {
+    /* --breakpoint-lg */
+    .left-controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .left-controls > .control-group {
+      width: 100%;
+    }
+
+    .left-controls > .eat-controls {
+      grid-column: 1 / -1;
+      box-sizing: border-box;
+      width: 100%;
+    }
+  }
+
   /* Keep right-side dropdown chevrons visible on compact screens so
      Import/Export still read as menus rather than immediate actions. */
   @media (max-width: 600px) {
@@ -212,6 +232,18 @@ export const responsiveStyles = css`
       justify-content: space-between;
       gap: var(--spacing-2xs, 0.25rem);
       padding: var(--button-padding-y) var(--spacing-xs);
+    }
+  }
+
+  /* Give the threshold caption its own row on the narrowest supported viewports. */
+  @media (max-width: 400px) {
+    .eat-threshold {
+      grid-template-columns: minmax(4rem, 1fr) auto auto auto;
+      width: 100%;
+    }
+
+    .eat-threshold > span:first-child {
+      grid-column: 1 / -1;
     }
   }
 

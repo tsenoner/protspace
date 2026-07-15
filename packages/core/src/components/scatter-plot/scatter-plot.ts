@@ -40,11 +40,16 @@ import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
 import type { VisibilityModel } from './styling/visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
+import { resolveColor } from './webgl/color-utils';
 import { QuadtreeIndex } from './interaction/quadtree-index';
 import { computeViewportWindow, buildViewKey } from './duplicate-stacks/duplicate-stack-viewport';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
-import { computeTooltipStyle, TOOLTIP_FALLBACK_HEIGHT } from './tooltips/tooltip-position';
+import {
+  computeTooltipStyle,
+  effectiveTooltipWidth,
+  TOOLTIP_FALLBACK_HEIGHT,
+} from './tooltips/tooltip-position';
 import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
@@ -493,6 +498,7 @@ export class ProtspaceScatterplot extends LitElement {
         isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
       },
       this._handleWebglContextLost,
+      () => resolveColor(getComputedStyle(this).backgroundColor),
     );
     this._updateStyleSignature();
     this._webglRenderer.setStyleSignature(this._styleSig);
@@ -1886,7 +1892,10 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _estimateTooltipHeight(): number {
     if (!this._tooltipData) return TOOLTIP_FALLBACK_HEIGHT;
-    return estimateTooltipHeight(this._tooltipData.view);
+    return estimateTooltipHeight(
+      this._tooltipData.view,
+      effectiveTooltipWidth(this._mergedConfig.width),
+    );
   }
 
   private _getTooltipStyle() {
@@ -2376,6 +2385,11 @@ export class ProtspaceScatterplot extends LitElement {
       dataDomain,
       pointSizeReference,
       resetView,
+      resolveColor(
+        backgroundColor === 'transparent'
+          ? getComputedStyle(this).backgroundColor
+          : backgroundColor,
+      ),
     );
 
     // Composite with badges canvas if present. For the unzoomed (resetView)

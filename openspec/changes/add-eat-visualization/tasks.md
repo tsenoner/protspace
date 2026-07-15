@@ -152,7 +152,8 @@
       expose all labels in tooltips, serialize structural v2 companions losslessly, and add exact
       `O88488`/`P0C5E4` real-fixture plus focused round-trip regressions.
 - [x] 11.3 Increase the shared live/export hollow-ring width while retaining point-size
-      proportionality; verify shader parity and exact-fixture encoded output.
+      responsiveness; verify shader parity and exact-fixture encoded output. D10/13.3 subsequently
+      bounded that response to preserve small-marker interiors.
 - [x] 11.4 Validate the existing raw-confidence filter workflow and zoom-transformed provenance
       endpoint behavior with code, unit, and rendered evidence; do not add duplicate state unless
       either hypothesis fails.

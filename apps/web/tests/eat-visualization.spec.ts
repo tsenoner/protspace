@@ -95,129 +95,163 @@ async function getProteinScreenPosition(
   }, proteinId);
 }
 
-async function sampleEncodedExportMarkers(page: Page): Promise<{
+async function sampleEncodedExportMarkers(
+  page: Page,
+  pointSize = 240,
+  backgroundColor = '#ffffff',
+): Promise<{
   predicted: number[];
   predictedRing: number[][];
+  densePredicted: number[];
+  densePredictedNearestNeighbor: number;
   observed: number[];
   predictedNearestNeighbor: number;
   observedNearestNeighbor: number;
+  corner: number[];
 }> {
-  return page.evaluate(async () => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (HTMLElement & {
-          _plotData?: {
-            length: number;
-            xs: Float32Array;
-            ys: Float32Array;
-            originalIndices: Int32Array | null;
-          };
-          data?: {
-            annotation_predicted?: Record<string, Array<unknown | null>>;
-          };
-          captureAtResolution?: (
-            width: number,
-            height: number,
-            options: { resetView: boolean },
-          ) => HTMLCanvasElement;
-          getDataExtent?: (options: { padded: boolean }) => {
-            xMin: number;
-            xMax: number;
-            yMin: number;
-            yMax: number;
-          } | null;
-          getRenderInfo?: (
-            width: number,
-            height: number,
-          ) => {
-            marginLeft: number;
-            marginRight: number;
-            marginTop: number;
-            marginBottom: number;
-          } | null;
-        })
-      | null;
-    const plotData = plot?._plotData;
-    const predictedCells = plot?.data?.annotation_predicted?.ec;
-    const extent = plot?.getDataExtent?.({ padded: true });
-    const width = 800;
-    const height = 600;
-    const margins = plot?.getRenderInfo?.(width, height);
-    if (!plotData || !predictedCells || !extent || !margins || !plot?.captureAtResolution) {
-      throw new Error('Export geometry is not ready');
-    }
+  return page.evaluate(
+    async ({ pointSize, backgroundColor }) => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (HTMLElement & {
+            _plotData?: {
+              length: number;
+              xs: Float32Array;
+              ys: Float32Array;
+              originalIndices: Int32Array | null;
+              proteinIds: string[];
+            };
+            data?: {
+              annotation_predicted?: Record<string, Array<unknown | null>>;
+            };
+            captureAtResolution?: (
+              width: number,
+              height: number,
+              options: { resetView: boolean; backgroundColor: string },
+            ) => HTMLCanvasElement;
+            getDataExtent?: (options: { padded: boolean }) => {
+              xMin: number;
+              xMax: number;
+              yMin: number;
+              yMax: number;
+            } | null;
+            getRenderInfo?: (
+              width: number,
+              height: number,
+            ) => {
+              marginLeft: number;
+              marginRight: number;
+              marginTop: number;
+              marginBottom: number;
+            } | null;
+            config?: Record<string, unknown>;
+            updateComplete?: Promise<unknown>;
+          })
+        | null;
+      const plotData = plot?._plotData;
+      const predictedCells = plot?.data?.annotation_predicted?.ec;
+      const extent = plot?.getDataExtent?.({ padded: true });
+      const width = 800;
+      const height = 600;
+      const margins = plot?.getRenderInfo?.(width, height);
+      if (!plotData || !predictedCells || !extent || !margins || !plot?.captureAtResolution) {
+        throw new Error('Export geometry is not ready');
+      }
 
-    const positions = Array.from({ length: plotData.length }, (_, slot) => ({
-      slot,
-      x:
-        margins.marginLeft +
-        ((plotData.xs[slot] - extent.xMin) / (extent.xMax - extent.xMin)) *
-          (width - margins.marginLeft - margins.marginRight),
-      y:
-        margins.marginTop +
-        ((extent.yMax - plotData.ys[slot]) / (extent.yMax - extent.yMin)) *
-          (height - margins.marginTop - margins.marginBottom),
-    }));
-    const withIsolation = positions.map((position) => ({
-      ...position,
-      nearestNeighbor: Math.min(
-        ...positions
-          .filter((other) => other.slot !== position.slot)
-          .map((other) => Math.hypot(other.x - position.x, other.y - position.y)),
-      ),
-    }));
-    const mostIsolated = (isPredicted: boolean) =>
-      withIsolation
-        .filter(({ slot }) => {
-          const proteinIndex = plotData.originalIndices?.[slot] ?? slot;
-          return (predictedCells[proteinIndex] !== null) === isPredicted;
-        })
-        .sort((a, b) => b.nearestNeighbor - a.nearestNeighbor)[0];
-    const predictedPoint = mostIsolated(true);
-    const observedPoint = mostIsolated(false);
-    if (!predictedPoint || !observedPoint) throw new Error('No export marker pair was available');
+      const originalConfig = plot.config ?? {};
+      plot.config = { ...originalConfig, pointSize };
+      await plot.updateComplete;
 
-    // Exercise the same off-screen renderer used by PNG export, encode it as PNG, and decode the
-    // resulting bitmap before sampling. This catches regressions where only the live shader is wired.
-    const exportCanvas = plot.captureAtResolution(width, height, { resetView: true });
-    const png = await new Promise<Blob>((resolve, reject) => {
-      exportCanvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('PNG encoding failed'))),
-        'image/png',
+      const positions = Array.from({ length: plotData.length }, (_, slot) => ({
+        slot,
+        x:
+          margins.marginLeft +
+          ((plotData.xs[slot] - extent.xMin) / (extent.xMax - extent.xMin)) *
+            (width - margins.marginLeft - margins.marginRight),
+        y:
+          margins.marginTop +
+          ((extent.yMax - plotData.ys[slot]) / (extent.yMax - extent.yMin)) *
+            (height - margins.marginTop - margins.marginBottom),
+      }));
+      const withIsolation = positions.map((position) => ({
+        ...position,
+        nearestNeighbor: Math.min(
+          ...positions
+            .filter((other) => other.slot !== position.slot)
+            .map((other) => Math.hypot(other.x - position.x, other.y - position.y)),
+        ),
+      }));
+      const mostIsolated = (isPredicted: boolean) =>
+        withIsolation
+          .filter(({ slot }) => {
+            const proteinIndex = plotData.originalIndices?.[slot] ?? slot;
+            return (predictedCells[proteinIndex] !== null) === isPredicted;
+          })
+          .sort((a, b) => b.nearestNeighbor - a.nearestNeighbor)[0];
+      const predictedPoint = mostIsolated(true);
+      const observedPoint = mostIsolated(false);
+      const denseProteinIndex = plotData.proteinIds.indexOf('P60483');
+      const densePredictedPoint = withIsolation.find(
+        ({ slot }) => (plotData.originalIndices?.[slot] ?? slot) === denseProteinIndex,
       );
-    });
-    const bitmap = await createImageBitmap(png);
-    const decoded = document.createElement('canvas');
-    decoded.width = bitmap.width;
-    decoded.height = bitmap.height;
-    const context = decoded.getContext('2d');
-    if (!context) throw new Error('PNG decoding context is unavailable');
-    context.drawImage(bitmap, 0, 0);
-    bitmap.close();
+      if (!predictedPoint || !observedPoint || !densePredictedPoint) {
+        throw new Error('No isolated and dense export marker samples were available');
+      }
 
-    const sample = ({ x, y }: { x: number; y: number }): number[] => {
-      const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
-      return Array.from(rgba);
-    };
-    const predictedRingOffsets = [
-      [-4, 0],
-      [4, 0],
-      [0, -4],
-      [0, 4],
-      [-3, -3],
-      [3, -3],
-      [-3, 3],
-      [3, 3],
-    ];
-    return {
-      predicted: sample(predictedPoint),
-      predictedRing: predictedRingOffsets.map(([dx, dy]) =>
-        sample({ x: predictedPoint.x + dx, y: predictedPoint.y + dy }),
-      ),
-      observed: sample(observedPoint),
-      predictedNearestNeighbor: predictedPoint.nearestNeighbor,
-      observedNearestNeighbor: observedPoint.nearestNeighbor,
-    };
-  });
+      // Exercise the same off-screen renderer used by PNG export, encode it as PNG, and decode the
+      // resulting bitmap before sampling. This catches regressions where only the live shader is wired.
+      const exportCanvas = plot.captureAtResolution(width, height, {
+        resetView: true,
+        backgroundColor,
+      });
+      const png = await new Promise<Blob>((resolve, reject) => {
+        exportCanvas.toBlob(
+          (blob) => (blob ? resolve(blob) : reject(new Error('PNG encoding failed'))),
+          'image/png',
+        );
+      });
+      const bitmap = await createImageBitmap(png);
+      const decoded = document.createElement('canvas');
+      decoded.width = bitmap.width;
+      decoded.height = bitmap.height;
+      const context = decoded.getContext('2d');
+      if (!context) throw new Error('PNG decoding context is unavailable');
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+
+      const sample = ({ x, y }: { x: number; y: number }): number[] => {
+        const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+        return Array.from(rgba);
+      };
+      const ringOffset = Math.max(1, Math.round(Math.sqrt(pointSize) / 4));
+      const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
+      const predictedRingOffsets = [
+        [-ringOffset, 0],
+        [ringOffset, 0],
+        [0, -ringOffset],
+        [0, ringOffset],
+        [-diagonalOffset, -diagonalOffset],
+        [diagonalOffset, -diagonalOffset],
+        [-diagonalOffset, diagonalOffset],
+        [diagonalOffset, diagonalOffset],
+      ];
+      const result = {
+        predicted: sample(predictedPoint),
+        predictedRing: predictedRingOffsets.map(([dx, dy]) =>
+          sample({ x: predictedPoint.x + dx, y: predictedPoint.y + dy }),
+        ),
+        densePredicted: sample(densePredictedPoint),
+        densePredictedNearestNeighbor: densePredictedPoint.nearestNeighbor,
+        observed: sample(observedPoint),
+        predictedNearestNeighbor: predictedPoint.nearestNeighbor,
+        observedNearestNeighbor: observedPoint.nearestNeighbor,
+        corner: sample({ x: 0, y: 0 }),
+      };
+      plot.config = originalConfig;
+      await plot.updateComplete;
+      return result;
+    },
+    { pointSize, backgroundColor },
+  );
 }
 
 test('renders and explores EAT transfers from the real phosphatase bundle', async ({ page }) => {
@@ -304,6 +338,48 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     prediction: null,
   });
 
+  const proteinSearch = controlBar.locator('protspace-protein-search');
+  await proteinSearch.locator('#protein-search-input').fill('A0JMF6');
+  await proteinSearch.locator('#protein-search-input').press('Enter');
+  await controlBar.getByRole('button', { name: 'Isolate' }).click();
+  await expect(legendSummary).toContainText(/Observed\s*0/);
+  await expect(legendSummary).toContainText(/Predicted by EAT\s*0/);
+  await expect(legendSummary).toContainText(/No annotation\s*1/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const scatterplot = document.querySelector('protspace-scatterplot') as
+          | (Element & {
+              _plotData?: {
+                length: number;
+                proteinIds: string[];
+                originalIndices: Int32Array | null;
+              };
+            })
+          | null;
+        const plotData = scatterplot?._plotData;
+        return {
+          length: plotData?.length,
+          ids: plotData
+            ? Array.from(
+                { length: plotData.length },
+                (_, slot) => plotData.proteinIds[plotData.originalIndices?.[slot] ?? slot],
+              )
+            : undefined,
+        };
+      }),
+    )
+    .toEqual({ length: 1, ids: ['A0JMF6'] });
+  const isolatedPosition = await getProteinScreenPosition(page, 'A0JMF6');
+  await page.mouse.move(isolatedPosition.x, isolatedPosition.y);
+  const isolatedTooltip = plot.locator('protspace-protein-tooltip');
+  await expect(isolatedTooltip).toContainText('A0JMF6');
+  await expect(isolatedTooltip).not.toContainText('Predicted (transferred)');
+  await controlBar.getByRole('button', { name: 'Reset' }).click();
+  await expect(legendSummary).toContainText(/Observed\s*535/);
+  await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
+  await expect(legendSummary).toContainText(/No annotation\s*84/);
+
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -377,6 +453,28 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     transferLabelGeometry.every(({ clientWidth, scrollWidth }) => scrollWidth <= clientWidth + 1),
   ).toBe(true);
   expect(transferLabelGeometry.some(({ clientHeight }) => clientHeight > 18)).toBe(true);
+
+  for (const width of [320, 360]) {
+    await page.setViewportSize({ width, height: 844 });
+    await plot.scrollIntoViewIfNeeded();
+    const responsivePosition = await getProteinScreenPosition(page, 'O88488');
+    await page.mouse.move(responsivePosition.x, responsivePosition.y);
+    await expect(transferredLabels).toHaveCount(4);
+    const tooltipBounds = await tooltip.boundingBox();
+    expect(tooltipBounds).not.toBeNull();
+    expect(tooltipBounds!.x).toBeGreaterThanOrEqual(15);
+    expect(tooltipBounds!.x + tooltipBounds!.width).toBeLessThanOrEqual(width - 15);
+    await expect(transferredLabels.nth(3)).toContainText(
+      '3.1.3.95 (phosphatidylinositol-3,5-bisphosphate 3-phosphatase)',
+    );
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await plot.evaluate(async (element) => {
+    await (element as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete;
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
 
   const transfer = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as
@@ -469,50 +567,119 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await plot.getByRole('button', { name: 'Close provenance connections' }).click();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  const mobileRows = await controlBar.evaluate((element) => {
+  await page.setViewportSize({ width: 601, height: 844 });
+  const tabletRows = await controlBar.evaluate((element) => {
     const root = element.shadowRoot!;
-    const projection = root
-      .querySelector('.left-controls > .control-group')!
-      .getBoundingClientRect();
-    const eat = root.querySelector('.eat-controls')!.getBoundingClientRect();
-    const eatHelp = root.querySelector('.eat-threshold-info')!.getBoundingClientRect();
-    const annotation = root
-      .querySelectorAll('.left-controls > .control-group')[1]
-      .getBoundingClientRect();
+    const [projectionElement, annotationElement] = root.querySelectorAll<HTMLElement>(
+      '.left-controls > .control-group',
+    );
+    const eatElement = root.querySelector<HTMLElement>('.eat-controls')!;
+    const projection = projectionElement.getBoundingClientRect();
+    const annotation = annotationElement.getBoundingClientRect();
+    const eat = eatElement.getBoundingClientRect();
     return {
-      viewportWidth: window.innerWidth,
-      controlLeft: element.getBoundingClientRect().left,
-      controlRight: element.getBoundingClientRect().right,
-      projectionBottom: projection.bottom,
-      projectionLeft: projection.left,
       projectionRight: projection.right,
-      eatTop: eat.top,
-      eatBottom: eat.bottom,
-      eatLeft: eat.left,
-      eatRight: eat.right,
-      eatHelpLeft: eatHelp.left,
-      eatHelpRight: eatHelp.right,
-      annotationTop: annotation.top,
+      projectionBottom: projection.bottom,
+      projectionClientWidth: projectionElement.clientWidth,
+      projectionScrollWidth: projectionElement.scrollWidth,
       annotationLeft: annotation.left,
-      annotationRight: annotation.right,
+      annotationBottom: annotation.bottom,
+      annotationClientWidth: annotationElement.clientWidth,
+      annotationScrollWidth: annotationElement.scrollWidth,
+      eatTop: eat.top,
     };
   });
-  expect(mobileRows.controlLeft).toBeGreaterThanOrEqual(0);
-  expect(mobileRows.controlRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-  expect(mobileRows.projectionLeft).toBeGreaterThanOrEqual(0);
-  expect(mobileRows.projectionRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-  expect(mobileRows.eatLeft).toBeGreaterThanOrEqual(0);
-  expect(mobileRows.eatRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-  expect(mobileRows.eatHelpLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
-  expect(mobileRows.eatHelpRight).toBeLessThanOrEqual(mobileRows.eatRight);
-  expect(mobileRows.annotationLeft).toBeGreaterThanOrEqual(0);
-  expect(mobileRows.annotationRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-  expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
-  expect(mobileRows.annotationTop).toBeLessThanOrEqual(mobileRows.eatTop);
+  expect(tabletRows.projectionRight).toBeLessThanOrEqual(tabletRows.annotationLeft);
+  expect(tabletRows.projectionScrollWidth).toBeLessThanOrEqual(tabletRows.projectionClientWidth);
+  expect(tabletRows.annotationScrollWidth).toBeLessThanOrEqual(tabletRows.annotationClientWidth);
+  expect(tabletRows.eatTop).toBeGreaterThanOrEqual(
+    Math.max(tabletRows.projectionBottom, tabletRows.annotationBottom),
+  );
+
+  for (const mobileWidth of [320, 390]) {
+    await page.setViewportSize({ width: mobileWidth, height: 844 });
+    const mobileRows = await controlBar.evaluate((element) => {
+      const root = element.shadowRoot!;
+      const projection = root
+        .querySelector('.left-controls > .control-group')!
+        .getBoundingClientRect();
+      const eat = root.querySelector('.eat-controls')!.getBoundingClientRect();
+      const eatThresholdElement = root.querySelector<HTMLElement>('.eat-threshold')!;
+      const eatThreshold = eatThresholdElement.getBoundingClientRect();
+      const eatPercent = root.querySelector('.eat-threshold-percent')!.getBoundingClientRect();
+      const eatHelp = root.querySelector('.eat-threshold-info')!.getBoundingClientRect();
+      const annotation = root
+        .querySelectorAll('.left-controls > .control-group')[1]
+        .getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        controlLeft: element.getBoundingClientRect().left,
+        controlRight: element.getBoundingClientRect().right,
+        projectionBottom: projection.bottom,
+        projectionLeft: projection.left,
+        projectionRight: projection.right,
+        eatTop: eat.top,
+        eatBottom: eat.bottom,
+        eatLeft: eat.left,
+        eatRight: eat.right,
+        eatHelpLeft: eatHelp.left,
+        eatHelpRight: eatHelp.right,
+        eatThresholdLeft: eatThreshold.left,
+        eatThresholdRight: eatThreshold.right,
+        eatThresholdClientWidth: eatThresholdElement.clientWidth,
+        eatThresholdScrollWidth: eatThresholdElement.scrollWidth,
+        eatPercentLeft: eatPercent.left,
+        eatPercentRight: eatPercent.right,
+        annotationTop: annotation.top,
+        annotationLeft: annotation.left,
+        annotationRight: annotation.right,
+      };
+    });
+    expect(mobileRows.controlLeft).toBeGreaterThanOrEqual(0);
+    expect(mobileRows.controlRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+    expect(mobileRows.projectionLeft).toBeGreaterThanOrEqual(0);
+    expect(mobileRows.projectionRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+    expect(mobileRows.eatLeft).toBeGreaterThanOrEqual(0);
+    expect(mobileRows.eatRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+    expect(mobileRows.eatHelpLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
+    expect(mobileRows.eatHelpRight).toBeLessThanOrEqual(mobileRows.eatRight);
+    expect(mobileRows.eatThresholdLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
+    expect(mobileRows.eatThresholdRight).toBeLessThanOrEqual(mobileRows.eatRight);
+    expect(mobileRows.eatThresholdScrollWidth).toBeLessThanOrEqual(
+      mobileRows.eatThresholdClientWidth,
+    );
+    expect(mobileRows.eatPercentLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
+    expect(mobileRows.eatPercentRight).toBeLessThanOrEqual(mobileRows.eatRight);
+    expect(mobileRows.annotationLeft).toBeGreaterThanOrEqual(0);
+    expect(mobileRows.annotationRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+    expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
+    expect(mobileRows.annotationTop).toBeLessThanOrEqual(mobileRows.eatTop);
+  }
+
+  for (const width of [320, 390, 601, 800]) {
+    await page.setViewportSize({ width, height: 844 });
+    const noAnnotationHelp = legendSummary.getByRole('button', {
+      name: 'Information about No annotation',
+    });
+    await page.mouse.move(1, 1);
+    await page.keyboard.press('Escape');
+    await noAnnotationHelp.evaluate((button) => (button as HTMLButtonElement).click());
+    const helpDialog = legendSummary.getByRole('dialog');
+    await expect(helpDialog).toBeVisible();
+    const helpBounds = await helpDialog.boundingBox();
+    expect(helpBounds).not.toBeNull();
+    expect(helpBounds!.x).toBeGreaterThanOrEqual(8);
+    expect(helpBounds!.x + helpBounds!.width).toBeLessThanOrEqual(width - 8);
+    await noAnnotationHelp.evaluate((button) => (button as HTMLButtonElement).click());
+    await expect(helpDialog).toBeHidden();
+  }
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  const exportMarkers = await sampleEncodedExportMarkers(page);
+  const markerProfiles: Awaited<ReturnType<typeof sampleEncodedExportMarkers>>[] = [];
+  for (const pointSize of [48, 240, 512]) {
+    markerProfiles.push(await sampleEncodedExportMarkers(page, pointSize));
+  }
+  const exportMarkers = markerProfiles[1];
   const distanceFromWhite = ([red, green, blue]: number[]) =>
     Math.abs(255 - red) + Math.abs(255 - green) + Math.abs(255 - blue);
   expect(exportMarkers.predictedNearestNeighbor).toBeGreaterThan(8);
@@ -522,6 +689,21 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(distanceFromWhite(exportMarkers.predicted)).toBeLessThan(20);
   expect(Math.max(...exportMarkers.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   expect(distanceFromWhite(exportMarkers.observed)).toBeGreaterThan(60);
+  expect(exportMarkers.densePredictedNearestNeighbor).toBeLessThan(0.5);
+  expect(distanceFromWhite(exportMarkers.densePredicted)).toBeLessThan(20);
+  for (const profile of markerProfiles) {
+    expect(distanceFromWhite(profile.predicted)).toBeLessThan(20);
+    expect(Math.max(...profile.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
+  }
+  const darkExport = await sampleEncodedExportMarkers(page, 240, '#102030');
+  expect(
+    Math.abs(darkExport.predicted[0] - 16) +
+      Math.abs(darkExport.predicted[1] - 32) +
+      Math.abs(darkExport.predicted[2] - 48),
+  ).toBeLessThan(20);
+  const transparentExport = await sampleEncodedExportMarkers(page, 240, 'transparent');
+  expect(distanceFromWhite(transparentExport.predicted)).toBeLessThan(20);
+  expect(transparentExport.corner[3]).toBe(0);
 
   await controlBar.getByRole('button', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');

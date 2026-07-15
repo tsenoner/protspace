@@ -39,12 +39,13 @@ export interface PointAttribLocations {
   predicted: number;
 }
 
-/** Uniform locations for the point shader program (seven uniforms). */
+/** Uniform locations for the point shader program. */
 export interface PointUniformLocations {
   resolution: WebGLUniformLocation | null;
   transform: WebGLUniformLocation | null;
   dpr: WebGLUniformLocation | null;
   gamma: WebGLUniformLocation | null;
+  knockoutColor: WebGLUniformLocation | null;
   labelColors: WebGLUniformLocation | null;
   labelTextureSize: WebGLUniformLocation | null;
   maxLabels: WebGLUniformLocation | null;

@@ -11,7 +11,13 @@ describe('point shaders', () => {
 
   it('cuts out glyph interiors only for transferred annotations', () => {
     expect(POINT_FRAGMENT_SHADER).toContain('if (v_predicted > 0.5)');
-    expect(POINT_FRAGMENT_SHADER).toContain('shapeAlpha *= 1.0 - interior;');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);',
+    );
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'mix(finalColor * v_color.a, linearKnockoutColor, predictedInterior)',
+    );
+    expect(POINT_FRAGMENT_SHADER).toContain('uniform vec3 u_knockoutColor;');
     expect(POINT_FRAGMENT_SHADER).toContain('v_predicted < 0.5');
     expect(POINT_FRAGMENT_SHADER).toContain('clamp(aa * 1.75, 0.22, 0.42)');
     expect(POINT_FRAGMENT_SHADER).toContain('min(aa, (1.0 - ringWidth) * 0.5)');

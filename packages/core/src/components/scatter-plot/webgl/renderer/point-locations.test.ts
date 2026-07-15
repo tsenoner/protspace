@@ -37,7 +37,7 @@ describe('resolvePointLocations', () => {
     });
   });
 
-  it('resolves all seven uniforms by their shader names', () => {
+  it('resolves all point uniforms by their shader names', () => {
     const { gl, program } = mockGL();
     const { uniforms } = resolvePointLocations(gl, program);
     expect(Object.keys(uniforms).sort()).toEqual(
@@ -47,11 +47,13 @@ describe('resolvePointLocations', () => {
         'labelColors',
         'labelTextureSize',
         'maxLabels',
+        'knockoutColor',
         'resolution',
         'transform',
       ].sort(),
     );
     expect((uniforms.resolution as unknown as { name: string }).name).toBe('u_resolution');
     expect((uniforms.maxLabels as unknown as { name: string }).name).toBe('u_maxLabels');
+    expect((uniforms.knockoutColor as unknown as { name: string }).name).toBe('u_knockoutColor');
   });
 });

@@ -62,6 +62,7 @@ uniform sampler2D u_labelColors;
 uniform vec2 u_labelTextureSize;
 uniform int u_maxLabels;
 uniform float u_gamma;
+uniform vec3 u_knockoutColor;
 
 out vec4 fragColor;
 
@@ -111,13 +112,14 @@ void main() {
   // screen-space derivatives of the distance field.
   float aa = fwidth(edgeDist);
   float shapeAlpha = smoothstep(0.0, aa, edgeDist);
+  float predictedInterior = 0.0;
   if (v_predicted > 0.5) {
     // Keep the ring legible at every sprite size without allowing derivative scaling to consume
-    // the interior. A stable hollow centre is the non-colour cue that distinguishes transfers.
+    // the interior. The opaque surface-color knockout prevents earlier overlapping points from showing
+    // through the hole and visually turning a transferred ring back into a filled marker.
     float ringWidth = clamp(aa * 1.75, 0.22, 0.42);
     float interiorAa = min(aa, (1.0 - ringWidth) * 0.5);
-    float interior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
-    shapeAlpha *= 1.0 - interior;
+    predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
   }
   if (shapeAlpha < 0.001) discard;
 
@@ -155,8 +157,13 @@ void main() {
     finalColor = finalColor * 0.5;
   }
 
-  float finalAlpha = v_color.a * shapeAlpha;
-  fragColor = vec4(finalColor * finalAlpha, finalAlpha);
+  // Predicted interiors use an opaque plot-surface knockout. Mix premultiplied components
+  // explicitly so the ring/interior transition remains correct for reliability-faded points.
+  float finalAlpha = mix(v_color.a, 1.0, predictedInterior) * shapeAlpha;
+  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
+  vec3 premultipliedColor =
+    mix(finalColor * v_color.a, linearKnockoutColor, predictedInterior) * shapeAlpha;
+  fragColor = vec4(premultipliedColor, finalAlpha);
 }`;
 
 export const GAMMA_VERTEX_SHADER = `#version 300 es

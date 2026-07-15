@@ -45,7 +45,10 @@ const GENE_NAME_ROW = 20; // .tooltip-gene-name row
 const BLOCK_SEPARATOR = 17; // margin-top + padding-top + border-top for .tooltip-annotations
 const BLOCK_HEADER_ROW = 16; // .tooltip-annotation-header height
 const ANNOTATION_ROW = 16; // each .tooltip-annotation row (value or displayValues entry)
-const TRANSFER_LABEL_CHARS_PER_LINE = 42; // conservative width at the 350 px tooltip maximum
+const TRANSFER_LABEL_CHARS_PER_LINE_AT_MAX_WIDTH = 42;
+const TOOLTIP_MAX_WIDTH = 350;
+// Padding plus the fixed reliability/evidence column consumes width before the wrapping label.
+const TOOLTIP_FIXED_HORIZONTAL_CHROME = 80;
 const MINIMUM_HEIGHT = 160; // floor — short tooltips unaffected
 
 /**
@@ -57,7 +60,15 @@ const MINIMUM_HEIGHT = 160; // floor — short tooltips unaffected
  *
  * This is a pure function suitable for unit testing; no DOM access required.
  */
-export function estimateTooltipHeight(view: TooltipView): number {
+export function estimateTooltipHeight(view: TooltipView, tooltipWidth = TOOLTIP_MAX_WIDTH): number {
+  const transferCharsPerLine = Math.max(
+    1,
+    Math.floor(
+      TRANSFER_LABEL_CHARS_PER_LINE_AT_MAX_WIDTH *
+        ((Math.min(tooltipWidth, TOOLTIP_MAX_WIDTH) - TOOLTIP_FIXED_HORIZONTAL_CHROME) /
+          (TOOLTIP_MAX_WIDTH - TOOLTIP_FIXED_HORIZONTAL_CHROME)),
+    ),
+  );
   let height = HEADER_HEIGHT + CONTENT_PADDING_V;
 
   const hasProteinName = filterAnnotationValues(view.proteinName) !== null;
@@ -80,7 +91,7 @@ export function estimateTooltipHeight(view: TooltipView): number {
     // the viewport while the child tooltip completes its asynchronous render.
     for (const value of block.displayValues) {
       const lineCount = block.predicted
-        ? Math.max(1, Math.ceil(Array.from(value).length / TRANSFER_LABEL_CHARS_PER_LINE))
+        ? Math.max(1, Math.ceil(Array.from(value).length / transferCharsPerLine))
         : 1;
       height += lineCount * ANNOTATION_ROW;
     }

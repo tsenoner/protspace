@@ -32,15 +32,25 @@ export interface TooltipStyleInput {
   viewportHeight: number;
 }
 
+/**
+ * Resolve the tooltip's border-box width from the same viewport constraint used by its CSS.
+ * Keeping this value shared prevents positioning from assuming 350 px while the rendered tooltip
+ * has responsively narrowed (or, previously, remained 352 px including its border).
+ */
+export function effectiveTooltipWidth(viewportWidth: number): number {
+  return Math.max(0, Math.min(TOOLTIP_MAX_WIDTH, viewportWidth - 2 * TOOLTIP_EDGE_PADDING));
+}
+
 export function computeTooltipStyle(input: TooltipStyleInput): string {
   const { x, y, height: tooltipHeight, viewportWidth, viewportHeight } = input;
+  const tooltipWidth = effectiveTooltipWidth(viewportWidth);
 
   let left = x + TOOLTIP_ANCHOR_OFFSET_X;
   let top = y - TOOLTIP_ANCHOR_OFFSET_Y;
   let transform = '';
 
   // Horizontal: if it would overflow the right edge, flip to the left side.
-  if (left + TOOLTIP_MAX_WIDTH > viewportWidth) {
+  if (left + tooltipWidth > viewportWidth) {
     left = x - TOOLTIP_ANCHOR_OFFSET_X;
     transform = 'translateX(-100%)';
   }
@@ -48,8 +58,8 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
   // Keep within horizontal bounds.
   if (!transform && left < TOOLTIP_EDGE_PADDING) {
     left = TOOLTIP_EDGE_PADDING;
-  } else if (transform && left - TOOLTIP_MAX_WIDTH < TOOLTIP_EDGE_PADDING) {
-    left = TOOLTIP_MAX_WIDTH + TOOLTIP_EDGE_PADDING;
+  } else if (transform && left - tooltipWidth < TOOLTIP_EDGE_PADDING) {
+    left = tooltipWidth + TOOLTIP_EDGE_PADDING;
   }
 
   // Vertical: clamp to the viewport using the resolved height.
@@ -60,5 +70,7 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
     top = TOOLTIP_EDGE_PADDING;
   }
 
-  return `left: ${left}px; top: ${top}px;${transform ? ` transform: ${transform};` : ''}`;
+  return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${tooltipWidth}px;${
+    transform ? ` transform: ${transform};` : ''
+  }`;
 }

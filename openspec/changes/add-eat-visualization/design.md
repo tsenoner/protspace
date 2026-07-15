@@ -254,8 +254,9 @@ display, category unioning, hashing, and v2 companion export consume the structu
 legacy manually constructed cells fall back to their single `value`. This keeps literal semicolons
 distinguishable from structural separators and routes multi-valued predictions through the existing
 multi-label texture path. Increase the normalized
-signed-distance ring width so the hollow stroke is visibly legible and remains proportional to the
-configured point diameter in the shared live/export shader.
+signed-distance ring width so the hollow stroke is visibly legible and responds to the configured
+point diameter in the shared live/export shader. D10 supersedes the original linear-proportionality
+rule with bounded thickness after exact-fixture inspection showed that it consumed small interiors.
 
 The existing connector endpoint circles remain inside the transformed SVG overlay group. Their
 geometry therefore follows pan/zoom and their stroke remains non-scaling, as required by the
@@ -294,6 +295,17 @@ derivative-scaled width has no upper bound. The shared live/export shader will r
 diameter and category colour, but clamp the normalized ring width so an anti-aliased interior hole
 always remains. Enlarging predicted points independently was rejected because point size is an
 existing visual encoding and changing it would distort comparison with observed proteins.
+The interior uses the resolved plot-surface colour as an opaque knockout rather than transparency:
+exact-fixture dense clusters demonstrated that transparent holes reveal previously painted markers
+and therefore look filled. Live rendering resolves the host background; opaque exports resolve the
+requested background. A transparent export retains the live surface colour only inside transferred
+markers while pixels outside markers remain transparent—an intentional marker-style island required
+to preserve the non-colour transfer cue. Mixing the knockout in premultiplied space keeps its
+boundary anti-aliased even when the prediction ring is reliability-faded.
+Because a later coincident observed point could otherwise cover the knockout, the canonical
+live/export painter depth uses four stable tiers: unselected observed, unselected transferred,
+selected observed, selected transferred. Existing opacity/category depth remains the within-tier
+ordering, and the selected tiers stay contiguous for the renderer's established two-pass blend.
 
 Third, provenance endpoint halos communicate exactly which two points terminate a dashed connector,
 which remains valuable in a dense cloud and provides a cue beyond connector colour. Their current
