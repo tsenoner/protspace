@@ -103,7 +103,6 @@ function applyControlBarState(controlBar: ProtspaceControlBar, initialView: Reso
   controlBar.tooltipAnnotations = [...initialView.tooltip];
   controlBar.selectionMode = false;
   controlBar.selectedProteinsCount = 0;
-  controlBar.applyEatSettings(true, DEFAULT_EAT_CONFIDENCE_THRESHOLD);
   controlBar.requestUpdate();
 }
 

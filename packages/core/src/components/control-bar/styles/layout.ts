@@ -49,55 +49,6 @@ export const layoutStyles = css`
     min-width: 0;
   }
 
-  .eat-controls {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    margin: 0;
-    padding: 4px 8px;
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    min-width: 0;
-  }
-
-  .eat-switch,
-  .eat-threshold {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--text-primary);
-    white-space: nowrap;
-  }
-
-  .eat-switch input,
-  .eat-threshold input {
-    accent-color: var(--primary);
-  }
-
-  .eat-threshold {
-    font-size: var(--text-sm);
-    color: var(--muted);
-  }
-
-  .eat-threshold input[type='range'] {
-    width: 88px;
-  }
-
-  .eat-threshold-percent {
-    box-sizing: border-box;
-    width: 3.5rem;
-    padding: 2px 4px;
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--text-primary);
-    font: inherit;
-  }
-
-  .eat-threshold-info {
-    flex: 0 0 auto;
-  }
-
   .sr-only {
     position: absolute;
     width: 1px;

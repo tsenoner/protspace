@@ -13,6 +13,7 @@ export interface IScatterplotElement extends Element {
   getMaterializedData?(): ScatterplotData | null;
   selectedAnnotation: string;
   eatOverlayEnabled?: boolean;
+  eatConfidenceThreshold?: number;
 
   // Annotation values (using scatterplot's property names)
   hiddenAnnotationValues: string[];

@@ -22,10 +22,8 @@ import {
 import './search';
 import './annotation-select';
 import './query-builder';
-import '../common/info-popover';
 import type { FilterQuery } from './query-types';
 import { createCondition } from './query-types';
-import { annotationLabel, DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
 
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
@@ -59,9 +57,6 @@ export class ProtspaceControlBar extends LitElement {
   currentDatasetName: string = '';
   @property({ type: Boolean, attribute: 'current-dataset-is-demo' })
   currentDatasetIsDemo: boolean = false;
-  @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
-  @property({ type: Number, attribute: 'eat-confidence-threshold' })
-  eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   @state() private _eatAnnotationKeys: string[] = [];
 
   @state() private _selectionDisabled: boolean = false;
@@ -286,49 +281,6 @@ export class ProtspaceControlBar extends LitElement {
       composed: true,
     });
     this.dispatchEvent(customEvent);
-  }
-
-  public applyEatSettings(enabled: boolean, threshold: number): void {
-    this.eatOverlayEnabled = enabled;
-    this.eatConfidenceThreshold = threshold;
-    if (this.autoSync && this._scatterplotElement) {
-      this._scatterplotElement.eatOverlayEnabled = enabled;
-      this._scatterplotElement.eatConfidenceThreshold = threshold;
-    }
-  }
-
-  private _emitEatOverlayChange(): void {
-    this.applyEatSettings(this.eatOverlayEnabled, this.eatConfidenceThreshold);
-    this.dispatchEvent(
-      new CustomEvent('eat-overlay-change', {
-        detail: {
-          enabled: this.eatOverlayEnabled,
-          confidenceThreshold: this.eatConfidenceThreshold,
-        },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private _handleEatOverlayToggle(event: Event): void {
-    this.eatOverlayEnabled = (event.currentTarget as HTMLInputElement).checked;
-    this._emitEatOverlayChange();
-  }
-
-  private _handleEatThresholdInput(event: Event): void {
-    this._setEatConfidenceThreshold(Number((event.currentTarget as HTMLInputElement).value));
-  }
-
-  private _handleEatThresholdPercentInput(event: Event): void {
-    const value = Number((event.currentTarget as HTMLInputElement).value);
-    if (!Number.isFinite(value)) return;
-    this._setEatConfidenceThreshold(value / 100);
-  }
-
-  private _setEatConfidenceThreshold(value: number): void {
-    this.eatConfidenceThreshold = Math.min(1, Math.max(0, value));
-    this._emitEatOverlayChange();
   }
 
   private handleAnnotationSelected(event: CustomEvent<{ annotation: string }>) {
@@ -561,8 +513,6 @@ export class ProtspaceControlBar extends LitElement {
     // filter channel is reset in parallel by applyPlotState.
     this.filterQuery = [];
     this.filterActive = false;
-    this.eatOverlayEnabled = true;
-    this.eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   }
 
   private openFileDialog() {
@@ -657,53 +607,6 @@ export class ProtspaceControlBar extends LitElement {
               @tooltip-annotation-toggle=${this.handleTooltipAnnotationToggle}
             ></protspace-annotation-select>
           </div>
-
-          ${this._eatAnnotationKeys.includes(this.selectedAnnotation)
-            ? html`
-                <fieldset class="eat-controls">
-                  <legend class="sr-only">Embedding Annotation Transfer</legend>
-                  <label class="eat-switch">
-                    <input
-                      type="checkbox"
-                      .checked=${this.eatOverlayEnabled}
-                      @change=${this._handleEatOverlayToggle}
-                    />
-                    EAT
-                  </label>
-                  <div class="eat-threshold">
-                    <span>Emphasize reliability ≥</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      .value=${String(this.eatConfidenceThreshold)}
-                      ?disabled=${!this.eatOverlayEnabled}
-                      aria-label="EAT reliability emphasis threshold"
-                      @input=${this._handleEatThresholdInput}
-                    />
-                    <input
-                      class="eat-threshold-percent"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      .value=${String(Math.round(this.eatConfidenceThreshold * 100))}
-                      ?disabled=${!this.eatOverlayEnabled}
-                      aria-label="EAT reliability emphasis percentage"
-                      @input=${this._handleEatThresholdPercentInput}
-                    />
-                    <span aria-hidden="true">%</span>
-                    <protspace-info-popover
-                      class="eat-threshold-info"
-                      .description=${`Predictions below this reliability remain visible but are dimmed. To remove them, use Filter with “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
-                      label="EAT reliability emphasis"
-                      align="right"
-                    ></protspace-info-popover>
-                  </div>
-                </fieldset>
-              `
-            : ''}
         </div>
 
         <!-- Search selection -->
@@ -1499,13 +1402,6 @@ export class ProtspaceControlBar extends LitElement {
 
         if ('selectionMode' in scatterplot) {
           this.selectionMode = Boolean(scatterplot.selectionMode);
-        }
-
-        if (scatterplot.eatOverlayEnabled !== undefined) {
-          this.eatOverlayEnabled = scatterplot.eatOverlayEnabled;
-        }
-        if (scatterplot.eatConfidenceThreshold !== undefined) {
-          this.eatConfidenceThreshold = scatterplot.eatConfidenceThreshold;
         }
 
         if ('selectedProteinIds' in scatterplot) {

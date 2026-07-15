@@ -14,12 +14,13 @@ biology as ground truth in figures intended for scientific publication.
   explicitly identified numeric confidence annotation without consuming a legitimate user column
   that happens to share its preferred suffix; preserve that identity through numeric display
   materialization and selected-view export.
-- Add a persisted EAT overlay mode and confidence threshold beside annotation selection only when
-  the loaded dataset contains usable EAT predictions.
+- Add a persisted EAT overlay mode and confidence threshold inside the transferred-annotation
+  legend only when the selected annotation contains usable EAT predictions.
 - Coalesce transferred values into the active categorical view without changing curated data;
   render observed points filled and transferred points as confidence-weighted hollow markers.
 - Add EAT-specific tooltip provenance and an observed-versus-transferred-versus-missing legend
-  section with live counts that account for the complete represented population.
+  section with live counts that account for the complete represented population, without repeating
+  the meaning of the existing N/A category in a clipped help popover.
 - Add bidirectional, capped provenance connectors between transferred proteins and their source
   proteins, including projection/plane recomputation, connected-point emphasis, empty-click and
   keyboard dismissal, exact-view cache ownership, and an accessible fan-out summary.
@@ -47,7 +48,7 @@ None.
 ## Impact
 
 The change spans the shared visualization data model and accessors, bundle conversion/writing and
-settings validation, control bar, scatter-plot visibility and WebGL/export shaders, tooltip,
+settings validation, annotation selector, scatter-plot visibility and WebGL/export shaders, tooltip,
 legend, app interaction wiring, dataset loading/export, and their tests. It adds no runtime
 dependency and makes no breaking bundle-format change: old bundles remain unchanged, and EAT
 bundles retain the backend's three inline companion columns when re-exported.

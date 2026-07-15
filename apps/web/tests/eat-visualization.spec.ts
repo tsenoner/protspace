@@ -260,12 +260,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   const controlBar = page.locator('protspace-control-bar');
   const plot = page.locator('protspace-scatterplot');
-  const eatGroup = controlBar.getByRole('group', { name: 'Embedding Annotation Transfer' });
-  const eatToggle = controlBar.getByRole('checkbox', { name: 'EAT' });
-  const threshold = controlBar.getByRole('slider', {
+  const legend = page.locator('protspace-legend');
+  const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
+  const eatToggle = eatGroup.getByRole('checkbox', { name: 'Show EAT predictions' });
+  const threshold = eatGroup.getByRole('slider', {
     name: 'EAT reliability emphasis threshold',
   });
-  const thresholdPercent = controlBar.getByRole('spinbutton', {
+  const thresholdPercent = eatGroup.getByRole('spinbutton', {
     name: 'EAT reliability emphasis percentage',
   });
 
@@ -287,6 +288,16 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await thresholdPercent.fill('50');
   await expect(threshold).toHaveValue('0.5');
 
+  const legendSummary = eatGroup.getByRole('region', {
+    name: 'Transferred annotation counts',
+  });
+  await eatToggle.uncheck();
+  await expect(eatGroup).toBeVisible();
+  await expect(legendSummary).toBeHidden();
+  await expect(threshold).toBeDisabled();
+  await eatToggle.check();
+  await expect(legendSummary).toBeVisible();
+
   const annotationSelect = controlBar.locator('protspace-annotation-select');
   await annotationSelect.locator('.dropdown-trigger').click();
   const ecRow = annotationSelect.locator('.dropdown-item[data-annotation="ec"]');
@@ -301,16 +312,12 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await annotationSelect.locator('.dropdown-item[data-annotation="ec"]').click();
   await expect(eatGroup).toBeVisible();
 
-  const legendSummary = page
-    .locator('protspace-legend')
-    .getByRole('region', { name: 'Transferred annotation counts' });
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
   await expect(legendSummary).toContainText(/No annotation\s*84/);
-  await legendSummary.getByRole('button', { name: 'Information about No annotation' }).click();
-  await expect(legendSummary.getByRole('dialog')).toContainText(
-    'No observed EC number value and no EAT prediction',
-  );
+  await expect(
+    legendSummary.getByRole('button', { name: 'Information about No annotation' }),
+  ).toHaveCount(0);
 
   const noAnnotationExample = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as
@@ -568,110 +575,78 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
 
   await page.setViewportSize({ width: 601, height: 844 });
-  const tabletRows = await controlBar.evaluate((element) => {
+  const compactControlBar = await controlBar.evaluate((element) => {
     const root = element.shadowRoot!;
     const [projectionElement, annotationElement] = root.querySelectorAll<HTMLElement>(
       '.left-controls > .control-group',
     );
-    const eatElement = root.querySelector<HTMLElement>('.eat-controls')!;
     const projection = projectionElement.getBoundingClientRect();
     const annotation = annotationElement.getBoundingClientRect();
-    const eat = eatElement.getBoundingClientRect();
     return {
       projectionRight: projection.right,
-      projectionBottom: projection.bottom,
       projectionClientWidth: projectionElement.clientWidth,
       projectionScrollWidth: projectionElement.scrollWidth,
       annotationLeft: annotation.left,
-      annotationBottom: annotation.bottom,
       annotationClientWidth: annotationElement.clientWidth,
       annotationScrollWidth: annotationElement.scrollWidth,
-      eatTop: eat.top,
+      eatControlCount: root.querySelectorAll('.eat-controls').length,
     };
   });
-  expect(tabletRows.projectionRight).toBeLessThanOrEqual(tabletRows.annotationLeft);
-  expect(tabletRows.projectionScrollWidth).toBeLessThanOrEqual(tabletRows.projectionClientWidth);
-  expect(tabletRows.annotationScrollWidth).toBeLessThanOrEqual(tabletRows.annotationClientWidth);
-  expect(tabletRows.eatTop).toBeGreaterThanOrEqual(
-    Math.max(tabletRows.projectionBottom, tabletRows.annotationBottom),
+  expect(compactControlBar.projectionRight).toBeLessThanOrEqual(compactControlBar.annotationLeft);
+  expect(compactControlBar.projectionScrollWidth).toBeLessThanOrEqual(
+    compactControlBar.projectionClientWidth,
   );
-
-  for (const mobileWidth of [320, 390]) {
-    await page.setViewportSize({ width: mobileWidth, height: 844 });
-    const mobileRows = await controlBar.evaluate((element) => {
-      const root = element.shadowRoot!;
-      const projection = root
-        .querySelector('.left-controls > .control-group')!
-        .getBoundingClientRect();
-      const eat = root.querySelector('.eat-controls')!.getBoundingClientRect();
-      const eatThresholdElement = root.querySelector<HTMLElement>('.eat-threshold')!;
-      const eatThreshold = eatThresholdElement.getBoundingClientRect();
-      const eatPercent = root.querySelector('.eat-threshold-percent')!.getBoundingClientRect();
-      const eatHelp = root.querySelector('.eat-threshold-info')!.getBoundingClientRect();
-      const annotation = root
-        .querySelectorAll('.left-controls > .control-group')[1]
-        .getBoundingClientRect();
-      return {
-        viewportWidth: window.innerWidth,
-        controlLeft: element.getBoundingClientRect().left,
-        controlRight: element.getBoundingClientRect().right,
-        projectionBottom: projection.bottom,
-        projectionLeft: projection.left,
-        projectionRight: projection.right,
-        eatTop: eat.top,
-        eatBottom: eat.bottom,
-        eatLeft: eat.left,
-        eatRight: eat.right,
-        eatHelpLeft: eatHelp.left,
-        eatHelpRight: eatHelp.right,
-        eatThresholdLeft: eatThreshold.left,
-        eatThresholdRight: eatThreshold.right,
-        eatThresholdClientWidth: eatThresholdElement.clientWidth,
-        eatThresholdScrollWidth: eatThresholdElement.scrollWidth,
-        eatPercentLeft: eatPercent.left,
-        eatPercentRight: eatPercent.right,
-        annotationTop: annotation.top,
-        annotationLeft: annotation.left,
-        annotationRight: annotation.right,
-      };
-    });
-    expect(mobileRows.controlLeft).toBeGreaterThanOrEqual(0);
-    expect(mobileRows.controlRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-    expect(mobileRows.projectionLeft).toBeGreaterThanOrEqual(0);
-    expect(mobileRows.projectionRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-    expect(mobileRows.eatLeft).toBeGreaterThanOrEqual(0);
-    expect(mobileRows.eatRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-    expect(mobileRows.eatHelpLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
-    expect(mobileRows.eatHelpRight).toBeLessThanOrEqual(mobileRows.eatRight);
-    expect(mobileRows.eatThresholdLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
-    expect(mobileRows.eatThresholdRight).toBeLessThanOrEqual(mobileRows.eatRight);
-    expect(mobileRows.eatThresholdScrollWidth).toBeLessThanOrEqual(
-      mobileRows.eatThresholdClientWidth,
-    );
-    expect(mobileRows.eatPercentLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
-    expect(mobileRows.eatPercentRight).toBeLessThanOrEqual(mobileRows.eatRight);
-    expect(mobileRows.annotationLeft).toBeGreaterThanOrEqual(0);
-    expect(mobileRows.annotationRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-    expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
-    expect(mobileRows.annotationTop).toBeLessThanOrEqual(mobileRows.eatTop);
-  }
+  expect(compactControlBar.annotationScrollWidth).toBeLessThanOrEqual(
+    compactControlBar.annotationClientWidth,
+  );
+  expect(compactControlBar.eatControlCount).toBe(0);
 
   for (const width of [320, 390, 601, 800]) {
     await page.setViewportSize({ width, height: 844 });
-    const noAnnotationHelp = legendSummary.getByRole('button', {
-      name: 'Information about No annotation',
+    const legendControlLayout = await eatGroup.evaluate((element) => {
+      const group = element as HTMLElement;
+      const host = (group.getRootNode() as ShadowRoot).host.getBoundingClientRect();
+      const groupBounds = group.getBoundingClientRect();
+      const thresholdElement = group.querySelector<HTMLElement>('.eat-threshold')!;
+      const thresholdBounds = thresholdElement.getBoundingClientRect();
+      const percentBounds = group
+        .querySelector<HTMLElement>('.eat-threshold-percent')!
+        .getBoundingClientRect();
+      const helpBounds = group
+        .querySelector<HTMLElement>('.eat-threshold-info')!
+        .getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        hostLeft: host.left,
+        hostRight: host.right,
+        groupLeft: groupBounds.left,
+        groupRight: groupBounds.right,
+        helpLeft: helpBounds.left,
+        helpRight: helpBounds.right,
+        thresholdLeft: thresholdBounds.left,
+        thresholdRight: thresholdBounds.right,
+        thresholdClientWidth: thresholdElement.clientWidth,
+        thresholdScrollWidth: thresholdElement.scrollWidth,
+        percentLeft: percentBounds.left,
+        percentRight: percentBounds.right,
+      };
     });
-    await page.mouse.move(1, 1);
-    await page.keyboard.press('Escape');
-    await noAnnotationHelp.evaluate((button) => (button as HTMLButtonElement).click());
-    const helpDialog = legendSummary.getByRole('dialog');
-    await expect(helpDialog).toBeVisible();
-    const helpBounds = await helpDialog.boundingBox();
-    expect(helpBounds).not.toBeNull();
-    expect(helpBounds!.x).toBeGreaterThanOrEqual(8);
-    expect(helpBounds!.x + helpBounds!.width).toBeLessThanOrEqual(width - 8);
-    await noAnnotationHelp.evaluate((button) => (button as HTMLButtonElement).click());
-    await expect(helpDialog).toBeHidden();
+    expect(legendControlLayout.groupLeft).toBeGreaterThanOrEqual(legendControlLayout.hostLeft);
+    expect(legendControlLayout.groupRight).toBeLessThanOrEqual(legendControlLayout.hostRight);
+    expect(legendControlLayout.groupLeft).toBeGreaterThanOrEqual(0);
+    expect(legendControlLayout.groupRight).toBeLessThanOrEqual(legendControlLayout.viewportWidth);
+    expect(legendControlLayout.helpLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
+    expect(legendControlLayout.helpRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
+    expect(legendControlLayout.thresholdLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
+    expect(legendControlLayout.thresholdRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
+    expect(legendControlLayout.thresholdScrollWidth).toBeLessThanOrEqual(
+      legendControlLayout.thresholdClientWidth,
+    );
+    expect(legendControlLayout.percentLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
+    expect(legendControlLayout.percentRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
+    await expect(
+      legendSummary.getByRole('button', { name: 'Information about No annotation' }),
+    ).toHaveCount(0);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 

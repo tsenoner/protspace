@@ -266,3 +266,17 @@
       rings, subpixel-coincident P60483 final-pixel compositing, and default/dark/transparent
       exports. Automatic checks and explicit Playwright were green; all six feedback threads have
       immutable replies and are resolved.
+
+## 14. Legend-owned EAT controls follow-up
+
+- [x] 14.1 Move the EAT overlay switch and synchronized reliability range/percentage inputs from
+      the global control bar into the transferred-annotation legend section while retaining direct
+      scatter-plot synchronization, accessibility, settings restore, and the bubbling change
+      contract.
+- [x] 14.2 Remove the duplicate no-annotation help trigger and delete obsolete control-bar state,
+      handlers, layout/responsive styles, types, and tests without leaving dead code.
+- [x] 14.3 Add focused legend, controller, dataset-restore, and browser coverage for control
+      visibility, threshold synchronization, overlay re-enablement, and the unclipped population
+      summary.
+- [x] 14.4 Run focused checks, strict OpenSpec validation, rendered desktop/mobile QA, and the full
+      mandated `pnpm precommit` before publishing the follow-up.

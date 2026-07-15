@@ -70,9 +70,6 @@ export interface ScatterplotElementLike extends Element {
   numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
   annotationSortModes?: Record<string, LegendSortModeLike>;
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
-  eatOverlayEnabled?: boolean;
-  eatConfidenceThreshold?: number;
-
   runWebGLRenderPerfMeasurements?: (
     iterations?: number,
     options?: { download?: boolean; dataset?: { id: string; url?: string; proteinCount?: number } },

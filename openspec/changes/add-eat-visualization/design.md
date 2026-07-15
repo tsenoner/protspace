@@ -135,18 +135,19 @@ are enabled and `0.50` when a dataset has predictions. Validation accepts only a
 number in `[0,1]`; normalization drops invalid optional values while retaining otherwise valid
 settings. The writer gate recognizes EAT-only settings.
 
-The control bar exposes a switch beside annotation selection and a native range input (`0..1`, step
-`0.05`) only when the loaded dataset has at least one normalized EAT cell. A non-EAT dataset omits
-the complete fieldset so it contributes no irrelevant focus targets, accessibility-tree content,
-or empty responsive-grid spacing. The supported fieldset reuses the existing control-bar fieldset,
-legend, label, typography, spacing, colour, and native-input patterns; it introduces no decorative
-emoji. The threshold is disabled while the overlay is off. Auto-sync updates scatter state and
-emits one `eat-overlay-change` contract. Loading embedded settings applies both plot and control
-state; parquet export writes the current values.
+The transferred-annotation legend exposes an EAT switch and synchronized native range plus numeric
+percentage input (`0..1`, step `0.01`) when the selected annotation has normalized EAT cells in the
+stable loaded dataset. Keeping the control beside the filled/hollow population key makes the
+setting part of the encoding it changes and removes the wide fieldset and its responsive rules from
+the global control bar. A non-EAT selection omits the complete control so it contributes no
+irrelevant focus targets or accessibility-tree content. The threshold inputs are disabled while
+the overlay is off. Legend auto-sync updates scatter state directly and emits one bubbling
+`eat-overlay-change` contract. Loading embedded settings applies to the plot before legend sync;
+parquet export writes the current plot values.
 
 Embedded EAT settings have the same precedence for direct imports and OPFS replay: normalized bundle
 values are applied after dataset-reset defaults, and absent fields fall back to enabled and `0.50`.
-Unlike legend customization, EAT state has no separate per-dataset browser persistence channel, so
+EAT state has no separate per-dataset browser persistence channel, so
 OPFS MUST replay the embedded values rather than silently retaining reset defaults.
 
 ### D6. Keep provenance pairs as ids in a dedicated SVG controller

@@ -147,9 +147,7 @@ export function createDatasetController({
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
         const eatConfidenceThreshold =
           settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
-        controlBar.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
-        plotElement.eatOverlayEnabled = eatOverlayEnabled;
-        plotElement.eatConfidenceThreshold = eatConfidenceThreshold;
+        legendElement.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
       }
 
       controlBar.hasFileSettings =

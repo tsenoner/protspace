@@ -14,6 +14,7 @@ import {
   normalizeNumericPaletteId,
   resolveNumericAnnotationDisplaySettings,
   annotationLabel,
+  DEFAULT_EAT_CONFIDENCE_THRESHOLD,
   isPredictedAnnotation,
   getAnnotationMeta,
   type NumericBinningStrategy,
@@ -152,6 +153,8 @@ export class ProtspaceLegend extends LitElement {
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
   @state() private _eatCounts: EatPopulationCounts | null = null;
+  @state() private _eatOverlayEnabled = true;
+  @state() private _eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
   private _keyboardReorderSnapshot: {
@@ -973,6 +976,9 @@ export class ProtspaceLegend extends LitElement {
     this._selectedPaletteId = 'kellys';
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
+    this._eatCounts = null;
+    this._eatOverlayEnabled = true;
+    this._eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
     this._clearKeyboardReorderState();
 
     // Reset isolation state
@@ -1008,8 +1014,62 @@ export class ProtspaceLegend extends LitElement {
   // Data Handling
   // ─────────────────────────────────────────────────────────────────
 
+  public applyEatSettings(enabled: boolean, threshold: number): void {
+    const normalizedThreshold = Number.isFinite(threshold)
+      ? Math.min(1, Math.max(0, threshold))
+      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+    this._eatOverlayEnabled = enabled;
+    this._eatConfidenceThreshold = normalizedThreshold;
+
+    const scatterplot = this._scatterplotController.scatterplot;
+    if (this.autoSync && scatterplot) {
+      scatterplot.eatOverlayEnabled = enabled;
+      scatterplot.eatConfidenceThreshold = normalizedThreshold;
+    }
+  }
+
+  private _emitEatOverlayChange(): void {
+    this.dispatchEvent(
+      new CustomEvent('eat-overlay-change', {
+        detail: {
+          enabled: this._eatOverlayEnabled,
+          confidenceThreshold: this._eatConfidenceThreshold,
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _handleEatOverlayToggle(event: Event): void {
+    this.applyEatSettings(
+      (event.currentTarget as HTMLInputElement).checked,
+      this._eatConfidenceThreshold,
+    );
+    this._emitEatOverlayChange();
+  }
+
+  private _handleEatThresholdInput(event: Event): void {
+    this._setEatConfidenceThreshold(Number((event.currentTarget as HTMLInputElement).value));
+  }
+
+  private _handleEatThresholdPercentInput(event: Event): void {
+    const value = Number((event.currentTarget as HTMLInputElement).value);
+    if (!Number.isFinite(value)) return;
+    this._setEatConfidenceThreshold(value / 100);
+  }
+
+  private _setEatConfidenceThreshold(value: number): void {
+    this.applyEatSettings(this._eatOverlayEnabled, value);
+    this._emitEatOverlayChange();
+  }
+
   private _handleScatterplotDataChange(data: ScatterplotData, selectedAnnotation: string): void {
     this._clearKeyboardReorderState();
+    const scatterplot = this._scatterplotController.scatterplot;
+    this._eatOverlayEnabled = scatterplot?.eatOverlayEnabled ?? true;
+    this._eatConfidenceThreshold =
+      scatterplot?.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
     this.data = {
       annotations: data.annotations,
       protein_ids: data.protein_ids,
@@ -1081,8 +1141,13 @@ export class ProtspaceLegend extends LitElement {
     data: ScatterplotData,
     selectedAnnotation: string,
   ): EatPopulationCounts | null {
-    const overlayEnabled = this._scatterplotController.scatterplot?.eatOverlayEnabled ?? false;
-    return computeEatPopulationCounts(data, selectedAnnotation, overlayEnabled);
+    return computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
+  }
+
+  private _hasSelectedEatAnnotation(): boolean {
+    const stableData = this._scatterplotController.scatterplot?.data ?? this.data;
+    const predictions = stableData?.annotation_predicted?.[this.selectedAnnotation];
+    return Array.isArray(predictions) && predictions.some((cell) => cell !== null);
   }
 
   private _ensureSortModeDefaults(): void {
@@ -2094,32 +2159,82 @@ export class ProtspaceLegend extends LitElement {
                 : undefined,
           },
         )}
-        ${this._eatCounts
+        ${this._hasSelectedEatAnnotation()
           ? html`
-              <section class="eat-legend" aria-label="Transferred annotation counts">
-                <div class="eat-legend-title">Predicted (transferred)</div>
-                <div class="eat-legend-row">
-                  <span class="eat-swatch observed" aria-hidden="true"></span>
-                  <span>Observed</span>
-                  <strong>${this._eatCounts.observed}</strong>
+              <section class="eat-legend" aria-label="Embedding Annotation Transfer">
+                <div class="eat-legend-header">
+                  <div class="eat-legend-title">Predicted (transferred)</div>
+                  <label class="eat-switch">
+                    <input
+                      type="checkbox"
+                      .checked=${this._eatOverlayEnabled}
+                      aria-label="Show EAT predictions"
+                      @change=${this._handleEatOverlayToggle}
+                    />
+                    <span>Show</span>
+                  </label>
                 </div>
-                <div class="eat-legend-row">
-                  <span class="eat-swatch predicted" aria-hidden="true"></span>
-                  <span>Predicted by EAT</span>
-                  <strong>${this._eatCounts.predicted}</strong>
+                <div class="eat-threshold">
+                  <div class="eat-threshold-heading">
+                    <label for="eat-reliability-threshold">Emphasize reliability</label>
+                    <span class="eat-threshold-value">
+                      <input
+                        class="eat-threshold-percent"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        .value=${String(Math.round(this._eatConfidenceThreshold * 100))}
+                        ?disabled=${!this._eatOverlayEnabled}
+                        aria-label="EAT reliability emphasis percentage"
+                        @input=${this._handleEatThresholdPercentInput}
+                      />
+                      <span aria-hidden="true">%</span>
+                      <protspace-info-popover
+                        class="eat-threshold-info"
+                        .description=${`Predictions below this reliability remain visible but are dimmed. To remove them, use Filter with “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
+                        label="EAT reliability emphasis"
+                        align="right"
+                      ></protspace-info-popover>
+                    </span>
+                  </div>
+                  <input
+                    id="eat-reliability-threshold"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    .value=${String(this._eatConfidenceThreshold)}
+                    ?disabled=${!this._eatOverlayEnabled}
+                    aria-label="EAT reliability emphasis threshold"
+                    @input=${this._handleEatThresholdInput}
+                  />
                 </div>
-                <div class="eat-legend-row">
-                  <span class="eat-swatch missing" aria-hidden="true"></span>
-                  <span class="eat-legend-label">
-                    <span>No annotation</span>
-                    <protspace-info-popover
-                      .description=${`No observed ${title} value and no EAT prediction for this protein.`}
-                      label="No annotation"
-                      align="right"
-                    ></protspace-info-popover>
-                  </span>
-                  <strong>${this._eatCounts.missing}</strong>
-                </div>
+                ${this._eatOverlayEnabled && this._eatCounts
+                  ? html`
+                      <div
+                        class="eat-legend-counts"
+                        role="region"
+                        aria-label="Transferred annotation counts"
+                      >
+                        <div class="eat-legend-row">
+                          <span class="eat-swatch observed" aria-hidden="true"></span>
+                          <span>Observed</span>
+                          <strong>${this._eatCounts.observed}</strong>
+                        </div>
+                        <div class="eat-legend-row">
+                          <span class="eat-swatch predicted" aria-hidden="true"></span>
+                          <span>Predicted by EAT</span>
+                          <strong>${this._eatCounts.predicted}</strong>
+                        </div>
+                        <div class="eat-legend-row">
+                          <span class="eat-swatch missing" aria-hidden="true"></span>
+                          <span>No annotation</span>
+                          <strong>${this._eatCounts.missing}</strong>
+                        </div>
+                      </div>
+                    `
+                  : ''}
               </section>
             `
           : ''}

@@ -95,11 +95,11 @@ key and preserve both annotations.
 ### Requirement: EAT overlay controls are conditional, accessible, and persisted
 
 For datasets with normalized EAT cells, the annotation selector SHALL mark every base annotation
-that has transferred values. When one of those bases is selected, the control bar SHALL provide an
-EAT overlay switch and native range plus numeric percentage threshold controls immediately to the
-right of annotation selection. The range and numeric controls SHALL represent one value and remain
-synchronized. The accessible fieldset SHALL default to overlay enabled and threshold `0.50` and
-SHALL synchronize with the scatter plot. The complete fieldset SHALL be absent when the selected
+that has transferred values. When one of those bases is selected, the transferred-annotation legend
+SHALL provide an EAT overlay switch and native range plus numeric percentage threshold controls
+beside the observed/transferred population key. The range and numeric controls SHALL represent one
+value and remain synchronized. The accessible group SHALL default to overlay enabled and threshold
+`0.50` and SHALL synchronize with the scatter plot. The complete control SHALL be absent when the selected
 annotation has no usable EAT cells, including confidence-view and non-EAT selections. Optional
 `eatOverlayEnabled` and `eatConfidenceThreshold` bundle settings SHALL validate, normalize, write
 even when they are the only settings, and apply on dataset load.
@@ -110,7 +110,7 @@ even when they are the only settings, and apply on dataset load.
 - **THEN** the switch is enabled and on, the threshold is `50%`, and both controls have accessible
   names and keyboard behavior
 - **AND** the controls are contained by an accessible EAT-labelled group
-- **AND** the group is rendered immediately to the right of annotation selection
+- **AND** the group is rendered inside the transferred-annotation legend section
 
 #### Scenario: EAT annotations are discoverable
 
@@ -309,9 +309,9 @@ column-level model-prediction badge.
 
 For an active EAT base annotation with the overlay enabled, the legend SHALL render a distinct
 “Predicted (transferred)” section with filled “Observed,” hollow “Predicted by EAT,” and explicit
-“No annotation” rows with live counts from the current filtered/isolation view. The no-annotation
-row SHALL explain that it contains proteins with neither an observed value nor an EAT prediction for
-the selected annotation. Observed plus
+“No annotation” rows with live counts from the current filtered/isolation view. Because the
+no-annotation population has the same meaning as the existing N/A category, the row SHALL not add a
+duplicate explanatory popover. Observed plus
 transferred plus no-annotation SHALL equal the represented protein population. This section SHALL not
 replace or reuse the column-level predicted badge.
 
@@ -329,15 +329,17 @@ replace or reuse the column-level predicted badge.
 
 #### Scenario: Non-EAT or disabled view
 
-- **WHEN** the active annotation has no prediction channel or the overlay is disabled
-- **THEN** the EAT legend section is absent
+- **WHEN** the active annotation has no prediction channel
+- **THEN** the complete EAT legend control and population section are absent
+- **WHEN** the active EAT overlay is disabled
+- **THEN** the population rows are absent but the EAT control remains available so the user can
+  re-enable the overlay
 
-#### Scenario: No-annotation explanation
+#### Scenario: No-annotation row avoids duplicate help
 
 - **WHEN** the EAT population section is shown for a selected base annotation
 - **THEN** the third row is labelled “No annotation”
-- **AND** its accessible help identifies proteins that have neither an observed value nor an EAT
-  prediction for that selected annotation
+- **AND** it does not render a separate help trigger that duplicates the existing N/A meaning
 
 ### Requirement: EAT data survives slicing, hashing, and bundle round-trip
 

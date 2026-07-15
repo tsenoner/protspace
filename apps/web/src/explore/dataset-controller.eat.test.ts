@@ -59,12 +59,12 @@ describe('dataset controller EAT settings restore', () => {
   it('applies embedded EAT settings after an OPFS reload while retaining OPFS legend precedence', async () => {
     const controlBar = {
       clearForNewDataset: vi.fn(),
-      applyEatSettings: vi.fn(),
       hasFileSettings: false,
     };
     const legendElement = {
       clearForNewDataset: vi.fn(),
       setFileSettings: vi.fn(),
+      applyEatSettings: vi.fn(),
     };
     const plotElement = {
       eatOverlayEnabled: true,
@@ -114,9 +114,7 @@ describe('dataset controller EAT settings restore', () => {
     } as unknown as Event);
 
     expect(controlBar.clearForNewDataset).toHaveBeenCalledOnce();
-    expect(controlBar.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
-    expect(plotElement.eatOverlayEnabled).toBe(false);
-    expect(plotElement.eatConfidenceThreshold).toBe(0.75);
+    expect(legendElement.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
     expect(controlBar.hasFileSettings).toBe(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
@@ -133,10 +131,9 @@ describe('dataset controller EAT settings restore', () => {
         source: 'auto',
       },
     } as unknown as Event);
-    expect(controlBar.applyEatSettings).toHaveBeenLastCalledWith(
+    expect(legendElement.applyEatSettings).toHaveBeenLastCalledWith(
       true,
       DEFAULT_EAT_CONFIDENCE_THRESHOLD,
     );
-    expect(plotElement.eatConfidenceThreshold).toBe(DEFAULT_EAT_CONFIDENCE_THRESHOLD);
   });
 });

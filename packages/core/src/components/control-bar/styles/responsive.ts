@@ -169,7 +169,7 @@ export const responsiveStyles = css`
     }
   }
 
-  /* Keep projection and annotation readable while giving the wider EAT fieldset its own row. */
+  /* Keep projection and annotation readable on compact screens. */
   @media (max-width: 950px) {
     /* --breakpoint-lg */
     .left-controls {
@@ -179,12 +179,6 @@ export const responsiveStyles = css`
     }
 
     .left-controls > .control-group {
-      width: 100%;
-    }
-
-    .left-controls > .eat-controls {
-      grid-column: 1 / -1;
-      box-sizing: border-box;
       width: 100%;
     }
   }
@@ -205,45 +199,14 @@ export const responsiveStyles = css`
       width: 100%;
     }
 
-    .left-controls > .control-group,
-    .left-controls > .eat-controls {
+    .left-controls > .control-group {
       width: 100%;
-    }
-
-    .eat-controls {
-      box-sizing: border-box;
-      flex-wrap: wrap;
-      row-gap: var(--spacing-xs);
-    }
-
-    .eat-threshold {
-      display: grid;
-      grid-template-columns: auto minmax(4rem, 1fr) auto auto auto;
-      flex: 1 1 100%;
-      min-width: 0;
-    }
-
-    .eat-threshold input[type='range'] {
-      width: auto;
-      min-width: 4rem;
     }
 
     .right-controls .dropdown-trigger {
       justify-content: space-between;
       gap: var(--spacing-2xs, 0.25rem);
       padding: var(--button-padding-y) var(--spacing-xs);
-    }
-  }
-
-  /* Give the threshold caption its own row on the narrowest supported viewports. */
-  @media (max-width: 400px) {
-    .eat-threshold {
-      grid-template-columns: minmax(4rem, 1fr) auto auto auto;
-      width: 100%;
-    }
-
-    .eat-threshold > span:first-child {
-      grid-column: 1 / -1;
     }
   }
 
