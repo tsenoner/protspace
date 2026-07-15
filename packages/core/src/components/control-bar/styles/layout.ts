@@ -94,6 +94,10 @@ export const layoutStyles = css`
     font: inherit;
   }
 
+  .eat-threshold-info {
+    flex: 0 0 auto;
+  }
+
   .sr-only {
     position: absolute;
     width: 1px;

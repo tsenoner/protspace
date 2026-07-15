@@ -285,6 +285,7 @@ column-level model-prediction badge.
 - **WHEN** the user hovers a transferred protein while its base annotation is active
 - **THEN** the tooltip shows every transferred label, “Predicted (transferred),” bounded confidence,
   source id, and confidence bar
+- **AND** every transferred label remains fully readable without single-line truncation
 
 #### Scenario: Observed protein tooltip
 
@@ -295,7 +296,9 @@ column-level model-prediction badge.
 
 For an active EAT base annotation with the overlay enabled, the legend SHALL render a distinct
 “Predicted (transferred)” section with filled “Observed,” hollow “Predicted by EAT,” and explicit
-“Unannotated” rows with live counts from the current filtered/isolation view. Observed plus
+“No annotation” rows with live counts from the current filtered/isolation view. The no-annotation
+row SHALL explain that it contains proteins with neither an observed value nor an EAT prediction for
+the selected annotation. Observed plus
 transferred plus unannotated SHALL equal the represented protein population. This section SHALL not
 replace or reuse the column-level predicted badge.
 
@@ -315,6 +318,13 @@ replace or reuse the column-level predicted badge.
 
 - **WHEN** the active annotation has no prediction channel or the overlay is disabled
 - **THEN** the EAT legend section is absent
+
+#### Scenario: No-annotation explanation
+
+- **WHEN** the EAT population section is shown for a selected base annotation
+- **THEN** the third row is labelled “No annotation”
+- **AND** its accessible help identifies proteins that have neither an observed value nor an EAT
+  prediction for that selected annotation
 
 ### Requirement: EAT data survives slicing, hashing, and bundle round-trip
 

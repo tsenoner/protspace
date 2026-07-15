@@ -2110,7 +2110,14 @@ export class ProtspaceLegend extends LitElement {
                 </div>
                 <div class="eat-legend-row">
                   <span class="eat-swatch missing" aria-hidden="true"></span>
-                  <span>Unannotated</span>
+                  <span class="eat-legend-label">
+                    <span>No annotation</span>
+                    <protspace-info-popover
+                      .description=${`No observed ${title} value and no EAT prediction for this protein.`}
+                      label="No annotation"
+                      align="right"
+                    ></protspace-info-popover>
+                  </span>
                   <strong>${this._eatCounts.missing}</strong>
                 </div>
               </section>

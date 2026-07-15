@@ -7,14 +7,7 @@ import { estimateTooltipHeight } from './tooltip-height-estimate';
 // ---------------------------------------------------------------------------
 
 function makeBlock(
-  overrides: Partial<{
-    key: string;
-    displayValues: string[];
-    numericValue: number | null;
-    numericType: 'float' | 'int';
-    scores: (number[] | null)[];
-    evidence: (string | null)[];
-  }> = {},
+  overrides: Partial<TooltipView['blocks'][number]> = {},
 ): TooltipView['blocks'][number] {
   return {
     key: 'annotation',
@@ -154,5 +147,30 @@ describe('estimateTooltipHeight', () => {
     const view1 = makeView({ geneName: ['TP53'], blocks: [bigBlock()] });
     const view2 = makeView({ geneName: ['TP53'], blocks: [bigBlock()] });
     expect(estimateTooltipHeight(view1)).toBe(estimateTooltipHeight(view2));
+  });
+
+  it('reserves additional lines for long transferred labels without inflating observed rows', () => {
+    const longEc = '3.1.3.67 (phosphatidylinositol-3,4,5-trisphosphate 3-phosphatase)';
+    const anchor = bigBlock();
+    const predicted = {
+      value: longEc,
+      confidence: 0.87,
+      source: 'P0C5E4',
+    };
+    const shortTransfer = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: ['3.1.3.67'], predicted })] }),
+    );
+    const longTransfer = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: [longEc], predicted })] }),
+    );
+    const shortObserved = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: ['3.1.3.67'] })] }),
+    );
+    const longObserved = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: [longEc] })] }),
+    );
+
+    expect(longTransfer).toBeGreaterThan(shortTransfer);
+    expect(longObserved).toBe(shortObserved);
   });
 });

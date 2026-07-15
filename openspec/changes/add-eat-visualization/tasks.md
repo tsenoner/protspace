@@ -231,3 +231,21 @@
       documentation head.
 - [ ] 12.6 Run and require an explicit EAT Playwright workflow to pass on the exact final pushed
       documentation head.
+
+## 13. Exact-fixture UX follow-up
+
+- [x] 13.1 Replace unexplained “Unannotated” copy with “No annotation” and selected-annotation help
+      that defines the class as neither observed nor transferred; cover the exact population
+      partition and an isolated no-annotation protein.
+- [x] 13.2 Clarify that the EAT threshold emphasizes rather than filters, retain synchronized range
+      and percentage inputs immediately after Annotation, and expose the dim-not-remove behavior in
+      visible and accessible copy.
+- [x] 13.3 Bound the shared live/export predicted-ring width so small and dense markers retain a
+      visible hollow centre without changing their encoded diameter; add shader and rendered
+      regressions.
+- [x] 13.4 Keep provenance endpoint positions data-space-bound but compensate halo radius for zoom
+      so its screen-space diameter remains constant; add controller and exact-fixture zoom coverage.
+- [x] 13.5 Wrap every structured transferred tooltip label to complete text and update conservative
+      tooltip sizing/placement coverage for multi-line EC descriptions.
+- [ ] 13.6 Run focused checks, strict OpenSpec, exact-fixture desktop/mobile rendered QA, the full
+      mandated `pnpm precommit`, and PR checks before publishing immutable closure evidence.

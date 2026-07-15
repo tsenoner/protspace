@@ -48,6 +48,8 @@ interface ResolvedConnector extends ProvenanceConnectorPair {
   y2: number;
 }
 
+const PROVENANCE_ENDPOINT_RADIUS_PX = 7;
+
 /**
  * Owns the transient EAT provenance SVG layer. Requests retain protein ids—not coordinates—so a
  * rerender always resolves against the current projection, plane, filter, and isolation view.
@@ -57,6 +59,7 @@ export class ConnectorOverlayController {
   private request: ProvenanceConnectorRequest | null = null;
   private indexedPlotData: PlotData | null = null;
   private idToSlot = new Map<string, number>();
+  private zoomScale = 1;
 
   constructor(private readonly deps: ConnectorOverlayDeps) {}
 
@@ -83,6 +86,19 @@ export class ConnectorOverlayController {
 
   hasActiveRequest(): boolean {
     return this.request !== null;
+  }
+
+  /**
+   * Keep endpoint halos at a constant screen-space diameter while their parent SVG group carries
+   * the data-space zoom transform. This updates only circle geometry; it does not rebuild the
+   * connector join or resolve protein ids during a zoom gesture.
+   */
+  updateZoomScale(scale: number): void {
+    this.zoomScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    this.deps
+      .getOverlayGroup()
+      ?.selectAll<SVGCircleElement, unknown>('circle.eat-provenance-endpoint')
+      .attr('r', PROVENANCE_ENDPOINT_RADIUS_PX / this.zoomScale);
   }
 
   render(): void {
@@ -148,7 +164,7 @@ export class ConnectorOverlayController {
       .attr('class', 'eat-provenance-endpoint')
       .attr('cx', (endpoint) => endpoint.x)
       .attr('cy', (endpoint) => endpoint.y)
-      .attr('r', 7);
+      .attr('r', PROVENANCE_ENDPOINT_RADIUS_PX / this.zoomScale);
 
     this.deps.onStatusChange(getProvenanceConnectorStatus(request, resolved.length));
   }

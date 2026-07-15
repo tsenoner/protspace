@@ -13,6 +13,7 @@ describe('point shaders', () => {
     expect(POINT_FRAGMENT_SHADER).toContain('if (v_predicted > 0.5)');
     expect(POINT_FRAGMENT_SHADER).toContain('shapeAlpha *= 1.0 - interior;');
     expect(POINT_FRAGMENT_SHADER).toContain('v_predicted < 0.5');
-    expect(POINT_FRAGMENT_SHADER).toContain('max(0.22, aa * 2.5)');
+    expect(POINT_FRAGMENT_SHADER).toContain('clamp(aa * 1.75, 0.22, 0.42)');
+    expect(POINT_FRAGMENT_SHADER).toContain('min(aa, (1.0 - ringWidth) * 0.5)');
   });
 });

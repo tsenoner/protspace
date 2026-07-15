@@ -130,6 +130,29 @@ describe('ConnectorOverlayController', () => {
     expect(overlay.attr('transform')).toBe('translate(10,20) scale(2)');
   });
 
+  it('inverse-scales endpoint radii without rebuilding connector geometry', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    const endpointsBefore = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(endpointsBefore.map((endpoint) => endpoint.getAttribute('r'))).toEqual(['7', '7']);
+
+    controller.updateZoomScale(2.5);
+
+    const endpointsAfter = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(endpointsAfter).toEqual(endpointsBefore);
+    expect(endpointsAfter.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
+      2.8, 2.8,
+    ]);
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    expect(line?.getAttribute('x1')).toBe('10');
+
+    controller.updateZoomScale(Number.NaN);
+    expect(endpointsAfter.map((endpoint) => endpoint.getAttribute('r'))).toEqual(['7', '7']);
+  });
+
   it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {
     let currentPlotData = plotData;
     let proteinIdReads = 0;

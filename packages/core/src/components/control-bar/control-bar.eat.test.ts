@@ -49,9 +49,15 @@ describe('control-bar EAT controls', () => {
     expect(group.querySelector('legend')?.textContent).toBe('Embedding Annotation Transfer');
     expect(checkbox.disabled).toBe(false);
     expect(checkbox.checked).toBe(true);
-    expect(range.getAttribute('aria-label')).toBe('Minimum EAT reliability index');
+    expect(group.textContent).toContain('Emphasize reliability ≥');
+    expect(range.getAttribute('aria-label')).toBe('EAT reliability emphasis threshold');
     expect(range.value).toBe('0.5');
     expect(percent.value).toBe('50');
+    const info = group.querySelector('protspace-info-popover') as HTMLElement & {
+      description?: string;
+    };
+    expect(info.description).toContain('remain visible but are dimmed');
+    expect(info.description).toContain('EC number — EAT confidence');
 
     const annotationGroup = control.shadowRoot!.querySelector('#annotation-select')!.parentElement!;
     expect(

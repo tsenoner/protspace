@@ -280,6 +280,43 @@ categorical cell before the replacement table receives its v2 stamp. V2 inputs b
 Opaque `__pred_source` identifiers use the shared field encoder at production and are decoded as one
 field by the web loader, so literal `%`, `;`, and `|` never become categorical structure.
 
+### D10. Refine EAT semantics and screen-space legibility after exact-fixture inspection
+
+Exact-fixture inspection exposed four presentation ambiguities without changing the underlying data
+contract. First, long structured transfer labels are lossless in the view model but the tooltip's
+single-line ellipsis hides biologically meaningful EC descriptions. Transferred annotation labels
+therefore wrap to complete text while score/evidence columns remain compact. Runtime tooltip-height
+measurement stays authoritative; the pure fallback estimator accounts conservatively for wrapped
+rows so initial placement does not run below the viewport.
+
+Second, the enlarged predicted outline from D9 can consume most of a small point sprite because its
+derivative-scaled width has no upper bound. The shared live/export shader will retain the same marker
+diameter and category colour, but clamp the normalized ring width so an anti-aliased interior hole
+always remains. Enlarging predicted points independently was rejected because point size is an
+existing visual encoding and changing it would distort comparison with observed proteins.
+
+Third, provenance endpoint halos communicate exactly which two points terminate a dashed connector,
+which remains valuable in a dense cloud and provides a cue beyond connector colour. Their current
+radius inherits the parent zoom transform, however, and becomes visually dominant. Endpoint
+positions and connector lines will continue to use the transformed data-space group, while circle
+radii are inversely scaled from the current zoom factor so the halo diameter remains constant in
+screen space. This preserves localization without obscuring neighboring proteins.
+
+Finally, the threshold is an emphasis control rather than a filter: transfers below it remain
+visible and interactive. The fieldset stays immediately after the active Annotation selector, where
+its dependency is clear, but its visible and accessible copy changes from “Minimum reliability” to
+“Emphasize reliability ≥”. Supporting text states that lower-reliability transfers are dimmed, not
+removed, and points users to the generated numeric confidence annotation when removal is required.
+The range and synchronized integer percentage input remain together: the range supports rapid
+visual exploration while the number supports exact, reproducible values. Hiding either input in a
+popover was rejected because it reduces discoverability and makes a scientifically relevant display
+setting harder to inspect.
+
+The third population class is presented as “No annotation” rather than the unexplained
+“Unannotated”. Selected-annotation-specific help text defines it as having neither an observed value
+nor an EAT prediction. The class remains explicit and count-bearing; it is not merged into an
+ordinary missing legend category.
+
 ## Risks / Trade-offs
 
 - **Additional per-protein arrays increase memory for EAT bundles** → Allocate channels only for

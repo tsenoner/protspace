@@ -131,6 +131,13 @@ export const layoutStyles = css`
     color: var(--legend-text-color);
   }
 
+  .eat-legend-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
   .eat-swatch {
     width: 0.55rem;
     height: 0.55rem;

@@ -134,6 +134,18 @@ export const proteinTooltipStyles = css`
     flex: 1 1 auto;
   }
 
+  .eat-transferred-row {
+    align-items: flex-start;
+  }
+
+  .eat-transferred-label {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
   .tooltip-annotation-score {
     flex-shrink: 0;
     white-space: nowrap;

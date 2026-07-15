@@ -97,6 +97,7 @@ async function getProteinScreenPosition(
 
 async function sampleEncodedExportMarkers(page: Page): Promise<{
   predicted: number[];
+  predictedRing: number[][];
   observed: number[];
   predictedNearestNeighbor: number;
   observedNearestNeighbor: number;
@@ -197,8 +198,21 @@ async function sampleEncodedExportMarkers(page: Page): Promise<{
       const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
       return Array.from(rgba);
     };
+    const predictedRingOffsets = [
+      [-4, 0],
+      [4, 0],
+      [0, -4],
+      [0, 4],
+      [-3, -3],
+      [3, -3],
+      [-3, 3],
+      [3, 3],
+    ];
     return {
       predicted: sample(predictedPoint),
+      predictedRing: predictedRingOffsets.map(([dx, dy]) =>
+        sample({ x: predictedPoint.x + dx, y: predictedPoint.y + dy }),
+      ),
       observed: sample(observedPoint),
       predictedNearestNeighbor: predictedPoint.nearestNeighbor,
       observedNearestNeighbor: observedPoint.nearestNeighbor,
@@ -215,10 +229,10 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const eatGroup = controlBar.getByRole('group', { name: 'Embedding Annotation Transfer' });
   const eatToggle = controlBar.getByRole('checkbox', { name: 'EAT' });
   const threshold = controlBar.getByRole('slider', {
-    name: 'Minimum EAT reliability index',
+    name: 'EAT reliability emphasis threshold',
   });
   const thresholdPercent = controlBar.getByRole('spinbutton', {
-    name: 'Minimum EAT reliability percentage',
+    name: 'EAT reliability emphasis percentage',
   });
 
   await expect(eatGroup).toBeVisible();
@@ -226,6 +240,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(eatToggle).toBeEnabled();
   await expect(threshold).toHaveValue('0.5');
   await expect(thresholdPercent).toHaveValue('50');
+  await eatGroup
+    .getByRole('button', { name: 'Information about EAT reliability emphasis' })
+    .click();
+  await expect(eatGroup.getByRole('dialog')).toContainText(
+    'Predictions below this reliability remain visible but are dimmed',
+  );
+  await expect(eatGroup.getByRole('dialog')).toContainText('EC number — EAT confidence');
   await threshold.press('Home');
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
@@ -251,6 +272,37 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     .getByRole('region', { name: 'Transferred annotation counts' });
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
+  await expect(legendSummary).toContainText(/No annotation\s*84/);
+  await legendSummary.getByRole('button', { name: 'Information about No annotation' }).click();
+  await expect(legendSummary.getByRole('dialog')).toContainText(
+    'No observed EC number value and no EAT prediction',
+  );
+
+  const noAnnotationExample = await page.evaluate(() => {
+    const plotElement = document.querySelector('protspace-scatterplot') as
+      | (Element & {
+          data?: {
+            protein_ids: string[];
+            annotations: Record<string, { values: string[] }>;
+            annotation_data: Record<string, Int32Array>;
+            annotation_predicted?: Record<string, Array<unknown | null>>;
+          };
+        })
+      | null;
+    const index = plotElement?.data?.protein_ids.indexOf('A0JMF6') ?? -1;
+    const valueIndex = index >= 0 ? plotElement?.data?.annotation_data.ec[index] : undefined;
+    return {
+      id: plotElement?.data?.protein_ids[index],
+      observedValue:
+        valueIndex === undefined ? undefined : plotElement?.data?.annotations.ec.values[valueIndex],
+      prediction: index >= 0 ? plotElement?.data?.annotation_predicted?.ec[index] : undefined,
+    };
+  });
+  expect(noAnnotationExample).toEqual({
+    id: 'A0JMF6',
+    observedValue: '__NA__',
+    prediction: null,
+  });
 
   await expect
     .poll(() =>
@@ -305,6 +357,27 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     ],
   });
 
+  const o88488Position = await getProteinScreenPosition(page, 'O88488');
+  await page.mouse.move(o88488Position.x, o88488Position.y);
+  const tooltip = plot.locator('protspace-protein-tooltip');
+  const transferredLabels = tooltip.locator('.eat-transferred-label');
+  await expect(transferredLabels).toHaveCount(4);
+  await expect(transferredLabels.nth(3)).toContainText(
+    '3.1.3.95 (phosphatidylinositol-3,5-bisphosphate 3-phosphatase)',
+  );
+  const transferLabelGeometry = await transferredLabels.evaluateAll((labels) =>
+    labels.map((label) => ({
+      clientWidth: label.clientWidth,
+      scrollWidth: label.scrollWidth,
+      clientHeight: label.clientHeight,
+      scrollHeight: label.scrollHeight,
+    })),
+  );
+  expect(
+    transferLabelGeometry.every(({ clientWidth, scrollWidth }) => scrollWidth <= clientWidth + 1),
+  ).toBe(true);
+  expect(transferLabelGeometry.some(({ clientHeight }) => clientHeight > 18)).toBe(true);
+
   const transfer = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as
       | (Element & {
@@ -332,7 +405,6 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   const targetPosition = await getProteinScreenPosition(page, transfer.target);
   await page.mouse.move(targetPosition.x, targetPosition.y);
-  const tooltip = plot.locator('protspace-protein-tooltip');
   await expect(tooltip).toContainText('Predicted (transferred)');
   await expect(tooltip).toContainText('Reliability index');
   await expect(tooltip).toContainText(`source ${transfer.source}`);
@@ -380,7 +452,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await page.mouse.wheel(0, -500);
   await expect
     .poll(async () => (await endpoint.boundingBox())?.width ?? 0)
-    .toBeGreaterThan(endpointBeforeZoom!.width + 0.5);
+    .toBeCloseTo(endpointBeforeZoom!.width, 0);
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const firstConnectorX = await plot
     .locator('line.eat-provenance-connector')
@@ -404,6 +476,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       .querySelector('.left-controls > .control-group')!
       .getBoundingClientRect();
     const eat = root.querySelector('.eat-controls')!.getBoundingClientRect();
+    const eatHelp = root.querySelector('.eat-threshold-info')!.getBoundingClientRect();
     const annotation = root
       .querySelectorAll('.left-controls > .control-group')[1]
       .getBoundingClientRect();
@@ -418,6 +491,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       eatBottom: eat.bottom,
       eatLeft: eat.left,
       eatRight: eat.right,
+      eatHelpLeft: eatHelp.left,
+      eatHelpRight: eatHelp.right,
       annotationTop: annotation.top,
       annotationLeft: annotation.left,
       annotationRight: annotation.right,
@@ -429,6 +504,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(mobileRows.projectionRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
   expect(mobileRows.eatLeft).toBeGreaterThanOrEqual(0);
   expect(mobileRows.eatRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
+  expect(mobileRows.eatHelpLeft).toBeGreaterThanOrEqual(mobileRows.eatLeft);
+  expect(mobileRows.eatHelpRight).toBeLessThanOrEqual(mobileRows.eatRight);
   expect(mobileRows.annotationLeft).toBeGreaterThanOrEqual(0);
   expect(mobileRows.annotationRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
   expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
@@ -443,6 +520,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(exportMarkers.predicted[3]).toBe(255);
   expect(exportMarkers.observed[3]).toBe(255);
   expect(distanceFromWhite(exportMarkers.predicted)).toBeLessThan(20);
+  expect(Math.max(...exportMarkers.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   expect(distanceFromWhite(exportMarkers.observed)).toBeGreaterThan(60);
 
   await controlBar.getByRole('button', { name: 'Export' }).click();

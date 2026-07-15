@@ -112,8 +112,11 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
             scores.length > MAX_VISIBLE_SCORES ? visible.join(', ') + ', …' : visible.join(', ');
         }
         const displayValue = toDisplayValue(toInternalValue(value));
-        return html`<div class="tooltip-annotation">
-          <span class="tooltip-annotation-label" title="${displayValue}">${displayValue}</span
+        return html`<div class="tooltip-annotation ${block.predicted ? 'eat-transferred-row' : ''}">
+          <span
+            class="tooltip-annotation-label ${block.predicted ? 'eat-transferred-label' : ''}"
+            title="${displayValue}"
+            >${displayValue}</span
           >${scoreText
             ? html`<span class="tooltip-annotation-score">${scoreText}</span>`
             : evidence

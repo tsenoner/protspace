@@ -45,6 +45,7 @@ const GENE_NAME_ROW = 20; // .tooltip-gene-name row
 const BLOCK_SEPARATOR = 17; // margin-top + padding-top + border-top for .tooltip-annotations
 const BLOCK_HEADER_ROW = 16; // .tooltip-annotation-header height
 const ANNOTATION_ROW = 16; // each .tooltip-annotation row (value or displayValues entry)
+const TRANSFER_LABEL_CHARS_PER_LINE = 42; // conservative width at the 350 px tooltip maximum
 const MINIMUM_HEIGHT = 160; // floor — short tooltips unaffected
 
 /**
@@ -74,8 +75,15 @@ export function estimateTooltipHeight(view: TooltipView): number {
       height += ANNOTATION_ROW;
     }
 
-    // One row per displayValues entry
-    height += block.displayValues.length * ANNOTATION_ROW;
+    // Transferred labels wrap rather than truncate. The browser measurement remains authoritative,
+    // but this conservative pre-measure estimate prevents long labels from initially overflowing
+    // the viewport while the child tooltip completes its asynchronous render.
+    for (const value of block.displayValues) {
+      const lineCount = block.predicted
+        ? Math.max(1, Math.ceil(Array.from(value).length / TRANSFER_LABEL_CHARS_PER_LINE))
+        : 1;
+      height += lineCount * ANNOTATION_ROW;
+    }
   }
 
   return Math.max(MINIMUM_HEIGHT, height);

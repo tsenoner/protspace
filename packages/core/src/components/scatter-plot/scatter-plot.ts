@@ -1217,6 +1217,7 @@ export class ProtspaceScatterplot extends LitElement {
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
+        this._connectorOverlay.updateZoomScale(t.k);
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
       onHover: (event) => this._handleCanvasMouseMove(event),

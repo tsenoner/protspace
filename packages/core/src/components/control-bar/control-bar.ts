@@ -22,9 +22,10 @@ import {
 import './search';
 import './annotation-select';
 import './query-builder';
+import '../common/info-popover';
 import type { FilterQuery } from './query-types';
 import { createCondition } from './query-types';
-import { DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
+import { annotationLabel, DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
 
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
@@ -669,8 +670,8 @@ export class ProtspaceControlBar extends LitElement {
                     />
                     EAT
                   </label>
-                  <label class="eat-threshold">
-                    <span>Minimum reliability</span>
+                  <div class="eat-threshold">
+                    <span>Emphasize reliability ≥</span>
                     <input
                       type="range"
                       min="0"
@@ -678,7 +679,7 @@ export class ProtspaceControlBar extends LitElement {
                       step="0.01"
                       .value=${String(this.eatConfidenceThreshold)}
                       ?disabled=${!this.eatOverlayEnabled}
-                      aria-label="Minimum EAT reliability index"
+                      aria-label="EAT reliability emphasis threshold"
                       @input=${this._handleEatThresholdInput}
                     />
                     <input
@@ -689,11 +690,17 @@ export class ProtspaceControlBar extends LitElement {
                       step="1"
                       .value=${String(Math.round(this.eatConfidenceThreshold * 100))}
                       ?disabled=${!this.eatOverlayEnabled}
-                      aria-label="Minimum EAT reliability percentage"
+                      aria-label="EAT reliability emphasis percentage"
                       @input=${this._handleEatThresholdPercentInput}
                     />
                     <span aria-hidden="true">%</span>
-                  </label>
+                    <protspace-info-popover
+                      class="eat-threshold-info"
+                      .description=${`Predictions below this reliability remain visible but are dimmed. To remove them, use Filter with “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
+                      label="EAT reliability emphasis"
+                      align="right"
+                    ></protspace-info-popover>
+                  </div>
                 </fieldset>
               `
             : ''}

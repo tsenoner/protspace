@@ -112,8 +112,11 @@ void main() {
   float aa = fwidth(edgeDist);
   float shapeAlpha = smoothstep(0.0, aa, edgeDist);
   if (v_predicted > 0.5) {
-    float ringWidth = max(0.22, aa * 2.5);
-    float interior = smoothstep(ringWidth, ringWidth + aa, edgeDist);
+    // Keep the ring legible at every sprite size without allowing derivative scaling to consume
+    // the interior. A stable hollow centre is the non-colour cue that distinguishes transfers.
+    float ringWidth = clamp(aa * 1.75, 0.22, 0.42);
+    float interiorAa = min(aa, (1.0 - ringWidth) * 0.5);
+    float interior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
     shapeAlpha *= 1.0 - interior;
   }
   if (shapeAlpha < 0.001) discard;

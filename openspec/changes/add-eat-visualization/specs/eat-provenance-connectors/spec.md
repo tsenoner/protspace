@@ -88,6 +88,8 @@ rebuilding their data join.
 
 - **WHEN** the user pans or zooms with connectors active
 - **THEN** lines remain attached to both endpoints and retain a constant screen-space stroke width
+- **AND** endpoint halos retain a constant screen-space diameter while their centres track the
+  transformed source and target coordinates
 
 #### Scenario: Projection or 3-D plane change
 
@@ -117,6 +119,9 @@ Connectors SHALL use a dashed stroke plus endpoint emphasis and text status, so 
 depend on color alone. Empty-space click, deselection, annotation change, overlay disable, data
 replacement, Escape, and an accessible close control SHALL clear connectors and connector-owned
 highlights.
+
+Endpoint emphasis SHALL use an unfilled, constant-screen-space halo so it localizes the termini
+without covering the encoded protein markers or growing with zoom.
 
 #### Scenario: Empty-space dismissal
 

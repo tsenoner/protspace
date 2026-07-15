@@ -192,15 +192,19 @@ export const responsiveStyles = css`
 
     .eat-controls {
       box-sizing: border-box;
+      flex-wrap: wrap;
+      row-gap: var(--spacing-xs);
     }
 
     .eat-threshold {
-      flex: 1;
+      display: grid;
+      grid-template-columns: auto minmax(4rem, 1fr) auto auto auto;
+      flex: 1 1 100%;
       min-width: 0;
     }
 
     .eat-threshold input[type='range'] {
-      flex: 1;
+      width: auto;
       min-width: 4rem;
     }
 

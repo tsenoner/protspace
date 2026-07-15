@@ -179,7 +179,7 @@ const scatterplotStylesCore = css`
     cursor: pointer;
   }
 
-  /* EAT provenance connectors (SVG overlay). Geometry inherits the parent zoom transform. */
+  /* EAT provenance connectors (SVG overlay). Positions inherit the parent zoom transform. */
   .connector-lines-layer {
     pointer-events: none;
   }
