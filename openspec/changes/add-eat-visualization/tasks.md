@@ -202,6 +202,32 @@
 - [x] 12.2g When either endpoint leaves the view, materialize only drawable pairs and count every
       unavailable semantic connection independently of the 20-line cap; cover clicked-source and
       predicted-query directions under filtering and isolation without full candidate allocation.
-- [ ] 12.3 Run focused and full verification, mandated precommit, strict OpenSpec, exact EAT
+- [x] 12.3 Run focused and full verification, mandated precommit, strict OpenSpec, exact EAT
       Playwright, push coherent commits, reply to and resolve the new review threads with immutable
-      evidence, update exact-head PR evidence, and request fresh independent final-head review.
+      evidence, and update exact-head PR evidence. Implementation commits
+      `39176526fbf2b1b855b59084d3156b4d24591d5a`,
+      `d21e7df175bf02845c8112bc8f04ad54de86505e`,
+      `4b4592b510cf7d3885d0c2720555ef97cb1ea187`, and
+      `c4221bed78352b24a2c42f5303a217fb39ccecc3` passed 1,804 Vitest assertions
+      (one intentional skip), 761 Python tests, precommit, CI-equivalent quality/build, strict
+      OpenSpec validation, exact linked-fixture Playwright, the unchanged fixture hash, and the
+      added-line emoji audit. Immutable closure replies:
+      [off-view overlap](https://github.com/tsenoner/protspace/pull/315#discussion_r3586366341),
+      [sparse storage](https://github.com/tsenoner/protspace/pull/315#discussion_r3586366845),
+      [stable capability](https://github.com/tsenoner/protspace/pull/315#discussion_r3586366842),
+      [bounded hashing](https://github.com/tsenoner/protspace/pull/315#discussion_r3586371389),
+      [sparse multi-label gating](https://github.com/tsenoner/protspace/pull/315#discussion_r3586461946),
+      [retained off-view identity](https://github.com/tsenoner/protspace/pull/315#discussion_r3586461939),
+      [visible fan-out cap](https://github.com/tsenoner/protspace/pull/315#discussion_r3586535410),
+      and
+      [exact semantic unavailable totals](https://github.com/tsenoner/protspace/pull/315#discussion_r3586600267).
+      Independent validation reported implementation head
+      `c4221bed78352b24a2c42f5303a217fb39ccecc3` technically clean; its automatic code
+      quality, documentation, lint, and Python 3.10/3.11/3.12 checks were green. The
+      post-resolution thread-aware GraphQL fetch found zero unresolved threads.
+- [ ] 12.4 Receive an explicit clean independent review pinned to the exact final pushed
+      documentation head.
+- [ ] 12.5 Require every normal required GitHub CI check to pass on the exact final pushed
+      documentation head.
+- [ ] 12.6 Run and require an explicit EAT Playwright workflow to pass on the exact final pushed
+      documentation head.
