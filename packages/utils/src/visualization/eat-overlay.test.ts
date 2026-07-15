@@ -50,4 +50,21 @@ describe('EAT overlay helpers', () => {
     expect(hasEatPredictions(data)).toBe(true);
     expect(hasEatPredictions({ ...data, annotation_predicted: undefined })).toBe(false);
   });
+
+  it('upgrades single-valued storage to materialize every transferred label', () => {
+    const data = createData();
+    data.annotations.ec.values = ['1.1.1.1', '2.2.2.2', '3.3.3.3', '__NA__'];
+    data.annotation_data.ec = new Int32Array([0, 3, 3]);
+    data.annotation_predicted!.ec[1] = {
+      value: '2.2.2.2;3.3.3.3',
+      values: ['2.2.2.2', '3.3.3.3'],
+      confidence: 0.81,
+      source: 'observed',
+    };
+
+    const materialized = materializeEatOverlay(data, 'ec', true);
+
+    expect(materialized.annotation_data.ec).toEqual([[0], [1, 2], [3]]);
+    expect(data.annotation_data.ec).toBeInstanceOf(Int32Array);
+  });
 });

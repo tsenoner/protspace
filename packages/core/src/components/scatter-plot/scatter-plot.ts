@@ -2289,6 +2289,30 @@ export class ProtspaceScatterplot extends LitElement {
     return this._getInteractableProteinIds();
   }
 
+  /** Whether a global protein index survives the current query filter and isolation view. */
+  isProteinInCurrentView(originalIndex: number): boolean {
+    const originalIndices = this._plotData.originalIndices;
+    if (!originalIndices) return originalIndex >= 0 && originalIndex < this._plotData.length;
+    let low = 0;
+    let high = originalIndices.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      const candidate = originalIndices[middle];
+      if (candidate === originalIndex) return true;
+      if (candidate < originalIndex) low = middle + 1;
+      else high = middle - 1;
+    }
+    return false;
+  }
+
+  /** Whether legend and effective opacity rules permit a protein independent of view culling. */
+  isProteinLegendEligible(proteinId: string, originalIndex: number): boolean {
+    const point = this._scratchPoint;
+    point.id = proteinId;
+    point.originalIndex = originalIndex;
+    return this._getVisibilityModel().isInteractive(point);
+  }
+
   /**
    * Capture the scatterplot at a specific resolution for high-quality export.
    * Renders directly to an off-screen WebGL canvas without affecting the display.

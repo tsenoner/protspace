@@ -108,16 +108,33 @@ export function createInteractionController({
       updateSelectedProteinDisplay(null);
     },
     handleProteinClick(event) {
-      const proteinId = (event as CustomEvent<{ proteinId?: string }>).detail?.proteinId;
+      const detail = (
+        event as CustomEvent<{ proteinId?: string; point?: { originalIndex?: number } }>
+      ).detail;
+      const proteinId = detail?.proteinId;
+      const originalIndex = detail?.point?.originalIndex;
       const data = plotElement.data;
       const annotation = plotElement.selectedAnnotation;
-      if (!proteinId || !data || !annotation || !plotElement.eatOverlayEnabled) {
+      if (
+        !proteinId ||
+        originalIndex === undefined ||
+        !data ||
+        !annotation ||
+        !plotElement.eatOverlayEnabled
+      ) {
         plotElement.clearProvenanceConnectors();
         return;
       }
 
-      const interactableProteinIds = plotElement.getInteractableProteinIds();
-      const request = eatProvenance.resolve(data, annotation, proteinId, interactableProteinIds);
+      const request = eatProvenance.resolve(
+        data,
+        annotation,
+        proteinId,
+        originalIndex,
+        (candidateId, candidateIndex) =>
+          plotElement.isProteinLegendEligible(candidateId, candidateIndex),
+        (candidateIndex) => plotElement.isProteinInCurrentView(candidateIndex),
+      );
       if (request) {
         plotElement.setProvenanceConnectors(request);
       } else {

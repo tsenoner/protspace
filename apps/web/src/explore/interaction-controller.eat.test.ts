@@ -18,13 +18,13 @@ function makeData(): VisualizationData {
 
 function setup() {
   const data = makeData();
-  const interactableProteinIds = new Set(data.protein_ids);
   const plotElement = {
     data,
     selectedAnnotation: 'ec',
     selectedProteinIds: [],
     eatOverlayEnabled: true,
-    getInteractableProteinIds: vi.fn(() => interactableProteinIds),
+    isProteinLegendEligible: vi.fn(() => true),
+    isProteinInCurrentView: vi.fn(() => true),
     setProvenanceConnectors: vi.fn(),
     clearProvenanceConnectors: vi.fn(),
   };
@@ -41,7 +41,9 @@ describe('interaction controller EAT provenance', () => {
   it('forwards a predicted click to the scatter connector API', () => {
     const { controller, plotElement } = setup();
 
-    controller.handleProteinClick({ detail: { proteinId: 'query' } } as unknown as Event);
+    controller.handleProteinClick({
+      detail: { proteinId: 'query', point: { originalIndex: 1 } },
+    } as unknown as Event);
 
     expect(plotElement.setProvenanceConnectors).toHaveBeenCalledWith({
       pairs: [
@@ -52,29 +54,36 @@ describe('interaction controller EAT provenance', () => {
         },
       ],
       totalCandidates: 1,
+      unavailableCandidates: 0,
     });
   });
 
   it('clears connectors when EAT is disabled or a click has no provenance', () => {
     const { controller, plotElement } = setup();
     plotElement.eatOverlayEnabled = false;
-    controller.handleProteinClick({ detail: { proteinId: 'query' } } as unknown as Event);
+    controller.handleProteinClick({
+      detail: { proteinId: 'query', point: { originalIndex: 1 } },
+    } as unknown as Event);
     plotElement.eatOverlayEnabled = true;
-    controller.handleProteinClick({ detail: { proteinId: 'unknown' } } as unknown as Event);
+    controller.handleProteinClick({
+      detail: { proteinId: 'unknown', point: { originalIndex: 9 } },
+    } as unknown as Event);
 
     expect(plotElement.clearProvenanceConnectors).toHaveBeenCalledTimes(2);
     expect(plotElement.setProvenanceConnectors).not.toHaveBeenCalled();
   });
 
-  it('reuses the scatter plot interactable-membership cache across repeated clicks', () => {
+  it('threads global indices through repeated provenance clicks', () => {
     const { controller, plotElement } = setup();
 
-    controller.handleProteinClick({ detail: { proteinId: 'query' } } as unknown as Event);
-    controller.handleProteinClick({ detail: { proteinId: 'source' } } as unknown as Event);
+    controller.handleProteinClick({
+      detail: { proteinId: 'query', point: { originalIndex: 1 } },
+    } as unknown as Event);
+    controller.handleProteinClick({
+      detail: { proteinId: 'source', point: { originalIndex: 0 } },
+    } as unknown as Event);
 
-    expect(plotElement.getInteractableProteinIds).toHaveBeenCalledTimes(2);
-    expect(plotElement.getInteractableProteinIds.mock.results[1]?.value).toBe(
-      plotElement.getInteractableProteinIds.mock.results[0]?.value,
-    );
+    expect(plotElement.isProteinLegendEligible).toHaveBeenCalledWith('query', 1);
+    expect(plotElement.isProteinLegendEligible).toHaveBeenCalledWith('source', 0);
   });
 });

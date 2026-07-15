@@ -21,6 +21,7 @@ from collections.abc import Sequence
 import pyarrow as pa
 
 from protlabel import Prediction
+from protspace.data.annotations.encoding import encode_field
 
 
 def add_overlay_columns(
@@ -29,6 +30,7 @@ def add_overlay_columns(
     predictions: Sequence[Prediction],
     *,
     identifiers: list[str] | None = None,
+    format_version: int = 2,
 ) -> pa.Table:
     """Append COL__pred_value / COL__pred_confidence / COL__pred_source, by identifier.
 
@@ -52,7 +54,9 @@ def add_overlay_columns(
         else:
             values.append(pred.label)
             confidences.append(float(pred.reliability))
-            sources.append(pred.source_id)
+            sources.append(
+                encode_field(pred.source_id) if format_version >= 2 else pred.source_id
+            )
 
     # Drop any pre-existing overlay columns first so re-running transfer on an
     # already-overlaid table replaces them rather than appending duplicates

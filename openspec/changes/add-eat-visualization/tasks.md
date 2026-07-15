@@ -142,3 +142,31 @@
       the added-line emoji audit returned zero matches, both threads were answered with immutable
       evidence and resolved, the subsequent thread-aware fetch found zero unresolved or new
       comments, and exact-head code quality/documentation CI passed in run 29336232132.
+
+## 11. Post-monorepo owner feedback remediation
+
+- [x] 11.1 Move the EAT controls after annotation selection, gate them by the selected EAT base,
+      mark EAT-capable dropdown rows accessibly, and add synchronized range/percentage threshold
+      entry with component and responsive regressions.
+- [x] 11.2 Preserve ordered decoded labels for multi-valued EAT cells, materialize every label,
+      expose all labels in tooltips, serialize structural v2 companions losslessly, and add exact
+      `O88488`/`P0C5E4` real-fixture plus focused round-trip regressions.
+- [x] 11.3 Increase the shared live/export hollow-ring width while retaining point-size
+      proportionality; verify shader parity and exact-fixture encoded output.
+- [x] 11.4 Validate the existing raw-confidence filter workflow and zoom-transformed provenance
+      endpoint behavior with code, unit, and rendered evidence; do not add duplicate state unless
+      either hypothesis fails.
+- [x] 11.4a Thread the click detail's global `originalIndex` into provenance resolution, remove the
+      dataset-wide protein-id map, and distinguish legend-ineligible endpoints from filtered or
+      isolated unavailable endpoints in both click directions with accessible-status regressions.
+- [x] 11.4b Reuse the shared EAT threshold default in settings restoration and cover settings that
+      omit only the optional threshold.
+- [x] 11.4c Encode opaque prediction source ids at the Python producer boundary and migrate legacy
+      v1 categorical cells structurally before stamping transfer output as v2; cover reserved
+      characters from CLI output through web normalization and connector resolution.
+- [x] 11.5 Run targeted checks, full current `pnpm precommit`, full applicable suites, strict
+      OpenSpec, exact linked-data Playwright, monorepo CI-equivalent checks, fixture hashes, and the
+      no-emoji-added audit before committing and publishing remediation.
+- [ ] 11.6 Fetch the latest remote head, commit coherently with #277/#300 references, push explicitly
+      to `origin HEAD:agent/277-eat-overlay`, update the PR exact-head evidence, reply to every new
+      comment/thread with immutable SHA and tests, and re-fetch thread-aware unresolved state.

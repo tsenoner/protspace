@@ -6,6 +6,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protlabel import Prediction
+from protspace.data.annotations.encoding import migrate_legacy_annotation_table
 from protspace.data.io.predictions import add_overlay_columns
 
 
@@ -51,6 +52,30 @@ def test_source_is_the_reference_id():
     out = add_overlay_columns(_table(), "protein_category", preds).to_pylist()
     by_id = {r["identifier"]: r for r in out}
     assert by_id["Q0"]["protein_category__pred_source"] == "R0"
+
+
+def test_source_reserved_characters_are_encoded_as_one_opaque_v2_field():
+    source_id = "R|part;literal%3B"
+    preds = [Prediction("Q0", "neurotoxin", source_id, 0.3, 0.8, 1, "euclidean")]
+    out = add_overlay_columns(_table(), "protein_category", preds).to_pylist()
+    by_id = {row["identifier"]: row for row in out}
+    assert by_id["Q0"]["protein_category__pred_source"] == "R%7Cpart%3Bliteral%253B"
+
+
+def test_legacy_table_migration_preserves_parsed_structure_and_opaque_sources():
+    legacy = pa.table(
+        {
+            "identifier": ["Q0", "R|part;literal%3B"],
+            "category": ["name%3Bpart", "ACC (Name; part)|EXP"],
+            "category__pred_source": ["R|part;literal%3B", None],
+        }
+    )
+
+    migrated = migrate_legacy_annotation_table(legacy).to_pylist()
+
+    assert migrated[0]["category"] == "name%253Bpart"
+    assert migrated[1]["category"] == "ACC (Name%3B part)|EXP"
+    assert migrated[0]["category__pred_source"] == "R%7Cpart%3Bliteral%253B"
 
 
 def test_source_column_is_string():

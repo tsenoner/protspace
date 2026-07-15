@@ -24,6 +24,11 @@ type ConnectorSeam = {
   };
   _mergedConfig: { selectedOpacity: number };
   _getInteractableProteinIds(): ReadonlySet<string>;
+  _formatConnectorStatus(status: {
+    shown: number;
+    total: number;
+    missingEndpoints: number;
+  }): string;
   _reconcileProvenanceConnectors(changed: Map<string, unknown>): void;
 };
 
@@ -107,6 +112,14 @@ describe('scatter-plot provenance connector contract', () => {
     );
 
     expect(overlay.render).toHaveBeenCalledOnce();
+  });
+
+  it('announces eligible endpoints that are unavailable outside the current view', () => {
+    const { seam } = makePlot();
+
+    expect(seam._formatConnectorStatus({ shown: 0, total: 1, missingEndpoints: 1 })).toBe(
+      'Showing 0 of 1 provenance connection · 1 connection unavailable outside the current view',
+    );
   });
 
   it('suppresses a pair that becomes non-interactable under connector-owned highlighting', () => {

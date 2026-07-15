@@ -83,6 +83,17 @@ export const layoutStyles = css`
     width: 88px;
   }
 
+  .eat-threshold-percent {
+    box-sizing: border-box;
+    width: 3.5rem;
+    padding: 2px 4px;
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-primary);
+    font: inherit;
+  }
+
   .sr-only {
     position: absolute;
     width: 1px;

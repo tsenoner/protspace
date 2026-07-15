@@ -14,8 +14,11 @@ function setData(control: ProtspaceControlBar, annotationPredicted?: Array<unkno
         data: {
           protein_ids: ['P1'],
           projections: [],
-          annotations: { ec: { values: ['1.1.1.1'] } },
-          annotation_data: { ec: new Int32Array([0]) },
+          annotations: {
+            ec: { values: ['1.1.1.1'] },
+            family: { values: ['PF1'] },
+          },
+          annotation_data: { ec: new Int32Array([0]), family: new Int32Array([0]) },
           ...(annotationPredicted ? { annotation_predicted: { ec: annotationPredicted } } : {}),
         },
       },
@@ -38,12 +41,21 @@ describe('control-bar EAT controls', () => {
 
     const group = control.shadowRoot!.querySelector<HTMLFieldSetElement>('.eat-controls')!;
     const checkbox = control.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
-    const range = control.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold input')!;
+    const range = control.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    const percent = control.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')!;
     expect(group.querySelector('legend')?.textContent).toBe('Embedding Annotation Transfer');
     expect(checkbox.disabled).toBe(false);
     expect(checkbox.checked).toBe(true);
     expect(range.getAttribute('aria-label')).toBe('Minimum EAT reliability index');
     expect(range.value).toBe('0.5');
+    expect(percent.value).toBe('50');
+
+    const annotationGroup = control.shadowRoot!.querySelector('#annotation-select')!.parentElement!;
+    expect(
+      annotationGroup.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
   });
 
   it('omits the complete control group for a dataset without usable transfers', async () => {
@@ -75,5 +87,35 @@ describe('control-bar EAT controls', () => {
         detail: { enabled: false, confidenceThreshold: 0.5 },
       }),
     );
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    const percent = control.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')!;
+    percent.value = '73';
+    percent.dispatchEvent(new Event('input'));
+    await control.updateComplete;
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: { enabled: true, confidenceThreshold: 0.73 } }),
+    );
+    expect(
+      control.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold input[type="range"]')!
+        .value,
+    ).toBe('0.73');
+  });
+
+  it('gates controls by the selected annotation in a mixed-capability dataset', async () => {
+    const control = document.createElement('protspace-control-bar') as ProtspaceControlBar;
+    control.autoSync = false;
+    document.body.append(control);
+    setData(control, [{ value: '1.1.1.1', confidence: 0.7, source: 'REF' }]);
+    await control.updateComplete;
+
+    expect(control.shadowRoot!.querySelector('.eat-controls')).not.toBeNull();
+    control.applyAnnotationSelection('family');
+    await control.updateComplete;
+    expect(control.shadowRoot!.querySelector('.eat-controls')).toBeNull();
+    control.applyAnnotationSelection('ec');
+    await control.updateComplete;
+    expect(control.shadowRoot!.querySelector('.eat-controls')).not.toBeNull();
   });
 });

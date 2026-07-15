@@ -3,6 +3,7 @@ import type { PredictedCell, VisualizationData } from '@protspace/utils';
 
 interface SourceCandidate {
   targetProteinId: string;
+  targetProteinIndex: number;
   confidence: number;
 }
 
@@ -26,7 +27,10 @@ function compareSourceCandidates(left: SourceCandidate, right: SourceCandidate):
  */
 export class EatProvenanceResolver {
   private readonly sourceIndexes = new WeakMap<VisualizationData, Map<string, SourceIndex>>();
-  private readonly proteinIndexes = new WeakMap<VisualizationData, ReadonlyMap<string, number>>();
+  private readonly sourceProteinIndexes = new WeakMap<
+    VisualizationData,
+    Map<string, ReadonlyMap<string, number>>
+  >();
 
   getSourceIndex(data: VisualizationData, annotation: string): SourceIndex {
     let byAnnotation = this.sourceIndexes.get(data);
@@ -44,7 +48,11 @@ export class EatProvenanceResolver {
       const targetProteinId = data.protein_ids[proteinIndex];
       if (!cell || !targetProteinId) continue;
       const candidates = mutable.get(cell.source) ?? [];
-      candidates.push({ targetProteinId, confidence: cell.confidence });
+      candidates.push({
+        targetProteinId,
+        targetProteinIndex: proteinIndex,
+        confidence: cell.confidence,
+      });
       mutable.set(cell.source, candidates);
     }
     for (const candidates of mutable.values()) candidates.sort(compareSourceCandidates);
@@ -52,19 +60,54 @@ export class EatProvenanceResolver {
     return mutable;
   }
 
+  private getSourceProteinIndex(
+    data: VisualizationData,
+    annotation: string,
+    sourceProteinId: string,
+  ): number | undefined {
+    let byAnnotation = this.sourceProteinIndexes.get(data);
+    if (!byAnnotation) {
+      byAnnotation = new Map();
+      this.sourceProteinIndexes.set(data, byAnnotation);
+    }
+    let sourcePositions = byAnnotation.get(annotation);
+    if (!sourcePositions) {
+      const sourceIds = new Set(
+        (data.annotation_predicted?.[annotation] ?? []).flatMap((cell) =>
+          cell ? [cell.source] : [],
+        ),
+      );
+      const positions = new Map<string, number>();
+      data.protein_ids.forEach((proteinId, index) => {
+        if (sourceIds.has(proteinId)) positions.set(proteinId, index);
+      });
+      sourcePositions = positions;
+      byAnnotation.set(annotation, sourcePositions);
+    }
+    return sourcePositions.get(sourceProteinId);
+  }
+
   resolve(
     data: VisualizationData,
     annotation: string,
     clickedProteinId: string,
-    visibleProteinIds: ReadonlySet<string>,
+    clickedProteinIndex: number,
+    isLegendEligible: (proteinId: string, proteinIndex: number) => boolean,
+    isInCurrentView: (proteinIndex: number) => boolean,
   ): ProvenanceConnectorRequest | null {
-    const proteinIndex = this.getProteinIndex(data).get(clickedProteinId);
-    if (proteinIndex === undefined || !visibleProteinIds.has(clickedProteinId)) return null;
+    if (!isLegendEligible(clickedProteinId, clickedProteinIndex)) return null;
 
     const predictedCell: PredictedCell | null =
-      data.annotation_predicted?.[annotation]?.[proteinIndex] ?? null;
+      data.annotation_predicted?.[annotation]?.[clickedProteinIndex] ?? null;
     if (predictedCell) {
-      if (!visibleProteinIds.has(predictedCell.source)) return null;
+      const sourceProteinIndex =
+        predictedCell.sourceIndex ??
+        this.getSourceProteinIndex(data, annotation, predictedCell.source) ??
+        -1;
+      if (sourceProteinIndex >= 0 && !isLegendEligible(predictedCell.source, sourceProteinIndex)) {
+        return null;
+      }
+      const sourceInCurrentView = sourceProteinIndex >= 0 && isInCurrentView(sourceProteinIndex);
       return {
         pairs: [
           {
@@ -74,15 +117,21 @@ export class EatProvenanceResolver {
           },
         ],
         totalCandidates: 1,
+        unavailableCandidates: sourceInCurrentView ? 0 : 1,
       };
     }
 
     const candidates = this.getSourceIndex(data, annotation).get(clickedProteinId) ?? [];
     const pairs = [];
     let totalCandidates = 0;
+    let unavailableCandidates = 0;
     for (const candidate of candidates) {
-      if (!visibleProteinIds.has(candidate.targetProteinId)) continue;
+      if (!isLegendEligible(candidate.targetProteinId, candidate.targetProteinIndex)) continue;
       totalCandidates++;
+      if (!isInCurrentView(candidate.targetProteinIndex)) {
+        unavailableCandidates++;
+        continue;
+      }
       if (pairs.length < MAX_PROVENANCE_CONNECTORS) {
         pairs.push({
           sourceProteinId: clickedProteinId,
@@ -96,14 +145,7 @@ export class EatProvenanceResolver {
     return {
       pairs,
       totalCandidates,
+      unavailableCandidates,
     };
-  }
-
-  private getProteinIndex(data: VisualizationData): ReadonlyMap<string, number> {
-    const cached = this.proteinIndexes.get(data);
-    if (cached) return cached;
-    const index = new Map(data.protein_ids.map((proteinId, position) => [proteinId, position]));
-    this.proteinIndexes.set(data, index);
-    return index;
   }
 }

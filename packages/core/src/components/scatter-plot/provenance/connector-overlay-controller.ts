@@ -10,8 +10,10 @@ export interface ProvenanceConnectorPair {
 
 export interface ProvenanceConnectorRequest {
   pairs: readonly ProvenanceConnectorPair[];
-  /** Number of visible candidates before the deterministic fan-out cap. */
+  /** Number of legend-eligible candidates before the deterministic fan-out cap. */
   totalCandidates: number;
+  /** Legend-eligible candidates whose endpoint is outside the filtered/isolated view. */
+  unavailableCandidates?: number;
 }
 
 export interface ProvenanceConnectorStatus {
@@ -50,6 +52,7 @@ export class ConnectorOverlayController {
     this.request = {
       pairs: request.pairs.map((pair) => ({ ...pair })),
       totalCandidates: Math.max(0, Math.trunc(request.totalCandidates)),
+      unavailableCandidates: Math.max(0, Math.trunc(request.unavailableCandidates ?? 0)),
     };
     this.render();
   }
@@ -138,7 +141,8 @@ export class ConnectorOverlayController {
     this.deps.onStatusChange({
       shown: resolved.length,
       total: request.totalCandidates,
-      missingEndpoints: request.pairs.length - resolved.length,
+      missingEndpoints:
+        (request.unavailableCandidates ?? 0) + (request.pairs.length - resolved.length),
     });
   }
 

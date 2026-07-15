@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, type VisualizationData } from '@protspace/utils';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
@@ -121,5 +121,22 @@ describe('dataset controller EAT settings restore', () => {
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(7);
+
+    await controller.handleDataLoaded({
+      detail: {
+        data,
+        settings: {
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: true,
+        },
+        source: 'auto',
+      },
+    } as unknown as Event);
+    expect(controlBar.applyEatSettings).toHaveBeenLastCalledWith(
+      true,
+      DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+    );
+    expect(plotElement.eatConfidenceThreshold).toBe(DEFAULT_EAT_CONFIDENCE_THRESHOLD);
   });
 });

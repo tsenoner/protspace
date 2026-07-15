@@ -50,6 +50,20 @@ export function getPredictedCell(
   return data.annotation_predicted?.[annotationKey]?.[proteinIdx] ?? null;
 }
 
+/** Decoded display labels, retaining backwards compatibility with single-value runtime cells. */
+export function getPredictedCellValues(cell: PredictedCell): readonly string[] {
+  return cell.values && cell.values.length > 0 ? cell.values : [cell.value];
+}
+
+export function hasEatPredictionsForAnnotation(
+  data: Pick<VisualizationData, 'annotation_predicted'> | null | undefined,
+  annotationKey: string | null | undefined,
+): boolean {
+  return Boolean(
+    annotationKey && data?.annotation_predicted?.[annotationKey]?.some((cell) => cell !== null),
+  );
+}
+
 export function hasEatPredictions(
   data: Pick<VisualizationData, 'annotation_predicted'> | null | undefined,
 ): boolean {
@@ -63,10 +77,24 @@ function cloneWithPredictions(
   valueToIndex: ReadonlyMap<string, number>,
 ): AnnotationData {
   if (source instanceof Int32Array) {
+    const hasMultiValuePrediction = predictedCells.some(
+      (cell) => cell !== null && getPredictedCellValues(cell).length > 1,
+    );
+    if (hasMultiValuePrediction) {
+      const clone = Array.from(source, (index) => (index >= 0 ? [index] : []));
+      for (let i = 0; i < predictedCells.length; i++) {
+        const cell = predictedCells[i];
+        if (!cell) continue;
+        clone[i] = getPredictedCellValues(cell)
+          .map((value) => valueToIndex.get(value) ?? -1)
+          .filter((index) => index >= 0);
+      }
+      return clone;
+    }
     const clone = source.slice();
     for (let i = 0; i < predictedCells.length; i++) {
       const cell = predictedCells[i];
-      if (cell) clone[i] = valueToIndex.get(cell.value) ?? clone[i];
+      if (cell) clone[i] = valueToIndex.get(getPredictedCellValues(cell)[0]) ?? clone[i];
     }
     return clone;
   }
@@ -74,7 +102,12 @@ function cloneWithPredictions(
   const clone = source.slice();
   for (let i = 0; i < predictedCells.length; i++) {
     const cell = predictedCells[i];
-    if (cell) clone[i] = [valueToIndex.get(cell.value) ?? getFirstAnnotationIndex(source, i)];
+    if (cell) {
+      const indices = getPredictedCellValues(cell)
+        .map((value) => valueToIndex.get(value) ?? -1)
+        .filter((index) => index >= 0);
+      clone[i] = indices.length > 0 ? indices : [getFirstAnnotationIndex(source, i)];
+    }
   }
   return clone;
 }

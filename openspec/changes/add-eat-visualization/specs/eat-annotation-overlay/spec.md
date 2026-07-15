@@ -6,7 +6,9 @@ The loader SHALL recognize exact `BASE__pred_value`, `BASE__pred_confidence`, an
 `BASE__pred_source` companion columns, exclude reserved companions from ordinary annotations, and
 expose valid transferred cells through `annotation_predicted[BASE]` in protein order. A transferred
 cell SHALL contain a non-empty value and source plus a finite confidence in `[0,1]`, and SHALL exist
-only when the curated base cell is missing.
+only when the curated base cell is missing. Multi-valued transferred cells SHALL preserve ordered
+decoded labels and positionally aligned score/evidence metadata. Prediction source ids SHALL be
+encoded and decoded as one opaque v2 field rather than categorical hit grammar.
 
 #### Scenario: Valid transfer triple
 
@@ -29,6 +31,20 @@ only when the curated base cell is missing.
 
 - **WHEN** a legacy bundle contains no recognized companion columns
 - **THEN** it produces no prediction side-channel and all existing annotation behavior is unchanged
+
+#### Scenario: Opaque reserved-character source id
+
+- **WHEN** the transfer source identifier contains literal `%`, `;`, or `|` characters
+- **THEN** CLI output encodes it as one v2 field and web normalization restores the exact identifier
+- **AND** provenance resolution matches that exact identifier to its projected source protein
+
+#### Scenario: Legacy v1 transfer migration
+
+- **WHEN** transfer operates on a v1 bundle containing literal `%XX`, pipe suffixes, or semicolons
+  inside parenthesized categorical labels
+- **THEN** the replacement annotations table is structurally migrated before it is stamped v2
+- **AND** curated and transferred hit labels, scores, and evidence have the same parsed structure
+  before and after the transfer boundary
 
 ### Requirement: Confidence is exposed through a deliberate numeric annotation
 
@@ -61,6 +77,13 @@ key and preserve both annotations.
 - **THEN** it has an EAT-specific friendly label and explains that the value is a reliability index,
   not a calibrated probability
 
+#### Scenario: Filter by raw reliability index
+
+- **WHEN** a user selects the generated confidence annotation in the existing filter builder and
+  configures a numeric comparison
+- **THEN** filtering evaluates the raw reliability indices rather than materialized display bins
+- **AND** proteins without a transferred value do not match a positive reliability comparison
+
 #### Scenario: User annotation shares the preferred synthetic suffix
 
 - **WHEN** an EAT or non-EAT v1/v2 bundle contains a real numeric or categorical annotation named
@@ -71,10 +94,13 @@ key and preserve both annotations.
 
 ### Requirement: EAT overlay controls are conditional, accessible, and persisted
 
-For datasets with normalized EAT cells, the control bar SHALL provide an EAT overlay switch beside
-annotation selection and a native confidence-threshold control. The accessible fieldset SHALL
-default to overlay enabled and threshold `0.50` and SHALL synchronize with the scatter plot. The
-complete fieldset SHALL be absent for datasets without usable EAT cells. Optional
+For datasets with normalized EAT cells, the annotation selector SHALL mark every base annotation
+that has transferred values. When one of those bases is selected, the control bar SHALL provide an
+EAT overlay switch and native range plus numeric percentage threshold controls immediately to the
+right of annotation selection. The range and numeric controls SHALL represent one value and remain
+synchronized. The accessible fieldset SHALL default to overlay enabled and threshold `0.50` and
+SHALL synchronize with the scatter plot. The complete fieldset SHALL be absent when the selected
+annotation has no usable EAT cells, including confidence-view and non-EAT selections. Optional
 `eatOverlayEnabled` and `eatConfidenceThreshold` bundle settings SHALL validate, normalize, write
 even when they are the only settings, and apply on dataset load.
 
@@ -84,12 +110,39 @@ even when they are the only settings, and apply on dataset load.
 - **THEN** the switch is enabled and on, the threshold is `50%`, and both controls have accessible
   names and keyboard behavior
 - **AND** the controls are contained by an accessible EAT-labelled group
+- **AND** the group is rendered immediately to the right of annotation selection
+
+#### Scenario: EAT annotations are discoverable
+
+- **WHEN** the annotation selector opens for a dataset containing transfers for `ec` and
+  `protein_families`
+- **THEN** both base rows expose a text-labelled EAT marker to sighted and assistive-technology
+  users
+- **AND** ordinary annotations and generated confidence views do not receive that marker
+
+#### Scenario: Range and percentage entry stay synchronized
+
+- **WHEN** the user changes either the threshold slider or the bounded `0` to `100` percentage
+  input
+- **THEN** the other control reflects the same normalized threshold
+- **AND** one `eat-overlay-change` contract updates the scatter plot
+
+#### Scenario: Selected annotation has no transfers
+
+- **WHEN** an EAT-capable dataset selects a base without transferred cells or a generated
+  confidence view
+- **THEN** the complete EAT control group is absent without leaving responsive-grid spacing
 
 #### Scenario: Dataset without EAT
 
 - **WHEN** a dataset without normalized EAT cells loads
 - **THEN** the complete EAT control group is absent from the rendered DOM and accessibility tree
 - **AND** no empty group spacing or orphaned EAT label remains
+
+#### Scenario: Embedded settings omit the optional threshold
+
+- **WHEN** bundle settings are present but omit `eatConfidenceThreshold`
+- **THEN** restore uses `DEFAULT_EAT_CONFIDENCE_THRESHOLD` rather than a separate literal fallback
 
 #### Scenario: Embedded settings round-trip
 
@@ -114,7 +167,10 @@ even when they are the only settings, and apply on dataset load.
 When the overlay is enabled and an EAT base annotation is active, the effective category SHALL be
 the curated value when present and otherwise the transferred value. Observed cells SHALL remain
 filled. Transferred cells SHALL use the same category mapping but render as hollow, anti-aliased
-markers. Disabling the overlay SHALL return transferred cells to their curated missing category.
+markers with a clearly legible outline whose screen-space thickness grows proportionally with point
+size. Multi-valued transferred cells SHALL retain every decoded label and use the existing
+multi-label marker segmentation. Disabling the overlay SHALL return transferred cells to their
+curated missing category.
 
 #### Scenario: Observed and transferred category share a hue
 
@@ -127,6 +183,19 @@ markers. Disabling the overlay SHALL return transferred cells to their curated m
 - **WHEN** a transferred value is absent from all curated cells
 - **THEN** the enabled overlay includes it in the effective legend and assigns it a stable category
   encoding without reordering existing observed categories
+
+#### Scenario: Multi-valued transferred category
+
+- **WHEN** a transferred companion cell contains two structural semicolon-separated labels
+- **THEN** overlay materialization assigns both category indices to that protein
+- **AND** live and exported markers use the existing multi-label segmentation with both hues
+
+#### Scenario: Hollow outline follows point size
+
+- **WHEN** a user increases or decreases legend point size
+- **THEN** the hollow transferred outline remains visibly thicker than the anti-alias fringe
+- **AND** its screen-space thickness changes proportionally with the marker diameter in live and
+  exported rendering
 
 #### Scenario: Overlay disabled
 
@@ -190,7 +259,7 @@ column-level model-prediction badge.
 #### Scenario: Transferred protein tooltip
 
 - **WHEN** the user hovers a transferred protein while its base annotation is active
-- **THEN** the tooltip shows the transferred label, “Predicted (transferred),” bounded confidence,
+- **THEN** the tooltip shows every transferred label, “Predicted (transferred),” bounded confidence,
   source id, and confidence bar
 
 #### Scenario: Observed protein tooltip
@@ -225,10 +294,11 @@ replace or reuse the column-level predicted badge.
 
 ### Requirement: EAT data survives slicing, hashing, and bundle round-trip
 
-Prediction cells SHALL remain aligned when visualization data is sliced. Dataset fingerprints SHALL
-change when any prediction value, confidence, or source changes. Bundle export SHALL reconstruct the
-curated base cells and all three backend companion columns, even when called with an overlay-
-materialized view, and SHALL omit synthetic confidence annotations.
+Prediction cells SHALL remain aligned when visualization data is sliced and SHALL retain both their
+lossless storage value and decoded display-label list. Dataset fingerprints SHALL change when any
+prediction label, confidence, or source changes. Bundle export SHALL reconstruct the curated base
+cells and all three backend companion columns, even when called with an overlay-materialized view,
+and SHALL omit synthetic confidence annotations.
 
 #### Scenario: Slice alignment
 
@@ -256,6 +326,14 @@ materialized view, and SHALL omit synthetic confidence annotations.
 - **THEN** the annotations parquet remains stamped `protspace_format_version=2`
 - **AND** every protein retains the same annotation set, evidence, and score companions
 - **AND** every EAT value, confidence, and source companion is preserved
+
+#### Scenario: Multi-valued EAT companion round-trip
+
+- **WHEN** a v1 or v2 EAT value companion contains multiple decoded labels, including a label with
+  a literal structural character
+- **THEN** the runtime cell retains the exact ordered label list for display
+- **AND** export writes each label with v2 escaping and structural separators
+- **AND** reload reconstructs the same ordered labels rather than one semicolon-containing category
 
 #### Scenario: Collision-safe v1 and v2 round-trip
 

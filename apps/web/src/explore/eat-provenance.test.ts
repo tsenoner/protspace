@@ -33,12 +33,15 @@ function makeData(queryCount = 24): VisualizationData {
 }
 
 describe('EatProvenanceResolver', () => {
+  const allLegendEligible = () => true;
+  const allInCurrentView = () => true;
+
   it('uses the active annotation cell for a predicted-to-source click', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
 
     expect(
-      resolver.resolve(data, 'family', 'query-0', new Set([...data.protein_ids, 'other-source'])),
+      resolver.resolve(data, 'family', 'query-0', 1, allLegendEligible, allInCurrentView),
     ).toEqual({
       pairs: [
         {
@@ -48,25 +51,36 @@ describe('EatProvenanceResolver', () => {
         },
       ],
       totalCandidates: 1,
+      unavailableCandidates: 1,
     });
   });
 
   it('rejects a predicted click when its source endpoint is legend-hidden', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
-    const interactable = new Set([...data.protein_ids, 'other-source']);
-    interactable.delete('other-source');
-
-    expect(resolver.resolve(data, 'family', 'query-0', interactable)).toBeNull();
+    expect(
+      resolver.resolve(
+        data,
+        'ec',
+        'query-0',
+        1,
+        (proteinId) => proteinId !== 'source',
+        allInCurrentView,
+      ),
+    ).toBeNull();
   });
 
   it('rejects a source click when the predicted endpoint is legend-hidden', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
-    const interactable = new Set(data.protein_ids);
-    interactable.delete('query-0');
-
-    const request = resolver.resolve(data, 'ec', 'source', interactable);
+    const request = resolver.resolve(
+      data,
+      'ec',
+      'source',
+      0,
+      (proteinId) => proteinId !== 'query-0',
+      allInCurrentView,
+    );
 
     expect(request?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-0');
     expect(request?.totalCandidates).toBe(23);
@@ -75,11 +89,17 @@ describe('EatProvenanceResolver', () => {
   it('filters to the visible view, orders deterministically, and caps fan-out at 20', () => {
     const data = makeData();
     const resolver = new EatProvenanceResolver();
-    const visible = new Set(data.protein_ids.filter((id) => id !== 'query-2'));
+    const request = resolver.resolve(
+      data,
+      'ec',
+      'source',
+      0,
+      allLegendEligible,
+      (proteinIndex) => proteinIndex !== 3,
+    );
 
-    const request = resolver.resolve(data, 'ec', 'source', visible);
-
-    expect(request?.totalCandidates).toBe(23);
+    expect(request?.totalCandidates).toBe(24);
+    expect(request?.unavailableCandidates).toBe(1);
     expect(request?.pairs).toHaveLength(20);
     expect(request?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-2');
     expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
@@ -128,9 +148,15 @@ describe('EatProvenanceResolver', () => {
       },
     });
 
-    const visible = new Set(data.protein_ids);
     for (let click = 0; click < 3; click++) {
-      const request = resolver.resolve(data, 'ec', 'source', visible);
+      const request = resolver.resolve(
+        data,
+        'ec',
+        'source',
+        0,
+        allLegendEligible,
+        allInCurrentView,
+      );
       expect(request?.totalCandidates).toBe(50_000);
       expect(request?.pairs).toHaveLength(20);
       expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
@@ -146,11 +172,68 @@ describe('EatProvenanceResolver', () => {
     cells[2].confidence = 0.99;
     const resolver = new EatProvenanceResolver();
 
-    const request = resolver.resolve(data, 'ec', 'source', new Set(data.protein_ids));
+    const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, allInCurrentView);
 
     expect(request?.pairs.slice(0, 2).map((pair) => pair.targetProteinId)).toEqual([
       'query-0',
       'query-1',
     ]);
+  });
+
+  it('uses a filtered point global index instead of its local rendered position', () => {
+    const data = makeData();
+    const resolver = new EatProvenanceResolver();
+
+    const request = resolver.resolve(data, 'ec', 'query-7', 8, allLegendEligible, allInCurrentView);
+
+    expect(request?.pairs[0]).toMatchObject({
+      sourceProteinId: 'source',
+      targetProteinId: 'query-7',
+    });
+  });
+
+  it.each(['filtering', 'isolation'])(
+    'retains endpoints removed by %s as unavailable in both click directions',
+    () => {
+      const data = makeData();
+      const resolver = new EatProvenanceResolver();
+      const sourceRequest = resolver.resolve(
+        data,
+        'ec',
+        'source',
+        0,
+        allLegendEligible,
+        (proteinIndex) => proteinIndex !== 1,
+      );
+      const targetRequest = resolver.resolve(
+        data,
+        'ec',
+        'query-0',
+        1,
+        allLegendEligible,
+        (proteinIndex) => proteinIndex !== 0,
+      );
+
+      expect(sourceRequest).toMatchObject({ totalCandidates: 24, unavailableCandidates: 1 });
+      expect(targetRequest).toMatchObject({ totalCandidates: 1, unavailableCandidates: 1 });
+    },
+  );
+
+  it('resolves a producer-decoded reserved-character source id exactly', () => {
+    const sourceId = 'P0|ref;literal%3B';
+    const data = makeData(1);
+    data.protein_ids = [sourceId, 'query'];
+    data.annotation_predicted!.ec = [
+      null,
+      { value: 'EC-0', confidence: 0.9, source: sourceId, sourceIndex: 0 },
+    ];
+    const resolver = new EatProvenanceResolver();
+
+    const request = resolver.resolve(data, 'ec', 'query', 1, allLegendEligible, allInCurrentView);
+
+    expect(request?.pairs[0]).toMatchObject({
+      sourceProteinId: sourceId,
+      targetProteinId: 'query',
+    });
   });
 });

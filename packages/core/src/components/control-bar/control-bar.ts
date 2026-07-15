@@ -24,7 +24,7 @@ import './annotation-select';
 import './query-builder';
 import type { FilterQuery } from './query-types';
 import { createCondition } from './query-types';
-import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, hasEatPredictions } from '@protspace/utils';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
 
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
@@ -61,7 +61,7 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
   @property({ type: Number, attribute: 'eat-confidence-threshold' })
   eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
-  @state() private _hasEatData = false;
+  @state() private _eatAnnotationKeys: string[] = [];
 
   @state() private _selectionDisabled: boolean = false;
 
@@ -316,7 +316,17 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _handleEatThresholdInput(event: Event): void {
-    this.eatConfidenceThreshold = Number((event.currentTarget as HTMLInputElement).value);
+    this._setEatConfidenceThreshold(Number((event.currentTarget as HTMLInputElement).value));
+  }
+
+  private _handleEatThresholdPercentInput(event: Event): void {
+    const value = Number((event.currentTarget as HTMLInputElement).value);
+    if (!Number.isFinite(value)) return;
+    this._setEatConfidenceThreshold(value / 100);
+  }
+
+  private _setEatConfidenceThreshold(value: number): void {
+    this.eatConfidenceThreshold = Math.min(1, Math.max(0, value));
     this._emitEatOverlayChange();
   }
 
@@ -632,7 +642,22 @@ export class ProtspaceControlBar extends LitElement {
             </div>
           </div>
 
-          ${this._hasEatData
+          <!-- Annotation selection -->
+          <div class="control-group">
+            <label for="annotation-select">Annotation:</label>
+            <protspace-annotation-select
+              id="annotation-select"
+              .annotations=${this.annotations}
+              .annotationDefinitions=${this._currentData?.annotations ?? {}}
+              .eatAnnotations=${this._eatAnnotationKeys}
+              .selectedAnnotation=${this.selectedAnnotation}
+              .tooltipAnnotations=${this.tooltipAnnotations}
+              @annotation-select=${this.handleAnnotationSelected}
+              @tooltip-annotation-toggle=${this.handleTooltipAnnotationToggle}
+            ></protspace-annotation-select>
+          </div>
+
+          ${this._eatAnnotationKeys.includes(this.selectedAnnotation)
             ? html`
                 <fieldset class="eat-controls">
                   <legend class="sr-only">Embedding Annotation Transfer</legend>
@@ -645,35 +670,33 @@ export class ProtspaceControlBar extends LitElement {
                     EAT
                   </label>
                   <label class="eat-threshold">
-                    <span>Reliability ${Math.round(this.eatConfidenceThreshold * 100)}%</span>
+                    <span>Minimum reliability</span>
                     <input
                       type="range"
                       min="0"
                       max="1"
-                      step="0.05"
+                      step="0.01"
                       .value=${String(this.eatConfidenceThreshold)}
                       ?disabled=${!this.eatOverlayEnabled}
                       aria-label="Minimum EAT reliability index"
                       @input=${this._handleEatThresholdInput}
                     />
+                    <input
+                      class="eat-threshold-percent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      .value=${String(Math.round(this.eatConfidenceThreshold * 100))}
+                      ?disabled=${!this.eatOverlayEnabled}
+                      aria-label="Minimum EAT reliability percentage"
+                      @input=${this._handleEatThresholdPercentInput}
+                    />
+                    <span aria-hidden="true">%</span>
                   </label>
                 </fieldset>
               `
             : ''}
-
-          <!-- Annotation selection -->
-          <div class="control-group">
-            <label for="annotation-select">Annotation:</label>
-            <protspace-annotation-select
-              id="annotation-select"
-              .annotations=${this.annotations}
-              .annotationDefinitions=${this._currentData?.annotations ?? {}}
-              .selectedAnnotation=${this.selectedAnnotation}
-              .tooltipAnnotations=${this.tooltipAnnotations}
-              @annotation-select=${this.handleAnnotationSelected}
-              @tooltip-annotation-toggle=${this.handleTooltipAnnotationToggle}
-            ></protspace-annotation-select>
-          </div>
         </div>
 
         <!-- Search selection -->
@@ -1421,7 +1444,9 @@ export class ProtspaceControlBar extends LitElement {
     this.annotations = Object.keys(data.annotations || {}).filter(
       (a) => !TOOLTIP_ONLY_ANNOTATIONS.has(a),
     );
-    this._hasEatData = hasEatPredictions(data);
+    this._eatAnnotationKeys = Object.entries(data.annotation_predicted ?? {})
+      .filter(([, cells]) => cells.some(Boolean))
+      .map(([annotation]) => annotation);
 
     // Default selections if invalid
     if (!this.selectedProjection || !this.projections.includes(this.selectedProjection)) {

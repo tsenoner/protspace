@@ -112,7 +112,7 @@ void main() {
   float aa = fwidth(edgeDist);
   float shapeAlpha = smoothstep(0.0, aa, edgeDist);
   if (v_predicted > 0.5) {
-    float ringWidth = max(0.14, aa * 2.0);
+    float ringWidth = max(0.22, aa * 2.5);
     float interior = smoothstep(ringWidth, ringWidth + aa, edgeDist);
     shapeAlpha *= 1.0 - interior;
   }

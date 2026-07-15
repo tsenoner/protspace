@@ -50,10 +50,18 @@ export type AnnotationData = Int32Array | readonly (readonly number[])[];
 /** A value transferred from a reference protein by Embedding Annotation Transfer (EAT). */
 export interface PredictedCell {
   value: string;
+  /** Ordered decoded labels for multi-valued transfers; absent for legacy/single-valued cells. */
+  values?: readonly string[];
+  /** Score vectors aligned positionally with `values`. */
+  scores?: readonly (readonly number[] | null)[];
+  /** Evidence strings aligned positionally with `values`. */
+  evidence?: readonly (string | null)[];
   /** Bounded EAT reliability index. This is not a calibrated probability. */
   confidence: number;
   /** Protein identifier from which the value was transferred. */
   source: string;
+  /** Runtime global index for O(1) provenance lookup when the source is in this dataset. */
+  sourceIndex?: number;
 }
 
 /** Per-base-annotation EAT cells, aligned to `protein_ids`. */

@@ -125,9 +125,12 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
       go_bp: golden.protein_ids.map((_, proteinIndex) =>
         proteinIndex === p2Index
           ? {
-              value: 'transferred;label|literal%',
+              value: 'transferred;label|literal%;second hit',
+              values: ['transferred;label|literal%', 'second hit'],
+              scores: [[0.91], null],
+              evidence: [null, 'EXP'],
               confidence: 0.83,
-              source: 'P1|reference',
+              source: 'P1|reference;literal%',
             }
           : null,
       ),
@@ -142,8 +145,8 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
     const extraction = await extractRowsFromParquetBundle(written);
     expect(extraction.formatVersion).toBe(2);
     expect(extraction.annotationsById.get('P2')).toMatchObject({
-      go_bp__pred_value: 'transferred%3Blabel%7Cliteral%25',
-      go_bp__pred_source: 'P1%7Creference',
+      go_bp__pred_value: 'transferred%3Blabel%7Cliteral%25|0.91;second hit|EXP',
+      go_bp__pred_source: 'P1%7Creference%3Bliteral%25',
     });
 
     const reloaded = await convertParquetToVisualizationDataOptimized(extraction);
@@ -151,8 +154,11 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
     expect(reloaded.annotation_evidence).toEqual(expectedEvidence);
     expect(reloaded.annotation_scores).toEqual(expectedScores);
     expect(reloaded.annotation_predicted?.go_bp?.[p2Index]).toMatchObject({
-      value: 'transferred;label|literal%',
-      source: 'P1|reference',
+      value: 'transferred;label|literal%;second hit',
+      values: ['transferred;label|literal%', 'second hit'],
+      scores: [[0.91], null],
+      evidence: [null, 'EXP'],
+      source: 'P1|reference;literal%',
     });
     expect(reloaded.annotation_predicted?.go_bp?.[p2Index]?.confidence).toBeCloseTo(0.83, 6);
   });

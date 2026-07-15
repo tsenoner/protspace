@@ -4,6 +4,7 @@
  */
 
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
+import { getPredictedCellValues } from '../visualization/eat-overlay.js';
 import type { PredictedCell } from '../types.js';
 
 interface DatasetHashInput {
@@ -189,7 +190,14 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
         count += 1;
         hash = appendFNV1a64(
           hash,
-          [proteinId, cell.value, String(cell.confidence), cell.source].join('\x1f'),
+          [
+            proteinId,
+            getPredictedCellValues(cell).join('\x1d'),
+            JSON.stringify(cell.scores ?? []),
+            JSON.stringify(cell.evidence ?? []),
+            String(cell.confidence),
+            cell.source,
+          ].join('\x1f'),
         );
         hash = appendFNV1a64(hash, '\x1e');
       }

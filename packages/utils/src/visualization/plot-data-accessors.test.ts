@@ -299,5 +299,28 @@ describe('plot-data-accessors', () => {
       });
       expect(view.blocks[1].predicted).toBeNull();
     });
+
+    it('keeps structured transferred labels and aligned metadata in the tooltip block', () => {
+      const data = baseData();
+      data.annotation_predicted = {
+        species: [
+          {
+            value: 'mouse;rat',
+            values: ['mouse', 'rat'],
+            scores: [[0.9], null],
+            evidence: [null, 'EXP'],
+            confidence: 0.76,
+            source: 'p1',
+          },
+          null,
+          null,
+        ],
+      };
+
+      const block = buildTooltipView(data, 0, 'species', [], true).blocks[0];
+      expect(block.displayValues).toEqual(['mouse', 'rat']);
+      expect(block.scores).toEqual([[0.9], null]);
+      expect(block.evidence).toEqual([null, 'EXP']);
+    });
   });
 });

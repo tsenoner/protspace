@@ -169,21 +169,29 @@ function createCategoricalAnnotation(
   };
 }
 
-function readCategoricalStorageValue(
+function readCategoricalStorageValues(
   data: VisualizationData,
   annotationKey: string,
   proteinIdx: number,
-): string | null {
+): string[] {
   const annotation = data.annotations[annotationKey];
   const rows = data.annotation_data[annotationKey];
-  if (!annotation || !rows || annotation.kind !== 'categorical') return null;
-  const values = getProteinAnnotationIndices(rows, proteinIdx)
+  if (!annotation || !rows || annotation.kind !== 'categorical') return [];
+  return getProteinAnnotationIndices(rows, proteinIdx)
     .map((index) => annotation.values[index])
     .filter((value): value is string => value != null && !isNAValue(value))
     .map((value) => normalizeMissingValue(value))
     .filter((value): value is string => value != null)
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function readCategoricalStorageValue(
+  data: VisualizationData,
+  annotationKey: string,
+  proteinIdx: number,
+): string | null {
+  const values = readCategoricalStorageValues(data, annotationKey, proteinIdx);
   return values.length > 0 ? values.join(';') : null;
 }
 
@@ -259,7 +267,10 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
     let invalidCount = 0;
     for (let i = 0; i < data.protein_ids.length; i++) {
       if (!isCuratedAnnotationMissing(data, base, i)) continue;
-      const value = readCategoricalStorageValue(data, group.value, i);
+      const values = readCategoricalStorageValues(data, group.value, i);
+      const value = values.length > 0 ? values.join(';') : null;
+      const scores = data.annotation_scores?.[group.value]?.[i] ?? [];
+      const evidence = data.annotation_evidence?.[group.value]?.[i] ?? [];
       const source = readCategoricalStorageValue(data, group.source, i);
       const confidence = confidences[i];
       if (
@@ -273,16 +284,44 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
         if (value != null || source != null || confidence != null) invalidCount += 1;
         continue;
       }
-      cells[i] = { value, confidence, source };
-      if (!knownValues.has(value)) {
-        knownValues.add(value);
-        predictionOnlyValues.push(value);
+      cells[i] = {
+        value,
+        ...(values.length > 1 ? { values } : {}),
+        ...(scores.some((entry) => entry !== null) ? { scores } : {}),
+        ...(evidence.some((entry) => entry !== null) ? { evidence } : {}),
+        confidence,
+        source,
+      };
+      for (const label of values) {
+        if (knownValues.has(label)) continue;
+        knownValues.add(label);
+        predictionOnlyValues.push(label);
       }
     }
     if (invalidCount > 0) {
       console.warn(`Ignored ${invalidCount} invalid EAT row(s) for annotation "${base}".`);
     }
     if (!cells.some(Boolean)) continue;
+
+    const sourceIndexes = new Map<string, number>();
+    for (const cell of cells) {
+      if (cell) sourceIndexes.set(cell.source, -1);
+    }
+    data.protein_ids.forEach((proteinId, index) => {
+      if (sourceIndexes.has(proteinId)) sourceIndexes.set(proteinId, index);
+    });
+    for (const cell of cells) {
+      if (!cell) continue;
+      const sourceIndex = sourceIndexes.get(cell.source) ?? -1;
+      if (sourceIndex >= 0) {
+        Object.defineProperty(cell, 'sourceIndex', {
+          value: sourceIndex,
+          enumerable: false,
+          configurable: false,
+          writable: false,
+        });
+      }
+    }
 
     const oldValues = baseAnnotation.values;
     const observedValues = oldValues.filter(

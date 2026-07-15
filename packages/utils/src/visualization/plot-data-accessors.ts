@@ -1,6 +1,6 @@
 import type { VisualizationData, NumericAnnotationType, PredictedCell } from '../types.js';
 import { getProteinAnnotationIndices } from './annotation-data-access.js';
-import { getPredictedCell } from './eat-overlay.js';
+import { getPredictedCell, getPredictedCellValues } from './eat-overlay.js';
 import { getNumericBinLabelMap } from './numeric-binning.js';
 import { toInternalValue } from './missing-values.js';
 
@@ -123,11 +123,17 @@ function buildAnnotationBlock(
   const predicted = includeEatProvenance ? getPredictedCell(data, proteinIdx, key) : null;
   return {
     key,
-    displayValues: predicted ? [predicted.value] : getProteinDisplayValues(data, proteinIdx, key),
+    displayValues: predicted
+      ? [...getPredictedCellValues(predicted)]
+      : getProteinDisplayValues(data, proteinIdx, key),
     numericValue: getProteinNumericValue(data, proteinIdx, key),
     numericType: getProteinNumericType(data, key),
-    scores: getProteinScores(data, proteinIdx, key),
-    evidence: getProteinEvidence(data, proteinIdx, key),
+    scores: predicted
+      ? (predicted.scores?.map((scores) => (scores ? [...scores] : null)) ?? [])
+      : getProteinScores(data, proteinIdx, key),
+    evidence: predicted
+      ? [...(predicted.evidence ?? [])]
+      : getProteinEvidence(data, proteinIdx, key),
     predicted,
   };
 }

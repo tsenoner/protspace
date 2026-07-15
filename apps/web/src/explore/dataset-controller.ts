@@ -7,7 +7,7 @@ import type {
   DataErrorEventDetail,
   DataLoader as ProtspaceDataLoader,
 } from '@protspace/core';
-import { generateDatasetHash } from '@protspace/utils';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, generateDatasetHash } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
   getDataLoadFailureNotification,
@@ -145,7 +145,8 @@ export function createDatasetController({
       }
       if (settings) {
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
-        const eatConfidenceThreshold = settings.eatConfidenceThreshold ?? 0.5;
+        const eatConfidenceThreshold =
+          settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
         controlBar.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
         plotElement.eatOverlayEnabled = eatOverlayEnabled;
         plotElement.eatConfidenceThreshold = eatConfidenceThreshold;

@@ -22,6 +22,7 @@ class ProtspaceAnnotationSelect extends LitElement {
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: Object }) annotationDefinitions: Record<string, Pick<Annotation, 'runtime'>> =
     {};
+  @property({ type: Array }) eatAnnotations: string[] = [];
   @property({ type: String, attribute: 'selected-annotation' }) selectedAnnotation: string = '';
   @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String }) placeholder: string = 'Select annotation';
@@ -259,6 +260,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                 const isHighlighted = itemIndex === this.highlightIndex;
                                 const isSelected = annotation === this.selectedAnnotation;
                                 const isInTooltip = this.tooltipAnnotations.includes(annotation);
+                                const hasEatPredictions = this.eatAnnotations.includes(annotation);
                                 const definition = this.annotationDefinitions[annotation];
                                 const meta = getAnnotationMeta(annotation, definition);
                                 const hasDocs = meta.description.length > 0 || !!meta.docsUrl;
@@ -293,6 +295,14 @@ class ProtspaceAnnotationSelect extends LitElement {
                                     <span class="dropdown-item-label"
                                       >${annotationLabel(annotation, definition)}</span
                                     >
+                                    ${hasEatPredictions
+                                      ? html`<span
+                                          class="eat-badge"
+                                          title="Embedding Annotation Transfer predictions available"
+                                          aria-label="EAT predictions available"
+                                          >EAT</span
+                                        >`
+                                      : ''}
                                     ${isPredictedAnnotation(annotation)
                                       ? html`<span
                                           class="predicted-badge"

@@ -20,9 +20,10 @@ SHALL emphasize both endpoints without changing protein selection semantics.
 ### Requirement: Source proteins connect to a bounded query fan-out
 
 Clicking a source protein SHALL connect it to transferred queries that name it as source for the
-active base annotation. Both source and target endpoints SHALL be restricted to the authoritative
-rendered/interactable view (including legend visibility), ordered by descending confidence with
-protein id as deterministic tie-breaker, and capped at 20. Source candidates SHALL be ordered once
+active base annotation. Legend-ineligible endpoints SHALL be excluded, while otherwise eligible
+endpoints removed by filtering or isolation SHALL remain in the total and accessible unavailable
+count. Renderable pairs SHALL be ordered by descending confidence with protein id as deterministic
+tie-breaker and capped at 20. Source candidates SHALL be ordered once
 when their cached index is constructed; each click SHALL scan and count visible candidates while
 materializing at most 20 pairs, without per-click sorting or a full filtered-candidate allocation.
 The UI SHALL report the shown and total candidate counts.
@@ -79,6 +80,15 @@ rebuilding their data join.
 - **WHEN** filtering or isolation removes one endpoint
 - **THEN** no invalid or stale line is drawn for that pair and accessible status explains that the
   endpoint is outside the current view
+- **AND** the unavailable candidate remains in the total in either click direction, including when
+  zero lines can be drawn
+
+#### Scenario: Filtered point retains global identity
+
+- **WHEN** a clicked filtered-view point's local rendered position differs from its global protein
+  index
+- **THEN** provenance reads the prediction cell using `detail.point.originalIndex`
+- **AND** no dataset-wide protein-id-to-index map is allocated on first click
 
 ### Requirement: Connector state is dismissable and non-colour-dependent
 

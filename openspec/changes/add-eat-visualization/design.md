@@ -218,6 +218,45 @@ toggle/threshold behavior, tooltip provenance, both connector directions, projec
 dismissal, responsive layout, and encoded PNG/export. Full precommit and relevant E2E tests run
 before every commit.
 
+### D9. Integrate owner follow-up without duplicating application state
+
+Place the EAT fieldset after annotation selection and render it only for the selected base whose
+prediction channel contains usable cells. Pass the available EAT base names into the existing
+annotation selector and mark those rows with a text-labelled badge; generated confidence views stay
+unmarked. Pair the native threshold range with a bounded integer percentage input. Both controls
+normalize through one handler and continue to emit the existing `eat-overlay-change` contract, so
+settings persistence and scatter invalidation remain single-sourced.
+
+True reliability filtering remains in the existing query builder through the generated numeric
+`<base> — EAT confidence` annotation. The range continues to implement the original fade threshold;
+adding a second direct-filter toggle was rejected because it would create competing filter ownership,
+query composition, reset, and persistence semantics.
+
+Preserve decoded EAT value labels as an ordered runtime list alongside the canonical joined storage
+value, with score and evidence arrays aligned to those labels. Overlay materialization, tooltip
+display, category unioning, hashing, and v2 companion export consume the structured hits, while
+legacy manually constructed cells fall back to their single `value`. This keeps literal semicolons
+distinguishable from structural separators and routes multi-valued predictions through the existing
+multi-label texture path. Increase the normalized
+signed-distance ring width so the hollow stroke is visibly legible and remains proportional to the
+configured point diameter in the shared live/export shader.
+
+The existing connector endpoint circles remain inside the transformed SVG overlay group. Their
+geometry therefore follows pan/zoom and their stroke remains non-scaling, as required by the
+connector spec; rendered measurement is used to validate that behavior before changing it.
+
+Provenance receives the click detail's global `originalIndex` directly. The resolver retains only
+its annotation-scoped reverse source index and evaluates legend eligibility separately from
+filtered/isolation membership. Off-view eligible candidates remain in the request as unavailable
+status, while legend-hidden candidates are excluded. Source indices computed during normalization
+make the predicted-to-source path O(1) without a million-entry dataset-wide id map.
+
+Transfer is also a v1/v2 migration boundary. The Python CLI detects legacy annotation metadata,
+selects transfer labels under v1 semantics, then parenthesis-aware parses and v2-encodes every
+categorical cell before the replacement table receives its v2 stamp. V2 inputs bypass migration.
+Opaque `__pred_source` identifiers use the shared field encoder at production and are decoded as one
+field by the web loader, so literal `%`, `;`, and `|` never become categorical structure.
+
 ## Risks / Trade-offs
 
 - **Additional per-protein arrays increase memory for EAT bundles** → Allocate channels only for
@@ -241,10 +280,12 @@ before every commit.
 
 ## Migration Plan
 
-The change is additive and frontend-only. Old bundles load with no EAT controls or altered render.
-New EAT fields in settings are optional, so older settings normalize to defaults. Deploy can be
-rolled back without data migration because bundles keep the backend's existing three companion
-columns. The OpenSpec change is archived only after the PR is green and review feedback is resolved.
+The change is additive across the transfer producer and frontend consumer. Old bundles load with no
+EAT controls or altered render. New EAT fields in settings are optional, so older settings normalize
+to defaults. The transfer command migrates legacy v1 categorical cells before stamping v2 metadata;
+existing bundles remain unchanged on disk. Deploy can be rolled back because the migrated output
+retains the same annotation columns and three EAT companions. The OpenSpec change is archived only
+after the PR is green and review feedback is resolved.
 
 ## Open Questions
 

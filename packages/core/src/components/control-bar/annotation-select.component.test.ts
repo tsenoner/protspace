@@ -8,6 +8,7 @@ type AnnotationSelectElement = HTMLElement & {
   annotations: string[];
   selectedAnnotation: string;
   tooltipAnnotations: string[];
+  eatAnnotations: string[];
   updateComplete: Promise<unknown>;
 };
 
@@ -16,6 +17,7 @@ async function setup(initial: Partial<AnnotationSelectElement> = {}) {
   el.annotations = initial.annotations ?? ['gene_name', 'pfam', 'species'];
   el.selectedAnnotation = initial.selectedAnnotation ?? 'pfam';
   el.tooltipAnnotations = initial.tooltipAnnotations ?? [];
+  el.eatAnnotations = initial.eatAnnotations ?? [];
   document.body.appendChild(el);
   await el.updateComplete;
   return el;
@@ -54,6 +56,14 @@ describe('protspace-annotation-select tooltip extras', () => {
 
     expect(primary.querySelector('.primary-dot')).not.toBeNull();
     expect(other.querySelector('.primary-dot')).toBeNull();
+  });
+
+  it('marks only EAT-capable annotation options with a text badge', async () => {
+    const el = await setup({ eatAnnotations: ['pfam'] });
+    await openDropdown(el);
+
+    expect(getRowFor(el, 'pfam').querySelector('.eat-badge')?.textContent).toBe('EAT');
+    expect(getRowFor(el, 'species').querySelector('.eat-badge')).toBeNull();
   });
 
   it('hides the tooltip toggle on the primary row and shows it on other rows', async () => {

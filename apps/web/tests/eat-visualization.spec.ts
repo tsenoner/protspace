@@ -217,13 +217,34 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const threshold = controlBar.getByRole('slider', {
     name: 'Minimum EAT reliability index',
   });
+  const thresholdPercent = controlBar.getByRole('spinbutton', {
+    name: 'Minimum EAT reliability percentage',
+  });
 
   await expect(eatGroup).toBeVisible();
   await expect(eatToggle).toBeChecked();
   await expect(eatToggle).toBeEnabled();
   await expect(threshold).toHaveValue('0.5');
+  await expect(thresholdPercent).toHaveValue('50');
   await threshold.press('Home');
   await expect(threshold).toHaveValue('0');
+  await expect(thresholdPercent).toHaveValue('0');
+  await thresholdPercent.fill('50');
+  await expect(threshold).toHaveValue('0.5');
+
+  const annotationSelect = controlBar.locator('protspace-annotation-select');
+  await annotationSelect.locator('.dropdown-trigger').click();
+  const ecRow = annotationSelect.locator('.dropdown-item[data-annotation="ec"]');
+  await expect(ecRow.locator('.eat-badge')).toHaveText('EAT');
+  const ordinaryRow = annotationSelect
+    .locator('.dropdown-item:not(:has(.eat-badge))')
+    .filter({ hasNot: annotationSelect.locator('.annotation-section-header') })
+    .first();
+  await ordinaryRow.click();
+  await expect(eatGroup).toBeHidden();
+  await annotationSelect.locator('.dropdown-trigger').click();
+  await annotationSelect.locator('.dropdown-item[data-annotation="ec"]').click();
+  await expect(eatGroup).toBeVisible();
 
   const legendSummary = page
     .locator('protspace-legend')
@@ -254,9 +275,35 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   await eatToggle.uncheck();
   await expect(threshold).toBeDisabled();
+  await expect(thresholdPercent).toBeDisabled();
   await expect(legendSummary).toBeHidden();
   await eatToggle.check();
   await expect(threshold).toBeEnabled();
+
+  const exactMultiValueTransfer = await page.evaluate(() => {
+    const plotElement = document.querySelector('protspace-scatterplot') as
+      | (Element & {
+          data?: {
+            protein_ids: string[];
+            annotation_predicted?: Record<
+              string,
+              Array<{ source: string; values?: readonly string[] } | null>
+            >;
+          };
+        })
+      | null;
+    const proteinIndex = plotElement?.data?.protein_ids.indexOf('O88488') ?? -1;
+    return plotElement?.data?.annotation_predicted?.ec?.[proteinIndex] ?? null;
+  });
+  expect(exactMultiValueTransfer).toMatchObject({
+    source: 'P0C5E4',
+    values: [
+      '3.1.3.36 (phosphoinositide 5-phosphatase)',
+      '3.1.3.67 (phosphatidylinositol-3,4,5-trisphosphate 3-phosphatase)',
+      '3.1.3.86 (phosphatidylinositol-3,4,5-trisphosphate 5-phosphatase)',
+      '3.1.3.95 (phosphatidylinositol-3,5-bisphosphate 3-phosphatase)',
+    ],
+  });
 
   const transfer = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as
@@ -291,9 +338,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(tooltip).toContainText(`source ${transfer.source}`);
 
   await plot.evaluate((element, proteinId) => {
+    const plotElement = element as Element & { data?: { protein_ids: string[] } };
     element.dispatchEvent(
       new CustomEvent('protein-click', {
-        detail: { proteinId },
+        detail: {
+          proteinId,
+          point: { originalIndex: plotElement.data?.protein_ids.indexOf(proteinId) },
+        },
         bubbles: true,
         composed: true,
       }),
@@ -303,15 +354,33 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(1);
 
   await plot.evaluate((element, proteinId) => {
+    const plotElement = element as Element & { data?: { protein_ids: string[] } };
     element.dispatchEvent(
       new CustomEvent('protein-click', {
-        detail: { proteinId },
+        detail: {
+          proteinId,
+          point: { originalIndex: plotElement.data?.protein_ids.indexOf(proteinId) },
+        },
         bubbles: true,
         composed: true,
       }),
     );
   }, transfer.source);
   await expect(plot.getByRole('status')).toContainText('Showing 4 of 4 provenance connections');
+  await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
+  const endpoint = plot.locator('circle.eat-provenance-endpoint').first();
+  const endpointBeforeZoom = await endpoint.boundingBox();
+  const plotBounds = await plot.boundingBox();
+  expect(endpointBeforeZoom).not.toBeNull();
+  expect(plotBounds).not.toBeNull();
+  await page.mouse.move(
+    plotBounds!.x + plotBounds!.width / 2,
+    plotBounds!.y + plotBounds!.height / 2,
+  );
+  await page.mouse.wheel(0, -500);
+  await expect
+    .poll(async () => (await endpoint.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(endpointBeforeZoom!.width + 0.5);
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const firstConnectorX = await plot
     .locator('line.eat-provenance-connector')
@@ -362,8 +431,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(mobileRows.eatRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
   expect(mobileRows.annotationLeft).toBeGreaterThanOrEqual(0);
   expect(mobileRows.annotationRight).toBeLessThanOrEqual(mobileRows.viewportWidth);
-  expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.eatTop);
-  expect(mobileRows.eatBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
+  expect(mobileRows.projectionBottom).toBeLessThanOrEqual(mobileRows.annotationTop);
+  expect(mobileRows.annotationTop).toBeLessThanOrEqual(mobileRows.eatTop);
   await page.setViewportSize({ width: 1280, height: 720 });
 
   const exportMarkers = await sampleEncodedExportMarkers(page);

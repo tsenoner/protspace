@@ -70,6 +70,16 @@ describe('ConnectorOverlayController', () => {
     expect(status).toEqual({ shown: 1, total: 8, missingEndpoints: 1 });
   });
 
+  it('adds resolver-known filtered or isolated candidates to unavailable status', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.9 }],
+      totalCandidates: 3,
+      unavailableCandidates: 2,
+    });
+
+    expect(status).toEqual({ shown: 1, total: 3, missingEndpoints: 2 });
+  });
+
   it('recomputes geometry on render without rebuilding for parent transforms', () => {
     controller.set({
       pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],

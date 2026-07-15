@@ -17,7 +17,7 @@ import { BUNDLE_DELIMITER_BYTES } from './constants';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
 import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
-import { getEatCompanionColumn } from '../visualization/eat-overlay.js';
+import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { encodeAnnotationField } from './annotation-codec.js';
 
 const ANNOTATION_FORMAT_VERSION = '2';
@@ -105,7 +105,18 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       columnData.push(
         {
           name: getEatCompanionColumn(annotationName, 'value'),
-          data: predictedCells.map((cell) => (cell ? encodeAnnotationField(cell.value) : null)),
+          data: predictedCells.map((cell) => {
+            if (!cell) return null;
+            return getPredictedCellValues(cell)
+              .map((label, index) =>
+                serializeCategoricalValue(
+                  label,
+                  cell.evidence?.[index],
+                  cell.scores?.[index] ?? null,
+                ),
+              )
+              .join(';');
+          }),
           type: 'STRING',
         },
         {
