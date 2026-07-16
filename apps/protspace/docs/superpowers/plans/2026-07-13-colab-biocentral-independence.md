@@ -54,7 +54,7 @@ Additional decisions baked in:
 | PR1 | `local.py` + `[local]` extra + `test_local_embedder.py` | ✅ done (was #73) |
 | PR2 | `-b/--backend {biocentral,local}` switch on `embed` + `prepare`, `embed_fasta(backend=)` dispatch, `resolve_default_backend()`, backend-aware `--batch-size`, `test_backend_switch.py` | ✅ done (was #74) |
 | PR3 | Empirical local-vs-Biocentral pooling parity cross-check + docs (resolves the deferred Ankh-pooling / `reduce=True` server black-box question) | ✅ done (2026-07-16) — see PR3 results below |
-| PR4 | Notebook: default to local-in-Colab via `resolve_default_backend()` | ⬜ |
+| PR4 | Notebook: default to local-in-Colab via `resolve_default_backend()` | ✅ done (2026-07-17) — see PR4 results below |
 | PR5 | Wire the dead `--stats` toggle into the Preparation notebook | ⬜ |
 | PR6 | Append optional EAT to the Preparation notebook | ⬜ |
 
@@ -101,6 +101,32 @@ Synthyra**.
 Availability note: Biocentral was mid-outage during this work; `esm2_8m/35m/150m` and (transiently)
 all six failed server-side at times — `esm2_650m` was used as the ESM-family reference since the
 smaller ESM2 checkpoints were not loaded server-side.
+
+## PR4 results — Preparation notebook backend switch (2026-07-17)
+
+`notebooks/ProtSpace_Preparation.ipynb` now embeds via the local backend by default on Colab,
+closing the functional half of #59 (PR1 → PR2 → PR4). Changes, all confined to the notebook:
+
+- **Install cell** pulls `protspace[local]` (was bare `protspace`) so torch/transformers are
+  present; torch is preinstalled on Colab, so the extra only adds transformers/sentencepiece/
+  protobuf/einops.
+- **Input cell** grows a **Backend** dropdown next to the embedder multi-select (shown on the
+  FASTA + UniProt-query tabs): `Auto` (default) → `resolve_default_backend()` (local on a Colab
+  GPU, else Biocentral), plus explicit `Local` / `Biocentral`. FASTA-tab copy updated to describe
+  both backends.
+- **ESM-C gating:** whenever the *effective* backend is Biocentral, `esmc_300m` / `esmc_600m`
+  checkboxes are unchecked + disabled with an inline warning (Biocentral's ESM-C output is invalid
+  per the PR3 root-cause), re-enabled under Local. A defensive `_drop_incompatible()` also filters
+  them in the generate handler.
+- **Generate handler** resolves `(backend, embed_config)` once via `_resolve_backend_and_config()`
+  (`LocalEmbedConfig` vs `EmbedConfig`) and threads `backend=` into both `embed_fasta()` call
+  sites; the H5/query tabs are unchanged.
+
+Verified: notebook is valid `nbformat`, all code cells parse, both `embed_fasta` calls pass
+`backend=`, no hardcoded `EmbedConfig()` remains; helper logic (auto-resolution, config-type-per-
+backend, ESM-C drop) unit-checked against the real backend symbols; `test_backend_switch.py` +
+`test_local_embedder.py` (fast) green. The notebook can only run end-to-end inside Colab (needs
+`google.colab`), so runtime embedding is exercised there, not in CI.
 
 ## Decisions still owed by the maintainer (don't assume)
 
