@@ -86,9 +86,17 @@ ESM-C (`esm` pkg, `esmc_300m`) produces a **bit-identical** pooled vector to Syn
 embedding. Biocentral's ESM-C vector (norm ~29) is **orthogonal to the standard embedding at every
 one of the 31 hidden layers** (best layer match cosine 0.08). Every *other* family matches Biocentral
 at ≈1.0, so our pooling convention is correct; the anomaly is isolated to **Biocentral's ESM-C
-reduction** (likely a server-side bug in its `reduce=True` path for ESM-C — reported to the Biocentral
-maintainer). Switching local ESM-C to native would **not** help (native == Synthyra) and would add a
-gated/heavier dep for no benefit, so **local ESM-C stays Synthyra**.
+handling**. **Root cause found in `biotrainer`** (its embedding engine): ESM-C has no dedicated
+embedder, so `Synthyra/ESMplusplus_small` hits the generic loader, whose
+`_determine_tokenizer_and_model()` picks the architecture by **substring** — `"esm" in
+"esmplusplus"` is True → it loads the ESM-C checkpoint as a vanilla **ESM-2** model
+(`EsmModel`/`EsmTokenizer`, no `trust_remote_code`, wrong tokenizer). transformers even warns
+"*using a model of type `ESMplusplus` to instantiate a model of type `esm` … not supported*". So
+Biocentral never runs the real ESM-C model — the embeddings are meaningless. Reported to the
+Biocentral maintainer (`biocentral-esmc-issue.md`, with the fix: add a dedicated ESM-C embedder /
+stop matching on the loose `"esm"` substring). Switching local ESM-C to native would **not** help
+(native == Synthyra) and would add a gated/heavier dep for no benefit, so **local ESM-C stays
+Synthyra**.
 
 Availability note: Biocentral was mid-outage during this work; `esm2_8m/35m/150m` and (transiently)
 all six failed server-side at times — `esm2_650m` was used as the ESM-family reference since the
