@@ -45,7 +45,8 @@ export const getNavigation = (mode: Environment): NavItem[] => {
       text: 'Resources',
       items: [
         { text: 'Python Package', link: 'https://github.com/tsenoner/protspace' },
-        { text: 'Research Paper', link: 'https://doi.org/10.1016/j.jmb.2025.168940' },
+        { text: 'Web App Paper (bioRxiv)', link: 'https://doi.org/10.64898/2026.05.04.722720' },
+        { text: 'Tool Paper (JMB)', link: 'https://doi.org/10.1016/j.jmb.2025.168940' },
       ],
     },
     {

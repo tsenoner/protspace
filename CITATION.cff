@@ -1,0 +1,84 @@
+# This CITATION.cff lets GitHub render a "Cite this repository" button.
+# `preferred-citation` (the web-application preprint) is what GitHub exports as
+# BibTeX/APA; the earlier peer-reviewed tool paper is listed under `references`.
+# Update `preferred-citation` to the peer-reviewed version once it is published.
+cff-version: 1.2.0
+message: "If you use ProtSpace, please cite the preferred-citation below."
+title: "ProtSpace"
+type: software
+authors:
+  - family-names: Senoner
+    given-names: Tobias
+  - family-names: Vahidi
+    given-names: Peyman
+  - family-names: Olenyi
+    given-names: Tobias
+  - family-names: Senoner
+    given-names: Florin
+  - family-names: Sisman
+    given-names: Gökhan
+  - family-names: Kahl
+    given-names: Elias
+  - family-names: Rost
+    given-names: Burkhard
+  - family-names: Koludarov
+    given-names: Ivan
+url: "https://protspace.app"
+repository-code: "https://github.com/tsenoner/protspace"
+license: MIT
+preferred-citation:
+  type: article
+  title: "ProtSpace: Protein Universe in Your Browser"
+  authors:
+    - family-names: Senoner
+      given-names: Tobias
+    - family-names: Vahidi
+      given-names: Peyman
+    - family-names: Olenyi
+      given-names: Tobias
+    - family-names: Senoner
+      given-names: Florin
+    - family-names: Sisman
+      given-names: Gökhan
+    - family-names: Kahl
+      given-names: Elias
+    - family-names: Rost
+      given-names: Burkhard
+    - family-names: Koludarov
+      given-names: Ivan
+  journal: "bioRxiv"
+  year: 2026
+  month: 5
+  doi: "10.64898/2026.05.04.722720"
+  url: "https://www.biorxiv.org/content/10.64898/2026.05.04.722720v1"
+  publisher:
+    name: "openRxiv"
+  notes: "Preprint (bioRxiv); peer-reviewed version in preparation."
+references:
+  - type: article
+    title: "ProtSpace: A Tool for Visualizing Protein Space"
+    authors:
+      - family-names: Senoner
+        given-names: Tobias
+      - family-names: Olenyi
+        given-names: Tobias
+      - family-names: Heinzinger
+        given-names: Michael
+      - family-names: Spannagl
+        given-names: Anton
+      - family-names: Bouras
+        given-names: George
+      - family-names: Rost
+        given-names: Burkhard
+      - family-names: Koludarov
+        given-names: Ivan
+    journal: "Journal of Molecular Biology"
+    year: 2025
+    month: 8
+    volume: 437
+    issue: 15
+    start: 168940
+    doi: "10.1016/j.jmb.2025.168940"
+    issn: "0022-2836"
+    publisher:
+      name: "Elsevier"

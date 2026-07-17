@@ -114,7 +114,7 @@ export default defineConfig({
     socialLinks: [{ icon: 'github', link: 'https://github.com/tsenoner/protspace' }],
 
     footer: {
-      message: 'Released under the Apache 2.0 License.',
+      message: 'Released under the MIT License.',
       copyright: 'Copyright © 2025 Rostlab, TU Munich',
     },
 

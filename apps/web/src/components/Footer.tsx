@@ -10,7 +10,7 @@ const Footer = () => {
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           {/* Copyright */}
           <div className="text-sm text-muted-foreground text-center md:text-left">
-            © 2025–{new Date().getFullYear()} ProtSpace contributors · Apache-2.0 License
+            © 2025–{new Date().getFullYear()} ProtSpace contributors · MIT License
           </div>
 
           {/* Links */}

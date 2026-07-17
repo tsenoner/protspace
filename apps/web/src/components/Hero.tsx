@@ -84,7 +84,7 @@ const Hero = () => {
               Open Source
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Apache-2.0 License
+              MIT License
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
               3D-Beacons API

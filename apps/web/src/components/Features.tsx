@@ -32,7 +32,7 @@ const features = [
   {
     icon: Code2,
     title: 'Open-Source & Extensible',
-    description: 'Apache-2.0 licensed with extensible codebase. Contribute and customize freely.',
+    description: 'MIT licensed with extensible codebase. Contribute and customize freely.',
   },
 ];
 

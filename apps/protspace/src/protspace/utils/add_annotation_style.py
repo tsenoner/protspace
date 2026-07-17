@@ -31,7 +31,7 @@ _SETTINGS_KEYS = {
 }
 
 # Built-in palette IDs, mirrored from the web frontend — the source of truth:
-# protspace_web/packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
+# packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
 # numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
 # categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
 # Keep this list in sync with those files.

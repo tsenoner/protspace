@@ -205,7 +205,7 @@ class AnnotationConfiguration:
                 raise ValueError(
                     f"Unknown annotation '{annotation}'.{hint}\n"
                     f"  Groups: {groups}\n"
-                    f"  See https://github.com/tsenoner/protspace/blob/main/docs/annotations.md"
+                    f"  See https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
                 )
             if annotation not in normalized_annotations:
                 normalized_annotations.append(annotation)
