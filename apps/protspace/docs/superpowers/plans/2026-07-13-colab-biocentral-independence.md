@@ -56,7 +56,7 @@ Additional decisions baked in:
 | PR3 | Empirical local-vs-Biocentral pooling parity cross-check + docs (resolves the deferred Ankh-pooling / `reduce=True` server black-box question) | ✅ done (2026-07-16) — see PR3 results below |
 | PR4 | Notebook: default to local-in-Colab via `resolve_default_backend()` | ✅ done (2026-07-17) — see PR4 results below |
 | PR5 | Wire the dead `--stats` toggle into the Preparation notebook | ✅ done (2026-07-17) — see PR5 results below |
-| PR6 | Append optional EAT to the Preparation notebook | ⬜ |
+| PR6 | Append optional EAT to the Preparation notebook | ✅ done (2026-07-17) — see PR6 results below |
 
 **#59 is functionally addressed once PR1 → PR2 → PR4 land** — the CLI can already embed fully
 offline today. PR3, PR5, PR6 are hardening + notebook/UX surface.
@@ -151,6 +151,43 @@ Result: 5-part bundle (all parts non-empty), statistics table = 15 rows, `metada
 `info["quality"]` carry `knn_overlap / trustworthiness / continuity / random_triplet /
 spearman_distance`. `test_stats_bundle` + `test_stats_carriage` + `test_stats_cli` green. Only
 PR6 (append EAT) remains.
+
+## PR6 results — optional in-session EAT cell (2026-07-17)
+
+The Preparation notebook now carries an **optional Embedding Annotation Transfer (EAT)** step,
+so a user can fill missing annotation values without leaving the notebook — closing the last
+roadmap item. Notebook-only; two new cells inserted between Generate (cell 3) and "What's Next",
+plus a small publish hook in the generate handler:
+
+- `_on_gen` (cell 3), after `save_output` succeeds, publishes two globals for the EAT cell:
+  `_eat_bundle_path` (the just-written bundle) and `_eat_emb_set` (`embedding_sets[0]` — the
+  full-dim transfer space, pre-DR).
+- New **markdown** section + **"4. Optional: Fill missing annotations (EAT)"** widget cell. It
+  operates **in-session** on those globals (no re-upload): a target-column dropdown populated from
+  the generated bundle (`Reload columns` button), query + reference filter fields
+  (`id-prefix` and/or `where` `col~substr`), `k` + `metric`, and a `Transfer & Download` button.
+  It reads the bundle's annotations, normalises the id column (`protein_id`↔`identifier`), builds
+  `emb_map` from the embedding set, calls `run_transfer(...)` in-process (same core the CLI uses),
+  writes `…​.eat.parquetbundle`, and downloads it.
+
+**Design constraint discovered + surfaced in the UI:** `classify()` is rule-based and raises if
+the query rule matches nothing; an empty reference rule also matches nothing. There is **no
+"all others" default** — every canonical usage (tests, standalone notebook) passes explicit query
+*and* reference rules (`Rule(id_prefixes=["TRINITY_"])` / `Rule(id_prefixes=["P0"])`). The cell
+therefore **requires** at least one query filter and one reference filter, with inline guidance
+(and `P0…` Swiss-Prot / `TRINITY_…` assembly examples) rather than offering a default that would
+just error. Overlay columns are written by `add_overlay_columns` as `COL__pred_value` /
+`COL__pred_confidence` / `COL__pred_source`, `None` for non-transferred rows (so the results count
+= `num_rows − null_count`); the curated column is left untouched.
+
+Verified **offline** end-to-end (only `files.download` needs Colab): generated a real bundle from
+`data/Pla2g2/Pla2g2_prot_t5.h5` (448 proteins, `role`/`grp` columns, 300 refs / 148 missing-value
+queries), then ran the exact `_on_eat` logic — `protein_id` normalisation, `run_transfer`
+(cosine, k=1), `replace_annotations_in_bundle`. Result: **148/148** queries transferred,
+confidence ≈ 0.99, `grp__pred_source` = a reference id, augmented bundle round-trips with all three
+overlay columns, curated `grp` untouched. `test_transfer_cli` + `test_classification` green.
+
+**#59 stack complete** (PR1–PR6). `docs(notebook):` prefix (non-releasing).
 
 ## Decisions still owed by the maintainer (don't assume)
 
