@@ -122,7 +122,7 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
 
   it('after zooming the live view onto one stack, a 1600×400 capture still badges all three stacks, each on its export-projected dot', () => {
     const sp = prime();
-    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer.prototype, 'renderExport');
+    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
 
     // #301 precondition: live viewport compute restricted to stack A's base px.
     const live = sp._scales!;
@@ -136,7 +136,7 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
     expect(out).toBeInstanceOf(HTMLCanvasElement);
 
     expect(spy).toHaveBeenCalledTimes(1);
-    const stacks = spy.mock.calls[0][0] as Array<{ key: string; px: number; py: number }>;
+    const stacks = spy.mock.calls[0][1] as Array<{ key: string; px: number; py: number }>;
     // #301: all three stacks, not just the zoomed one.
     expect(stacks.map((s) => s.key).sort()).toEqual(['0|0', '100|100', '50|50']);
 
@@ -159,17 +159,17 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
     }
 
     // #302 size rule: badgeScale = dpr(1) × sqrt((1600·400)/(800·600)).
-    expect(spy.mock.calls[0][1]).toBeCloseTo(Math.sqrt((1600 * 400) / (800 * 600)), 6);
+    expect(spy.mock.calls[0][2]).toBeCloseTo(Math.sqrt((1600 * 400) / (800 * 600)), 6);
   });
 
   it('alignment holds at a second output size (900×900) — spec requires ≥2 sizes', () => {
     const sp = prime();
-    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer.prototype, 'renderExport');
+    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
 
     sp.captureAtResolution(900, 900, { resetView: true });
 
     expect(spy).toHaveBeenCalledTimes(1);
-    const stacks = spy.mock.calls[0][0] as Array<{ key: string; px: number; py: number }>;
+    const stacks = spy.mock.calls[0][1] as Array<{ key: string; px: number; py: number }>;
     expect(stacks.map((s) => s.key).sort()).toEqual(['0|0', '100|100', '50|50']);
 
     const exportScales = ExportRenderer.createExportScales(
@@ -187,6 +187,6 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
       expect(s.px).toBeCloseTo(exportScales.x(x), 6);
       expect(s.py).toBeCloseTo(exportScales.y(y), 6);
     }
-    expect(spy.mock.calls[0][1]).toBeCloseTo(Math.sqrt((900 * 900) / (800 * 600)), 6);
+    expect(spy.mock.calls[0][2]).toBeCloseTo(Math.sqrt((900 * 900) / (800 * 600)), 6);
   });
 });

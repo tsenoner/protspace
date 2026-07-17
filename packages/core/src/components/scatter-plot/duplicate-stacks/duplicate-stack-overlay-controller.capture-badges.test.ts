@@ -4,6 +4,7 @@ import * as d3 from 'd3';
 import { DuplicateStackOverlayController } from './duplicate-stack-overlay-controller';
 import { DuplicateBadgesCanvasRenderer } from './duplicate-badges-canvas-renderer';
 import { QuadtreeIndex } from '../interaction/quadtree-index';
+import { makePD, tenPointPD } from './test-support/plot-data-fixtures';
 import type { PlotData } from '@protspace/utils';
 import type { BadgeCaptureProjection } from './duplicate-stack-types';
 
@@ -14,23 +15,6 @@ import type { BadgeCaptureProjection } from './duplicate-stack-types';
  * disabled or nothing-to-render → null, so captureAtResolution skips
  * compositing rather than pasting a blank canvas.
  */
-
-function makePD(xs: number[], ys: number[]): PlotData {
-  return {
-    length: xs.length,
-    xs: new Float32Array(xs),
-    ys: new Float32Array(ys),
-    zs: null,
-    originalIndices: null,
-    proteinIds: xs.map((_, i) => `p${i}`),
-  };
-}
-
-// Stack A = slots 0-1 at (0,0); B = slots 2-4 at (50,50); C = slots 5-6 at
-// (90,90); slots 7-9 are solos.
-function tenPointPD(): PlotData {
-  return makePD([0, 0, 50, 50, 50, 90, 90, 20, 30, 40], [0, 0, 50, 50, 50, 90, 90, 70, 80, 85]);
-}
 
 /** Identity-ish live scales: data [0,100] → base pixels [0,100]. */
 function liveScales() {
@@ -95,7 +79,8 @@ function exportProjection(overrides: Partial<BadgeCaptureProjection> = {}): Badg
 
 /** Stack keys handed to renderExport on the most recent captureBadges call. */
 function renderedKeys(spy: MockInstance): string[] {
-  const stacks = spy.mock.calls[spy.mock.calls.length - 1][0] as Array<{ key: string }>;
+  // renderExport(canvas, stacks, badgeScale, expandedKey) — stacks is arg 1.
+  const stacks = spy.mock.calls[spy.mock.calls.length - 1][1] as Array<{ key: string }>;
   return stacks.map((s) => s.key).sort();
 }
 
@@ -120,7 +105,7 @@ describe('captureBadges — full-extent coverage (#301)', () => {
   let renderExportSpy: MockInstance;
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
-    renderExportSpy = vi.spyOn(DuplicateBadgesCanvasRenderer.prototype, 'renderExport');
+    renderExportSpy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
     rafQueue = [];
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       rafQueue.push(cb);
@@ -167,7 +152,7 @@ describe('captureBadges — full-extent coverage (#301)', () => {
     const { controller } = makeFixture({ visibleSlots: [0, 1, 2, 3, 7, 8, 9] });
     controller.captureBadges(exportProjection());
     expect(renderedKeys(renderExportSpy)).toEqual(['0|0', '50|50']);
-    const stacks = renderExportSpy.mock.calls[0][0] as Array<{
+    const stacks = renderExportSpy.mock.calls[0][1] as Array<{
       key: string;
       points: unknown[];
     }>;
@@ -179,23 +164,23 @@ describe('captureBadges — output geometry (#302)', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('sizes the canvas to the output physical dims and projects px/py through the export scales', () => {
-    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer.prototype, 'renderExport');
+    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
     const { controller } = makeFixture();
     const proj = exportProjection();
     const canvas = controller.captureBadges(proj)!;
     expect(canvas.width).toBe(1600);
     expect(canvas.height).toBe(400);
-    const stacks = spy.mock.calls[0][0] as Array<{ key: string; px: number; py: number }>;
+    const stacks = spy.mock.calls[0][1] as Array<{ key: string; px: number; py: number }>;
     const b = stacks.find((s) => s.key === '50|50')!;
     expect(b.px).toBeCloseTo(proj.scales.x(50)); // 800
     expect(b.py).toBeCloseTo(proj.scales.y(50)); // 200
   });
 
   it('forwards badgeScale to the export draw routine', () => {
-    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer.prototype, 'renderExport');
+    const spy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
     const { controller } = makeFixture();
     controller.captureBadges(exportProjection({ badgeScale: 1.5 }));
-    expect(spy.mock.calls[0][1]).toBe(1.5);
+    expect(spy.mock.calls[0][2]).toBe(1.5);
   });
 });
 

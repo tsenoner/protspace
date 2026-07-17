@@ -2,27 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { computeFullExtentDuplicateStacks } from './duplicate-stack-full-extent';
 import type { FullExtentDuplicateStack } from './duplicate-stack-full-extent';
 import { buildDuplicateStacks, getDuplicateStackKey } from './duplicate-stack-helpers';
+import { makePD, tenPointPD } from './test-support/plot-data-fixtures';
 import { materializePlotDataPoint } from '@protspace/utils';
 import type { PlotData } from '@protspace/utils';
 
-function makePD(xs: number[], ys: number[], ids?: string[]): PlotData {
-  return {
-    length: xs.length,
-    xs: new Float32Array(xs),
-    ys: new Float32Array(ys),
-    zs: null,
-    originalIndices: null,
-    proteinIds: ids ?? xs.map((_, i) => `p${i}`),
-  };
-}
-
 const allSlots = (pd: PlotData) => Array.from({ length: pd.length }, (_, i) => i);
-
-// Stack A = slots 0-1 at (0,0); B = slots 2-4 at (50,50); C = slots 5-6 at
-// (90,90); slots 7-9 are solos.
-function tenPointPD(): PlotData {
-  return makePD([0, 0, 50, 50, 50, 90, 90, 20, 30, 40], [0, 0, 50, 50, 50, 90, 90, 70, 80, 85]);
-}
 
 describe('computeFullExtentDuplicateStacks (#301)', () => {
   it('groups duplicate coords into stacks across the full extent and drops solos', () => {

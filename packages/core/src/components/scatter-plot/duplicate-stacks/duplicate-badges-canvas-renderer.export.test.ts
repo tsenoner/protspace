@@ -42,19 +42,12 @@ const stk = (key: string, px: number, py: number, n: number): RenderDuplicateSta
   })),
 });
 
-function makeRenderer(canvas: HTMLCanvasElement | undefined, expandedKey: string | null = null) {
-  return new DuplicateBadgesCanvasRenderer({
-    getCanvas: () => canvas,
-    getTransform: () => ({ x: 0, y: 0, k: 1 }), // unused by renderExport
-    getSize: () => ({ width: 0, height: 0 }), // unused by renderExport
-    getExpandedKey: () => expandedKey,
-  });
-}
+const { renderExport } = DuplicateBadgesCanvasRenderer;
 
 describe('DuplicateBadgesCanvasRenderer.renderExport (#302)', () => {
   it('draws in raw output pixels: identity transform, full physical clear, px/py used as-is', () => {
     const { canvas, calls } = fakeCanvas(1600, 400);
-    makeRenderer(canvas).renderExport([stk('a', 100, 50, 3)], 1);
+    renderExport(canvas, [stk('a', 100, 50, 3)], 1, null);
     expect(calls[0]).toEqual(['setTransform', [1, 0, 0, 1, 0, 0]]);
     expect(calls[1]).toEqual(['clearRect', [0, 0, 1600, 400]]);
     const arc = calls.find(([m]) => m === 'arc')!;
@@ -69,7 +62,7 @@ describe('DuplicateBadgesCanvasRenderer.renderExport (#302)', () => {
 
   it('scales radius, offset, font and line width uniformly by badgeScale (badges stay round)', () => {
     const { canvas, calls, props } = fakeCanvas(1600, 400);
-    makeRenderer(canvas).renderExport([stk('a', 100, 50, 3)], 2);
+    renderExport(canvas, [stk('a', 100, 50, 3)], 2, null);
     const arc = calls.find(([m]) => m === 'arc')!;
     // A single scalar radius — a circle by construction, no x/y stretch possible.
     expect(arc[1]).toEqual([
@@ -89,14 +82,14 @@ describe('DuplicateBadgesCanvasRenderer.renderExport (#302)', () => {
 
   it('tints the expanded stack and labels every stack with its member count', () => {
     const { canvas, calls } = fakeCanvas(800, 600);
-    makeRenderer(canvas, 'b').renderExport([stk('a', 10, 10, 3), stk('b', 20, 20, 5)], 1);
+    renderExport(canvas, [stk('a', 10, 10, 3), stk('b', 20, 20, 5)], 1, 'b');
     expect(calls.filter(([m]) => m === 'arc')).toHaveLength(2);
     expect(calls.filter(([m]) => m === 'fillText').map(([, a]) => a[0])).toEqual(['3', '5']);
   });
 
   it('is a silent no-op without a canvas or 2d context', () => {
-    expect(() => makeRenderer(undefined).renderExport([stk('a', 0, 0, 2)], 1)).not.toThrow();
+    expect(() => renderExport(undefined, [stk('a', 0, 0, 2)], 1, null)).not.toThrow();
     const noCtx = { width: 10, height: 10, getContext: () => null } as unknown as HTMLCanvasElement;
-    expect(() => makeRenderer(noCtx).renderExport([stk('a', 0, 0, 2)], 1)).not.toThrow();
+    expect(() => renderExport(noCtx, [stk('a', 0, 0, 2)], 1, null)).not.toThrow();
   });
 });

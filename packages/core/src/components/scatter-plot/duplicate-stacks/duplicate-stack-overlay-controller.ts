@@ -173,13 +173,12 @@ export class DuplicateStackOverlayController {
     target.width = width;
     target.height = height;
 
-    const renderer = new DuplicateBadgesCanvasRenderer({
-      getCanvas: () => target,
-      getTransform: () => ({ x: 0, y: 0, k: 1 }), // unused by renderExport
-      getSize: () => ({ width, height }), // unused by renderExport
-      getExpandedKey: () => this.expandedKey,
-    });
-    renderer.renderExport(stacksToRender, projection.badgeScale);
+    DuplicateBadgesCanvasRenderer.renderExport(
+      target,
+      stacksToRender,
+      projection.badgeScale,
+      this.expandedKey,
+    );
     return target;
   }
 
