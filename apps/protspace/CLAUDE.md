@@ -302,6 +302,8 @@ Located in `notebooks/`:
 
 **Local embedding (optional, `[local]` extra):** torch, transformers, sentencepiece, protobuf, einops — enables on-device embedding via `protspace.data.embedding.local` (issue #59; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
 
+**Local↔Biocentral parity (verified 2026-07-16):** local embeddings match the Biocentral API at **cosine ≥ 0.9999** for ProtT5, ProstT5, ESM2, Ankh, and Ankh3 (25-seq Pla2g2 cross-check; small rel-L2 is half-vs-full precision drift). **Exception — ESM-C:** local ESM-C (Synthyra ESM++) is bit-identical to native EvolutionaryScale ESM-C but **orthogonal to Biocentral's ESM-C** (cosine ~0.02). Root cause is on Biocentral's side: its engine (`biotrainer`) has no dedicated ESM-C embedder and its generic loader substring-matches `"esm"` in `ESMplusplus`, loading the ESM-C checkpoint as a vanilla ESM-2 model (wrong architecture/tokenizer) — so it never runs the real ESM-C. Do **not** mix local and Biocentral `esmc_*` embeddings in one dataset until Biocentral is fixed. See `docs/superpowers/plans/2026-07-13-colab-biocentral-independence.md` (PR3 results).
+
 **Dev:** pytest, pytest-cov, ruff
 
 ## Conventions

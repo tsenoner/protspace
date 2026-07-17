@@ -53,7 +53,7 @@ Additional decisions baked in:
 |----|-------|--------|
 | PR1 | `local.py` + `[local]` extra + `test_local_embedder.py` | ✅ done (was #73) |
 | PR2 | `-b/--backend {biocentral,local}` switch on `embed` + `prepare`, `embed_fasta(backend=)` dispatch, `resolve_default_backend()`, backend-aware `--batch-size`, `test_backend_switch.py` | ✅ done (was #74) |
-| PR3 | Empirical local-vs-Biocentral pooling parity cross-check + docs (resolves the deferred Ankh-pooling / `reduce=True` server black-box question) | ⬜ next |
+| PR3 | Empirical local-vs-Biocentral pooling parity cross-check + docs (resolves the deferred Ankh-pooling / `reduce=True` server black-box question) | ✅ done (2026-07-16) — see PR3 results below |
 | PR4 | Notebook: default to local-in-Colab via `resolve_default_backend()` | ⬜ |
 | PR5 | Wire the dead `--stats` toggle into the Preparation notebook | ⬜ |
 | PR6 | Append optional EAT to the Preparation notebook | ⬜ |
@@ -61,17 +61,67 @@ Additional decisions baked in:
 **#59 is functionally addressed once PR1 → PR2 → PR4 land** — the CLI can already embed fully
 offline today. PR3, PR5, PR6 are hardening + notebook/UX surface.
 
+## PR3 results — local ↔ Biocentral parity (measured 2026-07-16)
+
+Method: 25 deterministic sequences from `data/Pla2g2/Pla2g2.fasta` (sorted by id, first 25);
+embed each via the local backend and via Biocentral (`reduce=True`); align by id; per-protein
+cosine + relative L2 (`‖local−bio‖/‖bio‖`). Bar: **min cosine ≥ 0.99** for every family. Throwaway
+script run in an isolated worktree venv; not committed.
+
+| Family (checkpoint) | code path | mean cos | min cos | mean relL2 | verdict |
+|---|---|---|---|---|---|
+| `prot_t5` | T5, space-join, trailing-EOS strip | 1.00000 | 1.00000 | 0.00000 | ✅ PASS |
+| `prost_t5` | T5, `<AA2fold>` prefix | 1.00000 | 1.00000 | 0.00061 | ✅ PASS |
+| `esm2_650m` | ESM, CLS+EOS strip *(stands in for all esm2_\*)* | 1.00000 | 1.00000 | 0.00000 | ✅ PASS |
+| `ankh_base` | Ankh, raw-string tok, trailing-EOS strip | 0.99992 | 0.99991 | 0.01274 | ✅ PASS |
+| `ankh3_large` | Ankh, **no prefix** | 0.99991 | 0.99987 | 0.01363 | ✅ PASS |
+| `esmc_300m` | Synthyra ESM++ | 0.02162 | 0.00637 | 0.99976 | ❌ FAIL (Biocentral anomaly — see below) |
+
+**5 / 6 families pass with huge margin** (worst min cosine 0.99987). The 0.0006–0.014 relative-L2 on
+the passing families is just half-vs-full precision drift (local uses `*_half`/`*_fp16` variants).
+
+**ESM-C is the lone failure, and the local backend is _not_ at fault.** Native EvolutionaryScale
+ESM-C (`esm` pkg, `esmc_300m`) produces a **bit-identical** pooled vector to Synthyra ESM++
+(both norm 0.77, both cosine 0.007 vs Biocentral) — so Synthyra == native == the standard ESM-C
+embedding. Biocentral's ESM-C vector (norm ~29) is **orthogonal to the standard embedding at every
+one of the 31 hidden layers** (best layer match cosine 0.08). Every *other* family matches Biocentral
+at ≈1.0, so our pooling convention is correct; the anomaly is isolated to **Biocentral's ESM-C
+handling**. **Root cause found in `biotrainer`** (its embedding engine): ESM-C has no dedicated
+embedder, so `Synthyra/ESMplusplus_small` hits the generic loader, whose
+`_determine_tokenizer_and_model()` picks the architecture by **substring** — `"esm" in
+"esmplusplus"` is True → it loads the ESM-C checkpoint as a vanilla **ESM-2** model
+(`EsmModel`/`EsmTokenizer`, no `trust_remote_code`, wrong tokenizer). transformers even warns
+"*using a model of type `ESMplusplus` to instantiate a model of type `esm` … not supported*". So
+Biocentral never runs the real ESM-C model — the embeddings are meaningless. Reported to the
+Biocentral maintainer (`biocentral-esmc-issue.md`, with the fix: add a dedicated ESM-C embedder /
+stop matching on the loose `"esm"` substring). Switching local ESM-C to native would **not** help
+(native == Synthyra) and would add a gated/heavier dep for no benefit, so **local ESM-C stays
+Synthyra**.
+
+Availability note: Biocentral was mid-outage during this work; `esm2_8m/35m/150m` and (transiently)
+all six failed server-side at times — `esm2_650m` was used as the ESM-family reference since the
+smaller ESM2 checkpoints were not loaded server-side.
+
 ## Decisions still owed by the maintainer (don't assume)
 
-1. Confirm Synthyra-for-ESM-C.
-2. Run + set a tolerance for the Biocentral-vs-local pooling cross-check (`reduce=True` is a
-   server-side black box — the one unverified parity item).
-3. `esm2_3b` free-tier policy (gate / warn / hide).
-4. `ankh3_large` `[NLU]` vs `[S2S]` prefix.
+1. ~~Confirm Synthyra-for-ESM-C.~~ **RESOLVED (PR3):** Synthyra == native EvolutionaryScale ESM-C
+   (bit-identical pooled output). Keep Synthyra (ungated). It does **not** match Biocentral, but that
+   is a Biocentral-side ESM-C anomaly, not a local defect.
+2. ~~Run + set a tolerance for the Biocentral-vs-local cross-check.~~ **RESOLVED (PR3):** all
+   non-ESM-C families ≥ 0.99987 cosine; ≥ 0.99 is met with wide margin. ESM-C excluded with a
+   documented reason (Biocentral anomaly).
+3. `esm2_3b` free-tier policy (gate / warn / hide). *(still open)*
+4. ~~`ankh3_large` `[NLU]` vs `[S2S]` prefix.~~ **RESOLVED (PR3):** **no prefix** — the current
+   raw-string, no-prefix implementation matches Biocentral at cosine 0.9999.
 5. Scope #59 to embeddings only, or also the `predicted_*` annotation server dep
-   (`biocentral_retriever.py`).
-6. Local backend micro-batch config (Biocentral's `batch_size=1000` is an API-request batch, not
-   a GPU micro-batch) — addressed in PR2 via `LocalEmbedConfig` (default 8).
+   (`biocentral_retriever.py`). *(still open)*
+6. Local backend micro-batch config — addressed in PR2 via `LocalEmbedConfig` (default 8).
+
+## Follow-up owed to Biocentral
+
+The ESM-C (`esmc_300m`, `Synthyra/ESMplusplus_small`) embeddings returned by the Biocentral API are
+orthogonal to the model's own standard output. A hand-off note for the Biocentral maintainer was
+drafted (see the session's `biocentral-esmc-issue.md`).
 
 ## Adversarial-review fixes already applied (PR1/PR2)
 
