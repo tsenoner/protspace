@@ -3,6 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "license": "MIT",
+  "homepage": "https://protspace.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tsenoner/protspace.git",
+    "directory": "apps/web"
+  },
+  "bugs": {
+    "url": "https://github.com/tsenoner/protspace/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

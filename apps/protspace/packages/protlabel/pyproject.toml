@@ -11,8 +11,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tsenoner/protspace"
+Homepage = "https://protspace.app"
 Repository = "https://github.com/tsenoner/protspace"
+Documentation = "https://protspace.app/docs/"
+Issues = "https://github.com/tsenoner/protspace/issues"
+Changelog = "https://github.com/tsenoner/protspace/blob/main/apps/protspace/CHANGELOG.md"
 
 
 

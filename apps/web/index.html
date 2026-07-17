@@ -31,6 +31,28 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
 
+    <link rel="canonical" href="https://protspace.app/" />
+    <meta property="og:image" content="https://protspace.app/web-app-manifest-512x512.png" />
+    <meta name="twitter:image" content="https://protspace.app/web-app-manifest-512x512.png" />
+
+    <!-- Structured data: software application + scholarly citations -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ProtSpace",
+        "url": "https://protspace.app",
+        "applicationCategory": "https://schema.org/ScienceApplication",
+        "operatingSystem": "Web",
+        "license": "https://opensource.org/licenses/MIT",
+        "description": "Open-source tool to explore protein language model (pLM) embeddings interactively in the browser.",
+        "citation": [
+          "https://doi.org/10.64898/2026.05.04.722720",
+          "https://doi.org/10.1016/j.jmb.2025.168940"
+        ]
+      }
+    </script>
+
     <!-- Start Single Page Apps for GitHub Pages -->
     <script>
       // Single Page Apps for GitHub Pages

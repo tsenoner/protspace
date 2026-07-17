@@ -1,6 +1,10 @@
 {
-  "name": "MyWebSite",
-  "short_name": "MySite",
+  "name": "ProtSpace",
+  "short_name": "ProtSpace",
+  "description": "Interactive visualization of protein language model (pLM) embeddings",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
