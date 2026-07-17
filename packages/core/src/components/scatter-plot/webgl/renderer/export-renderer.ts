@@ -331,9 +331,17 @@ export class ExportRenderer {
     // Shared with the badge capture path (#302): see computeSizeScaleFactor.
     const displayWidth = config.width ?? DEFAULT_VIEWPORT_WIDTH;
     const displayHeight = config.height ?? DEFAULT_VIEWPORT_HEIGHT;
+    // `width`/`height` here are PHYSICAL (logical × dpr), whereas
+    // pointSizeReference and the display dims are LOGICAL (CSS px). Feed
+    // sizeScaleFactor logical reference dims: the physical dims carry a factor
+    // of dpr that would otherwise double-count against the explicit `* dpr` in
+    // stagePoint, scaling point size by dpr² at dpr ≠ 1. At dpr = 1 logical ===
+    // physical, so this leaves current (dpr = 1) exports byte-identical.
+    const logicalWidth = width / dpr;
+    const logicalHeight = height / dpr;
     const sizeScaleFactor = computeSizeScaleFactor(
-      pointSizeReference?.width ?? width,
-      pointSizeReference?.height ?? height,
+      pointSizeReference?.width ?? logicalWidth,
+      pointSizeReference?.height ?? logicalHeight,
       config.width,
       config.height,
     );

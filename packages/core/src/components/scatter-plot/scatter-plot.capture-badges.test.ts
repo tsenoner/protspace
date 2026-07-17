@@ -83,17 +83,20 @@ describe('scatter-plot captureAtResolution — badge projection wiring (#301/#30
     expect(projection.badgeScale).toBeCloseTo(computeSizeScaleFactor(1600, 400, 800, 600));
   });
 
-  it('multiplies badgeScale by the export dpr and uses physical dims', () => {
+  it('applies dpr once (not dpr²): physical canvas dims, logical size reference', () => {
     stubRenderer(el);
     const captureBadges = vi.spyOn(el._dupOverlay, 'captureBadges').mockReturnValue(null);
 
     el.captureAtResolution(800, 600, { resetView: true, dpr: 2 });
 
     const projection = captureBadges.mock.calls[0][0];
+    // The canvas is physical (dpr raises pixel density, not composition).
     expect(projection.width).toBe(1600);
     expect(projection.height).toBe(1200);
-    // Same rule the dots follow: size × dpr × sizeScaleFactor(physical, display).
-    expect(projection.badgeScale).toBeCloseTo(2 * computeSizeScaleFactor(1600, 1200, 800, 600));
+    // sizeScaleFactor uses LOGICAL dims (800×600 → 1), so badgeScale = dpr × 1 = 2.
+    // The old bug fed physical dims (1600×1200 → 2), giving dpr × 2 = 4 (dpr²).
+    expect(projection.badgeScale).toBeCloseTo(2 * computeSizeScaleFactor(800, 600, 800, 600));
+    expect(projection.badgeScale).toBeCloseTo(2);
   });
 
   it('skips badge capture when export scales are unavailable (null contract)', () => {

@@ -2222,9 +2222,16 @@ export class ProtspaceScatterplot extends LitElement {
   ): HTMLCanvasElement | null {
     const scales = this._webglRenderer?.createExportScales(webglCanvas.width, webglCanvas.height);
     if (!scales) return null;
+    // webglCanvas.width/height are PHYSICAL (logical × dpr); pointSizeReference
+    // and the config dims are LOGICAL. Use logical reference dims so
+    // sizeScaleFactor matches the dots' factor exactly and the dpr applied below
+    // is not squared (mirrors ExportRenderer.initializeOffscreenContext). No-op
+    // at dpr = 1.
+    const logicalWidth = webglCanvas.width / dpr;
+    const logicalHeight = webglCanvas.height / dpr;
     const sizeScaleFactor = computeSizeScaleFactor(
-      pointSizeReference?.width ?? webglCanvas.width,
-      pointSizeReference?.height ?? webglCanvas.height,
+      pointSizeReference?.width ?? logicalWidth,
+      pointSizeReference?.height ?? logicalHeight,
       this._mergedConfig.width,
       this._mergedConfig.height,
     );
