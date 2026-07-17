@@ -15,6 +15,7 @@ import {
   resolveNumericAnnotationDisplaySettings,
   annotationLabel,
   DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+  hasEatPredictionsForAnnotation,
   isPredictedAnnotation,
   getAnnotationMeta,
   type NumericBinningStrategy,
@@ -1088,7 +1089,7 @@ export class ProtspaceLegend extends LitElement {
       runtime: data.annotations[selectedAnnotation].runtime,
     };
     this._updateAnnotationValues(data, selectedAnnotation);
-    this._eatCounts = this._computeEatCounts(data, selectedAnnotation);
+    this._eatCounts = computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
     this.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -1137,17 +1138,9 @@ export class ProtspaceLegend extends LitElement {
     this.annotationValues = buildAnnotationValueList(colData, values, data.protein_ids.length);
   }
 
-  private _computeEatCounts(
-    data: ScatterplotData,
-    selectedAnnotation: string,
-  ): EatPopulationCounts | null {
-    return computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
-  }
-
   private _hasSelectedEatAnnotation(): boolean {
     const stableData = this._scatterplotController.scatterplot?.data ?? this.data;
-    const predictions = stableData?.annotation_predicted?.[this.selectedAnnotation];
-    return Array.isArray(predictions) && predictions.some((cell) => cell !== null);
+    return hasEatPredictionsForAnnotation(stableData, this.selectedAnnotation);
   }
 
   private _ensureSortModeDefaults(): void {

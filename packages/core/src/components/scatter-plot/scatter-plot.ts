@@ -2019,12 +2019,10 @@ export class ProtspaceScatterplot extends LitElement {
   /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */
   setProvenanceConnectors(request: ProvenanceConnectorRequest): void {
     const pairs = request.pairs.slice(0, 20);
-    const endpointIds = new Set<string>();
-    for (const pair of pairs) {
-      endpointIds.add(pair.sourceProteinId);
-      endpointIds.add(pair.targetProteinId);
-    }
-    this.highlightedProteinIds = [...endpointIds];
+    const endpointIds = (ps: typeof pairs): string[] => [
+      ...new Set(ps.flatMap((p) => [p.sourceProteinId, p.targetProteinId])),
+    ];
+    this.highlightedProteinIds = endpointIds(pairs);
 
     // Connector highlights use selectedOpacity. Revalidate after applying them because a zero
     // selected tier can make every otherwise-valid endpoint non-interactable.
@@ -2036,12 +2034,7 @@ export class ProtspaceScatterplot extends LitElement {
           interactableProteinIds.has(pair.targetProteinId),
       );
       if (validPairs.length !== pairs.length) {
-        const validEndpointIds = new Set<string>();
-        for (const pair of validPairs) {
-          validEndpointIds.add(pair.sourceProteinId);
-          validEndpointIds.add(pair.targetProteinId);
-        }
-        this.highlightedProteinIds = [...validEndpointIds];
+        this.highlightedProteinIds = endpointIds(validPairs);
         if (validPairs.length === 0) {
           this._connectorOverlay.clear();
           return;

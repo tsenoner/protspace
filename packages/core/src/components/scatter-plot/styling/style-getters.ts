@@ -176,11 +176,11 @@ export function createStyleGetters(
 
   const getOpacity = (point: PlotDataPoint): number => visibility.opacityOf(point);
 
-  const isPredicted = (point: PlotDataPoint): boolean =>
-    !!(
-      styleConfig.eatOverlayEnabled &&
-      data?.annotation_predicted?.[styleConfig.selectedAnnotation]?.[point.originalIndex]
-    );
+  // Resolve the predicted-cell array once (string-keyed lookup) instead of per point.
+  const predictedCells = styleConfig.eatOverlayEnabled
+    ? (data?.annotation_predicted?.[styleConfig.selectedAnnotation] ?? null)
+    : null;
+  const isPredicted = (point: PlotDataPoint): boolean => !!predictedCells?.[point.originalIndex];
 
   // Precompute normalization for z-order mapping so getDepth is cheap.
   const zMap = styleConfig.zOrderMapping ?? null;

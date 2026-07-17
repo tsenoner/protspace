@@ -45,7 +45,6 @@ import {
   EAT_BELOW_THRESHOLD_FACTOR,
   EAT_MAX_OPACITY,
   EAT_MIN_OPACITY,
-  getPredictedCell,
   isSparseMultiValueAnnotationData,
 } from '@protspace/utils';
 
@@ -274,15 +273,17 @@ export function computeVisibilityModel(
     return hiddenMask![idx] === 1; // hiddenMode === 'mask' guarantees non-null
   };
 
+  // Resolve the predicted-cell array once (string-keyed lookup) instead of per point.
+  const predictedCells =
+    eatOverlayEnabled && data ? (data.annotation_predicted?.[selectedAnnotation] ?? null) : null;
+
   const baseOpacityOf = (point: PlotDataPoint): number => {
     const isSelected = selectedIdsSet.has(point.id);
     const isHighlighted = highlightedIdsSet.has(point.id);
     if (isSelected || isHighlighted) return opacities.selected;
     if (hasSelection && !isSelected) return opacities.faded;
     if (eatOverlayEnabled) {
-      const predicted = data
-        ? getPredictedCell(data, point.originalIndex, selectedAnnotation)
-        : null;
+      const predicted = predictedCells?.[point.originalIndex] ?? null;
       if (predicted) {
         const confidenceOpacity =
           EAT_MIN_OPACITY + (EAT_MAX_OPACITY - EAT_MIN_OPACITY) * predicted.confidence;

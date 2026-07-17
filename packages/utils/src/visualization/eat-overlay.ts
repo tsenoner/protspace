@@ -75,6 +75,16 @@ export function hasEatPredictions(
   return Object.values(data.annotation_predicted).some((cells) => cells.some(Boolean));
 }
 
+/** Resolve a predicted cell's display labels to their (valid) annotation value indices. */
+function predictedIndices(
+  cell: PredictedCell,
+  valueToIndex: ReadonlyMap<string, number>,
+): number[] {
+  return getPredictedCellValues(cell)
+    .map((value) => valueToIndex.get(value) ?? -1)
+    .filter((index) => index >= 0);
+}
+
 function cloneWithPredictions(
   source: AnnotationData,
   predictedCells: readonly (PredictedCell | null)[],
@@ -90,9 +100,7 @@ function cloneWithPredictions(
       for (let i = 0; i < predictedCells.length; i++) {
         const cell = predictedCells[i];
         if (!cell) continue;
-        const indices = getPredictedCellValues(cell)
-          .map((value) => valueToIndex.get(value) ?? -1)
-          .filter((index) => index >= 0);
+        const indices = predictedIndices(cell, valueToIndex);
         if (indices.length > 1) {
           base[i] = indices[0];
           overrides.set(i, indices);
@@ -116,9 +124,7 @@ function cloneWithPredictions(
     for (let i = 0; i < predictedCells.length; i++) {
       const cell = predictedCells[i];
       if (!cell) continue;
-      const indices = getPredictedCellValues(cell)
-        .map((value) => valueToIndex.get(value) ?? -1)
-        .filter((index) => index >= 0);
+      const indices = predictedIndices(cell, valueToIndex);
       if (indices.length > 1) {
         base[i] = indices[0];
         overrides.set(i, indices);
@@ -134,9 +140,7 @@ function cloneWithPredictions(
   for (let i = 0; i < predictedCells.length; i++) {
     const cell = predictedCells[i];
     if (cell) {
-      const indices = getPredictedCellValues(cell)
-        .map((value) => valueToIndex.get(value) ?? -1)
-        .filter((index) => index >= 0);
+      const indices = predictedIndices(cell, valueToIndex);
       clone[i] = indices.length > 0 ? indices : [getFirstAnnotationIndex(source, i)];
     }
   }
