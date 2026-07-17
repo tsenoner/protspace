@@ -6,9 +6,24 @@ on:
     # No tag trigger: protspace releases push `v*` tags to THIS repo, and the
     # prep image must not build/publish on them (it deploys by digest on main,
     # and a `v4.7.1` tag would otherwise mint a mislabeled protspace-prep image).
+    #
+    # Path-filtered to the prep image's actual build inputs so a web-only or
+    # docs-only push to main no longer rebuilds and redeploys an unchanged
+    # backend image. The set below is exactly what apps/prep/Dockerfile binds
+    # and copies (root lock + root pyproject + both uv workspace member sources,
+    # since protspace-prep is source-pinned to the protspace member).
+    paths:
+      - 'apps/prep/**'
+      - 'apps/protspace/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/publish-images.yml'
   pull_request:
     paths:
       - 'apps/prep/**'
+      - 'apps/protspace/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
