@@ -55,7 +55,7 @@ Additional decisions baked in:
 | PR2 | `-b/--backend {biocentral,local}` switch on `embed` + `prepare`, `embed_fasta(backend=)` dispatch, `resolve_default_backend()`, backend-aware `--batch-size`, `test_backend_switch.py` | ✅ done (was #74) |
 | PR3 | Empirical local-vs-Biocentral pooling parity cross-check + docs (resolves the deferred Ankh-pooling / `reduce=True` server black-box question) | ✅ done (2026-07-16) — see PR3 results below |
 | PR4 | Notebook: default to local-in-Colab via `resolve_default_backend()` | ✅ done (2026-07-17) — see PR4 results below |
-| PR5 | Wire the dead `--stats` toggle into the Preparation notebook | ⬜ |
+| PR5 | Wire the dead `--stats` toggle into the Preparation notebook | ✅ done (2026-07-17) — see PR5 results below |
 | PR6 | Append optional EAT to the Preparation notebook | ⬜ |
 
 **#59 is functionally addressed once PR1 → PR2 → PR4 land** — the CLI can already embed fully
@@ -127,6 +127,30 @@ Verified: notebook is valid `nbformat`, all code cells parse, both `embed_fasta`
 backend, ESM-C drop) unit-checked against the real backend symbols; `test_backend_switch.py` +
 `test_local_embedder.py` (fast) green. The notebook can only run end-to-end inside Colab (needs
 `google.colab`), so runtime embedding is exercised there, not in CI.
+
+## PR5 results — Preparation notebook statistics toggle (2026-07-17)
+
+The Preparation notebook's `--stats` capability was documented-but-dead: the generate handler
+built the bundle without ever calling `_compute_statistics`, so `save_output`'s `statistics=` /
+`settings=` slots were always empty. PR5 wires it up (notebook-only, generate cell):
+
+- A **"Compute quality statistics"** checkbox (off by default) in the form, under a new "Quality
+  statistics" heading.
+- `PipelineConfig(..., stats=compute_stats_cb.value)`.
+- After `_run_reductions`, and **before** `create_output`, call
+  `pipeline._compute_statistics(embedding_sets, all_reductions, all_headers, metadata)` — it
+  mutates `metadata` (per-protein `cluster_elbow_*` columns) and each reduction's
+  `info["quality"]` (faithfulness) **in place**, so ordering matters — then thread
+  `statistics=` / `settings=stats_settings or None` into `save_output`. This mirrors
+  `ReductionPipeline.run()` exactly.
+
+Verified end-to-end **offline** (stats needs no Colab/GPU): drove the exact wiring against
+`data/Pla2g2/Pla2g2_prot_t5.h5` (448 proteins, PCA2+UMAP2, a synthetic 3-category annotation).
+Result: 5-part bundle (all parts non-empty), statistics table = 15 rows, `metadata` gained two
+`cluster_elbow_*` columns, cluster-legend `settings` built, and both projections'
+`info["quality"]` carry `knn_overlap / trustworthiness / continuity / random_triplet /
+spearman_distance`. `test_stats_bundle` + `test_stats_carriage` + `test_stats_cli` green. Only
+PR6 (append EAT) remains.
 
 ## Decisions still owed by the maintainer (don't assume)
 
