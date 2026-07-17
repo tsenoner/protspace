@@ -43,7 +43,11 @@ import {
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import { computeExtent, computePaddedExtent } from './data-extent';
-import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
+import {
+  computeSizeScaleFactor,
+  DEFAULT_VIEWPORT_WIDTH,
+  DEFAULT_VIEWPORT_HEIGHT,
+} from './viewport-defaults';
 import { stagePoint, type StagePointArrays, MAX_LABELS } from './stage-point';
 import { buildPaintOrder } from './point-staging';
 import {
@@ -324,11 +328,23 @@ export class ExportRenderer {
     // For inset (zoom) renders, callers pass `pointSizeReference` set to the
     // source plot's render size so points stay visually the same size as in
     // the main plot — instead of shrinking when the inset target is small.
+    // Shared with the badge capture path (#302): see computeSizeScaleFactor.
     const displayWidth = config.width ?? DEFAULT_VIEWPORT_WIDTH;
     const displayHeight = config.height ?? DEFAULT_VIEWPORT_HEIGHT;
-    const refW = pointSizeReference?.width ?? width;
-    const refH = pointSizeReference?.height ?? height;
-    const sizeScaleFactor = Math.sqrt((refW * refH) / (displayWidth * displayHeight));
+    // `width`/`height` here are PHYSICAL (logical × dpr), whereas
+    // pointSizeReference and the display dims are LOGICAL (CSS px). Feed
+    // sizeScaleFactor logical reference dims: the physical dims carry a factor
+    // of dpr that would otherwise double-count against the explicit `* dpr` in
+    // stagePoint, scaling point size by dpr² at dpr ≠ 1. At dpr = 1 logical ===
+    // physical, so this leaves current (dpr = 1) exports byte-identical.
+    const logicalWidth = width / dpr;
+    const logicalHeight = height / dpr;
+    const sizeScaleFactor = computeSizeScaleFactor(
+      pointSizeReference?.width ?? logicalWidth,
+      pointSizeReference?.height ?? logicalHeight,
+      config.width,
+      config.height,
+    );
     // Enable extensions for float textures (needed for gamma pipeline)
     const colorBufferFloatExt = gl.getExtension('EXT_color_buffer_float');
     const floatBlendExt = gl.getExtension('EXT_float_blend');
