@@ -7,11 +7,10 @@
   </picture>
 </p>
 
-[![CI](https://github.com/tsenoner/protspace/actions/workflows/ci.yml/badge.svg)](https://github.com/tsenoner/protspace/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://img.shields.io/pypi/v/protspace)](https://pypi.org/project/protspace/)
 [![Downloads](https://static.pepy.tech/badge/protspace)](https://pepy.tech/project/protspace)
-[![Website](https://img.shields.io/website?url=https%3A%2F%2Fprotspace.app&label=protspace.app)](https://protspace.app)
+[![Website](https://img.shields.io/badge/website-protspace.app-2ea44f)](https://protspace.app)
 [![DOI (preprint)](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.05.04.722720-b31b1b)](https://doi.org/10.64898/2026.05.04.722720)
 [![DOI (JMB)](https://img.shields.io/badge/DOI-10.1016%2Fj.jmb.2025.168940-blue)](https://doi.org/10.1016/j.jmb.2025.168940)
 
