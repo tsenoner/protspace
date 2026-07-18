@@ -14,7 +14,7 @@
 [![DOI (preprint)](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.05.04.722720-b31b1b)](https://doi.org/10.64898/2026.05.04.722720)
 [![DOI (JMB)](https://img.shields.io/badge/DOI-10.1016%2Fj.jmb.2025.168940-blue)](https://doi.org/10.1016/j.jmb.2025.168940)
 
-ProtSpace is an interactive tool for exploring protein language model (pLM) embeddings. Project high-dimensional embeddings to 2D (PCA, UMAP, t-SNE, PaCMAP), color proteins by biological annotations, view 3D structures, and export publication-ready figures — all in your browser, scaling to 570,000+ proteins with no server upload.
+ProtSpace is a free, in-browser tool for exploring protein language model (pLM) embeddings. Project embeddings into an interactive map to surface relationships that sequence similarity misses, overlay biological annotations, transfer labels to unannotated proteins with a confidence score (EAT), inspect 3D structures, and export publication-ready figures — at Swiss-Prot scale, with nothing uploaded.
 
 ## 🌐 Try it online
 
