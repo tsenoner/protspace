@@ -7,7 +7,7 @@ for the design.
 ## Run locally
 
 ```bash
-cd services/protspace-prep
+cd apps/prep
 uv venv
 uv pip install -e ".[dev]"
 uv run uvicorn protspace_prep.app:app --reload --port 8000

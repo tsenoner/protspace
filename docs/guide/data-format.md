@@ -4,7 +4,7 @@ ProtSpace uses `.parquetbundle` files - a single file containing all visualizati
 
 ## What is a .parquetbundle?
 
-A `.parquetbundle` is a single file containing three Parquet tables bundled together, with an optional settings section:
+A `.parquetbundle` is a single file containing three core Parquet tables bundled together, with optional settings and statistics sections:
 
 ```
 .parquetbundle file
@@ -14,7 +14,9 @@ A `.parquetbundle` is a single file containing three Parquet tables bundled toge
 ├── ---PARQUET_DELIMITER---       # Separator
 ├── projections_data.parquet      # 2D/3D coordinates
 ├── ---PARQUET_DELIMITER---       # Optional separator
-└── settings.parquet              # Optional: one-row Parquet table with settings_json
+├── settings.parquet              # Optional: one-row Parquet table with settings_json
+├── ---PARQUET_DELIMITER---       # Optional separator
+└── statistics.parquet            # Optional: projection quality metrics (protspace stats)
 ```
 
 This bundled format allows efficient loading in the browser while keeping everything in one convenient file.

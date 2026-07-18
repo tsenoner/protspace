@@ -46,7 +46,7 @@ ProtSpace processes everything locally in your browser:
 
 ## Performance
 
-ProtSpace can handle datasets with **200,000+ proteins** directly in your browser without server uploads.
+ProtSpace can handle datasets with **570,000+ proteins** (full Swiss-Prot scale) directly in your browser without server uploads.
 
 ## Next Steps
 

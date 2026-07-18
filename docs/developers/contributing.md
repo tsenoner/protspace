@@ -6,22 +6,19 @@ Guide for developers who want to contribute to ProtSpace.
 
 ```
 protspace/
-├── app/                    # Demo application (Vite + React)
-│   ├── src/
-│   │   ├── pages/          # React pages
-│   │   └── components/     # React components
-│   └── public/             # Static assets
+├── apps/
+│   ├── web/                # Web application + landing page (Vite + React)
+│   ├── protspace/          # Python CLI package (PyPI: protspace) + notebooks
+│   └── prep/               # FASTA → .parquetbundle prep service (FastAPI)
 ├── packages/
-│   ├── core/               # Main web components library
+│   ├── core/               # Main web components library (Lit + WebGL)
 │   │   └── src/components/
 │   │       ├── scatter-plot/
 │   │       ├── legend/
 │   │       ├── control-bar/
 │   │       └── structure-viewer/
 │   └── utils/              # Shared utilities
-├── docs/                   # Documentation (VitePress)
-├── data/                   # Example datasets
-└── notebooks/              # Jupyter notebooks for data prep
+└── docs/                   # Documentation (VitePress)
 ```
 
 ## Technology Stack
