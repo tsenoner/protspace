@@ -74,7 +74,7 @@ const Hero = () => {
                 rel="noopener noreferrer"
               >
                 <Database className="h-5 w-5" />
-                Create Data
+                Prepare Data
               </a>
             </Button>
           </div>
