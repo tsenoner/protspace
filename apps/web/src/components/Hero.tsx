@@ -3,6 +3,13 @@ import { Database, BookOpen, Play } from 'lucide-react';
 import { Link } from 'react-router';
 import { DOCS_URL } from '@/config';
 
+const badges = [
+  'Nothing leaves your browser',
+  'Swiss-Prot scale',
+  'Annotation transfer (EAT)',
+  'Trustworthy projections',
+];
+
 const Hero = () => {
   return (
     <section
@@ -77,18 +84,14 @@ const Hero = () => {
 
           {/* Badges */}
           <div className="flex flex-wrap gap-3 justify-center pt-8">
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Nothing leaves your browser
-            </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Swiss-Prot scale
-            </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Annotation transfer (EAT)
-            </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Trustworthy projections
-            </span>
+            {badges.map((badge) => (
+              <span
+                key={badge}
+                className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm"
+              >
+                {badge}
+              </span>
+            ))}
           </div>
         </div>
       </div>

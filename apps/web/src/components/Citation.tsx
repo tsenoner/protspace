@@ -2,56 +2,32 @@ import { useState } from 'react';
 import { BookOpen, Copy, Check, ExternalLink } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/components/ui/sonner';
+import { notify } from '@/lib/notify';
+import {
+  PUBLICATION_WEB,
+  PUBLICATION_JMB,
+  doiUrl,
+  type Publication,
+} from '../../../../config/citations';
 
-interface Reference {
+interface Reference extends Publication {
   id: string;
   tag: string;
   tagClass: string;
-  citation: string;
-  doi: string;
-  doiLabel: string;
-  bibtex: string;
 }
 
 const references: Reference[] = [
   {
+    ...PUBLICATION_WEB,
     id: 'web',
     tag: 'Latest · Preprint',
     tagClass: 'bg-primary/10 text-primary',
-    citation:
-      'Senoner, T., Vahidi, P., Olenyi, T., Senoner, F., Sisman, G., Kahl, E., Rost, B., & Koludarov, I. (2026). ProtSpace: Protein Universe in Your Browser. bioRxiv.',
-    doi: 'https://doi.org/10.64898/2026.05.04.722720',
-    doiLabel: '10.64898/2026.05.04.722720',
-    bibtex: `@article{senoner2026protspaceweb,
-  title     = {ProtSpace: Protein Universe in Your Browser},
-  author    = {Senoner, Tobias and Vahidi, Peyman and Olenyi, Tobias and Senoner, Florin and Sisman, G{\\"o}khan and Kahl, Elias and Rost, Burkhard and Koludarov, Ivan},
-  journal   = {bioRxiv},
-  year      = {2026},
-  doi       = {10.64898/2026.05.04.722720},
-  url       = {https://www.biorxiv.org/content/10.64898/2026.05.04.722720v1},
-  publisher = {openRxiv}
-}`,
   },
   {
+    ...PUBLICATION_JMB,
     id: 'original',
     tag: 'Original · Peer-reviewed',
     tagClass: 'bg-muted text-muted-foreground',
-    citation:
-      'Senoner, T., Olenyi, T., Heinzinger, M., Spannagl, A., Bouras, G., Rost, B., & Koludarov, I. (2025). ProtSpace: A Tool for Visualizing Protein Space. Journal of Molecular Biology, 437(15), 168940.',
-    doi: 'https://doi.org/10.1016/j.jmb.2025.168940',
-    doiLabel: '10.1016/j.jmb.2025.168940',
-    bibtex: `@article{senoner2025protspace,
-  title     = {ProtSpace: A Tool for Visualizing Protein Space},
-  author    = {Senoner, Tobias and Olenyi, Tobias and Heinzinger, Michael and Spannagl, Anton and Bouras, George and Rost, Burkhard and Koludarov, Ivan},
-  journal   = {Journal of Molecular Biology},
-  volume    = {437},
-  number    = {15},
-  pages     = {168940},
-  year      = {2025},
-  doi       = {10.1016/j.jmb.2025.168940},
-  publisher = {Elsevier}
-}`,
   },
 ];
 
@@ -62,10 +38,10 @@ const Citation = () => {
     try {
       await navigator.clipboard.writeText(ref.bibtex);
       setCopied(ref.id);
-      toast.success('BibTeX copied to clipboard');
+      notify.success({ title: 'BibTeX copied to clipboard' });
       setTimeout(() => setCopied((current) => (current === ref.id ? null : current)), 2000);
     } catch {
-      toast.error('Could not copy to clipboard');
+      notify.error({ title: 'Could not copy to clipboard' });
     }
   };
 
@@ -106,13 +82,13 @@ const Citation = () => {
 
               <div className="flex flex-wrap items-center gap-3 mt-auto">
                 <a
-                  href={ref.doi}
+                  href={doiUrl(ref.doi)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
                 >
                   <ExternalLink className="h-4 w-4" />
-                  {ref.doiLabel}
+                  {ref.doi}
                 </a>
                 <Button
                   variant="outline"

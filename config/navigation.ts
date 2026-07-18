@@ -5,6 +5,7 @@
  * This ensures consistent navigation structure in both React app and VitePress docs.
  */
 import { getUrls, buildUrl, type Environment } from './urls';
+import { PUBLICATION_WEB, PUBLICATION_JMB, doiUrl } from './citations';
 
 interface NavItem {
   text: string;
@@ -45,11 +46,8 @@ export const getNavigation = (mode: Environment): NavItem[] => {
       text: 'Resources',
       items: [
         { text: 'Python Package', link: 'https://pypi.org/project/protspace/' },
-        {
-          text: 'Latest publication (bioRxiv)',
-          link: 'https://doi.org/10.64898/2026.05.04.722720',
-        },
-        { text: 'Original publication (JMB)', link: 'https://doi.org/10.1016/j.jmb.2025.168940' },
+        { text: 'Latest publication (bioRxiv)', link: doiUrl(PUBLICATION_WEB.doi) },
+        { text: 'Original publication (JMB)', link: doiUrl(PUBLICATION_JMB.doi) },
       ],
     },
     {
