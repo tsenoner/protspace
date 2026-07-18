@@ -1,4 +1,4 @@
-import { Network, Layers, Box, Search, Database, Code2 } from 'lucide-react';
+import { Network, Layers, Database, Share2, Box, Zap } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
 const features = [
@@ -6,33 +6,37 @@ const features = [
     icon: Network,
     title: 'Protein Language Models',
     description:
-      'Explore protein families as never before, leveraging the comprehensive knowledge of protein Language Models.',
+      'See protein space the way pLMs do — ProtT5, ESM-2, ESM-C, Ankh, and 12+ models, no alignments required.',
   },
   {
     icon: Layers,
-    title: 'Dimensionality Reduction',
-    description: 'Visualize high-dimensional embeddings using UMAP, t-SNE, and PCA techniques.',
-  },
-  {
-    icon: Box,
-    title: '3D Protein Structure Visualization',
+    title: 'Six Projection Methods',
     description:
-      'Visualize protein 3D structures with AlphaFold2 predictions directly in the browser.',
-  },
-  {
-    icon: Search,
-    title: 'Real-Time Search',
-    description: 'Find proteins by ID or functional annotations instantly.',
+      'Compare PCA, UMAP, t-SNE, PaCMAP, MDS, and LocalMAP side by side to find the view that reveals your biology.',
   },
   {
     icon: Database,
-    title: 'Metadata Integration',
-    description: 'Link biological metadata for enriched exploration and contextual analysis.',
+    title: 'Rich Annotations',
+    description:
+      'Color proteins by UniProt, InterPro, TED domains, AlphaFold, and ML predictions — curated evidence and models in one place.',
   },
   {
-    icon: Code2,
-    title: 'Open-Source & Extensible',
-    description: 'MIT licensed with extensible codebase. Contribute and customize freely.',
+    icon: Share2,
+    title: 'Annotation Transfer (EAT)',
+    description:
+      'Fill in missing labels from the nearest annotated protein in embedding space, each with a confidence score.',
+  },
+  {
+    icon: Box,
+    title: '3D Structures in the Browser',
+    description:
+      'Open AlphaFold structures via Mol* right from the plot — sequence and structure, side by side.',
+  },
+  {
+    icon: Zap,
+    title: 'Swiss-Prot Scale',
+    description:
+      'Explore 570,000+ proteins entirely client-side — nothing uploaded — then export publication-ready figures.',
   },
 ];
 

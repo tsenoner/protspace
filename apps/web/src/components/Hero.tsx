@@ -45,9 +45,10 @@ const Hero = () => {
           <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto">
             Explore, analyze, understand your protein space.
             <br />
-            Put your embeddings and UniProt side by side to uncover
+            Put your embeddings side by side with annotations from UniProt, InterPro, AlphaFold
+            &amp; more
             <br />
-            confirmations, contradictions, and unexpected biology.
+            to uncover confirmations, contradictions, and unexpected biology.
           </p>
 
           {/* CTA Buttons */}
@@ -81,13 +82,16 @@ const Hero = () => {
           {/* Badges */}
           <div className="flex flex-wrap gap-3 justify-center pt-8">
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Open Source
+              570K+ proteins
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              MIT License
+              100% in-browser
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              3D-Beacons API
+              12+ protein language models
+            </span>
+            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
+              Open source
             </span>
           </div>
         </div>
