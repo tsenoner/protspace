@@ -43,12 +43,8 @@ const Hero = () => {
 
           {/* Subtitle */}
           <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto">
-            Explore, analyze, understand your protein space.
-            <br />
-            Put your embeddings side by side with annotations from UniProt, InterPro, AlphaFold
-            &amp; more
-            <br />
-            to uncover confirmations, contradictions, and unexpected biology.
+            Explore protein language model embeddings overlaid with biology — and see what sequence
+            similarity can&rsquo;t.
           </p>
 
           {/* CTA Buttons */}
@@ -82,16 +78,16 @@ const Hero = () => {
           {/* Badges */}
           <div className="flex flex-wrap gap-3 justify-center pt-8">
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              570K+ proteins
+              Nothing leaves your browser
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              100% in-browser
+              Swiss-Prot scale
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              12+ protein language models
+              Annotation transfer (EAT)
             </span>
             <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Open source
+              Trustworthy projections
             </span>
           </div>
         </div>

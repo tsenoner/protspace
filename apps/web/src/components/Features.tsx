@@ -1,42 +1,42 @@
-import { Network, Layers, Database, Share2, Box, Zap } from 'lucide-react';
+import { Sparkles, Layers, Share2, BarChart3, SlidersHorizontal, Box } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
 const features = [
   {
-    icon: Network,
-    title: 'Protein Language Models',
+    icon: Sparkles,
+    title: 'Beyond Sequence Similarity',
     description:
-      'See protein space the way pLMs do — ProtT5, ESM-2, ESM-C, Ankh, and 12+ models, no alignments required.',
+      'Surface functional relationships that sequence alignment misses — the biology embeddings reveal and networks cannot.',
   },
   {
     icon: Layers,
-    title: 'Six Projection Methods',
+    title: 'Layered Annotations',
     description:
-      'Compare PCA, UMAP, t-SNE, PaCMAP, MDS, and LocalMAP side by side to find the view that reveals your biology.',
-  },
-  {
-    icon: Database,
-    title: 'Rich Annotations',
-    description:
-      'Color proteins by UniProt, InterPro, TED domains, AlphaFold, and ML predictions — curated evidence and models in one place.',
+      'Overlay UniProt, InterPro, AlphaFold, TED domains, and ML predictions on every protein in the map.',
   },
   {
     icon: Share2,
     title: 'Annotation Transfer (EAT)',
     description:
-      'Fill in missing labels from the nearest annotated protein in embedding space, each with a confidence score.',
+      'Fill missing labels from the nearest neighbour in embedding space, each with a confidence score.',
+  },
+  {
+    icon: BarChart3,
+    title: 'Insights Through Statistics',
+    description:
+      'Silhouette, trustworthiness, and cluster-validity scores tell you which regions of the map to trust.',
+  },
+  {
+    icon: SlidersHorizontal,
+    title: 'Your Model, Your Projection',
+    description:
+      'Model-agnostic embeddings with modular, extensible projection methods — bring your own and compare.',
   },
   {
     icon: Box,
-    title: '3D Structures in the Browser',
+    title: 'Structures & Figures, in Place',
     description:
-      'Open AlphaFold structures via Mol* right from the plot — sequence and structure, side by side.',
-  },
-  {
-    icon: Zap,
-    title: 'Swiss-Prot Scale',
-    description:
-      'Explore 570,000+ proteins entirely client-side — nothing uploaded — then export publication-ready figures.',
+      'Open AlphaFold 3D structures and export publication-ready figures without leaving the browser.',
   },
 ];
 
@@ -47,13 +47,13 @@ const Features = () => {
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
-            Powerful Features for
+            From embedding space to
             <span className="block bg-gradient-primary bg-clip-text text-transparent">
-              Protein Analysis
+              biological insight
             </span>
           </h2>
           <p className="text-lg text-muted-foreground">
-            Everything you need to visualize and explore large-scale protein embedding spaces
+            Everything you need to explore protein embedding space — and act on it
           </p>
         </div>
 
