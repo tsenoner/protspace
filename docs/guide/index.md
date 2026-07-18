@@ -1,6 +1,6 @@
 # What is ProtSpace?
 
-**ProtSpace** is a browser-based, interactive visualization tool for exploring protein language model (pLM) embeddings. It helps researchers and biologists understand high-dimensional protein data by visualizing it in 2D.
+**ProtSpace** is a browser-based tool for exploring protein language model (pLM) embeddings. It maps the embedding space — not a sequence-similarity network — to reveal relationships that sequence similarity misses, letting you overlay biological annotations and turn high-dimensional protein data into testable hypotheses. Nothing is uploaded.
 
 ## Why Use ProtSpace?
 
@@ -13,14 +13,14 @@ Protein language models (like ProtT5, ESM2, Ankh) create embeddings that capture
 
 ## Key Features
 
-| Feature              | Description                                                             |
-| -------------------- | ----------------------------------------------------------------------- |
-| **No Installation**  | Runs entirely in your browser at [protspace.app](https://protspace.app) |
-| **Privacy-First**    | Your data never leaves your computer - all processing is client-side    |
-| **Multiple Views**   | PCA, UMAP, t-SNE, PaCMAP, MDS, and LocalMAP projections                 |
-| **Rich Annotations** | Color by UniProt, InterPro, Taxonomy, or custom expert annotations      |
-| **3D Structures**    | View protein structures from the AlphaFold Database                     |
-| **Export Options**   | Save images (PNG, PDF), data (Parquet), and protein IDs                 |
+| Feature              | Description                                                                |
+| -------------------- | -------------------------------------------------------------------------- |
+| **No Installation**  | Runs entirely in your browser at [protspace.app](https://protspace.app)    |
+| **Privacy-First**    | Your data never leaves your computer - all processing is client-side       |
+| **Multiple Views**   | Compare several dimensionality-reduction views of the same embedding space |
+| **Rich Annotations** | Color by UniProt, InterPro, Taxonomy, or custom expert annotations         |
+| **3D Structures**    | View protein structures from the AlphaFold Database                        |
+| **Export Options**   | Save images (PNG, PDF), data (Parquet), and protein IDs                    |
 
 ## How It Works
 

@@ -9,7 +9,7 @@ const navItems = getNavigation(mode);
 
 export default defineConfig({
   title: 'ProtSpace',
-  description: 'Interactive visualization for protein language model embeddings',
+  description: 'Explore protein language model (pLM) embeddings and reveal relationships that sequence similarity misses.',
 
   base: urls.docs,
 

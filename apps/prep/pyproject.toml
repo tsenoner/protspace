@@ -1,7 +1,7 @@
 [project]
 name = "protspace-prep"
 version = "0.1.0"
-description = "FASTA → .parquetbundle preparation service for ProtSpace"
+description = "Hosted FASTA → .parquetbundle preparation service for ProtSpace — embeds, projects, and annotates sequences for interactive exploration at protspace.app"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [

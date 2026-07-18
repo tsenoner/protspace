@@ -40,7 +40,7 @@ protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 ```
 
-See the [ProtSpace Python package](https://github.com/tsenoner/protspace/tree/main/apps/protspace) for the full CLI (annotation transfer, quality metrics, 12+ pLMs, and more).
+See the [ProtSpace Python package](https://github.com/tsenoner/protspace/tree/main/apps/protspace) for the full CLI (annotation transfer, quality metrics, multiple pLMs, and more).
 
 ## 📚 Documentation
 

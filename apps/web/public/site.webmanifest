@@ -1,7 +1,7 @@
 {
   "name": "ProtSpace",
   "short_name": "ProtSpace",
-  "description": "Interactive visualization of protein language model (pLM) embeddings",
+  "description": "Explore protein language model (pLM) embeddings in your browser — reveal relationships sequence similarity misses.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
