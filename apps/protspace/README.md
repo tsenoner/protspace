@@ -18,7 +18,7 @@ ProtSpace is a visualization tool for exploring **protein embeddings** or **simi
 
 ## 🌐 Try Online
 
-**[ProtSpace Web](https://protspace.app/explore)**: Fast 2D explorer optimized for large datasets — drag & drop `.parquetbundle` files ([source](https://github.com/tsenoner/protspace))
+**[ProtSpace web app](https://protspace.app/explore)**: Fast 2D explorer optimized for large datasets — drag & drop `.parquetbundle` files ([source](https://github.com/tsenoner/protspace))
 
 ## 🚀 Google Colab Notebooks
 
