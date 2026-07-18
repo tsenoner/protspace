@@ -17,7 +17,7 @@ interface Reference {
 const references: Reference[] = [
   {
     id: 'web',
-    tag: 'Web application · Preprint',
+    tag: 'Latest · Preprint',
     tagClass: 'bg-primary/10 text-primary',
     citation:
       'Senoner, T., Vahidi, P., Olenyi, T., Senoner, F., Sisman, G., Kahl, E., Rost, B., & Koludarov, I. (2026). ProtSpace: Protein Universe in Your Browser. bioRxiv.',
@@ -34,8 +34,8 @@ const references: Reference[] = [
 }`,
   },
   {
-    id: 'tool',
-    tag: 'Original tool · Peer-reviewed',
+    id: 'original',
+    tag: 'Original · Peer-reviewed',
     tagClass: 'bg-muted text-muted-foreground',
     citation:
       'Senoner, T., Olenyi, T., Heinzinger, M., Spannagl, A., Bouras, G., Rost, B., & Koludarov, I. (2025). ProtSpace: A Tool for Visualizing Protein Space. Journal of Molecular Biology, 437(15), 168940.',
@@ -81,8 +81,8 @@ const Citation = () => {
             </span>
           </h2>
           <p className="text-lg text-muted-foreground">
-            If ProtSpace supports your research, please cite it. The web application preprint is the
-            latest reference; the peer-reviewed paper describes the original tool.
+            If ProtSpace supports your research, please cite it. The web-application preprint is the
+            latest reference; the peer-reviewed article is the original ProtSpace publication.
           </p>
         </div>
 

@@ -139,7 +139,7 @@ Senoner, T., Vahidi, P., Olenyi, T., Senoner, F., Sisman, G., Kahl, E., Rost, B.
 ProtSpace: Protein Universe in Your Browser. bioRxiv. https://doi.org/10.64898/2026.05.04.722720
 ```
 
-The original ProtSpace tool paper (peer-reviewed):
+The original, peer-reviewed ProtSpace publication:
 
 ```
 Senoner, T., Olenyi, T., Heinzinger, M., Spannagl, A., Bouras, G., Rost, B., & Koludarov, I. (2025).

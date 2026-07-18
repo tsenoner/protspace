@@ -1,6 +1,6 @@
 # This CITATION.cff lets GitHub render a "Cite this repository" button.
 # `preferred-citation` (the web-application preprint) is what GitHub exports as
-# BibTeX/APA; the earlier peer-reviewed tool paper is listed under `references`.
+# BibTeX/APA; the earlier peer-reviewed publication is listed under `references`.
 # Update `preferred-citation` to the peer-reviewed version once it is published.
 cff-version: 1.2.0
 message: "If you use ProtSpace, please cite the preferred-citation below."

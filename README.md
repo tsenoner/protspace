@@ -75,7 +75,7 @@ If you use **ProtSpace**, please cite the web application preprint (latest):
 
 > Senoner, T., Vahidi, P., Olenyi, T., Senoner, F., Sisman, G., Kahl, E., Rost, B., & Koludarov, I. (2026). ProtSpace: Protein Universe in Your Browser. _bioRxiv_. https://doi.org/10.64898/2026.05.04.722720
 
-The original ProtSpace tool paper (peer-reviewed):
+The original, peer-reviewed ProtSpace publication:
 
 > Senoner, T., Olenyi, T., Heinzinger, M., Spannagl, A., Bouras, G., Rost, B., & Koludarov, I. (2025). ProtSpace: A Tool for Visualizing Protein Space. _Journal of Molecular Biology_, 437(15), 168940. https://doi.org/10.1016/j.jmb.2025.168940
 
