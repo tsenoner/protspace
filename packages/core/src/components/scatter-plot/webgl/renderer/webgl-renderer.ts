@@ -505,6 +505,25 @@ export class WebGLRenderer {
   }
 
   /**
+   * The exact data→pixel scales a reset-view (non-inset) export render maps
+   * points through at the given output physical pixel dimensions. Exposed so
+   * the badge capture path can project badge positions through the SAME
+   * function the exported dots use — re-deriving the margin/extent math
+   * elsewhere drifts (#301/#302). Uses the same inputs `renderToCanvas` hands
+   * to the export pipeline (last-rendered data + live config). Returns null
+   * before the first render or when the data is empty.
+   */
+  public createExportScales(exportWidth: number, exportHeight: number): ScalePair | null {
+    if (!this.lastRenderedData) return null;
+    return ExportRenderer.createExportScales(
+      this.getConfig(),
+      this.lastRenderedData,
+      exportWidth,
+      exportHeight,
+    );
+  }
+
+  /**
    * Display configuration the renderer would apply to a render at the given
    * export dimensions. Returned values are in *export pixel space* (i.e.
    * `marginLeft` is the pixel offset of the data area's left edge inside an

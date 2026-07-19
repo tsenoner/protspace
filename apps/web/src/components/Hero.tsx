@@ -68,7 +68,7 @@ const Hero = () => {
 
             <Button variant="outline-hero" size="lg" className="w-full sm:w-auto" asChild>
               <a
-                href="https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb"
+                href="https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Preparation.ipynb"
                 target="_blank"
                 rel="noopener noreferrer"
               >

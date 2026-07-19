@@ -39,7 +39,7 @@ import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
 import type { VisibilityModel } from './styling/visibility-model';
-import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer } from './webgl';
+import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer, computeSizeScaleFactor } from './webgl';
 import { resolveColor } from './webgl/color-utils';
 import { QuadtreeIndex } from './interaction/quadtree-index';
 import { computeViewportWindow, buildViewKey } from './duplicate-stacks/duplicate-stack-viewport';
@@ -219,6 +219,11 @@ export class ProtspaceScatterplot extends LitElement {
   // cacheKey so a rebuild forces a miss even when the transform is unchanged
   // (otherwise un-hidden points stay missing until a pan/zoom changes the key).
   private _quadtreeGeneration = 0;
+  // Slot list the quadtree was last rebuilt with (legend/filter-visible
+  // slots). Retained for the duplicate-badge capture path (#301): the
+  // full-extent compute iterates it against the raw PlotData arrays instead
+  // of traversing the quadtree (~93× slower at 570k points, research doc 04).
+  private _visibleSlots: number[] | null = null;
   private _hoverRaf: number | null = null;
   private _commitSelectionRafId: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
@@ -245,6 +250,7 @@ export class ProtspaceScatterplot extends LitElement {
     getScales: () => this._scales,
     getPlotData: () => this._plotData,
     getQuadtree: () => this._quadtreeIndex,
+    getVisibleSlots: () => this._visibleSlots,
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
     getColor: (p) => this._getColors(p)[0] ?? '#888888',
@@ -1151,6 +1157,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelCompute();
 
     if (!this._plotData.length || !this._scales) {
+      this._visibleSlots = null;
       this._dupOverlay.resetState();
       // F-17: an emptied quadtree also changes the indexed slot set; bump the
       // generation and invalidate so the transform-keyed cache cannot serve a
@@ -1172,6 +1179,7 @@ export class ProtspaceScatterplot extends LitElement {
       sp.originalIndex = origIdx;
       if (visibilityModel.isInteractive(sp)) visibleSlots.push(s);
     }
+    this._visibleSlots = visibleSlots;
     this._quadtreeIndex.setScales(this._scales);
     this._quadtreeIndex.rebuild(pd, visibleSlots);
     // Duplicate stacks are computed lazily for the current viewport (see the
@@ -2386,19 +2394,21 @@ export class ProtspaceScatterplot extends LitElement {
     );
 
     // Composite with badges canvas if present. For the unzoomed (resetView)
-    // capture, re-render the badges at the identity transform so they line up
-    // with the fit-all points; the live _badgesCanvas is positioned for the
-    // live zoom/pan and would otherwise leak the zoom into the figure (#294).
-    // The inset path (dataDomain set) keeps the live canvas — its badge handling
-    // is a separate, pre-existing concern.
+    // capture, render the full-extent badge set at the OUTPUT geometry via
+    // the overlay controller (#301/#302): positions go through the same
+    // export scales as the WebGL dots and the badge canvas matches
+    // webglCanvas's physical dims, so the drawImage below is a 1:1 copy
+    // (equal src/dst rects). The inset path (dataDomain set) keeps the live
+    // canvas — its badge handling is a separate, pre-existing concern — and
+    // the non-resetView path keeps the live canvas stretched to the output
+    // dims, exactly as before.
     const badgesCanvas =
       resetView && !dataDomain
-        ? this._dupOverlay.captureBadges(d3.zoomIdentity)
+        ? this._captureExportBadges(webglCanvas, dpr, pointSizeReference)
         : this._badgesCanvas;
     if (badgesCanvas && badgesCanvas.width > 0 && badgesCanvas.height > 0) {
       const ctx = webglCanvas.getContext('2d');
       if (ctx) {
-        // Scale badges to match output dimensions
         ctx.drawImage(
           badgesCanvas,
           0,
@@ -2428,6 +2438,42 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     return webglCanvas;
+  }
+
+  /**
+   * Badge capture at export geometry (#301/#302): project badges through the
+   * SAME scales the reset-view WebGL export just used (facade pass-through to
+   * ExportRenderer.createExportScales at the output's physical pixel dims)
+   * and scale badge geometry by the same dpr × sizeScaleFactor rule the
+   * exported dots' sizes use. Returns null (skip compositing) when export
+   * scales are unavailable (no renderer / nothing rendered / empty data).
+   */
+  private _captureExportBadges(
+    webglCanvas: HTMLCanvasElement,
+    dpr: number,
+    pointSizeReference?: { width: number; height: number },
+  ): HTMLCanvasElement | null {
+    const scales = this._webglRenderer?.createExportScales(webglCanvas.width, webglCanvas.height);
+    if (!scales) return null;
+    // webglCanvas.width/height are PHYSICAL (logical × dpr); pointSizeReference
+    // and the config dims are LOGICAL. Use logical reference dims so
+    // sizeScaleFactor matches the dots' factor exactly and the dpr applied below
+    // is not squared (mirrors ExportRenderer.initializeOffscreenContext). No-op
+    // at dpr = 1.
+    const logicalWidth = webglCanvas.width / dpr;
+    const logicalHeight = webglCanvas.height / dpr;
+    const sizeScaleFactor = computeSizeScaleFactor(
+      pointSizeReference?.width ?? logicalWidth,
+      pointSizeReference?.height ?? logicalHeight,
+      this._mergedConfig.width,
+      this._mergedConfig.height,
+    );
+    return this._dupOverlay.captureBadges({
+      scales,
+      width: webglCanvas.width,
+      height: webglCanvas.height,
+      badgeScale: dpr * sizeScaleFactor,
+    });
   }
 
   /**

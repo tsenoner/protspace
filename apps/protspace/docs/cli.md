@@ -60,12 +60,15 @@ protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3,tsne2" -o
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
-| `-e, --embedder` | Biocentral model shortcut (comma-separated for multi-model). | `prot_t5` |
-| `--batch-size` | Sequences per API call. | `1000` |
+| `-e, --embedder` | Model shortcut (comma-separated for multi-model). | `prot_t5` |
+| `-b, --backend` | Embedding engine: `biocentral` (remote API) or `local` (on-device GPU/CPU). | `biocentral` |
+| `--batch-size` | Sequences per batch. Backend default when unset: 1000 (API call) or 8 (local GPU micro-batch). | — |
 
 **Available embedders:** `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`, `esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
 
 > **Licensing:** `ankh_base`, `ankh_large`, `ankh3_large` (CC-BY-NC-SA-4.0), `esmc_600m` (Cambrian Non-Commercial). All others are permissively licensed.
+
+> **Local backend (`--backend local`):** computes embeddings on a local GPU/CPU via HuggingFace `transformers` instead of the remote Biocentral API — useful when the API is unavailable, or in Colab. Requires the extra: `pip install "protspace[local]"`. ESM-C uses the Synthyra ESM++ checkpoints for consistency with the API path. `esm2_3b` may exceed a free Colab T4 (16 GB) — prefer an L4/A100 runtime for it.
 
 #### Projection
 
@@ -140,10 +143,14 @@ This produces three projections: `ProtT5 — PCA 2`, `ProtT5 — UMAP 2 (n=15)`,
 
 ## `protspace embed`
 
-Generate HDF5 embeddings from FASTA via the Biocentral API.
+Generate HDF5 embeddings from FASTA, via the remote Biocentral API (default) or a local GPU/CPU (`--backend local`, needs `pip install "protspace[local]"`).
 
 ```bash
+# Remote Biocentral API (default)
 protspace embed -i sequences.fasta -e prot_t5 -e esm2_3b -o embeddings/
+
+# On-device GPU/CPU — works offline / when Biocentral is down
+protspace embed -i sequences.fasta -e prot_t5 -o embeddings/ --backend local
 ```
 
 ## `protspace project`

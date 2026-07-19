@@ -43,7 +43,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | Command | Purpose |
 |---------|---------|
 | `protspace prepare` | Full pipeline: embed → reduce → annotate → bundle |
-| `protspace embed` | FASTA → HDF5 embeddings via Biocentral API |
+| `protspace embed` | FASTA → HDF5 embeddings (Biocentral API or local GPU/CPU via `--backend local`) |
 | `protspace project` | HDF5 → dimensionality reduction |
 | `protspace annotate` | Fetch protein annotations |
 | `protspace bundle` | Combine projections + annotations → .parquetbundle |
@@ -59,6 +59,7 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 
 # From HDF5: protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 # From FASTA: protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
+# Local GPU/CPU embedding (offline, needs protspace[local]): protspace prepare -i seq.fasta -e prot_t5 --backend local -m pca2 -o output
 # Multi-model: protspace prepare -i seq.fasta -e prot_t5,esm2_3b -m pca2 -o output
 # All 12 pLMs: protspace prepare -i seq.fasta -e prot_t5,prost_t5,esm2_8m,esm2_35m,esm2_150m,esm2_650m,esm2_3b,ankh_base,ankh_large,ankh3_large,esmc_300m,esmc_600m -m pca2 -o output
 # Combine datasets (same name → union): protspace prepare -i species_a.h5:prot_t5 -i species_b.h5:prot_t5 -m umap2 -o output
@@ -144,7 +145,8 @@ src/protspace/
 │   │   ├── settings_converter.py # Settings table conversion
 │   │   └── writers.py          # Annotation output writers
 │   ├── embedding/
-│   │   └── biocentral.py       # Biocentral API client, model shortcut mappings
+│   │   ├── biocentral.py       # Biocentral API client, model shortcut mappings
+│   │   └── local.py            # Local GPU/CPU backend (HF transformers, [local] extra)
 │   ├── parsers/
 │   │   └── uniprot_parser.py   # UniProt XML/TSV parsing
 │   └── processors/
@@ -265,6 +267,8 @@ uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With
 | `test_annotation_select.py` | 6 | Annotation selection: suitability filter (cardinality/numeric/id-like exclusion), `auto` vs explicit-list label building (explicit names bypass the heuristic), missing-value dropping |
 | `test_annotation_validity.py` | 6 | `AnnotationValidityStatistic`: silhouette/DBI/CH scored per annotation on `ctx.coords`, embedding vs. projection `space_kind`, missing-value exclusion, single-category no-op, id-canonical subsample determinism |
 | `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
+| `test_backend_switch.py` | 10 | Embedding backend switch: `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
+| `test_local_embedder.py` | 21 | Local embedding backend: checkpoint resolution (12 short keys, Synthyra ESM-C), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, empty-output guard, esm2_8m end-to-end + resume (slow) |
 | `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
 | `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |
 | `test_taxonomy_annotation_retriever.py` | 15 | Taxonomy via UniProt Taxonomy API (mocked + integration) |
@@ -295,6 +299,10 @@ Located in `notebooks/`:
 **Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar, gunicorn
+
+**Local embedding (optional, `[local]` extra):** torch, transformers, sentencepiece, protobuf, einops — enables on-device embedding via `protspace.data.embedding.local` (issue #59; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
+
+**Local↔Biocentral parity (verified 2026-07-16):** local embeddings match the Biocentral API at **cosine ≥ 0.9999** for ProtT5, ProstT5, ESM2, Ankh, and Ankh3 (25-seq Pla2g2 cross-check; small rel-L2 is half-vs-full precision drift). **Exception — ESM-C:** local ESM-C (Synthyra ESM++) is bit-identical to native EvolutionaryScale ESM-C but **orthogonal to Biocentral's ESM-C** (cosine ~0.02). Root cause is on Biocentral's side: its engine (`biotrainer`) has no dedicated ESM-C embedder and its generic loader substring-matches `"esm"` in `ESMplusplus`, loading the ESM-C checkpoint as a vanilla ESM-2 model (wrong architecture/tokenizer) — so it never runs the real ESM-C. Do **not** mix local and Biocentral `esmc_*` embeddings in one dataset until Biocentral is fixed. See `docs/superpowers/plans/2026-07-13-colab-biocentral-independence.md` (PR3 results).
 
 **Dev:** pytest, pytest-cov, ruff
 
