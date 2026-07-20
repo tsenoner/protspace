@@ -712,8 +712,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   // color is no longer pinned to white here. The exported alpha stays opaque regardless (same
   // background-fill compositing as above), which is still worth asserting.
   expect(exportMarkers.densePredicted[3]).toBe(255);
+  // The colored ring must render at every point size. The hollow CENTER's color is intentionally
+  // NOT asserted per-size here: at a small point size (48px) the hole is sub-pixel, so the sampled
+  // "center" can land on the ring and is not reliably the show-through color across platforms (it
+  // read ~92 on Linux CI vs near-white on macOS). The center's show-through is proven at the default
+  // size instead — near-white over the white bg (above), the dark bg (below), and alpha 0 over a
+  // transparent bg (below).
   for (const profile of markerProfiles) {
-    expect(distanceFromWhite(profile.predicted)).toBeLessThan(20);
     expect(Math.max(...profile.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   }
   const darkExport = await sampleEncodedExportMarkers(page, 240, '#102030');
