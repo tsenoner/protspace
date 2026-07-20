@@ -68,6 +68,7 @@ out vec4 fragColor;
 
 const float PI = 3.14159265359;
 const float SQRT3 = 1.73205080757;
+const float PREDICTED_INTERIOR_FILL = 0.0; // 1.0 = filled knockout (old), 0.0 = hollow
 
 void main() {
   vec2 coord = gl_PointCoord * 2.0 - 1.0;
@@ -115,9 +116,10 @@ void main() {
   float predictedInterior = 0.0;
   if (v_predicted > 0.5) {
     // Keep the ring legible at every sprite size without allowing derivative scaling to consume
-    // the interior. The opaque surface-color knockout prevents earlier overlapping points from showing
-    // through the hole and visually turning a transferred ring back into a filled marker.
-    float ringWidth = clamp(aa * 1.75, 0.22, 0.42);
+    // the interior. With PREDICTED_INTERIOR_FILL = 1.0 the opaque surface-color knockout would
+    // prevent earlier overlapping points from showing through the hole; at 0.0 (hollow) that
+    // show-through is allowed for densely overlapping markers — an accepted trade-off.
+    float ringWidth = clamp(aa * 1.75, 0.30, 0.55);
     float interiorAa = min(aa, (1.0 - ringWidth) * 0.5);
     predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
   }
@@ -157,12 +159,14 @@ void main() {
     finalColor = finalColor * 0.5;
   }
 
-  // Predicted interiors use an opaque plot-surface knockout. Mix premultiplied components
-  // explicitly so the ring/interior transition remains correct for reliability-faded points.
-  float finalAlpha = mix(v_color.a, 1.0, predictedInterior) * shapeAlpha;
+  // Predicted interiors mix toward PREDICTED_INTERIOR_FILL (hollow=0.0, filled-knockout=1.0).
+  // Mix premultiplied components explicitly so the ring/interior transition remains correct
+  // for reliability-faded points.
+  float finalAlpha = mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
   vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
   vec3 premultipliedColor =
-    mix(finalColor * v_color.a, linearKnockoutColor, predictedInterior) * shapeAlpha;
+    mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
+    shapeAlpha;
   fragColor = vec4(premultipliedColor, finalAlpha);
 }`;
 

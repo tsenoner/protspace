@@ -15,11 +15,18 @@ describe('point shaders', () => {
       'predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);',
     );
     expect(POINT_FRAGMENT_SHADER).toContain(
-      'mix(finalColor * v_color.a, linearKnockoutColor, predictedInterior)',
+      'mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior)',
     );
     expect(POINT_FRAGMENT_SHADER).toContain('uniform vec3 u_knockoutColor;');
     expect(POINT_FRAGMENT_SHADER).toContain('v_predicted < 0.5');
-    expect(POINT_FRAGMENT_SHADER).toContain('clamp(aa * 1.75, 0.22, 0.42)');
+    expect(POINT_FRAGMENT_SHADER).toContain('clamp(aa * 1.75, 0.30, 0.55)');
     expect(POINT_FRAGMENT_SHADER).toContain('min(aa, (1.0 - ringWidth) * 0.5)');
+  });
+
+  it('makes the predicted interior hollow via a single revertible flag', () => {
+    expect(POINT_FRAGMENT_SHADER).toContain('const float PREDICTED_INTERIOR_FILL = 0.0;');
+    expect(POINT_FRAGMENT_SHADER).toContain(
+      'mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior)',
+    );
   });
 });

@@ -222,6 +222,10 @@ async function sampleEncodedExportMarkers(
         const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
         return Array.from(rgba);
       };
+      // At 0.75 * radius (sqrt(pointSize)/4 vs. the sqrt(pointSize)/3 sprite radius, see
+      // stage-point.ts POINT_SIZE_DIVISOR) this offset lands well inside the ring band for both
+      // the pre-Task-3 ringWidth clamp(aa*1.75, 0.22, 0.42) and the thicker
+      // clamp(aa*1.75, 0.30, 0.55) — the wider ring only grows margin, it never shrinks it.
       const ringOffset = Math.max(1, Math.round(Math.sqrt(pointSize) / 4));
       const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
       const predictedRingOffsets = [
@@ -664,13 +668,23 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     Math.abs(255 - red) + Math.abs(255 - green) + Math.abs(255 - blue);
   expect(exportMarkers.predictedNearestNeighbor).toBeGreaterThan(8);
   expect(exportMarkers.observedNearestNeighbor).toBeGreaterThan(8);
+  // Predicted interiors are hollow (Task 3: #3+#4) — `captureAtResolution` fills the export
+  // canvas with an opaque `backgroundColor` first and then composites the WebGL layer over it
+  // ("source-over"), so a fully transparent hole still resolves to an opaque background-colored
+  // pixel here. The center only reads as truly transparent when the export itself has no opaque
+  // background fill (see the `'transparent'` backgroundColor case below).
   expect(exportMarkers.predicted[3]).toBe(255);
   expect(exportMarkers.observed[3]).toBe(255);
   expect(distanceFromWhite(exportMarkers.predicted)).toBeLessThan(20);
   expect(Math.max(...exportMarkers.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   expect(distanceFromWhite(exportMarkers.observed)).toBeGreaterThan(60);
   expect(exportMarkers.densePredictedNearestNeighbor).toBeLessThan(0.5);
-  expect(distanceFromWhite(exportMarkers.densePredicted)).toBeLessThan(20);
+  // Hollow interiors intentionally drop the opaque-knockout protection against overlapping
+  // markers: a densely overlapping predicted point's "hole" can now reveal whatever was painted
+  // underneath it in the same WebGL pass instead of always matching the plot background, so the
+  // color is no longer pinned to white here. The exported alpha stays opaque regardless (same
+  // background-fill compositing as above), which is still worth asserting.
+  expect(exportMarkers.densePredicted[3]).toBe(255);
   for (const profile of markerProfiles) {
     expect(distanceFromWhite(profile.predicted)).toBeLessThan(20);
     expect(Math.max(...profile.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
@@ -682,7 +696,11 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       Math.abs(darkExport.predicted[2] - 48),
   ).toBeLessThan(20);
   const transparentExport = await sampleEncodedExportMarkers(page, 240, 'transparent');
-  expect(distanceFromWhite(transparentExport.predicted)).toBeLessThan(20);
+  // With backgroundColor: 'transparent', `captureAtResolution` skips the opaque-fill compositing
+  // step entirely and returns the raw WebGL canvas, which is cleared to (0,0,0,0). An isolated
+  // hollow predicted point's center is therefore genuinely transparent here — unlike the opaque
+  // exports above, there is no background fill underneath it to composite onto.
+  expect(transparentExport.predicted[3]).toBe(0);
   expect(transparentExport.corner[3]).toBe(0);
 
   await controlBar.getByRole('button', { name: 'Export' }).click();
