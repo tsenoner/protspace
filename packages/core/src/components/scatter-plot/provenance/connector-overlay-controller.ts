@@ -89,9 +89,11 @@ export class ConnectorOverlayController {
   }
 
   /**
-   * Keep endpoint halos at a constant screen-space diameter while their parent SVG group carries
-   * the data-space zoom transform. This updates only circle geometry; it does not rebuild the
-   * connector join or resolve protein ids during a zoom gesture.
+   * Keep endpoint halos at a constant screen-space diameter, and connector lines trimmed to the
+   * halo boundary by a constant screen-space margin, while their parent SVG group carries the
+   * data-space zoom transform. This mutates existing circle/line attributes in place from the
+   * `data-c*` anchors each line already carries; it does not rebuild the connector join or
+   * resolve protein ids during a zoom gesture.
    */
   updateZoomScale(scale: number): void {
     this.zoomScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
@@ -102,7 +104,20 @@ export class ConnectorOverlayController {
     overlay
       ?.selectAll<SVGLineElement, unknown>('line.eat-provenance-connector')
       .attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale)
-      .attr('stroke-dasharray', this.connectorDasharray());
+      .attr('stroke-dasharray', this.connectorDasharray())
+      .each((_d, index, nodes) => {
+        const line = nodes[index];
+        const trimmed = this.trimmedLine(
+          Number(line.getAttribute('data-cx1')),
+          Number(line.getAttribute('data-cy1')),
+          Number(line.getAttribute('data-cx2')),
+          Number(line.getAttribute('data-cy2')),
+        );
+        line.setAttribute('x1', String(trimmed.x1));
+        line.setAttribute('y1', String(trimmed.y1));
+        line.setAttribute('x2', String(trimmed.x2));
+        line.setAttribute('y2', String(trimmed.y2));
+      });
   }
 
   // Current "Shape size" point-size config; shared by endpointBaseRadiusPx and
@@ -128,6 +143,39 @@ export class ConnectorOverlayController {
   // vector-effect: non-scaling-stroke no longer covers the whole stroke paint op for this line.
   private connectorDasharray(): string {
     return `${5 / this.zoomScale} ${4 / this.zoomScale}`;
+  }
+
+  /**
+   * Pull each line endpoint back toward the other end by the halo's own on-screen radius, so the
+   * dashed line always approaches but never overlaps the endpoint marker — the line and its halo
+   * meet cleanly at the same boundary regardless of point size or zoom, instead of the line
+   * running underneath/through a marker whose size varies with "Shape size". Endpoints closer
+   * together than twice that margin (near-duplicate or overlapping points) collapse to a
+   * zero-length line at the midpoint rather than crossing past each other.
+   */
+  private trimmedLine(
+    cx1: number,
+    cy1: number,
+    cx2: number,
+    cy2: number,
+  ): { x1: number; y1: number; x2: number; y2: number } {
+    const margin = this.endpointBaseRadiusPx() / this.zoomScale;
+    const dx = cx2 - cx1;
+    const dy = cy2 - cy1;
+    const length = Math.hypot(dx, dy);
+    if (length <= margin * 2) {
+      const midX = (cx1 + cx2) / 2;
+      const midY = (cy1 + cy2) / 2;
+      return { x1: midX, y1: midY, x2: midX, y2: midY };
+    }
+    const ux = dx / length;
+    const uy = dy / length;
+    return {
+      x1: cx1 + ux * margin,
+      y1: cy1 + uy * margin,
+      x2: cx2 - ux * margin,
+      y2: cy2 - uy * margin,
+    };
   }
 
   render(): void {
@@ -174,12 +222,21 @@ export class ConnectorOverlayController {
       .data(resolved, (pair) => `${pair.sourceProteinId}\u0000${pair.targetProteinId}`)
       .join('line')
       .attr('class', 'eat-provenance-connector')
-      .attr('x1', (pair) => pair.x1)
-      .attr('y1', (pair) => pair.y1)
-      .attr('x2', (pair) => pair.x2)
-      .attr('y2', (pair) => pair.y2)
+      // True endpoint centers, retained so updateZoomScale can re-trim without re-resolving ids.
+      .attr('data-cx1', (pair) => pair.x1)
+      .attr('data-cy1', (pair) => pair.y1)
+      .attr('data-cx2', (pair) => pair.x2)
+      .attr('data-cy2', (pair) => pair.y2)
       .attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale)
-      .attr('stroke-dasharray', this.connectorDasharray());
+      .attr('stroke-dasharray', this.connectorDasharray())
+      .each((pair, index, nodes) => {
+        const line = nodes[index];
+        const trimmed = this.trimmedLine(pair.x1, pair.y1, pair.x2, pair.y2);
+        line.setAttribute('x1', String(trimmed.x1));
+        line.setAttribute('y1', String(trimmed.y1));
+        line.setAttribute('x2', String(trimmed.x2));
+        line.setAttribute('y2', String(trimmed.y2));
+      });
 
     const endpoints = new Map<string, { id: string; x: number; y: number }>();
     for (const pair of resolved) {

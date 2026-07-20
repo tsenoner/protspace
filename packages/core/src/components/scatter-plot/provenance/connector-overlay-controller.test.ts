@@ -25,6 +25,37 @@ const EXPECTED_BASE_RADIUS_PX = Math.max(4, Math.sqrt(240) / 3 + 2);
 // default), so expectations track the formula instead of a hand-computed constant.
 const EXPECTED_STROKE_WIDTH_PX = Math.max(1, Math.sqrt(240) / 10);
 
+// Mirrors ConnectorOverlayController#trimmedLine: pulls each endpoint back toward the other by
+// `marginPx / zoomScale`, collapsing to the midpoint when the two margins would overlap. Lets
+// tests assert against the same formula the implementation uses instead of hand-computed
+// trimmed coordinates that would silently drift if the margin or collapse rule changes.
+function expectedTrimmedLine(
+  cx1: number,
+  cy1: number,
+  cx2: number,
+  cy2: number,
+  marginPx: number,
+  zoomScale = 1,
+): { x1: number; y1: number; x2: number; y2: number } {
+  const margin = marginPx / zoomScale;
+  const dx = cx2 - cx1;
+  const dy = cy2 - cy1;
+  const length = Math.hypot(dx, dy);
+  if (length <= margin * 2) {
+    const midX = (cx1 + cx2) / 2;
+    const midY = (cy1 + cy2) / 2;
+    return { x1: midX, y1: midY, x2: midX, y2: midY };
+  }
+  const ux = dx / length;
+  const uy = dy / length;
+  return {
+    x1: cx1 + ux * margin,
+    y1: cy1 + uy * margin,
+    x2: cx2 - ux * margin,
+    y2: cy2 - uy * margin,
+  };
+}
+
 describe('ConnectorOverlayController', () => {
   let svg: SVGSVGElement;
   let overlay: d3.Selection<SVGGElement, unknown, null, undefined>;
@@ -57,12 +88,28 @@ describe('ConnectorOverlayController', () => {
       totalCandidates: 1,
     });
 
+    // Raw resolved centers are (10,60) source -> (20,50) target; at the default margin
+    // (~7.16px) that's inside twice the margin, so the rendered line's endpoints collapse to
+    // their midpoint (line-to-halo-boundary trimming, see 'trims the connector line' below) —
+    // the halo circles below still sit at the untrimmed centers, which is what id resolution
+    // actually resolves to.
     const line = svg.querySelector('line.eat-provenance-connector');
-    expect(line?.getAttribute('x1')).toBe('10');
-    expect(line?.getAttribute('y1')).toBe('60');
-    expect(line?.getAttribute('x2')).toBe('20');
-    expect(line?.getAttribute('y2')).toBe('50');
-    expect(svg.querySelectorAll('circle.eat-provenance-endpoint')).toHaveLength(2);
+    const trimmed = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmed.x1, 10);
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(trimmed.y1, 10);
+    expect(Number(line?.getAttribute('x2'))).toBeCloseTo(trimmed.x2, 10);
+    expect(Number(line?.getAttribute('y2'))).toBeCloseTo(trimmed.y2, 10);
+
+    const circles = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(circles).toHaveLength(2);
+    expect(
+      circles.map((c) => [Number(c.getAttribute('cx')), Number(c.getAttribute('cy'))]),
+    ).toEqual(
+      expect.arrayContaining([
+        [10, 60],
+        [20, 50],
+      ]),
+    );
     expect(status).toEqual({ shown: 1, total: 1, missingEndpoints: 0 });
   });
 
@@ -127,7 +174,8 @@ describe('ConnectorOverlayController', () => {
     });
     const line = svg.querySelector('line.eat-provenance-connector');
     overlay.attr('transform', 'translate(10,20) scale(2)');
-    expect(line?.getAttribute('x1')).toBe('10');
+    const trimmedBefore = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedBefore.x1, 10);
 
     scales = {
       x: d3.scaleLinear().domain([0, 10]).range([0, 200]),
@@ -135,7 +183,10 @@ describe('ConnectorOverlayController', () => {
     };
     controller.render();
 
-    expect(svg.querySelector('line')?.getAttribute('x1')).toBe('20');
+    // Wider range moves the raw centers to (20,120) -> (40,100), comfortably past twice the
+    // margin, so this now exercises the non-collapsed trim branch.
+    const trimmedAfter = expectedTrimmedLine(20, 120, 40, 100, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(svg.querySelector('line')?.getAttribute('x1'))).toBeCloseTo(trimmedAfter.x1, 10);
     expect(overlay.attr('transform')).toBe('translate(10,20) scale(2)');
   });
 
@@ -160,7 +211,8 @@ describe('ConnectorOverlayController', () => {
       EXPECTED_BASE_RADIUS_PX / 2.5,
     ]);
     expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
-    expect(line?.getAttribute('x1')).toBe('10');
+    const trimmedAtZoom = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX, 2.5);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedAtZoom.x1, 10);
 
     controller.updateZoomScale(Number.NaN);
     expect(endpointsAfter.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
@@ -220,7 +272,8 @@ describe('ConnectorOverlayController', () => {
       EXPECTED_STROKE_WIDTH_PX / 2.5,
       10,
     );
-    expect(line?.getAttribute('x1')).toBe('10');
+    const trimmedAtZoom = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX, 2.5);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedAtZoom.x1, 10);
 
     controller.updateZoomScale(Number.NaN);
     expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(EXPECTED_STROKE_WIDTH_PX, 10);
@@ -241,6 +294,83 @@ describe('ConnectorOverlayController', () => {
 
     controller.updateZoomScale(Number.NaN);
     expect(line?.getAttribute('stroke-dasharray')).toBe('5 4');
+  });
+
+  it('trims the connector line to the halo boundary without moving the halo itself', () => {
+    scales = {
+      x: d3.scaleLinear().domain([0, 10]).range([0, 1000]),
+      y: d3.scaleLinear().domain([0, 10]).range([1000, 0]),
+    };
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    // Raw resolved centers: source (1,4) -> (100,600); target (2,5) -> (200,500). Well past
+    // twice the default halo margin (~7.16px), so this exercises the non-collapsed trim branch.
+    const line = svg.querySelector('line.eat-provenance-connector');
+    const trimmed = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmed.x1, 10);
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(trimmed.y1, 10);
+    expect(Number(line?.getAttribute('x2'))).toBeCloseTo(trimmed.x2, 10);
+    expect(Number(line?.getAttribute('y2'))).toBeCloseTo(trimmed.y2, 10);
+
+    // Each trimmed endpoint sits exactly one halo radius from its own untrimmed center, along
+    // the source<->target direction — the line meets the halo boundary, not the center.
+    expect(Math.hypot(trimmed.x1 - 100, trimmed.y1 - 600)).toBeCloseTo(EXPECTED_BASE_RADIUS_PX, 10);
+    expect(Math.hypot(trimmed.x2 - 200, trimmed.y2 - 500)).toBeCloseTo(EXPECTED_BASE_RADIUS_PX, 10);
+
+    // Halos are unaffected by the trim — still centered exactly on the resolved points, so
+    // hover/click hit-targets and tooltips keep referring to the true point location.
+    const circles = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(
+      circles.map((c) => [Number(c.getAttribute('cx')), Number(c.getAttribute('cy'))]),
+    ).toEqual(
+      expect.arrayContaining([
+        [100, 600],
+        [200, 500],
+      ]),
+    );
+  });
+
+  it('collapses the connector line to its midpoint when endpoints are closer than twice the halo margin', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    // The shared beforeEach scale puts source/target ~14.14px apart — inside twice the default
+    // ~7.16px margin — so the line collapses to a point rather than crossing past its own halos.
+    const line = svg.querySelector('line.eat-provenance-connector');
+    expect(line?.getAttribute('x1')).toBe(line?.getAttribute('x2'));
+    expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'));
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(15, 10); // (10 + 20) / 2
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(55, 10); // (60 + 50) / 2
+  });
+
+  it('keeps the line-to-halo trim margin constant through zoom', () => {
+    scales = {
+      x: d3.scaleLinear().domain([0, 10]).range([0, 1000]),
+      y: d3.scaleLinear().domain([0, 10]).range([1000, 0]),
+    };
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+
+    controller.updateZoomScale(4);
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    const trimmedAtZoom = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX, 4);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedAtZoom.x1, 10);
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(trimmedAtZoom.y1, 10);
+    // The margin shrinks in data-space as zoomScale grows, so the ON-SCREEN margin (data-space
+    // margin * zoomScale) stays pinned to the halo's own on-screen radius at every zoom level.
+    const dataSpaceMargin = Math.hypot(trimmedAtZoom.x1 - 100, trimmedAtZoom.y1 - 600);
+    expect(dataSpaceMargin * 4).toBeCloseTo(EXPECTED_BASE_RADIUS_PX, 10);
+
+    controller.updateZoomScale(Number.NaN);
+    const trimmedReset = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedReset.x1, 10);
   });
 
   it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {
