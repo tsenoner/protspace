@@ -17,6 +17,10 @@ const plotData: PlotData = {
   proteinIds: ['target', 'outside', 'source'],
 };
 
+// Mirrors ConnectorOverlayController#endpointBaseRadiusPx for pointSize 240 (the
+// default), so expectations track the formula instead of a hand-computed constant.
+const EXPECTED_BASE_RADIUS_PX = Math.max(4, Math.sqrt(240) / 3 + 2);
+
 describe('ConnectorOverlayController', () => {
   let svg: SVGSVGElement;
   let overlay: d3.Selection<SVGGElement, unknown, null, undefined>;
@@ -36,6 +40,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => plotData,
       getScales: () => scales,
+      getPointSize: () => 240,
       onStatusChange: (next) => {
         status = next;
       },
@@ -137,20 +142,27 @@ describe('ConnectorOverlayController', () => {
     });
     const line = svg.querySelector('line.eat-provenance-connector');
     const endpointsBefore = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
-    expect(endpointsBefore.map((endpoint) => endpoint.getAttribute('r'))).toEqual(['7', '7']);
+    expect(endpointsBefore.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
+      EXPECTED_BASE_RADIUS_PX,
+      EXPECTED_BASE_RADIUS_PX,
+    ]);
 
     controller.updateZoomScale(2.5);
 
     const endpointsAfter = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
     expect(endpointsAfter).toEqual(endpointsBefore);
     expect(endpointsAfter.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
-      2.8, 2.8,
+      EXPECTED_BASE_RADIUS_PX / 2.5,
+      EXPECTED_BASE_RADIUS_PX / 2.5,
     ]);
     expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
     expect(line?.getAttribute('x1')).toBe('10');
 
     controller.updateZoomScale(Number.NaN);
-    expect(endpointsAfter.map((endpoint) => endpoint.getAttribute('r'))).toEqual(['7', '7']);
+    expect(endpointsAfter.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
+      EXPECTED_BASE_RADIUS_PX,
+      EXPECTED_BASE_RADIUS_PX,
+    ]);
   });
 
   it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {

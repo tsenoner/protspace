@@ -38,6 +38,8 @@ interface ConnectorOverlayDeps {
   getOverlayGroup: () => Selection<SVGGElement, unknown, null, undefined> | null;
   getPlotData: () => PlotData;
   getScales: () => ScalePair | null;
+  /** Current "Shape size" point-size config; defaults to 240 (the config default). */
+  getPointSize?: () => number;
   onStatusChange: (status: ProvenanceConnectorStatus | null) => void;
 }
 
@@ -47,8 +49,6 @@ interface ResolvedConnector extends ProvenanceConnectorPair {
   x2: number;
   y2: number;
 }
-
-const PROVENANCE_ENDPOINT_RADIUS_PX = 7;
 
 /**
  * Owns the transient EAT provenance SVG layer. Requests retain protein ids—not coordinates—so a
@@ -98,7 +98,15 @@ export class ConnectorOverlayController {
     this.deps
       .getOverlayGroup()
       ?.selectAll<SVGCircleElement, unknown>('circle.eat-provenance-endpoint')
-      .attr('r', PROVENANCE_ENDPOINT_RADIUS_PX / this.zoomScale);
+      .attr('r', this.endpointBaseRadiusPx() / this.zoomScale);
+  }
+
+  // On-screen point radius ≈ sqrt(pointSize)/3 (matches the WebGL/hit-test formula;
+  // keep in sync with POINT_SIZE_DIVISOR in stage-point.ts). Halo sits just outside.
+  private endpointBaseRadiusPx(): number {
+    const pointSize = this.deps.getPointSize?.() ?? 240;
+    const pointRadiusPx = Math.sqrt(Math.max(pointSize, 1)) / 3;
+    return Math.max(4, pointRadiusPx + 2);
   }
 
   render(): void {
@@ -164,7 +172,7 @@ export class ConnectorOverlayController {
       .attr('class', 'eat-provenance-endpoint')
       .attr('cx', (endpoint) => endpoint.x)
       .attr('cy', (endpoint) => endpoint.y)
-      .attr('r', PROVENANCE_ENDPOINT_RADIUS_PX / this.zoomScale);
+      .attr('r', this.endpointBaseRadiusPx() / this.zoomScale);
 
     this.deps.onStatusChange(getProvenanceConnectorStatus(request, resolved.length));
   }

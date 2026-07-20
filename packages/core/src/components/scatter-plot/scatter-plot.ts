@@ -263,6 +263,7 @@ export class ProtspaceScatterplot extends LitElement {
     getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
     getPlotData: () => this._plotData,
     getScales: () => this._scales,
+    getPointSize: () => this._mergedConfig.pointSize,
     onStatusChange: (status) => {
       if (
         this._connectorStatus?.shown === status?.shown &&
