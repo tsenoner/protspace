@@ -1,3 +1,6 @@
+from functools import cache
+
+
 # https://plotly.com/python/marker-style/
 def extract_marker_strings(input_list):
     # Filter out integers and string representations of numbers
@@ -34,19 +37,22 @@ MARKER_SHAPES_3D = [
 
 # plotly ships only in the `frontend` extra, so it must stay out of the import
 # path — the CLI (embed/project/transfer) imports this module too.
+@cache
+def _marker_shapes_2d():
+    try:
+        from plotly.validator_cache import ValidatorCache
+    except ImportError as exc:
+        # AttributeError keeps hasattr()/getattr(default) probes working on
+        # core-only installs instead of exploding with ModuleNotFoundError.
+        raise AttributeError(
+            "MARKER_SHAPES_2D requires plotly: pip install 'protspace[frontend]'"
+        ) from exc
+
+    validator = ValidatorCache.get_validator("scatter.marker", "symbol")
+    return sorted(extract_marker_strings(validator.values))
+
+
 def __getattr__(name):
     if name == "MARKER_SHAPES_2D":
-        try:
-            from plotly.validator_cache import ValidatorCache
-        except ImportError as exc:
-            # AttributeError keeps hasattr()/getattr(default) probes working on
-            # core-only installs instead of exploding with ModuleNotFoundError.
-            raise AttributeError(
-                "MARKER_SHAPES_2D requires plotly: pip install 'protspace[frontend]'"
-            ) from exc
-
-        validator = ValidatorCache.get_validator("scatter.marker", "symbol")
-        value = sorted(extract_marker_strings(validator.values))
-        globals()[name] = value
-        return value
+        return _marker_shapes_2d()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

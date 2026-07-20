@@ -15,6 +15,9 @@ from .config import (
 )
 from .constants import is_projection_3d, standardize_missing
 
+# Names that must not be resolved at import time (they pull in plotly).
+_LAZY_FROM_CONFIG = frozenset({"MARKER_SHAPES_2D"})
+
 __all__ = [
     "DEFAULT_PORT",
     "HELP_PANEL_WIDTH_PERCENT",
@@ -25,8 +28,8 @@ __all__ = [
     "NAN_COLOR",
     "HIGHLIGHT_COLOR",
     "HIGHLIGHT_BORDER_COLOR",
-    "MARKER_SHAPES_3D",
     "MARKER_SHAPES_2D",
+    "MARKER_SHAPES_3D",
     "standardize_missing",
     "is_projection_3d",
 ]
@@ -34,7 +37,8 @@ __all__ = [
 
 def __getattr__(name):
     # MARKER_SHAPES_2D stays lazy (it needs plotly); forward so the historical
-    # `from protspace.core import MARKER_SHAPES_2D` keeps working.
-    if name == "MARKER_SHAPES_2D":
+    # `from protspace.core import MARKER_SHAPES_2D` keeps working. config's own
+    # __getattr__ owns both the lazy resolution and the install-hint message.
+    if name in _LAZY_FROM_CONFIG:
         return getattr(config, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
