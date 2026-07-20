@@ -16,9 +16,6 @@ export type EatCompanionKind = keyof typeof EAT_COMPANION_SUFFIXES;
 
 export const EAT_CONFIDENCE_SUFFIX = '__eat_confidence';
 export const DEFAULT_EAT_CONFIDENCE_THRESHOLD = 0.5;
-export const EAT_MIN_OPACITY = 0.25;
-export const EAT_MAX_OPACITY = 0.9;
-export const EAT_BELOW_THRESHOLD_FACTOR = 0.35;
 
 const EAT_COMPANION_RE = /^(.*)__pred_(value|confidence|source)$/;
 

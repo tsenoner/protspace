@@ -1542,8 +1542,6 @@ export class ProtspaceScatterplot extends LitElement {
         selectedProteinIds: this.selectedProteinIds,
         highlightedProteinIds: this.highlightedProteinIds,
         opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
-        eatOverlayEnabled: this.eatOverlayEnabled,
-        eatConfidenceThreshold: this.eatConfidenceThreshold,
       },
       this._visibilityModelCache ?? undefined,
     );

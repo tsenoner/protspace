@@ -60,8 +60,11 @@ function baseInputs(overrides: Partial<VisibilityInputs> = {}): VisibilityInputs
 }
 
 describe('computeVisibilityModel', () => {
-  describe('EAT reliability opacity', () => {
-    it('maps confidence endpoints and fades values below the threshold without hiding them', () => {
+  // ── #6a: reliability dimming removed — predicted points render at base
+  // opacity, identical to observed points, distinguished only by the hollow
+  // ring glyph (drawn elsewhere). Confidence no longer feeds opacity at all.
+  describe('predicted points render at base opacity (dimming removed)', () => {
+    it('a predicted point with no selection returns opacities.base and is interactive', () => {
       const data = makeData(['A', 'B'], Int32Array.of(0, 1));
       data.annotation_predicted = {
         annot: [
@@ -69,17 +72,13 @@ describe('computeVisibilityModel', () => {
           { value: 'B', confidence: 1, source: 'ref' },
         ],
       };
-      const full = computeVisibilityModel(
-        baseInputs({ data, eatOverlayEnabled: true, eatConfidenceThreshold: 0 }),
-      );
-      expect(full.opacityOf(point('p0', 0))).toBe(0.25);
-      expect(full.opacityOf(point('p1', 1))).toBe(0.9);
-
-      const thresholded = computeVisibilityModel(
-        baseInputs({ data, eatOverlayEnabled: true, eatConfidenceThreshold: 0.5 }),
-      );
-      expect(thresholded.opacityOf(point('p0', 0))).toBe(0.25 * 0.35);
-      expect(thresholded.isInteractive(point('p0', 0))).toBe(true);
+      const model = computeVisibilityModel(baseInputs({ data }));
+      expect(model.baseOpacityOf(point('p0', 0))).toBe(OPACITIES.base);
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
+      expect(model.isInteractive(point('p0', 0))).toBe(true);
+      // Low-confidence prediction gets no special treatment either — same base opacity.
+      expect(model.baseOpacityOf(point('p1', 1))).toBe(OPACITIES.base);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.base);
     });
 
     it('keeps hidden precedence and lets endpoint highlight win', () => {
@@ -90,7 +89,6 @@ describe('computeVisibilityModel', () => {
       const highlighted = computeVisibilityModel(
         baseInputs({
           data,
-          eatOverlayEnabled: true,
           highlightedProteinIds: ['p1'],
         }),
       );
@@ -99,7 +97,6 @@ describe('computeVisibilityModel', () => {
       const hidden = computeVisibilityModel(
         baseInputs({
           data,
-          eatOverlayEnabled: true,
           highlightedProteinIds: ['p1'],
           hiddenAnnotationValues: ['B'],
         }),
