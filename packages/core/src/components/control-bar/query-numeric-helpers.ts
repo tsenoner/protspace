@@ -43,15 +43,19 @@ export function isNumericConditionReady(condition: NumericCondition): boolean {
  * Asymmetry to be aware of: the NOT operator is applied as an index-based
  * complement over all proteins (see `complement()` in query-evaluate.ts), NOT
  * by inverting this predicate. A null-valued protein is excluded by a positive
- * op but RE-INCLUDED by `NOT <op>`. This has no effect on shipped data today:
- * the only numeric annotation is sequence length, which is always present (no
- * nulls). Categorical filters already expose `__NA__` as the supported way to
- * match/negate missing values; there is no numeric equivalent yet.
+ * op but RE-INCLUDED by `NOT <op>`. Categorical filters already expose
+ * `__NA__` as the supported way to match/negate missing values; there is no
+ * numeric equivalent yet.
  *
- * TODO: when a nullable numeric annotation ships, decide the null rule per
- * operator AND under NOT (e.g. add an explicit "is missing" affordance, or make
- * NOT invert this predicate so nulls stay excluded), and add evaluate-layer
- * tests for the NOT + null + numeric combination.
+ * This NOT + null combination is intentionally relied on: the nullable
+ * `__eat_confidence` numeric annotation (reliability score on EAT-predicted
+ * points) ships with `NOT(EAT_confidence < X)` as the reliability filter's
+ * query condition, so sub-threshold predictions are hidden while curated
+ * points — which have no confidence score, i.e. null — are re-included by the
+ * NOT complement rather than getting hidden alongside them. Locked by the
+ * evaluate-layer characterization tests in query-evaluate.test.ts
+ * (describe('NOT + null (curated retained)')); change this predicate's null
+ * handling only with that behavior in mind.
  */
 export function matchesNumericValue(value: number | null, condition: NumericCondition): boolean {
   if (value === null) return false;
