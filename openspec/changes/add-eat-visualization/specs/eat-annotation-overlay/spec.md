@@ -305,27 +305,23 @@ column-level model-prediction badge.
 - **WHEN** the user hovers an observed protein
 - **THEN** no per-cell EAT provenance block is shown for that annotation
 
-### Requirement: Legend accounts for observed, transferred, and no-annotation populations
+### Requirement: Legend accounts for observed and transferred populations
 
 For an active EAT base annotation with the overlay enabled, the legend SHALL render a distinct
-“Predicted (transferred)” section with filled “Observed,” hollow “Predicted by EAT,” and explicit
-“No annotation” rows with live counts from the current filtered/isolation view. Because the
-no-annotation population has the same meaning as the existing N/A category, the row SHALL not add a
-duplicate explanatory popover. Observed plus
-transferred plus no-annotation SHALL equal the represented protein population. This section SHALL not
-replace or reuse the column-level predicted badge.
+“Predicted (transferred)” section with filled “Observed” and hollow “Predicted by EAT” rows with
+live counts from the current filtered/isolation view. Proteins whose only value is the NA category
+are already represented by the dataset's existing N/A legend entry and SHALL NOT be duplicated in
+this section. This section SHALL not replace or reuse the column-level predicted badge.
 
 #### Scenario: Full dataset counts
 
 - **WHEN** an EAT base annotation is active in the full dataset
-- **THEN** the legend reports observed, transferred, and no-annotation counts whose sum equals the
-  number of proteins represented by that annotation view
+- **THEN** the legend reports observed and transferred counts for that annotation view
 
 #### Scenario: Constrained-view counts
 
 - **WHEN** filtering or isolation changes the visible protein set
-- **THEN** the observed, transferred, and no-annotation counts update to the constrained view
-- **AND** their sum equals the constrained represented population
+- **THEN** the observed and transferred counts update to the constrained view
 
 #### Scenario: Non-EAT or disabled view
 
@@ -334,12 +330,6 @@ replace or reuse the column-level predicted badge.
 - **WHEN** the active EAT overlay is disabled
 - **THEN** the population rows are absent but the EAT control remains available so the user can
   re-enable the overlay
-
-#### Scenario: No-annotation row avoids duplicate help
-
-- **WHEN** the EAT population section is shown for a selected base annotation
-- **THEN** the third row is labelled “No annotation”
-- **AND** it does not render a separate help trigger that duplicates the existing N/A meaning
 
 ### Requirement: EAT data survives slicing, hashing, and bundle round-trip
 

@@ -2,9 +2,7 @@
 
 ### Requirement: Predicted proteins connect to their active-column source
 
-When the EAT overlay is enabled and an EAT base annotation is active, clicking a transferred protein
-SHALL draw one dashed provenance line to that cell's source protein in the current projection and
-SHALL emphasize both endpoints without changing protein selection semantics.
+When the EAT overlay is enabled and an EAT base annotation is active, clicking a transferred protein SHALL draw one dashed provenance line to that cell's source protein in the current projection and SHALL emphasize both endpoints without changing protein selection semantics.
 
 #### Scenario: Predicted-to-source connector
 

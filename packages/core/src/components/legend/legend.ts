@@ -2220,11 +2220,6 @@ export class ProtspaceLegend extends LitElement {
                           <span>Predicted by EAT</span>
                           <strong>${this._eatCounts.predicted}</strong>
                         </div>
-                        <div class="eat-legend-row">
-                          <span class="eat-swatch missing" aria-hidden="true"></span>
-                          <span>No annotation</span>
-                          <strong>${this._eatCounts.missing}</strong>
-                        </div>
                       </div>
                     `
                   : ''}

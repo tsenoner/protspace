@@ -30,14 +30,13 @@ function makeData(): VisualizationData {
 
 describe('EAT population accounting', () => {
   it.each([
-    ['full', [0, 1, 2, 3, 4, 5], { observed: 2, predicted: 2, missing: 2, total: 6 }],
-    ['filtered', [0, 2, 4], { observed: 1, predicted: 1, missing: 1, total: 3 }],
-    ['isolated', [1, 3], { observed: 1, predicted: 1, missing: 0, total: 2 }],
+    ['full', [0, 1, 2, 3, 4, 5], { observed: 2, predicted: 2, total: 6 }],
+    ['filtered', [0, 2, 4], { observed: 1, predicted: 1, total: 3 }],
+    ['isolated', [1, 3], { observed: 1, predicted: 1, total: 2 }],
   ] as const)('partitions the %s represented view', (_view, indices, expected) => {
     const view = sliceVisualizationDataByIndices(makeData(), [...indices]);
     const counts = computeEatPopulationCounts(view, 'ec', true);
 
     expect(counts).toEqual(expected);
-    expect(counts!.observed + counts!.predicted + counts!.missing).toBe(counts!.total);
   });
 });

@@ -325,10 +325,10 @@ visual exploration while the number supports exact, reproducible values. Hiding 
 popover was rejected because it reduces discoverability and makes a scientifically relevant display
 setting harder to inspect.
 
-The third population class is presented as “No annotation” rather than the unexplained
-“Unannotated”. Selected-annotation-specific help text defines it as having neither an observed value
-nor an EAT prediction. The class remains explicit and count-bearing; it is not merged into an
-ordinary missing legend category.
+The population key reports two classes, observed and transferred, rather than three. A protein whose
+only value is the NA category is neither observed nor transferred, but it is already represented by
+the dataset's existing N/A legend entry, so a third “No annotation” row would only duplicate that
+count under a different label.
 
 ## Risks / Trade-offs
 

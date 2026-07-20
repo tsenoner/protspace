@@ -77,7 +77,7 @@ describe('legend-owned EAT controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders the controls with counts and no duplicate no-annotation help', async () => {
+  it('renders the controls with counts', async () => {
     const { legend } = await setup();
     const root = legend.shadowRoot!;
     const group = root.querySelector<HTMLElement>('.eat-legend')!;
@@ -86,8 +86,6 @@ describe('legend-owned EAT controls', () => {
     expect(group.textContent).toContain('Predicted (transferred)');
     expect(group.textContent).toContain('Observed');
     expect(group.textContent).toContain('Predicted by EAT');
-    expect(group.textContent).toContain('No annotation');
-    expect(group.querySelector('protspace-info-popover[label="No annotation"]')).toBeNull();
     expect(root.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value).toBe('50');
   });
 

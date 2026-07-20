@@ -314,10 +314,6 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
-  await expect(legendSummary).toContainText(/No annotation\s*84/);
-  await expect(
-    legendSummary.getByRole('button', { name: 'Information about No annotation' }),
-  ).toHaveCount(0);
 
   const noAnnotationExample = await page.evaluate(() => {
     const plotElement = document.querySelector('protspace-scatterplot') as
@@ -351,7 +347,6 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await controlBar.getByRole('button', { name: 'Isolate' }).click();
   await expect(legendSummary).toContainText(/Observed\s*0/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*0/);
-  await expect(legendSummary).toContainText(/No annotation\s*1/);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -385,7 +380,6 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await controlBar.getByRole('button', { name: 'Reset' }).click();
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
-  await expect(legendSummary).toContainText(/No annotation\s*84/);
 
   await expect
     .poll(() =>
@@ -658,9 +652,6 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     );
     expect(legendControlLayout.percentLeft).toBeGreaterThanOrEqual(legendControlLayout.groupLeft);
     expect(legendControlLayout.percentRight).toBeLessThanOrEqual(legendControlLayout.groupRight);
-    await expect(
-      legendSummary.getByRole('button', { name: 'Information about No annotation' }),
-    ).toHaveCount(0);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 
