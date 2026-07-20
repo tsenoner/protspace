@@ -1097,6 +1097,15 @@ export class ProtspaceControlBar extends LitElement {
     }
   }
 
+  protected updated(changed: Map<string, unknown>): void {
+    // Switching the color-by annotation moves the legend reliability slider to the
+    // NEW base's threshold: re-derive from that base's eat-confidence condition and
+    // mirror it out. The value-compare guard inside keeps this from ping-ponging.
+    if (changed.has('selectedAnnotation')) {
+      this._emitEatThresholdMirror();
+    }
+  }
+
   private handleDocumentKeydown(event: KeyboardEvent) {
     const path = event.composedPath?.() ?? [];
     const inAriaModal = path.some(
@@ -1666,15 +1675,22 @@ export class ProtspaceControlBar extends LitElement {
     }
 
     const threshold = Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0;
-    const existing = this._findEatConfidenceCondition(this.filterQuery);
-    const current = existing?.max ?? 0;
+    const key = this._findEatConfidenceAnnotationKey(baseKey);
+    // Scope the read/write to THIS base's eat-confidence column so tuning one
+    // transferred base's slider can't clobber or misread another base's filter.
+    const current = key
+      ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0)
+      : 0;
     // Value-compare guard: the query already reflects this threshold, so
     // re-applying would be redundant and could ping-pong with the reverse mirror.
     if (threshold === current) return;
 
     this._lastEmittedThreshold = threshold;
-    const key = this._findEatConfidenceAnnotationKey(baseKey);
-    const next = this.filterQuery.filter((item) => !this._isEatConfidenceNumericItem(item));
+    // Remove ONLY this base's reliability condition; every other condition
+    // (other bases' eat filters, unrelated user filters) is preserved.
+    const next = key
+      ? this.filterQuery.filter((item) => !this._isReliabilityConditionForKey(item, key))
+      : [...this.filterQuery];
     if (threshold > 0 && key) {
       next.push(
         createNumericCondition({
@@ -1690,8 +1706,12 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _emitEatThresholdMirror(): void {
-    const eat = this._findEatConfidenceCondition(this.filterQuery);
-    const derived = eat?.max ?? 0;
+    // Scope to the SELECTED base: the slider shows the threshold for the base the
+    // user is currently coloring by, so switching annotation moves it to that base.
+    const key = this._findEatConfidenceAnnotationKey(this.selectedAnnotation);
+    const derived = key
+      ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0)
+      : 0;
     if (derived === this._lastEmittedThreshold) return;
     this._lastEmittedThreshold = derived;
     this.dispatchEvent(
@@ -1700,19 +1720,6 @@ export class ProtspaceControlBar extends LitElement {
         bubbles: true,
         composed: true,
       }),
-    );
-  }
-
-  /** True when `key` names an eat-confidence column in the current dataset. */
-  private _isEatConfidenceAnnotation(key: string): boolean {
-    return isEatConfidenceAnnotation(this._currentData?.annotations?.[key]);
-  }
-
-  private _isEatConfidenceNumericItem(item: FilterQueryItem): boolean {
-    return (
-      !isFilterGroup(item) &&
-      item.kind === 'numeric' &&
-      this._isEatConfidenceAnnotation(item.annotation)
     );
   }
 
@@ -1728,20 +1735,31 @@ export class ProtspaceControlBar extends LitElement {
     return undefined;
   }
 
-  /** The reliability filter's `NOT(EAT_confidence < X)` condition, if present. */
-  private _findEatConfidenceCondition(query: FilterQuery): NumericCondition | undefined {
-    for (const item of query) {
-      if (
-        !isFilterGroup(item) &&
-        item.kind === 'numeric' &&
-        item.operator === 'lt' &&
-        item.logicalOp === 'NOT' &&
-        this._isEatConfidenceAnnotation(item.annotation)
-      ) {
-        return item;
-      }
-    }
-    return undefined;
+  /**
+   * True when `item` is the reliability filter `NOT(<key> < X)` for the specific
+   * eat-confidence column `key` — numeric, that exact column, `lt`, negated.
+   */
+  private _isReliabilityConditionForKey(
+    item: FilterQueryItem,
+    key: string,
+  ): item is NumericCondition {
+    return (
+      !isFilterGroup(item) &&
+      item.kind === 'numeric' &&
+      item.annotation === key &&
+      item.operator === 'lt' &&
+      item.logicalOp === 'NOT'
+    );
+  }
+
+  /** The reliability `NOT(<key> < X)` condition for eat-confidence column `key`, if present. */
+  private _findReliabilityConditionForKey(
+    query: FilterQuery,
+    key: string,
+  ): NumericCondition | undefined {
+    return query.find((item): item is NumericCondition =>
+      this._isReliabilityConditionForKey(item, key),
+    );
   }
 
   private _handleQueryReset() {
