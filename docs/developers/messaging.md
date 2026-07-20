@@ -12,7 +12,7 @@ Use transient notifications for recoverable warnings and errors that affect the 
 - Example: a dataset import failed
 - Example: selection mode was auto-disabled after the filtered dataset became too small
 
-In the demo application, `app/src/lib/notify.ts` is the only supported transient notification entry point.
+In the demo application, `apps/web/src/lib/notify.ts` is the only supported transient notification entry point.
 
 ### Blocking and progress UI
 

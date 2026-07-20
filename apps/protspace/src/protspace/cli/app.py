@@ -14,9 +14,9 @@ PANEL_STAGES = "Pipeline stages · run individually"
 PANEL_REFINE = "Refine"
 PANEL_VISUALIZE = "Visualize"
 
-_HELP = """ProtSpace — turn protein language model embeddings into an interactive visualization.
+_HELP = """ProtSpace — prepare protein language model (pLM) embeddings for interactive exploration.
 
-Most users only need 'prepare' to build a bundle, then explore it in the browser at https://protspace.app/explore.
+Reveal relationships that sequence similarity misses. Most users only need 'prepare' to build a bundle, then explore it in the browser at https://protspace.app/explore.
 
 \b
 Quick start:

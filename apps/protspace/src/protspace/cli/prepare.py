@@ -43,7 +43,9 @@ from protspace.cli.common_options import (
 
 logger = logging.getLogger(__name__)
 
-ANNOTATIONS_URL = "https://github.com/tsenoner/protspace/blob/main/docs/annotations.md"
+ANNOTATIONS_URL = (
+    "https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
+)
 EMBEDDER_MODELS = {
     "prot_t5",
     "prost_t5",

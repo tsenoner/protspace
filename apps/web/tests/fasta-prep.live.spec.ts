@@ -10,16 +10,14 @@ import { test, expect } from '@playwright/test';
  * Prerequisites:
  *   - `docker compose up -d protspace-prep`
  *   - `pnpm --filter @protspace/app dev` (vite on http://localhost:8080)
- *   - `app/.env.development` sets VITE_PREP_API_BASE=http://localhost:8000
+ *   - `apps/web/.env.development` sets VITE_PREP_API_BASE=http://localhost:8000
  *
  * Run:
- *   cd app && RUN_LIVE_E2E=1 npx playwright test --config=tests/playwright.config.ts \
+ *   cd apps/web && RUN_LIVE_E2E=1 npx playwright test --config=tests/playwright.config.ts \
  *     --project=fasta-prep-live
  */
 
-const FIXTURE = fileURLToPath(
-  new URL('../../services/protspace-prep/tests/fixtures/small.fasta', import.meta.url),
-);
+const FIXTURE = fileURLToPath(new URL('../../prep/tests/fixtures/small.fasta', import.meta.url));
 
 test('FASTA drop completes the prep flow against the live backend', async ({ page }) => {
   await page.goto('/explore');

@@ -112,7 +112,7 @@ ProtSpace is optimized for 2D visualization — prefer `*2` methods over `*3`.
 
 ## Embedder Models
 
-When using a FASTA file as input, specify an embedder with `-e` to generate embeddings via the [Biocentral](https://biocentral.cloud) API:
+When using a FASTA file as input, specify an embedder with `-e` to generate embeddings via the [Biocentral](https://biocentral.rostlab.org) API:
 
 ```bash
 protspace prepare -i sequences.fasta -e prot_t5 -m pca2,umap2
@@ -122,6 +122,6 @@ Available models: `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `es
 
 ## More Info
 
-The `protspace prepare` command is the recommended all-in-one pipeline. For advanced workflows, the CLI also provides individual subcommands: `embed`, `project`, `annotate`, `bundle`, `serve`, and `style`.
+The `protspace prepare` command is the recommended all-in-one pipeline. For advanced workflows, the CLI also provides individual subcommands: `embed`, `project`, `annotate`, `bundle`, `stats`, `transfer`, `serve`, and `style`.
 
-Full CLI reference and advanced usage: [ProtSpace Python GitHub](https://github.com/tsenoner/protspace)
+Full CLI reference and advanced usage: [ProtSpace on GitHub](https://github.com/tsenoner/protspace/tree/main/apps/protspace)

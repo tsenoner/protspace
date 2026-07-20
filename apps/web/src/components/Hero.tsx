@@ -3,6 +3,13 @@ import { Database, BookOpen, Play } from 'lucide-react';
 import { Link } from 'react-router';
 import { DOCS_URL } from '@/config';
 
+const badges = [
+  'Nothing leaves your browser',
+  'Swiss-Prot scale',
+  'Annotation transfer (EAT)',
+  'Trustworthy projections',
+];
+
 const Hero = () => {
   return (
     <section
@@ -43,11 +50,8 @@ const Hero = () => {
 
           {/* Subtitle */}
           <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto">
-            Explore, analyze, understand your protein space.
-            <br />
-            Put your embeddings and UniProt side by side to uncover
-            <br />
-            confirmations, contradictions, and unexpected biology.
+            Explore protein language model embeddings overlaid with biology — and see what sequence
+            similarity can&rsquo;t.
           </p>
 
           {/* CTA Buttons */}
@@ -73,22 +77,21 @@ const Hero = () => {
                 rel="noopener noreferrer"
               >
                 <Database className="h-5 w-5" />
-                Create Data
+                Prepare Data
               </a>
             </Button>
           </div>
 
           {/* Badges */}
           <div className="flex flex-wrap gap-3 justify-center pt-8">
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Open Source
-            </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              Apache-2.0 License
-            </span>
-            <span className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm">
-              3D-Beacons API
-            </span>
+            {badges.map((badge) => (
+              <span
+                key={badge}
+                className="px-4 py-2 rounded-full bg-card/50 backdrop-blur-xs border border-border/40 text-sm"
+              >
+                {badge}
+              </span>
+            ))}
           </div>
         </div>
       </div>

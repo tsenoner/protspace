@@ -4,7 +4,7 @@ Custom colors, shapes, and legend settings for annotation categories.
 
 **Two approaches:**
 
-- **Web UI** — interactive editing in [ProtSpace Web](https://protspace.app/explore), save to download the updated bundle
+- **Web UI** — interactive editing in [ProtSpace web app](https://protspace.app/explore), save to download the updated bundle
 - **CLI** — programmatic via `protspace style` (see [CLI Reference](cli.md#protspace-style))
 
 ## Workflow
@@ -35,9 +35,9 @@ protspace style styled.parquetbundle --dump-settings
 **Two ways to color a numeric column instead:**
 
 1. **Pre-bin into categorical strings** before styling — turn the numbers into range-label strings (e.g. `"100-200"`, or fixed/quantile buckets), then style the binned column like any other categorical.
-2. **Use the web app's continuous gradient** — [ProtSpace Web](https://protspace.app/explore) content-sniffs numeric columns and bins them client-side into a sequential gradient (`batlow` default; also viridis / cividis / inferno / plasma). The binning strategy and reverse-gradient toggle live in the UI only.
+2. **Use the web app's continuous gradient** — [ProtSpace web app](https://protspace.app/explore) content-sniffs numeric columns and bins them client-side into a sequential gradient (`batlow` default; also viridis / cividis / inferno / plasma). The binning strategy and reverse-gradient toggle live in the UI only.
 
-If you *do* pass CLI styling keys for a numeric column, the web frontend reinterprets them: `colors` / `shapes` / `pinnedValues` are **ignored** (bin IDs never match your per-value keys), `maxVisibleValues` becomes the **target bin count**, and `selectedPaletteId` is reset unless it is one of the five gradient IDs (markers are always circles). See the [ProtSpace Web legend docs](https://github.com/tsenoner/protspace_web/blob/main/docs/explore/legend.md) for the numeric legend behavior.
+If you *do* pass CLI styling keys for a numeric column, the web frontend reinterprets them: `colors` / `shapes` / `pinnedValues` are **ignored** (bin IDs never match your per-value keys), `maxVisibleValues` becomes the **target bin count**, and `selectedPaletteId` is reset unless it is one of the five gradient IDs (markers are always circles). See the [ProtSpace legend docs](https://github.com/tsenoner/protspace/blob/main/docs/explore/legend.md) for the numeric legend behavior.
 
 ## Styles JSON format
 
@@ -86,7 +86,7 @@ Missing values (`""`, `"<NA>"`, `"NaN"`) are normalized automatically — use an
 
 ProtSpace ships eleven built-in palettes, split by data type: **six categorical** palettes (discrete colors, one per category) and **five numeric gradients** (a continuous sequential scale). The two sets do not overlap and are not interchangeable — a numeric column can only use a gradient, and a categorical column can only use a categorical palette.
 
-The palettes are defined in the web frontend, the single source of truth: [`color-scheme.ts`](https://github.com/tsenoner/protspace_web/blob/main/packages/utils/src/visualization/color-scheme.ts) (`COLOR_SCHEMES`) and [`numeric-binning.ts`](https://github.com/tsenoner/protspace_web/blob/main/packages/utils/src/visualization/numeric-binning.ts) (`GRADIENT_COLOR_SCHEME_IDS`).
+The palettes are defined in the web frontend, the single source of truth: [`color-scheme.ts`](https://github.com/tsenoner/protspace/blob/main/packages/utils/src/visualization/color-scheme.ts) (`COLOR_SCHEMES`) and [`numeric-binning.ts`](https://github.com/tsenoner/protspace/blob/main/packages/utils/src/visualization/numeric-binning.ts) (`GRADIENT_COLOR_SCHEME_IDS`).
 
 ### Categorical palettes (`selectedPaletteId`)
 

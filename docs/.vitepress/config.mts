@@ -9,7 +9,7 @@ const navItems = getNavigation(mode);
 
 export default defineConfig({
   title: 'ProtSpace',
-  description: 'Interactive visualization for protein language model embeddings',
+  description: 'Explore protein language model (pLM) embeddings and reveal relationships that sequence similarity misses.',
 
   base: urls.docs,
 
@@ -114,7 +114,7 @@ export default defineConfig({
     socialLinks: [{ icon: 'github', link: 'https://github.com/tsenoner/protspace' }],
 
     footer: {
-      message: 'Released under the Apache 2.0 License.',
+      message: 'Released under the MIT License.',
       copyright: 'Copyright © 2025 Rostlab, TU Munich',
     },
 
