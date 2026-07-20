@@ -1107,7 +1107,11 @@ export class ProtspaceLegend extends LitElement {
    * geometry — to a drag-pause/release.
    */
   private _setEatConfidenceThresholdLive(value: number): void {
-    this._eatConfidenceThreshold = clamp01(value);
+    // clamp01(NaN) is NaN; keep the non-finite fallback the immediate apply used
+    // (unreachable via the current handlers, but defensive/consistent).
+    this._eatConfidenceThreshold = Number.isFinite(value)
+      ? clamp01(value)
+      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
     this._debounceEatThresholdCommit();
   }
 

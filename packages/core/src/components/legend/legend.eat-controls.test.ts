@@ -235,6 +235,49 @@ describe('legend-owned EAT controls', () => {
     );
   });
 
+  it('cancels a pending threshold commit when the overlay toggle supersedes it', async () => {
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    // Arm the debounce with a drag tick...
+    const range = legend.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    range.value = '0.55';
+    range.dispatchEvent(new Event('input'));
+
+    // ...then a discrete toggle applies immediately (one emit) and supersedes it.
+    const toggle = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // The superseded debounce timer must not fire a stale second emit.
+    vi.advanceTimersByTime(150);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a pending threshold commit on disconnect (teardown)', async () => {
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    const range = legend.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    range.value = '0.55';
+    range.dispatchEvent(new Event('input'));
+    expect(listener).not.toHaveBeenCalled();
+
+    // Tearing the element down clears the pending timer — no emit after teardown.
+    legend.remove();
+    vi.advanceTimersByTime(150);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('setReliabilityThreshold updates the slider without re-emitting (reverse mirror)', async () => {
     const { legend } = await setup();
     const listener = vi.fn();
