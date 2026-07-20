@@ -14,6 +14,7 @@ import {
   normalizeNumericPaletteId,
   resolveNumericAnnotationDisplaySettings,
   annotationLabel,
+  clamp01,
   DEFAULT_EAT_CONFIDENCE_THRESHOLD,
   hasEatPredictionsForAnnotation,
   isPredictedAnnotation,
@@ -75,6 +76,14 @@ import {
 import { renderOtherDialog } from './legend-other-dialog';
 import { createFocusTrap } from './focus-trap';
 import { createLegendErrorEventDetail } from './legend.events';
+
+/**
+ * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
+ * visual value + percent readout update live on every tick, but the expensive
+ * downstream apply (reliability query re-eval + geometry/quadtree rebuild at 570k
+ * points) is deferred to a drag-pause/release so dragging stays smooth.
+ */
+const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
 
 // Types
 import type {
@@ -204,6 +213,9 @@ export class ProtspaceLegend extends LitElement {
 
   // Debounce timer for color picker updates
   private _colorChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Debounce timer for committing an EAT reliability slider drag (the expensive apply).
+  private _eatThresholdCommitTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Track where mousedown occurred for click-outside detection
   private _mouseDownOutsideColorPicker = false;
@@ -707,6 +719,7 @@ export class ProtspaceLegend extends LitElement {
     window.removeEventListener('mouseup', this._onWindowMouseUp);
     this._cleanupFocusTrap();
     this._cleanupColorChangeDebounce();
+    this._cancelEatThresholdCommit();
     super.disconnectedCallback();
   }
 
@@ -1025,6 +1038,9 @@ export class ProtspaceLegend extends LitElement {
   }
 
   public applyEatSettings(enabled: boolean, threshold: number): void {
+    // A discrete apply (overlay toggle, bundle import) supersedes any pending
+    // debounced threshold commit — cancel it so it can't fire a stale late emit.
+    this._cancelEatThresholdCommit();
     const normalizedThreshold = Number.isFinite(threshold)
       ? Math.min(1, Math.max(0, threshold))
       : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
@@ -1075,17 +1091,55 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _handleEatThresholdInput(event: Event): void {
-    this._setEatConfidenceThreshold(Number((event.currentTarget as HTMLInputElement).value));
+    this._setEatConfidenceThresholdLive(Number((event.currentTarget as HTMLInputElement).value));
   }
 
   private _handleEatThresholdPercentInput(event: Event): void {
     const value = Number((event.currentTarget as HTMLInputElement).value);
     if (!Number.isFinite(value)) return;
-    this._setEatConfidenceThreshold(value / 100);
+    this._setEatConfidenceThresholdLive(value / 100);
   }
 
-  private _setEatConfidenceThreshold(value: number): void {
-    this.applyEatSettings(this._eatOverlayEnabled, value);
+  /**
+   * Threshold drag: update the slider's visual value immediately (thumb + percent
+   * readout stay live), but debounce the expensive downstream apply — the
+   * `eat-overlay-change` emit that re-runs the reliability query and rebuilds
+   * geometry — to a drag-pause/release.
+   */
+  private _setEatConfidenceThresholdLive(value: number): void {
+    this._eatConfidenceThreshold = clamp01(value);
+    this._debounceEatThresholdCommit();
+  }
+
+  private _debounceEatThresholdCommit(): void {
+    if (this._eatThresholdCommitTimer !== null) {
+      clearTimeout(this._eatThresholdCommitTimer);
+    }
+    this._eatThresholdCommitTimer = setTimeout(() => {
+      this._eatThresholdCommitTimer = null;
+      this._emitEatOverlayChange();
+    }, EAT_THRESHOLD_COMMIT_DELAY_MS);
+  }
+
+  /** Slider release (@change): apply the pending threshold now, without waiting out the debounce. */
+  private _handleEatThresholdCommit(): void {
+    this._flushEatThresholdCommit();
+  }
+
+  private _flushEatThresholdCommit(): void {
+    if (this._eatThresholdCommitTimer !== null) {
+      clearTimeout(this._eatThresholdCommitTimer);
+      this._eatThresholdCommitTimer = null;
+      this._emitEatOverlayChange();
+    }
+  }
+
+  /** Drop a pending threshold commit without emitting (an immediate apply supersedes it). */
+  private _cancelEatThresholdCommit(): void {
+    if (this._eatThresholdCommitTimer !== null) {
+      clearTimeout(this._eatThresholdCommitTimer);
+      this._eatThresholdCommitTimer = null;
+    }
   }
 
   private _handleScatterplotDataChange(data: ScatterplotData, selectedAnnotation: string): void {
@@ -2205,6 +2259,7 @@ export class ProtspaceLegend extends LitElement {
                         ?disabled=${!this._eatOverlayEnabled}
                         aria-label="EAT reliability filter percentage"
                         @input=${this._handleEatThresholdPercentInput}
+                        @change=${this._handleEatThresholdCommit}
                       />
                       <span aria-hidden="true">%</span>
                       <protspace-info-popover
@@ -2225,6 +2280,7 @@ export class ProtspaceLegend extends LitElement {
                     ?disabled=${!this._eatOverlayEnabled}
                     aria-label="EAT reliability filter threshold"
                     @input=${this._handleEatThresholdInput}
+                    @change=${this._handleEatThresholdCommit}
                   />
                 </div>
                 ${this._eatOverlayEnabled && this._eatCounts

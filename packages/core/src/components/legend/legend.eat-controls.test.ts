@@ -73,6 +73,7 @@ describe('legend-owned EAT controls', () => {
   afterEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('renders the controls with counts', async () => {
@@ -113,6 +114,8 @@ describe('legend-owned EAT controls', () => {
     )!;
     range.value = '0.73';
     range.dispatchEvent(new Event('input'));
+    // Releasing the slider flushes the debounced apply so the emit lands now.
+    range.dispatchEvent(new Event('change'));
     await legend.updateComplete;
 
     expect(plot.eatOverlayEnabled).toBe(true);
@@ -131,11 +134,105 @@ describe('legend-owned EAT controls', () => {
     const percent = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')!;
     percent.value = '34';
     percent.dispatchEvent(new Event('input'));
+    percent.dispatchEvent(new Event('change'));
     await legend.updateComplete;
     expect(listener).toHaveBeenLastCalledWith(
       expect.objectContaining({ detail: { enabled: true, confidenceThreshold: 0.34 } }),
     );
     expect(range.value).toBe('0.34');
+  });
+
+  it('debounces the threshold apply: display stays live, the emit defers ~150ms', async () => {
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    const range = legend.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    range.value = '0.62';
+    range.dispatchEvent(new Event('input'));
+
+    // The slider thumb value + percent readout update immediately for a smooth drag.
+    expect(legend.reliabilityThreshold).toBe(0.62);
+    await legend.updateComplete;
+    expect(
+      legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value,
+    ).toBe('62');
+
+    // ...but the expensive downstream apply (the emit that re-runs the query) waits.
+    expect(listener).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(150);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: { enabled: true, confidenceThreshold: 0.62 } }),
+    );
+  });
+
+  it('collapses a rapid drag into a single deferred emit', async () => {
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    const range = legend.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    for (const v of ['0.1', '0.2', '0.3', '0.45']) {
+      range.value = v;
+      range.dispatchEvent(new Event('input'));
+    }
+    expect(listener).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(150);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: { enabled: true, confidenceThreshold: 0.45 } }),
+    );
+  });
+
+  it('flushes the pending apply immediately on slider release (@change)', async () => {
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    const range = legend.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    range.value = '0.4';
+    range.dispatchEvent(new Event('input'));
+    expect(listener).not.toHaveBeenCalled();
+
+    // Release commits without waiting out the full debounce window.
+    range.dispatchEvent(new Event('change'));
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: { enabled: true, confidenceThreshold: 0.4 } }),
+    );
+
+    // The already-flushed timer must not fire a duplicate emit.
+    vi.advanceTimersByTime(150);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies the overlay toggle immediately (no debounce)', async () => {
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    const toggle = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+
+    // The toggle is a discrete action, not a drag — it emits synchronously.
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: { enabled: false, confidenceThreshold: 0 } }),
+    );
   });
 
   it('setReliabilityThreshold updates the slider without re-emitting (reverse mirror)', async () => {
