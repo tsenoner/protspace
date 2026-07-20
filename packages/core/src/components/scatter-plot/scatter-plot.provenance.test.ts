@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest';
+import { render as litRender, type TemplateResult } from 'lit';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -23,6 +24,7 @@ type ConnectorSeam = {
     invalidateDataCache: ReturnType<typeof vi.fn>;
   };
   _mergedConfig: { selectedOpacity: number };
+  _connectorStatus: { shown: number; total: number; missingEndpoints: number } | null;
   _getInteractableProteinIds(): ReadonlySet<string>;
   _formatConnectorStatus(status: {
     shown: number;
@@ -30,6 +32,7 @@ type ConnectorSeam = {
     missingEndpoints: number;
   }): string;
   _reconcileProvenanceConnectors(changed: Map<string, unknown>): void;
+  render(): TemplateResult;
 };
 
 function makePlot() {
@@ -118,8 +121,32 @@ describe('scatter-plot provenance connector contract', () => {
     const { seam } = makePlot();
 
     expect(seam._formatConnectorStatus({ shown: 0, total: 1, missingEndpoints: 1 })).toBe(
-      'Showing 0 of 1 provenance connection · 1 connection unavailable outside the current view',
+      '1 hidden (off-view)',
     );
+  });
+
+  it('omits the connector-status chip once every connector endpoint is visible', () => {
+    const { seam } = makePlot();
+    seam._connectorStatus = { shown: 1, total: 1, missingEndpoints: 0 };
+
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    litRender(seam.render(), shadow);
+
+    expect(shadow.querySelector('.connector-status')).toBeNull();
+  });
+
+  it('renders the terse connector-status chip once an endpoint is off-view', () => {
+    const { seam } = makePlot();
+    seam._connectorStatus = { shown: 0, total: 1, missingEndpoints: 1 };
+
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    litRender(seam.render(), shadow);
+
+    const chip = shadow.querySelector('.connector-status');
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toContain('1 hidden (off-view)');
   });
 
   it('suppresses a pair that becomes non-interactable under connector-owned highlighting', () => {

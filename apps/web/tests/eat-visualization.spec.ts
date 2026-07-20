@@ -527,7 +527,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       }),
     );
   }, transfer.target);
-  await expect(plot.getByRole('status')).toContainText('Showing 1 of 1 provenance connection');
+  // All endpoints are on-screen, so the terse status chip stays silent (Task 1: #1).
+  await expect(plot.locator('.connector-status')).not.toBeVisible();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(1);
 
   await plot.evaluate((element, proteinId) => {
@@ -543,7 +544,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       }),
     );
   }, transfer.source);
-  await expect(plot.getByRole('status')).toContainText('Showing 4 of 4 provenance connections');
+  // Still all on-screen after the second pair is added — chip remains silent.
+  await expect(plot.locator('.connector-status')).not.toBeVisible();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const endpoint = plot.locator('circle.eat-provenance-endpoint').first();
   const endpointBeforeZoom = await endpoint.boundingBox();
@@ -571,7 +573,19 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     .not.toBe(firstConnectorX);
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
 
-  await plot.getByRole('button', { name: 'Close provenance connections' }).click();
+  // Both endpoints stay on-screen here too, so there is no × chip to click; dismiss
+  // via the existing "click empty plot space" path instead (Task 1: #1). Use the
+  // bottom-right corner: the top-left ~50x40px band is occupied by the
+  // projection-metadata / tips info triggers (2rem info button at top:0.5rem;
+  // left:0.5rem, z-index 10, so (8,8) lands on that button, not the canvas), the
+  // bottom overlays (`.plot-indicator`) are `pointer-events: none` so they never
+  // intercept clicks, and the extreme corner sits well outside the zoomed-in
+  // 832-point cluster.
+  const clearClickBounds = await plot.boundingBox();
+  expect(clearClickBounds).not.toBeNull();
+  await plot.click({
+    position: { x: clearClickBounds!.width - 12, y: clearClickBounds!.height - 12 },
+  });
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
 
   await page.setViewportSize({ width: 601, height: 844 });

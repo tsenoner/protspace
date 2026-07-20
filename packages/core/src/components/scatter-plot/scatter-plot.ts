@@ -2000,7 +2000,7 @@ export class ProtspaceScatterplot extends LitElement {
               </div>
             `
           : ''}
-        ${this._connectorStatus
+        ${this._connectorStatus && this._connectorStatus.missingEndpoints > 0
           ? html`
               <div class="connector-status" role="status" aria-live="polite">
                 <span>${this._formatConnectorStatus(this._connectorStatus)}</span>
@@ -2019,9 +2019,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _formatConnectorStatus(status: ProvenanceConnectorStatus): string {
-    const base = `Showing ${status.shown} of ${status.total} provenance connection${status.total === 1 ? '' : 's'}`;
-    if (status.missingEndpoints === 0) return base;
-    return `${base} · ${status.missingEndpoints} connection${status.missingEndpoints === 1 ? '' : 's'} unavailable outside the current view`;
+    return `${status.missingEndpoints} hidden (off-view)`;
   }
 
   /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */
