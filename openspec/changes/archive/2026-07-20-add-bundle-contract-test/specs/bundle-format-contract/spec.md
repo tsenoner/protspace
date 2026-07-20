@@ -87,6 +87,39 @@ The generated bundle SHALL carry annotation and projection values that distingui
 - **WHEN** projection metadata JSON carries a value parsed from parquet as a big integer
 - **THEN** extraction completes without a serialization failure
 
+### Requirement: The contract covers both conversion implementations
+
+The reader routes datasets past a row-count threshold through a separate, optimized conversion implementation. The contract SHALL exercise both that implementation and the small-data one, asserting the same annotation encoding contract through each.
+
+#### Scenario: A dataset large enough to take the optimized path is read
+
+- **WHEN** a generated bundle exceeds the reader's optimized-path row threshold
+- **THEN** the optimized conversion entry point decodes its percent-encoded labels, splits its multi-hit cells, and reports its missing numeric values exactly as the small-data path does
+
+#### Scenario: Only the optimized implementation regresses
+
+- **WHEN** annotation decoding breaks in the optimized implementation but not the small-data one
+- **THEN** the contract suite fails
+
+### Requirement: Contract assertions fail when the behavior they name regresses
+
+Each assertion SHALL be falsifiable by the regression it describes. An assertion SHALL NOT be satisfied by an out-of-range index, by an unrelated error message, or by behavior that is identical with and without the code under test.
+
+#### Scenario: The zero-byte settings guard is removed
+
+- **WHEN** the reader stops treating an empty settings part as the producer's sentinel and routes it through the settings parser
+- **THEN** the contract suite fails
+
+#### Scenario: A reader drops a protein from a numeric annotation column
+
+- **WHEN** a numeric annotation array is shorter than the protein count
+- **THEN** the missing-value assertion fails rather than passing on an undefined index
+
+#### Scenario: Converted data retains a value that cannot be serialized
+
+- **WHEN** conversion leaves a BigInt in its output
+- **THEN** the contract suite fails at serialization rather than only at conversion
+
 ### Requirement: The contract check cannot be silently skipped
 
 The contract suite SHALL be a standalone test project that is not part of the default workspace test run, and SHALL NOT guard itself on the presence of the Python toolchain. Its CI job SHALL be triggered by the union of the producer paths, the consumer paths, and the contract suite's own paths.
@@ -105,3 +138,8 @@ The contract suite SHALL be a standalone test project that is not part of the de
 
 - **WHEN** a change touches the data-loader or the shared parquet utilities
 - **THEN** the contract job runs even though the Python workflow does not
+
+#### Scenario: A pull request changes a module the assertions depend on indirectly
+
+- **WHEN** a change touches a module the reader imports to normalize settings or to decode missing values, without touching the data-loader itself
+- **THEN** the contract job still runs

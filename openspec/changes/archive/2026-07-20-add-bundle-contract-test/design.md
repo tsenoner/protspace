@@ -91,3 +91,48 @@ The union is the point. `ci.yml` and `protspace-ci.yml` remain mutually exclusiv
 - **Generator drift.** If `protspace annotate` changes its output columns, the hand-written input parquets keep the contract test green against a stale idea of that stage's output. Narrower than the gap being closed; noted, not solved.
 - **Cross-runtime CI cost.** The job installs both toolchains. Mitigated by the path filter — it fires only for changes to the format seam.
 - **Subprocess failure legibility.** If `protspace bundle` exits non-zero, the generator must surface its stderr through the vitest failure, or the suite reports an unhelpful missing-file error.
+
+## Deferred follow-up
+
+Three items surfaced during code review, verified as real, and deliberately left
+out of this change. They are recorded here rather than as open tasks because each
+is a decision to defer, not unfinished work in this change's scope.
+
+### 1. The TypeScript writer has no delimiter guard (correctness)
+
+The Python writer refuses to emit a part containing the reserved delimiter bytes
+(`_check_no_delimiter`). `packages/utils/src/parquet/bundle-writer.ts` has no
+equivalent, so a web export whose annotation text contains the literal
+`---PARQUET_DELIMITER---` produces a bundle with a spurious delimiter.
+
+Widening the reader's part-count gate made this _report_ worse, not more likely:
+a contaminated 4-part export previously failed fast with "Expected 2 or 3
+delimiters, found 4" and now gets admitted, mis-sliced, and surfaces as "Invalid
+Parquet file: magic bytes not found" — a misleading error for a delimiter
+problem. A 3-part contaminated export was already mis-admitted before this
+change, so the underlying hole predates it.
+
+The real fix is a producer-side guard mirroring the Python one, in the export
+path this change does not otherwise touch. Deferred to keep the diff scoped to
+the seam.
+
+### 2. A zero-byte settings part in a 4-part bundle no longer warns
+
+`if (part4 && part4.byteLength > 0)` treats an empty settings part as the
+producer's sentinel. That is only strictly true when a fifth part follows — the
+sentinel exists to hold statistics at a fixed position. In a 4-part bundle a
+zero-byte settings part instead means a truncated or failed settings write, and
+that case now skips the parser silently where it previously logged "Failed to
+parse settings from bundle, using defaults".
+
+Conditioning the skip on `delimiterPositions.length === 4` would restore the
+diagnostic. Not done here because it changes reader behavior beyond the layout
+this change set out to support, and no producer is known to emit it.
+
+### 3. The contract suite re-decodes each bundle per test
+
+Every `it()` re-reads its bundle from disk and re-runs the full parquet decode;
+`minimal` is extracted six times per run. Hoisting each variant's extraction into
+`beforeAll` would cut suite CPU several-fold with no loss of coverage. Left alone
+because the suite runs in ~3s and per-test extraction keeps each case readable in
+isolation — revisit if the suite grows or the large variant gets bigger.
