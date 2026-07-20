@@ -181,6 +181,10 @@ describe('ConnectorOverlayController', () => {
     );
     expect(EXPECTED_STROKE_WIDTH_PX).toBeCloseTo(1.5, 1);
 
+    // biggerController intentionally reuses the same `overlay`/SVG DOM as `controller` above:
+    // both join keyed on the same source/target pair, so `.set()` updates the existing
+    // <line>/<circle> nodes in place rather than creating duplicates — `svg.querySelector(...)`
+    // below is expected to keep returning a single element, now with the larger stroke-width.
     const biggerController = new ConnectorOverlayController({
       getOverlayGroup: () => overlay,
       getPlotData: () => plotData,
@@ -220,6 +224,23 @@ describe('ConnectorOverlayController', () => {
 
     controller.updateZoomScale(Number.NaN);
     expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(EXPECTED_STROKE_WIDTH_PX, 10);
+  });
+
+  it('inverse-scales the connector dash cadence so it stays constant through zoom', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    expect(line?.getAttribute('stroke-dasharray')).toBe('5 4');
+
+    controller.updateZoomScale(2.5);
+
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    expect(line?.getAttribute('stroke-dasharray')).toBe(`${5 / 2.5} ${4 / 2.5}`);
+
+    controller.updateZoomScale(Number.NaN);
+    expect(line?.getAttribute('stroke-dasharray')).toBe('5 4');
   });
 
   it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {

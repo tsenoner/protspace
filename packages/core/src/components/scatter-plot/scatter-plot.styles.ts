@@ -186,7 +186,6 @@ const scatterplotStylesCore = css`
 
   .eat-provenance-connector {
     stroke: #475569;
-    stroke-dasharray: 5 4;
     stroke-linecap: round;
     opacity: 0.82;
   }
