@@ -1,5 +1,6 @@
 """Core configuration and constants for ProtSpace."""
 
+from . import config
 from .config import (
     DEFAULT_LINE_WIDTH,
     DEFAULT_PORT,
@@ -25,6 +26,15 @@ __all__ = [
     "HIGHLIGHT_COLOR",
     "HIGHLIGHT_BORDER_COLOR",
     "MARKER_SHAPES_3D",
+    "MARKER_SHAPES_2D",
     "standardize_missing",
     "is_projection_3d",
 ]
+
+
+def __getattr__(name):
+    # MARKER_SHAPES_2D stays lazy (it needs plotly); forward so the historical
+    # `from protspace.core import MARKER_SHAPES_2D` keeps working.
+    if name == "MARKER_SHAPES_2D":
+        return getattr(config, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

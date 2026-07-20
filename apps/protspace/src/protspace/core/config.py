@@ -32,11 +32,18 @@ MARKER_SHAPES_3D = [
 ]
 
 
-# ponytail: plotly ships only in the `frontend` extra, so it must stay out of the
-# import path — the CLI (embed/project/transfer) imports this module too.
+# plotly ships only in the `frontend` extra, so it must stay out of the import
+# path — the CLI (embed/project/transfer) imports this module too.
 def __getattr__(name):
     if name == "MARKER_SHAPES_2D":
-        from plotly.validator_cache import ValidatorCache
+        try:
+            from plotly.validator_cache import ValidatorCache
+        except ImportError as exc:
+            # AttributeError keeps hasattr()/getattr(default) probes working on
+            # core-only installs instead of exploding with ModuleNotFoundError.
+            raise AttributeError(
+                "MARKER_SHAPES_2D requires plotly: pip install 'protspace[frontend]'"
+            ) from exc
 
         validator = ValidatorCache.get_validator("scatter.marker", "symbol")
         value = sorted(extract_marker_strings(validator.values))

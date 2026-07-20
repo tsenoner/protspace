@@ -7,7 +7,19 @@ import sys
 # simulates a bare `pip install protspace` without the frontend extra.
 CODE = """
 import sys
-for mod in ("plotly", "dash"):
+# every top-level module that only ships in the `frontend` extra
+FRONTEND_ONLY = (
+    "plotly",
+    "dash",
+    "dash_bootstrap_components",
+    "dash_daq",
+    "dash_iconify",
+    "dash_molstar",
+    "kaleido",
+    "gunicorn",
+    "dotenv",
+)
+for mod in FRONTEND_ONLY:
     sys.modules[mod] = None
 import protspace.cli.app  # noqa: F401
 """
