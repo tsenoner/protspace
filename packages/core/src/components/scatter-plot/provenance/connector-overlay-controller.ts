@@ -107,16 +107,13 @@ export class ConnectorOverlayController {
       .attr('stroke-dasharray', this.connectorDasharray())
       .each((_d, index, nodes) => {
         const line = nodes[index];
-        const trimmed = this.trimmedLine(
+        this.applyTrimmedLineAttrs(
+          line,
           Number(line.getAttribute('data-cx1')),
           Number(line.getAttribute('data-cy1')),
           Number(line.getAttribute('data-cx2')),
           Number(line.getAttribute('data-cy2')),
         );
-        line.setAttribute('x1', String(trimmed.x1));
-        line.setAttribute('y1', String(trimmed.y1));
-        line.setAttribute('x2', String(trimmed.x2));
-        line.setAttribute('y2', String(trimmed.y2));
       });
   }
 
@@ -178,6 +175,21 @@ export class ConnectorOverlayController {
     };
   }
 
+  /** Trim the true endpoint centers to the halo boundary and write the result to the line. */
+  private applyTrimmedLineAttrs(
+    line: SVGLineElement,
+    cx1: number,
+    cy1: number,
+    cx2: number,
+    cy2: number,
+  ): void {
+    const trimmed = this.trimmedLine(cx1, cy1, cx2, cy2);
+    line.setAttribute('x1', String(trimmed.x1));
+    line.setAttribute('y1', String(trimmed.y1));
+    line.setAttribute('x2', String(trimmed.x2));
+    line.setAttribute('y2', String(trimmed.y2));
+  }
+
   render(): void {
     const overlay = this.deps.getOverlayGroup();
     const request = this.request;
@@ -230,12 +242,7 @@ export class ConnectorOverlayController {
       .attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale)
       .attr('stroke-dasharray', this.connectorDasharray())
       .each((pair, index, nodes) => {
-        const line = nodes[index];
-        const trimmed = this.trimmedLine(pair.x1, pair.y1, pair.x2, pair.y2);
-        line.setAttribute('x1', String(trimmed.x1));
-        line.setAttribute('y1', String(trimmed.y1));
-        line.setAttribute('x2', String(trimmed.x2));
-        line.setAttribute('y2', String(trimmed.y2));
+        this.applyTrimmedLineAttrs(nodes[index], pair.x1, pair.y1, pair.x2, pair.y2);
       });
 
     const endpoints = new Map<string, { id: string; x: number; y: number }>();

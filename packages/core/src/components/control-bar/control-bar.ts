@@ -10,6 +10,7 @@ import type {
   StructureViewerElement,
 } from './types';
 import { handleDropdownEscape, isAnyDropdownOpen } from '../../utils/dropdown-helpers';
+import { isEatConfidenceAnnotation } from '@protspace/utils';
 import {
   EXPORT_DEFAULTS,
   toggleProteinSelection,
@@ -1367,7 +1368,7 @@ export class ProtspaceControlBar extends LitElement {
     // columns (e.g. NOT(EAT_confidence < X)), but they're not meaningful to color by.
     this._filterableAnnotations = fullAnnotationKeys;
     this.annotations = fullAnnotationKeys.filter(
-      (key) => data.annotations?.[key]?.runtime?.role !== 'eat-confidence',
+      (key) => !isEatConfidenceAnnotation(data.annotations?.[key]),
     );
     this._eatAnnotationKeys = Object.entries(capabilityData.annotation_predicted ?? {})
       .filter(([, cells]) => cells.some(Boolean))
@@ -1704,7 +1705,7 @@ export class ProtspaceControlBar extends LitElement {
 
   /** True when `key` names an eat-confidence column in the current dataset. */
   private _isEatConfidenceAnnotation(key: string): boolean {
-    return this._currentData?.annotations?.[key]?.runtime?.role === 'eat-confidence';
+    return isEatConfidenceAnnotation(this._currentData?.annotations?.[key]);
   }
 
   private _isEatConfidenceNumericItem(item: FilterQueryItem): boolean {
@@ -1720,8 +1721,7 @@ export class ProtspaceControlBar extends LitElement {
     const annotations = this._currentData?.annotations;
     if (!annotations) return undefined;
     for (const [key, annotation] of Object.entries(annotations)) {
-      const runtime = annotation.runtime;
-      if (runtime?.role === 'eat-confidence' && runtime.baseAnnotation === baseKey) {
+      if (isEatConfidenceAnnotation(annotation) && annotation.runtime?.baseAnnotation === baseKey) {
         return key;
       }
     }

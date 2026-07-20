@@ -5,6 +5,7 @@ import type {
   ProtspaceStructureViewer,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
+import { isEatConfidenceAnnotation } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
 import type { EffectiveExploreView } from './view-state';
 
@@ -39,13 +40,13 @@ export function resolveRenderableView(
   );
   // Synthesized `__eat_confidence` annotations are filter-only (see control-bar's
   // color-by/filterable split) — never auto-selected as the default color-by annotation.
-  const isEatConfidenceAnnotation = (key: string) =>
-    newData.annotations[key]?.runtime?.role === 'eat-confidence';
   const firstAnnotationKey =
-    Object.keys(newData.annotations).find((key) => !isEatConfidenceAnnotation(key)) || '';
+    Object.keys(newData.annotations).find(
+      (key) => !isEatConfidenceAnnotation(newData.annotations[key]),
+    ) || '';
   const requestedAnnotation = initialView?.annotation;
   const annotation =
-    requestedAnnotation && !isEatConfidenceAnnotation(requestedAnnotation)
+    requestedAnnotation && !isEatConfidenceAnnotation(newData.annotations[requestedAnnotation])
       ? requestedAnnotation
       : firstAnnotationKey;
 

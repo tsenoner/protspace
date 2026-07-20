@@ -45,6 +45,17 @@ export function isEatConfidenceAnnotationKey(key: string): boolean {
   return key.length > EAT_CONFIDENCE_SUFFIX.length && key.endsWith(EAT_CONFIDENCE_SUFFIX);
 }
 
+/**
+ * True when an annotation is a synthesized EAT-confidence column (filter-only, never color-by).
+ * Uses the authoritative `runtime.role` capability, which — unlike the `__eat_confidence` suffix —
+ * also matches the collision-renamed `__eat_confidence__runtime_N` variant.
+ */
+export function isEatConfidenceAnnotation(
+  annotation: { runtime?: { role?: string } } | null | undefined,
+): boolean {
+  return annotation?.runtime?.role === 'eat-confidence';
+}
+
 export function getEatBaseAnnotationKey(key: string): string | null {
   return isEatConfidenceAnnotationKey(key) ? key.slice(0, -EAT_CONFIDENCE_SUFFIX.length) : null;
 }
