@@ -487,6 +487,41 @@ git commit -m "feat(eat): filter sub-threshold predictions via two-way slider<->
 
 ---
 
+## Task 10: Connector dashed line thickness scales with "Shape size"
+
+*(Added from user feedback during Task 6–8 exploration.)*
+
+**Files:**
+- Modify: `packages/core/src/components/scatter-plot/provenance/connector-overlay-controller.ts` (`line.eat-provenance-connector` join in `render()`, and `updateZoomScale()`)
+- Modify: `packages/core/src/components/scatter-plot/scatter-plot.styles.ts` (`.eat-provenance-connector` rule ~187-190)
+- Test: `packages/core/src/components/scatter-plot/provenance/connector-overlay-controller.test.ts`
+
+**Interfaces:**
+- Consumes: `this.deps.getPointSize?.() ?? 240` (added Task 4), the `endpointBaseRadiusPx()` pattern.
+- Produces: private `connectorStrokeWidthPx(): number` deriving line width from point size, constant through zoom (same behavior as the halos).
+
+**Context:** The dashed connector line has a FIXED `stroke-width: 1.5px` in CSS (`scatter-plot.styles.ts:189`; dash `stroke-dasharray: 5 4` at :190), set nowhere in JS — so it doesn't react to the point-size control, whereas the endpoint halos now do (`endpointBaseRadiusPx()`). Make the line proportionally thicker as "Shape size" grows.
+
+- [ ] **Step 1: Write the failing test.** In `connector-overlay-controller.test.ts`, add a test: with `getPointSize: () => 960`, the rendered `line.eat-provenance-connector` `stroke-width` is proportionally larger than with `getPointSize: () => 240`; at the default (240) it stays ≈ 1.5px; and the value is constant through zoom (assert the effective screen-space width is unchanged after `updateZoomScale`, mirroring the existing halo-radius test).
+
+- [ ] **Step 2: Run → FAIL.** `pnpm --filter @protspace/core exec vitest --run src/components/scatter-plot/provenance/connector-overlay-controller.test.ts`
+
+- [ ] **Step 3: Implement.** Add:
+```ts
+// Screen-space line width scaled by point size (parallels endpointBaseRadiusPx).
+private connectorStrokeWidthPx(): number {
+  const pointSize = this.deps.getPointSize?.() ?? 240;
+  return Math.max(1, Math.sqrt(Math.max(pointSize, 1)) / 10); // ≈1.55px at the default 240
+}
+```
+In `render()`, on the connector-line join add `.attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale)`; in `updateZoomScale()` also re-set the line's `stroke-width` (select `line.eat-provenance-connector`, set `stroke-width` to `connectorStrokeWidthPx()/zoomScale`) — exactly parallel to the endpoint-circle `r` update — so the line stays constant screen-width through zoom, consistent with the halos. Remove the now-overridden fixed `stroke-width: 1.5px` from the `.eat-provenance-connector` CSS rule (keep the color + `stroke-dasharray`). Tune the divisor so the default (240) renders ≈ 1.5px.
+
+- [ ] **Step 4: Run → PASS**, then full `pnpm --filter @protspace/core test:ci`.
+
+- [ ] **Step 5: Commit** `feat(eat): scale provenance connector line thickness with Shape size` (+ Co-Authored-By / Claude-Session trailers). `git add` only the three named files.
+
+---
+
 ## Task 9: Full verification + update PR
 
 **Files:** none (verification + push).
