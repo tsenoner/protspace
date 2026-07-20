@@ -38,7 +38,6 @@ async function setup() {
     data: VisualizationData;
     selectedAnnotation: string;
     eatOverlayEnabled: boolean;
-    eatConfidenceThreshold: number;
     hiddenAnnotationValues: string[];
     otherAnnotationValues: string[];
     config: Record<string, never>;
@@ -52,7 +51,6 @@ async function setup() {
     data,
     selectedAnnotation: 'ec',
     eatOverlayEnabled: true,
-    eatConfidenceThreshold: 0.5,
     hiddenAnnotationValues: [],
     otherAnnotationValues: [],
     config: {},
@@ -86,10 +84,11 @@ describe('legend-owned EAT controls', () => {
     expect(group.textContent).toContain('Predicted (transferred)');
     expect(group.textContent).toContain('Observed');
     expect(group.textContent).toContain('Predicted by EAT');
-    expect(root.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value).toBe('50');
+    // Default reliability position is 0 (show everything, clean filter box).
+    expect(root.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value).toBe('0');
   });
 
-  it('synchronizes toggle, range, and percentage changes with the scatter plot', async () => {
+  it('syncs the overlay switch with the scatter plot and emits threshold changes for the filter', async () => {
     const { legend, plot } = await setup();
     const listener = vi.fn();
     legend.addEventListener('eat-overlay-change', listener);
@@ -99,6 +98,7 @@ describe('legend-owned EAT controls', () => {
     toggle.dispatchEvent(new Event('change'));
     await legend.updateComplete;
 
+    // The overlay switch still coalesces predictions on the scatter plot.
     expect(plot.eatOverlayEnabled).toBe(false);
     expect(legend.shadowRoot!.querySelector('.eat-legend')).not.toBeNull();
     expect(legend.shadowRoot!.querySelector('.eat-legend-counts')).toBeNull();
@@ -116,7 +116,9 @@ describe('legend-owned EAT controls', () => {
     await legend.updateComplete;
 
     expect(plot.eatOverlayEnabled).toBe(true);
-    expect(plot.eatConfidenceThreshold).toBe(0.73);
+    // The threshold is no longer pushed onto the scatter plot as a dimming input;
+    // it rides the eat-overlay-change contract and the range/percent stay in sync.
+    expect(plot).not.toHaveProperty('eatConfidenceThreshold');
     expect(
       legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value,
     ).toBe('73');
@@ -130,8 +132,26 @@ describe('legend-owned EAT controls', () => {
     percent.value = '34';
     percent.dispatchEvent(new Event('input'));
     await legend.updateComplete;
-    expect(plot.eatConfidenceThreshold).toBe(0.34);
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: { enabled: true, confidenceThreshold: 0.34 } }),
+    );
     expect(range.value).toBe('0.34');
+  });
+
+  it('setReliabilityThreshold updates the slider without re-emitting (reverse mirror)', async () => {
+    const { legend } = await setup();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    legend.setReliabilityThreshold(0.42);
+    await legend.updateComplete;
+
+    expect(legend.reliabilityThreshold).toBe(0.42);
+    expect(
+      legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value,
+    ).toBe('42');
+    // Reverse direction must stay silent so it can't loop back to the control bar.
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('uses stable dataset capability and omits controls for a non-EAT selection', async () => {

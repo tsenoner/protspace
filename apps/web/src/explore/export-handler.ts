@@ -210,7 +210,9 @@ export function createExportHandler({
             exportOptions: {},
             publishState: loadPublishState() ?? undefined,
             eatOverlayEnabled: plotElement.eatOverlayEnabled,
-            eatConfidenceThreshold: plotElement.eatConfidenceThreshold,
+            // The reliability slider position lives on the legend now (it drives
+            // the query filter, not scatter-plot dimming), so persist it from there.
+            eatConfidenceThreshold: legendElement.reliabilityThreshold,
           };
         }
 

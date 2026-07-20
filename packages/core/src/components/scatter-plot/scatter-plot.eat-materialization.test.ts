@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 
 beforeAll(() => {
@@ -16,7 +16,6 @@ type Internals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
   eatOverlayEnabled: boolean;
-  eatConfidenceThreshold: number;
   _getMaterializedData(): VisualizationData;
   _scheduleQuadtreeRebuild(): void;
   updated(changedProperties: Map<string, unknown>): void;
@@ -55,23 +54,5 @@ describe('scatter-plot EAT materialization', () => {
     expect(disabled).not.toBe(enabled);
     expect(Array.from(disabled.annotation_data.ec as Int32Array)).toEqual([0, 1]);
     expect(Array.from(plot.data.annotation_data.ec as Int32Array)).toEqual([0, 1]);
-  });
-
-  it('keeps threshold input off quadtree and population data-change paths', () => {
-    const plot = document.createElement('protspace-scatterplot') as Internals;
-    plot.data = data();
-    plot.selectedAnnotation = 'ec';
-    plot.eatOverlayEnabled = true;
-    plot.eatConfidenceThreshold = 0.75;
-    const scheduleQuadtree = vi
-      .spyOn(plot, '_scheduleQuadtreeRebuild')
-      .mockImplementation(() => undefined);
-    const dataChange = vi.fn();
-    plot.addEventListener('data-change', dataChange);
-
-    plot.updated(new Map([['eatConfidenceThreshold', 0.5]]));
-
-    expect(scheduleQuadtree).not.toHaveBeenCalled();
-    expect(dataChange).not.toHaveBeenCalled();
   });
 });

@@ -226,7 +226,11 @@ export interface BundleSettings {
   publishState?: Record<string, unknown>;
   /** Whether transferred values are coalesced into their curated base annotation. */
   eatOverlayEnabled?: boolean;
-  /** Minimum EAT reliability index before transferred markers receive their full alpha. */
+  /**
+   * Saved reliability-slider position (0…1, default 0). On load it seeds the
+   * slider, which derives a `NOT(EAT_confidence < x)` query filter only when
+   * above 0 — so an absent or `0` value means no reliability filter (#6b).
+   */
   eatConfidenceThreshold?: number;
 }
 

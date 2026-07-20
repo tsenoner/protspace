@@ -5,7 +5,6 @@ import type {
   ProtspaceStructureViewer,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
-import { DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
 import type { EffectiveExploreView } from './view-state';
 
@@ -102,7 +101,6 @@ function applyPlotState(
   plotElement.filteredProteinIds = [];
   plotElement.filtersActive = false;
   plotElement.eatOverlayEnabled = true;
-  plotElement.eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   plotElement.requestUpdate('data', previousData);
 }
 

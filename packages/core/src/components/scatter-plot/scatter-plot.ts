@@ -21,7 +21,6 @@ import {
   materializePlotDataPoint,
   gatherPlotData,
   materializeEatOverlay,
-  DEFAULT_EAT_CONFIDENCE_THRESHOLD,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -105,7 +104,6 @@ type VisibilityModelMemoKey = {
   selectedOpacity: number;
   fadedOpacity: number;
   eatOverlayEnabled: boolean;
-  eatConfidenceThreshold: number;
 };
 
 // Default configuration moved to config.ts
@@ -139,8 +137,6 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
   @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
-  @property({ type: Number, attribute: 'eat-confidence-threshold' })
-  eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -813,10 +809,8 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('hiddenAnnotationValues') ||
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('eatOverlayEnabled');
-    if (visibilityMembershipChanged || changedProperties.has('eatConfidenceThreshold')) {
-      // Threshold changes only vary non-zero predicted alpha, so membership and geometry are
-      // unchanged. Keep range-input updates off the O(N) spatial-index path.
-      if (visibilityMembershipChanged) this._scheduleQuadtreeRebuild();
+    if (visibilityMembershipChanged) {
+      this._scheduleQuadtreeRebuild();
       this._webglRenderer?.invalidateStyleCache();
       this._updateStyleSignature();
       this._webglRenderer?.setStyleSignature(this._styleSig);
@@ -855,7 +849,6 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
       changedProperties.has('eatOverlayEnabled') ||
-      changedProperties.has('eatConfidenceThreshold') ||
       changedProperties.has('config')
     ) {
       this._styleGettersCache = this._buildStyleGetters();
@@ -1528,8 +1521,7 @@ export class ProtspaceScatterplot extends LitElement {
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === this.eatOverlayEnabled &&
-      key.eatConfidenceThreshold === this.eatConfidenceThreshold
+      key.eatOverlayEnabled === this.eatOverlayEnabled
     ) {
       return this._visibilityModelCache;
     }
@@ -1557,7 +1549,6 @@ export class ProtspaceScatterplot extends LitElement {
       selectedOpacity,
       fadedOpacity,
       eatOverlayEnabled: this.eatOverlayEnabled,
-      eatConfidenceThreshold: this.eatConfidenceThreshold,
     };
     return model;
   }
@@ -2071,7 +2062,6 @@ export class ProtspaceScatterplot extends LitElement {
       `ps:${cfg.pointSize}`,
       `annot:${this.selectedAnnotation}`,
       `eat:${this.eatOverlayEnabled ? 1 : 0}`,
-      `eat-threshold:${this.eatConfidenceThreshold}`,
     ];
     this._styleSig = parts.join('|');
   }

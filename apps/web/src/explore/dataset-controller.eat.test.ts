@@ -68,7 +68,6 @@ describe('dataset controller EAT settings restore', () => {
     };
     const plotElement = {
       eatOverlayEnabled: true,
-      eatConfidenceThreshold: 0.5,
     };
     const viewController = {
       subscribeToViewChanges: vi.fn(() => () => {}),

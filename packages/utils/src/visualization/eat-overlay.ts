@@ -15,7 +15,13 @@ export const EAT_COMPANION_SUFFIXES = {
 export type EatCompanionKind = keyof typeof EAT_COMPANION_SUFFIXES;
 
 export const EAT_CONFIDENCE_SUFFIX = '__eat_confidence';
-export const DEFAULT_EAT_CONFIDENCE_THRESHOLD = 0.5;
+/**
+ * Default reliability-slider position. `0` means "show everything": the slider
+ * derives a `NOT(EAT_confidence < x)` filter only when dragged above 0, so a
+ * fresh dataset (or a bundle without a saved position) shows all points and
+ * leaves the filter box clean (#6b).
+ */
+export const DEFAULT_EAT_CONFIDENCE_THRESHOLD = 0;
 
 const EAT_COMPANION_RE = /^(.*)__pred_(value|confidence|source)$/;
 

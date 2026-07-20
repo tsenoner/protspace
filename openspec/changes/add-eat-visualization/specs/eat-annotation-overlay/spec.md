@@ -99,15 +99,17 @@ that has transferred values. When one of those bases is selected, the transferre
 SHALL provide an EAT overlay switch and native range plus numeric percentage threshold controls
 beside the observed/transferred population key. The range and numeric controls SHALL represent one
 value and remain synchronized. The accessible group SHALL default to overlay enabled and threshold
-`0.50` and SHALL synchronize with the scatter plot. The complete control SHALL be absent when the selected
-annotation has no usable EAT cells, including confidence-view and non-EAT selections. Optional
-`eatOverlayEnabled` and `eatConfidenceThreshold` bundle settings SHALL validate, normalize, write
-even when they are the only settings, and apply on dataset load.
+`0` — every prediction shown and the filter box clean — and its threshold SHALL mirror two-way with
+the shared `NOT(EAT_confidence < x)` query filter. The complete control SHALL be absent when the
+selected annotation has no usable EAT cells, including confidence-view and non-EAT selections.
+Optional `eatOverlayEnabled` and `eatConfidenceThreshold` bundle settings SHALL validate, normalize,
+write even when they are the only settings, and on dataset load seed the slider (which derives the
+filter condition only above `0`).
 
 #### Scenario: EAT-capable dataset
 
 - **WHEN** a dataset with normalized EAT cells loads without embedded EAT settings
-- **THEN** the switch is enabled and on, the threshold is `50%`, and both controls have accessible
+- **THEN** the switch is enabled and on, the threshold is `0%`, and both controls have accessible
   names and keyboard behavior
 - **AND** the controls are contained by an accessible EAT-labelled group
 - **AND** the group is rendered inside the transferred-annotation legend section
@@ -125,7 +127,7 @@ even when they are the only settings, and apply on dataset load.
 - **WHEN** the user changes either the threshold slider or the bounded `0` to `100` percentage
   input
 - **THEN** the other control reflects the same normalized threshold
-- **AND** one `eat-overlay-change` contract updates the scatter plot
+- **AND** one `eat-overlay-change` contract drives the shared reliability query filter
 
 #### Scenario: Selected annotation has no transfers
 
@@ -155,14 +157,15 @@ even when they are the only settings, and apply on dataset load.
 #### Scenario: Embedded settings round-trip
 
 - **WHEN** a bundle is exported with overlay disabled and threshold `0.75`, then reloaded
-- **THEN** both the control bar and scatter plot restore disabled overlay state and threshold `0.75`
+- **THEN** the overlay is restored disabled and the reliability slider seeds `0.75`, deriving its
+  `NOT(EAT_confidence < 0.75)` query filter
 
 #### Scenario: Embedded settings restore from OPFS
 
 - **WHEN** a persisted bundle with overlay disabled and threshold `0.75` is replayed from OPFS
-- **THEN** its normalized embedded EAT settings override dataset-reset defaults in both the control
-  bar and scatter plot
-- **AND** settings absent from the bundle retain the enabled and `0.50` defaults
+- **THEN** its normalized embedded EAT settings override dataset-reset defaults in both the reliability
+  slider and its shared query filter
+- **AND** settings absent from the bundle retain the enabled and `0` defaults
 
 #### Scenario: Invalid optional setting
 
@@ -244,30 +247,35 @@ category.
 - **WHEN** the current view is rendered live, composited in grayscale, or exported to PNG
 - **THEN** observed-versus-transferred distinction remains encoded by filled-versus-hollow geometry
 
-### Requirement: Confidence controls transferred opacity without hiding points
+### Requirement: Reliability threshold filters sub-threshold predictions
 
-The authoritative point-visibility model SHALL map transferred confidence linearly from `0.25` at
-zero confidence to `0.90` at confidence one. A transferred cell below the configured threshold SHALL
-be further faded but SHALL remain visible and interactive unless hidden by an existing category
-visibility rule. Existing hidden, selected, highlighted, and selection-fade precedence SHALL remain
-consistent.
+The reliability threshold SHALL hide predictions whose transferred confidence is below its position
+by driving a shared `NOT(EAT_confidence < x)` query-filter condition, not by dimming points.
+Transferred predictions render at full opacity while visible. Curated (non-transferred) points, which
+carry no confidence, SHALL always remain visible regardless of the threshold. At position `0` the
+threshold SHALL create no condition, so every point is shown and the filter box stays clean. The
+slider and the query filter SHALL mirror two-way: moving the slider upserts or removes the condition,
+editing that condition moves the slider, and each direction guards on the threshold value so they do
+not oscillate. Existing hidden, selected, highlighted, and selection-fade precedence SHALL remain
+consistent for the points that stay visible.
 
-#### Scenario: Confidence endpoints
+#### Scenario: Default shows every prediction
 
-- **WHEN** unselected transferred cells have confidence `0` and `1` with threshold `0`
-- **THEN** their base opacities are `0.25` and `0.90` respectively
+- **WHEN** the reliability threshold is at its default position `0`
+- **THEN** no reliability condition exists and every transferred and curated point is visible
 
-#### Scenario: Below-threshold prediction
+#### Scenario: Sub-threshold predictions are filtered out
 
-- **WHEN** a transferred cell's confidence is below the configured threshold
-- **THEN** its opacity is reduced to a non-zero value rather than the point disappearing
+- **WHEN** the threshold is raised above `0`
+- **THEN** a `NOT(EAT_confidence < x)` condition is applied and predictions with confidence below `x`
+  are removed from the visible set
+- **AND** curated points, which have no confidence, remain visible
 
-#### Scenario: Threshold input lifecycle
+#### Scenario: Slider and filter mirror two-way
 
-- **WHEN** the user changes the confidence threshold repeatedly in the same annotation view
-- **THEN** the system invalidates style and visibility state and redraws the points
-- **AND** it does not rebuild plot geometry or the quadtree
-- **AND** it does not request an unchanged population recount through `data-change`
+- **WHEN** the user moves the slider or edits the equivalent `NOT(EAT_confidence < x)` condition in
+  the filter builder
+- **THEN** the other control reflects the same normalized threshold without oscillating
 
 #### Scenario: Hidden category wins
 

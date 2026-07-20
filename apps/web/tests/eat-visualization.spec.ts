@@ -268,29 +268,56 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
   const eatToggle = eatGroup.getByRole('checkbox', { name: 'Show EAT predictions' });
   const threshold = eatGroup.getByRole('slider', {
-    name: 'EAT reliability emphasis threshold',
+    name: 'EAT reliability filter threshold',
   });
   const thresholdPercent = eatGroup.getByRole('spinbutton', {
-    name: 'EAT reliability emphasis percentage',
+    name: 'EAT reliability filter percentage',
   });
+  const filterButton = controlBar.locator('.filter-container .dropdown-trigger');
+  const predictedVisibleCount = () =>
+    page.evaluate(() => {
+      const renderer = (
+        document.querySelector('protspace-scatterplot') as
+          | (Element & {
+              _webglRenderer?: { predicted?: Float32Array; currentPointCount?: number };
+            })
+          | null
+      )?._webglRenderer;
+      const count = renderer?.currentPointCount ?? 0;
+      return renderer?.predicted
+        ? Array.from(renderer.predicted.subarray(0, count)).filter((value) => value === 1).length
+        : -1;
+    });
 
   await expect(eatGroup).toBeVisible();
   await expect(eatToggle).toBeChecked();
   await expect(eatToggle).toBeEnabled();
-  await expect(threshold).toHaveValue('0.5');
-  await expect(thresholdPercent).toHaveValue('50');
-  await eatGroup
-    .getByRole('button', { name: 'Information about EAT reliability emphasis' })
-    .click();
-  await expect(eatGroup.getByRole('dialog')).toContainText(
-    'Predictions below this reliability remain visible but are dimmed',
-  );
-  await expect(eatGroup.getByRole('dialog')).toContainText('EC number — EAT confidence');
+  // Default position 0: every prediction visible, filter box clean.
+  await expect(threshold).toHaveValue('0');
+  await expect(thresholdPercent).toHaveValue('0');
+  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect.poll(predictedVisibleCount).toBe(213);
+
+  // Raising the threshold drives the shared NOT(EAT_confidence < x) filter, which
+  // HIDES sub-threshold predictions (fewer visible points) rather than dimming them.
+  await thresholdPercent.fill('99');
+  await expect(threshold).toHaveValue('0.99');
+  await expect(filterButton).toHaveClass(/filter-active/);
+  await expect.poll(predictedVisibleCount).toBeLessThan(213);
+
+  // Dragging back to 0 removes the condition and restores every prediction.
   await threshold.press('Home');
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
-  await thresholdPercent.fill('50');
-  await expect(threshold).toHaveValue('0.5');
+  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect.poll(predictedVisibleCount).toBe(213);
+
+  // The info popover explains predictions are filtered out while curated stays.
+  await eatGroup.getByRole('button', { name: 'Information about EAT reliability filter' }).click();
+  await expect(eatGroup.getByRole('dialog')).toContainText(
+    'Predictions below this reliability are hidden',
+  );
+  await expect(eatGroup.getByRole('dialog')).toContainText('EC number — EAT confidence');
 
   const legendSummary = eatGroup.getByRole('region', {
     name: 'Transferred annotation counts',

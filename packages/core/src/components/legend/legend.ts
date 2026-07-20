@@ -1015,6 +1015,15 @@ export class ProtspaceLegend extends LitElement {
   // Data Handling
   // ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Reliability slider position (0…1). The slider no longer dims points itself;
+   * it drives the shared `NOT(EAT_confidence < x)` query filter via the control
+   * bar. Exposed so bundle export can persist the saved slider position (#6b).
+   */
+  public get reliabilityThreshold(): number {
+    return this._eatConfidenceThreshold;
+  }
+
   public applyEatSettings(enabled: boolean, threshold: number): void {
     const normalizedThreshold = Number.isFinite(threshold)
       ? Math.min(1, Math.max(0, threshold))
@@ -1022,11 +1031,27 @@ export class ProtspaceLegend extends LitElement {
     this._eatOverlayEnabled = enabled;
     this._eatConfidenceThreshold = normalizedThreshold;
 
+    // The overlay switch still coalesces predictions into the base annotation on
+    // the scatter plot. The threshold, however, only feeds the reliability query
+    // filter now — it is emitted (below) and forwarded to the control bar, not
+    // pushed onto the scatter plot as a dimming input.
     const scatterplot = this._scatterplotController.scatterplot;
     if (this.autoSync && scatterplot) {
       scatterplot.eatOverlayEnabled = enabled;
-      scatterplot.eatConfidenceThreshold = normalizedThreshold;
     }
+
+    this._emitEatOverlayChange();
+  }
+
+  /**
+   * Reverse mirror: set the slider position from the query filter WITHOUT
+   * re-emitting `eat-overlay-change`, so the control-bar->legend direction does
+   * not loop back into the legend->control-bar direction (#6b).
+   */
+  public setReliabilityThreshold(value: number): void {
+    this._eatConfidenceThreshold = Number.isFinite(value)
+      ? Math.min(1, Math.max(0, value))
+      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   }
 
   private _emitEatOverlayChange(): void {
@@ -1047,7 +1072,6 @@ export class ProtspaceLegend extends LitElement {
       (event.currentTarget as HTMLInputElement).checked,
       this._eatConfidenceThreshold,
     );
-    this._emitEatOverlayChange();
   }
 
   private _handleEatThresholdInput(event: Event): void {
@@ -1062,15 +1086,15 @@ export class ProtspaceLegend extends LitElement {
 
   private _setEatConfidenceThreshold(value: number): void {
     this.applyEatSettings(this._eatOverlayEnabled, value);
-    this._emitEatOverlayChange();
   }
 
   private _handleScatterplotDataChange(data: ScatterplotData, selectedAnnotation: string): void {
     this._clearKeyboardReorderState();
     const scatterplot = this._scatterplotController.scatterplot;
     this._eatOverlayEnabled = scatterplot?.eatOverlayEnabled ?? true;
-    this._eatConfidenceThreshold =
-      scatterplot?.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+    // The reliability slider position is legend-owned now (it drives the query
+    // filter, not scatter-plot dimming), so it is preserved across data-change
+    // rather than re-read from the scatter plot.
     this.data = {
       annotations: data.annotations,
       protein_ids: data.protein_ids,
@@ -2169,7 +2193,7 @@ export class ProtspaceLegend extends LitElement {
                 </div>
                 <div class="eat-threshold">
                   <div class="eat-threshold-heading">
-                    <label for="eat-reliability-threshold">Emphasize reliability</label>
+                    <label for="eat-reliability-threshold">Hide below reliability</label>
                     <span class="eat-threshold-value">
                       <input
                         class="eat-threshold-percent"
@@ -2179,14 +2203,14 @@ export class ProtspaceLegend extends LitElement {
                         step="1"
                         .value=${String(Math.round(this._eatConfidenceThreshold * 100))}
                         ?disabled=${!this._eatOverlayEnabled}
-                        aria-label="EAT reliability emphasis percentage"
+                        aria-label="EAT reliability filter percentage"
                         @input=${this._handleEatThresholdPercentInput}
                       />
                       <span aria-hidden="true">%</span>
                       <protspace-info-popover
                         class="eat-threshold-info"
-                        .description=${`Predictions below this reliability remain visible but are dimmed. To remove them, use Filter with “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
-                        label="EAT reliability emphasis"
+                        .description=${`Predictions below this reliability are hidden (filtered out); curated “${annotationLabel(this.selectedAnnotation)}” annotations always stay visible. Set to 0% to show all. This mirrors a Filter condition on “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
+                        label="EAT reliability filter"
                         align="right"
                       ></protspace-info-popover>
                     </span>
@@ -2199,7 +2223,7 @@ export class ProtspaceLegend extends LitElement {
                     step="0.01"
                     .value=${String(this._eatConfidenceThreshold)}
                     ?disabled=${!this._eatOverlayEnabled}
-                    aria-label="EAT reliability emphasis threshold"
+                    aria-label="EAT reliability filter threshold"
                     @input=${this._handleEatThresholdInput}
                   />
                 </div>
