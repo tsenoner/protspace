@@ -1,0 +1,89 @@
+name: Bundle format contract (Python ↔ TypeScript)
+
+# The .parquetbundle producer (apps/protspace, Python) and its consumer
+# (packages/core data-loader, TypeScript) are tested by separate workflows whose
+# path filters are mutually exclusive: ci.yml ignores apps/protspace/**, and
+# protspace-ci.yml only runs for it. A contract test placed in either would be
+# skipped by exactly the change most likely to break it.
+#
+# This workflow's filter is therefore the UNION of both sides plus the suite
+# itself, and it is the only job that installs both toolchains. Keep the filter
+# in sync when either side's format code moves.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/protspace/src/protspace/data/io/**'
+      - 'apps/protspace/src/protspace/data/annotations/**'
+      - 'apps/protspace/src/protspace/cli/bundle.py'
+      - 'packages/core/src/components/data-loader/**'
+      # bundle.ts feeds settings through sanitizePublishState from publish/.
+      - 'packages/core/src/components/publish/**'
+      - 'packages/utils/src/parquet/**'
+      # conversion.ts decodes annotations via normalizeMissingValue/NA_VALUE —
+      # what makes the "missing numeric stays missing" assertion meaningful.
+      - 'packages/utils/src/visualization/**'
+      - 'tests/contract/**'
+      - '.github/workflows/bundle-contract.yml'
+  pull_request:
+    paths:
+      - 'apps/protspace/src/protspace/data/io/**'
+      - 'apps/protspace/src/protspace/data/annotations/**'
+      - 'apps/protspace/src/protspace/cli/bundle.py'
+      - 'packages/core/src/components/data-loader/**'
+      # bundle.ts feeds settings through sanitizePublishState from publish/.
+      - 'packages/core/src/components/publish/**'
+      - 'packages/utils/src/parquet/**'
+      # conversion.ts decodes annotations via normalizeMissingValue/NA_VALUE —
+      # what makes the "missing numeric stays missing" assertion meaningful.
+      - 'packages/utils/src/visualization/**'
+      - 'tests/contract/**'
+      - '.github/workflows/bundle-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: Bundle format contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: 'apps/protspace/pyproject.toml'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      # Both toolchains are required. The suite must never degrade to a skip when
+      # one is missing — an absent producer has to fail the job, not pass it.
+      - name: Install Python producer
+        run: uv sync --package protspace
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run bundle format contract
+        run: pnpm test:contract

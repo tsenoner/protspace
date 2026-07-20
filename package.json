@@ -19,6 +19,7 @@
     "test:e2e": "playwright test -c apps/web/tests/playwright.config.ts",
     "test": "turbo test",
     "test:ci": "turbo test:ci",
+    "test:contract": "vitest --run --config tests/contract/vitest.config.ts",
     "perf": "playwright test -c perf/playwright.config.ts perf/webgl-perf.spec.ts",
     "lint": "turbo lint",
     "lint:fix": "turbo lint -- --fix",
@@ -60,6 +61,7 @@
     "tsx": "^4.22.4",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
-    "vitepress": "^1.6.4"
+    "vitepress": "^1.6.4",
+    "vitest": "^4.1.9"
   }
 }

@@ -56,9 +56,14 @@ function readFormatVersion(metadata: FileMetaData): number {
 /**
  * Extract rows and optional settings from a parquetbundle.
  *
- * Supports two formats:
+ * Supports every layout the Python producer can write (see `_parse_bundle` in
+ * `apps/protspace/src/protspace/data/io/bundle.py`, which bounds itself to 3-5 parts):
  * - 2 delimiters (3 parts): Original format without settings
  * - 3 delimiters (4 parts): Extended format with settings
+ * - 4 delimiters (5 parts): Settings plus a projection-statistics part, which the
+ *   web reader does not consume. The settings slot may be zero bytes when the
+ *   producer wrote statistics without settings — it exists only to keep the
+ *   statistics part at a fixed position.
  */
 export async function extractRowsFromParquetBundle(
   arrayBuffer: ArrayBuffer,
@@ -66,14 +71,14 @@ export async function extractRowsFromParquetBundle(
   const uint8Array = new Uint8Array(arrayBuffer);
   const delimiterPositions = findBundleDelimiterPositions(uint8Array);
 
-  // Support both 2 delimiters (original) and 3 delimiters (with settings)
-  if (delimiterPositions.length !== 2 && delimiterPositions.length !== 3) {
+  // 2 delimiters (original), 3 (with settings), or 4 (settings + statistics).
+  if (delimiterPositions.length < 2 || delimiterPositions.length > 4) {
     throw new Error(
-      `Expected 2 or 3 delimiters in parquetbundle, found ${delimiterPositions.length}`,
+      `Expected 2 to 4 delimiters in parquetbundle, found ${delimiterPositions.length}`,
     );
   }
 
-  const hasSettingsPart = delimiterPositions.length === 3;
+  const hasSettingsPart = delimiterPositions.length >= 3;
 
   // Extract the three required parts
   let part1: ArrayBuffer | null = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
@@ -88,8 +93,12 @@ export async function extractRowsFromParquetBundle(
     part3 = uint8Array
       .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[2])
       .slice().buffer;
+    // Bound the settings part by the next delimiter when one follows. Slicing to
+    // end-of-file instead would hand the settings parser the statistics part
+    // glued onto its tail.
+    const settingsEnd = delimiterPositions[3] ?? uint8Array.length;
     part4 = uint8Array
-      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length)
+      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length, settingsEnd)
       .slice().buffer;
   } else {
     part3 = uint8Array
@@ -133,7 +142,9 @@ export async function extractRowsFromParquetBundle(
 
   // Parse settings if present
   let settings: BundleSettings | null = null;
-  if (part4) {
+  // A zero-byte settings part is the producer's sentinel for "no settings, but
+  // statistics follow" — absent settings, not a corrupt part, so don't warn.
+  if (part4 && part4.byteLength > 0) {
     settings = await extractSettings(part4);
   }
 
