@@ -21,6 +21,10 @@ const plotData: PlotData = {
 // default), so expectations track the formula instead of a hand-computed constant.
 const EXPECTED_BASE_RADIUS_PX = Math.max(4, Math.sqrt(240) / 3 + 2);
 
+// Mirrors ConnectorOverlayController#connectorStrokeWidthPx for pointSize 240 (the
+// default), so expectations track the formula instead of a hand-computed constant.
+const EXPECTED_STROKE_WIDTH_PX = Math.max(1, Math.sqrt(240) / 10);
+
 describe('ConnectorOverlayController', () => {
   let svg: SVGSVGElement;
   let overlay: d3.Selection<SVGGElement, unknown, null, undefined>;
@@ -163,6 +167,59 @@ describe('ConnectorOverlayController', () => {
       EXPECTED_BASE_RADIUS_PX,
       EXPECTED_BASE_RADIUS_PX,
     ]);
+  });
+
+  it('scales the connector line stroke-width with point size, defaulting to ~1.5px', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const defaultLine = svg.querySelector('line.eat-provenance-connector');
+    expect(Number(defaultLine?.getAttribute('stroke-width'))).toBeCloseTo(
+      EXPECTED_STROKE_WIDTH_PX,
+      10,
+    );
+    expect(EXPECTED_STROKE_WIDTH_PX).toBeCloseTo(1.5, 1);
+
+    const biggerController = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => plotData,
+      getScales: () => scales,
+      getPointSize: () => 960,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    biggerController.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    const biggerLine = svg.querySelector('line.eat-provenance-connector');
+    const expectedWidthAt960 = Math.max(1, Math.sqrt(960) / 10);
+    expect(Number(biggerLine?.getAttribute('stroke-width'))).toBeCloseTo(expectedWidthAt960, 10);
+    expect(expectedWidthAt960).toBeGreaterThan(EXPECTED_STROKE_WIDTH_PX);
+  });
+
+  it('inverse-scales the connector line stroke-width without rebuilding connector geometry', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(EXPECTED_STROKE_WIDTH_PX, 10);
+
+    controller.updateZoomScale(2.5);
+
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(
+      EXPECTED_STROKE_WIDTH_PX / 2.5,
+      10,
+    );
+    expect(line?.getAttribute('x1')).toBe('10');
+
+    controller.updateZoomScale(Number.NaN);
+    expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(EXPECTED_STROKE_WIDTH_PX, 10);
   });
 
   it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {

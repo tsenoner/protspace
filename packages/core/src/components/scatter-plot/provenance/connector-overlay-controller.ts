@@ -95,10 +95,13 @@ export class ConnectorOverlayController {
    */
   updateZoomScale(scale: number): void {
     this.zoomScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-    this.deps
-      .getOverlayGroup()
+    const overlay = this.deps.getOverlayGroup();
+    overlay
       ?.selectAll<SVGCircleElement, unknown>('circle.eat-provenance-endpoint')
       .attr('r', this.endpointBaseRadiusPx() / this.zoomScale);
+    overlay
+      ?.selectAll<SVGLineElement, unknown>('line.eat-provenance-connector')
+      .attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale);
   }
 
   // On-screen point radius ≈ sqrt(pointSize)/3 (matches the WebGL/hit-test formula;
@@ -107,6 +110,12 @@ export class ConnectorOverlayController {
     const pointSize = this.deps.getPointSize?.() ?? 240;
     const pointRadiusPx = Math.sqrt(Math.max(pointSize, 1)) / 3;
     return Math.max(4, pointRadiusPx + 2);
+  }
+
+  // Screen-space line width scaled by point size (parallels endpointBaseRadiusPx).
+  private connectorStrokeWidthPx(): number {
+    const pointSize = this.deps.getPointSize?.() ?? 240;
+    return Math.max(1, Math.sqrt(Math.max(pointSize, 1)) / 10); // ≈1.55px at the default 240
   }
 
   render(): void {
@@ -156,7 +165,8 @@ export class ConnectorOverlayController {
       .attr('x1', (pair) => pair.x1)
       .attr('y1', (pair) => pair.y1)
       .attr('x2', (pair) => pair.x2)
-      .attr('y2', (pair) => pair.y2);
+      .attr('y2', (pair) => pair.y2)
+      .attr('stroke-width', this.connectorStrokeWidthPx() / this.zoomScale);
 
     const endpoints = new Map<string, { id: string; x: number; y: number }>();
     for (const pair of resolved) {
