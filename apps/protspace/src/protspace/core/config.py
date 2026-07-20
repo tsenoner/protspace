@@ -1,6 +1,3 @@
-from plotly.validator_cache import ValidatorCache
-
-
 # https://plotly.com/python/marker-style/
 def extract_marker_strings(input_list):
     # Filter out integers and string representations of numbers
@@ -23,8 +20,6 @@ HIGHLIGHT_COLOR = "rgba(0,0,0,0)"
 HIGHLIGHT_BORDER_COLOR = "black"
 
 # Marker shapes
-SymbolValidator = ValidatorCache.get_validator("scatter.marker", "symbol")
-MARKER_SHAPES_2D = sorted(extract_marker_strings(SymbolValidator.values))
 MARKER_SHAPES_3D = [
     "circle",
     "circle-open",
@@ -35,3 +30,16 @@ MARKER_SHAPES_3D = [
     "square-open",
     "x",
 ]
+
+
+# ponytail: plotly ships only in the `frontend` extra, so it must stay out of the
+# import path — the CLI (embed/project/transfer) imports this module too.
+def __getattr__(name):
+    if name == "MARKER_SHAPES_2D":
+        from plotly.validator_cache import ValidatorCache
+
+        validator = ValidatorCache.get_validator("scatter.marker", "symbol")
+        value = sorted(extract_marker_strings(validator.values))
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
