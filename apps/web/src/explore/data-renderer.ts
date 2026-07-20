@@ -29,7 +29,7 @@ interface ResolvedInitialView {
   tooltip: string[];
 }
 
-function resolveRenderableView(
+export function resolveRenderableView(
   newData: VisualizationData,
   initialView?: EffectiveExploreView | null,
 ): ResolvedInitialView {
@@ -38,8 +38,17 @@ function resolveRenderableView(
     0,
     newData.projections.findIndex((projection) => projection.name === projectionName),
   );
-  const firstAnnotationKey = Object.keys(newData.annotations)[0] || '';
-  const annotation = initialView?.annotation ?? firstAnnotationKey;
+  // Synthesized `__eat_confidence` annotations are filter-only (see control-bar's
+  // color-by/filterable split) — never auto-selected as the default color-by annotation.
+  const isEatConfidenceAnnotation = (key: string) =>
+    newData.annotations[key]?.runtime?.role === 'eat-confidence';
+  const firstAnnotationKey =
+    Object.keys(newData.annotations).find((key) => !isEatConfidenceAnnotation(key)) || '';
+  const requestedAnnotation = initialView?.annotation;
+  const annotation =
+    requestedAnnotation && !isEatConfidenceAnnotation(requestedAnnotation)
+      ? requestedAnnotation
+      : firstAnnotationKey;
 
   const availableAnnotations = new Set(Object.keys(newData.annotations));
   const seenTooltip = new Set<string>();

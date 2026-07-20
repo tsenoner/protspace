@@ -3,6 +3,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './annotation-select';
+import './control-bar';
+import type { ProtspaceData } from './types';
 
 type AnnotationSelectElement = HTMLElement & {
   annotations: string[];
@@ -152,5 +154,60 @@ describe('protspace-annotation-select tooltip extras', () => {
 
     expect(selectSpy).toHaveBeenCalledTimes(1);
     expect((selectSpy.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'gene_name' });
+  });
+});
+
+interface ControlBarInternals extends HTMLElement {
+  annotations: string[];
+  _filterableAnnotations: string[];
+  selectedAnnotation: string;
+  _updateOptionsFromData(data: ProtspaceData, capabilityData?: ProtspaceData): void;
+  updateComplete: Promise<unknown>;
+}
+
+describe('protspace-control-bar annotation list splitting', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('excludes eat-confidence annotations from the color-by list but keeps them in the filterable list', async () => {
+    const controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
+    document.body.appendChild(controlBar);
+    await controlBar.updateComplete;
+
+    const data: ProtspaceData = {
+      projections: [{ name: 'umap' }],
+      annotations: {
+        pfam: { kind: 'categorical', values: ['a', 'b'] },
+        pfam__eat_confidence: {
+          kind: 'numeric',
+          values: ['0.9', '0.4'],
+          runtime: { role: 'eat-confidence', baseAnnotation: 'pfam' },
+        },
+        // Collision-renamed variant (real allocateEatConfidenceAnnotationKey output shape:
+        // `<base>__eat_confidence__runtime_N`) — identity must still key off runtime.role,
+        // not the `__eat_confidence` suffix.
+        pfam__eat_confidence__runtime_2: {
+          kind: 'numeric',
+          values: ['0.1', '0.7'],
+          runtime: { role: 'eat-confidence', baseAnnotation: 'pfam' },
+        },
+      },
+    };
+
+    controlBar._updateOptionsFromData(data);
+
+    expect(controlBar.annotations).toEqual(['pfam']);
+    expect(controlBar._filterableAnnotations).toEqual([
+      'pfam',
+      'pfam__eat_confidence',
+      'pfam__eat_confidence__runtime_2',
+    ]);
+    // The default color-by selection must never land on an eat-confidence key.
+    expect(controlBar.selectedAnnotation).toBe('pfam');
   });
 });

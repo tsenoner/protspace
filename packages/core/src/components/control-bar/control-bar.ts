@@ -58,6 +58,8 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: Boolean, attribute: 'current-dataset-is-demo' })
   currentDatasetIsDemo: boolean = false;
   @state() private _eatAnnotationKeys: string[] = [];
+  /** Full annotation key list (includes synthesized `__eat_confidence` keys) for the query-filter column picker. */
+  @state() private _filterableAnnotations: string[] = [];
 
   @state() private _selectionDisabled: boolean = false;
 
@@ -1014,7 +1016,7 @@ export class ProtspaceControlBar extends LitElement {
                 @click=${(e: Event) => e.stopPropagation()}
               >
                 <protspace-query-builder
-                  .annotations=${this.annotations}
+                  .annotations=${this._filterableAnnotations}
                   .data=${this._currentData}
                   .query=${this.filterQuery}
                   @query-changed=${this._handleQueryChanged}
@@ -1352,8 +1354,14 @@ export class ProtspaceControlBar extends LitElement {
     // Update projections and annotations
     this.projectionsMeta = data.projections || [];
     this.projections = this.projectionsMeta.map((p) => p.name) || [];
-    this.annotations = Object.keys(data.annotations || {}).filter(
+    const fullAnnotationKeys = Object.keys(data.annotations || {}).filter(
       (a) => !TOOLTIP_ONLY_ANNOTATIONS.has(a),
+    );
+    // The query-filter column picker can filter on the synthesized `__eat_confidence`
+    // columns (e.g. NOT(EAT_confidence < X)), but they're not meaningful to color by.
+    this._filterableAnnotations = fullAnnotationKeys;
+    this.annotations = fullAnnotationKeys.filter(
+      (key) => data.annotations?.[key]?.runtime?.role !== 'eat-confidence',
     );
     this._eatAnnotationKeys = Object.entries(capabilityData.annotation_predicted ?? {})
       .filter(([, cells]) => cells.some(Boolean))
