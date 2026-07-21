@@ -14,7 +14,11 @@ dependencies = [
   "slowapi>=0.1.9",
 ]
 
-[project.optional-dependencies]
+# PEP 735 group, not a [project.optional-dependencies] extra: these are only ever
+# needed to run the test suite, so they should not be installable by consumers as
+# `protspace-prep[dev]`. Groups are also synced by default, so a plain `uv sync`
+# yields a test-ready environment; the Dockerfile's `--no-dev` still excludes them.
+[dependency-groups]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",

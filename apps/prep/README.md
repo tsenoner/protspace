@@ -6,10 +6,11 @@ for the design.
 
 ## Run locally
 
+`protspace-prep` is a member of the repo-root uv workspace, so run these from the
+repo root. The `dev` dependency group installs by default — no extra flag needed.
+
 ```bash
-cd apps/prep
-uv venv
-uv pip install -e ".[dev]"
+uv sync --package protspace-prep
 uv run uvicorn protspace_prep.app:app --reload --port 8000
 ```
 
