@@ -6,62 +6,29 @@ name: Bundle format contract (Python ↔ TypeScript)
 # protspace-ci.yml only runs for it. A contract test placed in either would be
 # skipped by exactly the change most likely to break it.
 #
-# This workflow's filter is therefore the UNION of both sides plus the suite
-# itself, and it is the only job that installs both toolchains. Keep the filter
-# in sync when either side's format code moves.
+# This job therefore lives on its own, installs both toolchains, and runs
+# UNFILTERED — on every pull request, no `paths:` gate.
+#
+# That is deliberate, for two reasons:
+#
+# 1. It is a required status check. A path-filtered required check deadlocks:
+#    GitHub waits forever for a report that a skipped workflow never sends, so
+#    any PR outside the filter can never merge.
+#
+# 2. A hand-maintained filter is a hand-maintained copy of an import graph, and
+#    it rots silently. The previous version of this file was already incomplete
+#    on the day it was written — it missed the @protspace/utils barrel, the CLI
+#    modules bundle.py imports, and the hyparquet pin in pnpm-lock.yaml. When a
+#    filter is wrong the job does not fail; it simply does not run, which reads
+#    exactly like "the contract still holds".
+#
+# The job is cheap enough to run every time: `uv sync --no-dev` installs 57
+# packages rather than the 223 the dev group pulls, and the suite itself is ~4s.
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/protspace/src/protspace/data/io/**'
-      - 'apps/protspace/src/protspace/data/annotations/**'
-      # The generator shells out to `protspace bundle` by bare name, so the whole
-      # CLI package matters: bundle.py's own imports (app.py, common_options.py)
-      # and pyproject.toml's [project.scripts] entry that puts it on PATH.
-      - 'apps/protspace/src/protspace/cli/**'
-      - 'apps/protspace/pyproject.toml'
-      - 'packages/core/src/components/data-loader/**'
-      # bundle.ts feeds settings through sanitizePublishState from publish/.
-      - 'packages/core/src/components/publish/**'
-      # The suite aliases @protspace/utils to the package root, so its barrel
-      # (index.ts) and everything the barrel re-exports is in the tested graph —
-      # not just parquet/. conversion.ts also decodes annotations via
-      # normalizeMissingValue/NA_VALUE from visualization/, which is what makes
-      # the "missing numeric stays missing" assertion meaningful.
-      - 'packages/utils/src/**'
-      - 'tests/contract/**'
-      # hyparquet is the decoder under test; a bump belongs in this job's scope.
-      # The root package.json defines the `test:contract` script the job runs.
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'uv.lock'
-      - '.github/workflows/bundle-contract.yml'
   pull_request:
-    paths:
-      - 'apps/protspace/src/protspace/data/io/**'
-      - 'apps/protspace/src/protspace/data/annotations/**'
-      # The generator shells out to `protspace bundle` by bare name, so the whole
-      # CLI package matters: bundle.py's own imports (app.py, common_options.py)
-      # and pyproject.toml's [project.scripts] entry that puts it on PATH.
-      - 'apps/protspace/src/protspace/cli/**'
-      - 'apps/protspace/pyproject.toml'
-      - 'packages/core/src/components/data-loader/**'
-      # bundle.ts feeds settings through sanitizePublishState from publish/.
-      - 'packages/core/src/components/publish/**'
-      # The suite aliases @protspace/utils to the package root, so its barrel
-      # (index.ts) and everything the barrel re-exports is in the tested graph —
-      # not just parquet/. conversion.ts also decodes annotations via
-      # normalizeMissingValue/NA_VALUE from visualization/, which is what makes
-      # the "missing numeric stays missing" assertion meaningful.
-      - 'packages/utils/src/**'
-      - 'tests/contract/**'
-      # hyparquet is the decoder under test; a bump belongs in this job's scope.
-      # The root package.json defines the `test:contract` script the job runs.
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'uv.lock'
-      - '.github/workflows/bundle-contract.yml'
   workflow_dispatch:
 
 jobs:
