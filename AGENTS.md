@@ -43,20 +43,26 @@ Always run `pnpm precommit` before creating any git commit. It runs:
 - TypeScript (typecheck)
 - Vitest (tests)
 
+It is JS-only; Python workspace members are covered by their own CI workflows (see below).
+
 ## Python workspace members (uv)
 
 The Python packages are uv workspace members (root `[tool.uv.workspace]`) sharing one root
-`uv.lock`. Adding a member means wiring up three things it does not get for free:
+`uv.lock`. A new **top-level** member needs three things it does not get for free:
 
-- **`pnpm precommit` is JS-only** — it never lints or tests Python. Each member needs its own
-  workflow in `.github/workflows/` (GitHub runs workflows only from the repo root), path-filtered
-  on the member's directory **and** `uv.lock` — a dependency bump reaches it through the root lock
-  alone.
-- **Each member needs its own `[tool.ruff]`**, with `target-version` matching its `requires-python`.
-  Ruff resolves the nearest _ancestor_ config, so a member without one silently inherits another
-  member's rules and target version — or ruff's defaults if no ancestor has a `[tool.ruff]` table.
-- **Test/lint-only deps go in `[dependency-groups]`**, not `[project.optional-dependencies]`.
+- **Its own workflow** in `.github/workflows/` (GitHub runs workflows only from the repo root),
+  path-filtered on the member's directory **and** `uv.lock` — a dependency bump reaches it through
+  the root lock alone. See `prep-ci.yml` for a worked example.
+- **Its own `[tool.ruff]`**, with `target-version` matching its `requires-python`. Ruff resolves the
+  nearest _ancestor_ config, so a member without one silently inherits another member's rules and
+  target version — or ruff's defaults if no ancestor has a `[tool.ruff]` table.
+- **Test/lint-only deps in `[dependency-groups]`**, not `[project.optional-dependencies]`.
   Groups sync by default; extras do not, and a `dev` extra is installable by consumers.
+
+A member nested inside another — currently only `apps/protspace/packages/protlabel` — needs
+neither of the first two: `protspace-ci.yml` already lints and tests it via `packages/`, and it
+inherits `apps/protspace`'s ruff config, which is correct only while their `requires-python`
+floors agree.
 
 ## Commit style
 
