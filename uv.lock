@@ -3316,7 +3316,6 @@ frontend = [
     { name = "dash-molstar" },
     { name = "kaleido" },
     { name = "plotly" },
-    { name = "requests" },
 ]
 local = [
     { name = "einops" },
@@ -3342,7 +3341,6 @@ dev = [
     { name = "jupytext" },
     { name = "panel" },
     { name = "polars" },
-    { name = "pyarrow" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -3372,7 +3370,6 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pymmseqs", specifier = ">=1.0.4" },
     { name = "requests", specifier = ">=2.32.4" },
-    { name = "requests", marker = "extra == 'frontend'", specifier = ">=2.32.4" },
     { name = "rich", specifier = ">=14.3.3" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "sentencepiece", marker = "extra == 'local'", specifier = ">=0.2.2" },
@@ -3400,7 +3397,6 @@ dev = [
     { name = "jupytext", specifier = ">=1.17.1" },
     { name = "panel", specifier = ">=1.5.2" },
     { name = "polars", specifier = ">=1.26.0" },
-    { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.6.9" },
