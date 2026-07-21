@@ -14,6 +14,7 @@
 import { parquetWriteBuffer } from 'hyparquet-writer';
 import type { VisualizationData, BundleSettings } from '../types';
 import { BUNDLE_DELIMITER_BYTES } from './constants';
+import { assertNoBundleDelimiter } from './delimiter-utils';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
 import { getFirstAnnotationIndex } from '../visualization/annotation-data-access.js';
@@ -224,6 +225,12 @@ export function createParquetBundle(
     const settingsBuffer = createSettingsParquet(settings);
     buffers.push(settingsBuffer);
   }
+
+  // The delimiter is in-band and unescaped, so a part containing it would split
+  // into two on read-back. The Python producer guards every part it writes; do
+  // the same here or the invariant holds in only one direction. Annotation text
+  // and legend category names are user-authored, so this is reachable.
+  buffers.forEach(assertNoBundleDelimiter);
 
   return concatenateBuffers(buffers, BUNDLE_DELIMITER_BYTES);
 }

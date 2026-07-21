@@ -3,7 +3,7 @@
  * These are shared between the bundle reader (core) and bundle writer (utils).
  */
 
-import { BUNDLE_DELIMITER_BYTES } from './constants';
+import { BUNDLE_DELIMITER, BUNDLE_DELIMITER_BYTES } from './constants';
 
 /**
  * Find all positions of the bundle delimiter in a Uint8Array.
@@ -27,6 +27,29 @@ export function findBundleDelimiterPositions(uint8Array: Uint8Array): number[] {
   }
 
   return positions;
+}
+
+/**
+ * Guard: a serialized part must not contain the bundle delimiter.
+ *
+ * The delimiter is in-band with no escaping, so a part whose bytes happen to
+ * contain it would be split into two on read-back. Fail loudly at write time
+ * rather than emit a bundle that decodes into the wrong shape.
+ *
+ * Mirrors `_check_no_delimiter` in the Python producer
+ * (`apps/protspace/src/protspace/data/io/bundle.py`) — both sides must enforce
+ * this or the format's invariants hold only in one direction.
+ *
+ * @param arrayBuffer - The serialized part to check
+ * @throws If the part contains the reserved delimiter byte string
+ */
+export function assertNoBundleDelimiter(arrayBuffer: ArrayBuffer): void {
+  if (findBundleDelimiterPositions(new Uint8Array(arrayBuffer)).length > 0) {
+    throw new Error(
+      `Serialized parquet part contains the bundle delimiter "${BUNDLE_DELIMITER}"; ` +
+        'a value includes this reserved byte string and would corrupt the bundle on read.',
+    );
+  }
 }
 
 /**
