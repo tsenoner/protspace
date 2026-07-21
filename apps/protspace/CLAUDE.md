@@ -2,7 +2,6 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Version:** 4.7.1
 - **Python:** >=3.10
 - **License:** MIT
 - **PyPI:** `pip install protspace`
