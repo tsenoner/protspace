@@ -78,33 +78,29 @@ export async function extractRowsFromParquetBundle(
     );
   }
 
-  const hasSettingsPart = delimiterPositions.length >= 3;
+  const delimiterLength = BUNDLE_DELIMITER_BYTES.length;
 
-  // Extract the three required parts
-  let part1: ArrayBuffer | null = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
-  let part2: ArrayBuffer | null = uint8Array
-    .subarray(delimiterPositions[0] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[1])
-    .slice().buffer;
+  // Every part runs from just past its opening delimiter to the next delimiter,
+  // or to end-of-file when none follows. Bounding by the next delimiter is what
+  // keeps a trailing part from being glued onto its predecessor's tail — without
+  // it, a 5-part bundle would hand the settings parser the statistics part too.
+  const partBetween = (start: number, end: number = uint8Array.length): ArrayBuffer =>
+    uint8Array.subarray(start, end).slice().buffer;
 
-  let part3: ArrayBuffer | null;
-  let part4: ArrayBuffer | null = null;
-
-  if (hasSettingsPart) {
-    part3 = uint8Array
-      .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[2])
-      .slice().buffer;
-    // Bound the settings part by the next delimiter when one follows. Slicing to
-    // end-of-file instead would hand the settings parser the statistics part
-    // glued onto its tail.
-    const settingsEnd = delimiterPositions[3] ?? uint8Array.length;
-    part4 = uint8Array
-      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length, settingsEnd)
-      .slice().buffer;
-  } else {
-    part3 = uint8Array
-      .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length)
-      .slice().buffer;
-  }
+  let part1: ArrayBuffer | null = partBetween(0, delimiterPositions[0]);
+  let part2: ArrayBuffer | null = partBetween(
+    delimiterPositions[0] + delimiterLength,
+    delimiterPositions[1],
+  );
+  let part3: ArrayBuffer | null = partBetween(
+    delimiterPositions[1] + delimiterLength,
+    delimiterPositions[2],
+  );
+  // The settings part exists only when a third delimiter opens it.
+  const part4: ArrayBuffer | null =
+    delimiterPositions.length >= 3
+      ? partBetween(delimiterPositions[2] + delimiterLength, delimiterPositions[3])
+      : null;
 
   // Validate parquet magic for each part before parsing
   assertValidParquetMagic(part1);
