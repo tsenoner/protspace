@@ -23,6 +23,10 @@ WORKDIR /app
 
 # Layer 1: external deps only (no workspace members). Cached until the workspace
 # lock or any member's pyproject.toml changes.
+#
+# `--no-dev` is load-bearing, not decorative: prep's test deps are a PEP 735
+# dependency group, which uv installs by default. Dropping the flag ships pytest
+# and friends into the runtime image.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
