@@ -2,7 +2,9 @@ from protspace_prep.config import load_settings
 
 
 def test_cors_origins_parsed_from_env(monkeypatch):
-    monkeypatch.setenv("CORS_ALLOWED_ORIGIN", "https://protspace.app, https://staging.protspace.app")
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGIN", "https://protspace.app, https://staging.protspace.app"
+    )
     settings = load_settings()
     assert settings.cors_allowed_origins == (
         "https://protspace.app",

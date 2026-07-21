@@ -1,0 +1,71 @@
+name: prep CI (Python)
+
+# protspace-prep is a uv workspace member under apps/prep. GitHub only runs
+# workflows from the root .github/workflows, so this lives here (not nested) and
+# path-filters to prep changes. Run steps use working-directory: apps/prep; uv
+# detects the workspace root and uses the root lock — hence uv.lock in the paths
+# filter, since prep's resolved dependencies live there rather than in the member.
+#
+# Mirrors protspace-ci.yml, minus the Python matrix: prep declares
+# requires-python = ">=3.12" and is only ever run from its pinned container image.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/prep/**'
+      - 'uv.lock'
+      - '.github/workflows/prep-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/prep/**'
+      - 'uv.lock'
+      - '.github/workflows/prep-ci.yml'
+
+defaults:
+  run:
+    working-directory: apps/prep
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: 'apps/prep/pyproject.toml'
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff check
+        run: uv run ruff check src/ tests/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: 'apps/prep/pyproject.toml'
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest

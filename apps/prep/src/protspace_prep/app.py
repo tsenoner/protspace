@@ -1,9 +1,9 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from .api import fasta_validation_error_handler, make_router
-from .config import Settings, load_settings
+from .config import load_settings
 from .jobs import JobRegistry, PipelineFn
 from .logger import setup_logging
 from .pipeline import run_protspace_prepare
@@ -21,7 +21,7 @@ from .validation import FastaValidationError
 logger = logging.getLogger("protspace_prep")
 
 
-def create_app(*, pipeline: Optional[PipelineFn] = None) -> FastAPI:
+def create_app(*, pipeline: PipelineFn | None = None) -> FastAPI:
     settings = load_settings()
     # Configure logging before anything else emits a log line so no logger is
     # cached without the structlog formatter.
@@ -36,7 +36,7 @@ def create_app(*, pipeline: Optional[PipelineFn] = None) -> FastAPI:
     )
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI):  # noqa: ARG001 — asynccontextmanager lifespan contract
         async def _sweep_loop():
             while True:
                 try:

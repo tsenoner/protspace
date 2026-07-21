@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Awaitable, Callable, Sequence
 
 from protspace.data.loaders.h5 import parse_identifier
 
@@ -47,7 +48,9 @@ def _classify_failure(exc: PipelineFailure) -> PipelineFailure:
     """
     haystack = f"{exc} {exc.detail or ''}".lower()
     if any(p in haystack for p in _BIOCENTRAL_DOWN_PATTERNS):
-        return PipelineFailure(_BIOCENTRAL_FRIENDLY_MESSAGE, code="BIOCENTRAL_UNAVAILABLE")
+        return PipelineFailure(
+            _BIOCENTRAL_FRIENDLY_MESSAGE, code="BIOCENTRAL_UNAVAILABLE"
+        )
     return exc
 
 
@@ -61,7 +64,10 @@ def _normalize_fasta_headers(input_path: Path, output_path: Path) -> None:
     merged annotations. Normalising up-front makes both paths emit identical
     identifiers. Plain headers (no UniProt pipes) are left untouched.
     """
-    with open(input_path, encoding="utf-8") as fin, open(output_path, "w", encoding="utf-8") as fout:
+    with (
+        open(input_path, encoding="utf-8") as fin,
+        open(output_path, "w", encoding="utf-8") as fout,
+    ):
         for line in fin:
             if line.startswith(">"):
                 stripped = line[1:].strip()
@@ -131,7 +137,9 @@ async def run_protspace_prepare(
                 if failures:
                     classified = [_classify_failure(e) for e in failures]
                     if any(c.code == "BIOCENTRAL_UNAVAILABLE" for c in classified):
-                        raise PipelineFailure(_BIOCENTRAL_FRIENDLY_MESSAGE, code="BIOCENTRAL_UNAVAILABLE") from eg
+                        raise PipelineFailure(
+                            _BIOCENTRAL_FRIENDLY_MESSAGE, code="BIOCENTRAL_UNAVAILABLE"
+                        ) from eg
                     # Preserve the per-step diagnostic detail (subprocess stderr)
                     # so it stays available for server-side logging; the joined
                     # message remains the curated, user-facing text.
@@ -170,10 +178,12 @@ async def run_protspace_prepare(
                 str(bundle_path),
             ]
             await _run_step("bundle", bundle_cmd)
-    except asyncio.TimeoutError:
+    except TimeoutError:
+        # `from None`: the watchdog timeout is an expected outcome translated into
+        # a domain failure; the bare TimeoutError carries no extra diagnostics.
         raise PipelineFailure(
             f"protspace pipeline timed out after {settings.pipeline_timeout_seconds}s."
-        )
+        ) from None
 
     if not bundle_path.exists():
         raise PipelineFailure(
@@ -220,7 +230,7 @@ async def _run_step(name: str, cmd: Sequence[str]) -> None:
         process.kill()
         try:
             await asyncio.wait_for(process.wait(), timeout=5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         raise
 
@@ -236,5 +246,3 @@ async def _run_step(name: str, cmd: Sequence[str]) -> None:
             f"report this with the reference shown below.",
             detail=f"protspace {name} exited with code {returncode}: {tail}",
         )
-
-

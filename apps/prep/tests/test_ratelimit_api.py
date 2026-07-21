@@ -54,8 +54,12 @@ async def test_rate_limit_ignores_spoofed_forwarded_for(make_client, monkeypatch
     monkeypatch.setenv("PREP_RATE_LIMIT", "1/hour")
     files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
     async with make_client(client=("198.51.100.5", 33333)) as c:
-        r1 = await c.post("/api/prepare", files=files, headers={"X-Forwarded-For": "1.1.1.1"})
-        r2 = await c.post("/api/prepare", files=files, headers={"X-Forwarded-For": "2.2.2.2"})
+        r1 = await c.post(
+            "/api/prepare", files=files, headers={"X-Forwarded-For": "1.1.1.1"}
+        )
+        r2 = await c.post(
+            "/api/prepare", files=files, headers={"X-Forwarded-For": "2.2.2.2"}
+        )
     assert r1.status_code == 202
     assert r2.status_code == 429
 
@@ -65,7 +69,10 @@ async def test_cors_preflight_allows_configured_origin(make_client, monkeypatch)
     async with make_client() as c:
         r = await c.options(
             "/api/prepare",
-            headers={"Origin": "https://protspace.app", "Access-Control-Request-Method": "POST"},
+            headers={
+                "Origin": "https://protspace.app",
+                "Access-Control-Request-Method": "POST",
+            },
         )
     assert r.headers.get("access-control-allow-origin") == "https://protspace.app"
 
@@ -75,7 +82,10 @@ async def test_cors_absent_for_unconfigured_origin(make_client, monkeypatch):
     async with make_client() as c:
         r = await c.options(
             "/api/prepare",
-            headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+            },
         )
     assert r.headers.get("access-control-allow-origin") is None
 

@@ -5,8 +5,8 @@ import pytest
 from protspace_prep.config import load_settings
 from protspace_prep.validation import (
     FastaValidationError,
-    parse_and_validate,
     ValidationCode,
+    parse_and_validate,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"

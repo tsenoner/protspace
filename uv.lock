@@ -3446,6 +3446,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "respx" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -3465,6 +3466,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "respx", specifier = ">=0.21" },
+    { name = "ruff", specifier = ">=0.15.21" },
 ]
 
 [[package]]
