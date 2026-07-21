@@ -65,7 +65,7 @@ def make_router(
     @limiter.limit(settings.rate_limit)
     async def submit(
         request: Request,  # noqa: ARG001 — slowapi's @limiter.limit reads it by name
-        response: Response,  # noqa: ARG001 — see below; slowapi injects headers via it
+        response: Response,  # noqa: ARG001
         file: UploadFile = File(...),
     ):
         # `response` is unused here; slowapi reads it via kwargs to inject

@@ -3,11 +3,14 @@ name: prep CI (Python)
 # protspace-prep is a uv workspace member under apps/prep. GitHub only runs
 # workflows from the root .github/workflows, so this lives here (not nested) and
 # path-filters to prep changes. Run steps use working-directory: apps/prep; uv
-# detects the workspace root and uses the root lock — hence uv.lock in the paths
-# filter, since prep's resolved dependencies live there rather than in the member.
+# detects the workspace root and uses the root lock — which is why uv.lock is in
+# the paths filter, since a dependency bump reaches prep only through that file.
 #
-# Mirrors protspace-ci.yml, minus the Python matrix: prep declares
-# requires-python = ">=3.12" and is only ever run from its pinned container image.
+# One job rather than protspace-ci.yml's lint/test split: that split pays for
+# itself there because `test` is a 3-version matrix, so a merged job would run
+# ruff three times. Here there is no matrix, and both jobs shared an identical
+# ~30s setup (`uv sync` installs ~97 packages via the protspace member) to run
+# two ruff commands that finish in under a second.
 
 on:
   push:
@@ -27,7 +30,7 @@ defaults:
     working-directory: apps/prep
 
 jobs:
-  lint:
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,9 +40,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
 
+      # Pinned, NOT python-version-file: prep declares requires-python ">=3.12",
+      # which setup-python resolves to the newest release (3.14 at time of
+      # writing) — so CI would validate against an interpreter the service never
+      # runs. apps/prep/Dockerfile pins python3.12-bookworm-slim; match it.
       - uses: actions/setup-python@v6
         with:
-          python-version-file: 'apps/prep/pyproject.toml'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: uv sync --group dev
@@ -49,23 +56,6 @@ jobs:
 
       - name: Ruff format check
         run: uv run ruff format --check src/ tests/
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: 'uv.lock'
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version-file: 'apps/prep/pyproject.toml'
-
-      - name: Install dependencies
-        run: uv sync --group dev
 
       - name: Run tests
         run: uv run pytest
