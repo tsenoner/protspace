@@ -11,9 +11,12 @@ name: Bundle format contract (Python ↔ TypeScript)
 #
 # That is deliberate, for two reasons:
 #
-# 1. It is a required status check. A path-filtered required check deadlocks:
-#    GitHub waits forever for a report that a skipped workflow never sends, so
-#    any PR outside the filter can never merge.
+# 1. It is meant to be a required status check, and a path-filtered required
+#    check deadlocks: GitHub waits forever for a report that a skipped workflow
+#    never sends, so any PR outside the filter can never merge. (Marking it
+#    required is a repo-settings change, made once after this lands — until
+#    then the job reports but does not gate. Do not re-add a `paths:` filter to
+#    save CI minutes without also un-requiring the check.)
 #
 # 2. A filter here would be a hand-maintained copy of an import graph, and it
 #    would rot silently. To stay correct it would have to enumerate the
