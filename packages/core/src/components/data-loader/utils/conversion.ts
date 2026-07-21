@@ -431,6 +431,16 @@ export function convertParquetToVisualizationData(
   return convertLegacyFormatData(rows, columnNames, formatVersion);
 }
 
+/**
+ * Row count at or above which the optimized entry point uses the separated
+ * decoder instead of delegating to the small-data implementation.
+ *
+ * Exported so tests can size fixtures from the real threshold rather than
+ * restating it — a hardcoded fixture size silently stops exercising the
+ * optimized path the moment this number moves.
+ */
+export const OPTIMIZED_PATH_ROW_THRESHOLD = 10_000;
+
 export function convertParquetToVisualizationDataOptimized(
   input: BundleExtractionResult | Rows,
   projectionsMetadata?: Rows,
@@ -439,7 +449,7 @@ export function convertParquetToVisualizationDataOptimized(
     // Legacy path: raw rows passed directly (e.g. from tests or plain parquet files)
     validateRowsBasic(input);
     const dataSize = input.length;
-    if (dataSize < 10000) {
+    if (dataSize < OPTIMIZED_PATH_ROW_THRESHOLD) {
       return Promise.resolve(convertParquetToVisualizationData(input, projectionsMetadata));
     }
     return convertLargeDatasetOptimizedRaw(input, projectionsMetadata);
@@ -447,7 +457,7 @@ export function convertParquetToVisualizationDataOptimized(
 
   // New path: separated extraction shape from extractRowsFromParquetBundle
   const numProjectionRows = input.projections.length;
-  if (numProjectionRows < 10000) {
+  if (numProjectionRows < OPTIMIZED_PATH_ROW_THRESHOLD) {
     return Promise.resolve(convertParquetToVisualizationData(input));
   }
   return convertLargeDatasetOptimized(input);

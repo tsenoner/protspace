@@ -21,14 +21,17 @@ import { extractRowsFromParquetBundle } from '../../packages/core/src/components
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
+  OPTIMIZED_PATH_ROW_THRESHOLD,
 } from '../../packages/core/src/components/data-loader/utils/conversion';
+// Imported by source path, like the core reader above: the suite tests the
+// working tree, not built package output. (The vitest config still aliases
+// `@protspace/utils` — packages/core's own sources import it that way.)
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants';
 
 const REPO_ROOT = resolve(__dirname, '../..');
 const PROTEIN_COUNT = 10;
 const PROJECTION_COUNT = 2;
-/** Mirrors LARGE_PROTEIN_COUNT in emit_bundles.py — sized past the reader's
- * 10_000-row optimized-path threshold. */
+/** Mirrors LARGE_PROTEIN_COUNT in emit_bundles.py. */
 const LARGE_PROTEIN_COUNT = 6_000;
 
 /** Mirrors emit_bundles.py — the value the producer percent-encodes. */
@@ -44,23 +47,31 @@ function loadBundle(variant: string): ArrayBuffer {
 beforeAll(() => {
   outDir = mkdtempSync(join(tmpdir(), 'protspace-contract-'));
 
-  const result = spawnSync(
-    'uv',
-    ['run', '--package', 'protspace', 'python', 'tests/contract/emit_bundles.py', outDir],
-    { cwd: REPO_ROOT, encoding: 'utf-8' },
-  );
-
-  // Without this the suite would fail later on a missing file, hiding the real
-  // producer-side traceback. The generator is also never allowed to be skipped:
-  // an absent Python toolchain must fail the job, not quietly pass it.
-  if (result.error) {
-    throw new Error(`Could not run the bundle generator: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    throw new Error(
-      `Bundle generator exited with ${result.status}\n` +
-        `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+  // The generator's failure paths run after the temp dir exists, and the cleanup
+  // below is only *returned* — so without this the dir leaks on exactly the runs
+  // you repeat most while debugging a producer-side break.
+  try {
+    const result = spawnSync(
+      'uv',
+      ['run', '--package', 'protspace', 'python', 'tests/contract/emit_bundles.py', outDir],
+      { cwd: REPO_ROOT, encoding: 'utf-8' },
     );
+
+    // Without this the suite would fail later on a missing file, hiding the real
+    // producer-side traceback. The generator is also never allowed to be skipped:
+    // an absent Python toolchain must fail the job, not quietly pass it.
+    if (result.error) {
+      throw new Error(`Could not run the bundle generator: ${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      throw new Error(
+        `Bundle generator exited with ${result.status}\n` +
+          `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+      );
+    }
+  } catch (error) {
+    rmSync(outDir, { recursive: true, force: true });
+    throw error;
   }
 
   return () => rmSync(outDir, { recursive: true, force: true });
@@ -139,31 +150,33 @@ describe('bundle layouts the producer can write', () => {
 });
 
 describe('annotation encoding across the language boundary', () => {
-  it('decodes a percent-encoded label back to its literal characters', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('minimal'));
-    const data = convertParquetToVisualizationData(extraction);
+  // Every case below reads the same `minimal` bundle, so decode it once. These
+  // assertions are all pure reads of the converted result; none mutates it, and
+  // none needs a spy installed before the decode (unlike the sentinel case
+  // above, which must extract inside the test body to observe console.warn).
+  let data: Awaited<ReturnType<typeof convertParquetToVisualizationData>>;
 
+  beforeAll(async () => {
+    data = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(loadBundle('minimal')),
+    );
+  });
+
+  it('decodes a percent-encoded label back to its literal characters', () => {
     // The producer encodes the reserved ';' as %3B; a v1 reader would surface
     // the escape sequence verbatim.
     expect(data.annotations.family.values).toContain(LABEL_WITH_RESERVED_CHAR);
     expect(data.annotations.family.values.join('|')).not.toContain('%3B');
   });
 
-  it('splits a multi-hit cell into separate labels', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('minimal'));
-    const data = convertParquetToVisualizationData(extraction);
-
+  it('splits a multi-hit cell into separate labels', () => {
     // "DomA|0.91;DomB|0.82" — a reader that splits on '|' before ';' loses DomB.
     expect(data.annotations.domains.values).toContain('DomA');
     expect(data.annotations.domains.values).toContain('DomB');
   });
 
-  it('reports a missing numeric value as missing rather than zero', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('minimal'));
-    const data = convertParquetToVisualizationData(extraction);
-
+  it('reports a missing numeric value as missing rather than zero', () => {
     const lengths = data.numeric_annotation_data?.length;
-    expect(lengths).toBeDefined();
     // Assert the length first: an out-of-range index yields `undefined`, which
     // would satisfy the null check below even if the reader dropped a protein.
     expect(lengths).toHaveLength(PROTEIN_COUNT);
@@ -172,10 +185,7 @@ describe('annotation encoding across the language boundary', () => {
     expect(lengths?.[0]).toBe(100);
   });
 
-  it('exposes the third dimension of a 3D projection', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('minimal'));
-    const data = convertParquetToVisualizationData(extraction);
-
+  it('exposes the third dimension of a 3D projection', () => {
     const projection3d = data.projections.find((p) => p.name === 'PCA_3');
     expect(projection3d?.dimension).toBe(3);
     expect(projection3d?.data.length).toBe(PROTEIN_COUNT * 3);
@@ -184,10 +194,7 @@ describe('annotation encoding across the language boundary', () => {
     expect(projection2d?.dimension).toBe(2);
   });
 
-  it('produces data that survives serialization despite BigInt-valued columns', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('minimal'));
-    const data = convertParquetToVisualizationData(extraction);
-
+  it('produces data that survives serialization despite BigInt-valued columns', () => {
     // `dimensions` is an int64 column, so the raw extraction really does hand back
     // a BigInt (verified: `typeof extraction.projectionsMetadata[0].dimensions`
     // === 'bigint'); conversion is what normalizes it away. Merely converting is
@@ -202,12 +209,25 @@ describe('annotation encoding across the language boundary', () => {
 });
 
 describe('the optimized conversion path real datasets take', () => {
-  // Below 10_000 projection rows the optimized entry point delegates to the
-  // small-data implementation, so the 10-protein variants never reach the
-  // separated decoder used by decode.worker.ts for every production dataset.
+  // Below OPTIMIZED_PATH_ROW_THRESHOLD projection rows the optimized entry point
+  // delegates to the small-data implementation, so the 10-protein variants never
+  // reach the separated decoder decode.worker.ts uses for production datasets.
+  //
+  // Guard the fixture against the threshold itself, not a copy of its value: if
+  // the threshold is raised above what emit_bundles.py generates, this describe
+  // silently degrades into a duplicate of the four small-data tests above. That
+  // is the one way this suite can stop protecting without going red — so make it
+  // go red. Raising the threshold means raising LARGE_PROTEIN_COUNT in both this
+  // file and emit_bundles.py.
+  it('generates a fixture that actually crosses the optimized-path threshold', () => {
+    expect(LARGE_PROTEIN_COUNT * PROJECTION_COUNT).toBeGreaterThanOrEqual(
+      OPTIMIZED_PATH_ROW_THRESHOLD,
+    );
+  });
+
   it('decodes the same annotation contract as the small-data path', async () => {
     const extraction = await extractRowsFromParquetBundle(loadBundle('large'));
-    expect(extraction.projections.length).toBeGreaterThanOrEqual(10_000);
+    expect(extraction.projections.length).toBeGreaterThanOrEqual(OPTIMIZED_PATH_ROW_THRESHOLD);
     expect(extraction.formatVersion).toBe(2);
 
     const data = await convertParquetToVisualizationDataOptimized(extraction);

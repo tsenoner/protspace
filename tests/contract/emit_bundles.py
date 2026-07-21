@@ -235,48 +235,49 @@ def main(out_dir: Path) -> None:
     pq.write_table(build_statistics_table(), statistics_path)
     settings_path.write_text(json.dumps(build_settings()), encoding="utf-8")
 
-    annotations_path, projections_dir = write_inputs(inputs, protein_ids(PROTEIN_COUNT))
-    common = ["-a", str(annotations_path), "-p", str(projections_dir)]
+    # One input set per distinct protein count, shared by every variant that size.
+    inputs_by_count = {
+        PROTEIN_COUNT: write_inputs(inputs, protein_ids(PROTEIN_COUNT)),
+        LARGE_PROTEIN_COUNT: write_inputs(
+            out_dir / "inputs-large", protein_ids(LARGE_PROTEIN_COUNT)
+        ),
+    }
 
     # Every layout the producer can write. `stats_no_settings` is the sneaky one:
     # the producer emits a zero-byte settings slot to keep statistics at part five.
-    variants: dict[str, list[str]] = {
-        "minimal": [],
-        "with_settings": ["--settings", str(settings_path)],
-        "with_stats": ["--settings", str(settings_path), "-s", str(statistics_path)],
-        "stats_no_settings": ["-s", str(statistics_path)],
+    variants: dict[str, tuple[int, list[str]]] = {
+        "minimal": (PROTEIN_COUNT, []),
+        "with_settings": (PROTEIN_COUNT, ["--settings", str(settings_path)]),
+        "with_stats": (
+            PROTEIN_COUNT,
+            ["--settings", str(settings_path), "-s", str(statistics_path)],
+        ),
+        "stats_no_settings": (PROTEIN_COUNT, ["-s", str(statistics_path)]),
+        # Same layout as `minimal`, sized past the reader's optimized-path threshold.
+        "large": (LARGE_PROTEIN_COUNT, []),
     }
 
-    for variant, extra in variants.items():
+    for variant, (count, extra) in variants.items():
+        annotations_path, projections_dir = inputs_by_count[count]
         output = out_dir / f"{variant}.parquetbundle"
-        run_bundle([*common, "-o", str(output), *extra], variant=variant)
+        run_bundle(
+            [
+                "-a",
+                str(annotations_path),
+                "-p",
+                str(projections_dir),
+                "-o",
+                str(output),
+                *extra,
+            ],
+            variant=variant,
+        )
         if not output.exists():
             raise SystemExit(
                 f"variant {variant!r} reported success but wrote no bundle"
             )
 
-    # Same layout as `minimal`, sized past the reader's optimized-path threshold.
-    large_inputs = out_dir / "inputs-large"
-    large_inputs.mkdir(parents=True, exist_ok=True)
-    large_annotations, large_projections = write_inputs(
-        large_inputs, protein_ids(LARGE_PROTEIN_COUNT)
-    )
-    large_output = out_dir / "large.parquetbundle"
-    run_bundle(
-        [
-            "-a",
-            str(large_annotations),
-            "-p",
-            str(large_projections),
-            "-o",
-            str(large_output),
-        ],
-        variant="large",
-    )
-    if not large_output.exists():
-        raise SystemExit("variant 'large' reported success but wrote no bundle")
-
-    print(f"wrote {len(variants) + 1} bundles to {out_dir}")
+    print(f"wrote {len(variants)} bundles to {out_dir}")
 
 
 if __name__ == "__main__":
