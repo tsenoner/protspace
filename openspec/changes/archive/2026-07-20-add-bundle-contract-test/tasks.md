@@ -30,7 +30,7 @@
 ## 4. CI
 
 - [x] 4.1 Add `.github/workflows/bundle-contract.yml` installing both `uv` and pnpm and running `pnpm test:contract`.
-- [x] 4.2 Set its path filter to the union of the producer paths, the consumer paths, `tests/contract/**`, and the workflow file itself.
+- [x] 4.2 Trigger the job on every pull request, unfiltered. (Superseded 6.1: a path filter cannot serve as a required status check — GitHub waits forever for a report a skipped workflow never sends.)
 - [x] 4.3 Verify the existing `ci.yml` and `protspace-ci.yml` filters are left unchanged and that the new job is the only one covering the seam.
 
 ## 5. Verification
@@ -42,7 +42,7 @@
 
 ## 6. Review findings
 
-- [x] 6.1 Widen the CI path filter to `packages/core/src/components/publish/**` and `packages/utils/src/visualization/**` — modules the reader imports for settings normalization and missing-value decoding, whose edits previously skipped the job.
+- [x] 6.1 Superseded — the path filter was removed entirely rather than widened. Widening only moved the boundary; it was still a hand-copied import graph, and it was already missing the `@protspace/utils` barrel and the hyparquet pin the day it was written.
 - [x] 6.2 Emit a `large` variant (6000 proteins × 2 projections) past the reader's 10000-row threshold so the optimized conversion implementation is covered, not only the small-data one.
 - [x] 6.3 Assert the zero-byte settings guard by its observable effect (the settings parser is never entered), since `settings === null` holds with the guard removed.
 - [x] 6.4 Assert `PROTEIN_COUNT` length before indexing the numeric annotation array, so a dropped row cannot pass as a missing value.

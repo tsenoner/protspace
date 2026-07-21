@@ -133,7 +133,7 @@ export async function extractRowsFromParquetBundle(
   part1 = null;
   const projectionsMetadataData = await parquetReadObjects({ file: part2 });
   part2 = null;
-  const projectionsData = await parquetReadObjects({ file: part3! });
+  const projectionsData = await parquetReadObjects({ file: part3 });
   part3 = null;
 
   // Parse settings if present

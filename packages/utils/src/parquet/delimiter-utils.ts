@@ -44,7 +44,7 @@ export function findBundleDelimiterPositions(uint8Array: Uint8Array): number[] {
  * @throws If the part contains the reserved delimiter byte string
  */
 export function assertNoBundleDelimiter(arrayBuffer: ArrayBuffer): void {
-  if (findBundleDelimiterPositions(new Uint8Array(arrayBuffer)).length > 0) {
+  if (isParquetBundle(arrayBuffer)) {
     throw new Error(
       `Serialized parquet part contains the bundle delimiter "${BUNDLE_DELIMITER}"; ` +
         'a value includes this reserved byte string and would corrupt the bundle on read.',

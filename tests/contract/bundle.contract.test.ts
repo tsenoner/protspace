@@ -51,9 +51,25 @@ beforeAll(() => {
   // below is only *returned* — so without this the dir leaks on exactly the runs
   // you repeat most while debugging a producer-side break.
   try {
+    // --no-dev: `uv run` re-syncs the environment before executing, and without
+    // this it syncs to the DEFAULT group set — silently undoing the workflow's
+    // `uv sync --no-dev` one step later and pulling torch + the CUDA wheels back
+    // in. Measured in CI: the teardown prune reported "Removed 47247 files
+    // (5.9GiB)" for a job whose install step had reported 58 packages.
+    // --locked: fail if uv.lock has drifted from pyproject rather than silently
+    // re-resolving, so the contract runs against the versions we pinned.
     const result = spawnSync(
       'uv',
-      ['run', '--package', 'protspace', 'python', 'tests/contract/emit_bundles.py', outDir],
+      [
+        'run',
+        '--package',
+        'protspace',
+        '--no-dev',
+        '--locked',
+        'python',
+        'tests/contract/emit_bundles.py',
+        outDir,
+      ],
       { cwd: REPO_ROOT, encoding: 'utf-8' },
     );
 
@@ -213,18 +229,12 @@ describe('the optimized conversion path real datasets take', () => {
   // delegates to the small-data implementation, so the 10-protein variants never
   // reach the separated decoder decode.worker.ts uses for production datasets.
   //
-  // Guard the fixture against the threshold itself, not a copy of its value: if
-  // the threshold is raised above what emit_bundles.py generates, this describe
-  // silently degrades into a duplicate of the four small-data tests above. That
-  // is the one way this suite can stop protecting without going red — so make it
-  // go red. Raising the threshold means raising LARGE_PROTEIN_COUNT in both this
-  // file and emit_bundles.py.
-  it('generates a fixture that actually crosses the optimized-path threshold', () => {
-    expect(LARGE_PROTEIN_COUNT * PROJECTION_COUNT).toBeGreaterThanOrEqual(
-      OPTIMIZED_PATH_ROW_THRESHOLD,
-    );
-  });
-
+  // Guard the fixture against the real threshold, not a copy of its value: if the
+  // threshold is raised above what emit_bundles.py generates, this block silently
+  // degrades into a duplicate of the small-data tests above — the one way this
+  // suite can stop protecting without going red. Asserted below against the
+  // generated bundle rather than against LARGE_PROTEIN_COUNT, because that
+  // constant is a hand-maintained mirror of emit_bundles.py and can itself drift.
   it('decodes the same annotation contract as the small-data path', async () => {
     const extraction = await extractRowsFromParquetBundle(loadBundle('large'));
     expect(extraction.projections.length).toBeGreaterThanOrEqual(OPTIMIZED_PATH_ROW_THRESHOLD);

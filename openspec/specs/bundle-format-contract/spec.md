@@ -128,7 +128,7 @@ Each assertion SHALL be falsifiable by the regression it describes. An assertion
 
 ### Requirement: The contract check cannot be silently skipped
 
-The contract suite SHALL be a standalone test project that is not part of the default workspace test run, and SHALL NOT guard itself on the presence of the Python toolchain. Its CI job SHALL be triggered by the union of the producer paths, the consumer paths, and the contract suite's own paths.
+The contract suite SHALL be a standalone test project that is not part of the default workspace test run, and SHALL NOT guard itself on the presence of the Python toolchain. Its CI job SHALL run for every change that can affect either side of the seam, without a hand-maintained path filter — a filter is a copy of an import graph, and when it is wrong the job does not fail, it silently does not run.
 
 #### Scenario: The Python toolchain is unavailable in the contract job
 

@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pyarrow as pa
@@ -64,10 +65,6 @@ LABEL_WITH_RESERVED_CHAR = "Kinase (EC 2.7.11.1); regulatory subunit"
 # A two-hit cell with per-hit scores. A reader that splits on '|' before ';'
 # swallows the second hit, which is exactly the bug the grammar exists to avoid.
 MULTI_HIT_CELL = f"{encode_field('DomA')}|0.91;{encode_field('DomB')}|0.82"
-
-# Larger than 2^53, so it survives the JSON round-trip only if nothing coerces
-# it through a float. info_json reaches the reader as an opaque string.
-LARGE_INT_IN_INFO_JSON = 9007199254740993
 
 
 def build_annotations_table(ids: list[str]) -> pa.Table:
@@ -117,12 +114,7 @@ def build_projection_tables(ids: list[str]) -> tuple[pa.Table, pa.Table]:
             "projection_name": pa.array([name for name, _ in projections], pa.string()),
             "dimensions": pa.array([dims for _, dims in projections], pa.int64()),
             "info_json": pa.array(
-                [
-                    json.dumps(
-                        {"n_components": dims, "fitted_on": LARGE_INT_IN_INFO_JSON}
-                    )
-                    for _, dims in projections
-                ],
+                [json.dumps({"n_components": dims}) for _, dims in projections],
                 pa.string(),
             ),
             "source": pa.array(["contract_embedding"] * len(projections), pa.string()),
@@ -155,25 +147,33 @@ def build_projection_tables(ids: list[str]) -> tuple[pa.Table, pa.Table]:
 
 
 def build_settings() -> dict:
-    """A settings payload that survives the reader's ``normalizeBundleSettings``.
+    """A settings payload in the shape the Python producer actually writes.
 
-    Shaped to the normalized (non-legacy) branch so the test asserts a real
-    round-trip rather than the null-on-reject fallback.
+    This is a FLAT ``{annotation_name: envelope}`` map, not a
+    ``{"legendSettings": ..., "exportOptions": ...}`` wrapper. Both
+    ``build_cluster_legend_settings`` (stats/carriage.py) and
+    ``visualization_state_to_settings`` (data/io/settings_converter.py) return
+    the flat form, and ``protspace bundle`` writes it through unchanged --
+    ``legendSettings`` appears nowhere in the Python sources.
+
+    That distinction is the whole point of asserting it here: the wrapper shape
+    takes ``normalizeBundleSettings``'s ``isNormalizedBundleSettings`` branch,
+    while every bundle a real producer writes takes the ``isLegacyBundleSettings``
+    branch. Using the wrapper would leave the only branch Python -> TS traffic
+    ever reaches untested by the contract.
     """
     return {
-        "legendSettings": {
-            "family": {
-                "maxVisibleValues": 10,
-                "shapeSize": 24,
-                "sortMode": "size-desc",
-                "hiddenValues": [],
-                "enableDuplicateStackUI": False,
-                "categories": {
-                    "Hydrolase": {"zOrder": 0, "color": "#ff0000", "shape": "circle"},
-                },
-            }
-        },
-        "exportOptions": {},
+        "family": {
+            "maxVisibleValues": 10,
+            "shapeSize": 24,
+            "sortMode": "size-desc",
+            "hiddenValues": [],
+            "enableDuplicateStackUI": False,
+            "selectedPaletteId": "kellys",
+            "categories": {
+                "Hydrolase": {"zOrder": 0, "color": "#ff0000", "shape": "circle"},
+            },
+        }
     }
 
 
@@ -257,7 +257,8 @@ def main(out_dir: Path) -> None:
         "large": (LARGE_PROTEIN_COUNT, []),
     }
 
-    for variant, (count, extra) in variants.items():
+    def emit(item: tuple[str, tuple[int, list[str]]]) -> None:
+        variant, (count, extra) = item
         annotations_path, projections_dir = inputs_by_count[count]
         output = out_dir / f"{variant}.parquetbundle"
         run_bundle(
@@ -276,6 +277,20 @@ def main(out_dir: Path) -> None:
             raise SystemExit(
                 f"variant {variant!r} reported success but wrote no bundle"
             )
+
+    # Each `protspace bundle` call costs ~0.33s, of which ~0.26s is interpreter +
+    # typer/rich/pyarrow import startup and only ~0.07s is real work (measured;
+    # unchanged from 10 to 20_000 proteins). Running the five sequentially pays
+    # that startup five times over. The variants share read-only inputs, write
+    # disjoint outputs, and `_atomic_write_bytes` stages through
+    # `tempfile.mkstemp`, so there is no ordering or collision hazard.
+    #
+    # Threads rather than processes: every call is a `subprocess.run`, so the GIL
+    # is released for the whole wait and the fan-out is bounded by runner cores,
+    # not by Python. Draining the map iterator re-raises whatever a worker raised,
+    # including the SystemExit from `run_bundle`.
+    with ThreadPoolExecutor(max_workers=len(variants)) as pool:
+        list(pool.map(emit, variants.items()))
 
     print(f"wrote {len(variants)} bundles to {out_dir}")
 

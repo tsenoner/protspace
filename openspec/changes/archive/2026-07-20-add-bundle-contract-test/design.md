@@ -63,33 +63,30 @@ The `hasSettingsPart` branch changes from `length === 3` to `length >= 3`, and p
 
 Four layout variants prove the reader tolerates each shape. They prove nothing about encoding. The generator's ten proteins therefore carry:
 
-| element                    | why it is in the contract                                   |
-| -------------------------- | ----------------------------------------------------------- |
-| percent-encoded label      | v2 encoding; a v1 reader renders the escape literally       |
-| `;` multi-hit cell         | v2 splits it; v1 treats it as one opaque label              |
-| numeric column with a null | null versus `NaN` handling differs across the boundary      |
-| one 3D projection          | `z` column presence and the `dimensions` metadata field     |
-| BigInt-valued `info_json`  | previously caused serialization failures on the reader side |
+| element                    | why it is in the contract                               |
+| -------------------------- | ------------------------------------------------------- |
+| percent-encoded label      | v2 encoding; a v1 reader renders the escape literally   |
+| `;` multi-hit cell         | v2 splits it; v1 treats it as one opaque label          |
+| numeric column with a null | null versus `NaN` handling differs across the boundary  |
+| one 3D projection          | `z` column presence and the `dimensions` metadata field |
+| int64 `dimensions` column  | arrives as a BigInt; `JSON.stringify` throws on it      |
 
 ## CI trigger
 
-```yaml
-paths:
-  - 'apps/protspace/src/protspace/data/io/**'
-  - 'apps/protspace/src/protspace/data/annotations/**'
-  - 'apps/protspace/src/protspace/cli/bundle.py'
-  - 'packages/core/src/components/data-loader/**'
-  - 'packages/utils/src/parquet/**'
-  - 'tests/contract/**'
-  - '.github/workflows/bundle-contract.yml'
-```
+Unfiltered — the job runs on every pull request. The workflow header carries the
+full reasoning; in short, a `paths:` filter cannot coexist with a required status
+check (GitHub waits indefinitely for a report a skipped workflow never sends),
+and a filter here would be a hand-maintained copy of an import graph that fails
+silently when wrong.
 
-The union is the point. `ci.yml` and `protspace-ci.yml` remain mutually exclusive; this workflow is the only one that fires for a change to either side, and it installs both `uv` and pnpm.
+`ci.yml` and `protspace-ci.yml` remain mutually exclusive; this workflow is the
+only one that fires for a change to either side, and it installs both `uv` and
+pnpm.
 
 ## Risks
 
 - **Generator drift.** If `protspace annotate` changes its output columns, the hand-written input parquets keep the contract test green against a stale idea of that stage's output. Narrower than the gap being closed; noted, not solved.
-- **Cross-runtime CI cost.** The job installs both toolchains. Mitigated by the path filter — it fires only for changes to the format seam.
+- **Cross-runtime CI cost.** The job installs both toolchains and runs on every pull request, so this cost is paid every time rather than mitigated by a filter. Held down instead by `--no-dev` (57 packages rather than 223) and by not pruning the uv cache; ~1 minute total, about half of it the fixture generator.
 - **Subprocess failure legibility.** If `protspace bundle` exits non-zero, the generator must surface its stderr through the vitest failure, or the suite reports an unhelpful missing-file error.
 
 ## Deferred follow-up

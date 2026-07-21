@@ -15,15 +15,15 @@ name: Bundle format contract (Python ↔ TypeScript)
 #    GitHub waits forever for a report that a skipped workflow never sends, so
 #    any PR outside the filter can never merge.
 #
-# 2. A hand-maintained filter is a hand-maintained copy of an import graph, and
-#    it rots silently. The previous version of this file was already incomplete
-#    on the day it was written — it missed the @protspace/utils barrel, the CLI
-#    modules bundle.py imports, and the hyparquet pin in pnpm-lock.yaml. When a
+# 2. A filter here would be a hand-maintained copy of an import graph, and it
+#    would rot silently. To stay correct it would have to enumerate the
+#    @protspace/utils barrel, the CLI modules bundle.py imports, and the
+#    hyparquet pin in pnpm-lock.yaml — and track them as they move. When a
 #    filter is wrong the job does not fail; it simply does not run, which reads
 #    exactly like "the contract still holds".
 #
-# The job is cheap enough to run every time: `uv sync --no-dev` installs 57
-# packages rather than the 223 the dev group pulls, and the suite itself is ~4s.
+# Cost: ~1 minute, about half of it the Python generator that writes the fixture
+# bundles by invoking the real `protspace bundle` CLI.
 
 on:
   push:
@@ -42,39 +42,46 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
+          # setup-uv defaults to `uv cache prune --ci`, which discards prebuilt
+          # wheels and keeps only source builds. This dependency tree is all
+          # wheels, so pruning leaves the cache near-empty and every run
+          # re-downloads numpy/scipy/pandas/pyarrow/scikit-learn.
+          prune-cache: false
 
+      # Pin to .python-version (3.12), NOT pyproject.toml. pyproject declares
+      # `requires-python = ">=3.10"`, from which setup-python installs the newest
+      # satisfying release — it picked 3.14.6, a version no other job in this repo
+      # tests. For a required check that means the interpreter floats with the
+      # runner image, and a new release with lagging numba/llvmlite/pyarrow wheels
+      # would block every merge with no code change.
       - uses: actions/setup-python@v6
         with:
-          python-version-file: 'apps/protspace/pyproject.toml'
+          python-version-file: 'apps/protspace/.python-version'
+
+      # pnpm/action-setup must precede setup-node so `cache: 'pnpm'` can resolve
+      # the store path. setup-node's built-in cache replaces the hand-rolled
+      # `pnpm store path` + actions/cache pair duplicated across the other
+      # workflows. The pnpm version comes from package.json `packageManager`.
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          cache: 'pnpm'
 
       # Both toolchains are required. The suite must never degrade to a skip when
       # one is missing — an absent producer has to fail the job, not pass it.
       #
       # --no-dev: the contract path needs pyarrow + typer + the protspace CLI and
       # nothing else. The dev group pulls torch and 15 nvidia-* CUDA wheels (223
-      # packages vs 57), none of which this job imports — gigabytes of download
-      # and cache pressure for a four-second test.
+      # packages vs 57), none of which this job imports.
+      # --locked: fail if uv.lock has drifted from pyproject rather than silently
+      # resolving different versions than we pinned.
+      #
+      # NOTE: the test's own `uv run` must repeat --no-dev, or it re-syncs to the
+      # default group set and undoes this. See bundle.contract.test.ts.
       - name: Install Python producer
-        run: uv sync --package protspace --no-dev
+        run: uv sync --package protspace --no-dev --locked
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile

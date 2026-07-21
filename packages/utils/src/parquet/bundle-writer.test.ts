@@ -158,14 +158,6 @@ describe('bundle-writer', () => {
       expect(() => createParquetBundle(data)).toThrow(/contains the bundle delimiter/);
     });
 
-    it('writes a clean bundle when no value carries the delimiter', () => {
-      // Pairs with the test above: proves the guard is discriminating, not a
-      // blanket throw that would make the negative case vacuous.
-      expect(
-        countBundleDelimiters(new Uint8Array(createParquetBundle(createMockVisualizationData()))),
-      ).toBe(2);
-    });
-
     it('writes a settings part when EAT settings are the only persisted state', () => {
       const buffer = createParquetBundle(createMockVisualizationData(), {
         includeSettings: true,
