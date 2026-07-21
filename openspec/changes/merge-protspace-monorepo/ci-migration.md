@@ -47,13 +47,17 @@ the same publish job — so add the identical trusted publisher (owner `tsenoner
 repo `protspace`, workflow `protspace-publish.yml`, env `pypi`) on the
 [`protlabel`](https://pypi.org/project/protlabel/) project as well.
 
-## GHCR image — no secret to move
+## GHCR image — retired, nothing to do
 
-`protspace-publish.yml`'s `docker` job pushes `ghcr.io/<owner>/protspace` using the
-built-in `GITHUB_TOKEN` (`packages: write`). Nothing to copy, but on first publish
-from this repo confirm the existing `protspace` GHCR package's **Actions access** is
-linked to this repo (Package → Settings → Manage Actions access), else the push
-403s against a package still linked to the legacy repo.
+~~Link the `protspace` GHCR package's Actions access to this repo.~~ No longer
+required: the legacy Dash image was retired in fec6a2cb, so `protspace-publish.yml`
+has no `docker` job to authorise.
+
+This step's own warning is what happened — the push did 403 "against a package
+still linked to the legacy repo", silently, on every release from 2026-07-14
+onward (GHCR stopped at 4.7.1 while PyPI reached 4.8.2). The `pypi` and `docker`
+jobs have no `needs:` between them, so releases kept succeeding and nothing
+surfaced the failure.
 
 ## Already present in `protspace` — do NOT re-create
 

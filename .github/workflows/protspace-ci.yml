@@ -3,17 +3,20 @@ name: protspace CI (Python)
 # protspace is a uv workspace member under apps/protspace. GitHub only runs
 # workflows from the root .github/workflows, so this lives here (not nested) and
 # path-filters to protspace changes. Run steps use working-directory: apps/protspace;
-# uv detects the workspace root and uses the root lock.
+# uv detects the workspace root and uses the root lock — which is why uv.lock is in
+# the paths filter, since a dependency bump reaches protspace only through that file.
 
 on:
   push:
     branches: [main]
     paths:
       - 'apps/protspace/**'
+      - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
   pull_request:
     paths:
       - 'apps/protspace/**'
+      - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
 
 defaults:

@@ -16,8 +16,6 @@ FRONTEND_ONLY = (
     "dash_iconify",
     "dash_molstar",
     "kaleido",
-    "gunicorn",
-    "dotenv",
 )
 for mod in FRONTEND_ONLY:
     sys.modules[mod] = None
