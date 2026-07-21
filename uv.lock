@@ -1287,18 +1287,6 @@ wheels = [
 ]
 
 [[package]]
-name = "gunicorn"
-version = "26.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/b7/a4a3f632f823e432ce6bc65f62961b7980c898c77f075a2f7118cb3846fe/gunicorn-26.0.0.tar.gz", hash = "sha256:ca9346f85e3a4aeeb64d491045c16b9a35647abd37ea15efe53080eb8b090baf", size = 727286, upload-time = "2026-05-05T06:38:25.529Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/40/9c2384fc2be4ad25dd4a49decd5ad9ea5a3639814c11bd40ab77cb9f0a14/gunicorn-26.0.0-py3-none-any.whl", hash = "sha256:40233d26a5f0d1872916188c276e21641155111c2853f0c2cd55260aec0d24fc", size = 212009, upload-time = "2026-05-05T06:38:23.007Z" },
-]
-
-[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3326,10 +3314,8 @@ frontend = [
     { name = "dash-daq" },
     { name = "dash-iconify" },
     { name = "dash-molstar" },
-    { name = "gunicorn" },
     { name = "kaleido" },
     { name = "plotly" },
-    { name = "python-dotenv" },
     { name = "requests" },
 ]
 local = [
@@ -3375,7 +3361,6 @@ requires-dist = [
     { name = "dash-iconify", marker = "extra == 'frontend'", specifier = ">=0.1.2" },
     { name = "dash-molstar", marker = "extra == 'frontend'", specifier = ">=1.3.0" },
     { name = "einops", marker = "extra == 'local'", specifier = ">=0.8.2" },
-    { name = "gunicorn", marker = "extra == 'frontend'", specifier = ">=23.0.0" },
     { name = "h5py", specifier = ">=3.12.1" },
     { name = "kaleido", marker = "extra == 'frontend'", specifier = ">=0.2.1,!=0.2.1.post1" },
     { name = "numpy", specifier = ">=1.23.0" },
@@ -3386,7 +3371,6 @@ requires-dist = [
     { name = "protobuf", marker = "extra == 'local'", specifier = ">=7.35.1" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pymmseqs", specifier = ">=1.0.4" },
-    { name = "python-dotenv", marker = "extra == 'frontend'", specifier = ">=1.0.1" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "requests", marker = "extra == 'frontend'", specifier = ">=2.32.4" },
     { name = "rich", specifier = ">=14.3.3" },
