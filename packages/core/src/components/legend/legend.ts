@@ -1126,10 +1126,6 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /** Slider release (@change): apply the pending threshold now, without waiting out the debounce. */
-  private _handleEatThresholdCommit(): void {
-    this._flushEatThresholdCommit();
-  }
-
   private _flushEatThresholdCommit(): void {
     if (this._eatThresholdCommitTimer !== null) {
       clearTimeout(this._eatThresholdCommitTimer);
@@ -2263,7 +2259,7 @@ export class ProtspaceLegend extends LitElement {
                         ?disabled=${!this._eatOverlayEnabled}
                         aria-label="EAT reliability filter percentage"
                         @input=${this._handleEatThresholdPercentInput}
-                        @change=${this._handleEatThresholdCommit}
+                        @change=${this._flushEatThresholdCommit}
                       />
                       <span aria-hidden="true">%</span>
                       <protspace-info-popover
@@ -2284,7 +2280,7 @@ export class ProtspaceLegend extends LitElement {
                     ?disabled=${!this._eatOverlayEnabled}
                     aria-label="EAT reliability filter threshold"
                     @input=${this._handleEatThresholdInput}
-                    @change=${this._handleEatThresholdCommit}
+                    @change=${this._flushEatThresholdCommit}
                   />
                 </div>
                 ${this._eatOverlayEnabled && this._eatCounts

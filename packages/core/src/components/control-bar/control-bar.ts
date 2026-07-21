@@ -1678,9 +1678,7 @@ export class ProtspaceControlBar extends LitElement {
     const key = this._findEatConfidenceAnnotationKey(baseKey);
     // Scope the read/write to THIS base's eat-confidence column so tuning one
     // transferred base's slider can't clobber or misread another base's filter.
-    const current = key
-      ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0)
-      : 0;
+    const current = this._thresholdForKey(key);
     // Value-compare guard: the query already reflects this threshold, so
     // re-applying would be redundant and could ping-pong with the reverse mirror.
     if (threshold === current) return;
@@ -1709,9 +1707,7 @@ export class ProtspaceControlBar extends LitElement {
     // Scope to the SELECTED base: the slider shows the threshold for the base the
     // user is currently coloring by, so switching annotation moves it to that base.
     const key = this._findEatConfidenceAnnotationKey(this.selectedAnnotation);
-    const derived = key
-      ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0)
-      : 0;
+    const derived = this._thresholdForKey(key);
     if (derived === this._lastEmittedThreshold) return;
     this._lastEmittedThreshold = derived;
     this.dispatchEvent(
@@ -1760,6 +1756,11 @@ export class ProtspaceControlBar extends LitElement {
     return query.find((item): item is NumericCondition =>
       this._isReliabilityConditionForKey(item, key),
     );
+  }
+
+  /** The current reliability threshold for eat-confidence column `key` (0 if none/unresolved). */
+  private _thresholdForKey(key: string | undefined): number {
+    return key ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0) : 0;
   }
 
   private _handleQueryReset() {
