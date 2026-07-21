@@ -17,6 +17,7 @@ on:
       - 'apps/protspace/**'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '.dockerignore'
       - '.github/workflows/publish-images.yml'
   pull_request:
     paths:
@@ -24,6 +25,7 @@ on:
       - 'apps/protspace/**'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '.dockerignore'
       - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 

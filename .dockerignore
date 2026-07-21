@@ -9,13 +9,19 @@
 **/.pytest_cache
 docs/.vitepress/cache
 
-# Files the image never needs, but which the Dockerfile's `COPY apps/prep` would
-# otherwise pull in — busting the layer cache and minting a new image digest for
-# doc- or test-only edits. publish-images.yml re-pins PREP_IMAGE_DIGEST on every
-# digest change, so that redeploys a functionally identical backend.
+# Sources the image never needs, but which `COPY apps/prep` / `COPY apps/protspace`
+# would otherwise pull in — busting the layer cache and minting a new image digest
+# for doc- or test-only edits. publish-images.yml re-pins PREP_IMAGE_DIGEST on every
+# digest change, so that redeploys a functionally identical backend. Both members'
+# wheels package `src/` only, so nothing below reaches the build.
 #
-# Scoped to apps/prep on purpose: apps/protspace and protlabel set
-# `readme = "README.md"` in their metadata, so excluding their READMEs would
-# break the hatchling wheel build. apps/prep declares no readme.
+# READMEs are deliberately asymmetric: apps/protspace and protlabel set
+# `readme = "README.md"`, so excluding theirs breaks the hatchling build.
+# apps/prep declares no readme.
 apps/prep/README.md
 apps/prep/tests
+apps/protspace/tests
+apps/protspace/data
+apps/protspace/docs
+apps/protspace/notebooks
+apps/protspace/scripts
