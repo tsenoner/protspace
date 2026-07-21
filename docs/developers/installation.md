@@ -9,10 +9,13 @@ If you just want to visualize protein data, visit [protspace.app](https://protsp
 ## NPM Package
 
 ::: danger Not yet published
-`@protspace/core`, `@protspace/react` and `@protspace/utils` are **not on the npm
-registry** — every command in this section and the next currently returns a 404,
-and no publish workflow exists yet. To embed the components today, consume them
-from a local checkout via the workspace (see [Development Setup](#development-setup)).
+These packages are **not on the npm registry** — every command in this section and
+the next currently returns a 404. `@protspace/core` and `@protspace/utils` exist in
+the repo and are ready to publish; `@protspace/react` has not been built yet.
+Tracked in [#378](https://github.com/tsenoner/protspace/issues/378).
+
+To embed the components today, consume them from a local checkout via the
+workspace — see [Development Setup](#development-setup).
 :::
 
 Install the `@protspace/core` package to embed ProtSpace components in your project.
