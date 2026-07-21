@@ -1,10 +1,20 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import re
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, File, HTTPException, Path, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    HTTPException,
+    Path,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from slowapi import Limiter
 from starlette.background import BackgroundTask
@@ -36,19 +46,28 @@ def _safe_download_name(original_name: str) -> str:
     return f"{safe}.parquetbundle"
 
 
-def fasta_validation_error_handler(request: Request, exc: FastaValidationError) -> JSONResponse:
+def fasta_validation_error_handler(
+    request: Request,  # noqa: ARG001 — required by FastAPI's exception-handler contract
+    exc: FastaValidationError,
+) -> JSONResponse:
     return JSONResponse(
         status_code=400,
         content={"error": exc.message, "code": exc.code.value},
     )
 
 
-def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> APIRouter:
+def make_router(
+    registry: JobRegistry, settings: Settings, limiter: Limiter
+) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/prepare", status_code=status.HTTP_202_ACCEPTED)
     @limiter.limit(settings.rate_limit)
-    async def submit(request: Request, response: Response, file: UploadFile = File(...)):
+    async def submit(
+        request: Request,  # noqa: ARG001 — slowapi's @limiter.limit reads it by name
+        response: Response,  # noqa: ARG001
+        file: UploadFile = File(...),
+    ):
         # `response` is unused here; slowapi reads it via kwargs to inject
         # rate-limit headers (X-RateLimit-*, Retry-After) when headers_enabled=True.
         body = await file.read(settings.upload_max_bytes + 1)
@@ -66,13 +85,17 @@ def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> 
             ) from exc
         parse_and_validate(text, settings)
         try:
-            job_id = await registry.submit(body, original_name=file.filename or "input.fasta")
+            job_id = await registry.submit(
+                body, original_name=file.filename or "input.fasta"
+            )
         except QueueFull:
+            # `from None`: a full queue is an expected condition being translated
+            # into its HTTP form, not an error raised while handling an error.
             raise HTTPException(
                 status_code=503,
                 detail="Server is busy; too many pending jobs. Try again shortly.",
                 headers={"Retry-After": "30"},
-            )
+            ) from None
         return {"job_id": job_id}
 
     @router.get("/api/prepare/{job_id}/events")
@@ -96,7 +119,7 @@ def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> 
                             asyncio.shield(pending),
                             timeout=_KEEPALIVE_INTERVAL_SECONDS,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         if await request.is_disconnected():
                             return
                         yield KEEPALIVE_FRAME.encode("utf-8")
@@ -127,7 +150,9 @@ def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> 
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         }
-        return StreamingResponse(stream(), media_type="text/event-stream", headers=headers)
+        return StreamingResponse(
+            stream(), media_type="text/event-stream", headers=headers
+        )
 
     @router.get("/api/prepare/{job_id}/bundle")
     async def bundle(job_id: str = _JOB_ID):
@@ -135,7 +160,9 @@ def make_router(registry: JobRegistry, settings: Settings, limiter: Limiter) -> 
         if state is None:
             raise HTTPException(status_code=404, detail="Unknown job_id")
         if state.status is JobStatus.ERROR:
-            raise HTTPException(status_code=409, detail=state.error_message or "Job failed.")
+            raise HTTPException(
+                status_code=409, detail=state.error_message or "Job failed."
+            )
         if state.status is not JobStatus.DONE:
             raise HTTPException(status_code=409, detail="Job not finished.")
         if state.consumed:

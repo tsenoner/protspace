@@ -22,6 +22,7 @@ dev = [
   "pytest-asyncio>=0.24",
   "httpx>=0.28",
   "respx>=0.21",
+  "ruff>=0.15.21",
 ]
 
 [build-system]
@@ -35,6 +36,45 @@ packages = ["src/protspace_prep"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra -q"
+
+# Ruff resolves the *nearest* config; without this block apps/prep silently falls
+# back to ruff's defaults rather than the repo's ruleset. py312 (not protspace's
+# py310) because `ExceptionGroup` — a 3.11+ builtin used in pipeline.py — reads as
+# F821 under py310. This currently duplicates apps/protspace's block; the shared
+# rules belong in a root config that each member extends with its own target.
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    "B", # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "ARG001", # unused-function-args
+    "F401", # unused-import
+    "F841", # unused-variable
+]
+ignore = [
+    "E501", # line too long, handled by the formatter
+    "B008", # do not perform function calls in argument defaults (FastAPI Depends)
+    "C901", # too complex
+    # UP042 wants `enum.StrEnum` instead of `(str, enum.Enum)`. Declining: the two
+    # differ in what `str(member)` returns, and JobStatus/ValidationCode cross the
+    # API boundary, so the swap is a wire-format risk for no functional gain.
+    "UP042",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["protspace_prep", "protspace"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG001", "F401", "F841", "F811"]  # Pytest fixtures intentionally redefine module-level fixtures
+"tests/conftest.py" = ["E402"]  # merges with the tests/* entry above
 
 [tool.uv]
 package = true

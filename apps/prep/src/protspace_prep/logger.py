@@ -9,6 +9,7 @@ per-call-site changes. `merge_contextvars` attaches request-scoped context
 """
 
 from __future__ import annotations
+
 import logging
 
 import structlog

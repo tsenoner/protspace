@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import enum
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from protspace.data.loaders.h5 import parse_identifier
 

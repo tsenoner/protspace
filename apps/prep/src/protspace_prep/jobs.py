@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 import asyncio
 import enum
 import logging
 import shutil
 import time
 import uuid
-
-import structlog
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import Any
+
+import structlog
 
 logger = logging.getLogger("protspace_prep.jobs")
 
@@ -67,12 +69,12 @@ class JobState:
     original_name: str
     fasta_path: Path
     output_dir: Path
-    bundle_path: Optional[Path] = None
-    error_message: Optional[str] = None
+    bundle_path: Path | None = None
+    error_message: str | None = None
     created_at: float = field(default_factory=time.time)
-    ready_at: Optional[float] = None
+    ready_at: float | None = None
     consumed: bool = False
-    terminal_event: Optional[Event] = None
+    terminal_event: Event | None = None
     queue_position: int = 0
 
 
@@ -96,12 +98,12 @@ class JobRegistry:
         self._max_pending = max_pending
         self._pipeline = pipeline
         self._jobs: dict[str, JobState] = {}
-        self._subscribers: dict[str, list[asyncio.Queue[Optional[Event]]]] = {}
+        self._subscribers: dict[str, list[asyncio.Queue[Event | None]]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._running = 0
         self._queued = 0
 
-    def get(self, job_id: str) -> Optional[JobState]:
+    def get(self, job_id: str) -> JobState | None:
         return self._jobs.get(job_id)
 
     def counts(self) -> dict[str, int]:
@@ -132,7 +134,14 @@ class JobRegistry:
         self._queued += 1
         await self._publish(
             job_id,
-            Event("queued", {"job_id": job_id, "queue_position": queue_position, "running": running}),
+            Event(
+                "queued",
+                {
+                    "job_id": job_id,
+                    "queue_position": queue_position,
+                    "running": running,
+                },
+            ),
         )
         self._tasks[job_id] = asyncio.create_task(self._run(job_id))
         return job_id
@@ -143,17 +152,31 @@ class JobRegistry:
             return
         # Late subscriber: synthesize queued then replay terminal event and close.
         if state.terminal_event is not None:
-            yield Event("queued", {"job_id": job_id, "queue_position": state.queue_position, "running": self._running})
+            yield Event(
+                "queued",
+                {
+                    "job_id": job_id,
+                    "queue_position": state.queue_position,
+                    "running": self._running,
+                },
+            )
             yield state.terminal_event
             return
 
         # Register the queue before yielding the synthetic queued event to avoid
         # the race where the pipeline completes between the terminal_event check
         # above and registration here.
-        queue: asyncio.Queue[Optional[Event]] = asyncio.Queue(maxsize=128)
+        queue: asyncio.Queue[Event | None] = asyncio.Queue(maxsize=128)
         self._subscribers[job_id].append(queue)
         try:
-            yield Event("queued", {"job_id": job_id, "queue_position": state.queue_position, "running": self._running})
+            yield Event(
+                "queued",
+                {
+                    "job_id": job_id,
+                    "queue_position": state.queue_position,
+                    "running": self._running,
+                },
+            )
             # Re-check after registration: if the pipeline finished in the window
             # between our initial check and queue registration, terminal_event is
             # already set (or the event was already enqueued for us).
@@ -173,7 +196,7 @@ class JobRegistry:
             except (ValueError, KeyError):
                 pass
 
-    def peek_bundle(self, job_id: str) -> Optional[Path]:
+    def peek_bundle(self, job_id: str) -> Path | None:
         """Return bundle path if available, without marking consumed."""
         state = self._jobs.get(job_id)
         if state is None or state.status is not JobStatus.DONE or state.consumed:
@@ -207,7 +230,7 @@ class JobRegistry:
 
     @staticmethod
     def _enqueue(
-        queue: asyncio.Queue[Optional[Event]],
+        queue: asyncio.Queue[Event | None],
         event: Event,
         *,
         terminal: bool,

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +50,9 @@ def load_settings() -> Settings:
         sweep_interval_seconds=int(os.getenv("PREP_SWEEP_INTERVAL_SECONDS", "300")),
         pipeline_timeout_seconds=int(os.getenv("PREP_PIPELINE_TIMEOUT_SECONDS", "420")),
         log_level=os.getenv("PREP_LOG_LEVEL", "INFO"),
-        log_json_format=os.getenv("PREP_LOG_JSON_FORMAT", "false").lower() in {"1", "true", "yes"},
+        log_json_format=(
+            os.getenv("PREP_LOG_JSON_FORMAT", "false").lower() in {"1", "true", "yes"}
+        ),
         cors_allowed_origins=_parse_origins(os.getenv("CORS_ALLOWED_ORIGIN", "")),
         rate_limit=(os.getenv("PREP_RATE_LIMIT", "").strip() or "5/15minutes"),
     )

@@ -111,7 +111,9 @@ async def test_semaphore_caps_active_jobs(tmp_job_root):
         max_concurrent=2,
         pipeline=slow_pipeline,
     )
-    job_ids = [await registry.submit(b">i\nM\n", original_name="t.fasta") for _ in range(4)]
+    job_ids = [
+        await registry.submit(b">i\nM\n", original_name="t.fasta") for _ in range(4)
+    ]
     await started.wait()
     await asyncio.sleep(0.05)
     assert peak == 2
@@ -153,8 +155,10 @@ async def test_submit_rejects_when_pending_at_cap(tmp_job_root):
     assert len(list(tmp_job_root.iterdir())) == 2
 
     release.set()
-    async for _ in registry.subscribe(a): pass
-    async for _ in registry.subscribe(b): pass
+    async for _ in registry.subscribe(a):
+        pass
+    async for _ in registry.subscribe(b):
+        pass
 
 
 async def test_multiple_concurrent_subscribers_each_receive_full_stream(tmp_job_root):
@@ -246,13 +250,16 @@ async def test_running_and_queued_counts(tmp_job_root):
     await asyncio.sleep(0.05)
     assert registry.counts() == {"running": 1, "queued": 1}
     release.set()
-    async for _ in registry.subscribe(a): pass
-    async for _ in registry.subscribe(b): pass
+    async for _ in registry.subscribe(a):
+        pass
+    async for _ in registry.subscribe(b):
+        pass
     assert registry.counts() == {"running": 0, "queued": 0}
 
 
 async def test_sweep_removes_expired_directories(tmp_path):
     from protspace_prep.jobs import JobRegistry
+
     job_root = tmp_path / "jobs"
     registry = JobRegistry(
         job_root=job_root,
@@ -262,7 +269,9 @@ async def test_sweep_removes_expired_directories(tmp_path):
     job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
     async for _ in registry.subscribe(job_id):
         pass
-    import os, time
+    import os
+    import time
+
     job_dir = job_root / job_id
     past = time.time() - 10_000
     os.utime(job_dir, (past, past))
@@ -299,6 +308,7 @@ async def test_sweep_evicts_consumed_jobs_without_waiting_for_ttl(tmp_job_root):
 # §2.2 — queue_position + running in queued event
 # ---------------------------------------------------------------------------
 
+
 async def test_queued_event_includes_queue_position_and_running(tmp_job_root):
     gate = asyncio.Event()
 
@@ -309,7 +319,9 @@ async def test_queued_event_includes_queue_position_and_running(tmp_job_root):
         bundle.write_bytes(b"x")
         return bundle
 
-    registry = JobRegistry(job_root=tmp_job_root, max_concurrent=1, pipeline=blocking_pipeline)
+    registry = JobRegistry(
+        job_root=tmp_job_root, max_concurrent=1, pipeline=blocking_pipeline
+    )
     job_id_a = await registry.submit(b">a\nM\n", original_name="a.fasta")
     job_id_b = await registry.submit(b">b\nM\n", original_name="b.fasta")
     # Let the tasks start so the semaphore is acquired by job A
@@ -324,6 +336,7 @@ async def test_queued_event_includes_queue_position_and_running(tmp_job_root):
     # Verify the queued event payload by subscribing to the late-subscriber path
     # (job A is running, so terminal_event may not be set yet; check job B which is queued)
     collected_b: list = []
+
     async def collect_b():
         async for e in registry.subscribe(job_id_b):
             collected_b.append(e)
@@ -337,15 +350,19 @@ async def test_queued_event_includes_queue_position_and_running(tmp_job_root):
 
     gate.set()
     # Drain both jobs so tmp dirs are cleaned up
-    async for _ in registry.subscribe(job_id_a): pass
-    async for _ in registry.subscribe(job_id_b): pass
+    async for _ in registry.subscribe(job_id_a):
+        pass
+    async for _ in registry.subscribe(job_id_b):
+        pass
 
 
 async def test_error_event_includes_code_when_pipeline_failure_has_code(tmp_job_root):
     async def coded_failure_pipeline(ctx, emit):
         raise PipelineFailure("nope", code="BIOCENTRAL_UNAVAILABLE")
 
-    registry = JobRegistry(job_root=tmp_job_root, max_concurrent=1, pipeline=coded_failure_pipeline)
+    registry = JobRegistry(
+        job_root=tmp_job_root, max_concurrent=1, pipeline=coded_failure_pipeline
+    )
     job_id = await registry.submit(b">id\nM\n", original_name="t.fasta")
     events = [e async for e in registry.subscribe(job_id)]
     error_event = next(e for e in events if e.event == "error")
@@ -356,7 +373,9 @@ async def test_error_event_omits_code_when_pipeline_failure_has_no_code(tmp_job_
     async def plain_failure_pipeline(ctx, emit):
         raise PipelineFailure("nope")
 
-    registry = JobRegistry(job_root=tmp_job_root, max_concurrent=1, pipeline=plain_failure_pipeline)
+    registry = JobRegistry(
+        job_root=tmp_job_root, max_concurrent=1, pipeline=plain_failure_pipeline
+    )
     job_id = await registry.submit(b">id\nM\n", original_name="t.fasta")
     events = [e async for e in registry.subscribe(job_id)]
     error_event = next(e for e in events if e.event == "error")
@@ -366,6 +385,7 @@ async def test_error_event_omits_code_when_pipeline_failure_has_no_code(tmp_job_
 # ---------------------------------------------------------------------------
 # Fix 3 — subscribe() race between yield queued and queue registration
 # ---------------------------------------------------------------------------
+
 
 async def test_subscribe_after_instant_pipeline_receives_done(tmp_job_root):
     """Submit with an instantly-terminating pipeline and subscribe immediately.
@@ -400,12 +420,15 @@ async def test_subscribe_race_repeated(tmp_job_root):
         # Yield control so the pipeline task can run
         await asyncio.sleep(0)
         events = [e async for e in registry.subscribe(job_id)]
-        assert events[-1].event == "done", f"Expected done, got {[e.event for e in events]}"
+        assert events[-1].event == "done", (
+            f"Expected done, got {[e.event for e in events]}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Fix 4 — Sweeper hangs live subscribers
 # ---------------------------------------------------------------------------
+
 
 async def test_sweep_notifies_live_subscriber(tmp_job_root):
     """A subscriber blocked on queue.get() must unblock when sweep_expired runs."""
@@ -436,7 +459,9 @@ async def test_sweep_notifies_live_subscriber(tmp_job_root):
     await asyncio.sleep(0.05)
 
     # Backdate the job directory so sweep_expired considers it expired
-    import os, time
+    import os
+    import time
+
     job_dir = tmp_job_root / job_id
     past = time.time() - 10_000
     os.utime(job_dir, (past, past))
@@ -446,7 +471,7 @@ async def test_sweep_notifies_live_subscriber(tmp_job_root):
     # Consumer should unblock (receive None sentinel) and finish promptly
     try:
         await asyncio.wait_for(consumer_task, timeout=1.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         consumer_task.cancel()
         pytest.fail("Subscriber task hung after sweep_expired — sentinel not delivered")
 
@@ -457,6 +482,7 @@ async def test_sweep_notifies_live_subscriber(tmp_job_root):
 # ---------------------------------------------------------------------------
 # Fix 5 — _run() doesn't handle CancelledError
 # ---------------------------------------------------------------------------
+
 
 async def test_cancelled_job_publishes_error_event(tmp_job_root):
     """Cancelling a running job task must publish an error event and set ERROR status."""
@@ -493,7 +519,7 @@ async def test_cancelled_job_publishes_error_event(tmp_job_root):
     # Consumer should receive the error event and finish
     try:
         await asyncio.wait_for(consumer_task, timeout=1.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         consumer_task.cancel()
         pytest.fail("Subscriber did not receive error event after job cancellation")
 

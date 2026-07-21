@@ -1,4 +1,4 @@
-from protspace_prep.sse import format_event, KEEPALIVE_FRAME
+from protspace_prep.sse import KEEPALIVE_FRAME, format_event
 
 
 def test_format_event_emits_named_event_with_json_data():

@@ -1,12 +1,16 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from protspace_prep.config import load_settings
 from protspace_prep.jobs import JobContext, PipelineFailure
-from protspace_prep.pipeline import _classify_failure, _normalize_fasta_headers, run_protspace_prepare
+from protspace_prep.pipeline import (
+    _classify_failure,
+    _normalize_fasta_headers,
+    run_protspace_prepare,
+)
 
 
 @pytest.fixture
@@ -46,9 +50,13 @@ def _mock_subprocess(returncode: int, stderr_lines: list[bytes] | None = None):
     return proc
 
 
-def _make_step_router(ctx: JobContext, *, fail_step: str | None = None,
-                      fail_returncode: int = 2,
-                      fail_stderr: list[bytes] | None = None):
+def _make_step_router(
+    ctx: JobContext,
+    *,
+    fail_step: str | None = None,
+    fail_returncode: int = 2,
+    fail_stderr: list[bytes] | None = None,
+):
     """Return a fake create_subprocess_exec that simulates each protspace step.
 
     Each successful step writes its expected output artifact so the next step
@@ -143,7 +151,8 @@ async def test_embed_and_annotate_run_concurrently(ctx):
 async def test_embed_failure_raises_pipeline_failure(ctx):
     settings = load_settings()
     fake = _make_step_router(
-        ctx, fail_step="embed",
+        ctx,
+        fail_step="embed",
         fail_stderr=[b"ERROR Biocentral returned 503: unavailable\n"],
     )
     with patch("asyncio.create_subprocess_exec", new=fake):
@@ -159,7 +168,8 @@ async def test_embed_failure_raises_pipeline_failure(ctx):
 async def test_annotate_failure_raises_pipeline_failure(ctx):
     settings = load_settings()
     fake = _make_step_router(
-        ctx, fail_step="annotate",
+        ctx,
+        fail_step="annotate",
         fail_stderr=[b"ERROR UniProt query failed\n"],
     )
     with patch("asyncio.create_subprocess_exec", new=fake):
@@ -302,12 +312,16 @@ async def test_pipeline_uses_normalized_fasta_for_embed_and_annotate(ctx):
     assert ">P12345" in normalized.read_text()
 
 
-async def test_embed_failure_with_connection_refused_is_classified_as_biocentral_unavailable(ctx):
+async def test_embed_failure_with_connection_refused_is_classified_as_biocentral_unavailable(
+    ctx,
+):
     settings = load_settings()
     fake = _make_step_router(
         ctx,
         fail_step="embed",
-        fail_stderr=[b"aiohttp.ClientConnectorError: Cannot connect to host biocentral.example.com:443\n"],
+        fail_stderr=[
+            b"aiohttp.ClientConnectorError: Cannot connect to host biocentral.example.com:443\n"
+        ],
     )
     with patch("asyncio.create_subprocess_exec", new=fake):
         with pytest.raises(PipelineFailure) as exc_info:
@@ -316,12 +330,16 @@ async def test_embed_failure_with_connection_refused_is_classified_as_biocentral
     assert "Biocentral embedding service is unavailable" in str(exc_info.value)
 
 
-async def test_embed_failure_with_no_healthy_service_timeout_is_classified_as_biocentral_unavailable(ctx):
+async def test_embed_failure_with_no_healthy_service_timeout_is_classified_as_biocentral_unavailable(
+    ctx,
+):
     settings = load_settings()
     fake = _make_step_router(
         ctx,
         fail_step="embed",
-        fail_stderr=[b"TimeoutError: No healthy biocentral service became available in time\n"],
+        fail_stderr=[
+            b"TimeoutError: No healthy biocentral service became available in time\n"
+        ],
     )
     with patch("asyncio.create_subprocess_exec", new=fake):
         with pytest.raises(PipelineFailure) as exc_info:

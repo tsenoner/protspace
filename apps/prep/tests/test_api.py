@@ -5,9 +5,9 @@ import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from protspace_prep.api import _safe_download_name
 from protspace_prep.app import create_app
 from protspace_prep.jobs import JobContext, PipelineFailure
-from protspace_prep.api import _safe_download_name
 
 
 async def _fake_success(ctx: JobContext, emit) -> Path:
@@ -73,7 +73,7 @@ async def test_post_prepare_returns_job_id_and_sse_drives_to_done(app_factory):
             events = []
             async for chunk in stream.aiter_lines():
                 if chunk.startswith("event: "):
-                    events.append(chunk[len("event: "):])
+                    events.append(chunk[len("event: ") :])
                 if "event: done" in chunk or "event: error" in chunk:
                     pass
         assert "queued" in events
@@ -159,6 +159,7 @@ async def test_post_prepare_returns_503_when_queue_full(app_factory, monkeypatch
 # Fix 1 — Content-Disposition header injection
 # ---------------------------------------------------------------------------
 
+
 class TestSafeDownloadName:
     def test_normal_name(self):
         assert _safe_download_name("my_sequences.fasta") == "my_sequences.parquetbundle"
@@ -212,7 +213,10 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
         assert r.status_code == 200
 
         cd = r.headers.get("content-disposition", "")
-        assert '"' not in cd.split("filename=", 1)[-1].lstrip('"').rstrip('"') or cd.count('"') == 2
+        assert (
+            '"' not in cd.split("filename=", 1)[-1].lstrip('"').rstrip('"')
+            or cd.count('"') == 2
+        )
         assert "\r" not in cd
         assert "\n" not in cd
         assert "X-Injected" not in r.headers
@@ -222,6 +226,7 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
 # Fix 2 — SSE keep-alive frames
 # ---------------------------------------------------------------------------
 
+
 async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeypatch):
     """When no event arrives within the keepalive interval, a comment frame
     is sent — and the stream must keep flowing afterwards (regression: a prior
@@ -229,6 +234,7 @@ async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeyp
     exhausting the subscriber generator so the stream truncated silently).
     """
     import asyncio
+
     import protspace_prep.api as api_module
 
     # Speed up: use a very short keepalive interval so the test doesn't take 15s.
@@ -280,6 +286,7 @@ async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeyp
 # ---------------------------------------------------------------------------
 # Fix 6 — bundle() marks consumed before read
 # ---------------------------------------------------------------------------
+
 
 async def test_bundle_expired_returns_410_and_does_not_consume(app_factory):
     """If the bundle file is missing when the download is requested, return 410.
