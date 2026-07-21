@@ -1,12 +1,11 @@
 name: protspace Publish
 
 # Dispatched by protspace-release.yml after a version bump. Publishes the
-# protspace + protlabel PyPI packages from apps/protspace.
+# protspace + protlabel PyPI packages from apps/protspace. PyPI trusted
+# publishing still needs a live dry-run — OpenSpec task 3.4.
 #
-# The legacy Dash image (ghcr.io/<owner>/protspace) was built here too until it
-# was retired: it existed to serve the Dash app on Render, and that deployment
-# was removed in b7b8f91b (2026-03-26). The Dash UI itself is unaffected — it
-# ships in the PyPI package and runs locally via `protspace serve`.
+# The legacy Dash image was retired in fec6a2cb — do not re-add; it had no
+# consumer once the Render deployment went away.
 
 on:
   repository_dispatch:

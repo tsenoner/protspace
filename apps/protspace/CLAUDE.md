@@ -174,8 +174,7 @@ src/protspace/
 ├── ui/                         # Dash UI components
 ├── visualization/              # Plotly visualization builders
 ├── app.py                      # Dash app factory
-├── main.py                     # Main entry point (launches Dash)
-└── wsgi.py                     # WSGI entry point for deployment
+└── main.py                     # Main entry point (launches Dash)
 ```
 
 ### uv workspace: `protlabel` (EAT engine)
@@ -298,7 +297,7 @@ Located in `notebooks/`:
 
 **Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich
 
-**Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar, gunicorn
+**Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar
 
 **Local embedding (optional, `[local]` extra):** torch, transformers, sentencepiece, protobuf, einops — enables on-device embedding via `protspace.data.embedding.local` (issue #59; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
 
