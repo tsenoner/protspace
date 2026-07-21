@@ -1,4 +1,4 @@
-# ProtSpace Web
+# ProtSpace
 
 <p align="center">
   <picture>
@@ -7,67 +7,53 @@
   </picture>
 </p>
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.jmb.2025.168940-blue)](https://doi.org/10.1016/j.jmb.2025.168940)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/protspace)](https://pypi.org/project/protspace/)
+[![Downloads](https://static.pepy.tech/badge/protspace)](https://pepy.tech/project/protspace)
+[![Website](https://img.shields.io/badge/website-protspace.app-2ea44f)](https://protspace.app)
+[![DOI (preprint)](https://img.shields.io/badge/bioRxiv-10.64898%2F2026.05.04.722720-b31b1b)](https://doi.org/10.64898/2026.05.04.722720)
+[![DOI (JMB)](https://img.shields.io/badge/DOI-10.1016%2Fj.jmb.2025.168940-blue)](https://doi.org/10.1016/j.jmb.2025.168940)
 
-ProtSpace Web is a browser-based visualization tool for exploring protein language model (pLM) embeddings. Built with modular web components (canvas renderer, interactive legend, control bar), it enables interactive exploration through dimensionality reduction methods (PCA, UMAP, t-SNE) with zoom, pan, and selection. Color by annotations, view 3D protein structures, and export images or data files for sharing.
+ProtSpace is a free, in-browser tool for exploring protein language model (pLM) embeddings. Project embeddings into an interactive map to surface relationships that sequence similarity misses, overlay biological annotations, transfer labels to unannotated proteins with a confidence score (EAT), inspect 3D structures, and export publication-ready figures — at Swiss-Prot scale, with nothing uploaded.
 
-## 🌐 Try Online
+## 🌐 Try it online
 
-**Demo**: https://protspace.app/ → Drag & drop `.parquetbundle` files (or a `.fasta` for instant prep on supported deployments)
+**[protspace.app](https://protspace.app/)** — drag & drop a `.parquetbundle` file to start exploring (or a `.fasta` for instant preparation on supported deployments). Everything runs client-side; your data never leaves your machine.
 
-## 🚀 Prepare Your Data
+## 🚀 Prepare your data
 
-**Option 1: Google Colab** _(no local installation needed)_
+**Option 1: Google Colab** _(no local installation)_
 
 Generate `.parquetbundle` files directly in your browser:
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Preparation.ipynb)
 
-**Option 2: Python ProtSpace** _(local installation)_
+**Option 2: ProtSpace Python package** _(local installation)_
 
 ```bash
 pip install protspace
 
-# Query UniProt and generate visualization files
-protspace-query -q "(ft_domain:phosphatase) AND (reviewed:true)" -o output_dir
+# Build a visualization bundle from your embeddings (HDF5)
+protspace prepare -i embeddings.h5 -m pca2,umap2 -o output
 
-# Or use your own embeddings
-protspace-local -i embeddings.h5 -o output_dir
+# ...or from a FASTA file (auto-embeds via the Biocentral API)
+protspace prepare -i sequences.fasta -e prot_t5 -m pca2 -o output
 ```
 
-See the [Python ProtSpace repository](https://github.com/tsenoner/protspace) for details.
+See the [ProtSpace Python package](https://github.com/tsenoner/protspace/tree/main/apps/protspace) for the full CLI (annotation transfer, quality metrics, multiple pLMs, and more).
 
 ## 📚 Documentation
 
-**[Full Documentation](https://protspace.app/docs/)** - User guides, data preparation, and feature explanations.
+**[Full documentation](https://protspace.app/docs/)** — user guides, data preparation, and feature explanations.
 
-## 🔧 Development
+## 📖 How to cite
 
-```bash
-git clone https://github.com/tsenoner/protspace.git
-cd protspace
-pnpm install
-pnpm dev  # App: http://localhost:8080 | Docs: http://localhost:5174/docs/
-```
+If you use **ProtSpace**, please cite the web application preprint (latest):
 
-## 🧹 Code Quality
+> Senoner, T., Vahidi, P., Olenyi, T., Senoner, F., Sisman, G., Kahl, E., Rost, B., & Koludarov, I. (2026). ProtSpace: Protein Universe in Your Browser. _bioRxiv_. https://doi.org/10.64898/2026.05.04.722720
 
-Before committing, run:
+The original, peer-reviewed ProtSpace publication:
 
-```bash
-pnpm precommit
-```
+> Senoner, T., Olenyi, T., Heinzinger, M., Spannagl, A., Bouras, G., Rost, B., & Koludarov, I. (2025). ProtSpace: A Tool for Visualizing Protein Space. _Journal of Molecular Biology_, 437(15), 168940. https://doi.org/10.1016/j.jmb.2025.168940
 
-This matches the installed local Git hook by running `lint-staged`, repo-wide type checks, Knip,
-dependency-hygiene checks, the local unit/integration test suite, and a docs build.
-
-For a faster static-only pass while you are iterating, run:
-
-```bash
-pnpm quality
-```
-
-## ⚖️ License
-
-Apache License 2.0 - see [LICENSE](LICENSE)
+A machine-readable [`CITATION.cff`](CITATION.cff) is included — use GitHub's **"Cite this repository"** button to export BibTeX or APA.

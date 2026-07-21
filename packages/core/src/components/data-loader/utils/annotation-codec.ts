@@ -1,20 +1,16 @@
 /**
- * Lossless percent-encoding for annotation value serialization (bundle format v2).
- * Mirrors the Python backend `encoding.py`. Reserved set: `%` `;` `|` and all
- * C0/DEL control chars. `,` `(` `)` are intentionally left literal (positionally
- * safe / display sugar) so names stay readable.
+ * Lossless percent-decoding for annotation value deserialization (bundle format v2).
+ *
+ * The matching encoder is `encodeAnnotationField` in `@protspace/utils`
+ * (`packages/utils/src/parquet/annotation-codec.ts`): the write path lives in the
+ * utils bundle-writer, this decode is the read path. Keeping a single encoder there
+ * (utils cannot import core) avoids a second hand-written copy that could silently
+ * diverge from this decoder. Both mirror the Python backend `encoding.py`. Reserved
+ * set: `%` `;` `|` and all C0/DEL control chars; `,` `(` `)` are intentionally left
+ * literal (positionally safe / display sugar) so names stay readable.
  */
 
-const ENCODE_RE = /[;|%\x00-\x1F\x7F]/g;
 const DECODE_RE = /%([0-9A-Fa-f]{2})/g;
-
-export function encodeField(s: string): string {
-  if (!s) return s;
-  return s.replace(
-    ENCODE_RE,
-    (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'),
-  );
-}
 
 export function decodeField(s: string): string {
   if (!s || s.indexOf('%') === -1) return s;

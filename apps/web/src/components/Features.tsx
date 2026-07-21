@@ -1,38 +1,42 @@
-import { Network, Layers, Box, Search, Database, Code2 } from 'lucide-react';
+import { Sparkles, Layers, Share2, BarChart3, SlidersHorizontal, Box } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
 const features = [
   {
-    icon: Network,
-    title: 'Protein Language Models',
+    icon: Sparkles,
+    title: 'Beyond Sequence Similarity',
     description:
-      'Explore protein families as never before, leveraging the comprehensive knowledge of protein Language Models.',
+      'Surface functional relationships that sequence alignment misses — the biology embeddings reveal and networks cannot.',
   },
   {
     icon: Layers,
-    title: 'Dimensionality Reduction',
-    description: 'Visualize high-dimensional embeddings using UMAP, t-SNE, and PCA techniques.',
+    title: 'Layered Annotations',
+    description:
+      'Overlay UniProt, InterPro, AlphaFold, TED domains, and ML predictions on every protein in the map.',
+  },
+  {
+    icon: Share2,
+    title: 'Annotation Transfer (EAT)',
+    description:
+      'Fill missing labels from the nearest neighbour in embedding space, each with a confidence score.',
+  },
+  {
+    icon: BarChart3,
+    title: 'Insights Through Statistics',
+    description:
+      'Silhouette, trustworthiness, and cluster-validity scores tell you which regions of the map to trust.',
+  },
+  {
+    icon: SlidersHorizontal,
+    title: 'Your Model, Your Projection',
+    description:
+      'Model-agnostic embeddings with modular, extensible projection methods — bring your own and compare.',
   },
   {
     icon: Box,
-    title: '3D Protein Structure Visualization',
+    title: 'Structures & Figures, in Place',
     description:
-      'Visualize protein 3D structures with AlphaFold2 predictions directly in the browser.',
-  },
-  {
-    icon: Search,
-    title: 'Real-Time Search',
-    description: 'Find proteins by ID or functional annotations instantly.',
-  },
-  {
-    icon: Database,
-    title: 'Metadata Integration',
-    description: 'Link biological metadata for enriched exploration and contextual analysis.',
-  },
-  {
-    icon: Code2,
-    title: 'Open-Source & Extensible',
-    description: 'Apache-2.0 licensed with extensible codebase. Contribute and customize freely.',
+      'Open AlphaFold 3D structures and export publication-ready figures without leaving the browser.',
   },
 ];
 
@@ -43,13 +47,13 @@ const Features = () => {
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
-            Powerful Features for
+            From embedding space to
             <span className="block bg-gradient-primary bg-clip-text text-transparent">
-              Protein Analysis
+              biological insight
             </span>
           </h2>
           <p className="text-lg text-muted-foreground">
-            Everything you need to visualize and explore large-scale protein embedding spaces
+            Everything you need to explore protein embedding space — and act on it
           </p>
         </div>
 

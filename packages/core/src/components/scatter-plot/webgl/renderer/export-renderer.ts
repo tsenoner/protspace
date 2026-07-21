@@ -49,7 +49,7 @@ import {
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
 import { stagePoint, type StagePointArrays, MAX_LABELS } from './stage-point';
-import { buildPaintOrder } from './point-staging';
+import { buildPaintOrder, composePaintDepth } from './point-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -94,6 +94,8 @@ interface ExportRenderOptions {
   transform: d3.ZoomTransform;
   /** Live gamma value; downgraded to 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
+  /** Plot-surface/interior marker color in sRGB. */
+  knockoutColor?: readonly [number, number, number];
 }
 
 export class ExportRenderer {
@@ -381,6 +383,7 @@ export class ExportRenderer {
       depths,
       labelCounts,
       shapes,
+      predicted,
       labelColorData,
       pointCount,
       selectedStartIndex,
@@ -401,6 +404,7 @@ export class ExportRenderer {
     const depthBuffer = gl.createBuffer();
     const labelCountBuffer = gl.createBuffer();
     const shapeBuffer = gl.createBuffer();
+    const predictedBuffer = gl.createBuffer();
     const labelColorTexture = gl.createTexture();
 
     gl.bindBuffer(gl.ARRAY_BUFFER, dataPositionBuffer);
@@ -420,6 +424,9 @@ export class ExportRenderer {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, shapeBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, shapes.subarray(0, pointCount), gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, predictedBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, predicted.subarray(0, pointCount), gl.STATIC_DRAW);
 
     // Setup label color texture
     gl.bindTexture(gl.TEXTURE_2D, labelColorTexture);
@@ -451,6 +458,7 @@ export class ExportRenderer {
         depth: depthBuffer,
         labelCount: labelCountBuffer,
         shape: shapeBuffer,
+        predicted: predictedBuffer,
       },
       attribs,
     );
@@ -491,6 +499,7 @@ export class ExportRenderer {
         height,
         dpr,
         gamma,
+        options.knockoutColor ?? [1, 1, 1],
         exportTransform,
         labelColorTexture,
         labelColorData.length,
@@ -526,6 +535,7 @@ export class ExportRenderer {
         height,
         dpr,
         gamma,
+        options.knockoutColor ?? [1, 1, 1],
         exportTransform,
         labelColorTexture,
         labelColorData.length,
@@ -543,6 +553,7 @@ export class ExportRenderer {
     gl.deleteBuffer(depthBuffer);
     gl.deleteBuffer(labelCountBuffer);
     gl.deleteBuffer(shapeBuffer);
+    gl.deleteBuffer(predictedBuffer);
     gl.deleteTexture(labelColorTexture);
     gl.deleteProgram(pointProgram);
     if (gammaCorrectionProgram) gl.deleteProgram(gammaCorrectionProgram);
@@ -569,6 +580,7 @@ export class ExportRenderer {
     depths: Float32Array;
     labelCounts: Float32Array;
     shapes: Float32Array;
+    predicted: Float32Array;
     labelColorData: Uint8Array;
     pointCount: number;
     selectedStartIndex: number;
@@ -580,6 +592,7 @@ export class ExportRenderer {
     const depths = new Float32Array(capacity);
     const labelCounts = new Float32Array(capacity);
     const shapes = new Float32Array(capacity);
+    const predicted = new Float32Array(capacity);
     const requiredPixels = capacity * MAX_LABELS;
     const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
     const labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
@@ -600,6 +613,7 @@ export class ExportRenderer {
       depths,
       labelCounts,
       shapes,
+      predicted,
       labelColorData,
     };
 
@@ -614,7 +628,11 @@ export class ExportRenderer {
       sp.x = xs[i];
       sp.y = ys[i];
       sp.originalIndex = origIdx;
-      depthScratch[i] = style.getDepth(sp);
+      depthScratch[i] = composePaintDepth(
+        style.getDepth(sp),
+        style.getOpacity(sp),
+        style.isPredicted(sp),
+      );
     }
 
     const { selectedStartIndex } = buildPaintOrder(
@@ -656,6 +674,7 @@ export class ExportRenderer {
       depths,
       labelCounts,
       shapes,
+      predicted,
       labelColorData,
       pointCount: count,
       selectedStartIndex,
@@ -674,6 +693,7 @@ export class ExportRenderer {
     height: number,
     dpr: number,
     gamma: number,
+    knockoutColor: readonly [number, number, number],
     transform: d3.ZoomTransform,
     labelColorTexture: WebGLTexture | null,
     labelColorDataLength: number,
@@ -687,6 +707,7 @@ export class ExportRenderer {
       transform: { x: transform.x, y: transform.y, k: transform.k },
       dpr,
       gamma,
+      knockoutColor,
       maxLabels: MAX_LABELS,
       labelTextureWidth: LABEL_TEXTURE_WIDTH,
       labelColorDataLength,

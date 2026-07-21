@@ -20,6 +20,7 @@ import {
   plotDataId,
   materializePlotDataPoint,
   gatherPlotData,
+  materializeEatOverlay,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -38,11 +39,16 @@ import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
 import type { VisibilityModel } from './styling/visibility-model';
 import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer, computeSizeScaleFactor } from './webgl';
+import { resolveColor } from './webgl/color-utils';
 import { QuadtreeIndex } from './interaction/quadtree-index';
 import { computeViewportWindow, buildViewKey } from './duplicate-stacks/duplicate-stack-viewport';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
-import { computeTooltipStyle, TOOLTIP_FALLBACK_HEIGHT } from './tooltips/tooltip-position';
+import {
+  computeTooltipStyle,
+  effectiveTooltipWidth,
+  TOOLTIP_FALLBACK_HEIGHT,
+} from './tooltips/tooltip-position';
 import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
@@ -53,6 +59,17 @@ import {
   PlotInteractionController,
   type PlotInteractionHost,
 } from './interaction/plot-interaction-controller';
+import {
+  ConnectorOverlayController,
+  type ProvenanceConnectorRequest,
+  type ProvenanceConnectorStatus,
+} from './provenance/connector-overlay-controller';
+
+export type {
+  ProvenanceConnectorPair,
+  ProvenanceConnectorRequest,
+  ProvenanceConnectorStatus,
+} from './provenance/connector-overlay-controller';
 
 // Visualization is only needed for viewport culling on very large datasets.
 // For <= MAX_POINTS_DIRECT_RENDER we can render the full set once and then pan/zoom via uniforms
@@ -86,6 +103,7 @@ type VisibilityModelMemoKey = {
   baseOpacity: number;
   selectedOpacity: number;
   fadedOpacity: number;
+  eatOverlayEnabled: boolean;
 };
 
 // Default configuration moved to config.ts
@@ -118,6 +136,7 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'filters-active' }) filtersActive = false;
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
   @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
+  @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -141,6 +160,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _shapeMapping: Record<string, string> | null = null;
   @state() private _canvasKey = 0;
   @state() private _numericRecomputeRunning = false;
+  @state() private _connectorStatus: ProvenanceConnectorStatus | null = null;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -167,9 +187,8 @@ export class ProtspaceScatterplot extends LitElement {
   // visibility model.
   private _visibilityModelCache: VisibilityModel | null = null;
   private _visibilityModelKey: VisibilityModelMemoKey | null = null;
-  // Memoized count of INTERACTIVE plot points (opacityOf > 0) for the
-  // bottom-left indicator — the points the user can actually see/interact
-  // with. Keyed on the visibility inputs that affect interactivity: the
+  // Memoized INTERACTIVE plot ids (opacityOf > 0), shared by the bottom-left
+  // count and provenance interaction. Keyed on the visibility inputs that affect interactivity: the
   // hidden-mask inputs (data, selectedAnnotation, hiddenAnnotationValues)
   // AND selection/highlight + the three opacities, because a configured
   // fadedOpacity of 0 makes non-selected points non-interactive, so a
@@ -177,18 +196,19 @@ export class ProtspaceScatterplot extends LitElement {
   // (originalIndices ref + length), NOT the container ref: a projection
   // switch clones _plotData (new container, same originalIndices) and must
   // reuse the cache since interactivity is independent of x/y coordinates.
-  private _visiblePointCountCache: number | null = null;
+  private _interactableProteinIdsCache: ReadonlySet<string> | null = null;
   private _visiblePointCountKey: {
     originalIndices: Int32Array | null;
     plotLength: number;
     data: VisualizationData | null;
     selectedAnnotation: string;
     hiddenAnnotationValues: string[];
-    selectedProteinIds: string[];
-    highlightedProteinIds: string[];
+    selectedProteinIds: string[] | null;
+    highlightedProteinIds: string[] | null;
     baseOpacity: number;
     selectedOpacity: number;
     fadedOpacity: number;
+    eatOverlayEnabled: boolean;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
   // F-17: advanced on every quadtree rebuild and folded into the virtualization
@@ -235,6 +255,23 @@ export class ProtspaceScatterplot extends LitElement {
     onHoverEnd: () => this._clearHoverState(),
   });
 
+  private _connectorOverlay = new ConnectorOverlayController({
+    getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
+    getPlotData: () => this._plotData,
+    getScales: () => this._scales,
+    getPointSize: () => this._mergedConfig.pointSize,
+    onStatusChange: (status) => {
+      if (
+        this._connectorStatus?.shown === status?.shown &&
+        this._connectorStatus?.total === status?.total &&
+        this._connectorStatus?.missingEndpoints === status?.missingEndpoints
+      ) {
+        return;
+      }
+      this._connectorStatus = status;
+    },
+  });
+
   private _webglRenderPerf = new WebglRenderPerfRunner(this);
 
   // Monotonically-increasing token used to invalidate a pending async tooltip-height
@@ -276,6 +313,7 @@ export class ProtspaceScatterplot extends LitElement {
   // wholesale, so comparing the selected annotation's settings ref is sound
   // (a numeric rebin yields a new ref -> fast-path miss -> JSON path re-materializes).
   private _lastMaterializedSelectedAnnotation: string | null = null;
+  private _lastMaterializedEatOverlayEnabled = true;
   private _lastMaterializedSelectedSettings:
     | NumericAnnotationDisplaySettingsMap[string]
     | undefined = undefined;
@@ -350,6 +388,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._lastMaterializedSource === this.data &&
       this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
       this._lastMaterializedSelectedAnnotation === this.selectedAnnotation &&
+      this._lastMaterializedEatOverlayEnabled === this.eatOverlayEnabled &&
       this._lastMaterializedSelectedSettings === selectedNumericSettings
     ) {
       return this._materializedDataCache;
@@ -370,6 +409,7 @@ export class ProtspaceScatterplot extends LitElement {
       selectedNumericType,
       numericAnnotationSettings: selectedNumericSettings ?? null,
       annotationKeys: Object.keys(sourceData.annotations),
+      eatOverlayEnabled: this.eatOverlayEnabled,
     });
 
     if (
@@ -381,15 +421,20 @@ export class ProtspaceScatterplot extends LitElement {
       return this._materializedDataCache;
     }
 
-    this._materializedDataCache = materializeVisualizationData(
-      sourceData,
-      this.numericAnnotationSettings,
-      DEFAULT_NUMERIC_BIN_COUNT,
+    this._materializedDataCache = materializeEatOverlay(
+      materializeVisualizationData(
+        sourceData,
+        this.numericAnnotationSettings,
+        DEFAULT_NUMERIC_BIN_COUNT,
+        this.selectedAnnotation,
+      ),
       this.selectedAnnotation,
+      this.eatOverlayEnabled,
     );
     this._lastMaterializedSource = this.data;
     this._lastMaterializedNumericValues = selectedNumericValuesCacheRef;
     this._lastMaterializedSelectedAnnotation = this.selectedAnnotation ?? null;
+    this._lastMaterializedEatOverlayEnabled = this.eatOverlayEnabled;
     this._lastMaterializedSelectedSettings = selectedNumericSettings;
     this._materializedDataCacheKey = cacheKey;
     return this._materializedDataCache;
@@ -453,8 +498,10 @@ export class ProtspaceScatterplot extends LitElement {
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
         getDepth: (p: PlotDataPoint) => this._getDepth(p),
         getShape: (p: PlotDataPoint) => this._getPointShape(p),
+        isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
       },
       this._handleWebglContextLost,
+      () => resolveColor(getComputedStyle(this).backgroundColor),
     );
     this._updateStyleSignature();
     this._webglRenderer.setStyleSignature(this._styleSig);
@@ -470,6 +517,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.addEventListener('dragenter', this.handleDragEnter);
     this.addEventListener('dragleave', this.handleDragLeave);
     this.addEventListener('drop', this.handleDrop);
+    window.addEventListener('keydown', this._handleConnectorKeydown);
   }
 
   disconnectedCallback() {
@@ -491,6 +539,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelDebounce();
     this._dupOverlay.cancelCompute();
     this._dupOverlay.clearBadges();
+    this._connectorOverlay.clear();
     this._webglRenderer?.destroy();
     // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
     // down the d3 brush + lasso (F-07).
@@ -503,7 +552,14 @@ export class ProtspaceScatterplot extends LitElement {
     this.removeEventListener('dragenter', this.handleDragEnter);
     this.removeEventListener('dragleave', this.handleDragLeave);
     this.removeEventListener('drop', this.handleDrop);
+    window.removeEventListener('keydown', this._handleConnectorKeydown);
   }
+
+  private _handleConnectorKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this._connectorOverlay.hasActiveRequest()) {
+      this.clearProvenanceConnectors();
+    }
+  };
 
   private handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -588,9 +644,45 @@ export class ProtspaceScatterplot extends LitElement {
     this._reconcileConfigMerge(changedProperties);
     this._rebuildStyleAndSignature(changedProperties);
     this._reconcileSelectionMode(changedProperties);
+    this._reconcileProvenanceConnectors(changedProperties);
     this._refreshStyleGettersCache(changedProperties);
     this._reconcileSelectionOverlays(changedProperties);
     this._reconcileTooltipMeasurement(changedProperties);
+    if (this.data && changedProperties.has('eatOverlayEnabled')) {
+      this.dispatchEvent(
+        new CustomEvent('data-change', {
+          detail: { data: this.getCurrentData() ?? this._getMaterializedData() ?? this.data },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
+  }
+
+  private _reconcileProvenanceConnectors(changedProperties: Map<string, unknown>): void {
+    const datasetChanged = changedProperties.has('data');
+    const contextChanged =
+      datasetChanged ||
+      changedProperties.has('selectedAnnotation') ||
+      changedProperties.has('hiddenAnnotationValues') ||
+      (changedProperties.has('eatOverlayEnabled') && !this.eatOverlayEnabled) ||
+      (changedProperties.has('selectedProteinIds') && this.selectedProteinIds.length === 0);
+    if (contextChanged) {
+      this.clearProvenanceConnectors();
+      if (datasetChanged) this._connectorOverlay.invalidateDataCache();
+      return;
+    }
+
+    if (
+      changedProperties.has('_plotData') ||
+      changedProperties.has('selectedProjectionIndex') ||
+      changedProperties.has('projectionPlane') ||
+      changedProperties.has('filteredProteinIds') ||
+      changedProperties.has('filtersActive') ||
+      changedProperties.has('config')
+    ) {
+      this._connectorOverlay.render();
+    }
   }
 
   /**
@@ -712,11 +804,12 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _rebuildStyleAndSignature(changedProperties: Map<string, unknown>) {
-    if (
+    const visibilityMembershipChanged =
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
-      changedProperties.has('otherAnnotationValues')
-    ) {
+      changedProperties.has('otherAnnotationValues') ||
+      changedProperties.has('eatOverlayEnabled');
+    if (visibilityMembershipChanged) {
       this._scheduleQuadtreeRebuild();
       this._webglRenderer?.invalidateStyleCache();
       this._updateStyleSignature();
@@ -728,7 +821,8 @@ export class ProtspaceScatterplot extends LitElement {
       // order and enabling the fast color-only update path.
       if (
         changedProperties.has('selectedAnnotation') ||
-        changedProperties.has('otherAnnotationValues')
+        changedProperties.has('otherAnnotationValues') ||
+        changedProperties.has('eatOverlayEnabled')
       ) {
         this._webglRenderer?.invalidatePositionCache();
       }
@@ -754,6 +848,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
+      changedProperties.has('eatOverlayEnabled') ||
       changedProperties.has('config')
     ) {
       this._styleGettersCache = this._buildStyleGetters();
@@ -840,6 +935,7 @@ export class ProtspaceScatterplot extends LitElement {
       }
       this._syncWebglSelectionActive();
     }
+    this._connectorOverlay.render();
   }
 
   private _processData() {
@@ -1129,6 +1225,7 @@ export class ProtspaceScatterplot extends LitElement {
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
+        this._connectorOverlay.updateZoomScale(t.k);
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
       onHover: (event) => this._handleCanvasMouseMove(event),
@@ -1182,6 +1279,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._scheduleQuadtreeRebuild();
     this._renderPlot();
     this._updateSelectionOverlays();
+    this._connectorOverlay.render();
   }
 
   // HiDPI setup and quality handled by WebGLRenderer
@@ -1422,7 +1520,8 @@ export class ProtspaceScatterplot extends LitElement {
       key.highlightedProteinIds === this.highlightedProteinIds &&
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
-      key.fadedOpacity === fadedOpacity
+      key.fadedOpacity === fadedOpacity &&
+      key.eatOverlayEnabled === this.eatOverlayEnabled
     ) {
       return this._visibilityModelCache;
     }
@@ -1449,6 +1548,7 @@ export class ProtspaceScatterplot extends LitElement {
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
+      eatOverlayEnabled: this.eatOverlayEnabled,
     };
     return model;
   }
@@ -1458,15 +1558,15 @@ export class ProtspaceScatterplot extends LitElement {
    * the user can actually see and interact with. `_plotData` is already
    * physically culled by isolation and query filters; this further drops
    * legend-hidden points AND selection-faded points whose configured
-   * fadedOpacity is 0 (faded-to-0 == invisible, exactly what the WebGL renderer
-   * and hit-test treat as non-interactive). The memo key therefore includes
-   * selection/highlight + the three opacities (fadedOpacity-0 makes selection
-   * affect interactivity), and keys plot-data on (originalIndices ref + length)
+   * any selected/base/faded tier is 0 (opacity 0 == invisible, exactly what the
+   * WebGL renderer and hit-test treat as non-interactive). The memo key therefore
+   * includes selection/highlight whenever any supported tier can cross the
+   * interactive boundary, and keys plot-data on (originalIndices ref + length)
    * rather than the `_plotData` container ref so a pure projection switch
    * (which clonePlotData()s a new container sharing the same originalIndices)
    * reuses the cache — interactivity is independent of x/y coordinates.
    */
-  private _getVisiblePointCount(): number {
+  private _getInteractableProteinIds(): ReadonlySet<string> {
     const data =
       this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
       this._getMaterializedData() ??
@@ -1475,51 +1575,62 @@ export class ProtspaceScatterplot extends LitElement {
     const baseOpacity = this._mergedConfig.baseOpacity;
     const selectedOpacity = this._mergedConfig.selectedOpacity;
     const fadedOpacity = this._mergedConfig.fadedOpacity;
+    // Selection/highlight can change membership whenever any opacity tier is non-interactive.
+    // Under the default all-positive tiers, connector-owned highlights reuse this cache.
+    const allOpacityTiersInteractive = baseOpacity > 0 && selectedOpacity > 0 && fadedOpacity > 0;
+    const selectedProteinIdsKey = allOpacityTiersInteractive ? null : this.selectedProteinIds;
+    const highlightedProteinIdsKey = allOpacityTiersInteractive ? null : this.highlightedProteinIds;
 
     const key = this._visiblePointCountKey;
     if (
-      this._visiblePointCountCache !== null &&
+      this._interactableProteinIdsCache !== null &&
       key &&
       key.originalIndices === pd.originalIndices &&
       key.plotLength === pd.length &&
       key.data === data &&
       key.selectedAnnotation === this.selectedAnnotation &&
       key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
-      key.selectedProteinIds === this.selectedProteinIds &&
-      key.highlightedProteinIds === this.highlightedProteinIds &&
+      key.selectedProteinIds === selectedProteinIdsKey &&
+      key.highlightedProteinIds === highlightedProteinIdsKey &&
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
-      key.fadedOpacity === fadedOpacity
+      key.fadedOpacity === fadedOpacity &&
+      key.eatOverlayEnabled === this.eatOverlayEnabled
     ) {
-      return this._visiblePointCountCache;
+      return this._interactableProteinIdsCache;
     }
 
     const model = this._getVisibilityModel();
     const oi = pd.originalIndices;
     const sp = this._scratchPoint;
-    let count = 0;
+    const proteinIds = new Set<string>();
     for (let s = 0; s < pd.length; s++) {
       const origIdx = oi ? oi[s] : s;
       sp.id = pd.proteinIds[origIdx];
       sp.originalIndex = origIdx;
       // x/y intentionally NOT set: isInteractive → opacityOf → isHidden /
       // baseOpacityOf read only id + originalIndex, never coordinates.
-      if (model.isInteractive(sp)) count++;
+      if (model.isInteractive(sp)) proteinIds.add(sp.id);
     }
-    this._visiblePointCountCache = count;
+    this._interactableProteinIdsCache = proteinIds;
     this._visiblePointCountKey = {
       originalIndices: pd.originalIndices,
       plotLength: pd.length,
       data,
       selectedAnnotation: this.selectedAnnotation,
       hiddenAnnotationValues: this.hiddenAnnotationValues,
-      selectedProteinIds: this.selectedProteinIds,
-      highlightedProteinIds: this.highlightedProteinIds,
+      selectedProteinIds: selectedProteinIdsKey,
+      highlightedProteinIds: highlightedProteinIdsKey,
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
+      eatOverlayEnabled: this.eatOverlayEnabled,
     };
-    return count;
+    return proteinIds;
+  }
+
+  private _getVisiblePointCount(): number {
+    return this._getInteractableProteinIds().size;
   }
 
   private _getDepth(point: PlotDataPoint): number {
@@ -1553,6 +1664,7 @@ export class ProtspaceScatterplot extends LitElement {
           selected: this._mergedConfig.selectedOpacity,
           faded: this._mergedConfig.fadedOpacity,
         },
+        eatOverlayEnabled: this.eatOverlayEnabled,
       },
       this._getVisibilityModel(),
     );
@@ -1584,6 +1696,7 @@ export class ProtspaceScatterplot extends LitElement {
       point.originalIndex,
       this.selectedAnnotation,
       this.tooltipAnnotations,
+      this.eatOverlayEnabled,
     );
     this._tooltipData = { x, y, view };
 
@@ -1608,6 +1721,7 @@ export class ProtspaceScatterplot extends LitElement {
           point.originalIndex,
           this.selectedAnnotation,
           this.tooltipAnnotations,
+          this.eatOverlayEnabled,
         )
       : null;
     this.dispatchEvent(
@@ -1720,7 +1834,10 @@ export class ProtspaceScatterplot extends LitElement {
 
     const [mouseX, mouseY] = d3.pointer(event);
     const nearestPoint = this.pickInteractivePointAt(mouseX, mouseY);
-    if (!nearestPoint) return;
+    if (!nearestPoint) {
+      this.clearProvenanceConnectors();
+      return;
+    }
 
     // If this point belongs to a duplicate stack, spiderfy instead of picking an arbitrary member.
     if (this._dupOverlay.maybeSpiderfyPoint(nearestPoint)) return;
@@ -1773,7 +1890,10 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _estimateTooltipHeight(): number {
     if (!this._tooltipData) return TOOLTIP_FALLBACK_HEIGHT;
-    return estimateTooltipHeight(this._tooltipData.view);
+    return estimateTooltipHeight(
+      this._tooltipData.view,
+      effectiveTooltipWidth(this._mergedConfig.width),
+    );
   }
 
   private _getTooltipStyle() {
@@ -1870,13 +1990,79 @@ export class ProtspaceScatterplot extends LitElement {
               </div>
             `
           : ''}
+        ${this._connectorStatus && this._connectorStatus.missingEndpoints > 0
+          ? html`
+              <div class="connector-status" role="status" aria-live="polite">
+                <span>${this._formatConnectorStatus(this._connectorStatus)}</span>
+                <button
+                  type="button"
+                  aria-label="Close provenance connections"
+                  @click=${this.clearProvenanceConnectors}
+                >
+                  ×
+                </button>
+              </div>
+            `
+          : ''}
       </div>
     `;
   }
 
+  private _formatConnectorStatus(status: ProvenanceConnectorStatus): string {
+    return `${status.missingEndpoints} hidden (off-view)`;
+  }
+
+  /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */
+  setProvenanceConnectors(request: ProvenanceConnectorRequest): void {
+    const pairs = request.pairs.slice(0, 20);
+    const endpointIds = (ps: typeof pairs): string[] => [
+      ...new Set(ps.flatMap((p) => [p.sourceProteinId, p.targetProteinId])),
+    ];
+    this.highlightedProteinIds = endpointIds(pairs);
+
+    // Connector highlights use selectedOpacity. Revalidate after applying them because a zero
+    // selected tier can make every otherwise-valid endpoint non-interactable.
+    if (this._mergedConfig.selectedOpacity <= 0) {
+      const interactableProteinIds = this._getInteractableProteinIds();
+      const validPairs = pairs.filter(
+        (pair) =>
+          interactableProteinIds.has(pair.sourceProteinId) &&
+          interactableProteinIds.has(pair.targetProteinId),
+      );
+      if (validPairs.length !== pairs.length) {
+        this.highlightedProteinIds = endpointIds(validPairs);
+        if (validPairs.length === 0) {
+          this._connectorOverlay.clear();
+          return;
+        }
+        this._connectorOverlay.set({ ...request, pairs: validPairs });
+        return;
+      }
+    }
+    this._connectorOverlay.set({ ...request, pairs });
+  }
+
+  /** Whether a semantic app-level provenance click still has an active render request. */
+  hasActiveProvenanceConnectors(): boolean {
+    return this._connectorOverlay.hasActiveRequest();
+  }
+
+  /** Clear EAT connector geometry, status, and connector-owned endpoint highlights. */
+  clearProvenanceConnectors = (): void => {
+    const wasActive = this._connectorOverlay.hasActiveRequest();
+    this._connectorOverlay.clear();
+    if (wasActive && this.highlightedProteinIds.length > 0) {
+      this.highlightedProteinIds = [];
+    }
+  };
+
   private _updateStyleSignature() {
     const cfg = this._mergedConfig;
-    const parts = [`ps:${cfg.pointSize}`, `annot:${this.selectedAnnotation}`];
+    const parts = [
+      `ps:${cfg.pointSize}`,
+      `annot:${this.selectedAnnotation}`,
+      `eat:${this.eatOverlayEnabled ? 1 : 0}`,
+    ];
     this._styleSig = parts.join('|');
   }
 
@@ -2101,6 +2287,35 @@ export class ProtspaceScatterplot extends LitElement {
     return this._getMaterializedData();
   }
 
+  /** Stable authoritative membership for points currently rendered with non-zero opacity. */
+  getInteractableProteinIds(): ReadonlySet<string> {
+    return this._getInteractableProteinIds();
+  }
+
+  /** Whether a global protein index survives the current query filter and isolation view. */
+  isProteinInCurrentView(originalIndex: number): boolean {
+    const originalIndices = this._plotData.originalIndices;
+    if (!originalIndices) return originalIndex >= 0 && originalIndex < this._plotData.length;
+    let low = 0;
+    let high = originalIndices.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      const candidate = originalIndices[middle];
+      if (candidate === originalIndex) return true;
+      if (candidate < originalIndex) low = middle + 1;
+      else high = middle - 1;
+    }
+    return false;
+  }
+
+  /** Whether legend and effective opacity rules permit a protein independent of view culling. */
+  isProteinLegendEligible(proteinId: string, originalIndex: number): boolean {
+    const point = this._scratchPoint;
+    point.id = proteinId;
+    point.originalIndex = originalIndex;
+    return this._getVisibilityModel().isInteractive(point);
+  }
+
   /**
    * Capture the scatterplot at a specific resolution for high-quality export.
    * Renders directly to an off-screen WebGL canvas without affecting the display.
@@ -2158,6 +2373,11 @@ export class ProtspaceScatterplot extends LitElement {
       dataDomain,
       pointSizeReference,
       resetView,
+      resolveColor(
+        backgroundColor === 'transparent'
+          ? getComputedStyle(this).backgroundColor
+          : backgroundColor,
+      ),
     );
 
     // Composite with badges canvas if present. For the unzoomed (resetView)

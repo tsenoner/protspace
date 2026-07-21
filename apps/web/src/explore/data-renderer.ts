@@ -5,6 +5,7 @@ import type {
   ProtspaceStructureViewer,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
+import { isEatConfidenceAnnotation } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
 import type { EffectiveExploreView } from './view-state';
 
@@ -28,7 +29,7 @@ interface ResolvedInitialView {
   tooltip: string[];
 }
 
-function resolveRenderableView(
+export function resolveRenderableView(
   newData: VisualizationData,
   initialView?: EffectiveExploreView | null,
 ): ResolvedInitialView {
@@ -37,8 +38,17 @@ function resolveRenderableView(
     0,
     newData.projections.findIndex((projection) => projection.name === projectionName),
   );
-  const firstAnnotationKey = Object.keys(newData.annotations)[0] || '';
-  const annotation = initialView?.annotation ?? firstAnnotationKey;
+  // Synthesized `__eat_confidence` annotations are filter-only (see control-bar's
+  // color-by/filterable split) — never auto-selected as the default color-by annotation.
+  const firstAnnotationKey =
+    Object.keys(newData.annotations).find(
+      (key) => !isEatConfidenceAnnotation(newData.annotations[key]),
+    ) || '';
+  const requestedAnnotation = initialView?.annotation;
+  const annotation =
+    requestedAnnotation && !isEatConfidenceAnnotation(newData.annotations[requestedAnnotation])
+      ? requestedAnnotation
+      : firstAnnotationKey;
 
   const availableAnnotations = new Set(Object.keys(newData.annotations));
   const seenTooltip = new Set<string>();
@@ -91,6 +101,7 @@ function applyPlotState(
   // stale protein ids onto the new dataset.
   plotElement.filteredProteinIds = [];
   plotElement.filtersActive = false;
+  plotElement.eatOverlayEnabled = true;
   plotElement.requestUpdate('data', previousData);
 }
 

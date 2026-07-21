@@ -1,8 +1,36 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  createParquetBundle,
+  getProteinAnnotationIndices,
+  isNAValue,
+  type VisualizationData,
+} from '@protspace/utils';
 import { extractRowsFromParquetBundle } from './bundle';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
+
+function perProteinAnnotationSets(
+  data: VisualizationData,
+  annotationNames: readonly string[],
+): Record<string, Record<string, string[]>> {
+  return Object.fromEntries(
+    data.protein_ids.map((proteinId, proteinIndex) => [
+      proteinId,
+      Object.fromEntries(
+        annotationNames.map((annotationName) => {
+          const annotation = data.annotations[annotationName];
+          const rows = data.annotation_data[annotationName];
+          const values = getProteinAnnotationIndices(rows, proteinIndex)
+            .map((valueIndex) => annotation.values[valueIndex])
+            .filter((value): value is string => value != null && !isNAValue(value))
+            .sort();
+          return [annotationName, values];
+        }),
+      ),
+    ]),
+  );
+}
 
 /**
  * Task J1: cross-repo golden-fixture proof (#56/#57/#58).
@@ -35,7 +63,7 @@ import { convertParquetToVisualizationDataOptimized } from './conversion';
  *       "projection_name": ["pca2", "pca2"],
  *       "identifier": ["P1", "P2"], "x": [0.0, 1.0], "y": [0.0, 1.0],
  *   })
- *   write_bundle([ann, meta, data], Path("../protspace_web/packages/core/src/components/data-loader/"
+ *   write_bundle([ann, meta, data], Path("packages/core/src/components/data-loader/"
  *       "utils/__fixtures__/v2-sample.parquetbundle"))
  *   PY
  */
@@ -84,6 +112,55 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
     expect(goBpData[p1Idx].map((i) => goBpValues[i])).toEqual(['apoptotic process']);
     expect(goBpEvidence).toBeDefined();
     expect(goBpEvidence![p1Idx]).toEqual(['IDA']);
+  });
+
+  it('writes and reloads golden v2 categorical structure plus every EAT companion', async () => {
+    const file = readFileSync(new URL('./__fixtures__/v2-sample.parquetbundle', import.meta.url));
+    const goldenBuffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
+    const golden = await convertParquetToVisualizationDataOptimized(
+      await extractRowsFromParquetBundle(goldenBuffer),
+    );
+    const p2Index = golden.protein_ids.indexOf('P2');
+    golden.annotation_predicted = {
+      go_bp: golden.protein_ids.map((_, proteinIndex) =>
+        proteinIndex === p2Index
+          ? {
+              value: 'transferred;label|literal%;second hit',
+              values: ['transferred;label|literal%', 'second hit'],
+              scores: [[0.91], null],
+              evidence: [null, 'EXP'],
+              confidence: 0.83,
+              source: 'P1|reference;literal%',
+            }
+          : null,
+      ),
+    };
+
+    const annotationNames = ['cath', 'go_bp'] as const;
+    const expectedAnnotationSets = perProteinAnnotationSets(golden, annotationNames);
+    const expectedEvidence = structuredClone(golden.annotation_evidence);
+    const expectedScores = structuredClone(golden.annotation_scores);
+
+    const written = createParquetBundle(golden);
+    const extraction = await extractRowsFromParquetBundle(written);
+    expect(extraction.formatVersion).toBe(2);
+    expect(extraction.annotationsById.get('P2')).toMatchObject({
+      go_bp__pred_value: 'transferred%3Blabel%7Cliteral%25|0.91;second hit|EXP',
+      go_bp__pred_source: 'P1%7Creference%3Bliteral%25',
+    });
+
+    const reloaded = await convertParquetToVisualizationDataOptimized(extraction);
+    expect(perProteinAnnotationSets(reloaded, annotationNames)).toEqual(expectedAnnotationSets);
+    expect(reloaded.annotation_evidence).toEqual(expectedEvidence);
+    expect(reloaded.annotation_scores).toEqual(expectedScores);
+    expect(reloaded.annotation_predicted?.go_bp?.[p2Index]).toMatchObject({
+      value: 'transferred;label|literal%;second hit',
+      values: ['transferred;label|literal%', 'second hit'],
+      scores: [[0.91], null],
+      evidence: [null, 'EXP'],
+      source: 'P1|reference;literal%',
+    });
+    expect(reloaded.annotation_predicted?.go_bp?.[p2Index]?.confidence).toBeCloseTo(0.83, 6);
   });
 });
 

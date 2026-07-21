@@ -6,9 +6,10 @@ import type {
   StructureErrorEventDetail,
   StructureLoadEvent,
 } from '@protspace/core';
-import { getProteinAnnotationIndices } from '@protspace/utils';
+import { getProteinAnnotationIndices, type VisualizationData } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getLegendErrorNotification } from './notifications';
+import { EatProvenanceResolver } from './eat-provenance';
 
 interface InteractionControllerOptions {
   legendElement: ProtspaceLegend;
@@ -17,11 +18,19 @@ interface InteractionControllerOptions {
   structureViewer: ProtspaceStructureViewer;
 }
 
+interface ActiveProvenanceClick {
+  data: VisualizationData;
+  annotation: string;
+  proteinId: string;
+  originalIndex: number;
+}
+
 export interface InteractionController {
   updateLegend(): void;
   updateSelectedProteinDisplay(proteinId: string | null): void;
   getSelectedProteins(): string[];
   handleSelectionChange(event: Event): void;
+  handleProteinClick(event: Event): void;
   handlePlotDataChange(): void;
   handleLegendError(event: Event): void;
   handleStructureLoad(event: Event): void;
@@ -37,6 +46,24 @@ export function createInteractionController({
   structureViewer,
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
+  let activeProvenanceClick: ActiveProvenanceClick | null = null;
+  const eatProvenance = new EatProvenanceResolver();
+
+  const resolveProvenanceClick = (click: ActiveProvenanceClick) =>
+    eatProvenance.resolve(
+      click.data,
+      click.annotation,
+      click.proteinId,
+      click.originalIndex,
+      (candidateId, candidateIndex) =>
+        plotElement.isProteinLegendEligible(candidateId, candidateIndex),
+      (candidateIndex) => plotElement.isProteinInCurrentView(candidateIndex),
+    );
+
+  const clearProvenance = () => {
+    activeProvenanceClick = null;
+    plotElement.clearProvenanceConnectors();
+  };
 
   const updateSelectedProteinDisplay = (proteinId: string | null) => {
     if (!selectedProteinElement) {
@@ -104,9 +131,60 @@ export function createInteractionController({
 
       updateSelectedProteinDisplay(null);
     },
+    handleProteinClick(event) {
+      const detail = (
+        event as CustomEvent<{ proteinId?: string; point?: { originalIndex?: number } }>
+      ).detail;
+      const proteinId = detail?.proteinId;
+      const originalIndex = detail?.point?.originalIndex;
+      const data = plotElement.data;
+      const annotation = plotElement.selectedAnnotation;
+      if (
+        !proteinId ||
+        originalIndex === undefined ||
+        !data ||
+        !annotation ||
+        !plotElement.eatOverlayEnabled
+      ) {
+        clearProvenance();
+        return;
+      }
+
+      const click = {
+        data,
+        annotation,
+        proteinId,
+        originalIndex,
+      };
+      const request = resolveProvenanceClick(click);
+      if (request) {
+        activeProvenanceClick = click;
+        plotElement.setProvenanceConnectors(request);
+      } else {
+        clearProvenance();
+      }
+    },
     handlePlotDataChange() {
       selectedProteins = plotElement.selectedProteinIds || [];
       updateLegend();
+      const click = activeProvenanceClick;
+      if (!click) return;
+      if (
+        !plotElement.hasActiveProvenanceConnectors() ||
+        plotElement.data !== click.data ||
+        plotElement.selectedAnnotation !== click.annotation ||
+        !plotElement.eatOverlayEnabled
+      ) {
+        activeProvenanceClick = null;
+        return;
+      }
+
+      const request = resolveProvenanceClick(click);
+      if (request) {
+        plotElement.setProvenanceConnectors(request);
+      } else {
+        clearProvenance();
+      }
     },
     handleLegendError(event) {
       const customEvent = event as CustomEvent<LegendErrorEventDetail>;
@@ -132,6 +210,7 @@ export function createInteractionController({
       updateSelectedProteinDisplay(null);
     },
     handleAnnotationChange() {
+      clearProvenance();
       // Synchronously clear the plot's hidden set for the newly selected
       // annotation. The core legend owns per-annotation visibility: it persists
       // hidden categories (saveSettings/loadSettings, keyed by datasetHash +

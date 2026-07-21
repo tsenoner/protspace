@@ -70,3 +70,6 @@ CLAUDE.md
 
 # Local-only large fixture for the load-reliability Playwright spec
 apps/web/tests/fixtures/sprot_50.parquetbundle
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

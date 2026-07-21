@@ -37,6 +37,7 @@ describe('protspace-info-popover', () => {
   afterEach(() => {
     document.body.innerHTML = '';
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('renders nothing without a description or docs URL', async () => {
@@ -160,6 +161,45 @@ describe('protspace-info-popover', () => {
     await el.updateComplete;
     expect(popover(el)?.classList.contains('placement-side')).toBe(false);
     expect(el.shadowRoot!.querySelector('.popover-arrow')).toBeNull();
+  });
+
+  it('relates the expanded trigger to a named, described popover', async () => {
+    const el = await setup({ label: 'No annotation' });
+    button(el)!.click();
+    await el.updateComplete;
+    const trigger = button(el)!;
+    const dialog = popover(el)!;
+    const description = dialog.querySelector('.popover-description')!;
+
+    expect(trigger.getAttribute('aria-controls')).toBe(dialog.id);
+    expect(trigger.getAttribute('aria-describedby')).toBe(description.id);
+    expect(dialog.getAttribute('role')).toBe('dialog');
+    expect(dialog.getAttribute('aria-label')).toBe('No annotation information');
+  });
+
+  it('clamps a right-aligned bottom popover to the left viewport margin', async () => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+    const el = await setup({ align: 'right' });
+    el.dispatchEvent(new Event('pointerenter'));
+    await el.updateComplete;
+    const initialPopover = popover(el) as HTMLElement;
+    vi.spyOn(initialPopover, 'getBoundingClientRect').mockReturnValue({
+      left: -98,
+      right: 162,
+      top: 30,
+      bottom: 100,
+      width: 260,
+      height: 70,
+      x: -98,
+      y: 30,
+      toJSON: () => ({}),
+    });
+
+    el.requestUpdate();
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect((popover(el) as HTMLElement).style.transform).toBe('translateX(106px)');
   });
 
   it('renders the docs link with the provided URL', async () => {

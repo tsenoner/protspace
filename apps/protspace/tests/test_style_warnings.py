@@ -185,8 +185,8 @@ def test_apply_styles_skips_palette_warning_for_numeric_gradient(tmp_path, caplo
 # --- pinned contract: keep the Python palette catalog in sync with the frontend ---
 #
 # The authoritative source is the web frontend:
-#   protspace_web/packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
-#   protspace_web/packages/utils/src/visualization/numeric-binning.ts
+#   packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
+#   packages/utils/src/visualization/numeric-binning.ts
 #                                                   (GRADIENT_COLOR_SCHEME_IDS)
 # These pins make the Python copy a deliberate, reviewed value: changing a palette
 # id trips a test, prompting a matching update to docs/styling.md (Color palettes)

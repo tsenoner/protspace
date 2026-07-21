@@ -1,5 +1,6 @@
-import type { VisualizationData, NumericAnnotationType } from '../types.js';
+import type { VisualizationData, NumericAnnotationType, PredictedCell } from '../types.js';
 import { getProteinAnnotationIndices } from './annotation-data-access.js';
+import { getPredictedCell, getPredictedCellValues } from './eat-overlay.js';
 import { getNumericBinLabelMap } from './numeric-binning.js';
 import { toInternalValue } from './missing-values.js';
 
@@ -87,6 +88,7 @@ export interface AnnotationBlock {
   numericType: NumericAnnotationType;
   scores: (number[] | null)[];
   evidence: (string | null)[];
+  predicted: PredictedCell | null;
 }
 
 export interface TooltipView {
@@ -116,14 +118,23 @@ function buildAnnotationBlock(
   data: VisualizationData,
   proteinIdx: number,
   key: string,
+  includeEatProvenance: boolean,
 ): AnnotationBlock {
+  const predicted = includeEatProvenance ? getPredictedCell(data, proteinIdx, key) : null;
   return {
     key,
-    displayValues: getProteinDisplayValues(data, proteinIdx, key),
+    displayValues: predicted
+      ? [...getPredictedCellValues(predicted)]
+      : getProteinDisplayValues(data, proteinIdx, key),
     numericValue: getProteinNumericValue(data, proteinIdx, key),
     numericType: getProteinNumericType(data, key),
-    scores: getProteinScores(data, proteinIdx, key),
-    evidence: getProteinEvidence(data, proteinIdx, key),
+    scores: predicted
+      ? (predicted.scores?.map((scores) => (scores ? [...scores] : null)) ?? [])
+      : getProteinScores(data, proteinIdx, key),
+    evidence: predicted
+      ? [...(predicted.evidence ?? [])]
+      : getProteinEvidence(data, proteinIdx, key),
+    predicted,
   };
 }
 
@@ -132,6 +143,7 @@ export function buildTooltipView(
   proteinIdx: number,
   primaryAnnotation: string | null,
   extraAnnotations: readonly string[] = [],
+  includeEatProvenance = false,
 ): TooltipView {
   const proteinId = data.protein_ids[proteinIdx] ?? '';
   const geneName = getHeaderValues(data, proteinIdx, 'gene_name', 'Gene name');
@@ -143,13 +155,13 @@ export function buildTooltipView(
   const blocks: AnnotationBlock[] = [];
   const seen = new Set<string>();
   if (primaryAnnotation && data.annotations[primaryAnnotation]) {
-    blocks.push(buildAnnotationBlock(data, proteinIdx, primaryAnnotation));
+    blocks.push(buildAnnotationBlock(data, proteinIdx, primaryAnnotation, includeEatProvenance));
     seen.add(primaryAnnotation);
   }
   for (const key of extraAnnotations) {
     if (seen.has(key)) continue;
     if (!data.annotations[key]) continue;
-    blocks.push(buildAnnotationBlock(data, proteinIdx, key));
+    blocks.push(buildAnnotationBlock(data, proteinIdx, key, false));
     seen.add(key);
   }
 

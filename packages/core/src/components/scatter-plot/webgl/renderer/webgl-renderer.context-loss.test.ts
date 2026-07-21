@@ -27,6 +27,7 @@ const style = (): WebGLStyleGetters => ({
   getOpacity: () => 1,
   getDepth: () => 0,
   getShape: () => 'circle',
+  isPredicted: () => false,
 });
 
 describe('WebGLRenderer context loss + restore (F-09 characterization lock)', () => {

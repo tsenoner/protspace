@@ -13,6 +13,8 @@ interface SideCoords {
   flipped: boolean;
 }
 
+let infoPopoverSequence = 0;
+
 /**
  * Small reusable "ⓘ" information control that opens a popover with an annotation description and an
  * optional "Learn more" link.
@@ -75,6 +77,7 @@ class ProtspaceInfoPopover extends LitElement {
       left: 0;
       z-index: 1000;
       width: max-content;
+      box-sizing: border-box;
       max-width: min(260px, calc(100vw - 24px));
       padding: 0.55rem 0.65rem;
       border-radius: 8px;
@@ -178,8 +181,13 @@ class ProtspaceInfoPopover extends LitElement {
   /** Opened via keyboard focus (not a pointer click). */
   @state() private kbFocused = false;
   @state() private flipLeft = false;
+  /** Horizontal correction for bottom popovers when neither opening direction fits unshifted. */
+  @state() private bottomShiftX = 0;
   /** Computed fixed coordinates for side placement (null until measured). */
   @state() private sideCoords: SideCoords | null = null;
+
+  private readonly popoverId = `protspace-info-popover-${++infoPopoverSequence}`;
+  private readonly descriptionId = `${this.popoverId}-description`;
 
   /** Whether the popover is currently visible (any of the three triggers). */
   private get isOpen(): boolean {
@@ -392,12 +400,30 @@ class ProtspaceInfoPopover extends LitElement {
     }
   }
 
+  /** Clamp a bottom popover to both viewport edges after its preferred direction is resolved. */
+  private _computeBottomShift() {
+    const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
+    if (!popover || this.bottomShiftX !== 0) return;
+
+    const rect = popover.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const MARGIN = 8;
+    let nextShift = 0;
+    if (rect.left < MARGIN) {
+      nextShift = MARGIN - rect.left;
+    } else if (rect.right > window.innerWidth - MARGIN) {
+      nextShift = window.innerWidth - MARGIN - rect.right;
+    }
+    if (nextShift !== this.bottomShiftX) this.bottomShiftX = nextShift;
+  }
+
   updated() {
     // Keep the outside-click listener attached only while open.
     if (!this.isOpen) {
       this._detachDocListener();
       this._detachRepositionListener();
       if (this.flipLeft) this.flipLeft = false;
+      if (this.bottomShiftX) this.bottomShiftX = 0;
       if (this.sideCoords) this.sideCoords = null;
       return;
     }
@@ -411,11 +437,17 @@ class ProtspaceInfoPopover extends LitElement {
 
     // Bottom placement: flip leftward if it would overflow the right edge of the viewport
     // (safety net on top of the `align` preference).
-    if (this.flipLeft || this.align === 'right') return;
     const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
-    if (popover && popover.getBoundingClientRect().right > window.innerWidth - 8) {
+    if (
+      !this.flipLeft &&
+      this.align !== 'right' &&
+      popover &&
+      popover.getBoundingClientRect().right > window.innerWidth - 8
+    ) {
       this.flipLeft = true;
+      return;
     }
+    this._computeBottomShift();
   }
 
   private _onPointerDown = () => {
@@ -467,8 +499,13 @@ class ProtspaceInfoPopover extends LitElement {
           this.sideCoords?.flipped ? 'flipped' : ''
         }`
       : `popover ${this.align === 'right' || this.flipLeft ? 'flip-left' : ''}`;
-    const popoverStyle =
-      side && this.sideCoords ? `left:${this.sideCoords.left}px;top:${this.sideCoords.top}px;` : '';
+    const popoverStyle = side
+      ? this.sideCoords
+        ? `left:${this.sideCoords.left}px;top:${this.sideCoords.top}px;`
+        : ''
+      : this.bottomShiftX
+        ? `transform:translateX(${this.bottomShiftX}px);`
+        : '';
 
     return html`
       <button
@@ -476,6 +513,8 @@ class ProtspaceInfoPopover extends LitElement {
         class="info-button ${open ? 'open' : ''}"
         aria-label=${ariaLabel}
         aria-expanded=${open}
+        aria-controls=${open ? this.popoverId : nothing}
+        aria-describedby=${open && this.description ? this.descriptionId : nothing}
         title=${ariaLabel}
         @pointerdown=${this._onPointerDown}
         @focus=${this._onFocus}
@@ -500,9 +539,11 @@ class ProtspaceInfoPopover extends LitElement {
       </button>
       ${open
         ? html`<div
+            id=${this.popoverId}
             class=${popoverClass}
             style=${popoverStyle}
             role="dialog"
+            aria-label=${this.label ? `${this.label} information` : 'Annotation information'}
             @keydown=${this._onKeydown}
           >
             ${side
@@ -512,7 +553,9 @@ class ProtspaceInfoPopover extends LitElement {
                 ></span>`
               : nothing}
             ${this.description
-              ? html`<p class="popover-description">${this.description}</p>`
+              ? html`<p id=${this.descriptionId} class="popover-description">
+                  ${this.description}
+                </p>`
               : nothing}
             ${this.docsUrl
               ? html`<a

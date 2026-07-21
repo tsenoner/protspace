@@ -39,6 +39,66 @@ def decode_field(s: str) -> str:
     return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
 
 
+def read_format_version(table: pa.Table) -> int:
+    """Return the annotations wire-format version, defaulting legacy tables to v1."""
+    metadata = table.schema.metadata or {}
+    try:
+        return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _split_legacy_hits(value: str) -> list[str]:
+    """Split v1 hits while retaining semicolons inside balanced label parentheses."""
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for index, character in enumerate(value):
+        if character == "(":
+            depth += 1
+        elif character == ")" and depth > 0:
+            depth -= 1
+        elif character == ";" and depth == 0:
+            parts.append(value[start:index])
+            start = index + 1
+    parts.append(value[start:])
+    return value.split(";") if depth != 0 else parts
+
+
+def encode_legacy_cell(value: str) -> str:
+    """Migrate one legacy categorical cell without changing its parsed hit structure."""
+    encoded_hits: list[str] = []
+    for hit in _split_legacy_hits(value):
+        label, separator, suffix = hit.partition("|")
+        encoded = encode_field(label)
+        if separator:
+            encoded = f"{encoded}|{encode_field(suffix)}"
+        encoded_hits.append(encoded)
+    return ";".join(encoded_hits)
+
+
+def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
+    """Re-emit every v1 string annotation using unambiguous v2 field encoding."""
+    columns = []
+    for name, column in zip(table.column_names, table.columns, strict=True):
+        if name in {"identifier", "protein_id"} or not (
+            pa.types.is_string(column.type) or pa.types.is_large_string(column.type)
+        ):
+            columns.append(column)
+            continue
+        opaque_source = name.endswith("__pred_source")
+        migrated = [
+            None
+            if value is None
+            else encode_field(value)
+            if opaque_source
+            else encode_legacy_cell(value)
+            for value in column.to_pylist()
+        ]
+        columns.append(pa.array(migrated, type=column.type))
+    return pa.Table.from_arrays(columns, names=table.column_names)
+
+
 def to_display_value(raw, *, decode: bool = True):
     """Convert a whole annotation cell into its scalar human-display value.
 

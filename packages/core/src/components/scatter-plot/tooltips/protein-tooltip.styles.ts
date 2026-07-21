@@ -20,6 +20,7 @@ export const proteinTooltipStyles = css`
   }
 
   .tooltip {
+    box-sizing: border-box;
     background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
     border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
     border-radius: 0.5rem;
@@ -28,7 +29,7 @@ export const proteinTooltipStyles = css`
       0 10px 40px rgba(0, 0, 0, 0.1);
     font-size: 0.875rem;
     min-width: 200px;
-    max-width: 350px;
+    max-width: var(--protspace-tooltip-effective-width, 350px);
     width: max-content;
     word-wrap: break-word;
     overflow: hidden;
@@ -134,6 +135,18 @@ export const proteinTooltipStyles = css`
     flex: 1 1 auto;
   }
 
+  .eat-transferred-row {
+    align-items: flex-start;
+  }
+
+  .eat-transferred-label {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
   .tooltip-annotation-score {
     flex-shrink: 0;
     white-space: nowrap;
@@ -161,5 +174,41 @@ export const proteinTooltipStyles = css`
     color: #94a3b8;
     font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
+  }
+
+  .eat-provenance {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0.125rem 0 0.25rem;
+    padding: 0.375rem;
+    border-radius: 0.375rem;
+    background: #f8fafc;
+  }
+
+  .eat-provenance-heading,
+  .eat-provenance-source {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    color: #475569;
+  }
+
+  .eat-provenance-source {
+    display: block;
+    color: #64748b;
+  }
+
+  .eat-confidence-track {
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e2e8f0;
+  }
+
+  .eat-confidence-track > span {
+    display: block;
+    height: 100%;
+    background: #7c3aed;
   }
 `;

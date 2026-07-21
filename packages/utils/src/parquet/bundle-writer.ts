@@ -17,13 +17,29 @@ import { BUNDLE_DELIMITER_BYTES } from './constants';
 import { assertNoBundleDelimiter } from './delimiter-utils';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
-import { getFirstAnnotationIndex } from '../visualization/annotation-data-access.js';
+import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
+import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
+import { encodeAnnotationField } from './annotation-codec.js';
+
+const ANNOTATION_FORMAT_VERSION = '2';
+const ANNOTATION_FORMAT_VERSION_KEY = 'protspace_format_version';
 
 /** Column data format for parquetWriteBuffer */
 interface ColumnData {
   name: string;
   data: (string | number | boolean | null)[];
   type?: 'STRING' | 'INT32' | 'INT64' | 'DOUBLE' | 'FLOAT' | 'BOOLEAN';
+}
+
+function serializeCategoricalValue(
+  label: string,
+  evidence: string | null | undefined,
+  scores: readonly number[] | null | undefined,
+): string {
+  const encodedLabel = encodeAnnotationField(label);
+  if (evidence) return `${encodedLabel}|${evidence}`;
+  if (scores && scores.length > 0) return `${encodedLabel}|${scores.join(',')}`;
+  return encodedLabel;
 }
 
 /**
@@ -41,6 +57,9 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
 
   // Add annotation columns
   for (const [annotationName, annotation] of Object.entries(data.annotations)) {
+    // Runtime-only numeric view over the prediction side-channel.
+    if (annotation.runtime?.role === 'eat-confidence') continue;
+
     if (isNumericAnnotation(annotation)) {
       const values = data.numeric_annotation_data?.[annotationName] ?? [];
       columnData.push({
@@ -57,10 +76,23 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
     // Convert indices back to actual annotation values
     const values: (string | null)[] = new Array(data.protein_ids.length);
     for (let i = 0; i < data.protein_ids.length; i++) {
-      // Take first annotation value (primary); getFirstAnnotationIndex handles
-      // both Int32Array and number[][] storage shapes.
-      const idx = getFirstAnnotationIndex(annotationIndices, i);
-      values[i] = idx >= 0 ? (annotation.values[idx] ?? null) : null;
+      if (data.annotation_predicted?.[annotationName]?.[i]) {
+        values[i] = null;
+        continue;
+      }
+
+      // Reconstruct the v2 wire cell positionally so decoded labels, evidence, and scores survive
+      // export without structural semicolons/pipes being reinterpreted on reload.
+      const cellValues = getProteinAnnotationIndices(annotationIndices, i).flatMap(
+        (valueIndex, cellIndex) => {
+          const value = annotation.values[valueIndex];
+          if (value == null) return [];
+          const evidence = data.annotation_evidence?.[annotationName]?.[i]?.[cellIndex];
+          const scores = data.annotation_scores?.[annotationName]?.[i]?.[cellIndex];
+          return [serializeCategoricalValue(value, evidence, scores)];
+        },
+      );
+      values[i] = cellValues.length > 0 ? cellValues.join(';') : null;
     }
 
     columnData.push({
@@ -68,9 +100,44 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       data: values,
       type: 'STRING',
     });
+
+    const predictedCells = data.annotation_predicted?.[annotationName];
+    if (predictedCells?.some(Boolean)) {
+      columnData.push(
+        {
+          name: getEatCompanionColumn(annotationName, 'value'),
+          data: predictedCells.map((cell) => {
+            if (!cell) return null;
+            return getPredictedCellValues(cell)
+              .map((label, index) =>
+                serializeCategoricalValue(
+                  label,
+                  cell.evidence?.[index],
+                  cell.scores?.[index] ?? null,
+                ),
+              )
+              .join(';');
+          }),
+          type: 'STRING',
+        },
+        {
+          name: getEatCompanionColumn(annotationName, 'confidence'),
+          data: predictedCells.map((cell) => cell?.confidence ?? null),
+          type: 'FLOAT',
+        },
+        {
+          name: getEatCompanionColumn(annotationName, 'source'),
+          data: predictedCells.map((cell) => (cell ? encodeAnnotationField(cell.source) : null)),
+          type: 'STRING',
+        },
+      );
+    }
   }
 
-  return parquetWriteBuffer({ columnData });
+  return parquetWriteBuffer({
+    columnData,
+    kvMetadata: [{ key: ANNOTATION_FORMAT_VERSION_KEY, value: ANNOTATION_FORMAT_VERSION }],
+  });
 }
 
 /**
@@ -159,7 +226,10 @@ function hasBundleSettings(settings: BundleSettings | undefined): settings is Bu
 
   return (
     Object.keys(settings.legendSettings).length > 0 ||
-    Object.keys(settings.exportOptions).length > 0
+    Object.keys(settings.exportOptions).length > 0 ||
+    settings.publishState !== undefined ||
+    settings.eatOverlayEnabled !== undefined ||
+    settings.eatConfidenceThreshold !== undefined
   );
 }
 

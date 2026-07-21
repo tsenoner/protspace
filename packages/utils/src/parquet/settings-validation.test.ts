@@ -299,6 +299,50 @@ describe('settings-validation', () => {
       expect(result?.publishState).toEqual({ raw: 1 });
     });
   });
+
+  describe('EAT bundle settings', () => {
+    it('accepts bounded optional settings', () => {
+      expect(
+        isNormalizedBundleSettings({
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: false,
+          eatConfidenceThreshold: 0.75,
+        }),
+      ).toBe(true);
+    });
+
+    it('drops each invalid optional setting independently', () => {
+      expect(
+        normalizeBundleSettings({
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: 'yes',
+          eatConfidenceThreshold: 0.75,
+        }),
+      ).toEqual({
+        legendSettings: {},
+        exportOptions: {},
+        eatOverlayEnabled: undefined,
+        eatConfidenceThreshold: 0.75,
+        publishState: undefined,
+      });
+      expect(
+        normalizeBundleSettings({
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: true,
+          eatConfidenceThreshold: 1.01,
+        }),
+      ).toEqual({
+        legendSettings: {},
+        exportOptions: {},
+        eatOverlayEnabled: true,
+        eatConfidenceThreshold: undefined,
+        publishState: undefined,
+      });
+    });
+  });
 });
 
 describe('LegendPersistedSettings — includeShapes backward compat', () => {

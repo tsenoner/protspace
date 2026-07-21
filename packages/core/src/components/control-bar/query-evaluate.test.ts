@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ProtspaceData } from './types';
 import type { FilterQuery } from './query-types';
+import { createNumericCondition } from './query-types';
 import {
   evaluateQuery,
   evaluateQueryExcluding,
@@ -416,6 +417,49 @@ describe('evaluateQuery', () => {
       const result = evaluateQuery(query, createTestData());
       // length>250 → P3,P4 ; NOT → P1,P2,P5 (P5 null is "not > 250")
       expect(result).toEqual(new Set([0, 1, 4]));
+    });
+
+    describe('NOT + null (curated retained)', () => {
+      /**
+       * Characterization data for a nullable numeric annotation, e.g. an
+       * `__eat_confidence` reliability score: two proteins carry a real
+       * prediction confidence, two are curated (no prediction, null value).
+       */
+      function createNullableNumericData(): ProtspaceData {
+        return {
+          protein_ids: ['P1', 'P2', 'P3', 'P4'],
+          numeric_annotation_data: {
+            conf: [0.2, 0.8, null, null],
+          },
+        };
+      }
+
+      it('NOT(x < 0.5) keeps values >= 0.5 AND null-valued rows (curated retained)', () => {
+        const data = createNullableNumericData();
+        const query: FilterQuery = [
+          createNumericCondition({
+            annotation: 'conf',
+            operator: 'lt',
+            max: 0.5,
+            logicalOp: 'NOT',
+          }),
+        ];
+        const result = evaluateQuery(query, data);
+        // 0.2 excluded; 0.8 kept; both nulls (curated) re-included by NOT's
+        // index complement — this is the mechanism the reliability filter
+        // relies on to hide low-confidence predictions while keeping curated
+        // points that have no confidence score at all.
+        expect(result).toEqual(new Set([1, 2, 3]));
+      });
+
+      it('mirror without NOT: x < 0.5 matches only the sub-threshold prediction', () => {
+        const data = createNullableNumericData();
+        const query: FilterQuery = [
+          createNumericCondition({ annotation: 'conf', operator: 'lt', max: 0.5 }),
+        ];
+        const result = evaluateQuery(query, data);
+        expect(result).toEqual(new Set([0]));
+      });
     });
   });
 });

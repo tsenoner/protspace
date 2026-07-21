@@ -40,7 +40,7 @@ import type {
   PlotDataPoint,
   VisualizationData,
 } from '@protspace/utils';
-import { toInternalValue } from '@protspace/utils';
+import { isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
 
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
@@ -121,6 +121,28 @@ function buildHiddenMask(
       }
       const v = annotationRows[i];
       mask[i] = v < 0 ? 1 : isBinHidden(v);
+    }
+  } else if (isSparseMultiValueAnnotationData(annotationRows)) {
+    const len = annotationRows.length;
+    for (let i = 0; i < n; i++) {
+      if (i >= len) {
+        mask[i] = 1;
+        continue;
+      }
+      const override = annotationRows.overrides.get(i);
+      if (!override) {
+        const value = annotationRows.base[i];
+        mask[i] = value < 0 ? 1 : isBinHidden(value);
+        continue;
+      }
+      let everyHidden = 1;
+      for (let k = 0; k < override.length; k++) {
+        if (isBinHidden(override[k]) === 0) {
+          everyHidden = 0;
+          break;
+        }
+      }
+      mask[i] = everyHidden;
     }
   } else {
     const len = annotationRows.length;

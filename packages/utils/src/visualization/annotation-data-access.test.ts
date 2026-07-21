@@ -3,6 +3,7 @@ import {
   getProteinAnnotationIndices,
   getProteinAnnotationCount,
   getFirstAnnotationIndex,
+  isMultilabelAnnotationData,
   sliceAnnotationData,
 } from './annotation-data-access';
 
@@ -54,6 +55,39 @@ describe('annotation-data-access', () => {
     });
   });
 
+  describe('sparse multi-value storage', () => {
+    const data = {
+      kind: 'sparse-multi' as const,
+      base: Int32Array.from([0, 1, -1, 2]),
+      overrides: new Map([[1, [1, 3]]]),
+      length: 4,
+    };
+
+    it('uses overrides only for exceptional rows', () => {
+      expect(getProteinAnnotationIndices(data, 0)).toEqual([0]);
+      expect(getProteinAnnotationIndices(data, 1)).toEqual([1, 3]);
+      expect(getProteinAnnotationCount(data, 1)).toBe(2);
+      expect(getFirstAnnotationIndex(data, 1)).toBe(1);
+      expect(getProteinAnnotationIndices(data, 2)).toEqual([]);
+    });
+
+    it('detects multilabel rows by scanning only sparse overrides', () => {
+      expect(isMultilabelAnnotationData(data)).toBe(true);
+      expect(
+        isMultilabelAnnotationData({
+          ...data,
+          overrides: new Map([[1, [1]]]),
+        }),
+      ).toBe(false);
+    });
+
+    it('remaps surviving overrides while slicing', () => {
+      const sliced = sliceAnnotationData(data, [3, 1]);
+      expect(getProteinAnnotationIndices(sliced, 0)).toEqual([2]);
+      expect(getProteinAnnotationIndices(sliced, 1)).toEqual([1, 3]);
+    });
+  });
+
   describe('out-of-range proteinIdx', () => {
     it('returns empty for Int32Array', () => {
       const data = Int32Array.from([0]);
@@ -88,6 +122,13 @@ describe('annotation-data-access', () => {
       const data = Int32Array.from([1, 2]);
       const sliced = sliceAnnotationData(data, [0, 99]);
       expect(Array.from(sliced as Int32Array)).toEqual([1, -1]);
+    });
+  });
+
+  describe('isMultilabelAnnotationData', () => {
+    it('distinguishes typed single-value and dense multilabel storage', () => {
+      expect(isMultilabelAnnotationData(Int32Array.from([0, 1]))).toBe(false);
+      expect(isMultilabelAnnotationData([[0], [1, 2]])).toBe(true);
     });
   });
 });

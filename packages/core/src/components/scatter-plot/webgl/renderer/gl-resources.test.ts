@@ -33,11 +33,11 @@ function makeFramebuffer(): FramebufferResources {
 }
 
 describe('GLResources', () => {
-  it('createAll allocates the 6 vertex buffers + quad buffer, VAO is not built here, and the label texture', () => {
+  it('createAll allocates all vertex buffers plus the quad and label texture', () => {
     const gl = makeGl();
     const res = new GLResources();
     res.createAll(gl);
-    expect(gl.createBuffer).toHaveBeenCalledTimes(7); // 6 attrib + quad
+    expect(gl.createBuffer).toHaveBeenCalledTimes(8); // 7 attrib + quad
     expect(gl.createVertexArray).toHaveBeenCalledTimes(0); // VAO built in createPointVAO, not here
     expect(gl.createTexture).toHaveBeenCalledTimes(1); // label color texture
     expect(res.dataPositionBuffer).not.toBeNull();
@@ -46,6 +46,7 @@ describe('GLResources', () => {
     expect(res.depthBuffer).not.toBeNull();
     expect(res.labelCountBuffer).not.toBeNull();
     expect(res.shapeBuffer).not.toBeNull();
+    expect(res.predictedBuffer).not.toBeNull();
     expect(res.quadBuffer).not.toBeNull();
     expect(res.labelColorTexture).not.toBeNull();
   });
@@ -58,7 +59,7 @@ describe('GLResources', () => {
     res.gammaCorrectionProgram = { k: 'gamma' } as unknown as WebGLProgram;
     res.pointVao = { k: 'vao' } as unknown as WebGLVertexArrayObject;
     res.deleteAll(gl);
-    expect(gl.deleteBuffer).toHaveBeenCalledTimes(7);
+    expect(gl.deleteBuffer).toHaveBeenCalledTimes(8);
     expect(gl.deleteTexture).toHaveBeenCalledTimes(1);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteProgram).toHaveBeenCalledTimes(2);
@@ -123,6 +124,7 @@ describe('GLResources', () => {
     expect(res.depthBuffer).toBeNull();
     expect(res.labelCountBuffer).toBeNull();
     expect(res.shapeBuffer).toBeNull();
+    expect(res.predictedBuffer).toBeNull();
     expect(res.quadBuffer).toBeNull();
     expect(res.labelColorTexture).toBeNull();
     expect(res.linearFramebuffer).toBeNull();

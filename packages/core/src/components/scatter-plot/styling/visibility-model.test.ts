@@ -60,6 +60,51 @@ function baseInputs(overrides: Partial<VisibilityInputs> = {}): VisibilityInputs
 }
 
 describe('computeVisibilityModel', () => {
+  // ── #6a: reliability dimming removed — predicted points render at base
+  // opacity, identical to observed points, distinguished only by the hollow
+  // ring glyph (drawn elsewhere). Confidence no longer feeds opacity at all.
+  describe('predicted points render at base opacity (dimming removed)', () => {
+    it('a predicted point with no selection returns opacities.base and is interactive', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      data.annotation_predicted = {
+        annot: [
+          { value: 'A', confidence: 0, source: 'ref' },
+          { value: 'B', confidence: 1, source: 'ref' },
+        ],
+      };
+      const model = computeVisibilityModel(baseInputs({ data }));
+      expect(model.baseOpacityOf(point('p0', 0))).toBe(OPACITIES.base);
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
+      expect(model.isInteractive(point('p0', 0))).toBe(true);
+      // Low-confidence prediction gets no special treatment either — same base opacity.
+      expect(model.baseOpacityOf(point('p1', 1))).toBe(OPACITIES.base);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.base);
+    });
+
+    it('keeps hidden precedence and lets endpoint highlight win', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      data.annotation_predicted = {
+        annot: [null, { value: 'B', confidence: 0.1, source: 'p0' }],
+      };
+      const highlighted = computeVisibilityModel(
+        baseInputs({
+          data,
+          highlightedProteinIds: ['p1'],
+        }),
+      );
+      expect(highlighted.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+
+      const hidden = computeVisibilityModel(
+        baseInputs({
+          data,
+          highlightedProteinIds: ['p1'],
+          hiddenAnnotationValues: ['B'],
+        }),
+      );
+      expect(hidden.opacityOf(point('p1', 1))).toBe(0);
+    });
+  });
+
   // ── Rule 1 — hidden ⇒ opacity exactly 0 ───────────────────────────────────
   describe('rule 1: hidden points have opacity exactly 0', () => {
     it('Int32Array: hidden value yields exactly 0 (Object.is)', () => {

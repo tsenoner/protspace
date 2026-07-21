@@ -23,6 +23,10 @@ WORKDIR /app
 
 # Layer 1: external deps only (no workspace members). Cached until the workspace
 # lock or any member's pyproject.toml changes.
+#
+# `--no-dev` is load-bearing, not decorative: prep's test deps are a PEP 735
+# dependency group, which uv installs by default. Dropping the flag ships pytest
+# and friends into the runtime image.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -41,6 +45,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim-bookworm@sha256:93ab4b7fa528b25124c97bcc755415e60eb671a86b4dbe0328df2fe2d1c1193d AS runtime
 
+LABEL org.opencontainers.image.source=https://github.com/tsenoner/protspace
 LABEL org.opencontainers.image.licenses=MIT
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

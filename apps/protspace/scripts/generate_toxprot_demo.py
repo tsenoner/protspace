@@ -44,8 +44,7 @@ RANDOM_STATE = 42
 SIGNAL_RE = re.compile(r"SIGNAL\s+(\d+)\.\.(\d+)")
 DEFAULT_SOURCE_SETTINGS = (
     Path(__file__).resolve().parent.parent.parent
-    / "protspace_web"
-    / "app"
+    / "web"
     / "public"
     / "data.parquetbundle"
 )

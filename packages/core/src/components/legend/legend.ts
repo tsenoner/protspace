@@ -14,6 +14,9 @@ import {
   normalizeNumericPaletteId,
   resolveNumericAnnotationDisplaySettings,
   annotationLabel,
+  clamp01,
+  DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+  hasEatPredictionsForAnnotation,
   isPredictedAnnotation,
   getAnnotationMeta,
   type NumericBinningStrategy,
@@ -61,6 +64,7 @@ import {
   computeOtherConcreteValues,
 } from './legend-helpers';
 import { buildAnnotationValueList } from './annotation-values';
+import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
 
 // Dialogs
 import {
@@ -72,6 +76,14 @@ import {
 import { renderOtherDialog } from './legend-other-dialog';
 import { createFocusTrap } from './focus-trap';
 import { createLegendErrorEventDetail } from './legend.events';
+
+/**
+ * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
+ * visual value + percent readout update live on every tick, but the expensive
+ * downstream apply (reliability query re-eval + geometry/quadtree rebuild at 570k
+ * points) is deferred to a drag-pause/release so dragging stays smooth.
+ */
+const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
 
 // Types
 import type {
@@ -150,6 +162,9 @@ export class ProtspaceLegend extends LitElement {
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
+  @state() private _eatCounts: EatPopulationCounts | null = null;
+  @state() private _eatOverlayEnabled = true;
+  @state() private _eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
   @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
   private _keyboardReorderSnapshot: {
@@ -198,6 +213,9 @@ export class ProtspaceLegend extends LitElement {
 
   // Debounce timer for color picker updates
   private _colorChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Debounce timer for committing an EAT reliability slider drag (the expensive apply).
+  private _eatThresholdCommitTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Track where mousedown occurred for click-outside detection
   private _mouseDownOutsideColorPicker = false;
@@ -701,6 +719,7 @@ export class ProtspaceLegend extends LitElement {
     window.removeEventListener('mouseup', this._onWindowMouseUp);
     this._cleanupFocusTrap();
     this._cleanupColorChangeDebounce();
+    this._cancelEatThresholdCommit();
     super.disconnectedCallback();
   }
 
@@ -971,6 +990,9 @@ export class ProtspaceLegend extends LitElement {
     this._selectedPaletteId = 'kellys';
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
+    this._eatCounts = null;
+    this._eatOverlayEnabled = true;
+    this._eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
     this._clearKeyboardReorderState();
 
     // Reset isolation state
@@ -1006,12 +1028,132 @@ export class ProtspaceLegend extends LitElement {
   // Data Handling
   // ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Reliability slider position (0…1). The slider no longer dims points itself;
+   * it drives the shared `NOT(EAT_confidence < x)` query filter via the control
+   * bar. Exposed so bundle export can persist the saved slider position (#6b).
+   */
+  public get reliabilityThreshold(): number {
+    return this._eatConfidenceThreshold;
+  }
+
+  public applyEatSettings(enabled: boolean, threshold: number): void {
+    // A discrete apply (overlay toggle, bundle import) supersedes any pending
+    // debounced threshold commit — cancel it so it can't fire a stale late emit.
+    this._cancelEatThresholdCommit();
+    const normalizedThreshold = Number.isFinite(threshold)
+      ? Math.min(1, Math.max(0, threshold))
+      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+    this._eatOverlayEnabled = enabled;
+    this._eatConfidenceThreshold = normalizedThreshold;
+
+    // The overlay switch still coalesces predictions into the base annotation on
+    // the scatter plot. The threshold, however, only feeds the reliability query
+    // filter now — it is emitted (below) and forwarded to the control bar, not
+    // pushed onto the scatter plot as a dimming input.
+    const scatterplot = this._scatterplotController.scatterplot;
+    if (this.autoSync && scatterplot) {
+      scatterplot.eatOverlayEnabled = enabled;
+    }
+
+    this._emitEatOverlayChange();
+  }
+
+  /**
+   * Reverse mirror: set the slider position from the query filter WITHOUT
+   * re-emitting `eat-overlay-change`, so the control-bar->legend direction does
+   * not loop back into the legend->control-bar direction (#6b).
+   */
+  public setReliabilityThreshold(value: number): void {
+    this._eatConfidenceThreshold = Number.isFinite(value)
+      ? Math.min(1, Math.max(0, value))
+      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+  }
+
+  private _emitEatOverlayChange(): void {
+    this.dispatchEvent(
+      new CustomEvent('eat-overlay-change', {
+        detail: {
+          enabled: this._eatOverlayEnabled,
+          confidenceThreshold: this._eatConfidenceThreshold,
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _handleEatOverlayToggle(event: Event): void {
+    this.applyEatSettings(
+      (event.currentTarget as HTMLInputElement).checked,
+      this._eatConfidenceThreshold,
+    );
+  }
+
+  private _handleEatThresholdInput(event: Event): void {
+    this._setEatConfidenceThresholdLive(Number((event.currentTarget as HTMLInputElement).value));
+  }
+
+  private _handleEatThresholdPercentInput(event: Event): void {
+    const value = Number((event.currentTarget as HTMLInputElement).value);
+    if (!Number.isFinite(value)) return;
+    this._setEatConfidenceThresholdLive(value / 100);
+  }
+
+  /**
+   * Threshold drag: update the slider's visual value immediately (thumb + percent
+   * readout stay live), but debounce the expensive downstream apply — the
+   * `eat-overlay-change` emit that re-runs the reliability query and rebuilds
+   * geometry — to a drag-pause/release.
+   */
+  private _setEatConfidenceThresholdLive(value: number): void {
+    // clamp01(NaN) is NaN; keep the non-finite fallback the immediate apply used
+    // (unreachable via the current handlers, but defensive/consistent).
+    this._eatConfidenceThreshold = Number.isFinite(value)
+      ? clamp01(value)
+      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+    this._debounceEatThresholdCommit();
+  }
+
+  private _debounceEatThresholdCommit(): void {
+    if (this._eatThresholdCommitTimer !== null) {
+      clearTimeout(this._eatThresholdCommitTimer);
+    }
+    this._eatThresholdCommitTimer = setTimeout(() => {
+      this._eatThresholdCommitTimer = null;
+      this._emitEatOverlayChange();
+    }, EAT_THRESHOLD_COMMIT_DELAY_MS);
+  }
+
+  /** Slider release (@change): apply the pending threshold now, without waiting out the debounce. */
+  private _flushEatThresholdCommit(): void {
+    if (this._eatThresholdCommitTimer !== null) {
+      clearTimeout(this._eatThresholdCommitTimer);
+      this._eatThresholdCommitTimer = null;
+      this._emitEatOverlayChange();
+    }
+  }
+
+  /** Drop a pending threshold commit without emitting (an immediate apply supersedes it). */
+  private _cancelEatThresholdCommit(): void {
+    if (this._eatThresholdCommitTimer !== null) {
+      clearTimeout(this._eatThresholdCommitTimer);
+      this._eatThresholdCommitTimer = null;
+    }
+  }
+
   private _handleScatterplotDataChange(data: ScatterplotData, selectedAnnotation: string): void {
     this._clearKeyboardReorderState();
+    const scatterplot = this._scatterplotController.scatterplot;
+    this._eatOverlayEnabled = scatterplot?.eatOverlayEnabled ?? true;
+    // The reliability slider position is legend-owned now (it drives the query
+    // filter, not scatter-plot dimming), so it is preserved across data-change
+    // rather than re-read from the scatter plot.
     this.data = {
       annotations: data.annotations,
       protein_ids: data.protein_ids,
       numeric_annotation_data: data.numeric_annotation_data,
+      annotation_predicted: data.annotation_predicted,
     };
     this.selectedAnnotation = selectedAnnotation;
     this.annotationData = {
@@ -1022,8 +1164,10 @@ export class ProtspaceLegend extends LitElement {
       kind: data.annotations[selectedAnnotation].kind,
       sourceKind: data.annotations[selectedAnnotation].sourceKind,
       numericMetadata: data.annotations[selectedAnnotation].numericMetadata,
+      runtime: data.annotations[selectedAnnotation].runtime,
     };
     this._updateAnnotationValues(data, selectedAnnotation);
+    this._eatCounts = computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
     this.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -1061,6 +1205,7 @@ export class ProtspaceLegend extends LitElement {
           kind: annotationInfo.kind,
           sourceKind: annotationInfo.sourceKind,
           numericMetadata: annotationInfo.numericMetadata,
+          runtime: annotationInfo.runtime,
         }
       : { name: '', values: [] };
   }
@@ -1069,6 +1214,11 @@ export class ProtspaceLegend extends LitElement {
     const colData = data.annotation_data[selectedAnnotation];
     const values = data.annotations[selectedAnnotation].values;
     this.annotationValues = buildAnnotationValueList(colData, values, data.protein_ids.length);
+  }
+
+  private _hasSelectedEatAnnotation(): boolean {
+    const stableData = this._scatterplotController.scatterplot?.data ?? this.data;
+    return hasEatPredictionsForAnnotation(stableData, this.selectedAnnotation);
   }
 
   private _ensureSortModeDefaults(): void {
@@ -2031,9 +2181,12 @@ export class ProtspaceLegend extends LitElement {
 
   render() {
     const activeName = this.annotationName || this.annotationData.name || '';
-    const title = activeName ? annotationLabel(activeName) : 'Legend';
+    const activeAnnotation = activeName
+      ? (this.data?.annotations?.[activeName] ?? this.annotationData)
+      : undefined;
+    const title = activeName ? annotationLabel(activeName, activeAnnotation) : 'Legend';
     const predicted = activeName ? isPredictedAnnotation(activeName) : false;
-    const meta = activeName ? getAnnotationMeta(activeName) : undefined;
+    const meta = activeName ? getAnnotationMeta(activeName, activeAnnotation) : undefined;
     const hasDocs = !!meta && (meta.description.length > 0 || !!meta.docsUrl);
 
     return html`
@@ -2077,6 +2230,82 @@ export class ProtspaceLegend extends LitElement {
                 : undefined,
           },
         )}
+        ${this._hasSelectedEatAnnotation()
+          ? html`
+              <section class="eat-legend" aria-label="Embedding Annotation Transfer">
+                <div class="eat-legend-header">
+                  <div class="eat-legend-title">Predicted (transferred)</div>
+                  <label class="eat-switch">
+                    <input
+                      type="checkbox"
+                      .checked=${this._eatOverlayEnabled}
+                      aria-label="Show EAT predictions"
+                      @change=${this._handleEatOverlayToggle}
+                    />
+                    <span>Show</span>
+                  </label>
+                </div>
+                <div class="eat-threshold">
+                  <div class="eat-threshold-heading">
+                    <label for="eat-reliability-threshold">Hide below reliability</label>
+                    <span class="eat-threshold-value">
+                      <input
+                        class="eat-threshold-percent"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        .value=${String(Math.round(this._eatConfidenceThreshold * 100))}
+                        ?disabled=${!this._eatOverlayEnabled}
+                        aria-label="EAT reliability filter percentage"
+                        @input=${this._handleEatThresholdPercentInput}
+                        @change=${this._flushEatThresholdCommit}
+                      />
+                      <span aria-hidden="true">%</span>
+                      <protspace-info-popover
+                        class="eat-threshold-info"
+                        .description=${`Predictions below this reliability are hidden (filtered out); curated “${annotationLabel(this.selectedAnnotation)}” annotations always stay visible. Set to 0% to show all. This mirrors a Filter condition on “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
+                        label="EAT reliability filter"
+                        align="right"
+                      ></protspace-info-popover>
+                    </span>
+                  </div>
+                  <input
+                    id="eat-reliability-threshold"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    .value=${String(this._eatConfidenceThreshold)}
+                    ?disabled=${!this._eatOverlayEnabled}
+                    aria-label="EAT reliability filter threshold"
+                    @input=${this._handleEatThresholdInput}
+                    @change=${this._flushEatThresholdCommit}
+                  />
+                </div>
+                ${this._eatOverlayEnabled && this._eatCounts
+                  ? html`
+                      <div
+                        class="eat-legend-counts"
+                        role="region"
+                        aria-label="Transferred annotation counts"
+                      >
+                        <div class="eat-legend-row">
+                          <span class="eat-swatch observed" aria-hidden="true"></span>
+                          <span>Observed</span>
+                          <strong>${this._eatCounts.observed}</strong>
+                        </div>
+                        <div class="eat-legend-row">
+                          <span class="eat-swatch predicted" aria-hidden="true"></span>
+                          <span>Predicted by EAT</span>
+                          <strong>${this._eatCounts.predicted}</strong>
+                        </div>
+                      </div>
+                    `
+                  : ''}
+              </section>
+            `
+          : ''}
         ${LegendRenderer.renderLegendContent(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}

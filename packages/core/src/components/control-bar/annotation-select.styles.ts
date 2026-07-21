@@ -150,6 +150,19 @@ export const annotationSelectStyles = [
       user-select: none;
     }
 
+    .eat-badge {
+      flex: 0 0 auto;
+      padding: 0.1rem 0.3rem;
+      border: var(--border-width) solid var(--primary);
+      border-radius: var(--radius);
+      color: var(--primary);
+      font-size: 0.65rem;
+      font-weight: var(--font-semibold);
+      line-height: 1;
+      letter-spacing: 0.03em;
+      user-select: none;
+    }
+
     .annotation-info {
       flex: 0 0 auto;
       align-items: center;

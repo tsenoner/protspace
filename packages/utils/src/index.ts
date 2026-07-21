@@ -4,6 +4,7 @@ export * from './visualization/annotation-data-access';
 export * from './visualization/slice-visualization-data';
 export * from './visualization/annotation-metadata';
 export * from './visualization/plot-data-accessors';
+export * from './visualization/eat-overlay';
 export * from './visualization/data-processor';
 export * from './visualization/plot-data';
 export * from './visualization/color-scheme';

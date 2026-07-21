@@ -108,10 +108,13 @@ For general questions:
 ### Monorepo Structure
 
 ```
+apps/
+├── web/           # Web application + landing page (Vite + React)
+├── protspace/     # Python CLI package (PyPI: protspace)
+└── prep/          # FASTA → .parquetbundle prep service (FastAPI)
 packages/
-├── core/          # Core web components (Lit)
-├── utils/         # Utility functions
-app/               # Demo application + landing page
+├── core/          # Core web components (Lit + WebGL canvas)
+└── utils/         # Color, data-processing, export utilities
 docs/              # Documentation site (VitePress)
 ```
 
@@ -174,7 +177,7 @@ pnpm docs:build   # Verify the documentation build
 
 ### Messaging Consistency
 
-- Prefer `app/src/lib/notify.ts` for app-level transient notifications.
+- Prefer `apps/web/src/lib/notify.ts` for app-level transient notifications.
 - Avoid new browser `alert()` calls in runtime code.
 - Update docs and tests in the same PR when user-facing messaging or event contracts change.
 

@@ -9,12 +9,12 @@ Get started with ProtSpace - no installation required.
 3. Start exploring your protein embeddings!
 
 ::: tip Don't have data yet?
-Download example datasets from the [data folder on GitHub](https://github.com/tsenoner/protspace/tree/main/apps/web/public/data), or generate your own using the [Google Colab notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/notebooks/ProtSpace_Preparation.ipynb).
+Download example datasets from the [data folder on GitHub](https://github.com/tsenoner/protspace/tree/main/apps/web/public/data), or generate your own using the [Google Colab notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Preparation.ipynb).
 :::
 
 ## What Can You Do?
 
-- **Visualize** protein embeddings in 2D using PCA, UMAP, t-SNE, PaCMAP, MDS, or LocalMAP
+- **Visualize** protein embeddings in 2D to reveal relationships that sequence similarity misses
 - **Color** points by biological annotations (taxonomy, family, function, etc.)
 - **Filter** and isolate specific protein groups
 - **Search** for specific proteins by ID

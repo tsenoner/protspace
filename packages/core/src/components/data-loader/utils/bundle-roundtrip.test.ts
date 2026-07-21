@@ -119,6 +119,47 @@ describe('round-trip with real data files', () => {
     );
   });
 
+  it('normalizes and losslessly round-trips the supplied phosphatase EAT fixture', async () => {
+    const filePath = resolve(
+      __dirname,
+      '../../../../../../apps/web/tests/fixtures/phosphatase_eat.parquetbundle',
+    );
+    const original = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(loadArrayBuffer(filePath)),
+    );
+
+    expect(original.protein_ids).toHaveLength(832);
+    expect(Object.keys(original.annotation_predicted ?? {})).toEqual(['ec', 'protein_families']);
+    expect(original.annotation_predicted?.ec.filter(Boolean)).toHaveLength(213);
+    expect(original.annotation_predicted?.protein_families.filter(Boolean)).toHaveLength(213);
+    expect(Object.keys(original.annotations).some((key) => key.includes('__pred_'))).toBe(false);
+    expect(original.annotations).toHaveProperty('ec__eat_confidence');
+    const ecCells = original.annotation_predicted?.ec.filter((cell) => cell !== null);
+    expect(Math.min(...(ecCells ?? []).map((cell) => cell.confidence))).toBeCloseTo(
+      0.3018029332,
+      6,
+    );
+    expect(Math.max(...(ecCells ?? []).map((cell) => cell.confidence))).toBe(1);
+    expect(ecCells?.some((cell) => cell.value.includes(';'))).toBe(true);
+    expect(ecCells?.every((cell) => cell.source.length > 0)).toBe(true);
+
+    const reloaded = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(createParquetBundle(original)),
+    );
+    for (const base of ['ec', 'protein_families']) {
+      const before = original.annotation_predicted?.[base] ?? [];
+      const after = reloaded.annotation_predicted?.[base] ?? [];
+      expect(after).toHaveLength(before.length);
+      for (let index = 0; index < before.length; index++) {
+        expect(after[index]?.value ?? null).toBe(before[index]?.value ?? null);
+        expect(after[index]?.source ?? null).toBe(before[index]?.source ?? null);
+        if (before[index]) {
+          expect(after[index]?.confidence).toBeCloseTo(before[index]!.confidence, 6);
+        }
+      }
+    }
+  });
+
   it('round-trips numeric legend settings through bundle settings', async () => {
     const original = {
       protein_ids: ['P1', 'P2', 'P3'],

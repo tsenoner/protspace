@@ -1,7 +1,7 @@
 [project]
 name = "protspace-prep"
 version = "0.1.0"
-description = "FASTA → .parquetbundle preparation service for ProtSpace"
+description = "Hosted FASTA → .parquetbundle preparation service for ProtSpace — embeds, projects, and annotates sequences for interactive exploration at protspace.app"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,7 +14,9 @@ dependencies = [
   "slowapi>=0.1.9",
 ]
 
-[project.optional-dependencies]
+# A group rather than an extra: test-only tooling should not be installable by
+# consumers as `protspace-prep[dev]`.
+[dependency-groups]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",

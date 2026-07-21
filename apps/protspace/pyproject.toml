@@ -1,7 +1,7 @@
 [project]
 name = "protspace"
-version = "4.8.0"
-description = "A visualisation tool for protein embeddings from pLMs"
+version = "4.8.2"
+description = "Prepare protein language model (pLM) embeddings for interactive exploration at protspace.app — embed, project, annotate, transfer labels (EAT), and bundle."
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
 license = "MIT"
@@ -22,6 +22,13 @@ dependencies = [
     "rich>=14.3.3",
     "protlabel>=4.4.0",
 ]
+
+[project.urls]
+Homepage = "https://protspace.app"
+Repository = "https://github.com/tsenoner/protspace"
+Documentation = "https://protspace.app/docs/"
+Issues = "https://github.com/tsenoner/protspace/issues"
+Changelog = "https://github.com/tsenoner/protspace/blob/main/apps/protspace/CHANGELOG.md"
 
 [project.optional-dependencies]
 frontend = [

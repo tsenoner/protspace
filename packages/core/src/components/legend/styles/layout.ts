@@ -105,6 +105,112 @@ export const layoutStyles = css`
     box-sizing: border-box;
   }
 
+  .eat-legend {
+    width: calc(100% - 1rem);
+    box-sizing: border-box;
+    margin: 0.125rem 0 0.375rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--legend-border);
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--legend-text-color) 3%, transparent);
+  }
+
+  .eat-legend-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--legend-text-secondary);
+  }
+
+  .eat-legend-header,
+  .eat-threshold-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .eat-switch,
+  .eat-threshold-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .eat-switch {
+    color: var(--legend-text-color);
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+
+  .eat-switch input,
+  .eat-threshold input {
+    accent-color: var(--legend-accent-color, var(--primary, #2563eb));
+  }
+
+  .eat-threshold {
+    margin: 0.4rem 0 0.45rem;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px solid var(--legend-border);
+  }
+
+  .eat-threshold-heading {
+    margin-bottom: 0.2rem;
+    font-size: 0.68rem;
+    color: var(--legend-text-secondary);
+  }
+
+  .eat-threshold > input[type='range'] {
+    display: block;
+    width: 100%;
+    margin: 0;
+  }
+
+  .eat-threshold-percent {
+    box-sizing: border-box;
+    width: 2.8rem;
+    padding: 0.1rem 0.2rem;
+    border: 1px solid var(--legend-border);
+    border-radius: 0.25rem;
+    background: var(--legend-bg);
+    color: var(--legend-text-color);
+    font: inherit;
+    text-align: right;
+  }
+
+  .eat-threshold-info {
+    flex: 0 0 auto;
+  }
+
+  .eat-legend-counts {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .eat-legend-row {
+    display: grid;
+    grid-template-columns: 0.8rem 1fr auto;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--legend-text-color);
+  }
+
+  .eat-swatch {
+    width: 0.55rem;
+    height: 0.55rem;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    box-sizing: border-box;
+  }
+
+  .eat-swatch.observed {
+    background: currentColor;
+  }
+
+  .eat-swatch.predicted {
+    background: transparent;
+  }
+
   .legend-items {
     display: flex;
     flex-direction: column;

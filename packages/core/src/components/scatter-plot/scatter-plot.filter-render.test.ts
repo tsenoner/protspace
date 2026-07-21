@@ -63,6 +63,7 @@ type ScatterplotInternals = HTMLElement & {
   };
   _processData(): void;
   _getVisiblePointCount(): number;
+  getInteractableProteinIds(): ReadonlySet<string>;
   _scheduleNumericAnnotationRefresh(): void;
   _getCurrentDisplayData(options?: {
     includeFilteredProteinIds?: boolean;
@@ -380,6 +381,32 @@ describe('scatter-plot visible point count', () => {
     expect(sp._getVisiblePointCount()).toBe(2);
   });
 
+  it('recomputes membership when selection leaves a zero base-opacity tier', () => {
+    const sp = makeScatter();
+    sp._mergedConfig = { ...sp._mergedConfig, baseOpacity: 0 };
+    sp._processData();
+    const beforeSelection = sp.getInteractableProteinIds();
+    expect(beforeSelection.size).toBe(0);
+
+    sp.selectedProteinIds = ['p0'];
+    const afterSelection = sp.getInteractableProteinIds();
+    expect(afterSelection).not.toBe(beforeSelection);
+    expect([...afterSelection]).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+  });
+
+  it('recomputes membership when a selected point enters a zero selected-opacity tier', () => {
+    const sp = makeScatter();
+    sp._mergedConfig = { ...sp._mergedConfig, selectedOpacity: 0 };
+    sp._processData();
+    const beforeSelection = sp.getInteractableProteinIds();
+    expect(beforeSelection.size).toBe(6);
+
+    sp.selectedProteinIds = ['p0'];
+    const afterSelection = sp.getInteractableProteinIds();
+    expect(afterSelection).not.toBe(beforeSelection);
+    expect([...afterSelection]).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
+  });
+
   it('keeps the count stable across a plot-data clone (projection switch shares originalIndices)', () => {
     const sp = makeScatter();
     sp._processData();
@@ -391,6 +418,24 @@ describe('scatter-plot visible point count', () => {
     expect(sp._plotData.originalIndices).toBe(before.originalIndices);
 
     expect(sp._getVisiblePointCount()).toBe(6); // cache reused, same answer
+  });
+
+  it('reuses interactable membership until authoritative visibility changes', () => {
+    const sp = makeScatter();
+    sp._processData();
+
+    const first = sp.getInteractableProteinIds();
+    const repeated = sp.getInteractableProteinIds();
+    expect(repeated).toBe(first);
+    expect([...first]).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+
+    sp.highlightedProteinIds = ['p0'];
+    expect(sp.getInteractableProteinIds()).toBe(first);
+
+    sp.hiddenAnnotationValues = ['B'];
+    const hiddenChanged = sp.getInteractableProteinIds();
+    expect(hiddenChanged).not.toBe(first);
+    expect([...hiddenChanged]).toEqual(['p0', 'p1', 'p2']);
   });
 });
 

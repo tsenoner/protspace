@@ -77,13 +77,14 @@ class TestPCAReducer:
     def test_deterministic(self, data_2d, config_2d):
         r1 = PCAReducer(config_2d).fit_transform(data_2d)
         r2 = PCAReducer(config_2d).fit_transform(data_2d)
-        np.testing.assert_allclose(r1, r2, atol=1e-5)
+        np.testing.assert_array_equal(r1, r2)
 
     def test_get_params(self, config_2d):
         reducer = PCAReducer(config_2d)
         reducer.fit_transform(np.random.randn(10, 5).astype(np.float32))
         params = reducer.get_params()
         assert params["n_components"] == 2
+        assert params["random_state"] == SEED
         assert "explained_variance_ratio" in params
 
 

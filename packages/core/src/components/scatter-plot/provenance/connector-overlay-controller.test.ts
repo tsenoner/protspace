@@ -1,0 +1,501 @@
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as d3 from 'd3';
+import type { PlotData, ScalePair } from '@protspace/utils';
+import {
+  ConnectorOverlayController,
+  type ProvenanceConnectorStatus,
+} from './connector-overlay-controller';
+
+const plotData: PlotData = {
+  length: 3,
+  xs: new Float32Array([1, 2, 3]),
+  ys: new Float32Array([4, 5, 6]),
+  zs: null,
+  originalIndices: new Int32Array([2, 0, 1]),
+  proteinIds: ['target', 'outside', 'source'],
+};
+
+// Mirrors ConnectorOverlayController#endpointBaseRadiusPx for pointSize 240 (the
+// default), so expectations track the formula instead of a hand-computed constant.
+const EXPECTED_BASE_RADIUS_PX = Math.max(4, Math.sqrt(240) / 3 + 2);
+
+// Mirrors ConnectorOverlayController#connectorStrokeWidthPx for pointSize 240 (the
+// default), so expectations track the formula instead of a hand-computed constant.
+const EXPECTED_STROKE_WIDTH_PX = Math.max(1, Math.sqrt(240) / 10);
+
+// Mirrors ConnectorOverlayController#trimmedLine: pulls each endpoint back toward the other by
+// `marginPx / zoomScale`, collapsing to the midpoint when the two margins would overlap. Lets
+// tests assert against the same formula the implementation uses instead of hand-computed
+// trimmed coordinates that would silently drift if the margin or collapse rule changes.
+function expectedTrimmedLine(
+  cx1: number,
+  cy1: number,
+  cx2: number,
+  cy2: number,
+  marginPx: number,
+  zoomScale = 1,
+): { x1: number; y1: number; x2: number; y2: number } {
+  const margin = marginPx / zoomScale;
+  const dx = cx2 - cx1;
+  const dy = cy2 - cy1;
+  const length = Math.hypot(dx, dy);
+  if (length <= margin * 2) {
+    const midX = (cx1 + cx2) / 2;
+    const midY = (cy1 + cy2) / 2;
+    return { x1: midX, y1: midY, x2: midX, y2: midY };
+  }
+  const ux = dx / length;
+  const uy = dy / length;
+  return {
+    x1: cx1 + ux * margin,
+    y1: cy1 + uy * margin,
+    x2: cx2 - ux * margin,
+    y2: cy2 - uy * margin,
+  };
+}
+
+describe('ConnectorOverlayController', () => {
+  let svg: SVGSVGElement;
+  let overlay: d3.Selection<SVGGElement, unknown, null, undefined>;
+  let status: ProvenanceConnectorStatus | null;
+  let scales: ScalePair;
+  let controller: ConnectorOverlayController;
+
+  beforeEach(() => {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    overlay = d3.select(svg).append('g').attr('class', 'overlay-container');
+    status = null;
+    scales = {
+      x: d3.scaleLinear().domain([0, 10]).range([0, 100]),
+      y: d3.scaleLinear().domain([0, 10]).range([100, 0]),
+    };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => plotData,
+      getScales: () => scales,
+      getPointSize: () => 240,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+  });
+
+  it('resolves ids through the current plot slots and draws non-semantic SVG geometry', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    // Raw resolved centers are (10,60) source -> (20,50) target; at the default margin
+    // (~7.16px) that's inside twice the margin, so the rendered line's endpoints collapse to
+    // their midpoint (line-to-halo-boundary trimming, see 'trims the connector line' below) —
+    // the halo circles below still sit at the untrimmed centers, which is what id resolution
+    // actually resolves to.
+    const line = svg.querySelector('line.eat-provenance-connector');
+    const trimmed = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmed.x1, 10);
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(trimmed.y1, 10);
+    expect(Number(line?.getAttribute('x2'))).toBeCloseTo(trimmed.x2, 10);
+    expect(Number(line?.getAttribute('y2'))).toBeCloseTo(trimmed.y2, 10);
+
+    const circles = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(circles).toHaveLength(2);
+    expect(
+      circles.map((c) => [Number(c.getAttribute('cx')), Number(c.getAttribute('cy'))]),
+    ).toEqual(
+      expect.arrayContaining([
+        [10, 60],
+        [20, 50],
+      ]),
+    );
+    expect(status).toEqual({ shown: 1, total: 1, missingEndpoints: 0 });
+  });
+
+  it('omits pairs with off-view endpoints and reports them accessibly to the host', () => {
+    controller.set({
+      pairs: [
+        { sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.9 },
+        { sourceProteinId: 'source', targetProteinId: 'missing', confidence: 0.7 },
+      ],
+      totalCandidates: 8,
+    });
+
+    expect(svg.querySelectorAll('line.eat-provenance-connector')).toHaveLength(1);
+    expect(status).toEqual({ shown: 1, total: 8, missingEndpoints: 1 });
+  });
+
+  it('materializes a retained pair when an off-view endpoint re-enters the view', () => {
+    let currentPlotData: PlotData = {
+      length: 1,
+      xs: new Float32Array([1]),
+      ys: new Float32Array([4]),
+      zs: null,
+      originalIndices: null,
+      proteinIds: ['source'],
+    };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => currentPlotData,
+      getScales: () => scales,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.9 }],
+      totalCandidates: 1,
+    });
+    expect(svg.querySelectorAll('line.eat-provenance-connector')).toHaveLength(0);
+    expect(status).toEqual({ shown: 0, total: 1, missingEndpoints: 1 });
+
+    currentPlotData = plotData;
+    controller.render();
+
+    expect(svg.querySelectorAll('line.eat-provenance-connector')).toHaveLength(1);
+    expect(status).toEqual({ shown: 1, total: 1, missingEndpoints: 0 });
+  });
+
+  it('adds resolver-known filtered or isolated candidates to unavailable status', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.9 }],
+      totalCandidates: 3,
+      unavailableCandidates: 2,
+    });
+
+    expect(status).toEqual({ shown: 1, total: 3, missingEndpoints: 2 });
+  });
+
+  it('recomputes geometry on render without rebuilding for parent transforms', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    overlay.attr('transform', 'translate(10,20) scale(2)');
+    const trimmedBefore = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedBefore.x1, 10);
+
+    scales = {
+      x: d3.scaleLinear().domain([0, 10]).range([0, 200]),
+      y: d3.scaleLinear().domain([0, 10]).range([200, 0]),
+    };
+    controller.render();
+
+    // Wider range moves the raw centers to (20,120) -> (40,100), comfortably past twice the
+    // margin, so this now exercises the non-collapsed trim branch.
+    const trimmedAfter = expectedTrimmedLine(20, 120, 40, 100, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(svg.querySelector('line')?.getAttribute('x1'))).toBeCloseTo(trimmedAfter.x1, 10);
+    expect(overlay.attr('transform')).toBe('translate(10,20) scale(2)');
+  });
+
+  it('inverse-scales endpoint radii without rebuilding connector geometry', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    const endpointsBefore = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(endpointsBefore.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
+      EXPECTED_BASE_RADIUS_PX,
+      EXPECTED_BASE_RADIUS_PX,
+    ]);
+
+    controller.updateZoomScale(2.5);
+
+    const endpointsAfter = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(endpointsAfter).toEqual(endpointsBefore);
+    expect(endpointsAfter.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
+      EXPECTED_BASE_RADIUS_PX / 2.5,
+      EXPECTED_BASE_RADIUS_PX / 2.5,
+    ]);
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    const trimmedAtZoom = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX, 2.5);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedAtZoom.x1, 10);
+
+    controller.updateZoomScale(Number.NaN);
+    expect(endpointsAfter.map((endpoint) => Number(endpoint.getAttribute('r')))).toEqual([
+      EXPECTED_BASE_RADIUS_PX,
+      EXPECTED_BASE_RADIUS_PX,
+    ]);
+  });
+
+  it('scales the connector line stroke-width with point size, defaulting to ~1.5px', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const defaultLine = svg.querySelector('line.eat-provenance-connector');
+    expect(Number(defaultLine?.getAttribute('stroke-width'))).toBeCloseTo(
+      EXPECTED_STROKE_WIDTH_PX,
+      10,
+    );
+    expect(EXPECTED_STROKE_WIDTH_PX).toBeCloseTo(1.5, 1);
+
+    // biggerController intentionally reuses the same `overlay`/SVG DOM as `controller` above:
+    // both join keyed on the same source/target pair, so `.set()` updates the existing
+    // <line>/<circle> nodes in place rather than creating duplicates — `svg.querySelector(...)`
+    // below is expected to keep returning a single element, now with the larger stroke-width.
+    const biggerController = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => plotData,
+      getScales: () => scales,
+      getPointSize: () => 960,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    biggerController.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    const biggerLine = svg.querySelector('line.eat-provenance-connector');
+    const expectedWidthAt960 = Math.max(1, Math.sqrt(960) / 10);
+    expect(Number(biggerLine?.getAttribute('stroke-width'))).toBeCloseTo(expectedWidthAt960, 10);
+    expect(expectedWidthAt960).toBeGreaterThan(EXPECTED_STROKE_WIDTH_PX);
+  });
+
+  it('inverse-scales the connector line stroke-width without rebuilding connector geometry', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(EXPECTED_STROKE_WIDTH_PX, 10);
+
+    controller.updateZoomScale(2.5);
+
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(
+      EXPECTED_STROKE_WIDTH_PX / 2.5,
+      10,
+    );
+    const trimmedAtZoom = expectedTrimmedLine(10, 60, 20, 50, EXPECTED_BASE_RADIUS_PX, 2.5);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedAtZoom.x1, 10);
+
+    controller.updateZoomScale(Number.NaN);
+    expect(Number(line?.getAttribute('stroke-width'))).toBeCloseTo(EXPECTED_STROKE_WIDTH_PX, 10);
+  });
+
+  it('inverse-scales the connector dash cadence so it stays constant through zoom', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+    expect(line?.getAttribute('stroke-dasharray')).toBe('5 4');
+
+    controller.updateZoomScale(2.5);
+
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    expect(line?.getAttribute('stroke-dasharray')).toBe(`${5 / 2.5} ${4 / 2.5}`);
+
+    controller.updateZoomScale(Number.NaN);
+    expect(line?.getAttribute('stroke-dasharray')).toBe('5 4');
+  });
+
+  it('trims the connector line to the halo boundary without moving the halo itself', () => {
+    scales = {
+      x: d3.scaleLinear().domain([0, 10]).range([0, 1000]),
+      y: d3.scaleLinear().domain([0, 10]).range([1000, 0]),
+    };
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    // Raw resolved centers: source (1,4) -> (100,600); target (2,5) -> (200,500). Well past
+    // twice the default halo margin (~7.16px), so this exercises the non-collapsed trim branch.
+    const line = svg.querySelector('line.eat-provenance-connector');
+    const trimmed = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmed.x1, 10);
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(trimmed.y1, 10);
+    expect(Number(line?.getAttribute('x2'))).toBeCloseTo(trimmed.x2, 10);
+    expect(Number(line?.getAttribute('y2'))).toBeCloseTo(trimmed.y2, 10);
+
+    // Each trimmed endpoint sits exactly one halo radius from its own untrimmed center, along
+    // the source<->target direction — the line meets the halo boundary, not the center.
+    expect(Math.hypot(trimmed.x1 - 100, trimmed.y1 - 600)).toBeCloseTo(EXPECTED_BASE_RADIUS_PX, 10);
+    expect(Math.hypot(trimmed.x2 - 200, trimmed.y2 - 500)).toBeCloseTo(EXPECTED_BASE_RADIUS_PX, 10);
+
+    // Halos are unaffected by the trim — still centered exactly on the resolved points, so
+    // hover/click hit-targets and tooltips keep referring to the true point location.
+    const circles = [...svg.querySelectorAll('circle.eat-provenance-endpoint')];
+    expect(
+      circles.map((c) => [Number(c.getAttribute('cx')), Number(c.getAttribute('cy'))]),
+    ).toEqual(
+      expect.arrayContaining([
+        [100, 600],
+        [200, 500],
+      ]),
+    );
+  });
+
+  it('collapses the connector line to its midpoint when endpoints are closer than twice the halo margin', () => {
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    // The shared beforeEach scale puts source/target ~14.14px apart — inside twice the default
+    // ~7.16px margin — so the line collapses to a point rather than crossing past its own halos.
+    const line = svg.querySelector('line.eat-provenance-connector');
+    expect(line?.getAttribute('x1')).toBe(line?.getAttribute('x2'));
+    expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'));
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(15, 10); // (10 + 20) / 2
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(55, 10); // (60 + 50) / 2
+  });
+
+  it('keeps the line-to-halo trim margin constant through zoom', () => {
+    scales = {
+      x: d3.scaleLinear().domain([0, 10]).range([0, 1000]),
+      y: d3.scaleLinear().domain([0, 10]).range([1000, 0]),
+    };
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    const line = svg.querySelector('line.eat-provenance-connector');
+
+    controller.updateZoomScale(4);
+    expect(svg.querySelector('line.eat-provenance-connector')).toBe(line);
+    const trimmedAtZoom = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX, 4);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedAtZoom.x1, 10);
+    expect(Number(line?.getAttribute('y1'))).toBeCloseTo(trimmedAtZoom.y1, 10);
+    // The margin shrinks in data-space as zoomScale grows, so the ON-SCREEN margin (data-space
+    // margin * zoomScale) stays pinned to the halo's own on-screen radius at every zoom level.
+    const dataSpaceMargin = Math.hypot(trimmedAtZoom.x1 - 100, trimmedAtZoom.y1 - 600);
+    expect(dataSpaceMargin * 4).toBeCloseTo(EXPECTED_BASE_RADIUS_PX, 10);
+
+    controller.updateZoomScale(Number.NaN);
+    const trimmedReset = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX);
+    expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmedReset.x1, 10);
+  });
+
+  it('retains stable-view reuse across clear but releases dataset-owned lookup state explicitly', () => {
+    let currentPlotData = plotData;
+    let proteinIdReads = 0;
+    const observedProteinIds = new Proxy(plotData.proteinIds, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) proteinIdReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    currentPlotData = { ...plotData, proteinIds: observedProteinIds };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => currentPlotData,
+      getScales: () => scales,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    const request = {
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    };
+
+    controller.set(request);
+    expect(proteinIdReads).toBe(plotData.length);
+    const cache = controller as unknown as {
+      indexedPlotData: PlotData | null;
+      idToSlot: Map<string, number>;
+    };
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+    expect([...cache.idToSlot.keys()].sort()).toEqual(['outside', 'source', 'target']);
+
+    controller.clear();
+    controller.set(request);
+    expect(proteinIdReads).toBe(plotData.length);
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+
+    controller.invalidateDataCache();
+    expect(cache.indexedPlotData).toBeNull();
+    expect(cache.idToSlot.size).toBe(0);
+
+    controller.set(request);
+    expect(proteinIdReads).toBe(plotData.length * 2);
+
+    currentPlotData = { ...currentPlotData };
+    controller.render();
+    expect(proteinIdReads).toBe(plotData.length * 3);
+  });
+
+  it('releases a cleared view on inactive replacement without building the next index', () => {
+    let proteinIdReads = 0;
+    const observeReads = (ids: readonly string[]) =>
+      new Proxy(ids, {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) proteinIdReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
+    let currentPlotData: PlotData = {
+      ...plotData,
+      proteinIds: observeReads(plotData.proteinIds),
+    };
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => currentPlotData,
+      getScales: () => scales,
+      onStatusChange: (next) => {
+        status = next;
+      },
+    });
+    const request = {
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    };
+    const cache = controller as unknown as {
+      indexedPlotData: PlotData | null;
+      idToSlot: Map<string, number>;
+    };
+
+    controller.set(request);
+    expect(proteinIdReads).toBe(3);
+    controller.clear();
+    controller.render();
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+    expect(cache.idToSlot.size).toBe(3);
+    expect(proteinIdReads).toBe(3);
+
+    currentPlotData = {
+      length: 1,
+      xs: new Float32Array([3]),
+      ys: new Float32Array([6]),
+      zs: null,
+      originalIndices: null,
+      proteinIds: observeReads(['source']),
+    };
+    controller.render();
+    expect(cache.indexedPlotData).toBeNull();
+    expect(cache.idToSlot.size).toBe(0);
+    expect(proteinIdReads).toBe(3);
+
+    controller.set(request);
+    expect(cache.indexedPlotData).toBe(currentPlotData);
+    expect([...cache.idToSlot.keys()]).toEqual(['source']);
+    expect(proteinIdReads).toBe(4);
+  });
+
+  it('clears geometry and status', () => {
+    const statusSpy = vi.fn();
+    controller = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => plotData,
+      getScales: () => scales,
+      onStatusChange: statusSpy,
+    });
+    controller.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+
+    controller.clear();
+
+    expect(svg.querySelector('.connector-lines-layer')).toBeNull();
+    expect(statusSpy).toHaveBeenLastCalledWith(null);
+    expect(controller.hasActiveRequest()).toBe(false);
+  });
+});

@@ -1,6 +1,10 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import type { ScatterplotData, OtherItem } from '../types';
-import type { NumericAnnotationDisplaySettingsMap, ScatterplotConfig } from '@protspace/utils';
+import {
+  isMultilabelAnnotationData,
+  type NumericAnnotationDisplaySettingsMap,
+  type ScatterplotConfig,
+} from '@protspace/utils';
 import type { LegendSortMode } from '../types';
 import {
   isScatterplotElement,
@@ -92,10 +96,7 @@ export class ScatterplotSyncController implements ReactiveController {
     const currentData = this._scatterplotElement?.getCurrentData?.();
     const annotationData = currentData?.annotation_data?.[selectedAnnotation];
 
-    return (
-      Array.isArray(annotationData) &&
-      annotationData.some((data) => Array.isArray(data) && data.length > 1)
-    );
+    return annotationData ? isMultilabelAnnotationData(annotationData) : false;
   }
 
   /**

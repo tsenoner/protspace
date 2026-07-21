@@ -15,6 +15,7 @@ export const POINT_ATTRIBUTE_LAYOUT: readonly PointAttributeSpec[] = [
   { key: 'depth', size: 1 },
   { key: 'labelCount', size: 1 },
   { key: 'shape', size: 1 },
+  { key: 'predicted', size: 1 },
 ] as const;
 
 type PointBuffers = Record<PointAttribKey, WebGLBuffer | null>;
