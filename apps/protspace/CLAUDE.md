@@ -12,9 +12,13 @@ Python package for dimensionality reduction of protein language model (pLM) embe
 **Always use `uv run` to execute Python commands in this project.** Do not use bare `python` or `python3`.
 
 ```bash
-# Install with dev deps + enable pre-commit hook (once per clone)
+# Install with dev deps (once per clone)
 uv sync --group dev
-git config core.hooksPath .githooks
+
+# Git hooks come from husky, installed by `pnpm install` AT THE REPO ROOT — a
+# Python-only setup leaves you with no pre-commit gate. Never set core.hooksPath
+# by hand; husky owns it.
+pnpm install
 
 # Run tests (skip slow) — testpaths covers both protspace + protlabel
 uv run pytest -m "not slow"
@@ -114,7 +118,8 @@ Model shortcuts are defined in `MODEL_SHORT_KEYS` (CommonEmbedder models) and `E
 ```
 src/protspace/
 ├── cli/
-│   ├── app.py                  # Typer app root, shared utilities
+│   ├── app.py                  # Typer app root, shared utilities, setup_logging()
+│   ├── common_options.py       # Shared Typer options
 │   ├── prepare.py              # Full pipeline command
 │   ├── embed.py                # FASTA → HDF5 embedding
 │   ├── project.py              # HDF5 → DR projections
@@ -122,6 +127,7 @@ src/protspace/
 │   ├── bundle.py               # Combine into .parquetbundle
 │   ├── stats.py                # Projection quality statistics command
 │   ├── serve.py                # Dash web frontend
+│   ├── transfer.py             # Embedding Annotation Transfer (EAT) command
 │   └── style.py                # Annotation styling
 ├── data/
 │   ├── loaders/
@@ -132,6 +138,7 @@ src/protspace/
 │   │   └── similarity.py       # FASTA → MMseqs2 → similarity matrix
 │   ├── annotations/
 │   │   ├── configuration.py    # Annotation category definitions
+│   │   ├── encoding.py         # Bundle format v2 wire contract (percent-encoding)
 │   │   ├── manager.py          # ProteinAnnotationManager orchestrator
 │   │   ├── merging.py          # Merge UniProt + InterPro annotations
 │   │   ├── scores.py           # Annotation score computation
@@ -139,8 +146,9 @@ src/protspace/
 │   │   └── transformers/       # Post-processing (field normalization, etc.)
 │   ├── io/
 │   │   ├── bundle.py           # .parquetbundle read/write
+│   │   ├── fasta.py            # FASTA detection + parsing (is_fasta_file, parse_fasta)
 │   │   ├── formatters.py       # ProteinAnnotations → DataFrame/Arrow
-│   │   ├── readers.py          # HDF5/CSV data readers
+│   │   ├── predictions.py      # Per-cell prediction overlay columns
 │   │   ├── settings_converter.py # Settings table conversion
 │   │   └── writers.py          # Annotation output writers
 │   ├── embedding/
@@ -169,6 +177,7 @@ src/protspace/
 │   ├── reducers.py             # All DR method implementations + annoy fallback
 │   ├── add_annotation_style.py # Annotation color/style utilities
 │   └── arrow_reader.py         # Parquet/Arrow reading helpers
+├── analysis/                   # Query/reference classification
 ├── core/                       # Core data models
 ├── ui/                         # Dash UI components
 ├── visualization/              # Plotly visualization builders
@@ -249,36 +258,53 @@ uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With
 
 ### Test Files
 
-| File | Tests | What it covers |
-|------|-------|---------------|
-| `test_annotation_manager.py` | 79 | Annotation fetch, merge, cache, configuration, evidence parsing |
-| `test_transformer.py` | 56 | Annotation transformers (field normalization, EC names) |
-| `test_reducers.py` | 51 | All 6 DR methods: shapes, finite output, float16, config validation |
-| `test_interpro_annotation_retriever.py` | 46 | InterPro API mocking, parsing |
-| `test_settings_converter.py` | 31 | Settings table ↔ visualization state conversion |
-| `test_uniprot_annotation_retriever.py` | 24 | UniProt API mocking, inactive entry resolution |
-| `test_pipeline_utils.py` | 70 | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
-| `test_stats.py` | 50 | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
-| `test_stats_cli.py` | 16 | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
-| `test_stats_carriage.py` | 10 | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
-| `test_stats_bundle.py` | 7 | Optional 5th (statistics) bundle part round-trip |
-| `test_annotation_select.py` | 6 | Annotation selection: suitability filter (cardinality/numeric/id-like exclusion), `auto` vs explicit-list label building (explicit names bypass the heuristic), missing-value dropping |
-| `test_annotation_validity.py` | 6 | `AnnotationValidityStatistic`: silhouette/DBI/CH scored per annotation on `ctx.coords`, embedding vs. projection `space_kind`, missing-value exclusion, single-category no-op, id-canonical subsample determinism |
-| `test_biocentral_embedder.py` | 23 | Biocentral API client, embedding flow |
-| `test_backend_switch.py` | 10 | Embedding backend switch: `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
-| `test_local_embedder.py` | 21 | Local embedding backend: checkpoint resolution (12 short keys, Synthyra ESM-C), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, empty-output guard, esm2_8m end-to-end + resume (slow) |
-| `test_fasta.py` | 17 | FASTA parsing, edge cases, CSV annotation loading |
-| `test_biocentral_retriever.py` | 14 | Biocentral prediction retriever (TMbed parsing, per-sequence) |
-| `test_taxonomy_annotation_retriever.py` | 15 | Taxonomy via UniProt Taxonomy API (mocked + integration) |
-| `test_config_validation.py` | 12 | DimensionReductionConfig parameter validation |
-| `test_style_warnings.py` | 17 | `protspace style` warnings: numeric-column detection (#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
-| `test_h5_parse_identifier.py` | 9 | HDF5 key parsing, identifier extraction |
-| `test_base_data_processor.py` | 9 | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
-| `test_ted_retriever.py` | 7 | TED domain retriever (mocked AlphaFold API, CATH names) |
-| `test_pfam_clan.py` | 7 | Pfam CLAN transformer (mapping, dedup, edge cases) |
-| `test_formatters.py` | 5 | ProteinAnnotations → DataFrame formatting |
-| `test_output_combinations.py` | 4 | Output format flag combinations |
-| `test_bundle_settings.py` | 4 | Parquetbundle settings read/write |
+Scoped to `tests/`; `protlabel` has its own suite under `packages/protlabel/tests/`.
+Counts are deliberately omitted — nothing validates them, so they only ever drift.
+For a live count run `uv run pytest tests/ --collect-only -q`.
+
+| File | What it covers |
+|------|---------------|
+| `test_annotation_manager.py` | Annotation fetch, merge, cache, configuration, evidence parsing |
+| `test_transformer.py` | Annotation transformers (field normalization, EC names) |
+| `test_reducers.py` | All 6 DR methods: shapes, finite output, float16, config validation |
+| `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing |
+| `test_settings_converter.py` | Settings table ↔ visualization state conversion |
+| `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution |
+| `test_pipeline_utils.py` | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
+| `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
+| `test_stats_cli.py` | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
+| `test_stats_carriage.py` | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
+| `test_stats_bundle.py` | Optional 5th (statistics) bundle part round-trip |
+| `test_annotation_select.py` | Annotation selection: suitability filter (cardinality/numeric/id-like exclusion), `auto` vs explicit-list label building (explicit names bypass the heuristic), missing-value dropping |
+| `test_annotation_validity.py` | `AnnotationValidityStatistic`: silhouette/DBI/CH scored per annotation on `ctx.coords`, embedding vs. projection `space_kind`, missing-value exclusion, single-category no-op, id-canonical subsample determinism |
+| `test_biocentral_embedder.py` | Biocentral API client, embedding flow |
+| `test_backend_switch.py` | Embedding backend switch: `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
+| `test_local_embedder.py` | Local embedding backend: checkpoint resolution (12 short keys, Synthyra ESM-C), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, empty-output guard, esm2_8m end-to-end + resume (slow) |
+| `test_fasta.py` | FASTA parsing, edge cases, CSV annotation loading |
+| `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence) |
+| `test_taxonomy_annotation_retriever.py` | Taxonomy via UniProt Taxonomy API (mocked + integration) |
+| `test_config_validation.py` | DimensionReductionConfig parameter validation |
+| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
+| `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
+| `test_base_data_processor.py` | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
+| `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names) |
+| `test_pfam_clan.py` | Pfam CLAN transformer (mapping, dedup, edge cases) |
+| `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
+| `test_output_combinations.py` | Output format flag combinations |
+| `test_bundle_settings.py` | Parquetbundle settings read/write |
+| `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet |
+| `test_transfer_cli.py` | Transfer orchestration core and CLI registration |
+| `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
+| `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
+| `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
+| `test_bundle_overlay.py` | Round-trip replacement of the annotations part of a bundle |
+| `test_classification.py` | Query/reference rules: id-prefix and case-insensitive `where` substring, query-over-reference precedence, empty-match and missing-column errors |
+| `test_bundle_version.py` | `format_version=2` stamped into the annotations parquet |
+| `test_uniprot_parser_encoding.py` | UniProtEntry free-text emit points percent-encode reserved chars |
+| `test_cath_names.py` | CATH names file parsing |
+| `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
+| `test_encoding_e2e.py` | Backend end-to-end round-trip proof for v2 annotation encoding |
+| `test_scores_ted.py` | `--no-scores` strips TED domains |
 
 **Markers:** `@pytest.mark.slow` (database downloads), `@pytest.mark.integration` (external APIs)
 
@@ -294,7 +320,7 @@ Located in `notebooks/`:
 
 ## Dependencies
 
-**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich
+**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich, protlabel (workspace member)
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar
 
