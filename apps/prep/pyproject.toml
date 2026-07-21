@@ -14,7 +14,9 @@ dependencies = [
   "slowapi>=0.1.9",
 ]
 
-[project.optional-dependencies]
+# A group rather than an extra: test-only tooling should not be installable by
+# consumers as `protspace-prep[dev]`.
+[dependency-groups]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",

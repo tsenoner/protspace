@@ -6,23 +6,34 @@ for the design.
 
 ## Run locally
 
+`protspace-prep` is a uv workspace member, so every command below runs from the
+repo root. Keep `--package protspace-prep` on `uv run` too: the workspace root is
+virtual, so a bare `uv run` resolves _all_ members and pulls in ~135 extra
+packages (torch, jupyter) that this service does not use.
+
+From the repo root:
+
 ```bash
-cd apps/prep
-uv venv
-uv pip install -e ".[dev]"
-uv run uvicorn protspace_prep.app:app --reload --port 8000
+uv sync --package protspace-prep
+uv run --package protspace-prep uvicorn protspace_prep.app:app --reload --port 8000
 ```
 
 ## Tests
 
+From the repo root — the path is required, since the root has no pytest config
+and a bare `pytest` collects the whole workspace:
+
 ```bash
-uv run pytest -q
+uv run --package protspace-prep pytest apps/prep -q
 ```
 
 ## Build the Docker image
 
+From the repo root — the build context is the workspace root, not `apps/prep`
+(see the header of [`Dockerfile`](./Dockerfile)):
+
 ```bash
-docker build -t protspace-prep:local .
+docker build -f apps/prep/Dockerfile -t protspace-prep:local .
 ```
 
 ## Configuration
