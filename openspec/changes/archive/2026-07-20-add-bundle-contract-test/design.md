@@ -94,45 +94,79 @@ The union is the point. `ci.yml` and `protspace-ci.yml` remain mutually exclusiv
 
 ## Deferred follow-up
 
-Three items surfaced during code review, verified as real, and deliberately left
-out of this change. They are recorded here rather than as open tasks because each
-is a decision to defer, not unfinished work in this change's scope.
+Three items surfaced during code review and were originally deferred. A later
+cleanup pass resolved all three; each entry records what actually happened,
+because two of the original write-ups turned out to be wrong about the fix.
 
-### 1. The TypeScript writer has no delimiter guard (correctness)
+### 1. The TypeScript writer has no delimiter guard (correctness) — RESOLVED
 
 The Python writer refuses to emit a part containing the reserved delimiter bytes
-(`_check_no_delimiter`). `packages/utils/src/parquet/bundle-writer.ts` has no
+(`_check_no_delimiter`). `packages/utils/src/parquet/bundle-writer.ts` had no
 equivalent, so a web export whose annotation text contains the literal
-`---PARQUET_DELIMITER---` produces a bundle with a spurious delimiter.
+`---PARQUET_DELIMITER---` produced a bundle with a spurious delimiter.
 
-Widening the reader's part-count gate made this _report_ worse, not more likely:
-a contaminated 4-part export previously failed fast with "Expected 2 or 3
-delimiters, found 4" and now gets admitted, mis-sliced, and surfaces as "Invalid
-Parquet file: magic bytes not found" — a misleading error for a delimiter
-problem. A 3-part contaminated export was already mis-admitted before this
-change, so the underlying hole predates it.
+The original write-up claimed widening the reader made this _report_ worse but
+not more likely. That understated it. A 4-part export contaminated **inside the
+settings part** produces 3 real + 1 spurious delimiter: previously a hard
+rejection, now admitted, with `part4` truncated at the spurious delimiter,
+`extractSettings` failing its magic check, and the failure swallowed into a
+`console.warn`. The dataset loads with all styling silently discarded. Settings
+JSON carries user-authored legend category names, so this was the most reachable
+contamination vector — and a silent wrong result is worse than the loud failure
+it replaced.
 
-The real fix is a producer-side guard mirroring the Python one, in the export
-path this change does not otherwise touch. Deferred to keep the diff scoped to
-the seam.
+Fixed by `assertNoBundleDelimiter` in `packages/utils/src/parquet/delimiter-utils.ts`
+(the module that already declares itself shared between reader and writer),
+applied to every part in `createParquetBundle`. Mutation-verified: removing the
+call turns the new `bundle-writer.test.ts` case red, which also confirms the
+delimiter genuinely survives into serialized parquet bytes rather than being
+hidden by column compression.
 
-### 2. A zero-byte settings part in a 4-part bundle no longer warns
+The deeper alternative — replacing in-band delimiters with length framing or a
+footer offset table — was rejected: it breaks every published `.parquetbundle`
+(Swiss-Prot ~45 MB, `apps/web/public/data/`, every user's saved file) for a
+hazard a 6-line write-time assertion fully covers.
 
-`if (part4 && part4.byteLength > 0)` treats an empty settings part as the
-producer's sentinel. That is only strictly true when a fifth part follows — the
-sentinel exists to hold statistics at a fixed position. In a 4-part bundle a
-zero-byte settings part instead means a truncated or failed settings write, and
-that case now skips the parser silently where it previously logged "Failed to
-parse settings from bundle, using defaults".
+### 2. A zero-byte settings part in a 4-part bundle no longer warns — WITHDRAWN
 
-Conditioning the skip on `delimiterPositions.length === 4` would restore the
-diagnostic. Not done here because it changes reader behavior beyond the layout
-this change set out to support, and no producer is known to emit it.
+The original entry proposed conditioning the skip on `delimiterPositions.length === 4`
+to restore a diagnostic. **That fix should not be implemented — it would
+reintroduce the exact drift this change exists to eliminate.**
 
-### 3. The contract suite re-decodes each bundle per test
+`bundle.py:53` reads `settings = parts[3] if len(parts) >= 4 and parts[3] else None`:
+Python branches on the fourth part's **emptiness**, not on the raw part count,
+and `bundle.py:9-11` states that as the format rule. The TypeScript
+`part4 && part4.byteLength > 0` is a byte-for-byte match of the producer's own
+semantics. Conditioning on part count would make the reader branch on something
+the writer does not — a new divergence, and one the contract suite could not
+catch, since no producer emits the shape it distinguishes.
 
-Every `it()` re-reads its bundle from disk and re-runs the full parquet decode;
-`minimal` is extracted six times per run. Hoisting each variant's extraction into
-`beforeAll` would cut suite CPU several-fold with no loss of coverage. Left alone
-because the suite runs in ~3s and per-test extraction keeps each case readable in
-isolation — revisit if the suite grows or the large variant gets bigger.
+The lost diagnostic also covers an unreachable state. No writer can produce a
+4-part bundle with a zero-byte settings slot: `write_bundle` and
+`replace_annotations_in_bundle` emit the empty slot only when statistics follow,
+`replace_settings_in_bundle` always writes real bytes, and `createParquetBundle`
+pushes settings only when `hasBundleSettings()` is true. Truncated writes are
+foreclosed too — Python writes via `_atomic_write_bytes` (tempfile + `os.replace`)
+and the web path writes a single `Blob`.
+
+If a truncation diagnostic is ever genuinely wanted, it has to be added to both
+sides at once, or it is simply a new drift.
+
+### 3. The contract suite re-decodes each bundle per test — RESOLVED (claim was wrong)
+
+The original entry claimed hoisting into `beforeAll` "would cut suite CPU
+several-fold." **That estimate was wrong by roughly three orders of magnitude.**
+Measured: the six `minimal` tests total ~7ms of a ~4.3s run; the remaining ~4.2s
+is the `beforeAll` generator subprocess. Hoisting saves ~0.14% of wall time.
+
+The extractions in the `annotation encoding` block were hoisted anyway — not for
+CPU, but because five verbatim copies of the same two-line preamble is
+duplication, and it forced every case to be `async` for a reason unrelated to
+what it asserts.
+
+One case must **not** be hoisted, and the reason is worth recording: the
+`stats_no_settings` test spies on `console.warn` and asserts it was never called.
+Its extraction has to happen inside the test body while the spy is installed.
+Hoisting it into `beforeAll` would move the decode before the spy exists and
+void the assertion silently — it would pass even with the `byteLength > 0` guard
+removed, which is precisely the regression it was written to catch.

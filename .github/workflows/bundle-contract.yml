@@ -16,29 +16,51 @@ on:
     paths:
       - 'apps/protspace/src/protspace/data/io/**'
       - 'apps/protspace/src/protspace/data/annotations/**'
-      - 'apps/protspace/src/protspace/cli/bundle.py'
+      # The generator shells out to `protspace bundle` by bare name, so the whole
+      # CLI package matters: bundle.py's own imports (app.py, common_options.py)
+      # and pyproject.toml's [project.scripts] entry that puts it on PATH.
+      - 'apps/protspace/src/protspace/cli/**'
+      - 'apps/protspace/pyproject.toml'
       - 'packages/core/src/components/data-loader/**'
       # bundle.ts feeds settings through sanitizePublishState from publish/.
       - 'packages/core/src/components/publish/**'
-      - 'packages/utils/src/parquet/**'
-      # conversion.ts decodes annotations via normalizeMissingValue/NA_VALUE —
-      # what makes the "missing numeric stays missing" assertion meaningful.
-      - 'packages/utils/src/visualization/**'
+      # The suite aliases @protspace/utils to the package root, so its barrel
+      # (index.ts) and everything the barrel re-exports is in the tested graph —
+      # not just parquet/. conversion.ts also decodes annotations via
+      # normalizeMissingValue/NA_VALUE from visualization/, which is what makes
+      # the "missing numeric stays missing" assertion meaningful.
+      - 'packages/utils/src/**'
       - 'tests/contract/**'
+      # hyparquet is the decoder under test; a bump belongs in this job's scope.
+      # The root package.json defines the `test:contract` script the job runs.
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'uv.lock'
       - '.github/workflows/bundle-contract.yml'
   pull_request:
     paths:
       - 'apps/protspace/src/protspace/data/io/**'
       - 'apps/protspace/src/protspace/data/annotations/**'
-      - 'apps/protspace/src/protspace/cli/bundle.py'
+      # The generator shells out to `protspace bundle` by bare name, so the whole
+      # CLI package matters: bundle.py's own imports (app.py, common_options.py)
+      # and pyproject.toml's [project.scripts] entry that puts it on PATH.
+      - 'apps/protspace/src/protspace/cli/**'
+      - 'apps/protspace/pyproject.toml'
       - 'packages/core/src/components/data-loader/**'
       # bundle.ts feeds settings through sanitizePublishState from publish/.
       - 'packages/core/src/components/publish/**'
-      - 'packages/utils/src/parquet/**'
-      # conversion.ts decodes annotations via normalizeMissingValue/NA_VALUE —
-      # what makes the "missing numeric stays missing" assertion meaningful.
-      - 'packages/utils/src/visualization/**'
+      # The suite aliases @protspace/utils to the package root, so its barrel
+      # (index.ts) and everything the barrel re-exports is in the tested graph —
+      # not just parquet/. conversion.ts also decodes annotations via
+      # normalizeMissingValue/NA_VALUE from visualization/, which is what makes
+      # the "missing numeric stays missing" assertion meaningful.
+      - 'packages/utils/src/**'
       - 'tests/contract/**'
+      # hyparquet is the decoder under test; a bump belongs in this job's scope.
+      # The root package.json defines the `test:contract` script the job runs.
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'uv.lock'
       - '.github/workflows/bundle-contract.yml'
   workflow_dispatch:
 
@@ -79,8 +101,13 @@ jobs:
 
       # Both toolchains are required. The suite must never degrade to a skip when
       # one is missing — an absent producer has to fail the job, not pass it.
+      #
+      # --no-dev: the contract path needs pyarrow + typer + the protspace CLI and
+      # nothing else. The dev group pulls torch and 15 nvidia-* CUDA wheels (223
+      # packages vs 57), none of which this job imports — gigabytes of download
+      # and cache pressure for a four-second test.
       - name: Install Python producer
-        run: uv sync --package protspace
+        run: uv sync --package protspace --no-dev
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile

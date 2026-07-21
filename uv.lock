@@ -3274,7 +3274,7 @@ wheels = [
 
 [[package]]
 name = "protlabel"
-version = "4.7.2"
+version = "4.8.0"
 source = { editable = "apps/protspace/packages/protlabel" }
 dependencies = [
     { name = "numpy" },
@@ -3300,7 +3300,7 @@ wheels = [
 
 [[package]]
 name = "protspace"
-version = "4.7.2"
+version = "4.8.0"
 source = { editable = "apps/protspace" }
 dependencies = [
     { name = "biocentral-api" },
