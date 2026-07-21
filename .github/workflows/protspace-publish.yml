@@ -28,9 +28,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
         with:
-          # No fetch-depth: 0 — versions are static in pyproject.toml (plain
-          # hatchling, not hatch-vcs) and `gh release upload` uses the API, so
-          # nothing in this job reads git history.
           ref: ${{ github.event.client_payload.tag }}
 
       - name: Install uv

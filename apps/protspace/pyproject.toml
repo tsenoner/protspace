@@ -70,7 +70,6 @@ dev = [
     "jupyter-black>=0.4.0",
     "jupyter-bokeh>=4.0.5",
     "panel>=1.5.2",
-    "pyarrow>=20.0.0",
     "ruff>=0.6.9",
     "xarray>=2024.9.0",
     "torch>=2.2,<3.0",

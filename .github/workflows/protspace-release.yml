@@ -41,6 +41,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
         with:
+          # Required: semantic-release walks history to compute the bump. A
+          # shallow clone makes it miscount commits rather than fail loudly.
           fetch-depth: 0
           ref: ${{ github.sha }}
           token: ${{ steps.app-token.outputs.token }}

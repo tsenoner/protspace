@@ -306,7 +306,7 @@ Located in `notebooks/`:
 
 ## Conventions
 
-- **Logging:** Configure once via `setup_logging()` in `cli/common_args.py`. Library modules use `logger = logging.getLogger(__name__)` only — no `logging.basicConfig()`.
+- **Logging:** Configure once via `setup_logging()` in `cli/app.py`. Library modules use `logger = logging.getLogger(__name__)` only — no `logging.basicConfig()`.
 - **Imports:** src-layout (`src/protspace/`; `protlabel` at `packages/protlabel/src/`). Tests import from `protspace.*` / `src.protspace.*` and `protlabel.*`.
 - **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ packages/ tests/`.
 - **Versioning:** python-semantic-release via `pyproject.toml`, lock-step across `protspace` + `protlabel`. Versions in `pyproject.toml`, `packages/protlabel/pyproject.toml`, and `src/protspace/__init__.py`.
