@@ -34,10 +34,16 @@ uv run pytest tests/test_reducers.py
 
 ## Slow Tests
 
-The following tests are marked as slow and can be skipped during rapid development:
+Some tests are marked slow and can be skipped during rapid development — they
+download external data or run a real model. List them with:
 
-- `tests/test_taxonomy_annotation_retriever.py` - Downloads and uses NCBI taxonomy database (~several seconds per test run)
+```bash
+uv run pytest tests/ --collect-only -q -m slow
+```
 
 ## CI/CD
 
-CI runs `uv run pytest tests/ -m "not slow" -q` by default. Slow/integration tests are skipped in CI to avoid external service dependencies.
+CI runs `uv run pytest -m "not slow" -q` by default, with no path argument —
+`testpaths` covers both workspace members, so this collects protspace and
+protlabel. Slow/integration tests are skipped in CI to avoid external service
+dependencies.

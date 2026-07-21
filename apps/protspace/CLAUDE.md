@@ -12,9 +12,13 @@ Python package for dimensionality reduction of protein language model (pLM) embe
 **Always use `uv run` to execute Python commands in this project.** Do not use bare `python` or `python3`.
 
 ```bash
-# Install with dev deps (once per clone). Git hooks are managed by husky via
-# the root `prepare` script — do NOT set core.hooksPath by hand.
+# Install with dev deps (once per clone)
 uv sync --group dev
+
+# Git hooks come from husky, installed by `pnpm install` AT THE REPO ROOT — a
+# Python-only setup leaves you with no pre-commit gate. Never set core.hooksPath
+# by hand; husky owns it.
+pnpm install
 
 # Run tests (skip slow) — testpaths covers both protspace + protlabel
 uv run pytest -m "not slow"
@@ -114,7 +118,8 @@ Model shortcuts are defined in `MODEL_SHORT_KEYS` (CommonEmbedder models) and `E
 ```
 src/protspace/
 ├── cli/
-│   ├── app.py                  # Typer app root, shared utilities
+│   ├── app.py                  # Typer app root, shared utilities, setup_logging()
+│   ├── common_options.py       # Shared Typer options
 │   ├── prepare.py              # Full pipeline command
 │   ├── embed.py                # FASTA → HDF5 embedding
 │   ├── project.py              # HDF5 → DR projections
@@ -141,7 +146,7 @@ src/protspace/
 │   │   └── transformers/       # Post-processing (field normalization, etc.)
 │   ├── io/
 │   │   ├── bundle.py           # .parquetbundle read/write
-│   │   ├── fasta.py            # FASTA parsing, CSV annotation loading
+│   │   ├── fasta.py            # FASTA detection + parsing (is_fasta_file, parse_fasta)
 │   │   ├── formatters.py       # ProteinAnnotations → DataFrame/Arrow
 │   │   ├── predictions.py      # Per-cell prediction overlay columns
 │   │   ├── settings_converter.py # Settings table conversion
@@ -253,10 +258,9 @@ uv run pytest --cov=src/protspace --cov=packages/protlabel/src/protlabel  # With
 
 ### Test Files
 
-Scoped to `apps/protspace/tests/`; `protlabel` has its own suite under
-`packages/protlabel/tests/`. Counts are deliberately omitted — they went stale in
-12 of 28 rows before this table was last corrected. For a live count run
-`uv run pytest --collect-only -q`.
+Scoped to `tests/`; `protlabel` has its own suite under `packages/protlabel/tests/`.
+Counts are deliberately omitted — nothing validates them, so they only ever drift.
+For a live count run `uv run pytest tests/ --collect-only -q`.
 
 | File | What it covers |
 |------|---------------|
@@ -292,9 +296,9 @@ Scoped to `apps/protspace/tests/`; `protlabel` has its own suite under
 | `test_transfer_cli.py` | Transfer orchestration core and CLI registration |
 | `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
-| `test_toxprot_demo.py` | `scripts/generate_toxprot_demo.py` |
+| `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
 | `test_bundle_overlay.py` | Round-trip replacement of the annotations part of a bundle |
-| `test_classification.py` | Query/reference classifier |
+| `test_classification.py` | Query/reference rules: id-prefix and case-insensitive `where` substring, query-over-reference precedence, empty-match and missing-column errors |
 | `test_bundle_version.py` | `format_version=2` stamped into the annotations parquet |
 | `test_uniprot_parser_encoding.py` | UniProtEntry free-text emit points percent-encode reserved chars |
 | `test_cath_names.py` | CATH names file parsing |

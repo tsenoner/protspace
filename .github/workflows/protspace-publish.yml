@@ -30,11 +30,13 @@ jobs:
         with:
           ref: ${{ github.event.client_payload.tag }}
 
-      # No dependency cache: this job only runs `uv build`, which provisions an
-      # isolated PEP 517 env from build-system.requires (hatchling) and never
-      # installs the locked set — hatchling does not even appear in uv.lock.
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          # Explicitly false, not omitted: setup-uv defaults enable-cache to
+          # "auto". This job only runs `uv build`, which never installs the
+          # locked set.
+          enable-cache: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
