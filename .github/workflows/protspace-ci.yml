@@ -10,10 +10,18 @@ on:
     branches: [main]
     paths:
       - 'apps/protspace/**'
+      # Single root lock for the whole uv workspace: a dependency bump reaches
+      # this member only through uv.lock, so filtering it out would let one land
+      # untested. Matches prep-ci.yml.
+      - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
   pull_request:
     paths:
       - 'apps/protspace/**'
+      # Single root lock for the whole uv workspace: a dependency bump reaches
+      # this member only through uv.lock, so filtering it out would let one land
+      # untested. Matches prep-ci.yml.
+      - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
 
 defaults:
