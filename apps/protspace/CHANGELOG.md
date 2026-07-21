@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.8.2 (2026-07-21)
+
+### Bug Fixes
+
+- **eat**: Preserve structured transfer semantics
+  ([#277](https://github.com/tsenoner/protspace/pull/277),
+  [`d53bc50`](https://github.com/tsenoner/protspace/commit/d53bc50e0a8d287bd5a3adf6b34e32602817c143))
+
+- **eat**: Stabilize large-dataset remediation
+  ([#277](https://github.com/tsenoner/protspace/pull/277),
+  [`3917652`](https://github.com/tsenoner/protspace/commit/39176526fbf2b1b855b59084d3156b4d24591d5a))
+
+
 ## v4.8.1 (2026-07-20)
 
 ### Bug Fixes
