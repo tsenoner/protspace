@@ -1,4 +1,9 @@
-import { annotationSource, compareTaxonomyRank, type AnnotationSource } from '@protspace/utils';
+import {
+  annotationSource,
+  compareTaxonomyRank,
+  type Annotation,
+  type AnnotationSource,
+} from '@protspace/utils';
 
 /** Dropdown section names — one per annotation source (the predicted flag is shown per-row, not as a group). */
 export type CategoryName = 'Biocentral' | 'InterPro' | 'TED' | 'Taxonomy' | 'UniProt' | 'Other';
@@ -45,7 +50,10 @@ const CATEGORY_ORDER: CategoryName[] = [
  * Within a section annotations are alphabetical, except Taxonomy, which is ordered by rank depth
  * (general → specific). Shared by annotation-select and query-condition-row.
  */
-export function groupAnnotations(annotations: string[]): GroupedAnnotation[] {
+export function groupAnnotations(
+  annotations: string[],
+  definitions?: Readonly<Record<string, Pick<Annotation, 'runtime'>>>,
+): GroupedAnnotation[] {
   const categorized: Record<CategoryName, string[]> = {
     Biocentral: [],
     InterPro: [],
@@ -56,7 +64,9 @@ export function groupAnnotations(annotations: string[]): GroupedAnnotation[] {
   };
 
   for (const annotation of annotations) {
-    categorized[categoryForSource(annotationSource(annotation))].push(annotation);
+    categorized[categoryForSource(annotationSource(annotation, definitions?.[annotation]))].push(
+      annotation,
+    );
   }
 
   for (const category of CATEGORY_ORDER) {

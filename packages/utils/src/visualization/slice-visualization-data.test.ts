@@ -20,6 +20,9 @@ function baseViz(): VisualizationData {
     numeric_annotation_data: { plddt: [10, 20, 30, 40] },
     annotation_scores: { fam: [[[0.1]], [[0.2]], [[0.3]], [[0.4]]] },
     annotation_evidence: { fam: [['x'], ['y'], ['z'], ['w']] },
+    annotation_predicted: {
+      fam: [null, { value: 'b', confidence: 0.7, source: 'p0' }, null, null],
+    },
   };
 }
 
@@ -49,6 +52,14 @@ describe('sliceVisualizationDataByIndices', () => {
   it('reslices numeric_annotation_data to kept indices', () => {
     const out = sliceVisualizationDataByIndices(baseViz(), [1, 3]);
     expect(out.numeric_annotation_data!.plddt).toEqual([20, 40]);
+  });
+
+  it('reslices EAT cells in the same protein order', () => {
+    const out = sliceVisualizationDataByIndices(baseViz(), [3, 1]);
+    expect(out.annotation_predicted?.fam).toEqual([
+      null,
+      { value: 'b', confidence: 0.7, source: 'p0' },
+    ]);
   });
 
   it('reslices annotation_scores AND annotation_evidence to kept indices (fixes drift)', () => {

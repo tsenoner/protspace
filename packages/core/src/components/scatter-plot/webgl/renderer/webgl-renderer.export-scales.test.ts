@@ -25,6 +25,7 @@ const style = (): WebGLStyleGetters => ({
   getOpacity: () => 1,
   getDepth: () => 0,
   getShape: () => 'circle',
+  isPredicted: () => false,
 });
 const config = { width: 800, height: 600 };
 

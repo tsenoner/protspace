@@ -23,6 +23,7 @@ export class GLResources {
   depthBuffer: WebGLBuffer | null = null;
   labelCountBuffer: WebGLBuffer | null = null;
   shapeBuffer: WebGLBuffer | null = null;
+  predictedBuffer: WebGLBuffer | null = null;
   quadBuffer: WebGLBuffer | null = null;
 
   labelColorTexture: WebGLTexture | null = null;
@@ -37,6 +38,7 @@ export class GLResources {
       this.depthBuffer,
       this.labelCountBuffer,
       this.shapeBuffer,
+      this.predictedBuffer,
       this.quadBuffer,
     ].filter((b): b is WebGLBuffer => b !== null);
   }
@@ -53,6 +55,7 @@ export class GLResources {
     this.depthBuffer = gl.createBuffer();
     this.labelCountBuffer = gl.createBuffer();
     this.shapeBuffer = gl.createBuffer();
+    this.predictedBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
   }
@@ -74,6 +77,7 @@ export class GLResources {
     if (this.depthBuffer && !gl.isBuffer(this.depthBuffer)) return false;
     if (this.labelCountBuffer && !gl.isBuffer(this.labelCountBuffer)) return false;
     if (this.shapeBuffer && !gl.isBuffer(this.shapeBuffer)) return false;
+    if (this.predictedBuffer && !gl.isBuffer(this.predictedBuffer)) return false;
     if (this.labelColorTexture && !gl.isTexture(this.labelColorTexture)) return false;
     return true;
   }
@@ -110,6 +114,7 @@ export class GLResources {
     this.depthBuffer = null;
     this.labelCountBuffer = null;
     this.shapeBuffer = null;
+    this.predictedBuffer = null;
     this.quadBuffer = null;
     this.labelColorTexture = null;
     this.linearFramebuffer = null;

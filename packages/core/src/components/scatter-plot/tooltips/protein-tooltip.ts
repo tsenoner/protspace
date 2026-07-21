@@ -85,6 +85,22 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
             >
           </div>`
         : ''}
+      ${block.predicted
+        ? html`
+            <div class="eat-provenance">
+              <div class="eat-provenance-heading">
+                <span>Predicted (transferred)</span>
+                <strong>${Math.round(block.predicted.confidence * 100)}%</strong>
+              </div>
+              <div class="eat-confidence-track" aria-label="EAT reliability index">
+                <span style=${`width: ${block.predicted.confidence * 100}%`}></span>
+              </div>
+              <div class="eat-provenance-source">
+                Reliability index · source ${block.predicted.source}
+              </div>
+            </div>
+          `
+        : ''}
       ${block.displayValues.map((value, idx) => {
         const scores = block.scores[idx];
         const evidence = block.evidence[idx];
@@ -96,8 +112,11 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
             scores.length > MAX_VISIBLE_SCORES ? visible.join(', ') + ', …' : visible.join(', ');
         }
         const displayValue = toDisplayValue(toInternalValue(value));
-        return html`<div class="tooltip-annotation">
-          <span class="tooltip-annotation-label" title="${displayValue}">${displayValue}</span
+        return html`<div class="tooltip-annotation ${block.predicted ? 'eat-transferred-row' : ''}">
+          <span
+            class="tooltip-annotation-label ${block.predicted ? 'eat-transferred-label' : ''}"
+            title="${displayValue}"
+            >${displayValue}</span
           >${scoreText
             ? html`<span class="tooltip-annotation-score">${scoreText}</span>`
             : evidence

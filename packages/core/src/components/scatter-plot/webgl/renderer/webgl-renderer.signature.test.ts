@@ -26,6 +26,7 @@ const style = (): WebGLStyleGetters => ({
   getOpacity: () => 1,
   getDepth: () => 0,
   getShape: () => 'circle',
+  isPredicted: () => false,
 });
 
 function makeRenderer() {

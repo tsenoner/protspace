@@ -19,6 +19,9 @@ export {
 // BigInt utilities
 export { sanitizeValue, bigIntReplacer } from './bigint-utils';
 
+// Annotation bundle format v2 codec
+export { encodeAnnotationField } from './annotation-codec';
+
 // Settings validation
 export {
   isValidLegendSettings,

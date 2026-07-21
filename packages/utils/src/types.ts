@@ -31,16 +31,53 @@ export interface Annotation {
   sourceKind?: AnnotationKind;
   numericType?: NumericAnnotationType;
   numericMetadata?: NumericAnnotationMetadata;
+  /** Runtime-only identity for derived annotations that must never be persisted as user data. */
+  runtime?: {
+    role: 'eat-confidence';
+    baseAnnotation: string;
+  };
 }
 
 /**
  * Per-protein annotation indices.
  * - `Int32Array`: strictly single-valued column. `data[proteinIdx]` is the
  *   index, or `-1` when the protein has no value for this column.
- * - `(readonly number[])[]`: multi-valued column. `data[proteinIdx]` is the
+ * - `SparseMultiValueAnnotationData`: compact single-value base plus overrides for the uncommon
+ *   multi-valued rows.
+ * - `(readonly number[])[]`: densely multi-valued column. `data[proteinIdx]` is the
  *   list of indices; an empty array means missing.
  */
-export type AnnotationData = Int32Array | readonly (readonly number[])[];
+export interface SparseMultiValueAnnotationData {
+  readonly kind: 'sparse-multi';
+  readonly base: Int32Array;
+  readonly overrides: ReadonlyMap<number, readonly number[]>;
+  readonly length: number;
+}
+
+export type AnnotationData =
+  | Int32Array
+  | SparseMultiValueAnnotationData
+  | readonly (readonly number[])[];
+
+/** A value transferred from a reference protein by Embedding Annotation Transfer (EAT). */
+export interface PredictedCell {
+  value: string;
+  /** Ordered decoded labels for multi-valued transfers; absent for legacy/single-valued cells. */
+  values?: readonly string[];
+  /** Score vectors aligned positionally with `values`. */
+  scores?: readonly (readonly number[] | null)[];
+  /** Evidence strings aligned positionally with `values`. */
+  evidence?: readonly (string | null)[];
+  /** Bounded EAT reliability index. This is not a calibrated probability. */
+  confidence: number;
+  /** Protein identifier from which the value was transferred. */
+  source: string;
+  /** Runtime global index for O(1) provenance lookup when the source is in this dataset. */
+  sourceIndex?: number;
+}
+
+/** Per-base-annotation EAT cells, aligned to `protein_ids`. */
+export type AnnotationPredictedData = Record<string, readonly (PredictedCell | null)[]>;
 
 export interface Projection {
   name: string;
@@ -60,6 +97,8 @@ export interface VisualizationData {
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
   numeric_annotation_data?: Record<string, (number | null)[]>;
+  /** Display-independent EAT provenance, keyed by the curated base annotation. */
+  annotation_predicted?: AnnotationPredictedData;
   annotation_scores?: Record<string, (number[] | null)[][]>;
   annotation_evidence?: Record<string, (string | null)[][]>;
 }
@@ -185,6 +224,14 @@ export interface BundleSettings {
   exportOptions: ExportOptionsMap;
   /** Serialised publish/figure editor state. Free-form JSON — validated on load. */
   publishState?: Record<string, unknown>;
+  /** Whether transferred values are coalesced into their curated base annotation. */
+  eatOverlayEnabled?: boolean;
+  /**
+   * Saved reliability-slider position (0…1, default 0). On load it seeds the
+   * slider, which derives a `NOT(EAT_confidence < x)` query filter only when
+   * above 0 — so an absent or `0` value means no reliability filter (#6b).
+   */
+  eatConfidenceThreshold?: number;
 }
 
 /**

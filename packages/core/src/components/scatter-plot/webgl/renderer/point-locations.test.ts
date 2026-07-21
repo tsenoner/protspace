@@ -10,6 +10,7 @@ function mockGL() {
     'a_depth',
     'a_labelCount',
     'a_shape',
+    'a_predicted',
   ];
   return {
     program,
@@ -22,7 +23,7 @@ function mockGL() {
 }
 
 describe('resolvePointLocations', () => {
-  it('resolves all six attributes by their shader names', () => {
+  it('resolves all point attributes by their shader names', () => {
     const { gl, program } = mockGL();
     const { attribs } = resolvePointLocations(gl, program);
     expect(attribs).toEqual({
@@ -32,10 +33,11 @@ describe('resolvePointLocations', () => {
       depth: 3,
       labelCount: 4,
       shape: 5,
+      predicted: 6,
     });
   });
 
-  it('resolves all seven uniforms by their shader names', () => {
+  it('resolves all point uniforms by their shader names', () => {
     const { gl, program } = mockGL();
     const { uniforms } = resolvePointLocations(gl, program);
     expect(Object.keys(uniforms).sort()).toEqual(
@@ -45,11 +47,13 @@ describe('resolvePointLocations', () => {
         'labelColors',
         'labelTextureSize',
         'maxLabels',
+        'knockoutColor',
         'resolution',
         'transform',
       ].sort(),
     );
     expect((uniforms.resolution as unknown as { name: string }).name).toBe('u_resolution');
     expect((uniforms.maxLabels as unknown as { name: string }).name).toBe('u_maxLabels');
+    expect((uniforms.knockoutColor as unknown as { name: string }).name).toBe('u_knockoutColor');
   });
 });

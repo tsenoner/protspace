@@ -26,16 +26,20 @@ export interface StagePointArrays {
   depths: Float32Array;
   labelCounts: Float32Array;
   shapes: Float32Array;
+  predicted: Float32Array;
   labelColorData: Uint8Array;
 }
 
 /** The subset of style getters a single staged-point write depends on. */
-export type StagePointStyle = Pick<WebGLStyleGetters, 'getColors' | 'getPointSize' | 'getShape'>;
+export type StagePointStyle = Pick<
+  WebGLStyleGetters,
+  'getColors' | 'getPointSize' | 'getShape' | 'isPredicted'
+>;
 
 /** The style channels (everything except position + depth) a staged point writes. */
 type StagePointStyleArrays = Pick<
   StagePointArrays,
-  'colors' | 'sizes' | 'labelCounts' | 'shapes' | 'labelColorData'
+  'colors' | 'sizes' | 'labelCounts' | 'shapes' | 'predicted' | 'labelColorData'
 >;
 
 /**
@@ -70,6 +74,7 @@ export function stagePointStyle(
   target.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
   target.labelCounts[idx] = pointColors.length;
   target.shapes[idx] = shapeIndex;
+  target.predicted[idx] = style.isPredicted(sp) ? 1 : 0;
 
   fillLabelColorTexels(target.labelColorData, idx, pointColors, MAX_LABELS);
 }

@@ -407,3 +407,82 @@ def test_cli_end_to_end_protein_id_bundle(tmp_path):
     assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
     # Provenance column round-trips through the bundle for the web frontend.
     assert rows["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+
+
+def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
+    """A v1 transfer result becomes unambiguous v2 without changing parsed structure."""
+    import io
+
+    import h5py
+    import pyarrow.parquet as pq
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import (
+        PARQUET_BUNDLE_DELIMITER,
+        read_bundle,
+        write_bundle,
+    )
+
+    source_id = "P0|ref;literal%3B"
+    annotations = pa.table(
+        {
+            "protein_id": ["TRINITY_1", source_id],
+            "protein_category": ["", "ACC (Name; part)|EXP"],
+            "literal_percent": ["name%3Bpart", "plain"],
+        }
+    )
+    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
+    proj_data = pa.table(
+        {"id": ["TRINITY_1", source_id], "x": [0.0, 9.0], "y": [0.0, 0.0]}
+    )
+    stamped_path = tmp_path / "stamped.parquetbundle"
+    write_bundle([annotations, proj_meta, proj_data], stamped_path)
+    parts, _ = read_bundle(stamped_path)
+    legacy_annotations = pq.read_table(io.BytesIO(parts[0])).replace_schema_metadata(
+        None
+    )
+    first_part = io.BytesIO()
+    pq.write_table(legacy_annotations, first_part)
+    bundle_path = tmp_path / "legacy.parquetbundle"
+    bundle_path.write_bytes(
+        PARQUET_BUNDLE_DELIMITER.join([first_part.getvalue(), parts[1], parts[2]])
+    )
+
+    h5_path = tmp_path / "legacy.h5"
+    with h5py.File(h5_path, "w") as handle:
+        handle.attrs["model_name"] = "test_model"
+        handle.create_dataset("TRINITY_1", data=np.array([1.0, 0.05], dtype=np.float32))
+        handle.create_dataset(source_id, data=np.array([1.0, 0.0], dtype=np.float32))
+
+    output_path = tmp_path / "out.parquetbundle"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            "-b",
+            str(bundle_path),
+            "-e",
+            str(h5_path),
+            "-t",
+            "protein_category",
+            "-o",
+            str(output_path),
+            "--query-id-prefix",
+            "TRINITY_",
+            "--reference-id-prefix",
+            "P0",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    output_parts, _ = read_bundle(output_path)
+    output = pq.read_table(io.BytesIO(output_parts[0]))
+    assert output.schema.metadata[b"protspace_format_version"] == b"2"
+    rows = {row["protein_id"]: row for row in output.to_pylist()}
+    assert rows[source_id]["protein_category"] == "ACC (Name%3B part)|EXP"
+    assert rows["TRINITY_1"]["literal_percent"] == "name%253Bpart"
+    assert rows["TRINITY_1"]["protein_category__pred_value"] == "ACC (Name%3B part)|EXP"
+    assert (
+        rows["TRINITY_1"]["protein_category__pred_source"] == "P0%7Cref%3Bliteral%253B"
+    )

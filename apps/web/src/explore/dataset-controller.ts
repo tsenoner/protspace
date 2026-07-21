@@ -7,7 +7,7 @@ import type {
   DataErrorEventDetail,
   DataLoader as ProtspaceDataLoader,
 } from '@protspace/core';
-import { generateDatasetHash } from '@protspace/utils';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, generateDatasetHash } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
   getDataLoadFailureNotification,
@@ -140,13 +140,21 @@ export function createDatasetController({
 
       await loadData(data);
 
-      const shouldApplyEmbeddedFileSettings = settings && loadMeta.kind !== 'opfs';
-      if (shouldApplyEmbeddedFileSettings) {
+      if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
+      }
+      if (settings) {
+        const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
+        const eatConfidenceThreshold =
+          settings.eatConfidenceThreshold ?? DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+        legendElement.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
       }
 
       controlBar.hasFileSettings =
-        settings != null && Object.keys(settings.legendSettings).length > 0;
+        settings != null &&
+        (Object.keys(settings.legendSettings).length > 0 ||
+          settings.eatOverlayEnabled !== undefined ||
+          settings.eatConfidenceThreshold !== undefined);
 
       if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);

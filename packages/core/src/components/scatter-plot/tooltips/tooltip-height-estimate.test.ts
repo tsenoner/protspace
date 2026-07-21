@@ -1,20 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import type { TooltipView } from '@protspace/utils';
 import { estimateTooltipHeight } from './tooltip-height-estimate';
+import { computeTooltipStyle } from './tooltip-position';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function makeBlock(
-  overrides: Partial<{
-    key: string;
-    displayValues: string[];
-    numericValue: number | null;
-    numericType: 'float' | 'int';
-    scores: (number[] | null)[];
-    evidence: (string | null)[];
-  }> = {},
+  overrides: Partial<TooltipView['blocks'][number]> = {},
 ): TooltipView['blocks'][number] {
   return {
     key: 'annotation',
@@ -154,5 +148,54 @@ describe('estimateTooltipHeight', () => {
     const view1 = makeView({ geneName: ['TP53'], blocks: [bigBlock()] });
     const view2 = makeView({ geneName: ['TP53'], blocks: [bigBlock()] });
     expect(estimateTooltipHeight(view1)).toBe(estimateTooltipHeight(view2));
+  });
+
+  it('reserves additional lines for long transferred labels without inflating observed rows', () => {
+    const longEc = '3.1.3.67 (phosphatidylinositol-3,4,5-trisphosphate 3-phosphatase)';
+    const anchor = bigBlock();
+    const predicted = {
+      value: longEc,
+      confidence: 0.87,
+      source: 'P0C5E4',
+    };
+    const shortTransfer = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: ['3.1.3.67'], predicted })] }),
+    );
+    const longTransfer = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: [longEc], predicted })] }),
+    );
+    const shortObserved = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: ['3.1.3.67'] })] }),
+    );
+    const longObserved = estimateTooltipHeight(
+      makeView({ blocks: [anchor, makeBlock({ displayValues: [longEc] })] }),
+    );
+
+    expect(longTransfer).toBeGreaterThan(shortTransfer);
+    expect(longObserved).toBe(shortObserved);
+  });
+
+  it('conservatively reserves more wrapped lines at a 320 px viewport tooltip width', () => {
+    const longEc = '3.1.3.67 (phosphatidylinositol-3,4,5-trisphosphate 3-phosphatase)';
+    const predicted = { value: longEc, confidence: 0.87, source: 'P0C5E4' };
+    const view = makeView({
+      proteinName: ['Phosphatidylinositol phosphatase PTPRQ'],
+      geneName: ['Ptprq'],
+      blocks: [makeBlock({ displayValues: [longEc, longEc, longEc, longEc], predicted })],
+    });
+
+    const narrowHeight = estimateTooltipHeight(view, 290);
+    expect(narrowHeight).toBeGreaterThan(estimateTooltipHeight(view, 350));
+
+    const style = computeTooltipStyle({
+      x: 300,
+      y: 380,
+      height: narrowHeight,
+      viewportWidth: 320,
+      viewportHeight: 400,
+    });
+    const top = Number(style.match(/top: ([\d.-]+)px/)?.[1]);
+    expect(top).toBeGreaterThanOrEqual(15);
+    expect(top + narrowHeight).toBeLessThanOrEqual(385);
   });
 });

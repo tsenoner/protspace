@@ -83,7 +83,7 @@ class ProtspaceQueryConditionRow extends LitElement {
   // ─── Annotation picker grouping ───────────────────────────────────────────
 
   private _groupAnnotations() {
-    return groupAnnotations(this.annotations).map((g) => ({
+    return groupAnnotations(this.annotations, this.data?.annotations).map((g) => ({
       category: g.category,
       items: g.annotations,
     }));

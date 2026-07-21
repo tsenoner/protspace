@@ -793,7 +793,10 @@ export function materializeVisualizationData(
       annotation.numericType ?? annotation.numericMetadata?.numericType,
     );
 
-    annotations[annotationName] = materialized.annotation;
+    annotations[annotationName] = {
+      ...annotation,
+      ...materialized.annotation,
+    };
     annotationData[annotationName] = materialized.annotationData;
   }
 

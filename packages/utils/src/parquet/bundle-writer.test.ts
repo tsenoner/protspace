@@ -144,6 +144,19 @@ describe('bundle-writer', () => {
       expect(buffer).toBeInstanceOf(ArrayBuffer);
       expect(buffer.byteLength).toBeGreaterThan(0);
     });
+
+    it('writes a settings part when EAT settings are the only persisted state', () => {
+      const buffer = createParquetBundle(createMockVisualizationData(), {
+        includeSettings: true,
+        settings: {
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: false,
+          eatConfidenceThreshold: 0.75,
+        },
+      });
+      expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(3);
+    });
   });
 
   describe('generateBundleFilename', () => {

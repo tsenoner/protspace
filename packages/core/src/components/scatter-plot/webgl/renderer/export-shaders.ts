@@ -18,6 +18,7 @@ in vec4 a_color;
 in float a_depth;
 in float a_labelCount;
 in float a_shape;
+in float a_predicted;
 
 uniform vec2 u_resolution;
 uniform vec3 u_transform;
@@ -27,6 +28,7 @@ uniform float u_gamma;
 out vec4 v_color;
 out float v_labelCount;
 flat out float v_shape;
+flat out float v_predicted;
 flat out int v_pointIndex;
 
 void main() {
@@ -43,6 +45,7 @@ void main() {
   v_color = vec4(linearColor, a_color.a);
   v_labelCount = a_labelCount;
   v_shape = a_shape;
+  v_predicted = a_predicted;
   v_pointIndex = gl_VertexID;
 }`;
 
@@ -52,17 +55,20 @@ precision highp float;
 in vec4 v_color;
 in float v_labelCount;
 flat in float v_shape;
+flat in float v_predicted;
 flat in int v_pointIndex;
 
 uniform sampler2D u_labelColors;
 uniform vec2 u_labelTextureSize;
 uniform int u_maxLabels;
 uniform float u_gamma;
+uniform vec3 u_knockoutColor;
 
 out vec4 fragColor;
 
 const float PI = 3.14159265359;
 const float SQRT3 = 1.73205080757;
+const float PREDICTED_INTERIOR_FILL = 0.0; // 1.0 = filled knockout (old), 0.0 = hollow
 
 void main() {
   vec2 coord = gl_PointCoord * 2.0 - 1.0;
@@ -107,6 +113,16 @@ void main() {
   // screen-space derivatives of the distance field.
   float aa = fwidth(edgeDist);
   float shapeAlpha = smoothstep(0.0, aa, edgeDist);
+  float predictedInterior = 0.0;
+  if (v_predicted > 0.5) {
+    // Keep the ring legible at every sprite size without allowing derivative scaling to consume
+    // the interior. With PREDICTED_INTERIOR_FILL = 1.0 the opaque surface-color knockout would
+    // prevent earlier overlapping points from showing through the hole; at 0.0 (hollow) that
+    // show-through is allowed for densely overlapping markers — an accepted trade-off.
+    float ringWidth = clamp(aa * 1.75, 0.30, 0.55);
+    float interiorAa = min(aa, (1.0 - ringWidth) * 0.5);
+    predictedInterior = smoothstep(ringWidth, ringWidth + interiorAa, edgeDist);
+  }
   if (shapeAlpha < 0.001) discard;
 
   // Early-out for hidden points (alpha=0). These remain in GPU arrays to
@@ -139,12 +155,19 @@ void main() {
   // Darken near the edge to mimic a border/outline.
   // Skip for faded points (low alpha) where the darkening is disproportionately visible.
   float strokeWidth = 0.15;
-  if (v_color.a > 0.5 && max(edgeDist, 0.0) < strokeWidth) {
+  if (v_predicted < 0.5 && v_color.a > 0.5 && max(edgeDist, 0.0) < strokeWidth) {
     finalColor = finalColor * 0.5;
   }
 
-  float finalAlpha = v_color.a * shapeAlpha;
-  fragColor = vec4(finalColor * finalAlpha, finalAlpha);
+  // Predicted interiors mix toward PREDICTED_INTERIOR_FILL (hollow=0.0, filled-knockout=1.0).
+  // Mix premultiplied components explicitly so the ring/interior transition remains correct
+  // for reliability-faded points.
+  float finalAlpha = mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
+  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
+  vec3 premultipliedColor =
+    mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
+    shapeAlpha;
+  fragColor = vec4(premultipliedColor, finalAlpha);
 }`;
 
 export const GAMMA_VERTEX_SHADER = `#version 300 es

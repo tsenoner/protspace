@@ -41,9 +41,13 @@ interface StubScatterplot {
 interface ControlBarInternals extends HTMLElement {
   _scatterplotElement: StubScatterplot | null;
   _currentData: ProtspaceData | undefined;
+  selectedAnnotation: string;
   filterActive: boolean;
   filterQuery: FilterQuery;
+  _lastEmittedThreshold: number;
+  setEatConfidenceThreshold(baseKey: string, x: number): void;
   _handleQueryApply(event: CustomEvent<{ matchedIndices: Set<number> }>): void;
+  _handleQueryChanged(event: CustomEvent<{ query: FilterQuery }>): void;
   _handleQueryReset(): void;
   updateComplete: Promise<unknown>;
 }
@@ -142,5 +146,324 @@ describe('control-bar filter query apply', () => {
     expect(controlBar.filterActive).toBe(false);
     // Reset re-seeds an empty condition row so the builder shows a fresh query.
     expect(controlBar.filterQuery).toHaveLength(1);
+  });
+});
+
+/**
+ * Two-way mirror between the legend reliability slider and the query filter (#6b).
+ * Forward: `setEatConfidenceThreshold(base, x)` upserts `NOT(EAT_confidence < x)`
+ * for x>0 and removes it for x<=0, running the same apply path as a real query.
+ * Reverse: a query change carrying (or dropping) that condition emits
+ * `eat-threshold-mirror` so the slider can follow. The eat-confidence column is
+ * resolved by runtime identity, not the `__eat_confidence` string suffix, so the
+ * collision-renamed `__runtime_N` variant is handled too.
+ */
+const EAT_KEY = 'family__eat_confidence__runtime_2';
+
+/**
+ * 20 proteins: p0–p4 curated (null confidence), p5–p19 predicted with
+ * confidence i/20 (0.25 … 0.95). The eat-confidence column carries an explicit
+ * runtime role/base so the control bar can find it without the suffix.
+ */
+function makeEatData(): ProtspaceData {
+  const count = 20;
+  return {
+    protein_ids: Array.from({ length: count }, (_, i) => `p${i}`),
+    annotations: {
+      family: { kind: 'categorical', values: ['A'], colors: ['#000'], shapes: ['circle'] },
+      [EAT_KEY]: {
+        kind: 'numeric',
+        values: [],
+        runtime: { role: 'eat-confidence', baseAnnotation: 'family' },
+      },
+    },
+    numeric_annotation_data: {
+      [EAT_KEY]: Array.from({ length: count }, (_, i) => (i < 5 ? null : i / 20)),
+    },
+  };
+}
+
+function eatCondition(query: FilterQuery) {
+  return query.find(
+    (item) => 'kind' in item && item.kind === 'numeric' && item.annotation === EAT_KEY,
+  );
+}
+
+describe('control-bar EAT reliability slider <-> query mirror', () => {
+  let controlBar: ControlBarInternals;
+  let scatter: StubScatterplot;
+
+  beforeEach(async () => {
+    document.body.innerHTML = '';
+    controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
+    controlBar.autoSync = false;
+    document.body.appendChild(controlBar);
+    await controlBar.updateComplete;
+
+    scatter = {
+      selectedProteinIds: ['sentinel'],
+      isolateSelection: vi.fn(),
+      resetIsolation: vi.fn(),
+      getCurrentData: vi.fn(() => makeEatData()),
+      getMaterializedData: vi.fn(() => makeEatData()),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    controlBar._scatterplotElement = scatter;
+    controlBar._currentData = makeEatData();
+    // The reverse mirror is scoped to the SELECTED base's eat-confidence column,
+    // so the color-by annotation must name the base ('family') for the derived
+    // threshold to resolve.
+    controlBar.selectedAnnotation = 'family';
+    await controlBar.updateComplete;
+  });
+
+  it('forward: upserts a single NOT(EAT_confidence < x) condition and applies it', () => {
+    controlBar.setEatConfidenceThreshold('family', 0.5);
+
+    const eat = eatCondition(controlBar.filterQuery);
+    expect(eat).toMatchObject({
+      kind: 'numeric',
+      annotation: EAT_KEY,
+      operator: 'lt',
+      max: 0.5,
+      logicalOp: 'NOT',
+    });
+    expect(controlBar.filterQuery).toHaveLength(1);
+    expect(scatter.filtersActive).toBe(true);
+    expect(controlBar.filterActive).toBe(true);
+
+    // Kept = curated (p0–p4, null confidence) + predictions >= 0.5 (p10–p19).
+    // Hidden = predictions below 0.5 (p5–p9).
+    const kept = scatter.filteredProteinIds ?? [];
+    expect(kept).toContain('p0');
+    expect(kept).toContain('p4');
+    expect(kept).not.toContain('p5');
+    expect(kept).not.toContain('p9');
+    expect(kept).toContain('p10');
+    expect(kept).toContain('p19');
+    expect(kept).toHaveLength(15);
+
+    // A filter is not a selection.
+    expect(scatter.selectedProteinIds).toEqual(['sentinel']);
+  });
+
+  it('forward: re-applying with a new threshold replaces (does not stack) the condition', () => {
+    controlBar.setEatConfidenceThreshold('family', 0.5);
+    controlBar.setEatConfidenceThreshold('family', 0.8);
+
+    expect(controlBar.filterQuery.filter((i) => 'kind' in i && i.kind === 'numeric')).toHaveLength(
+      1,
+    );
+    expect(eatCondition(controlBar.filterQuery)).toMatchObject({ max: 0.8 });
+    // Kept = curated (5) + predictions >= 0.8 (p16–p19 = 4) = 9.
+    expect(scatter.filteredProteinIds).toHaveLength(9);
+  });
+
+  it('forward: seeds against the current dataset, not a stale _currentData (dataset switch)', () => {
+    // Simulate a dataset switch mid-seed: `_currentData` still holds the PREVIOUS
+    // dataset (different ids, all-curated), while the scatter plot already exposes
+    // the NEW one via getMaterializedData. The seed must derive against the NEW
+    // dataset — reading it directly removes any data-change timing dependency.
+    const staleData: ProtspaceData = {
+      protein_ids: Array.from({ length: 20 }, (_, i) => `old${i}`),
+      annotations: {
+        family: { kind: 'categorical', values: ['A'], colors: ['#000'], shapes: ['circle'] },
+        [EAT_KEY]: {
+          kind: 'numeric',
+          values: [],
+          runtime: { role: 'eat-confidence', baseAnnotation: 'family' },
+        },
+      },
+      // All curated (null): a 0.5 filter against stale data would keep all 20 old ids.
+      numeric_annotation_data: { [EAT_KEY]: Array.from({ length: 20 }, () => null) },
+    };
+    controlBar._currentData = staleData;
+
+    controlBar.setEatConfidenceThreshold('family', 0.5);
+
+    // Derived against the NEW dataset (makeEatData: "p" ids, 5 curated + 15 kept),
+    // never the stale "old" ids.
+    const kept = scatter.filteredProteinIds ?? [];
+    expect(kept.every((id) => id.startsWith('p'))).toBe(true);
+    expect(kept).toHaveLength(15);
+  });
+
+  it('forward: dragging to 0 removes the eat condition and clears the filter channel', () => {
+    controlBar.setEatConfidenceThreshold('family', 0.5);
+    expect(scatter.filtersActive).toBe(true);
+
+    controlBar.setEatConfidenceThreshold('family', 0);
+
+    expect(eatCondition(controlBar.filterQuery)).toBeUndefined();
+    expect(controlBar.filterQuery).toHaveLength(0);
+    expect(scatter.filtersActive).toBe(false);
+    expect(scatter.filteredProteinIds).toEqual([]);
+    expect(controlBar.filterActive).toBe(false);
+  });
+
+  it('reverse: emits eat-threshold-mirror when a query change adds or drops the condition', () => {
+    const mirror = vi.fn();
+    controlBar.addEventListener('eat-threshold-mirror', mirror as EventListener);
+
+    controlBar._handleQueryChanged(
+      new CustomEvent('query-changed', {
+        detail: {
+          query: [
+            {
+              id: 'x',
+              kind: 'numeric',
+              annotation: EAT_KEY,
+              operator: 'lt',
+              min: null,
+              max: 0.6,
+              logicalOp: 'NOT',
+            },
+          ],
+        },
+      }),
+    );
+    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0.6 } }));
+
+    controlBar._handleQueryChanged(new CustomEvent('query-changed', { detail: { query: [] } }));
+    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0 } }));
+  });
+
+  it('guards the loop: a query change echoing the forward value does not re-emit', () => {
+    controlBar.setEatConfidenceThreshold('family', 0.5);
+
+    const mirror = vi.fn();
+    controlBar.addEventListener('eat-threshold-mirror', mirror as EventListener);
+
+    // The query-builder re-broadcasts the current query (same 0.5) — no new value.
+    controlBar._handleQueryChanged(
+      new CustomEvent('query-changed', { detail: { query: controlBar.filterQuery } }),
+    );
+    expect(mirror).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Per-annotation (per base) reliability filter. With two EAT base annotations
+ * transferred (e.g. EC and GO), each base owns its own `NOT(<base>_eat < x)`
+ * condition. Tuning one base's slider must not clobber or misread another's, and
+ * the reverse mirror must reflect the SELECTED base's threshold — so switching
+ * the color-by annotation moves the slider to that base's value.
+ */
+const EC_KEY = 'ec__eat_confidence__runtime_1';
+const GO_KEY = 'go__eat_confidence__runtime_2';
+
+function makeMultiEatData(): ProtspaceData {
+  const count = 20;
+  return {
+    protein_ids: Array.from({ length: count }, (_, i) => `p${i}`),
+    annotations: {
+      ec: { kind: 'categorical', values: ['A'], colors: ['#000'], shapes: ['circle'] },
+      go: { kind: 'categorical', values: ['A'], colors: ['#000'], shapes: ['circle'] },
+      [EC_KEY]: {
+        kind: 'numeric',
+        values: [],
+        runtime: { role: 'eat-confidence', baseAnnotation: 'ec' },
+      },
+      [GO_KEY]: {
+        kind: 'numeric',
+        values: [],
+        runtime: { role: 'eat-confidence', baseAnnotation: 'go' },
+      },
+    },
+    numeric_annotation_data: {
+      [EC_KEY]: Array.from({ length: count }, (_, i) => (i < 5 ? null : i / 20)),
+      [GO_KEY]: Array.from({ length: count }, (_, i) => (i < 5 ? null : i / 20)),
+    },
+  };
+}
+
+function conditionFor(query: FilterQuery, key: string) {
+  return query.find((item) => 'kind' in item && item.kind === 'numeric' && item.annotation === key);
+}
+
+describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
+  let controlBar: ControlBarInternals;
+  let scatter: StubScatterplot;
+
+  beforeEach(async () => {
+    document.body.innerHTML = '';
+    controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
+    controlBar.autoSync = false;
+    document.body.appendChild(controlBar);
+    await controlBar.updateComplete;
+
+    scatter = {
+      selectedProteinIds: ['sentinel'],
+      isolateSelection: vi.fn(),
+      resetIsolation: vi.fn(),
+      getCurrentData: vi.fn(() => makeMultiEatData()),
+      getMaterializedData: vi.fn(() => makeMultiEatData()),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    controlBar._scatterplotElement = scatter;
+    controlBar._currentData = makeMultiEatData();
+  });
+
+  it('scopes the condition to the base: setting GO does not clobber EC', () => {
+    controlBar.setEatConfidenceThreshold('ec', 0.5);
+    controlBar.setEatConfidenceThreshold('go', 0.8);
+
+    const numericConditions = controlBar.filterQuery.filter(
+      (i) => 'kind' in i && i.kind === 'numeric',
+    );
+    expect(numericConditions).toHaveLength(2);
+
+    // Both bases' conditions coexist with their own thresholds.
+    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({
+      operator: 'lt',
+      logicalOp: 'NOT',
+      max: 0.5,
+    });
+    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({
+      operator: 'lt',
+      logicalOp: 'NOT',
+      max: 0.8,
+    });
+  });
+
+  it('retuning one base rewrites only its own condition, preserving the other', () => {
+    controlBar.setEatConfidenceThreshold('ec', 0.5);
+    controlBar.setEatConfidenceThreshold('go', 0.8);
+    controlBar.setEatConfidenceThreshold('ec', 0.3);
+
+    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({ max: 0.3 });
+    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ max: 0.8 });
+    expect(controlBar.filterQuery.filter((i) => 'kind' in i && i.kind === 'numeric')).toHaveLength(
+      2,
+    );
+  });
+
+  it('dragging one base to 0 removes only its condition, leaving the other', () => {
+    controlBar.setEatConfidenceThreshold('ec', 0.5);
+    controlBar.setEatConfidenceThreshold('go', 0.8);
+    controlBar.setEatConfidenceThreshold('ec', 0);
+
+    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toBeUndefined();
+    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ max: 0.8 });
+  });
+
+  it('reverse mirror follows the SELECTED base when the annotation switches', async () => {
+    controlBar.setEatConfidenceThreshold('ec', 0.5);
+    controlBar.setEatConfidenceThreshold('go', 0.8);
+
+    const mirror = vi.fn();
+    controlBar.addEventListener('eat-threshold-mirror', mirror as EventListener);
+
+    controlBar.selectedAnnotation = 'ec';
+    await controlBar.updateComplete;
+    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0.5 } }));
+
+    controlBar.selectedAnnotation = 'go';
+    await controlBar.updateComplete;
+    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0.8 } }));
   });
 });

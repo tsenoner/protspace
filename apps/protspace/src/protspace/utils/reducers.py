@@ -237,7 +237,11 @@ class PCAReducer(DimensionReducer):
             )
             solver = "full"
 
-        pca = PCA(n_components=k, svd_solver=solver)
+        pca = PCA(
+            n_components=k,
+            svd_solver=solver,
+            random_state=self.config.random_state,
+        )
         try:
             result = pca.fit_transform(data)
             self.explained_variance = pca.explained_variance_ratio_.tolist()
@@ -253,6 +257,7 @@ class PCAReducer(DimensionReducer):
             "n_components": self.config.n_components,
             # Report the solver used, default to 'arpack' if not set yet
             "svd_solver": getattr(self, "used_solver", "arpack"),
+            "random_state": self.config.random_state,
         }
         if hasattr(self, "explained_variance"):
             params["explained_variance_ratio"] = self.explained_variance

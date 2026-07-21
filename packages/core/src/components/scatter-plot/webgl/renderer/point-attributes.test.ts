@@ -3,7 +3,7 @@ import { POINT_ATTRIBUTE_LAYOUT, setupAttributes } from './point-attributes';
 import type { PointAttribLocations } from '../types';
 
 describe('POINT_ATTRIBUTE_LAYOUT', () => {
-  it('declares the six attributes with the live VAO sizes (2,1,4,1,1,1)', () => {
+  it('declares the point attributes with the live VAO sizes', () => {
     expect(POINT_ATTRIBUTE_LAYOUT.map((a) => [a.key, a.size])).toEqual([
       ['dataPosition', 2],
       ['size', 1],
@@ -11,6 +11,7 @@ describe('POINT_ATTRIBUTE_LAYOUT', () => {
       ['depth', 1],
       ['labelCount', 1],
       ['shape', 1],
+      ['predicted', 1],
     ]);
   });
 });
@@ -39,6 +40,7 @@ describe('setupAttributes', () => {
       depth: { name: 'dep' },
       labelCount: { name: 'lc' },
       shape: { name: 'sh' },
+      predicted: { name: 'pred' },
     } as unknown as Record<string, WebGLBuffer>;
     const locations: PointAttribLocations = {
       dataPosition: 0,
@@ -47,6 +49,7 @@ describe('setupAttributes', () => {
       depth: 3,
       labelCount: 4,
       shape: 5,
+      predicted: 6,
     };
 
     setupAttributes(gl, buffers as never, locations);
@@ -70,6 +73,9 @@ describe('setupAttributes', () => {
       'bind:sh',
       'enable:5',
       'ptr:5:1:5126:0:0',
+      'bind:pred',
+      'enable:6',
+      'ptr:6:1:5126:0:0',
     ]);
   });
 });

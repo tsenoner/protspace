@@ -175,6 +175,24 @@ describe('ScatterplotSyncController', () => {
       expect(controller.isMultilabelAnnotation('multi')).toBe(true);
     });
 
+    it('returns true for a sparse materialized four-label prediction', () => {
+      mockScatterplot.getCurrentData = () => ({
+        protein_ids: ['O88488', 'P0C5E4'],
+        projections: [],
+        annotations: { ec: { values: ['3.1.3.16', '3.1.3.48', '3.1.3.53', '3.1.3.64'] } },
+        annotation_data: {
+          ec: {
+            kind: 'sparse-multi',
+            base: Int32Array.from([0, 1]),
+            overrides: new Map([[0, [0, 1, 2, 3]]]),
+            length: 2,
+          },
+        },
+      });
+
+      expect(controller.isMultilabelAnnotation('ec')).toBe(true);
+    });
+
     it('returns false when annotation data is missing', () => {
       mockScatterplot.getCurrentData = () => ({
         protein_ids: ['p1'],

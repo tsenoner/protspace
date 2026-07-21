@@ -169,10 +169,40 @@ export const responsiveStyles = css`
     }
   }
 
+  /* Keep projection and annotation readable on compact screens. */
+  @media (max-width: 950px) {
+    /* --breakpoint-lg */
+    .left-controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .left-controls > .control-group {
+      width: 100%;
+    }
+  }
+
   /* Keep right-side dropdown chevrons visible on compact screens so
      Import/Export still read as menus rather than immediate actions. */
   @media (max-width: 600px) {
     /* --breakpoint-sm */
+    .control-bar {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .left-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      width: 100%;
+    }
+
+    .left-controls > .control-group {
+      width: 100%;
+    }
+
     .right-controls .dropdown-trigger {
       justify-content: space-between;
       gap: var(--spacing-2xs, 0.25rem);

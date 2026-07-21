@@ -21,7 +21,7 @@ import {
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
-import { buildPaintOrder } from './point-staging';
+import { buildPaintOrder, composePaintDepth } from './point-staging';
 import { planRendererCapacity } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
 import { GLResources } from './gl-resources';
@@ -78,6 +78,7 @@ export class WebGLRenderer {
   private depths = new Float32Array(0);
   private labelCounts = new Float32Array(0);
   private shapes = new Float32Array(0);
+  private predicted = new Float32Array(0);
   private labelColorData = new Uint8Array(0);
 
   // Zero-copy view over the parallel staging arrays above, passed to `stagePoint`.
@@ -145,6 +146,7 @@ export class WebGLRenderer {
     private getConfig: () => ScatterplotConfig,
     private style: WebGLStyleGetters,
     private onContextLost?: () => void,
+    private getKnockoutColor: () => readonly [number, number, number] = () => [1, 1, 1],
   ) {
     this.lossController = new ContextLossController(this.canvas, () => {
       this.resetRendererState();
@@ -487,6 +489,7 @@ export class WebGLRenderer {
     dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number },
     pointSizeReference?: { width: number; height: number },
     resetView: boolean = false,
+    knockoutColor: readonly [number, number, number] = this.getKnockoutColor(),
   ): HTMLCanvasElement {
     return this.exportRenderer.renderToCanvas(this.lastRenderedData, this.getConfig(), this.style, {
       width,
@@ -497,6 +500,7 @@ export class WebGLRenderer {
       selectionActive: this.selectionActive,
       transform: resetView ? d3.zoomIdentity : this.getTransform(),
       gamma: this.gamma,
+      knockoutColor,
     });
   }
 
@@ -715,6 +719,7 @@ export class WebGLRenderer {
         depth: this.resources.depthBuffer,
         labelCount: this.resources.labelCountBuffer,
         shape: this.resources.shapeBuffer,
+        predicted: this.resources.predictedBuffer,
       },
       this.pointAttribLocations,
     );
@@ -758,6 +763,7 @@ export class WebGLRenderer {
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
         gamma: this.getEffectiveGamma(),
+        knockoutColor: this.getKnockoutColor(),
         maxLabels: MAX_LABELS,
         labelTextureWidth: LABEL_TEXTURE_WIDTH,
         labelColorDataLength: this.labelColorData.length,
@@ -861,7 +867,11 @@ export class WebGLRenderer {
         sp.originalIndex = origIdx;
         const opacity = this.style.getOpacity(sp);
         if (opacity === 0) continue;
-        const newDepth = this.style.getDepth(sp);
+        const newDepth = composePaintDepth(
+          this.style.getDepth(sp),
+          opacity,
+          this.style.isPredicted(sp),
+        );
         // Compare with stored depth (note: depths array is in sorted order after last render)
         if (Math.abs(newDepth - this.depths[i]) > 1e-6) {
           depthsChanged = true;
@@ -893,7 +903,11 @@ export class WebGLRenderer {
         sp.x = xs[i];
         sp.y = ys[i];
         sp.originalIndex = origIdx;
-        depthScratch[i] = this.style.getDepth(sp);
+        depthScratch[i] = composePaintDepth(
+          this.style.getDepth(sp),
+          this.style.getOpacity(sp),
+          this.style.isPredicted(sp),
+        );
       }
       // Canonical painter-order plan (shared with the export path via
       // buildPaintOrder): sort far->near, then locate the two-pass selection cut
@@ -1020,6 +1034,7 @@ export class WebGLRenderer {
       this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
       this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
       this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
+      this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
 
       // Update label-color texture. Allocate storage once (and whenever capacity grew);
       // afterwards update in place with texSubImage2D — no 32 MiB reallocation per recolor.
@@ -1088,6 +1103,7 @@ export class WebGLRenderer {
       depths: this.depths,
       labelCounts: this.labelCounts,
       shapes: this.shapes,
+      predicted: this.predicted,
       labelColorData: this.labelColorData,
     };
   }
@@ -1106,6 +1122,7 @@ export class WebGLRenderer {
     this.depths = new Float32Array(nextCapacity);
     this.labelCounts = new Float32Array(nextCapacity);
     this.shapes = new Float32Array(nextCapacity);
+    this.predicted = new Float32Array(nextCapacity);
     this.sortOrder = new Uint32Array(nextCapacity);
     this.sortDepths = new Float32Array(nextCapacity);
     // Align texture height to next power of 2 or just simple expansion

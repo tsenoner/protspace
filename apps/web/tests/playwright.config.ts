@@ -176,6 +176,14 @@ export default defineConfig({
       testMatch: /multi-annotation-tooltip\.spec\.ts/,
     },
     {
+      name: 'eat-visualization',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /eat-visualization\.spec\.ts/,
+    },
+    {
       // Mocked prep API (no backend); the live variant below is opt-in.
       name: 'fasta-prep',
       use: {

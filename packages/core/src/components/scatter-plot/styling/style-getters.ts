@@ -40,6 +40,7 @@ export interface StyleConfig {
     selected: number;
     faded: number;
   };
+  eatOverlayEnabled?: boolean;
 }
 
 export function createStyleGetters(
@@ -175,6 +176,12 @@ export function createStyleGetters(
 
   const getOpacity = (point: PlotDataPoint): number => visibility.opacityOf(point);
 
+  // Resolve the predicted-cell array once (string-keyed lookup) instead of per point.
+  const predictedCells = styleConfig.eatOverlayEnabled
+    ? (data?.annotation_predicted?.[styleConfig.selectedAnnotation] ?? null)
+    : null;
+  const isPredicted = (point: PlotDataPoint): boolean => !!predictedCells?.[point.originalIndex];
+
   // Precompute normalization for z-order mapping so getDepth is cheap.
   const zMap = styleConfig.zOrderMapping ?? null;
   // reduce (not Math.max(...spread)): a legend with tens of thousands of
@@ -247,5 +254,6 @@ export function createStyleGetters(
     getColors,
     getOpacity,
     getDepth,
+    isPredicted,
   };
 }

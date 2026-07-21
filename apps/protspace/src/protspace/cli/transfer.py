@@ -45,6 +45,7 @@ def run_transfer(
     reference_rule: Rule,
     k: int = 1,
     metric: str = "cosine",
+    format_version: int = 2,
 ) -> pa.Table:
     """Pure core: classify, transfer per column, return the augmented table.
 
@@ -118,7 +119,13 @@ def run_transfer(
             k=k,
             metric=metric,
         )
-        out = add_overlay_columns(out, column, preds, identifiers=all_ids)
+        out = add_overlay_columns(
+            out,
+            column,
+            preds,
+            identifiers=all_ids,
+            format_version=format_version,
+        )
         total_transferred += len(preds)
         logger.info("Transferred %r to %d quer(ies)", column, len(preds))
 
@@ -224,6 +231,10 @@ def transfer(
     import pyarrow.parquet as pq
 
     from protspace.analysis.classification import Rule
+    from protspace.data.annotations.encoding import (
+        migrate_legacy_annotation_table,
+        read_format_version,
+    )
     from protspace.data.io.bundle import read_bundle, replace_annotations_in_bundle
     from protspace.data.loaders import load_h5, split_h5_spec
 
@@ -259,6 +270,7 @@ def transfer(
     # Read the annotations part of the bundle.
     parts, _settings = read_bundle(bundle)
     annotations = pq.read_table(io.BytesIO(parts[0]))
+    input_format_version = read_format_version(annotations)
 
     # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
     if (
@@ -300,6 +312,7 @@ def transfer(
             reference_rule=reference_rule,
             k=k,
             metric=metric,
+            format_version=input_format_version,
         )
     except (KeyError, ValueError) as exc:
         # Use the raw message (KeyError stringifies with repr quotes) rather than
@@ -313,6 +326,9 @@ def transfer(
         augmented = augmented.rename_columns(
             [id_col if n == "identifier" else n for n in augmented.column_names]
         )
+
+    if input_format_version < 2:
+        augmented = migrate_legacy_annotation_table(augmented)
 
     replace_annotations_in_bundle(bundle, output, augmented)
     logger.info("Wrote transferred bundle to %s", output)

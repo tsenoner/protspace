@@ -284,5 +284,43 @@ describe('plot-data-accessors', () => {
       expect(view.blocks.map((b) => b.key)).toEqual(['gene_name']);
       expect(view.blocks[0].displayValues).toEqual(['BRCA1']);
     });
+
+    it('adds transferred value and provenance only for the active EAT annotation', () => {
+      const data = baseData();
+      data.annotation_predicted = {
+        species: [{ value: 'mouse', confidence: 0.76, source: 'p1' }, null, null],
+      };
+      const view = buildTooltipView(data, 0, 'species', ['gene_name'], true);
+      expect(view.blocks[0].displayValues).toEqual(['mouse']);
+      expect(view.blocks[0].predicted).toEqual({
+        value: 'mouse',
+        confidence: 0.76,
+        source: 'p1',
+      });
+      expect(view.blocks[1].predicted).toBeNull();
+    });
+
+    it('keeps structured transferred labels and aligned metadata in the tooltip block', () => {
+      const data = baseData();
+      data.annotation_predicted = {
+        species: [
+          {
+            value: 'mouse;rat',
+            values: ['mouse', 'rat'],
+            scores: [[0.9], null],
+            evidence: [null, 'EXP'],
+            confidence: 0.76,
+            source: 'p1',
+          },
+          null,
+          null,
+        ],
+      };
+
+      const block = buildTooltipView(data, 0, 'species', [], true).blocks[0];
+      expect(block.displayValues).toEqual(['mouse', 'rat']);
+      expect(block.scores).toEqual([[0.9], null]);
+      expect(block.evidence).toEqual([null, 'EXP']);
+    });
   });
 });
