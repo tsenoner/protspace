@@ -8,6 +8,13 @@ If you just want to visualize protein data, visit [protspace.app](https://protsp
 
 ## NPM Package
 
+::: danger Not yet published
+`@protspace/core`, `@protspace/react` and `@protspace/utils` are **not on the npm
+registry** — every command in this section and the next currently returns a 404,
+and no publish workflow exists yet. To embed the components today, consume them
+from a local checkout via the workspace (see [Development Setup](#development-setup)).
+:::
+
 Install the `@protspace/core` package to embed ProtSpace components in your project.
 
 ::: code-group
@@ -49,7 +56,7 @@ Use directly from a CDN without installation:
 For production use, pin to a specific version:
 
 ```html
-<script type="module" src="https://unpkg.com/@protspace/core@1.0.0"></script>
+<script type="module" src="https://unpkg.com/@protspace/core@<version>"></script>
 ```
 
 :::
