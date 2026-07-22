@@ -56,9 +56,14 @@ function readFormatVersion(metadata: FileMetaData): number {
 /**
  * Extract rows and optional settings from a parquetbundle.
  *
- * Supports two formats:
+ * Supports every layout the Python producer can write (see `_parse_bundle` in
+ * `apps/protspace/src/protspace/data/io/bundle.py`, which bounds itself to 3-5 parts):
  * - 2 delimiters (3 parts): Original format without settings
  * - 3 delimiters (4 parts): Extended format with settings
+ * - 4 delimiters (5 parts): Settings plus a projection-statistics part, which the
+ *   web reader does not consume. The settings slot may be zero bytes when the
+ *   producer wrote statistics without settings — it exists only to keep the
+ *   statistics part at a fixed position.
  */
 export async function extractRowsFromParquetBundle(
   arrayBuffer: ArrayBuffer,
@@ -66,36 +71,36 @@ export async function extractRowsFromParquetBundle(
   const uint8Array = new Uint8Array(arrayBuffer);
   const delimiterPositions = findBundleDelimiterPositions(uint8Array);
 
-  // Support both 2 delimiters (original) and 3 delimiters (with settings)
-  if (delimiterPositions.length !== 2 && delimiterPositions.length !== 3) {
+  // 2 delimiters (original), 3 (with settings), or 4 (settings + statistics).
+  if (delimiterPositions.length < 2 || delimiterPositions.length > 4) {
     throw new Error(
-      `Expected 2 or 3 delimiters in parquetbundle, found ${delimiterPositions.length}`,
+      `Expected 2 to 4 delimiters in parquetbundle, found ${delimiterPositions.length}`,
     );
   }
 
-  const hasSettingsPart = delimiterPositions.length === 3;
+  const delimiterLength = BUNDLE_DELIMITER_BYTES.length;
 
-  // Extract the three required parts
-  let part1: ArrayBuffer | null = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
-  let part2: ArrayBuffer | null = uint8Array
-    .subarray(delimiterPositions[0] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[1])
-    .slice().buffer;
+  // Every part runs from just past its opening delimiter to the next delimiter,
+  // or to end-of-file when none follows. Bounding by the next delimiter is what
+  // keeps a trailing part from being glued onto its predecessor's tail — without
+  // it, a 5-part bundle would hand the settings parser the statistics part too.
+  const partBetween = (start: number, end: number = uint8Array.length): ArrayBuffer =>
+    uint8Array.subarray(start, end).slice().buffer;
 
-  let part3: ArrayBuffer | null;
-  let part4: ArrayBuffer | null = null;
-
-  if (hasSettingsPart) {
-    part3 = uint8Array
-      .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[2])
-      .slice().buffer;
-    part4 = uint8Array
-      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length)
-      .slice().buffer;
-  } else {
-    part3 = uint8Array
-      .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length)
-      .slice().buffer;
-  }
+  let part1: ArrayBuffer | null = partBetween(0, delimiterPositions[0]);
+  let part2: ArrayBuffer | null = partBetween(
+    delimiterPositions[0] + delimiterLength,
+    delimiterPositions[1],
+  );
+  let part3: ArrayBuffer | null = partBetween(
+    delimiterPositions[1] + delimiterLength,
+    delimiterPositions[2],
+  );
+  // The settings part exists only when a third delimiter opens it.
+  const part4: ArrayBuffer | null =
+    delimiterPositions.length >= 3
+      ? partBetween(delimiterPositions[2] + delimiterLength, delimiterPositions[3])
+      : null;
 
   // Validate parquet magic for each part before parsing
   assertValidParquetMagic(part1);
@@ -128,12 +133,14 @@ export async function extractRowsFromParquetBundle(
   part1 = null;
   const projectionsMetadataData = await parquetReadObjects({ file: part2 });
   part2 = null;
-  const projectionsData = await parquetReadObjects({ file: part3! });
+  const projectionsData = await parquetReadObjects({ file: part3 });
   part3 = null;
 
   // Parse settings if present
   let settings: BundleSettings | null = null;
-  if (part4) {
+  // A zero-byte settings part is the producer's sentinel for "no settings, but
+  // statistics follow" — absent settings, not a corrupt part, so don't warn.
+  if (part4 && part4.byteLength > 0) {
     settings = await extractSettings(part4);
   }
 

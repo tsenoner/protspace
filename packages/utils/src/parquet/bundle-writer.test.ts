@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createParquetBundle, generateBundleFilename } from './bundle-writer';
 import { countBundleDelimiters } from './delimiter-utils';
+import { BUNDLE_DELIMITER } from './constants';
 import type { BundleSettings, VisualizationData } from '../types';
 
 // Mock visualization data
@@ -143,6 +144,18 @@ describe('bundle-writer', () => {
 
       expect(buffer).toBeInstanceOf(ArrayBuffer);
       expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    it('refuses to write a part whose contents contain the bundle delimiter', () => {
+      // The delimiter is in-band and unescaped, so a part carrying it would split
+      // into two on read-back. Annotation labels are user-authored, so this is
+      // reachable from the UI — and the reader cannot distinguish the resulting
+      // bundle from a genuinely malformed one. Mirrors the Python producer's
+      // `_check_no_delimiter`; failing at write time is the only safe moment.
+      const data = createMockVisualizationData();
+      data.annotations.family.values = [`kinase${BUNDLE_DELIMITER}family`, 'protease', null];
+
+      expect(() => createParquetBundle(data)).toThrow(/contains the bundle delimiter/);
     });
 
     it('writes a settings part when EAT settings are the only persisted state', () => {

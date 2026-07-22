@@ -9,16 +9,22 @@
       // Perf Playwright specs are not auto-discovered (perf playwright.config.ts
       // sits in a non-default location), so list them explicitly. Docs config is
       // listed because Knip does not infer `docs/.vitepress/*`.
+      // The cross-language bundle contract suite lives outside every package
+      // (it spans packages/core, packages/utils and the Python producer), so it
+      // has to be rooted here or knip cannot see what it imports — and reports
+      // the reader/conversion internals it pins as unused exports.
       "entry": [
         "scripts/**/*.ts",
         "docs/.vitepress/config.mts",
         "perf/**/*.spec.ts",
+        "tests/contract/**/*.test.ts",
       ],
       "project": [
         "config/**/*.ts",
         "scripts/**/*.ts",
         "perf/**/*.ts",
         "docs/.vitepress/**/*.{ts,mts}",
+        "tests/contract/**/*.ts",
       ],
     },
     "packages/core": {

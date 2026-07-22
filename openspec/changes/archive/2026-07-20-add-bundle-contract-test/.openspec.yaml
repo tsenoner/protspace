@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-20
+goal: Fail CI at change time when the Python bundle producer and the TypeScript
+  bundle reader drift apart, instead of relying on developer discipline or
+  hand-committed fixtures.
