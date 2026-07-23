@@ -113,8 +113,9 @@ filterwarnings = [
 
 
 [tool.ruff]
-# Keep in sync with requires-python above (AGENTS.md convention). Ruff would
-# otherwise infer py312 from requires-python anyway; the explicit pin documents it.
+# Explicit target matching requires-python (AGENTS.md convention). Load-bearing,
+# not just documentation: the nested protlabel member has no own [tool.ruff], so
+# ruff lints packages/ against this ancestor config.
 target-version = "py312"
 line-length = 88
 
