@@ -3,20 +3,20 @@
 Import these in any CLI command to avoid duplicating option definitions.
 """
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 
-class Metric(str, Enum):
+class Metric(StrEnum):
     euclidean = "euclidean"
     cosine = "cosine"
     manhattan = "manhattan"
 
 
-class ClusterSelection(str, Enum):
+class ClusterSelection(StrEnum):
     """How `--stats` chooses the cluster count K."""
 
     elbow = "elbow"  # inertia elbow (default)
@@ -24,7 +24,7 @@ class ClusterSelection(str, Enum):
     both = "both"  # emit both clusterings
 
 
-class Backend(str, Enum):
+class Backend(StrEnum):
     """Which engine computes the embeddings from FASTA sequences."""
 
     biocentral = "biocentral"  # remote Biocentral API (default)
