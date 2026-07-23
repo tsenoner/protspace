@@ -37,11 +37,11 @@ jobs:
           # "auto". This job only runs `uv build`, which never installs the
           # locked set.
           enable-cache: false
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version-file: 'apps/protspace/pyproject.toml'
+          # Pin the build interpreter instead of letting actions/setup-python
+          # resolve requires-python to the newest runner Python. hatchling emits
+          # py3-none-any so the wheel itself is unaffected, but this keeps the
+          # build environment deterministic and off a floating interpreter.
+          python-version: '3.12'
 
       # Build ONLY protspace + protlabel (lock-step). NOT --all-packages: that
       # also builds the private apps/prep member and lands dist/ at the workspace

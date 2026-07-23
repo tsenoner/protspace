@@ -1,0 +1,69 @@
+name: protspace future-Python canary
+
+# Early-warning for the NEXT Python release (not yet in protspace-ci.yml's
+# matrix). It fresh-resolves the whole dev environment on that interpreter and
+# runs the fast test suite. GitHub emails the workflow's last editor when a
+# scheduled run fails, so a break surfaces here — before a user hits it.
+#
+# WHY THIS EXISTS: protspace-ci.yml tests only released Pythons against the
+# pinned lock. Nothing there would tell you a coming release broke you until you
+# manually added it. This job watches ahead so adding the next version to the
+# matrix is a known-good one-line change, not a gamble.
+#
+# EXPECTED TO BE RED UNTIL THE ECOSYSTEM CATCHES UP: a new CPython ships months
+# before numba/llvmlite/pyarrow publish wheels for it, so early failures here are
+# usually "the stack isn't ready yet", not a protspace bug. When it fails, read
+# the log: a missing-wheel/source-build error for a dependency ≠ a protspace
+# regression. Once this goes green, promote the version into protspace-ci.yml and
+# bump the version below to the next one.
+
+on:
+  schedule:
+    # Monthly (1st, 06:00 UTC). Deliberately not weekly: while the new Python is
+    # pre-release the scientific wheels don't exist yet, so weekly would just be
+    # recurring noise. Monthly catches readiness within ~30 days.
+    - cron: '0 6 1 * *'
+  workflow_dispatch: # run on demand; also re-arms the schedule after repo-inactivity auto-disable
+
+defaults:
+  run:
+    working-directory: apps/protspace
+
+jobs:
+  next-python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The next Python after protspace-ci.yml's newest matrix entry.
+        python-version: ['3.15']
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+          # Exact series (not a range): uv won't select a pre-release for a range
+          # like ">=3.14", so ">=3.15" would silently resolve to a stable 3.14 and
+          # test nothing. Naming the series lets uv fetch the 3.15 pre-release.
+          python-version: ${{ matrix.python-version }}
+
+      - name: Resolve + install on the next Python (fresh, ignoring the pinned lock)
+        # --upgrade, NOT --locked: the committed lock has no wheels for the next
+        # Python. A fresh resolve pulls the newest versions that support it; a
+        # dependency with no compatible release is exactly the signal we want.
+        run: uv sync --group dev --upgrade
+
+      - name: Assert the leg actually runs its matrix version
+        run: |
+          uv run python -c "
+          import sys
+          want = '${{ matrix.python-version }}'
+          got = '.'.join(map(str, sys.version_info[:2]))
+          assert got == want, f'requested {want} but running {got} (uv did not provision the pre-release)'
+          print('interpreter OK:', sys.version)
+          "
+
+      - name: Run tests
+        run: uv run pytest -m "not slow" -q
