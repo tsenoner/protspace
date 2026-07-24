@@ -13,12 +13,8 @@ Usage:
 
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib  # Python < 3.11
 
 SCRIPT_DIR = Path(__file__).parent
 TOML_PATH = SCRIPT_DIR / "datasets.toml"
