@@ -174,7 +174,7 @@ src/protspace/
 ├── utils/
 │   ├── __init__.py             # Lazy exports: REDUCERS dict, reducer constants
 │   ├── constants.py            # DimensionReductionConfig, method name constants
-│   ├── reducers.py             # All DR method implementations + annoy fallback
+│   ├── reducers.py             # All DR method implementations
 │   ├── add_annotation_style.py # Annotation color/style utilities
 │   └── arrow_reader.py         # Parquet/Arrow reading helpers
 ├── analysis/                   # Query/reference classification
@@ -217,7 +217,6 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 - **UniProt ID validation:** `uniprot_retriever.py` pre-filters identifiers with a UniProt accession regex — non-matching IDs (e.g., `NCBI|...`, `sp|P12345|NAME`) are skipped with a summary warning. Identifiers must be bare accessions (e.g., `P12345`, `A0A2P1BSS8`). Inactive entries are resolved via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc.
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
 - **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
-- **Annoy fallback:** `reducers.py` includes a lazy annoy health check. On platforms where annoy is broken (e.g., macOS ARM64 segfaults), it monkey-patches pacmap to use sklearn `NearestNeighbors` instead. The check only runs when PaCMAP/LocalMAP are first used.
 - **Config validation:** `DimensionReductionConfig` (frozen dataclass in `utils/constants.py`) validates all parameters on init.
 - **Reducer registry:** `REDUCERS` dict in `utils/__init__.py` maps method names to reducer classes (lazy-loaded).
 - **Logging:** `setup_logging()` in `cli/app.py` uses a tqdm-aware handler to avoid garbling progress bars. Third-party loggers (`urllib3`, `requests`) are capped at WARNING even with `-vv`.
@@ -320,7 +319,7 @@ Located in `notebooks/`:
 
 ## Dependencies
 
-**Core:** h5py, scikit-learn, umap-learn, pacmap (includes annoy), numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich, protlabel (workspace member)
+**Core:** h5py, scikit-learn, umap-learn, pacmap, numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich, protlabel (workspace member)
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar
 
