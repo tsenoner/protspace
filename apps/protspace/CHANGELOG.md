@@ -1,6 +1,54 @@
 # CHANGELOG
 
 
+## v4.9.0 (2026-07-24)
+
+### Chores
+
+- **protspace**: Drop duplicate deps and drifting version strings
+  ([#376](https://github.com/tsenoner/protspace/pull/376),
+  [`70b54f9`](https://github.com/tsenoner/protspace/commit/70b54f97867115949821482ee9fcdf12eb5b1ea6))
+
+- **protspace**: Retire the legacy Dash container image
+  ([#374](https://github.com/tsenoner/protspace/pull/374),
+  [`4c36e5d`](https://github.com/tsenoner/protspace/commit/4c36e5ddead514a991a64ac70a7df9c136dd2b60))
+
+### Continuous Integration
+
+- **protspace**: Drop the redundant root .python-version
+  ([#382](https://github.com/tsenoner/protspace/pull/382),
+  [`f93f9c6`](https://github.com/tsenoner/protspace/commit/f93f9c6a51e8ac248bda64d91aa51cd8de7e21ad))
+
+- **protspace**: Test Python 3.12-3.14, pin interpreters, add 3.15 canary
+  ([#382](https://github.com/tsenoner/protspace/pull/382),
+  [`f93f9c6`](https://github.com/tsenoner/protspace/commit/f93f9c6a51e8ac248bda64d91aa51cd8de7e21ad))
+
+### Documentation
+
+- **protspace**: Clarify why the ruff target-version pin is load-bearing
+  ([#382](https://github.com/tsenoner/protspace/pull/382),
+  [`f93f9c6`](https://github.com/tsenoner/protspace/commit/f93f9c6a51e8ac248bda64d91aa51cd8de7e21ad))
+
+- **protspace**: Correct drifting facts in CLAUDE.md and installation docs
+  ([#377](https://github.com/tsenoner/protspace/pull/377),
+  [`fc88c03`](https://github.com/tsenoner/protspace/commit/fc88c037c2c54b6bae55b7013b230a5cb122db4d))
+
+### Features
+
+- **protspace**: Require Python >=3.12 ([#382](https://github.com/tsenoner/protspace/pull/382),
+  [`f93f9c6`](https://github.com/tsenoner/protspace/commit/f93f9c6a51e8ac248bda64d91aa51cd8de7e21ad))
+
+- **protspace**: Require Python >=3.12, fix the CI version matrix, add a future-Python canary
+  ([#382](https://github.com/tsenoner/protspace/pull/382),
+  [`f93f9c6`](https://github.com/tsenoner/protspace/commit/f93f9c6a51e8ac248bda64d91aa51cd8de7e21ad))
+
+### Refactoring
+
+- **protspace**: Adopt py312 idioms unmasked by the ruff bump
+  ([#382](https://github.com/tsenoner/protspace/pull/382),
+  [`f93f9c6`](https://github.com/tsenoner/protspace/commit/f93f9c6a51e8ac248bda64d91aa51cd8de7e21ad))
+
+
 ## v4.8.2 (2026-07-21)
 
 ### Bug Fixes
