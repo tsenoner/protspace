@@ -2,7 +2,7 @@
 
 Python package for dimensionality reduction of protein language model (pLM) embeddings, with annotation retrieval and data export for interactive visualization at [protspace.app](https://protspace.app).
 
-- **Python:** >=3.10
+- **Python:** >=3.12
 - **License:** MIT
 - **PyPI:** `pip install protspace`
 - **GitHub:** https://github.com/tsenoner/protspace
@@ -334,7 +334,7 @@ Located in `notebooks/`:
 
 - **Logging:** Configure once via `setup_logging()` in `cli/app.py`. Library modules use `logger = logging.getLogger(__name__)` only — no `logging.basicConfig()`.
 - **Imports:** src-layout (`src/protspace/`; `protlabel` at `packages/protlabel/src/`). Tests import from `protspace.*` / `src.protspace.*` and `protlabel.*`.
-- **Linting:** ruff with py310 target, 88 char line length. Run `ruff check src/ packages/ tests/`.
+- **Linting:** ruff with py312 target, 88 char line length. Run `ruff check src/ packages/ tests/`.
 - **Versioning:** python-semantic-release via `pyproject.toml`, lock-step across `protspace` + `protlabel`. Versions in `pyproject.toml`, `packages/protlabel/pyproject.toml`, and `src/protspace/__init__.py`.
 - **Build:** hatchling backend; uv workspace (`uv build --all-packages`).
 - **Git workflow:** Always create a feature branch and open a PR — never push directly to `main`.

@@ -5,7 +5,7 @@ description = "Prepare protein language model (pLM) embeddings for interactive e
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "h5py>=3.12.1",
     "scikit-learn>=1.6.1",
@@ -113,7 +113,10 @@ filterwarnings = [
 
 
 [tool.ruff]
-target-version = "py310"
+# Explicit target matching requires-python (AGENTS.md convention). Load-bearing,
+# not just documentation: the nested protlabel member has no own [tool.ruff], so
+# ruff lints packages/ against this ancestor config.
+target-version = "py312"
 line-length = 88
 
 [tool.ruff.lint]

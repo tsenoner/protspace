@@ -5,6 +5,13 @@ name: protspace CI (Python)
 # path-filters to protspace changes. Run steps use working-directory: apps/protspace;
 # uv detects the workspace root and uses the root lock — which is why uv.lock is in
 # the paths filter, since a dependency bump reaches protspace only through that file.
+#
+# Interpreter selection: every job pins Python via setup-uv's `python-version`
+# input (which sets UV_PYTHON) and does NOT use actions/setup-python. This is
+# deliberate — see the `test` job's "Assert" step. The shared root lock declares
+# requires-python ">=3.12" (apps/prep forces the floor), so an interpreter below
+# 3.12 handed to `uv sync` is silently discarded in favour of the system Python.
+# Pinning through uv makes the requested version the one uv actually provisions.
 
 on:
   push:
@@ -33,13 +40,12 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version-file: 'apps/protspace/pyproject.toml'
+          # Pin the interpreter at the requires-python floor so lint runs on a
+          # known version, not whatever the runner image last shipped.
+          python-version: '3.12'
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
 
       - name: Ruff check
         run: uv run ruff check src/ packages/ tests/
@@ -50,8 +56,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Don't cancel the other legs when one Python version fails — we want to
+      # see which versions break, not just the first.
+      fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        # Floor (requires-python) → newest released Python. Add a version here
+        # when it ships; the future-Python canary warns before it does.
+        python-version: ['3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v6
 
@@ -59,13 +70,23 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
-
-      - uses: actions/setup-python@v6
-        with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
+
+      - name: Assert the leg actually runs its matrix version
+        # Guards against silent interpreter substitution: if uv ever falls back
+        # to a different Python than the matrix requested, fail loudly here
+        # instead of reporting green coverage for a version that never ran.
+        run: |
+          uv run python -c "
+          import sys
+          want = '${{ matrix.python-version }}'
+          got = '.'.join(map(str, sys.version_info[:2]))
+          assert got == want, f'matrix requested {want} but tests ran on {got}'
+          print('interpreter OK:', sys.version)
+          "
 
       - name: Run tests
         run: uv run pytest -m "not slow" -q

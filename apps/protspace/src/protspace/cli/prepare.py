@@ -6,7 +6,7 @@ import logging
 import sys
 import time
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -349,7 +349,7 @@ def prepare(
     Comma-separated args (-e, -m, -a) must not contain spaces.
     """
     t_start = time.monotonic()
-    ts_start = datetime.now(timezone.utc)
+    ts_start = datetime.now(UTC)
 
     if not input and not query:
         raise typer.BadParameter(
@@ -671,7 +671,7 @@ def _write_run_log(
     """
     import protspace
 
-    ts_end = datetime.now(timezone.utc)
+    ts_end = datetime.now(UTC)
     n_projections = len(pipeline_config.methods) * n_embedding_sets
     rp = asdict(pipeline_config.reducer_params)
     ec = asdict(embed_config)
