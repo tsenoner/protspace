@@ -1,6 +1,6 @@
 # What is ProtSpace?
 
-**ProtSpace** is a browser-based tool for exploring protein language model (pLM) embeddings. It maps the embedding space — not a sequence-similarity network — to reveal relationships that sequence similarity misses, letting you overlay biological annotations and turn high-dimensional protein data into testable hypotheses. Nothing is uploaded.
+**ProtSpace** is a browser-based tool for exploring protein language model (pLM) embeddings. It maps the embedding space, not a sequence-similarity network, to reveal relationships that sequence similarity misses, letting you overlay biological annotations and turn high-dimensional protein data into testable hypotheses. Bundles you explore are never uploaded.
 
 ## Why Use ProtSpace?
 
@@ -16,7 +16,7 @@ Protein language models (like ProtT5, ESM2, Ankh) create embeddings that capture
 | Feature              | Description                                                                |
 | -------------------- | -------------------------------------------------------------------------- |
 | **No Installation**  | Runs entirely in your browser at [protspace.app](https://protspace.app)    |
-| **Privacy-First**    | Your data never leaves your computer - all processing is client-side       |
+| **Privacy-First**    | Exploring a `.parquetbundle` is fully client-side, the file stays local    |
 | **Multiple Views**   | Compare several dimensionality-reduction views of the same embedding space |
 | **Rich Annotations** | Color by UniProt, InterPro, Taxonomy, or custom expert annotations         |
 | **3D Structures**    | View protein structures from the AlphaFold Database                        |
@@ -30,9 +30,12 @@ Protein language models (like ProtT5, ESM2, Ankh) create embeddings that capture
 
 ## Privacy and Security
 
-ProtSpace processes everything locally in your browser:
+Exploring a `.parquetbundle` happens entirely in your browser:
 
-- **No uploads**: Files never leave your computer
+- **No uploads**: Your bundle is parsed and rendered locally and never leaves your computer
+- **One exception**: Dropping a `.fasta` sends those sequences to the ProtSpace prep backend, which
+  computes the embeddings a browser cannot, see
+  [Is my data uploaded to a server?](/guide/faq#is-my-data-uploaded-to-a-server)
 - **No tracking**: We don't collect any usage data
 - **Open source**: Fully transparent [codebase on GitHub](https://github.com/tsenoner/protspace)
 
@@ -46,7 +49,7 @@ ProtSpace processes everything locally in your browser:
 
 ## Performance
 
-ProtSpace can handle datasets with **570,000+ proteins** (full Swiss-Prot scale) directly in your browser without server uploads.
+ProtSpace can handle datasets with **570,000+ proteins** (full Swiss-Prot scale) directly in your browser, with no server rendering the data for you.
 
 ## Next Steps
 

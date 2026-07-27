@@ -1,13 +1,13 @@
 /**
  * Docs-only long-form content for the annotation reference page.
  *
- * This module is consumed ONLY by `generate-annotations.mts` at build time — it is never imported
+ * This module is consumed ONLY by `generate-annotations.mts` at build time, it is never imported
  * by the frontend, so the detailed prose here does not ship in the app bundle. The short popover
  * text and the runtime metadata live in the canonical registry
  * (`packages/utils/src/visualization/annotation-metadata.ts`); this file ADDS the deeper
  * explanation and an authoritative source link for the documentation site only.
  *
- * Keep keys in sync with the registry's column names — `generate-annotations.mts --check` fails the
+ * Keep keys in sync with the registry's column names, `generate-annotations.mts --check` fails the
  * build if a key here does not match a known column. Content is researched against primary sources
  * (model papers, UniProt/InterPro/NCBI/TED documentation); each entry's `detailsMarkdown` ends with
  * a "See […]" link to that source.
@@ -30,7 +30,7 @@ export const SOURCE_INTROS: Partial<Record<AnnotationSource, string>> = {
   Biocentral:
     'Biocentral columns are machine-learning predictions served by the [Biocentral API](https://biocentral.rostlab.org) (Rost lab, TUM). ProtSpace fetches the protein sequence from UniProt, submits it to the Biocentral models, and stores the returned per-protein prediction; all four columns are flagged ⚡ Predicted to distinguish them from experimental annotations. The underlying models (LightAttention, TMbed) take protein language model embeddings (ProtT5) as input rather than multiple sequence alignments, so predictions are available for any sequence regardless of homology to characterized proteins.',
   UniProt:
-    'These columns come from the UniProt Knowledgebase (UniProtKB), retrieved by ProtSpace through the [UniProt REST API](https://rest.uniprot.org) and attached to each protein as an annotation column. They cover entry identity and curation status (gene name, reviewed, annotation score, protein existence), sequence properties (length, fragment), high-level classification (keywords, protein family, subcellular location, PDB structure availability), and two standardized function ontologies — Enzyme Commission (EC) numbers and Gene Ontology (GO) terms. Where an annotation carries supporting evidence, ProtSpace appends a UniProt evidence code after a pipe (`|`), ranked from experimental (`EXP`) down to electronically inferred (`IEA`) and drawn from a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences).',
+    'These columns come from the UniProt Knowledgebase (UniProtKB), retrieved by ProtSpace through the [UniProt REST API](https://rest.uniprot.org) and attached to each protein as an annotation column. They cover entry identity and curation status (gene name, reviewed, annotation score, protein existence), sequence properties (length, fragment), high-level classification (keywords, protein family, subcellular location, PDB structure availability), and two standardized function ontologies, Enzyme Commission (EC) numbers and Gene Ontology (GO) terms. Where an annotation carries supporting evidence, ProtSpace appends a UniProt evidence code after a pipe (`|`), ranked from experimental (`EXP`) down to electronically inferred (`IEA`) and drawn from a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences).',
   InterPro:
     '[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database\'s own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.',
   Taxonomy:
@@ -121,17 +121,17 @@ export const ANNOTATION_DETAILS: Record<string, AnnotationDetail> = {
   // --- UniProt: function ontologies (EC / GO) ---
   go_bp: {
     detailsMarkdown:
-      'Biological Process is one of the three orthogonal aspects of the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/), capturing the larger biological objective a gene product contributes to — broad programmes such as "signal transduction" or "DNA repair" accomplished by ordered assemblies of molecular functions. Terms come from a controlled vocabulary organised as a directed acyclic graph, so a term can have several more-general parents and a protein is typically annotated to several BP terms of differing granularity. ProtSpace strips the aspect prefix and keeps the term name plus its evidence code, joining multiple terms with `;` (e.g. `apoptotic process|IDA;signal transduction|IEA`); evidence ranges from experimental (EXP, IDA, IMP) to computational and electronic (ISS, IEA).',
+      'Biological Process is one of the three orthogonal aspects of the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/), capturing the larger biological objective a gene product contributes to, broad programmes such as "signal transduction" or "DNA repair" accomplished by ordered assemblies of molecular functions. Terms come from a controlled vocabulary organised as a directed acyclic graph, so a term can have several more-general parents and a protein is typically annotated to several BP terms of differing granularity. ProtSpace strips the aspect prefix and keeps the term name plus its evidence code, joining multiple terms with `;` (e.g. `apoptotic process|IDA;signal transduction|IEA`); evidence ranges from experimental (EXP, IDA, IMP) to computational and electronic (ISS, IEA).',
     sourceUrl: 'https://geneontology.org/docs/ontology-documentation/',
   },
   go_cc: {
     detailsMarkdown:
-      'Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing where in the cell a gene product is located — subcellular structures such as membranes and organelles, macromolecular complexes, and (where relevant) the extracellular environment. Like the other aspects it is a directed acyclic graph of controlled-vocabulary terms, so localisations nest from general (e.g. "membrane") to specific (e.g. "mitochondrial inner membrane"). ProtSpace strips the aspect prefix and retains each term name with its evidence code, multiple terms separated by `;`; the strongest-to-weakest evidence ladder (EXP, HDA, IDA, TAS … IEA) lets you distinguish experimentally localised proteins from electronically inferred ones.',
+      'Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing where in the cell a gene product is located, subcellular structures such as membranes and organelles, macromolecular complexes, and (where relevant) the extracellular environment. Like the other aspects it is a directed acyclic graph of controlled-vocabulary terms, so localisations nest from general (e.g. "membrane") to specific (e.g. "mitochondrial inner membrane"). ProtSpace strips the aspect prefix and retains each term name with its evidence code, multiple terms separated by `;`; the strongest-to-weakest evidence ladder (EXP, HDA, IDA, TAS … IEA) lets you distinguish experimentally localised proteins from electronically inferred ones.',
     sourceUrl: 'https://geneontology.org/docs/ontology-documentation/',
   },
   go_mf: {
     detailsMarkdown:
-      'Molecular Function is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing the molecular-level activity a gene product performs — for example "catalytic activity", "protein kinase activity", or "transcription factor binding" — independent of where or when it acts. Terms are drawn from a controlled vocabulary structured as a directed acyclic graph, so a protein usually carries several MF terms spanning general and specific activities. ProtSpace strips the aspect prefix and keeps each term name with its evidence code, joining multiple terms with `;` (e.g. `ATP binding|IDA;protein serine/threonine kinase activity|IEA`); MF annotations frequently mirror the catalytic activity captured by the EC number for enzymes.',
+      'Molecular Function is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing the molecular-level activity a gene product performs, for example "catalytic activity", "protein kinase activity", or "transcription factor binding", independent of where or when it acts. Terms are drawn from a controlled vocabulary structured as a directed acyclic graph, so a protein usually carries several MF terms spanning general and specific activities. ProtSpace strips the aspect prefix and keeps each term name with its evidence code, joining multiple terms with `;` (e.g. `ATP binding|IDA;protein serine/threonine kinase activity|IEA`); MF annotations frequently mirror the catalytic activity captured by the EC number for enzymes.',
     sourceUrl: 'https://geneontology.org/docs/ontology-documentation/',
   },
 
@@ -191,7 +191,7 @@ export const ANNOTATION_DETAILS: Record<string, AnnotationDetail> = {
   // --- Taxonomy ---
   root: {
     detailsMarkdown:
-      "The root sits above the three-domain system and separates cellular life (organisms with a cell — Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).",
+      "The root sits above the three-domain system and separates cellular life (organisms with a cell, Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).",
     sourceUrl: 'https://www.ncbi.nlm.nih.gov/taxonomy',
   },
   domain: {
@@ -201,7 +201,7 @@ export const ANNOTATION_DETAILS: Record<string, AnnotationDetail> = {
   },
   kingdom: {
     detailsMarkdown:
-      "Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage — many bacterial and archaeal entries have no formal kingdom — so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.",
+      "Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage, many bacterial and archaeal entries have no formal kingdom, so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.",
     sourceUrl: 'https://www.uniprot.org/help/taxonomy',
   },
   phylum: {
@@ -238,7 +238,7 @@ export const ANNOTATION_DETAILS: Record<string, AnnotationDetail> = {
   // --- TED (structure-based domains) ---
   ted_domains: {
     detailsMarkdown:
-      "TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers — Chainsaw, Merizo, and UniDoc — and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `unclassified|{plddt}` when no CATH superfamily is assigned. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.",
+      "TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers, Chainsaw, Merizo, and UniDoc, and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `unclassified|{plddt}` when no CATH superfamily is assigned. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.",
     sourceUrl: 'https://doi.org/10.1126/science.adq4946',
   },
 };

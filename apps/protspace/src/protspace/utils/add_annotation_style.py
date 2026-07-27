@@ -33,7 +33,7 @@ _SETTINGS_KEYS = {
 # Built-in palette IDs, mirrored from the web frontend — the source of truth:
 # packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
 # numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
-# categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
+# categorical id; numeric gradients are chosen in the UI (see https://protspace.app/docs/guide/styling).
 # Keep this list in sync with those files.
 _CATEGORICAL_PALETTE_IDS = frozenset(
     {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
@@ -158,8 +158,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
     The CLI styling model is categorical-only, but the web frontend bins numeric
     columns into gradient ranges — so per-value colors/shapes/pins set via the
     CLI silently do not apply. Naming the column + its distinct-value count makes
-    that visible instead of a surprise. See ``docs/styling.md`` (Numeric
-    annotations).
+    that visible instead of a surprise. See https://protspace.app/docs/guide/styling#numeric-annotations.
     """
     from protspace.stats.annotation_select import _is_missing, _is_numeric
 
@@ -172,7 +171,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
         "--generate-template lists every number as its own category. Pre-bin it into "
         "categorical range labels (e.g. '100-200') or color it as a continuous "
         "gradient in the web app (https://protspace.app/explore). "
-        "See docs/styling.md#numeric-annotations.",
+        "See https://protspace.app/docs/guide/styling#numeric-annotations.",
         annotation,
         len(cleaned),
     )
@@ -183,8 +182,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
     """Warn when a categorical column's ``selectedPaletteId`` is not a categorical id.
 
     For a categorical column ``selectedPaletteId`` picks the palette, and the frontend
-    silently resets a gradient or unknown id to ``kellys`` (see ``docs/styling.md`` —
-    Color palettes). Naming the offending id makes that reset visible instead of a
+    silently resets a gradient or unknown id to ``kellys`` (see https://protspace.app/docs/guide/styling#color-palettes). Naming the offending id makes that reset visible instead of a
     surprise. A numeric column instead reads ``selectedPaletteId`` as its gradient, so
     callers skip this check for numeric columns.
     """
@@ -199,7 +197,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
         reason = f"'{palette}' is not a known palette"
     logger.warning(
         "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
-        "'kellys'. Categorical palettes: %s. See docs/styling.md#color-palettes.",
+        "'kellys'. Categorical palettes: %s. See https://protspace.app/docs/guide/styling#color-palettes.",
         annotation,
         reason,
         ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
@@ -358,7 +356,7 @@ def add_annotation_styles_bundle(
 
         all_values = set(value_frequencies.get(annotation, {}))
         # selectedPaletteId is the categorical palette; a numeric column reads it as
-        # its gradient instead (a gradient id applies — see docs/styling.md), so the
+        # its gradient instead (a gradient id applies — see https://protspace.app/docs/guide/styling), so the
         # categorical-palette check only runs when the column is not numeric.
         if not _warn_if_numeric(annotation, all_values):
             _warn_if_bad_palette(annotation, styles)

@@ -18,7 +18,7 @@ ProtSpace maps the **embedding space** of protein language models (pLMs) to reve
 
 ## 🌐 Try Online
 
-**[ProtSpace web app](https://protspace.app/explore)**: Fast 2D explorer optimized for large datasets — drag & drop `.parquetbundle` files ([source](https://github.com/tsenoner/protspace))
+**[ProtSpace web app](https://protspace.app/explore)**: fast 2D explorer optimized for large datasets — drag & drop the `.parquetbundle` this package produces and it is parsed in your browser, nothing uploaded. Small FASTA files can also be dropped directly and prepared for you. Source lives in the same repo under [`apps/web/`](https://github.com/tsenoner/protspace/tree/main/apps/web).
 
 ## 🚀 Google Colab Notebooks
 
@@ -57,7 +57,7 @@ protspace prepare -i species_a.h5:prot_t5 -i species_b.h5:prot_t5 -m umap2 -o ou
 
 ### 2. Explore results
 
-Upload the generated `.parquetbundle` file at [protspace.app/explore](https://protspace.app/explore).
+Open the generated `.parquetbundle` at [protspace.app/explore](https://protspace.app/explore) — it is read locally in your browser.
 
 ### 3. Power-user workflow (individual steps)
 
@@ -70,13 +70,13 @@ protspace bundle -p projections/ -a annotations.parquet -s statistics.parquet -o
 protspace transfer -b output.parquetbundle -e embeddings/prot_t5.h5 -t superfamily -o transferred.parquetbundle   # optional: fill gaps via EAT
 ```
 
-Or compute quality metrics inline during `prepare` with `--stats` (opt-in): annotation-based cluster-validity + faithfulness per projection. See the [CLI Reference](docs/cli.md#projection-statistics---stats).
+Or compute quality metrics inline during `prepare` with `--stats` (opt-in): annotation-based cluster-validity + faithfulness per projection. See the [CLI Reference](https://protspace.app/docs/guide/python-cli).
 
-Fill missing annotation values from the nearest annotated protein in embedding space with [`protspace transfer`](docs/cli.md#protspace-transfer) — Embedding Annotation Transfer (EAT).
+Fill missing annotation values from the nearest annotated protein in embedding space with [`protspace transfer`](https://protspace.app/docs/guide/python-cli) — Embedding Annotation Transfer (EAT).
 
 ## 📊 Example Output
 
-![2D Example](docs/protspace_example.png)
+![2D Example](https://raw.githubusercontent.com/tsenoner/protspace/main/apps/protspace/docs/protspace_example.png)
 
 ## ✨ Annotations
 
@@ -89,9 +89,25 @@ protspace prepare -i data.h5 -a default,interpro,kingdom -m pca2  # mix groups +
 
 ## 📖 Documentation
 
-- [Annotation Reference](docs/annotations.md) — full list of annotations, groups, data sources, output formats
-- [Annotation Styling](docs/styling.md) — custom colors, shapes, sort modes, and the `--generate-template` workflow
-- [CLI Reference](docs/cli.md) — command options, method parameters, file formats
+Full documentation lives at **[protspace.app/docs](https://protspace.app/docs/)**:
+
+- [CLI Reference](https://protspace.app/docs/guide/python-cli) — commands, options, method parameters
+- [Annotation Reference](https://protspace.app/docs/guide/annotations) — every annotation, its group, data source, and output format
+- [Annotation Styling](https://protspace.app/docs/guide/styling) — custom colors, shapes, sort modes, and the `--generate-template` workflow
+- [Bundle Format](https://protspace.app/docs/guide/data-format) — what is inside a `.parquetbundle`
+
+## 🧩 Where this fits
+
+`protspace` is the data-preparation half of ProtSpace. It lives in the
+[protspace monorepo](https://github.com/tsenoner/protspace) alongside the web explorer:
+
+| Piece                                                                                | What it does                                                    |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| **`protspace`** (this package, [`apps/protspace/`](https://github.com/tsenoner/protspace/tree/main/apps/protspace)) | Embed, project, annotate, bundle — produces `.parquetbundle`     |
+| **Web explorer** ([`apps/web/`](https://github.com/tsenoner/protspace/tree/main/apps/web))                          | Opens a `.parquetbundle` at [protspace.app/explore](https://protspace.app/explore) |
+
+Issues and pull requests for both go to
+[github.com/tsenoner/protspace](https://github.com/tsenoner/protspace/issues).
 
 ## 📝 Citation
 

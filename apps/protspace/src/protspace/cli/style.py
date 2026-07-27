@@ -26,7 +26,10 @@ def style(
         str | None,
         typer.Option(
             "--annotation-styles",
-            help="Styles as inline JSON string or path to JSON file. See docs/styling.md for format.",
+            help=(
+                "Styles as inline JSON string or path to JSON file. "
+                "See https://protspace.app/docs/guide/styling for format."
+            ),
         ),
     ] = None,
     dump_settings: Annotated[

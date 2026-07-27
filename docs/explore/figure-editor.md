@@ -1,6 +1,6 @@
 # Figure Editor
 
-The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization — all in a single interface.
+The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
 
 ![Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom](./images/figure-editor-overview.png)
 
@@ -11,11 +11,11 @@ The Figure Editor is a full-screen tool for creating publication-ready figures f
 
 The editor opens as a full-screen modal with a **preview canvas** on the left and a **settings sidebar** on the right.
 
-To export immediately with the last-used settings, use **Quick Export** instead — it skips the editor.
+To export immediately with the last-used settings, use **Quick Export** instead, it skips the editor.
 
 ## Journal Presets
 
-![Journal preset grid in the Figure Editor sidebar — Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets.png)
+![Journal preset grid in the Figure Editor sidebar, Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets.png)
 
 The presets grid configures dimensions and DPI for specific journals:
 
@@ -23,8 +23,8 @@ The presets grid configures dimensions and DPI for specific journals:
 | ------------- | ------- | --- | ---------- |
 | Nature 1 col  | 89 mm   | 300 | 247 mm     |
 | Nature 2 col  | 183 mm  | 300 | 247 mm     |
-| Science 1 col | 57 mm   | 300 | —          |
-| Science 2 col | 121 mm  | 300 | —          |
+| Science 1 col | 57 mm   | 300 | -          |
+| Science 2 col | 121 mm  | 300 | -          |
 | Cell 1 col    | 85 mm   | 300 | 225 mm     |
 | Cell 1.5 col  | 114 mm  | 300 | 225 mm     |
 | Cell 2 col    | 174 mm  | 300 | 225 mm     |
@@ -34,7 +34,7 @@ The presets grid configures dimensions and DPI for specific journals:
 | PLOS 2 col    | 190 mm  | 300 | 222 mm     |
 | Slide 16:9    | 1920 px | 96  | 1080 px    |
 | Slide 4:3     | 1440 px | 96  | 1080 px    |
-| Flexible      | 2048 px | 300 | —          |
+| Flexible      | 2048 px | 300 | -          |
 
 When you apply a journal preset:
 
@@ -65,7 +65,7 @@ Each has both a slider for quick adjustment and an input for precise values. The
 | **ON**   | Rebuilds pixels at the new resolution  | Pixels change, mm follows       |
 | **OFF**  | Only metadata changes; pixels stay put | Pixels change, mm follows       |
 
-Use **Resample OFF** when you've already produced a figure at the right pixel count and just want to tag it with a different DPI for print sizing — no re-rendering.
+Use **Resample OFF** when you've already produced a figure at the right pixel count and just want to tag it with a different DPI for print sizing, no re-rendering.
 
 When Resample is OFF and you click a preset, the editor auto-flips it back ON (a small note flashes) so the preset can apply.
 
@@ -77,7 +77,7 @@ Switch the Width/Height inputs between **px**, **mm**, **in**, **cm**. Internall
 
 The vertical chain icon between Width and Height links the two values. When **locked** (default), editing one rescales the other to preserve the aspect ratio. Click the chain to unlink.
 
-The chain is automatically broken and disabled while a journal preset pins width — relinking is meaningless when one side cannot move. Switching to Flexible re-enables it.
+The chain is automatically broken and disabled while a journal preset pins width, relinking is meaningless when one side cannot move. Switching to Flexible re-enables it.
 
 ## Legend
 
@@ -100,19 +100,19 @@ The font size input lets you type values in either **pt** (typographic points, w
 pt = px × 72 / DPI
 ```
 
-If you change DPI later, pt-entered sizes stay correct in physical terms — the px count rescales automatically.
+If you change DPI later, pt-entered sizes stay correct in physical terms, the px count rescales automatically.
 
 ### Legend positions
 
-- **Side positions** (right, left, top, bottom) — the legend occupies a dedicated strip alongside the plot. The plot area shrinks accordingly.
-- **Free** — the legend floats over the plot. Drag it anywhere on the canvas using the Select tool.
+- **Side positions** (right, left, top, bottom), the legend occupies a dedicated strip alongside the plot. The plot area shrinks accordingly.
+- **Free**, the legend floats over the plot. Drag it anywhere on the canvas using the Select tool.
 
 ### Legend rendering
 
-- **Underscore removal** — underscores in annotation names and category labels are replaced with spaces.
-- **Text wrapping** — long category labels wrap within their column width.
-- **Per-item shapes** — the legend renders each category's actual shape (circle, square, diamond, triangle-up/down, plus), matching the scatterplot.
-- **Corner positions** (tr, tl, br, bl) — available programmatically; the legend overlays the plot with a semi-transparent white background.
+- **Underscore removal**, underscores in annotation names and category labels are replaced with spaces.
+- **Text wrapping**, long category labels wrap within their column width.
+- **Per-item shapes**, the legend renders each category's actual shape (circle, square, diamond, triangle-up/down, plus), matching the scatterplot.
+- **Corner positions** (tr, tl, br, bl), available programmatically; the legend overlays the plot with a semi-transparent white background.
 
 ## Selecting items (canvas + sidebar)
 
@@ -134,11 +134,11 @@ The selected item is highlighted in the sidebar and gets resize/rotate handles o
 | **Escape**                    | Clear the selection (item stays)                  |
 | **× button on a sidebar row** | Remove that specific row, regardless of selection |
 
-While focus is inside an editable input (e.g. a label's text field), Delete/Backspace edit text as usual — they don't remove the overlay.
+While focus is inside an editable input (e.g. a label's text field), Delete/Backspace edit text as usual, they don't remove the overlay.
 
 ## Overlay tools
 
-![Figure Editor with three overlays placed: a red circle highlighting a protein cluster, an arrow pointing at the cluster, and a "Cluster A" label — sidebar shows the matching Overlays section](./images/figure-editor-overlays.png)
+![Figure Editor with three overlays placed: a red circle highlighting a protein cluster, an arrow pointing at the cluster, and a "Cluster A" label, sidebar shows the matching Overlays section](./images/figure-editor-overlays.png)
 
 The toolbar at the bottom of the preview switches between drawing tools.
 
@@ -174,8 +174,8 @@ Click to place a text label. Default text is "Label" and can be renamed in the s
 
 Creates a magnified view of a region. Two-phase workflow:
 
-1. **Draw the source rectangle** — drag to select the region you want to magnify
-2. **Draw the target rectangle** — drag to place where the magnified view should appear (its aspect ratio locks to the source)
+1. **Draw the source rectangle**, drag to select the region you want to magnify
+2. **Draw the target rectangle**, drag to place where the magnified view should appear (its aspect ratio locks to the source)
 
 After creation, the inset shows:
 
@@ -187,7 +187,7 @@ The connector logic auto-picks 2 of the 4 corner pairs based on the relative pos
 
 #### Geometric zoom (true vector-quality magnification)
 
-Insets are rendered as a **fresh WebGL pass scoped to the source's data domain** at the target rectangle's exact pixel size. Points keep native pixel size — the inset is not a raster crop-and-upscale, so quality keeps improving as the inset's pixel budget grows instead of plateauing at a fixed boost factor.
+Insets are rendered as a **fresh WebGL pass scoped to the source's data domain** at the target rectangle's exact pixel size. Points keep native pixel size, the inset is not a raster crop-and-upscale, so quality keeps improving as the inset's pixel budget grows instead of plateauing at a fixed boost factor.
 
 While you drag-resize an inset, redraws are throttled to the browser's animation frames. Very fast resizes reuse the last fresh render (slightly stretched) for instant feedback, then a fresh full-resolution render is computed once activity settles.
 
@@ -195,9 +195,9 @@ While you drag-resize an inset, redraws are throttled to the browser's animation
 
 Each inset has its own **Dot size** slider (0.5×–20×, default **2×**) that scales the rendered dot size inside the zoomed view, relative to the main plot:
 
-- **1×** — dots match the main plot's pixel size
-- **>1×** — dots are larger, useful when you've zoomed deep into a sparse region
-- **<1×** — dots are smaller
+- **1×**, dots match the main plot's pixel size
+- **>1×**, dots are larger, useful when you've zoomed deep into a sparse region
+- **<1×**, dots are smaller
 
 This affects the inset only, not the main plot.
 
@@ -216,8 +216,8 @@ All overlays default to black (`#000000`). Click the row to select it; click the
 
 ## Options
 
-- **Format** — toggle between PNG and PDF output
-- **Background** — white or transparent (PNG only; PDF always has a white background)
+- **Format**, toggle between PNG and PDF output
+- **Background**, white or transparent (PNG only; PDF always has a white background)
 
 ### PNG output
 
@@ -232,7 +232,7 @@ The PDF page size is computed exactly from the configured Width/Height in mm at 
 | Button         | Action                                                                                                                                                                               |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **New Figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. |
-| **Reset**      | Resets everything to defaults — dimensions, DPI, preset, legend, overlays, insets, format, background.                                                                               |
+| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background.                                                                                |
 | **Cancel**     | Closes the editor. Your current state is saved to localStorage.                                                                                                                      |
 | **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                              |
 
@@ -242,8 +242,8 @@ The Figure Editor saves your settings automatically so you can close and reopen 
 
 ### Where state is stored
 
-1. **localStorage** — saved on every close and export. Restored when you reopen the editor in the same browser.
-2. **Parquet bundle** — when you export a `.parquetbundle` with "Include legend settings" checked, the Figure Editor state is included. Anyone who loads the file gets your figure layout.
+1. **localStorage**, saved on every close and export. Restored when you reopen the editor in the same browser.
+2. **Parquet bundle**, when you export a `.parquetbundle` with "Include legend settings" checked, the Figure Editor state is included. Anyone who loads the file gets your figure layout.
 
 Priority on open: bundle settings > localStorage > defaults.
 
@@ -261,8 +261,8 @@ The editor records which projection and dimensionality (2D/3D) was active when o
 
 This means overlay positions (stored as normalized 0–1 coordinates over the plot area) may no longer align with the data. You can:
 
-- **Keep working** — overlays stay where they are
-- **Clear overlays** — remove stale overlays, keep the layout
+- **Keep working**, overlays stay where they are
+- **Clear overlays**, remove stale overlays, keep the layout
 
 ## Coordinate system
 

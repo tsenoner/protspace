@@ -112,15 +112,25 @@ describe('bundle utilities', () => {
       const bundle = createMockBundle(2);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 or 3 delimiters/,
+        /Expected 2 to 4 delimiters/,
       );
     });
 
-    it('should reject bundle with 4 delimiters (5 parts)', async () => {
+    it('should accept a 5-part (statistics) bundle past the delimiter guard', async () => {
       const bundle = createMockBundle(5);
 
+      // A --stats bundle (4 delimiters) is no longer a delimiter-count rejection;
+      // it proceeds to parquet parsing, which fails only because these are mocks.
+      await expect(extractRowsFromParquetBundle(bundle)).rejects.not.toThrow(
+        /Expected 2 to 4 delimiters/,
+      );
+    });
+
+    it('should reject bundle with 5 delimiters (6 parts)', async () => {
+      const bundle = createMockBundle(6);
+
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 or 3 delimiters/,
+        /Expected 2 to 4 delimiters/,
       );
     });
 
@@ -128,7 +138,7 @@ describe('bundle utilities', () => {
       const buffer = createMockParquetBuffer('no delimiter');
 
       await expect(extractRowsFromParquetBundle(buffer)).rejects.toThrow(
-        /Expected 2 or 3 delimiters/,
+        /Expected 2 to 4 delimiters/,
       );
     });
   });

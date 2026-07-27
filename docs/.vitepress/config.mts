@@ -23,8 +23,8 @@ export default defineConfig({
     },
   },
 
-  // Internal planning/spec notes — not part of the user-facing docs site.
-  srcExclude: ['superpowers/**'],
+  // Internal planning/spec notes and audit reports — not part of the user-facing docs site.
+  srcExclude: ['superpowers/**', 'audits/**'],
 
   head: [['link', { rel: 'icon', href: '/docs/favicon.svg' }]],
 
@@ -77,6 +77,7 @@ export default defineConfig({
           { text: 'Using Python CLI', link: '/guide/python-cli' },
           { text: 'Data Format Reference', link: '/guide/data-format' },
           { text: 'Annotation Reference', link: '/guide/annotations' },
+          { text: 'Annotation Styling', link: '/guide/styling' },
         ],
       },
       {

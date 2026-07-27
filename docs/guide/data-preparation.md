@@ -15,15 +15,40 @@ The Colab notebook converts protein embeddings into a visualization-ready `.parq
 
 ## Quickest path: drop a FASTA
 
-If your ProtSpace deployment runs the prep backend, you can skip the notebook
-entirely: drag a `.fasta` / `.fa` / `.fna` file (≤ 1500 sequences,
-≤ 2000 residues each) onto the Explore drop zone. The server will embed,
-project, annotate, and bundle, and the visualization opens automatically.
+If your ProtSpace deployment runs the prep backend, you can skip the notebook entirely: drag a
+`.fasta` / `.fa` / `.fna` file onto the Explore drop zone. The server embeds, projects, annotates,
+and bundles your sequences, and the visualization opens automatically.
 
-Behind the scenes this is the same pipeline as `protspace prepare -i seqs.fasta -e prot_t5 -m pca2,umap2`,
-with sensible defaults baked in. Use the notebook or the CLI for any non-default
-configuration (different embedder, additional projections, advanced annotation
-sources).
+Limits enforced on this path:
+
+| Limit                 | Value                    |
+| --------------------- | ------------------------ |
+| Sequences per file    | 20 minimum, 1500 maximum |
+| Residues per sequence | 2000                     |
+| Upload size           | 8 MB                     |
+| Job wall-clock time   | 420 seconds (7 minutes)  |
+
+Behind the scenes the service runs the same CLI subcommands you would run yourself: `protspace embed
+-e prot_t5` and `protspace annotate -a default` in parallel, then `protspace project -m pca2,umap2`,
+then `protspace bundle`. You get exactly the `PCA_2` and `UMAP_2` projections. Use the notebook or
+the CLI for any non-default configuration (different embedder, additional projections, other
+annotation sources).
+
+::: tip
+FASTA headers are normalized before embedding, so `sp|P12345|NAME_HUMAN` becomes `P12345`.
+:::
+
+::: warning Self-hosting
+There is no feature flag or capability probe, the drop zone always posts to `/api/prepare`. To
+enable this path on your own deployment you must run the
+[prep service](https://github.com/tsenoner/protspace/blob/main/apps/prep/README.md) and build the
+web app with `VITE_PREP_API_BASE` pointing at it. Without both, a FASTA drop fails with an upload
+error.
+:::
+
+Unlike `.parquetbundle` loading, this path uploads your sequences to a server. See
+[Importing Data](/explore/importing-data) for the full in-app flow, progress reporting, and error
+handling.
 
 ## Step 1: Get Protein Embeddings
 
@@ -62,17 +87,11 @@ For advanced users with custom embeddings, save them as an HDF5 file where each 
 
 ### Annotations
 
-Choose which annotations to include from three sources:
+Choose which annotations to include. They come from five sources, UniProt, InterPro, Taxonomy, TED,
+and Biocentral (predicted).
 
-| Source         | Examples                                                                                              |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| **UniProt**    | protein_families, ec, go_bp, cc_subcellular_location, ...                                             |
-| **InterPro**   | pfam, cath, panther, smart, superfamily, ...                                                          |
-| **Taxonomy**   | kingdom, phylum, class, order, family, genus, species                                                 |
-| **TED**        | ted_domains (AlphaFold structure-based domain annotations)                                            |
-| **Biocentral** | predicted_subcellular_location, predicted_membrane, predicted_signal_peptide, predicted_transmembrane |
-
-See the [ProtSpace Python package](https://github.com/tsenoner/protspace) for the complete list of available annotations per source.
+See the [Annotations reference](/guide/annotations) for the complete per-column catalogue: what each
+annotation means, where it comes from, and which ones are predicted.
 
 ::: tip
 First-time taxonomy selection downloads a database (~1 minute).

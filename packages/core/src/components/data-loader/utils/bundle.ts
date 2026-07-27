@@ -56,9 +56,16 @@ function readFormatVersion(metadata: FileMetaData): number {
 /**
  * Extract rows and optional settings from a parquetbundle.
  *
- * Supports two formats:
- * - 2 delimiters (3 parts): Original format without settings
- * - 3 delimiters (4 parts): Extended format with settings
+ * Positional layout is core(3) + settings? + statistics?:
+ * - 2 delimiters (3 parts): core data only
+ * - 3 delimiters (4 parts): core + settings
+ * - 4 delimiters (5 parts): core + settings + statistics (`protspace --stats`)
+ *
+ * A stats bundle written without settings still emits a zero-byte settings slot
+ * so statistics stay at part 5, so branch on the slot's emptiness, not the raw
+ * part count. The statistics part is not sliced or read here: in-app rendering
+ * of that table is a separate follow-up, so a `--stats` bundle simply opens and
+ * renders like any other.
  */
 export async function extractRowsFromParquetBundle(
   arrayBuffer: ArrayBuffer,
@@ -66,16 +73,16 @@ export async function extractRowsFromParquetBundle(
   const uint8Array = new Uint8Array(arrayBuffer);
   const delimiterPositions = findBundleDelimiterPositions(uint8Array);
 
-  // Support both 2 delimiters (original) and 3 delimiters (with settings)
-  if (delimiterPositions.length !== 2 && delimiterPositions.length !== 3) {
+  if (delimiterPositions.length < 2 || delimiterPositions.length > 4) {
     throw new Error(
-      `Expected 2 or 3 delimiters in parquetbundle, found ${delimiterPositions.length}`,
+      `Expected 2 to 4 delimiters in parquetbundle, found ${delimiterPositions.length}`,
     );
   }
 
-  const hasSettingsPart = delimiterPositions.length === 3;
+  const hasSettingsPart = delimiterPositions.length >= 3;
+  const hasStatisticsPart = delimiterPositions.length === 4;
 
-  // Extract the three required parts
+  // Extract the three required core parts
   let part1: ArrayBuffer | null = uint8Array.subarray(0, delimiterPositions[0]).slice().buffer;
   let part2: ArrayBuffer | null = uint8Array
     .subarray(delimiterPositions[0] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[1])
@@ -88,9 +95,14 @@ export async function extractRowsFromParquetBundle(
     part3 = uint8Array
       .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length, delimiterPositions[2])
       .slice().buffer;
-    part4 = uint8Array
-      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length)
+    // Settings slot ends at the statistics delimiter when a 5th part follows.
+    const settingsEnd = hasStatisticsPart ? delimiterPositions[3] : uint8Array.length;
+    const settingsSlot = uint8Array
+      .subarray(delimiterPositions[2] + BUNDLE_DELIMITER_BYTES.length, settingsEnd)
       .slice().buffer;
+    // A zero-byte settings slot is the sentinel a stats-without-settings bundle
+    // writes; treat it as "no settings" instead of parsing empty bytes.
+    part4 = settingsSlot.byteLength > 0 ? settingsSlot : null;
   } else {
     part3 = uint8Array
       .subarray(delimiterPositions[1] + BUNDLE_DELIMITER_BYTES.length)

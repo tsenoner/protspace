@@ -1,11 +1,13 @@
 <!--
-  AUTO-GENERATED — do not edit by hand.
+  AUTO-GENERATED, do not edit by hand.
   Brief text + metadata: packages/utils/src/visualization/annotation-metadata.ts
   Detailed text + source links: docs/scripts/annotation-details.ts
   Regenerate: pnpm docs:annotations
 -->
 
 # Annotation Reference
+
+This page is the canonical reference for every annotation column ProtSpace ships: what each value means, how it is produced, and where it comes from. To learn how to _request_ annotations when you prepare a dataset, the `-a` groups, custom CSV columns, and the input requirements of each source, see [Using Python CLI](/guide/python-cli).
 
 ## Annotation Value Format (v2 Encoding)
 
@@ -24,7 +26,7 @@ Format version 2 is marked in the parquet metadata of the `selected_annotations`
 
 ## Sources
 
-ProtSpace annotations come from several sources. **Computational predictions** — from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation — what the value means, how it is produced, and what it looks like — with a link to the authoritative source.
+ProtSpace annotations come from several sources. **Computational predictions**, from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED), are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation, what the value means, how it is produced, and what it looks like, with a link to the authoritative source.
 
 ## Predicted (Biocentral)
 
@@ -64,7 +66,7 @@ From the same TMbed per-residue topology (H = transmembrane helix, B = transmemb
 
 ## UniProt
 
-These columns come from the UniProt Knowledgebase (UniProtKB), retrieved by ProtSpace through the [UniProt REST API](https://rest.uniprot.org) and attached to each protein as an annotation column. They cover entry identity and curation status (gene name, reviewed, annotation score, protein existence), sequence properties (length, fragment), high-level classification (keywords, protein family, subcellular location, PDB structure availability), and two standardized function ontologies — Enzyme Commission (EC) numbers and Gene Ontology (GO) terms. Where an annotation carries supporting evidence, ProtSpace appends a UniProt evidence code after a pipe (`|`), ranked from experimental (`EXP`) down to electronically inferred (`IEA`) and drawn from a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences).
+These columns come from the UniProt Knowledgebase (UniProtKB), retrieved by ProtSpace through the [UniProt REST API](https://rest.uniprot.org) and attached to each protein as an annotation column. They cover entry identity and curation status (gene name, reviewed, annotation score, protein existence), sequence properties (length, fragment), high-level classification (keywords, protein family, subcellular location, PDB structure availability), and two standardized function ontologies, Enzyme Commission (EC) numbers and Gene Ontology (GO) terms. Where an annotation carries supporting evidence, ProtSpace appends a UniProt evidence code after a pipe (`|`), ranked from experimental (`EXP`) down to electronically inferred (`IEA`) and drawn from a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences).
 
 ### `annotation_score` {#annotation_score}
 
@@ -112,7 +114,7 @@ This is the gene symbol UniProt designates as primary for the protein, typically
 
 Gene Ontology Biological Process terms, with evidence codes.
 
-Biological Process is one of the three orthogonal aspects of the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/), capturing the larger biological objective a gene product contributes to — broad programmes such as "signal transduction" or "DNA repair" accomplished by ordered assemblies of molecular functions. Terms come from a controlled vocabulary organised as a directed acyclic graph, so a term can have several more-general parents and a protein is typically annotated to several BP terms of differing granularity. ProtSpace strips the aspect prefix and keeps the term name plus its evidence code, joining multiple terms with `;` (e.g. `apoptotic process|IDA;signal transduction|IEA`); evidence ranges from experimental (EXP, IDA, IMP) to computational and electronic (ISS, IEA).
+Biological Process is one of the three orthogonal aspects of the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/), capturing the larger biological objective a gene product contributes to, broad programmes such as "signal transduction" or "DNA repair" accomplished by ordered assemblies of molecular functions. Terms come from a controlled vocabulary organised as a directed acyclic graph, so a term can have several more-general parents and a protein is typically annotated to several BP terms of differing granularity. ProtSpace strips the aspect prefix and keeps the term name plus its evidence code, joining multiple terms with `;` (e.g. `apoptotic process|IDA;signal transduction|IEA`); evidence ranges from experimental (EXP, IDA, IMP) to computational and electronic (ISS, IEA).
 
 ### `go_cc` {#go_cc}
 
@@ -120,7 +122,7 @@ Biological Process is one of the three orthogonal aspects of the [Gene Ontology]
 
 Gene Ontology Cellular Component terms, with evidence codes.
 
-Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing where in the cell a gene product is located — subcellular structures such as membranes and organelles, macromolecular complexes, and (where relevant) the extracellular environment. Like the other aspects it is a directed acyclic graph of controlled-vocabulary terms, so localisations nest from general (e.g. "membrane") to specific (e.g. "mitochondrial inner membrane"). ProtSpace strips the aspect prefix and retains each term name with its evidence code, multiple terms separated by `;`; the strongest-to-weakest evidence ladder (EXP, HDA, IDA, TAS … IEA) lets you distinguish experimentally localised proteins from electronically inferred ones.
+Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing where in the cell a gene product is located, subcellular structures such as membranes and organelles, macromolecular complexes, and (where relevant) the extracellular environment. Like the other aspects it is a directed acyclic graph of controlled-vocabulary terms, so localisations nest from general (e.g. "membrane") to specific (e.g. "mitochondrial inner membrane"). ProtSpace strips the aspect prefix and retains each term name with its evidence code, multiple terms separated by `;`; the strongest-to-weakest evidence ladder (EXP, HDA, IDA, TAS … IEA) lets you distinguish experimentally localised proteins from electronically inferred ones.
 
 ### `go_mf` {#go_mf}
 
@@ -128,7 +130,7 @@ Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology
 
 Gene Ontology Molecular Function terms, with evidence codes.
 
-Molecular Function is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing the molecular-level activity a gene product performs — for example "catalytic activity", "protein kinase activity", or "transcription factor binding" — independent of where or when it acts. Terms are drawn from a controlled vocabulary structured as a directed acyclic graph, so a protein usually carries several MF terms spanning general and specific activities. ProtSpace strips the aspect prefix and keeps each term name with its evidence code, joining multiple terms with `;` (e.g. `ATP binding|IDA;protein serine/threonine kinase activity|IEA`); MF annotations frequently mirror the catalytic activity captured by the EC number for enzymes.
+Molecular Function is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing the molecular-level activity a gene product performs, for example "catalytic activity", "protein kinase activity", or "transcription factor binding", independent of where or when it acts. Terms are drawn from a controlled vocabulary structured as a directed acyclic graph, so a protein usually carries several MF terms spanning general and specific activities. ProtSpace strips the aspect prefix and keeps each term name with its evidence code, joining multiple terms with `;` (e.g. `ATP binding|IDA;protein serine/threonine kinase activity|IEA`); MF annotations frequently mirror the catalytic activity captured by the EC number for enzymes.
 
 ### `keyword` {#keyword}
 
@@ -272,7 +274,7 @@ The nine taxonomy columns trace the source organism up the standard Linnaean / N
 
 Cellular / acellular classification at the root of the taxonomy.
 
-The root sits above the three-domain system and separates cellular life (organisms with a cell — Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
+The root sits above the three-domain system and separates cellular life (organisms with a cell, Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
 
 ### `domain` {#domain}
 
@@ -288,7 +290,7 @@ This is the highest rank of the three-domain system proposed by Woese, Kandler a
 
 Taxonomic kingdom of the source organism.
 
-Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage — many bacterial and archaeal entries have no formal kingdom — so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.
+Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage, many bacterial and archaeal entries have no formal kingdom, so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.
 
 ### `phylum` {#phylum}
 
@@ -348,4 +350,4 @@ TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) provides structure
 
 Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).
 
-TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers — Chainsaw, Merizo, and UniDoc — and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `unclassified|{plddt}` when no CATH superfamily is assigned. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.
+TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers, Chainsaw, Merizo, and UniDoc, and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `unclassified|{plddt}` when no CATH superfamily is assigned. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.

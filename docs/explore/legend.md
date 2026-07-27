@@ -113,6 +113,24 @@ Common reasons:
 
 This is why you might see `10` requested bins become `9`, and `9` become `8`, without anything being wrong.
 
+## Predicted Annotations
+
+Some annotations are computational predictions rather than experimentally curated records. When one
+is selected, the legend header shows a ⚡ **Predicted** badge next to the annotation title, followed
+by the note `Computationally predicted, not experimentally curated.` The same ⚡ marker appears next
+to the annotation in the control bar's annotation dropdown.
+
+Annotations that carry the badge:
+
+- The Biocentral machine-learning predictions: `predicted_subcellular_location`,
+  `predicted_membrane`, `predicted_signal_peptide`, `predicted_transmembrane`
+- `signal_peptide` (Phobius), a de-novo topology predictor
+- `ted_domains` (TED), domains derived from predicted AlphaFold structures
+- Any other annotation column whose name starts with `predicted_`
+
+Signature-database annotations such as Pfam, CATH-Gene3D and SUPERFAMILY, and UniProt or Taxonomy
+fields, are not badged.
+
 ## Colors, Gradients, And Shapes
 
 ### Categorical Palettes
@@ -153,7 +171,7 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 ### Shapes
 
-Every category renders as a circle by default. To assign a different shape (square, diamond, plus, triangle-up, triangle-down) to an individual category, click the category's color/shape swatch in the legend — the popover has a Shape section underneath the color picker.
+Every category renders as a circle by default. To assign a different shape (square, diamond, plus, triangle-up, triangle-down) to an individual category, click the category's color/shape swatch in the legend, the popover has a Shape section underneath the color picker.
 
 Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 
@@ -165,6 +183,25 @@ Legend settings are saved per dataset and per annotation in the browser.
 - Numeric binning settings such as palette, gradient direction, strategy, and target bin count are restored on reload/import
 - Numeric hidden values and manual order are only restored when the current numeric topology still matches the saved one
 - Use `Reset` in the settings dialog to clear saved preferences for the selected annotation
+
+## Styling From The Python CLI
+
+`protspace style` can pre-set legend styling inside a bundle, but its keys are categorical only. For
+a numeric annotation the web app reinterprets or ignores them:
+
+- `colors`, `shapes` and `hiddenValues` are stored in the bundle but have no effect here. Numeric
+  legend entries are bin IDs such as `num:quantile:150:200`, so per-value keys never match anything.
+- `pinnedValues` and `zOrderSort` never reach the app at all. They are processing-only CLI keys, consumed while the bundle is generated and never written to it, for any annotation type.
+- `maxVisibleValues` becomes the target bin count (`Max legend items`). When the column has missing
+  values, one slot is reserved for `N/A`.
+- `selectedPaletteId` is normalized to `batlow` unless it is one of the five numeric gradient IDs.
+- `sortMode` collapses to `alpha-asc`, `alpha-desc`, `manual` or `manual-reverse`. The CLI default
+  `size-desc` is coerced to `alpha-asc`, shown as `By numeric value`.
+
+`Bin distribution` and `Reverse gradient direction` are UI-only settings and cannot be authored from
+the CLI.
+
+See [Styling Annotations](/guide/styling) for the full CLI styling reference.
 
 ## Multi-Label Annotations
 

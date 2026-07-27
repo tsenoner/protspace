@@ -1,98 +1,19 @@
 # Contributing
 
-Guide for developers who want to contribute to ProtSpace.
+The contribution guide for the whole repository, issue reporting, setup, quality gates, commit
+conventions, pull requests and the release process, lives in one place:
 
-## Repository Structure
+**→ [CONTRIBUTING.md on GitHub](https://github.com/tsenoner/protspace/blob/main/CONTRIBUTING.md)**
 
-```
-protspace/
-├── apps/
-│   ├── web/                # Web application + landing page (Vite + React)
-│   ├── protspace/          # Python CLI package (PyPI: protspace) + notebooks
-│   └── prep/               # FASTA → .parquetbundle prep service (FastAPI)
-├── packages/
-│   ├── core/               # Main web components library (Lit + WebGL)
-│   │   └── src/components/
-│   │       ├── scatter-plot/
-│   │       ├── legend/
-│   │       ├── control-bar/
-│   │       └── structure-viewer/
-│   └── utils/              # Shared utilities
-└── docs/                   # Documentation (VitePress)
-```
+Read that first. This page only covers the component patterns specific to the web front end.
 
-## Technology Stack
+## Web component patterns
 
-| Area              | Technologies                     |
-| ----------------- | -------------------------------- |
-| **Components**    | Lit, TypeScript                  |
-| **Build**         | Vite, Turbo (monorepo)           |
-| **Demo App**      | React                            |
-| **Visualization** | Canvas API, WebGL                |
-| **3D Structures** | Mol\*                            |
-| **Data**          | Parquet, hyparquet, Apache Arrow |
+The visual components in `packages/core` are [Lit](https://lit.dev) elements. `apps/web` is a React
+host shell that mounts them; the rendering itself is Lit plus a hand-written WebGL2 renderer under
+`packages/core/src/components/scatter-plot/webgl/`.
 
-## Requirements
-
-- Node.js 22+
-- pnpm 10.24.0+
-- Git
-
-## Setup
-
-```bash
-# Clone repository
-git clone https://github.com/tsenoner/protspace.git
-cd protspace
-
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Start development servers
-pnpm dev
-```
-
-The app runs at `http://localhost:8080` and the docs run at `http://localhost:5174/docs/`.
-
-## Development Commands
-
-```bash
-# Start dev server (watches for changes)
-pnpm dev
-
-# Build all packages
-pnpm build
-
-# Run linter
-pnpm lint
-
-# Fix linting issues
-pnpm lint:fix
-
-# Format code
-pnpm format
-
-# Type check
-pnpm type-check
-
-# Static quality gate
-pnpm quality
-
-# Build documentation
-pnpm docs:build
-
-# Preview documentation
-pnpm docs:preview
-```
-
-## Architecture
-
-### Web Components (Lit)
-
-Components are built with Lit and follow this pattern:
+### Writing a component
 
 ```typescript
 import { LitElement, html, css } from 'lit';
@@ -131,127 +52,38 @@ export class ProtspaceExample extends LitElement {
 }
 ```
 
-### Event Communication
+### Event communication
 
-Components communicate via custom events:
+Components stay decoupled by talking through custom events. Use `bubbles: true` and
+`composed: true` so the event escapes the shadow root and reaches the host app.
 
 ```typescript
-// Dispatch event
+// Dispatch, this is how the scatter plot emits a box/lasso selection
 this.dispatchEvent(
-  new CustomEvent('selection-change', {
-    detail: { selected: this.selectedIds },
+  new CustomEvent('brush-selection', {
+    detail: { proteinIds: selectedIds, isMultiple: true },
     bubbles: true,
     composed: true,
   }),
 );
 
-// Listen for events
-plot.addEventListener('selection-change', (e) => {
-  console.log('Selected:', e.detail.selected);
+// Listen
+plot.addEventListener('brush-selection', (e) => {
+  console.log('Selected:', e.detail.proteinIds);
 });
 ```
 
-### Canvas Rendering
+The scatter plot's public events are `protein-click`, `protein-hover`, `brush-selection`,
+`data-change`, `data-isolation`, `data-isolation-reset`, `auto-disable-selection`, `file-dropped`
+and `tour-start`.
 
-The scatterplot uses Canvas for performance:
+::: tip
+Event names and payloads are a public contract. When you change one, update
+[Messaging](/developers/messaging) and the tests in the same pull request.
+:::
 
-```typescript
-private renderPoints() {
-  const ctx = this.canvas.getContext('2d');
-  ctx.clearRect(0, 0, this.width, this.height);
+## See also
 
-  for (const point of this.visiblePoints) {
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, this.pointSize, 0, Math.PI * 2);
-    ctx.fillStyle = point.color;
-    ctx.fill();
-  }
-}
-```
-
-## Making Changes
-
-### Branching Strategy
-
-1. Create feature branch from `main`
-2. Make changes
-3. Submit pull request
-4. Get review
-5. Merge to `main`
-
-```bash
-git checkout -b feature/my-feature
-# Make changes
-git commit -m "Add my feature"
-git push origin feature/my-feature
-```
-
-### Commit Messages
-
-Use conventional commits:
-
-```
-feat: add new feature
-fix: resolve bug
-docs: update documentation
-style: formatting changes
-refactor: code restructuring
-test: add tests
-chore: maintenance
-```
-
-### Pull Requests
-
-Include in your PR:
-
-1. Clear description of changes
-2. Screenshots for UI changes
-3. Test coverage for new features
-4. Documentation updates
-
-## Testing
-
-### Manual Testing
-
-1. Start dev server: `pnpm dev`
-2. Load example data from `data/` folder
-3. Test all components work correctly
-
-### Building for Production
-
-```bash
-pnpm build
-```
-
-Check `packages/core/dist/` for output.
-
-## Documentation
-
-Documentation uses VitePress:
-
-```bash
-# Start docs dev server
-pnpm dev:docs
-
-# Build documentation
-pnpm docs:build
-```
-
-Edit files in `docs/` folder.
-
-## Release Process
-
-1. Update version in `package.json`
-2. Update `CHANGELOG.md`
-3. Create git tag
-4. Push to GitHub
-5. CI/CD handles npm publish
-
-## Getting Help
-
-- [GitHub Issues](https://github.com/tsenoner/protspace/issues) - Bug reports
-- [GitHub Discussions](https://github.com/tsenoner/protspace/discussions) - Questions
-
-## License
-
-MIT - See [LICENSE](https://github.com/tsenoner/protspace/blob/main/LICENSE)
+- [Architecture](/developers/architecture), how the packages fit together
+- [Style Architecture](/developers/style-architecture), CSS and theming conventions
+- [Installation](/developers/installation), local setup

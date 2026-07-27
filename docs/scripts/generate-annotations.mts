@@ -1,8 +1,8 @@
 /**
  * Generate `docs/guide/annotations.md` from two sources that share one set of column names:
- *   - the canonical runtime registry in `@protspace/utils` (`ANNOTATION_METADATA`) — friendly label,
+ *   - the canonical runtime registry in `@protspace/utils` (`ANNOTATION_METADATA`), friendly label,
  *     source, predicted flag, and the BRIEF description shown in the in-app info popover; and
- *   - the docs-only `annotation-details.ts` module — the LONG-FORM explanation and authoritative
+ *   - the docs-only `annotation-details.ts` module, the LONG-FORM explanation and authoritative
  *     source link rendered only on the documentation page (never shipped to the app bundle).
  *
  * The popover and the docs page therefore stay in sync on the brief text while the docs add depth.
@@ -80,13 +80,20 @@ function validateDetailKeys(): void {
 function build(): string {
   const lines: string[] = [];
   lines.push('<!--');
-  lines.push('  AUTO-GENERATED — do not edit by hand.');
+  lines.push('  AUTO-GENERATED, do not edit by hand.');
   lines.push('  Brief text + metadata: packages/utils/src/visualization/annotation-metadata.ts');
   lines.push('  Detailed text + source links: docs/scripts/annotation-details.ts');
   lines.push('  Regenerate: pnpm docs:annotations');
   lines.push('-->');
   lines.push('');
   lines.push('# Annotation Reference');
+  lines.push('');
+  lines.push(
+    'This page is the canonical reference for every annotation column ProtSpace ships: what each ' +
+      'value means, how it is produced, and where it comes from. To learn how to _request_ ' +
+      'annotations when you prepare a dataset, the `-a` groups, custom CSV columns, and the input ' +
+      'requirements of each source, see [Using Python CLI](/guide/python-cli).',
+  );
   lines.push('');
   lines.push('## Annotation Value Format (v2 Encoding)');
   lines.push('');
@@ -119,13 +126,13 @@ function build(): string {
   lines.push('## Sources');
   lines.push('');
   lines.push(
-    'ProtSpace annotations come from several sources. **Computational predictions** — from a ' +
+    'ProtSpace annotations come from several sources. **Computational predictions**, from a ' +
       'machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius ' +
-      '`signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference ' +
+      '`signal_peptide`, and TED), are flagged with a ⚡ Predicted badge in the app; reference ' +
       'signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) ' +
       'are not. For each annotation, the **bold lead line** is the same short summary shown in the ' +
-      "app's info popover, and the paragraph beneath it is a fuller explanation — what the value " +
-      'means, how it is produced, and what it looks like — with a link to the authoritative source.',
+      "app's info popover, and the paragraph beneath it is a fuller explanation, what the value " +
+      'means, how it is produced, and what it looks like, with a link to the authoritative source.',
   );
   lines.push('');
 

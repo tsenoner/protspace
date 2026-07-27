@@ -27,7 +27,10 @@ The control bar contains:
 6. **Isolate button** - Hide unselected proteins
 7. **Filter button** - Filter by annotation values
 8. **Export button** - Save images or data
-9. **Import button** - Load `.parquetbundle` file
+9. **Import button** - Load a `.parquetbundle`, or a `.fasta` / `.fa` / `.fna` file that ProtSpace
+   prepares for you
+
+See [Importing Data](/explore/importing-data) for both import paths and their limits.
 
 ## Scatterplot
 

@@ -1,12 +1,20 @@
 # Importing Data
 
-ProtSpace uses `.parquetbundle` files containing protein embeddings and annotations.
+ProtSpace accepts two kinds of input:
+
+- **`.parquetbundle`**, a prepared dataset containing projections and annotations. Loads entirely
+  in your browser.
+- **`.fasta` / `.fa` / `.fna`**, raw protein sequences. These are prepared into a bundle by the
+  ProtSpace prep backend, then opened automatically. See
+  [FASTA Upload (Instant Prep)](#fasta-upload-instant-prep).
+
+Both the drop zone and the **Import** button accept either kind.
 
 ## Drag and Drop (Recommended)
 
 The easiest way to load data:
 
-1. Locate your `.parquetbundle` file on your computer
+1. Locate your `.parquetbundle` or FASTA file on your computer
 2. Drag it onto the scatterplot canvas
 3. Drop when you see the drop indicator
 4. Data loads automatically
@@ -20,8 +28,79 @@ You can drop the file anywhere on the scatterplot area - it doesn't need to be a
 Alternatively, use the **Import** button in the control bar:
 
 1. Click the **Import** button in the top-right corner
-2. Select your `.parquetbundle` file from the file picker
+2. Select your `.parquetbundle` or FASTA file from the file picker
 3. Click **Open**
+
+## FASTA Upload (Instant Prep)
+
+Drop a FASTA file and ProtSpace prepares it for you, no Colab notebook, no local install.
+
+Accepted extensions are exactly `.fasta`, `.fa`, and `.fna`. Compressed (`.gz`) and other
+sequence extensions are not accepted.
+
+### What happens
+
+1. **Pre-checks run in your browser.** ProtSpace checks the file size and counts sequences before
+   uploading, so an out-of-range file fails immediately instead of wasting an upload.
+2. **The file is uploaded** to the prep backend, which queues it as a job.
+3. **A progress overlay appears**, titled _Preparing FASTA…_, with a **Cancel** button. The status
+   line underneath tracks the job: _Position N in queue…_ while waiting, then the embedding step
+   (the longest phase, the bar creeps forward while it runs), then _Projecting…_, then
+   _Bundling…_. If a job runs longer than expected the status changes to _Still working, large
+   jobs can take a few minutes…_.
+4. **The finished bundle opens automatically.** ProtSpace downloads it and loads it into the
+   scatterplot; there is no second click.
+
+### Limits
+
+| Limit                  | Value                      |
+| ---------------------- | -------------------------- |
+| Sequences per file     | 20 minimum, 1,500 maximum  |
+| Residues per sequence  | 2,000                      |
+| Total residues         | 1,500,000                  |
+| Upload size            | 8 MB                       |
+| Backend job timeout    | 420 seconds (7 minutes)    |
+| Submissions per client | 5 per 15 minutes (default) |
+
+The backend also rejects files with duplicate sequence identifiers, and sequences containing
+non-protein characters.
+
+::: warning FASTA upload leaves your computer
+Loading a `.parquetbundle` is fully local. Uploading a FASTA is not, the sequences are sent to
+the prep backend for processing. Prepared bundles are single-use downloads and are deleted from
+the server after you download them, or after one hour if you don't.
+:::
+
+### What the backend produces
+
+The prep service runs the same steps as the Python CLI, with fixed defaults:
+
+- **Embeddings** from the `prot_t5` model (computed via the Biocentral service)
+- **Projections** `PCA_2` and `UMAP_2`
+- **Annotations** from the `default` annotation group
+
+FASTA headers are normalised to their parsed identifier before processing, so a header like
+`>sp|P12345|NAME_HUMAN` appears in ProtSpace as `P12345`.
+
+To choose a different embedder, projection methods, or annotation set, prepare the data yourself
+with [Google Colab](/guide/data-preparation) or the [Python CLI](/guide/python-cli).
+
+### Requirements and larger datasets
+
+FASTA upload only works on a deployment that runs the prep backend. [protspace.app](https://protspace.app)
+has it enabled. If you self-host, you need to:
+
+- run the prep service, the `protspace-prep` service in
+  [`docker-compose.yml`](https://github.com/tsenoner/protspace/blob/main/docker-compose.yml), built
+  from [`apps/prep/`](https://github.com/tsenoner/protspace/tree/main/apps/prep)
+- build the web app with `VITE_PREP_API_BASE` pointing at that service
+
+Without both, a FASTA drop fails with an upload error. There is no capability probe, the app
+always attempts the upload.
+
+For datasets beyond these limits, use the
+[Colab notebook](/guide/data-preparation) or the [Python CLI](/guide/python-cli) instead, then
+import the resulting `.parquetbundle`.
 
 ## Example Datasets
 
@@ -43,7 +122,8 @@ Small datasets (< 10K proteins) load instantly. Larger datasets may take a few s
 
 ## Data & Settings Persistence
 
-All persistence is local to your browser — **your data is never sent to a server**.
+All persistence is local to your browser, **stored datasets and settings are never sent to a
+server**. (The one time data leaves your machine is a FASTA upload, described above.)
 
 - **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Switching to the demo dataset clears the stored file.
 - **Settings persist per dataset**: Legend customizations (colors, shapes, hidden categories, sort order) and export options are saved in browser storage for each dataset. When you reload or revisit the same dataset, your settings are restored.
@@ -67,9 +147,9 @@ ProtSpace still works normally without OPFS. Your dataset loads for the current 
 
 If a previous session failed to finish loading a dataset (browser crash, tab closed mid-load, or a corrupt file), ProtSpace shows a recovery banner above the scatterplot when you return. The banner names the file that didn't finish and offers three actions:
 
-- **Try again** — re-attempts the load from the stored copy. Useful if the previous failure was transient (network hiccup, momentary browser stall).
-- **Load default** — replaces the stored file with the demo dataset. Use this if you don't need to recover the specific file.
-- **Clear stored data** — deletes the stored file without loading anything. Choose this if the file is corrupt or you'd rather import a fresh copy yourself.
+- **Try again**, re-attempts the load from the stored copy. Useful if the previous failure was transient (network hiccup, momentary browser stall).
+- **Load default**, replaces the stored file with the demo dataset. Use this if you don't need to recover the specific file.
+- **Clear stored data**, deletes the stored file without loading anything. Choose this if the file is corrupt or you'd rather import a fresh copy yourself.
 
 After three failed retries the banner shifts tone, recommending you clear or load the demo rather than continue retrying.
 
@@ -79,7 +159,8 @@ Auto-retry would loop forever on a genuinely broken file. The banner makes the f
 
 ## Need a Data File?
 
-To create your own `.parquetbundle` files:
+If you only have sequences, drop the FASTA straight onto the scatterplot, see
+[FASTA Upload (Instant Prep)](#fasta-upload-instant-prep). To build a `.parquetbundle` yourself:
 
 - **[Using Google Colab](/guide/data-preparation)** - No installation required (recommended)
 - **[Using Python CLI](/guide/python-cli)** - For local processing or automation

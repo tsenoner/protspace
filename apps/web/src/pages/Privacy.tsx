@@ -118,9 +118,11 @@ const Privacy = () => {
             <section>
               <h2 className="text-xl font-semibold text-foreground mb-3">Your Data</h2>
               <p>
-                All data you load into ProtSpace (Parquet files, protein annotations) is processed
-                entirely in your browser. No data is uploaded to any server. We have no access to
-                your datasets.
+                Datasets you load directly (a .parquetbundle with its Parquet tables and protein
+                annotations) are processed entirely in your browser, and we have no access to them.
+                The one exception is FASTA instant-prep: when you upload a FASTA file, its sequences
+                are sent to the ProtSpace preparation service to compute embeddings and projections,
+                and only that result is returned to your browser.
               </p>
             </section>
 
