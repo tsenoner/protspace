@@ -140,7 +140,7 @@ already-done embeddings and annotation fetches.
 
 | Choice | Value | Rationale |
 |---|---|---|
-| Embedders | `prot_t5`, `esmc_300m` | ESMC-300m is permissively licensed (Cambrian Open). 600m is non-commercial — avoid for a public demo. |
+| Embedders | `prot_t5`, `esmc_300m` | ESMC-300m is permissively licensed (Cambrian Open). 600m is non-commercial — avoid for a public demo. **Superseded 2026-05-27:** ESM-C was relicensed to MIT (both sizes) when it moved to Chan Zuckerberg Biohub, so the 600m restriction no longer applies. The rest of this document stands as written on 2026-04-30. |
 | DR methods | `pca2`, `umap2` | Match old bundle. |
 | UMAP params | `n_neighbors=50, min_dist=0.5, random_state=42` | Match old bundle exactly. |
 | PCA params | sklearn defaults | Match old bundle (`svd_solver=arpack` is auto-picked). |

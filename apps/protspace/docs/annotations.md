@@ -162,7 +162,7 @@ This is readable via parquet tools and the frontend's hyparquet library (`parque
 
 **Display decoding is version-gated.** Names stay percent-encoded on the wire (in the bundle) and are decoded only for human display. Consumers decode a cell to its display value by trimming the `|score`/`|evidence` suffix and percent-decoding the label — but **only when `protspace_format_version >= 2`**. A legacy (v1, unstamped) bundle whose name legitimately contains a literal `%XX` is therefore left untouched. In the Python package this is `encoding.to_display_value(raw, decode=...)`, the single shared transform used by both the Dash `serve` plot (grouping/legend/hover) and the `style` template; `serve` stores user color/shape choices under this same display value so they match the plotted categories.
 
-**CATH superfamily naming** (issue #57): The CATH database marks some superfamilies as unnamed ("waiting to be named"). Rather than fabricate a parent-topology name, unnamed superfamilies render as their bare code: e.g., `3.30.70.11` instead of `3.30.70.11 (Guessed parent topology)`. This preserves data fidelity and avoids misleading users.
+**CATH superfamily naming** ([tsenoner/protspace-legacy#57](https://github.com/tsenoner/protspace-legacy/issues/57)): The CATH database marks some superfamilies as unnamed ("waiting to be named"). Rather than fabricate a parent-topology name, unnamed superfamilies render as their bare code: e.g., `3.30.70.11` instead of `3.30.70.11 (Guessed parent topology)`. This preserves data fidelity and avoids misleading users.
 
 ### Derived Annotation
 

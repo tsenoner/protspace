@@ -24,7 +24,10 @@ class TestParseCathNames:
         assert names["2.60.40.10"] == "Immunoglobulins"
 
     def test_unnamed_superfamily_has_no_name(self, tmp_path):
-        """An unnamed superfamily must NOT inherit the parent topology name (#57)."""
+        """An unnamed superfamily must NOT inherit the parent topology name.
+
+        See tsenoner/protspace-legacy#57.
+        """
         content = (
             "6.20.10           3s6xC01    :Laminin\n"
             "6.20.10.10        1lmmA01    :\n"

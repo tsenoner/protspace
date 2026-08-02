@@ -1,8 +1,8 @@
 # Design: Embedding Annotation Transfer (`protlabel` engine + `protspace transfer`)
 
-**Status:** As-built (reflects PR #55 after review)
+**Status:** As-built (reflects PR tsenoner/protspace-legacy#55 after review)
 **Date:** 2026-06-11 (rewritten 2026-06-29 to match what shipped)
-**Trigger:** Conference proximity-mining feedback + GitHub issue [#54 "EAT — Embedding Annotation Transfer"](https://github.com/tsenoner/protspace/issues/54).
+**Trigger:** Conference proximity-mining feedback + GitHub issue [tsenoner/protspace-legacy#54 "EAT — Embedding Annotation Transfer"](https://github.com/tsenoner/protspace-legacy/issues/54).
 
 > This document describes the design **as actually implemented**. An earlier draft
 > speculated about features that were deliberately *not* built (a faiss/PQ storage

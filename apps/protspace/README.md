@@ -37,6 +37,19 @@ ProtSpace maps the **embedding space** of protein language models (pLMs) to reve
 pip install protspace
 ```
 
+**Optional extras**
+
+| Extra | Install | Needed for |
+| --- | --- | --- |
+| `local` | `pip install "protspace[local]"` | on-device embedding (`--backend local`) instead of the Biocentral API |
+| `similarity` | `pip install "protspace[similarity]"` | MMseqs2 sequence-similarity projections (`-s/--similarity`) |
+| `frontend` | `pip install "protspace[frontend]"` | the local Dash viewer (`protspace serve`) |
+
+> **Upgrading from 4.9.x or earlier:** `-s/--similarity` used to work out of the box because
+> MMseqs2 shipped in the base install. It now lives in the `similarity` extra, so add
+> `pip install "protspace[similarity]"` if you use that flag. Nothing else changes — the base
+> install got smaller and no longer compiles MMseqs2 from source.
+
 ## 🎯 Quick Start
 
 ### 1. Prepare data

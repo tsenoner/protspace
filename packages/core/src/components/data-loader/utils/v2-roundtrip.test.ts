@@ -33,7 +33,7 @@ function perProteinAnnotationSets(
 }
 
 /**
- * Task J1: cross-repo golden-fixture proof (#56/#57/#58).
+ * Task J1: cross-repo golden-fixture proof (tsenoner/protspace-legacy issues #56, #57, #58).
  *
  * `__fixtures__/v2-sample.parquetbundle` is a REAL bundle produced by the
  * `protspace` backend's v2 writer (`stamp_format_version` + `encode_field` +

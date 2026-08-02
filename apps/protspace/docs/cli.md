@@ -66,7 +66,7 @@ protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3,tsne2" -o
 
 **Available embedders:** `prot_t5`, `prost_t5`, `esm2_8m`, `esm2_35m`, `esm2_150m`, `esm2_650m`, `esm2_3b`, `ankh_base`, `ankh_large`, `ankh3_large`, `esmc_300m`, `esmc_600m`
 
-> **Licensing:** `ankh_base`, `ankh_large`, `ankh3_large` (CC-BY-NC-SA-4.0), `esmc_600m` (Cambrian Non-Commercial). All others are permissively licensed.
+> **Licensing:** `ankh_base`, `ankh_large`, `ankh3_large` are CC-BY-NC-SA-4.0 (non-commercial). All others are permissively licensed, including both ESM-C models — ESM-C was relicensed to MIT on 2026-05-27.
 
 > **Local backend (`--backend local`):** computes embeddings on a local GPU/CPU via HuggingFace `transformers` instead of the remote Biocentral API — useful when the API is unavailable, or in Colab. Requires the extra: `pip install "protspace[local]"`. ESM-C uses the Synthyra ESM++ checkpoints for consistency with the API path. `esm2_3b` may exceed a free Colab T4 (16 GB) — prefer an L4/A100 runtime for it.
 
@@ -75,7 +75,7 @@ protspace prepare -i emb.h5 -m "pca2,umap2:n_neighbors=50;min_dist=0.3,tsne2" -o
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
 | `-m, --methods` | DR methods. Repeat the flag or use commas to combine methods (`-m pca2,umap2`); use semicolons to inline parameter overrides for one method (`-m 'umap2:n_neighbors=50;min_dist=0.1'`). See [Overridable parameters](#overridable-parameters-with--m) for the supported keys. Methods: `pca2`, `umap2`, `tsne2`, `pacmap2`, `mds2`, `localmap2`. | `pca2` |
-| `-s, --similarity` | Also compute sequence similarity DR from FASTA. | off |
+| `-s, --similarity` | Also compute sequence similarity DR from FASTA. Needs the extra: `pip install "protspace[similarity]"`. | off |
 | `--metric` | Distance metric (`euclidean`, `cosine`, `manhattan`). | `euclidean` |
 | `--random-state` | Random seed. | `42` |
 | `--n-neighbors` | UMAP/PaCMAP/LocalMAP neighbors. | `25` |

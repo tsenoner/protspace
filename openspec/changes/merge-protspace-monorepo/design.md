@@ -135,7 +135,8 @@ repo is archived, so the freeze is about carrying branches, not draining PRs.
         ──▶ FIRST monorepo feature PR = format v2: writer(#66) + reader(#306) + schema.json + fixtures, green together
 ```
 
-Conflict surface with the `app→apps/web` / `services→apps/prep` moves (verified against the open PRs):
+Conflict surface with the `app→apps/web` / `services→apps/prep` moves (verified against the open PRs).
+`#66`/`#55`/`#60` are branches of the now-archived `tsenoner/protspace-legacy`; `#306`/`#295`/`#233` are this repo's own:
 
 - **#306 (v2 reader):** `packages`/`docs` only → no conflict with the moves. Stays an in-repo branch.
 - **#66 (v2 writer):** arrives pre-prefixed under `apps/protspace/` via filter-repo → no conflict.

@@ -71,5 +71,14 @@ CLAUDE.md
 # Local-only large fixture for the load-reliability Playwright spec
 apps/web/tests/fixtures/sprot_50.parquetbundle
 
+# Notebook scratch: the Colab notebooks fetch/write these into the working
+# directory, which is the repo root when they are run locally.
+# No .h5 is tracked anywhere, so that one is repo-wide. Bundles are tracked
+# (fixtures, demo data) but only ever in subdirectories, so theirs is anchored
+# to the root — add a new root-level bundle with `git add -f`.
+*.h5
+/*.parquetbundle
+/output/
+
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/

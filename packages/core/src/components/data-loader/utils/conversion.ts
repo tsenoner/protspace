@@ -495,8 +495,9 @@ export const parseAnnotationValue = (
  * one rare value. Note this only catches a *net* imbalance (depth != 0 at the end): a stray
  * '(' in one hit cancelled by a stray ')' in a later hit leaves the final depth at 0, so the
  * inter-hit ';' (seen while depth was > 0) is silently swallowed and those two hits merge.
- * Both are symptoms of unsanitized names; sanitizing at the source is tracked in
- * tsenoner/protspace#56.
+ * Both are symptoms of unsanitized v1 names. Sanitizing at the source shipped in bundle
+ * format v2, which percent-encodes ';' (tsenoner/protspace-legacy#56, closed), so this
+ * paren-aware scan now only guards legacy v1 bundles.
  */
 function splitOnTopLevelSemicolons(value: string): string[] {
   // Fast path: with no '(' the depth stays 0 throughout, so the paren-aware scan

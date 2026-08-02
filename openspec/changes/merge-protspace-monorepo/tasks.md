@@ -1,7 +1,7 @@
 ## 0. Pre-cutover freeze (carry branches, don't drain — Decision D5)
 
 - [ ] 0.1 Announce a short freeze on protspace: no new merges to `main` after the snapshot until archived
-- [ ] 0.2 Inventory open branches to carry: #66 (v2 writer), #55 (EAT/transfer), #60 (chore). filter-repo carries all refs; nothing needs to land first
+- [ ] 0.2 Inventory open branches to carry from the now-archived `tsenoner/protspace-legacy`: #66 (v2 writer), #55 (EAT/transfer), #60 (chore). filter-repo carries all refs; nothing needs to land first
 - [ ] 0.3 Note web-side branches already in-repo (#306 v2 reader, #295 stats, #233) — they ride through the restructure, no cross-repo action
 
 ## 1. History import

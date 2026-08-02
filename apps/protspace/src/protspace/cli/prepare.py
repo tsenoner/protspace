@@ -19,6 +19,9 @@ import typer
 
 from protspace.cli.app import PANEL_START, app, setup_logging
 from protspace.cli.common_options import (
+    EMBEDDER_HELP_LICENSE,
+    EMBEDDER_HELP_MODELS,
+    EMBEDDER_MODELS,
     Backend,
     ClusterSelection,
     Metric,
@@ -39,6 +42,7 @@ from protspace.cli.common_options import (
     Opt_RandomState,
     Opt_Similarity,
     Opt_Verbose,
+    require_similarity_extra,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,20 +50,6 @@ logger = logging.getLogger(__name__)
 ANNOTATIONS_URL = (
     "https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
 )
-EMBEDDER_MODELS = {
-    "prot_t5",
-    "prost_t5",
-    "esm2_8m",
-    "esm2_35m",
-    "esm2_150m",
-    "esm2_650m",
-    "esm2_3b",
-    "ankh_base",
-    "ankh_large",
-    "ankh3_large",
-    "esmc_300m",
-    "esmc_600m",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -93,11 +83,8 @@ Opt_Embedder = Annotated[
         "-e",
         "--embedder",
         help=(
-            "pLM model(s), comma-separated. "
-            "Models: prot_t5, prost_t5, esm2_8m, esm2_35m, esm2_150m, "
-            "esm2_650m, esm2_3b, ankh_base, ankh_large, ankh3_large, "
-            "esmc_300m, esmc_600m. "
-            "Note: ankh_*, ankh3_*, esmc_600m are non-commercial licenses."
+            f"pLM model(s), comma-separated. "
+            f"{EMBEDDER_HELP_MODELS} {EMBEDDER_HELP_LICENSE}"
         ),
         rich_help_panel="Embedding",
     ),
@@ -355,6 +342,11 @@ def prepare(
         raise typer.BadParameter(
             "At least one of -i/--input or -q/--query is required."
         )
+
+    # Checked up front: similarity runs after embedding, so deferring this to
+    # the import site would bill the user a full embed before failing.
+    if similarity:
+        require_similarity_extra()
 
     # --stats-annotation / --cluster-selection only do anything under --stats;
     # a non-default value without --stats would be silently ignored, so reject it.

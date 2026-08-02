@@ -4,6 +4,8 @@
 
 **Goal:** Make the `protspace_web` frontend read bundle format v2 — detect `format_version`, decode percent-encoded names, and parse the now-unambiguous cell with a plain `split(';')` + single-`|` split — while keeping the existing (v1) parser for already-distributed bundles.
 
+**Issues:** tsenoner/protspace-legacy#56, #57, #58 (bare `#N` below refers to that archived repo).
+
 **Architecture:** A mirror codec (`decodeField`/`encodeField`) plus a version-branched parse. `bundle.ts` reads `format_version` from the annotations part's parquet key-value metadata (via hyparquet `parquetMetadata`) and threads it (default `1`) into the conversion functions. v2 → `split(';')` + `decodeField` on label/evidence; v1 → the existing paren-depth + `lastIndexOf('|')` heuristics, untouched. Downstream consumers are unaffected (they read the already-decoded `{labels, scores, evidence}` structures).
 
 **Tech Stack:** TypeScript, Vite, Lit/React, hyparquet 1.26, vitest, pnpm. Run via `pnpm`.

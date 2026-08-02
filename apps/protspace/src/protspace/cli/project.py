@@ -23,6 +23,7 @@ from protspace.cli.common_options import (
     Opt_RandomState,
     Opt_Similarity,
     Opt_Verbose,
+    require_similarity_extra,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,13 @@ def project(
     """
     setup_logging(verbose)
 
+    # Both similarity preconditions are pure argument checks, so they run
+    # before the HDF5 files are loaded.
+    if similarity:
+        if fasta is None:
+            raise typer.BadParameter("--similarity requires --fasta.")
+        require_similarity_extra()
+
     from collections import Counter
 
     import pyarrow.parquet as pq
@@ -107,8 +115,6 @@ def project(
         raise typer.BadParameter("No valid HDF5 files found.")
 
     if similarity:
-        if fasta is None:
-            raise typer.BadParameter("--similarity requires --fasta.")
         sim_set = compute_similarity(fasta, embedding_sets[0].headers)
         embedding_sets.append(sim_set)
 

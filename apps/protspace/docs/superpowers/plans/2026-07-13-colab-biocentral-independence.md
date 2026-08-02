@@ -1,6 +1,6 @@
-# Colab / Biocentral independence (issue #59)
+# Colab / Biocentral independence (issue #320)
 
-**Issue:** [tsenoner/protspace#59](https://github.com/tsenoner/protspace/issues/59) — "The Google
+**Issue:** [tsenoner/protspace#320](https://github.com/tsenoner/protspace/issues/320) — "The Google
 Colab notebook should be independent of Biocentral."
 
 **Goal:** the Colab notebooks (and the CLI) must be able to generate embeddings even when the
@@ -11,12 +11,12 @@ statistics (`prepare --stats`) features in the notebooks.
 Investigation done 2026-07-13 (multi-agent research workflow). This plan was ported into the
 `protspace_web` monorepo (`apps/protspace`) on 2026-07-14 when the Python backend and web
 frontend were merged into a single repo; PR1 + PR2 below were originally opened against the
-standalone `tsenoner/protspace` repo (#73, #74) and re-landed here as one consolidated PR.
+standalone `tsenoner/protspace` repo (now `tsenoner/protspace-legacy`; #73, #74 there) and re-landed here as one consolidated PR.
 
 ## Key findings
 
 - `notebooks/ClickThrough_GenerateEmbeddings.ipynb` **already** embeds locally on the Colab GPU
-  (12 models, HF transformers + native ESM) — the #59 capability exists but was siloed in a
+  (12 models, HF transformers + native ESM) — the #320 capability exists but was siloed in a
   notebook and H5-only. This is a consolidation problem, not a greenfield one.
 - `notebooks/ProtSpace_Preparation.ipynb` FASTA + UniProt-query tabs are the **only** Biocentral
   chokepoint, via `embed_fasta()` → `biocentral.embed_sequences()`.
@@ -58,7 +58,7 @@ Additional decisions baked in:
 | PR5 | Wire the dead `--stats` toggle into the Preparation notebook | ✅ done (2026-07-17) — see PR5 results below |
 | PR6 | Append optional EAT to the Preparation notebook | ✅ done (2026-07-17) — see PR6 results below |
 
-**#59 is functionally addressed once PR1 → PR2 → PR4 land** — the CLI can already embed fully
+**#320 is functionally addressed once PR1 → PR2 → PR4 land** — the CLI can already embed fully
 offline today. PR3, PR5, PR6 are hardening + notebook/UX surface.
 
 ## PR3 results — local ↔ Biocentral parity (measured 2026-07-16)
@@ -105,7 +105,7 @@ smaller ESM2 checkpoints were not loaded server-side.
 ## PR4 results — Preparation notebook backend switch (2026-07-17)
 
 `notebooks/ProtSpace_Preparation.ipynb` now embeds via the local backend by default on Colab,
-closing the functional half of #59 (PR1 → PR2 → PR4). Changes, all confined to the notebook:
+closing the functional half of #320 (PR1 → PR2 → PR4). Changes, all confined to the notebook:
 
 - **Install cell** pulls `protspace[local]` (was bare `protspace`) so torch/transformers are
   present; torch is preinstalled on Colab, so the extra only adds transformers/sentencepiece/
@@ -187,7 +187,7 @@ queries), then ran the exact `_on_eat` logic — `protein_id` normalisation, `ru
 confidence ≈ 0.99, `grp__pred_source` = a reference id, augmented bundle round-trips with all three
 overlay columns, curated `grp` untouched. `test_transfer_cli` + `test_classification` green.
 
-**#59 stack complete** (PR1–PR6). `docs(notebook):` prefix (non-releasing).
+**#320 stack complete** (PR1–PR6). `docs(notebook):` prefix (non-releasing).
 
 ## Decisions still owed by the maintainer (don't assume)
 
@@ -200,7 +200,7 @@ overlay columns, curated `grp` untouched. `test_transfer_cli` + `test_classifica
 3. `esm2_3b` free-tier policy (gate / warn / hide). *(still open)*
 4. ~~`ankh3_large` `[NLU]` vs `[S2S]` prefix.~~ **RESOLVED (PR3):** **no prefix** — the current
    raw-string, no-prefix implementation matches Biocentral at cosine 0.9999.
-5. Scope #59 to embeddings only, or also the `predicted_*` annotation server dep
+5. Scope #320 to embeddings only, or also the `predicted_*` annotation server dep
    (`biocentral_retriever.py`). *(still open)*
 6. Local backend micro-batch config — addressed in PR2 via `LocalEmbedConfig` (default 8).
 

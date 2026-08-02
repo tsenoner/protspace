@@ -1,7 +1,7 @@
 # Annotation Value Encoding Redesign (bundle format v2)
 
 **Date:** 2026-07-08
-**Issues:** [tsenoner/protspace#56](https://github.com/tsenoner/protspace/issues/56), [#57](https://github.com/tsenoner/protspace/issues/57), [#58](https://github.com/tsenoner/protspace/issues/58)
+**Issues:** [tsenoner/protspace-legacy#56](https://github.com/tsenoner/protspace-legacy/issues/56), [#57](https://github.com/tsenoner/protspace-legacy/issues/57), [#58](https://github.com/tsenoner/protspace-legacy/issues/58)
 **Repos touched:** `protspace` (backend) + `protspace_web` (frontend) — coordinated, lock-step
 **Status:** approved design — implementation plan to follow
 
@@ -46,7 +46,7 @@ Example real name that shatters today: `Ribosomal Protein L15; Chain: K; domain 
 ### Current frontend state
 
 `protspace_web` already shipped a *defensive* paren-depth split (`splitOnTopLevelSemicolons`, the
-[#282](https://github.com/tsenoner/protspace_web/pull/282) repair) whose own doc comment admits it
+[#282](https://github.com/tsenoner/protspace/pull/282) repair) whose own doc comment admits it
 **silently merges hits** when parens are net-imbalanced and points back to #56 as the real fix. It
 is a band-aid over a lossy, ambiguous contract.
 
@@ -249,7 +249,7 @@ writes only the first hit's decoded label (`getFirstAnnotationIndex`, `:59-62`) 
 scores, evidence, and secondary hits, without re-serializing the grammar. This is a **pre-existing,
 independent** data-loss bug orthogonal to the encoding contract, so it is not folded into this
 change (which would broaden the PR and risk). It is filed as
-[tsenoner/protspace_web#303](https://github.com/tsenoner/protspace_web/issues/303) (in the
+[tsenoner/protspace#303](https://github.com/tsenoner/protspace/issues/303) (in the
 "ProtSpace Development" project, status **Ready**) and becomes a natural follow-up once the v2 codec
 exists: the exporter should re-serialize from the decoded `{labels, scores, evidence}` via the
 shared codec and stamp `format_version = 2`.

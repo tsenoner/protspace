@@ -3,7 +3,7 @@
 A drop-in alternative to :mod:`protspace.data.embedding.biocentral` that
 computes per-protein embeddings with a local GPU (or CPU) via HuggingFace
 ``transformers`` instead of the remote Biocentral API — so the pipeline keeps
-working when Biocentral is down (issue #59).
+working when Biocentral is down (issue #320).
 
 ``embed_sequences`` keeps the Biocentral function's positional signature and
 HDF5 output contract (one float32 per-protein vector per dataset, resume-by-key),

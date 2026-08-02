@@ -3,7 +3,7 @@
 **Date:** 2026-06-29
 **Question:** Should `protlabel`'s nearest-neighbour search stay exact brute-force, or add an
 optional [usearch](https://github.com/unum-cloud/usearch) (HNSW) backend? How do the two scale?
-**Trigger:** PR #55 review (the reviewer flagged faiss as the wrong accelerator, suggested usearch,
+**Trigger:** PR tsenoner/protspace-legacy#55 review (the reviewer flagged faiss as the wrong accelerator, suggested usearch,
 and noted brute-force measured faster on a constrained box). This study substantiates the
 brute-force default decision with measurements.
 

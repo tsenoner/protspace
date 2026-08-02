@@ -3,6 +3,7 @@
 Import these in any CLI command to avoid duplicating option definitions.
 """
 
+import importlib.util
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -29,6 +30,31 @@ class Backend(StrEnum):
 
     biocentral = "biocentral"  # remote Biocentral API (default)
     local = "local"  # on-device GPU/CPU via transformers ([local] extra)
+
+
+# ---------------------------------------------------------------------------
+# Embedder help text, shared by `prepare -e` and `embed -e`
+# ---------------------------------------------------------------------------
+
+# Mirrors ALL_SHORT_KEYS in data.embedding.biocentral, which is not imported
+# here because it pulls h5py/numpy/biocentral_api (~400 ms) into every CLI
+# startup, including `--help`. test_cli_no_similarity.py fails if they drift.
+EMBEDDER_MODELS: tuple[str, ...] = (
+    "prot_t5",
+    "prost_t5",
+    "esm2_8m",
+    "esm2_35m",
+    "esm2_150m",
+    "esm2_650m",
+    "esm2_3b",
+    "ankh_base",
+    "ankh_large",
+    "ankh3_large",
+    "esmc_300m",
+    "esmc_600m",
+)
+EMBEDDER_HELP_MODELS = f"Models: {', '.join(EMBEDDER_MODELS)}."
+EMBEDDER_HELP_LICENSE = "Note: ankh_* and ankh3_* are non-commercial (CC-BY-NC-SA-4.0)."
 
 
 # ---------------------------------------------------------------------------
@@ -64,10 +90,27 @@ Opt_Similarity = Annotated[
     typer.Option(
         "-s",
         "--similarity",
-        help="Compute sequence similarity DR via MMseqs2.",
+        # `\[` escapes the bracket for Rich, which otherwise eats it as markup.
+        help="Compute sequence similarity DR via MMseqs2 (\\[similarity] extra).",
         rich_help_panel="Projection",
     ),
 ]
+
+
+def require_similarity_extra() -> None:
+    """Fail fast when `-s/--similarity` is used without the `similarity` extra.
+
+    Checked in the CLI layer rather than at the `pymmseqs` import site so the
+    user hears about it before any embedding work runs, and as a clean
+    `Error:` line rather than a traceback.
+    """
+    if importlib.util.find_spec("pymmseqs") is None:
+        raise typer.BadParameter(
+            'MMseqs2 is not installed. Install it with: pip install "protspace[similarity]"',
+            param_hint="-s/--similarity",
+        )
+
+
 Opt_Metric = Annotated[
     Metric,
     typer.Option(help="Distance metric for UMAP/t-SNE.", rich_help_panel="Projection"),
@@ -140,7 +183,7 @@ Opt_Backend = Annotated[
         "--backend",
         help=(
             "Embedding engine: 'biocentral' (remote API, default) or 'local' "
-            "(on-device GPU/CPU; needs `pip install protspace[local]`)."
+            "(on-device GPU/CPU; needs `pip install protspace\\[local]`)."
         ),
         rich_help_panel="Embedding",
     ),

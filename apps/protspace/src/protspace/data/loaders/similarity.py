@@ -57,7 +57,14 @@ def compute_similarity(
         logger.info("Cached similarity headers differ; recomputing.")
 
     # --- Compute ---
-    from pymmseqs.commands import easy_search
+    # Backstop for direct library callers; the CLI checks this up front via
+    # `require_similarity_extra()` so it can fail before embedding runs.
+    try:
+        from pymmseqs.commands import easy_search
+    except ModuleNotFoundError as exc:
+        raise ImportError(
+            'MMseqs2 is not installed. Install it with: pip install "protspace[similarity]"'
+        ) from exc
 
     n_seqs = len(headers)
     input_fasta = str(fasta_path.absolute())

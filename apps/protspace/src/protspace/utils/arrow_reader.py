@@ -101,7 +101,7 @@ class ArrowReader:
 
     def _build_data_structure(self):
         """Build the data structure matching the ProtSpace data schema."""
-        # Use the first column as identifier (issue #10)
+        # Use the first column as identifier (tsenoner/protspace-legacy#10)
         id_col = self._protein_annotations_df.columns[0]
 
         # Build protein_data

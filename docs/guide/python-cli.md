@@ -8,6 +8,19 @@ For local processing or automation, use the ProtSpace Python package.
 pip install protspace
 ```
 
+**Optional extras**
+
+| Extra        | Install                               | Needed for                                                            |
+| ------------ | ------------------------------------- | --------------------------------------------------------------------- |
+| `local`      | `pip install "protspace[local]"`      | on-device embedding (`--backend local`) instead of the Biocentral API |
+| `similarity` | `pip install "protspace[similarity]"` | MMseqs2 sequence-similarity projections (`-s/--similarity`)           |
+| `frontend`   | `pip install "protspace[frontend]"`   | the local Dash viewer (`protspace serve`)                             |
+
+> **Upgrading from 4.9.x or earlier:** `-s/--similarity` used to work out of the box because
+> MMseqs2 shipped in the base install. It now lives in the `similarity` extra, so add
+> `pip install "protspace[similarity]"` if you use that flag. Nothing else changes — the base
+> install got smaller and no longer compiles MMseqs2 from source.
+
 ## Quick Start
 
 ### From a UniProt Query
@@ -38,7 +51,7 @@ protspace prepare -i sequences.fasta -e prot_t5 -m pca2,umap2
 | `-m`      | Projection methods (comma-separated or repeatable)                       |
 | `-a`      | Annotations: group names, individual names, or CSV path                  |
 | `-e`      | Embedder model shortcut (for FASTA input)                                |
-| `-s`      | Compute sequence similarity via MMseqs2                                  |
+| `-s`      | Compute sequence similarity via MMseqs2 (needs `protspace[similarity]`)  |
 | `-v`      | Verbosity (`-v` = INFO, `-vv` = DEBUG)                                   |
 
 ## Annotations

@@ -4,6 +4,8 @@
 
 **Goal:** Make the `protspace` backend emit lossless, percent-encoded, version-stamped categorical annotation cells (bundle format v2) so external-DB names containing `;`/`|` never corrupt parsing, and stop fabricating names for unnamed CATH superfamilies (#57).
 
+**Issues:** tsenoner/protspace-legacy#56, #57, #58 (bare `#N` below refers to that archived repo).
+
 **Architecture:** A tiny shared codec (`encode_field`/`decode_field`) percent-encodes a minimal reserved set (`%` `;` `|` + C0/DEL control chars) inside every free-text token (name / bare-text label / evidence) at the serialization boundary; the bundle carries `format_version = 2` in parquet file-level key-value metadata on the `protein_annotations` table. Names are stored encoded (the wire format) and decoded only at display. Unnamed CATH superfamilies resolve to their bare code.
 
 **Tech Stack:** Python ≥3.10, pyarrow 20, pandas, pytest, ruff. Run everything with `uv run`.
@@ -204,7 +206,10 @@ Replace `test_unnamed_superfamily_inherits_topology` (`tests/test_cath_names.py:
 
 ```python
     def test_unnamed_superfamily_has_no_name(self, tmp_path):
-        """An unnamed superfamily must NOT inherit the parent topology name (#57)."""
+        """An unnamed superfamily must NOT inherit the parent topology name.
+
+        See tsenoner/protspace-legacy#57.
+        """
         content = (
             "6.20.10           3s6xC01    :Laminin\n"
             "6.20.10.10        1lmmA01    :\n"
@@ -236,8 +241,8 @@ def _parse_cath_names(path: Path) -> dict[str, str]:
     Each line: ``cath_code  representative_domain  :Name``. Superfamilies with an
     empty name (``:`` followed by nothing) are left OUT of the mapping so callers
     fall back to the bare CATH code — matching CATH's own "waiting to be named"
-    convention (issue #57). The parent topology name is never propagated onto an
-    unnamed superfamily.
+    convention (tsenoner/protspace-legacy#57). The parent topology name is never
+    propagated onto an unnamed superfamily.
     """
     names: dict[str, str] = {}
 
@@ -259,7 +264,7 @@ def _parse_cath_names(path: Path) -> dict[str, str]:
     return names
 ```
 
-Also update the module docstring (`cath_names.py:1-6`) — replace "Unnamed superfamilies inherit their parent topology name." with "Unnamed superfamilies are omitted so callers fall back to the bare CATH code (issue #57)." — and the `get_cath_names` docstring line 28-29 similarly.
+Also update the module docstring (`cath_names.py:1-6`) — replace "Unnamed superfamilies inherit their parent topology name." with "Unnamed superfamilies are omitted so callers fall back to the bare CATH code (tsenoner/protspace-legacy#57)." — and the `get_cath_names` docstring line 28-29 similarly.
 
 - [ ] **Step 4: Run to verify green (and no other cath test regressed)**
 

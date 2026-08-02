@@ -2,7 +2,8 @@
 
 **Date:** 2026-07-13
 **Status:** Approved (design)
-**Related issues:** [#67](https://github.com/tsenoner/protspace/issues/67) (numeric styling clarity), [#68](https://github.com/tsenoner/protspace/issues/68) (surface `stats`/`transfer`, version drift)
+**Related issues:** [tsenoner/protspace-legacy#67](https://github.com/tsenoner/protspace-legacy/issues/67) (numeric styling clarity), [tsenoner/protspace-legacy#68](https://github.com/tsenoner/protspace-legacy/issues/68) (surface `stats`/`transfer`, version drift)
+Bare `#N` below refers to that archived repo.
 
 ## Summary
 

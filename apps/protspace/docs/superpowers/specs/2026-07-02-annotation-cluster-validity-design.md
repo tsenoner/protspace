@@ -2,13 +2,14 @@
 
 **Date:** 2026-07-02
 **Branch:** `feat/annotation-cluster-validity` (stacked on `feat/projection-statistics`)
-**Refs:** #31 (parent feature request), #63 (extras, merged), #64 (deferred gap/BIC k-selection), protspace_web#296 (frontend spec)
+**Refs:** #324 (parent feature request), tsenoner/protspace-legacy#63 (extras, merged), #318 (deferred gap/BIC k-selection), protspace_web#296 (frontend spec)
+Issue numbers below are monorepo numbers unless prefixed; #324/#318 were transferred here from the archived repo.
 
 ## Motivation
 
-The shipped cluster-validity metric diverges from what #31 asked for. Today `ClusterValidityStatistic` runs KMeans on each projection's 2D coordinates and computes `silhouette / davies_bouldin / calinski_harabasz` **on those auto-KMeans labels**. That answers "does this projection form clean KMeans blobs?" — and it is partly circular, since KMeans optimises the very compactness silhouette/CH reward.
+The shipped cluster-validity metric diverges from what #324 asked for. Today `ClusterValidityStatistic` runs KMeans on each projection's 2D coordinates and computes `silhouette / davies_bouldin / calinski_harabasz` **on those auto-KMeans labels**. That answers "does this projection form clean KMeans blobs?" — and it is partly circular, since KMeans optimises the very compactness silhouette/CH reward.
 
-#31 instead asked to *"compute standard clustering quality scores for **any selected feature/annotation**"* and noted *"metrics should be computed on the **original high-dimensional embeddings**, not on UMAP/t-SNE projections which distort distances."* i.e. the scores should measure how well a **biological annotation** (e.g. `major_group`) separates — the answer users actually want.
+#324 instead asked to *"compute standard clustering quality scores for **any selected feature/annotation**"* and noted *"metrics should be computed on the **original high-dimensional embeddings**, not on UMAP/t-SNE projections which distort distances."* i.e. the scores should measure how well a **biological annotation** (e.g. `major_group`) separates — the answer users actually want.
 
 This rework makes cluster-validity **annotation-based**, while keeping the automated group-detection columns intact.
 
@@ -24,13 +25,13 @@ Use **annotation** throughout (never "feature"). An *annotation* is a per-protei
 | Auto-clustering: `cluster_elbow_*` / `cluster_silhouette_*` membership columns (+ per-point silhouette confidence + auto legend) | present | **kept unchanged** (group detection; frontend #296 already consumes them) |
 | Agreement (ARI/NMI) | none | **new** — auto-clusters vs each annotation |
 | Auto-cluster **self**-silhouette/DBI/CH aggregate rows | in `statistics.parquet` | **removed** (the circular metric). `n_clusters` meta row kept (documents detected K + inertia/knee for an elbow chart) |
-| Gap statistic / BIC-AIC k-selection | — | **out of scope** → #64 |
+| Gap statistic / BIC-AIC k-selection | — | **out of scope** → #318 |
 
 ## What gets computed
 
 For each selected annotation `a` (per-protein category labels), dropping proteins whose value for `a` is missing/`<NaN>`:
 
-1. **Embedding-space validity** — `silhouette / davies_bouldin / calinski_harabasz` of `a` on the source embedding. One set per `(embedding × a)`. The true-separability "ceiling" (#31's Key note). Computed **once per embedding** (not repeated per projection).
+1. **Embedding-space validity** — `silhouette / davies_bouldin / calinski_harabasz` of `a` on the source embedding. One set per `(embedding × a)`. The true-separability "ceiling" (#324's Key note). Computed **once per embedding** (not repeated per projection).
 2. **Projection-space validity** — the same three on each projection's 2D coords. One set per `(projection × a)`. How well each layout displays that separation.
 3. **Agreement** — `adjusted_rand` + `normalized_mutual_info` between each auto-cluster labelling (`kmeans_elbow`, `kmeans_silhouette`) and `a`, per projection. "Did automated KMeans recover `a`?" (label-only; coordinate-independent.)
 
@@ -98,7 +99,7 @@ New/updated `tests/test_stats*.py` cases:
 - Removed: assertions on the old auto-cluster self-silhouette aggregate row.
 
 ## Out of scope
-- Gap statistic + BIC/AIC k-selection → #64.
+- Gap statistic + BIC/AIC k-selection → #318.
 - HDBSCAN/GMM auto-clustering models → future (KMeans only).
 - Frontend rendering of the new rows → protspace_web#296.
 

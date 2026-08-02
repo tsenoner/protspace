@@ -513,7 +513,11 @@ class TestMergeSameNameSets:
         assert merge_same_name_sets([]) == []
 
     def test_same_name_no_overlap_through_pipeline(self):
-        """Regression test for issue #44: same name, disjoint keys should work."""
+        """Same name, disjoint keys should work.
+
+        Regression test for tsenoner/protspace-legacy#44 (the pre-monorepo Python
+        repo); this repo's own #44 is an unrelated web bug.
+        """
         config = PipelineConfig(methods=[MethodSpec("pca", 2)], output_path=None)
         pipeline = ReductionPipeline(config)
         es1 = _make_es("prot_t5", ["A", "B"])
