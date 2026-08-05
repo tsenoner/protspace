@@ -522,6 +522,179 @@ describe('query-value-picker', () => {
     });
   });
 
+  describe('keyboard navigation', () => {
+    /** The labels of the items currently carrying the `highlighted` class. */
+    function highlighted(el: ValuePickerEl): string[] {
+      return items(el)
+        .filter((i) => i.classList.contains('highlighted'))
+        .map((i) => i.querySelector('span:not(.value-picker-count)')!.textContent!.trim());
+    }
+
+    async function press(el: ValuePickerEl, key: string): Promise<ValuePickerEl> {
+      const input = el.shadowRoot!.querySelector('.value-picker-input') as HTMLInputElement;
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      await el.updateComplete;
+      return el;
+    }
+
+    it('highlights nothing until an arrow key is pressed', async () => {
+      const el = await mount();
+      expect(highlighted(el)).toEqual([]);
+    });
+
+    it('ArrowDown walks forward through the list', async () => {
+      const el = await mount();
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['Any value']);
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['Human']);
+    });
+
+    it('ArrowUp walks back and stops at the first item', async () => {
+      const el = await mount();
+      await press(el, 'ArrowDown');
+      await press(el, 'ArrowDown');
+      await press(el, 'ArrowUp');
+      expect(highlighted(el)).toEqual(['Any value']);
+      await press(el, 'ArrowUp');
+      expect(highlighted(el)).toEqual(['Any value']);
+    });
+
+    it('ArrowDown stops at the last item', async () => {
+      const el = await mount();
+      for (let i = 0; i < 10; i++) await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['N/A']);
+    });
+
+    it('Enter selects the highlighted value and emits the internal sentinel', async () => {
+      const el = await mount();
+      let emitted: string | undefined;
+      el.addEventListener('value-selected', (e) => {
+        emitted = (e as CustomEvent<{ value: string }>).detail.value;
+      });
+      await press(el, 'ArrowDown');
+      await press(el, 'Enter');
+      expect(emitted).toBe(ANY_VALUE);
+    });
+
+    it('Enter does nothing while nothing is highlighted', async () => {
+      const el = await mount();
+      let emitted = false;
+      el.addEventListener('value-selected', () => {
+        emitted = true;
+      });
+      await press(el, 'Enter');
+      expect(emitted).toBe(false);
+    });
+
+    it('navigates the filtered list, not the full one', async () => {
+      const el = await search(await mount(), 'ou');
+      let emitted: string | undefined;
+      el.addEventListener('value-selected', (e) => {
+        emitted = (e as CustomEvent<{ value: string }>).detail.value;
+      });
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['Mouse']);
+      await press(el, 'Enter');
+      expect(emitted).toBe('Mouse');
+    });
+
+    it('resets the highlight when the search query changes', async () => {
+      const el = await mount();
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['Any value']);
+      await search(el, 'u');
+      expect(highlighted(el)).toEqual([]);
+    });
+
+    it('resets the highlight when the picker is reopened', async () => {
+      const el = await mount();
+      await press(el, 'ArrowDown');
+      el.open = false;
+      await el.updateComplete;
+      el.open = true;
+      await el.updateComplete;
+      expect(highlighted(el)).toEqual([]);
+    });
+
+    it('arrows do nothing on an empty filtered list', async () => {
+      const el = await search(await mount(), 'nothing matches this');
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual([]);
+    });
+
+    it('refuses to highlight or select locked-out entries', async () => {
+      const el = await mount({ selectedValues: [ANY_VALUE] });
+      let emitted = false;
+      el.addEventListener('value-selected', () => {
+        emitted = true;
+      });
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual([]);
+      await press(el, 'Enter');
+      expect(emitted).toBe(false);
+    });
+
+    it('does not select a locked-out entry left highlighted by an earlier navigation', async () => {
+      const el = await mount();
+      await press(el, 'ArrowDown');
+      await press(el, 'ArrowDown');
+      expect(highlighted(el)).toEqual(['Human']);
+      // The lock arrives while Human is still highlighted.
+      el.selectedValues = [ANY_VALUE];
+      await el.updateComplete;
+      let emitted = false;
+      el.addEventListener('value-selected', () => {
+        emitted = true;
+      });
+      await press(el, 'Enter');
+      expect(emitted).toBe(false);
+    });
+  });
+
+  describe('ARIA', () => {
+    it('marks the list as a listbox and its entries as options', async () => {
+      const el = await mount();
+      const list = el.shadowRoot!.querySelector('.value-picker-list')!;
+      expect(list.getAttribute('role')).toBe('listbox');
+      expect(items(el)).toHaveLength(5);
+      for (const item of items(el)) {
+        expect(item.getAttribute('role')).toBe('option');
+      }
+    });
+
+    it('labels the search input', async () => {
+      const el = await mount();
+      const input = el.shadowRoot!.querySelector('.value-picker-input')!;
+      expect(input.getAttribute('aria-label')).toBe('Search values');
+      expect(input.getAttribute('aria-haspopup')).toBe('listbox');
+      expect(input.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('points aria-activedescendant at the highlighted option', async () => {
+      const el = await mount();
+      const input = el.shadowRoot!.querySelector('.value-picker-input')!;
+      expect(input.getAttribute('aria-activedescendant')).toBe('');
+
+      const keydown = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true });
+      input.dispatchEvent(keydown);
+      await el.updateComplete;
+
+      const active = input.getAttribute('aria-activedescendant')!;
+      expect(active).not.toBe('');
+      const target = el.shadowRoot!.getElementById(active)!;
+      expect(target.classList.contains('highlighted')).toBe(true);
+      expect(target.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('reports aria-selected false on the entries that are not highlighted', async () => {
+      const el = await mount();
+      for (const item of items(el)) {
+        expect(item.getAttribute('aria-selected')).toBe('false');
+      }
+    });
+  });
+
   describe('close behaviour', () => {
     it('emits picker-close on Escape', async () => {
       const el = await mount();

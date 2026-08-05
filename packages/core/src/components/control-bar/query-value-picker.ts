@@ -8,6 +8,7 @@ import { toInternalValue } from '../legend/config';
 import { resolveAnnotationInternalValues } from './query-evaluate';
 import { NA_VALUE, NA_DISPLAY } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
+import { handleDropdownEscape } from '../../utils/dropdown-helpers';
 
 /**
  * Display label for the `ANY_VALUE` sentinel, the companion of `NA_DISPLAY`.
@@ -38,6 +39,15 @@ class ProtspaceQueryValuePicker extends LitElement {
   @property({ type: Number }) triggerLeft: number = 0;
 
   @state() private _searchQuery: string = '';
+  /** Index into the *currently filtered* list, or -1 for "nothing highlighted". */
+  @state() private _highlightIndex: number = -1;
+
+  /**
+   * The filtered values as last rendered, in render order — the list keyboard
+   * navigation walks. Captured during render so arrow keys never have to redo
+   * the (dataset-sized) count arithmetic just to know what is on screen.
+   */
+  private _navigableValues: string[] = [];
 
   @litQuery('.value-picker-input') private _inputEl?: HTMLInputElement;
 
@@ -62,10 +72,14 @@ class ProtspaceQueryValuePicker extends LitElement {
   // ─── Auto-focus on open ───────────────────────────────────────────────────
 
   updated(changedProperties: Map<string, unknown>) {
-    if (changedProperties.has('open') && this.open) {
-      this.updateComplete.then(() => {
-        this._inputEl?.focus();
-      });
+    if (changedProperties.has('open')) {
+      // Opening and closing both start the next visit from a clean highlight.
+      this._highlightIndex = -1;
+      if (this.open) {
+        this.updateComplete.then(() => {
+          this._inputEl?.focus();
+        });
+      }
     }
   }
 
@@ -231,13 +245,54 @@ class ProtspaceQueryValuePicker extends LitElement {
 
   private _handleSearch(e: Event) {
     this._searchQuery = (e.target as HTMLInputElement).value;
+    this._highlightIndex = -1; // The old highlight indexes into the old list.
+  }
+
+  /**
+   * True while `ANY_VALUE` is selected: every entry is then locked out (see
+   * render) and neither the pointer nor the keyboard may select one.
+   */
+  private get _lockedByAnyValue(): boolean {
+    return this.selectedValues.includes(ANY_VALUE);
   }
 
   private _handleKeydown(e: KeyboardEvent) {
+    const values = this._navigableValues;
+
     if (e.key === 'Escape') {
-      e.stopPropagation();
-      this.dispatchEvent(new CustomEvent('picker-close', { bubbles: true, composed: true }));
+      // Via the shared helper so the enclosing modal does not also close.
+      handleDropdownEscape(e, () => {
+        this.dispatchEvent(new CustomEvent('picker-close', { bubbles: true, composed: true }));
+      });
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      // Nothing is selectable while the lock is on, so the highlight stays put.
+      if (values.length > 0 && !this._lockedByAnyValue) {
+        this._highlightIndex = Math.min(this._highlightIndex + 1, values.length - 1);
+        this._scrollToHighlighted();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (values.length > 0 && !this._lockedByAnyValue) {
+        this._highlightIndex = Math.max(this._highlightIndex - 1, 0);
+        this._scrollToHighlighted();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // Refuses disabled items exactly as the click handler does.
+      if (this._lockedByAnyValue) return;
+      if (this._highlightIndex >= 0 && this._highlightIndex < values.length) {
+        this._selectValue(values[this._highlightIndex]);
+      }
     }
+  }
+
+  private _scrollToHighlighted() {
+    this.updateComplete.then(() => {
+      const highlighted = this.shadowRoot?.querySelector('.value-picker-item.highlighted');
+      // Optional call: jsdom has no scrollIntoView.
+      highlighted?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    });
   }
 
   private _selectValue(value: string) {
@@ -255,39 +310,60 @@ class ProtspaceQueryValuePicker extends LitElement {
 
   render() {
     if (!this.open) {
+      this._navigableValues = [];
       return nothing;
     }
 
     const { allValues, filteredValues } = this._computeValues();
+    this._navigableValues = filteredValues.map(({ value }) => value);
     // "Any value" subsumes every other entry — OR-ing it with a real value is
     // just "any value", and OR-ing it with N/A is everything — so while it is
     // selected the rest of the list is locked out rather than silently ignored.
-    const lockedByAnyValue = this.selectedValues.includes(ANY_VALUE);
+    const lockedByAnyValue = this._lockedByAnyValue;
+    const activeId =
+      this._highlightIndex >= 0 && this._highlightIndex < filteredValues.length
+        ? `value-picker-option-${this._highlightIndex}`
+        : '';
 
     return html`
       <div class="value-picker" style="top:${this.triggerTop}px;left:${this.triggerLeft}px">
         <input
           class="value-picker-input"
           placeholder="Search values..."
+          aria-label="Search values"
+          role="combobox"
+          aria-expanded="true"
+          aria-haspopup="listbox"
+          aria-controls="value-picker-list"
+          aria-activedescendant=${activeId}
           .value=${this._searchQuery}
           @input=${this._handleSearch}
           @keydown=${this._handleKeydown}
         />
-        <div class="value-picker-list">
-          ${filteredValues.map(
-            ({ value, count }) => html`
+        <div class="value-picker-list" id="value-picker-list" role="listbox" aria-label="Values">
+          ${filteredValues.map(({ value, count }, index) => {
+            const isHighlighted = index === this._highlightIndex;
+            return html`
               <div
-                class="value-picker-item ${lockedByAnyValue ? 'is-disabled' : ''}"
+                id="value-picker-option-${index}"
+                class="value-picker-item ${lockedByAnyValue ? 'is-disabled' : ''} ${isHighlighted
+                  ? 'highlighted'
+                  : ''}"
+                role="option"
                 aria-disabled=${lockedByAnyValue ? 'true' : 'false'}
+                aria-selected=${isHighlighted ? 'true' : 'false'}
                 @click=${() => {
                   if (!lockedByAnyValue) this._selectValue(value);
+                }}
+                @mouseenter=${() => {
+                  if (!lockedByAnyValue) this._highlightIndex = index;
                 }}
               >
                 <span>${this._highlightMatch(this._displayValue(value))}</span>
                 <span class="value-picker-count">${count}</span>
               </div>
-            `,
-          )}
+            `;
+          })}
         </div>
         <div class="value-picker-footer">
           ${filteredValues.length} of ${allValues.length} values shown

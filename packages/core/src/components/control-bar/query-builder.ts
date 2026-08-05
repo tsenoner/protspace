@@ -12,7 +12,6 @@ import type {
 import { createCondition, createGroup, isFilterGroup } from './query-types';
 import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
 import { queryBuilderStyles } from './query-builder.styles';
-import { buttonMixin } from '../../styles/mixins';
 import { renderCloseIcon } from '../legend/legend-other-dialog';
 import './query-condition-row';
 
@@ -27,7 +26,6 @@ import './query-condition-row';
 @customElement('protspace-query-builder')
 class ProtspaceQueryBuilder extends LitElement {
   static styles = [
-    buttonMixin,
     queryBuilderStyles,
     css`
       :host {
