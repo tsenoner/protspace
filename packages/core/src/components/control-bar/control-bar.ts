@@ -10,7 +10,7 @@ import type {
   StructureViewerElement,
 } from './types';
 import { handleDropdownEscape, isAnyDropdownOpen } from '../../utils/dropdown-helpers';
-import { isEatConfidenceAnnotation } from '@protspace/utils';
+import { isEatConfidenceAnnotation, NA_VALUE } from '@protspace/utils';
 import {
   EXPORT_DEFAULTS,
   toggleProteinSelection,
@@ -1690,12 +1690,18 @@ export class ProtspaceControlBar extends LitElement {
       ? this.filterQuery.filter((item) => !this._isReliabilityConditionForKey(item, key))
       : [...this.filterQuery];
     if (threshold > 0 && key) {
+      // "confidence >= X, or no confidence score at all" — stated directly.
+      // Curated points carry no prediction confidence (null), and the N/A
+      // presence chip is what keeps them visible. This used to be spelled
+      // `NOT(confidence < X)`, which worked only because NOT was a bare index
+      // complement that happened to sweep nulls back in; NOT now means "has a
+      // value AND does not match", so it would hide curated points instead.
       next.push(
         createNumericCondition({
           annotation: key,
-          operator: 'lt',
-          max: threshold,
-          logicalOp: 'NOT',
+          operator: 'gte',
+          min: threshold,
+          presence: [NA_VALUE],
         }),
       );
     }
@@ -1732,8 +1738,9 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   /**
-   * True when `item` is the reliability filter `NOT(<key> < X)` for the specific
-   * eat-confidence column `key` — numeric, that exact column, `lt`, negated.
+   * True when `item` is the reliability filter `<key> >= X or N/A` for the
+   * specific eat-confidence column `key` — numeric, that exact column, `gte`,
+   * un-negated, and carrying the N/A presence chip that retains curated points.
    */
   private _isReliabilityConditionForKey(
     item: FilterQueryItem,
@@ -1743,12 +1750,13 @@ export class ProtspaceControlBar extends LitElement {
       !isFilterGroup(item) &&
       item.kind === 'numeric' &&
       item.annotation === key &&
-      item.operator === 'lt' &&
-      item.logicalOp === 'NOT'
+      item.operator === 'gte' &&
+      item.logicalOp !== 'NOT' &&
+      (item.presence ?? []).includes(NA_VALUE)
     );
   }
 
-  /** The reliability `NOT(<key> < X)` condition for eat-confidence column `key`, if present. */
+  /** The reliability `<key> >= X or N/A` condition for eat-confidence column `key`, if present. */
   private _findReliabilityConditionForKey(
     query: FilterQuery,
     key: string,
@@ -1760,7 +1768,7 @@ export class ProtspaceControlBar extends LitElement {
 
   /** The current reliability threshold for eat-confidence column `key` (0 if none/unresolved). */
   private _thresholdForKey(key: string | undefined): number {
-    return key ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0) : 0;
+    return key ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.min ?? 0) : 0;
   }
 
   private _handleQueryReset() {

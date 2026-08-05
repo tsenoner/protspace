@@ -1,5 +1,19 @@
 export type LogicalOp = 'AND' | 'OR' | 'NOT';
-export type NumericOperator = 'gt' | 'lt' | 'between';
+export type NumericOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'between';
+
+/**
+ * Presence sentinel meaning "this annotation has a value at all".
+ *
+ * Companion to `NA_VALUE` ('__NA__') from @protspace/utils, and its exact
+ * complement over a given annotation: NA_VALUE selects the proteins missing a
+ * value, ANY_VALUE selects precisely the rest. Kept here rather than in
+ * missing-values.ts because it is a filter-query concept, not an ingestion one
+ * — nothing in the data pipeline ever produces it.
+ *
+ * Categorical conditions carry it in `values` alongside real values; numeric
+ * conditions carry it in `presence`. Both kinds evaluate it identically.
+ */
+export const ANY_VALUE = '__ANY__';
 
 interface BaseCondition {
   id: string;
@@ -17,6 +31,13 @@ export interface NumericCondition extends BaseCondition {
   operator: NumericOperator;
   min: number | null;
   max: number | null;
+  /**
+   * Presence sentinels (`NA_VALUE` / `ANY_VALUE`) unioned with the comparison,
+   * mirroring how a categorical condition carries them among its `values`.
+   * `>= 0.5` with `[NA_VALUE]` reads "at least 0.5, or no value at all".
+   * A condition is configured when it has bounds OR a presence chip.
+   */
+  presence?: string[];
 }
 
 export type FilterCondition = CategoricalCondition | NumericCondition;
@@ -54,6 +75,7 @@ export function createNumericCondition(overrides?: Partial<NumericCondition>): N
     operator: 'gt',
     min: null,
     max: null,
+    presence: [],
     ...overrides,
   };
 }

@@ -23,6 +23,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import './control-bar';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
+import { NA_VALUE } from '@protspace/utils';
 
 interface StubScatterplot {
   filteredProteinIds?: string[];
@@ -219,17 +220,19 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
     await controlBar.updateComplete;
   });
 
-  it('forward: upserts a single NOT(EAT_confidence < x) condition and applies it', () => {
+  it('forward: upserts a single "EAT_confidence >= x or N/A" condition and applies it', () => {
     controlBar.setEatConfidenceThreshold('family', 0.5);
 
     const eat = eatCondition(controlBar.filterQuery);
     expect(eat).toMatchObject({
       kind: 'numeric',
       annotation: EAT_KEY,
-      operator: 'lt',
-      max: 0.5,
-      logicalOp: 'NOT',
+      operator: 'gte',
+      min: 0.5,
+      presence: [NA_VALUE],
     });
+    // Un-negated: the N/A chip is what retains curated points now, not NOT.
+    expect(eat?.logicalOp).not.toBe('NOT');
     expect(controlBar.filterQuery).toHaveLength(1);
     expect(scatter.filtersActive).toBe(true);
     expect(controlBar.filterActive).toBe(true);
@@ -256,7 +259,7 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
     expect(controlBar.filterQuery.filter((i) => 'kind' in i && i.kind === 'numeric')).toHaveLength(
       1,
     );
-    expect(eatCondition(controlBar.filterQuery)).toMatchObject({ max: 0.8 });
+    expect(eatCondition(controlBar.filterQuery)).toMatchObject({ min: 0.8 });
     // Kept = curated (5) + predictions >= 0.8 (p16–p19 = 4) = 9.
     expect(scatter.filteredProteinIds).toHaveLength(9);
   });
@@ -315,10 +318,10 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
               id: 'x',
               kind: 'numeric',
               annotation: EAT_KEY,
-              operator: 'lt',
-              min: null,
-              max: 0.6,
-              logicalOp: 'NOT',
+              operator: 'gte',
+              min: 0.6,
+              max: null,
+              presence: [NA_VALUE],
             },
           ],
         },
@@ -419,14 +422,14 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
 
     // Both bases' conditions coexist with their own thresholds.
     expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({
-      operator: 'lt',
-      logicalOp: 'NOT',
-      max: 0.5,
+      operator: 'gte',
+      presence: [NA_VALUE],
+      min: 0.5,
     });
     expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({
-      operator: 'lt',
-      logicalOp: 'NOT',
-      max: 0.8,
+      operator: 'gte',
+      presence: [NA_VALUE],
+      min: 0.8,
     });
   });
 
@@ -435,8 +438,8 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
     controlBar.setEatConfidenceThreshold('go', 0.8);
     controlBar.setEatConfidenceThreshold('ec', 0.3);
 
-    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({ max: 0.3 });
-    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ max: 0.8 });
+    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({ min: 0.3 });
+    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ min: 0.8 });
     expect(controlBar.filterQuery.filter((i) => 'kind' in i && i.kind === 'numeric')).toHaveLength(
       2,
     );
@@ -448,7 +451,7 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
     controlBar.setEatConfidenceThreshold('ec', 0);
 
     expect(conditionFor(controlBar.filterQuery, EC_KEY)).toBeUndefined();
-    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ max: 0.8 });
+    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ min: 0.8 });
   });
 
   it('reverse mirror follows the SELECTED base when the annotation switches', async () => {

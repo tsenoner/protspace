@@ -336,6 +336,15 @@ export const queryBuilderStyles = css`
     color: var(--primary);
   }
 
+  /* Locked out while the "Any value" sentinel is selected (it subsumes them). */
+  .value-picker-item.is-disabled,
+  .value-picker-item.is-disabled:hover {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: none;
+    color: var(--text-primary);
+  }
+
   .value-picker-item mark,
   .value-picker-highlight {
     color: var(--primary);

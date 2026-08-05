@@ -2,12 +2,12 @@ import { LitElement, html, nothing } from 'lit';
 import { property, state, query as litQuery } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { FilterCondition, LogicalOp, NumericCondition } from './query-types';
-import { createCondition, createNumericCondition } from './query-types';
+import { ANY_VALUE, createCondition, createNumericCondition } from './query-types';
 import type { ProtspaceData } from './types';
 import { groupAnnotations } from './annotation-categories';
 import { NA_VALUE, NA_DISPLAY, isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
-import './query-value-picker';
+import { ANY_DISPLAY } from './query-value-picker';
 import './query-numeric-input';
 
 /**
@@ -67,7 +67,9 @@ class ProtspaceQueryConditionRow extends LitElement {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private _displayValue(value: string): string {
-    return value === NA_VALUE ? NA_DISPLAY : value;
+    if (value === NA_VALUE) return NA_DISPLAY;
+    if (value === ANY_VALUE) return ANY_DISPLAY;
+    return value;
   }
 
   private _dispatchChanged(updated: FilterCondition) {
@@ -143,9 +145,20 @@ class ProtspaceQueryConditionRow extends LitElement {
   private _handleValueSelected(e: CustomEvent<{ value: string }>) {
     if (this.condition.kind !== 'categorical') return;
     const value = e.detail.value;
-    if (!this.condition.values.includes(value)) {
-      this._dispatchChanged({ ...this.condition, values: [...this.condition.values, value] });
+    const values = this.condition.values;
+    if (values.includes(value)) return;
+
+    // "Any value" is mutually exclusive with every other value: OR-ing it with a
+    // real value is just "any value", and OR-ing it with N/A matches everything.
+    // Selecting it therefore replaces the selection; once it is in place the
+    // picker locks the rest out, and this guard backs that up.
+    if (value === ANY_VALUE) {
+      this._dispatchChanged({ ...this.condition, values: [ANY_VALUE] });
+      return;
     }
+    if (values.includes(ANY_VALUE)) return;
+
+    this._dispatchChanged({ ...this.condition, values: [...values, value] });
   }
 
   private _handleValuePickerClose() {

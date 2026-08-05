@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { ProtspaceData } from './types';
 import type { FilterQuery } from './query-types';
-import { createNumericCondition } from './query-types';
+import { createNumericCondition, ANY_VALUE } from './query-types';
+import { NA_VALUE } from '@protspace/utils';
 import {
   evaluateQuery,
   evaluateQueryExcluding,
@@ -415,15 +416,16 @@ describe('evaluateQuery', () => {
         },
       ];
       const result = evaluateQuery(query, createTestData());
-      // length>250 → P3,P4 ; NOT → P1,P2,P5 (P5 null is "not > 250")
-      expect(result).toEqual(new Set([0, 1, 4]));
+      // length>250 → P3,P4 ; NOT → "has a length AND is not >250" → P1,P2.
+      // P5 (null length) is NOT re-included: NOT requires a present value.
+      expect(result).toEqual(new Set([0, 1]));
     });
 
-    describe('NOT + null (curated retained)', () => {
+    describe('NOT excludes N/A', () => {
       /**
-       * Characterization data for a nullable numeric annotation, e.g. an
-       * `__eat_confidence` reliability score: two proteins carry a real
-       * prediction confidence, two are curated (no prediction, null value).
+       * Nullable numeric annotation, e.g. an `__eat_confidence` reliability
+       * score: two proteins carry a real prediction confidence, two are
+       * curated (no prediction, null value).
        */
       function createNullableNumericData(): ProtspaceData {
         return {
@@ -434,7 +436,7 @@ describe('evaluateQuery', () => {
         };
       }
 
-      it('NOT(x < 0.5) keeps values >= 0.5 AND null-valued rows (curated retained)', () => {
+      it('NOT(x < 0.5) keeps only values >= 0.5 — nulls are NOT re-included', () => {
         const data = createNullableNumericData();
         const query: FilterQuery = [
           createNumericCondition({
@@ -445,11 +447,9 @@ describe('evaluateQuery', () => {
           }),
         ];
         const result = evaluateQuery(query, data);
-        // 0.2 excluded; 0.8 kept; both nulls (curated) re-included by NOT's
-        // index complement — this is the mechanism the reliability filter
-        // relies on to hide low-confidence predictions while keeping curated
-        // points that have no confidence score at all.
-        expect(result).toEqual(new Set([1, 2, 3]));
+        // NOT means "has a value AND does not match", so the curated nulls
+        // (P3, P4) are excluded along with the sub-threshold 0.2.
+        expect(result).toEqual(new Set([1]));
       });
 
       it('mirror without NOT: x < 0.5 matches only the sub-threshold prediction', () => {
@@ -459,6 +459,24 @@ describe('evaluateQuery', () => {
         ];
         const result = evaluateQuery(query, data);
         expect(result).toEqual(new Set([0]));
+      });
+
+      it('reliability-filter shape: >= 0.5 with an N/A chip retains curated points', () => {
+        const data = createNullableNumericData();
+        // This is the query the EAT reliability slider now synthesizes: a
+        // single condition reading "confidence >= X, or no confidence score".
+        // It states the intent directly instead of relying on NOT's complement
+        // to sweep nulls back in.
+        const query: FilterQuery = [
+          createNumericCondition({
+            annotation: 'conf',
+            operator: 'gte',
+            min: 0.5,
+            presence: [NA_VALUE],
+          }),
+        ];
+        const result = evaluateQuery(query, data);
+        expect(result).toEqual(new Set([1, 2, 3]));
       });
     });
   });
@@ -690,13 +708,15 @@ describe('multi-label annotations', () => {
       expect(result).toEqual(new Set([0, 1, 2]));
     });
 
-    it('NOT excludes proteins carrying the value among ANY label', () => {
+    it('NOT excludes proteins carrying the value among ANY label, and unlabeled ones', () => {
       const query: FilterQuery = [
         { id: '1', logicalOp: 'NOT', kind: 'categorical', annotation: 'domain', values: ['B'] },
       ];
-      // P1 and P3 carry B somewhere in their label list, so only P2 and P4 remain.
+      // P1 and P3 carry B somewhere in their label list, so they are excluded.
+      // P4 is unlabeled (N/A) and is excluded too — NOT requires a present
+      // value. Only P2 remains.
       const result = evaluateQuery(query, createMultilabelData());
-      expect(result).toEqual(new Set([1, 3]));
+      expect(result).toEqual(new Set([1]));
     });
 
     it('matches unlabeled proteins via __NA__', () => {
@@ -705,6 +725,156 @@ describe('multi-label annotations', () => {
       ];
       const result = evaluateQuery(query, createMultilabelData());
       expect(result).toEqual(new Set([3]));
+    });
+  });
+});
+
+describe('inclusive numeric operators (gte / lte)', () => {
+  // length: P1=100, P2=250, P3=400, P4=550, P5=null
+  it('gte includes the boundary value, gt excludes it', () => {
+    const data = createTestData();
+    const gte = evaluateQuery(
+      [createNumericCondition({ annotation: 'length', operator: 'gte', min: 250 })],
+      data,
+    );
+    const gt = evaluateQuery(
+      [createNumericCondition({ annotation: 'length', operator: 'gt', min: 250 })],
+      data,
+    );
+    expect(gte).toEqual(new Set([1, 2, 3]));
+    expect(gt).toEqual(new Set([2, 3]));
+  });
+
+  it('lte includes the boundary value, lt excludes it', () => {
+    const data = createTestData();
+    const lte = evaluateQuery(
+      [createNumericCondition({ annotation: 'length', operator: 'lte', max: 250 })],
+      data,
+    );
+    const lt = evaluateQuery(
+      [createNumericCondition({ annotation: 'length', operator: 'lt', max: 250 })],
+      data,
+    );
+    expect(lte).toEqual(new Set([0, 1]));
+    expect(lt).toEqual(new Set([0]));
+  });
+
+  it('treats a null value as outside every comparison operator', () => {
+    const data = createTestData();
+    // P5 has a null length and must not match gte/lte regardless of bound.
+    const result = evaluateQuery(
+      [createNumericCondition({ annotation: 'length', operator: 'gte', min: -Infinity })],
+      data,
+    );
+    expect(result.has(4)).toBe(false);
+  });
+});
+
+describe('presence chips', () => {
+  describe('categorical', () => {
+    // pfam: P1=PF00069, P2=PF00076, P3=null, P4=PF00069, P5=PF00076
+    it('__ANY__ matches every protein that has a value', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'pfam', values: [ANY_VALUE] },
+      ];
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 1, 3, 4]));
+    });
+
+    it('__ANY__ is the complement of __NA__ over the same annotation', () => {
+      const data = createTestData();
+      const any = evaluateQuery(
+        [{ id: '1', kind: 'categorical', annotation: 'pfam', values: [ANY_VALUE] }],
+        data,
+      );
+      const na = evaluateQuery(
+        [{ id: '1', kind: 'categorical', annotation: 'pfam', values: [NA_VALUE] }],
+        data,
+      );
+      expect([...any].some((i) => na.has(i))).toBe(false);
+      expect(any.size + na.size).toBe(5);
+    });
+
+    it('__ANY__ matches a multi-label protein that has at least one real label', () => {
+      const data: ProtspaceData = {
+        protein_ids: ['P1', 'P2'],
+        annotations: { domain: { values: ['A', null] } },
+        // P1 carries a real label plus a null; P2 is unlabeled.
+        annotation_data: { domain: [[0, 1], []] },
+      };
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'domain', values: [ANY_VALUE] },
+      ];
+      expect(evaluateQuery(query, data)).toEqual(new Set([0]));
+    });
+
+    it('__ANY__ alongside a real value still matches everything with a value', () => {
+      // The UI enforces exclusivity, but the evaluator must not produce a
+      // surprising result if both ever arrive together.
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'pfam', values: [ANY_VALUE, 'PF00069'] },
+      ];
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 1, 3, 4]));
+    });
+
+    it('__ANY__ matches nothing when the annotation column is missing', () => {
+      const query: FilterQuery = [
+        { id: '1', kind: 'categorical', annotation: 'nonexistent', values: [ANY_VALUE] },
+      ];
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set());
+    });
+  });
+
+  describe('numeric', () => {
+    // length: P1=100, P2=250, P3=400, P4=550, P5=null
+    it('an N/A chip alone matches only null-valued proteins', () => {
+      const query: FilterQuery = [
+        createNumericCondition({ annotation: 'length', presence: [NA_VALUE] }),
+      ];
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([4]));
+    });
+
+    it('an ANY chip alone matches every protein that has a value', () => {
+      const query: FilterQuery = [
+        createNumericCondition({ annotation: 'length', presence: [ANY_VALUE] }),
+      ];
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 1, 2, 3]));
+    });
+
+    it('unions a comparison with an N/A chip', () => {
+      const query: FilterQuery = [
+        createNumericCondition({
+          annotation: 'length',
+          operator: 'gte',
+          min: 400,
+          presence: [NA_VALUE],
+        }),
+      ];
+      // length >= 400 → P3,P4 ; plus the null-valued P5.
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([2, 3, 4]));
+    });
+
+    it('a presence chip alone makes the condition configured (Apply is not gated off)', () => {
+      const query: FilterQuery = [
+        createNumericCondition({ annotation: 'length', presence: [NA_VALUE] }),
+      ];
+      expect(hasConfiguredCondition(query)).toBe(true);
+    });
+
+    it('a condition with neither bounds nor chips stays unconfigured', () => {
+      const query: FilterQuery = [createNumericCondition({ annotation: 'length' })];
+      expect(hasConfiguredCondition(query)).toBe(false);
+    });
+
+    it('NOT over a presence chip inverts within proteins that have a value', () => {
+      const query: FilterQuery = [
+        createNumericCondition({
+          annotation: 'length',
+          presence: [NA_VALUE],
+          logicalOp: 'NOT',
+        }),
+      ];
+      // NOT(is N/A) → has a value and is not N/A → P1..P4.
+      expect(evaluateQuery(query, createTestData())).toEqual(new Set([0, 1, 2, 3]));
     });
   });
 });

@@ -53,6 +53,67 @@ async function selectEcAnnotation(page: Page): Promise<void> {
     .toBe('ec');
 }
 
+/**
+ * Per-protein reliability score for the `ec` annotation, read straight off the
+ * loaded dataset: `null` on curated proteins (they carry no EAT transfer, so
+ * they have no confidence) and the transfer's score on EAT-predicted ones.
+ *
+ * The column is resolved by runtime identity (role + base annotation), the same
+ * way the app resolves it, so a renamed/suffixed confidence column still works.
+ */
+async function readEcEatConfidences(
+  page: Page,
+): Promise<{ id: string; confidence: number | null }[]> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('protspace-scatterplot') as
+      | (Element & {
+          data?: {
+            protein_ids: string[];
+            annotations: Record<string, { runtime?: { role?: string; baseAnnotation?: string } }>;
+            numeric_annotation_data?: Record<string, Array<number | null>>;
+          };
+        })
+      | null;
+    const data = plot?.data;
+    const key = Object.entries(data?.annotations ?? {}).find(
+      ([, annotation]) =>
+        annotation.runtime?.role === 'eat-confidence' &&
+        annotation.runtime?.baseAnnotation === 'ec',
+    )?.[0];
+    const values = key ? data?.numeric_annotation_data?.[key] : undefined;
+    if (!data || !values) {
+      throw new Error('The EAT confidence column for `ec` is not loaded');
+    }
+    return data.protein_ids.map((id, index) => ({ id, confidence: values[index] ?? null }));
+  });
+}
+
+/**
+ * Protein ids the scatter plot currently renders. Query filters physically cull
+ * `_plotData` (see scatter-plot.filter-render.test.ts), so this is the visible
+ * point set, and `originalIndices` still addresses the full dataset.
+ */
+async function readRenderedProteinIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const plotData = (
+      document.querySelector('protspace-scatterplot') as
+        | (Element & {
+            _plotData?: {
+              length: number;
+              proteinIds: string[];
+              originalIndices: Int32Array | null;
+            };
+          })
+        | null
+    )?._plotData;
+    if (!plotData) throw new Error('Scatter plot geometry is not ready');
+    return Array.from(
+      { length: plotData.length },
+      (_, slot) => plotData.proteinIds[plotData.originalIndices?.[slot] ?? slot],
+    );
+  });
+}
+
 async function getProteinScreenPosition(
   page: Page,
   proteinId: string,
@@ -743,4 +804,105 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   expect(fs.statSync(downloadPath!).size).toBeGreaterThan(10_000);
+});
+
+/**
+ * Characterization guard for the reliability filter's NET user-visible outcome:
+ * raising the threshold hides low-confidence EAT predictions while CURATED
+ * points — which carry no confidence score at all — stay on the plot.
+ *
+ * Deliberately outcome-only: it asserts which proteins the scatter plot renders
+ * and never how the filter is expressed (no NOT operator, no query shape, no
+ * condition internals). The mechanism is expected to change (the null-valued
+ * curated points are currently re-included by the NOT index-complement; a
+ * future rewrite may state the condition positively and readmit them through an
+ * explicit "no value" presence chip instead). Either way this test must keep
+ * passing unchanged — if it fails after such a rewrite, curated annotations
+ * really did start disappearing from the plot, which is the regression it
+ * exists to catch.
+ */
+test('keeps curated points visible while the reliability filter hides low-confidence EAT predictions', async ({
+  page,
+}) => {
+  await loadEatFixture(page);
+  await selectEcAnnotation(page);
+
+  const plot = page.locator('protspace-scatterplot');
+  const legend = page.locator('protspace-legend');
+  const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
+  const thresholdPercent = eatGroup.getByRole('spinbutton', {
+    name: 'EAT reliability filter percentage',
+  });
+
+  const confidences = await readEcEatConfidences(page);
+  const curated = confidences.filter(({ confidence }) => confidence === null).map(({ id }) => id);
+  const predicted = confidences.filter(
+    (entry): entry is { id: string; confidence: number } => entry.confidence !== null,
+  );
+  // Fixture facts (phosphatase bundle, `ec`): 832 proteins = 619 curated + 213 EAT transfers.
+  expect(curated).toHaveLength(619);
+  expect(predicted).toHaveLength(213);
+
+  /**
+   * Visibility snapshot at a given threshold. `curatedHidden` lists ids rather
+   * than counting them so a regression names the vanished proteins, and
+   * `predictedExpectedVisible` re-derives the expected survivor count from the
+   * data so the hard-coded numbers below stay self-explaining.
+   */
+  const visibility = async (threshold: number) => {
+    const rendered = new Set(await readRenderedProteinIds(page));
+    return {
+      renderedTotal: rendered.size,
+      curatedHidden: curated.filter((id) => !rendered.has(id)),
+      predictedVisible: predicted.filter(({ id }) => rendered.has(id)).length,
+      predictedExpectedVisible: predicted.filter(({ confidence }) => confidence >= threshold)
+        .length,
+    };
+  };
+
+  // Threshold 0: nothing is filtered, the whole dataset is on screen.
+  await expect
+    .poll(() => visibility(0), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 832,
+      curatedHidden: [],
+      predictedVisible: 213,
+      predictedExpectedVisible: 213,
+    });
+
+  // 60%: 94 of the 213 transfers fall below the threshold and are hidden; all
+  // 619 curated points stay, so 619 + 119 = 738 points remain rendered.
+  await thresholdPercent.fill('60');
+  await expect
+    .poll(() => visibility(0.6), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 738,
+      curatedHidden: [],
+      predictedVisible: 119,
+      predictedExpectedVisible: 119,
+    });
+  await expect(plot.locator('.plot-indicator').first()).toHaveText('738 points');
+
+  // 100%: only the 4 transfers at full reliability survive — still no curated
+  // point is dropped, which is the whole point of the filter.
+  await thresholdPercent.fill('100');
+  await expect
+    .poll(() => visibility(1), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 623,
+      curatedHidden: [],
+      predictedVisible: 4,
+      predictedExpectedVisible: 4,
+    });
+
+  // Back to 0: every prediction returns, so the filter hid rather than dropped them.
+  await thresholdPercent.fill('0');
+  await expect
+    .poll(() => visibility(0), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 832,
+      curatedHidden: [],
+      predictedVisible: 213,
+      predictedExpectedVisible: 213,
+    });
 });

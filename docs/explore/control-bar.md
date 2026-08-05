@@ -110,9 +110,36 @@ Close the modal with the **×** button, **Cancel**, **Escape** key, or clicking 
 
 - **AND**: Protein must match both conditions
 - **OR**: Protein must match either condition
-- **NOT**: Protein must NOT match the condition (negation)
+- **NOT**: Protein must have a value for the annotation **and** not match the condition
 
 The first condition can optionally be set to **NOT** for immediate negation.
+
+**NOT** deliberately excludes proteins with no value (N/A) for the annotation
+being negated. "NOT phospholipase A2" means "belongs to some other family", not
+"belongs to some other family, or has no family assigned at all". To include
+unannotated proteins as well, add an explicit **N/A** condition with **OR**.
+:::
+
+::: tip Missing values
+
+Every annotation offers two presence entries alongside its real values:
+
+- **N/A**: proteins with no value for this annotation
+- **Any value**: proteins that have some value — any value at all
+
+**Any value** is exclusive: selecting it clears the other values, since "Any
+value or X" is just "Any value".
+
+Numeric annotations offer the same two entries next to their comparison, so
+`≥ 0.7` plus **N/A** reads "at least 0.7, or no score at all". A presence entry
+on its own is a complete condition — no bounds needed.
+:::
+
+::: tip Numeric comparisons
+
+Numeric conditions support `>`, `≥`, `<`, `≤`, and `between` (inclusive on both
+ends). Missing values never satisfy a comparison — use the **N/A** entry to
+include them.
 :::
 
 ::: info Filter vs Isolate

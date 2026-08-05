@@ -1,9 +1,11 @@
 import type { ProtspaceData } from './types';
 import type { NumericCondition, NumericOperator } from './query-types';
+import { ANY_VALUE } from './query-types';
+import { NA_VALUE } from '@protspace/utils';
 
 /**
  * Which value fields a numeric operator needs:
- * `gt` uses `min`, `lt` uses `max`, `between` uses both.
+ * `gt`/`gte` use `min`, `lt`/`lte` use `max`, `between` uses both.
  */
 export function numericFieldsFor(operator: NumericOperator): {
   min: boolean;
@@ -11,23 +13,33 @@ export function numericFieldsFor(operator: NumericOperator): {
 } {
   switch (operator) {
     case 'gt':
+    case 'gte':
       return { min: true, max: false };
     case 'lt':
+    case 'lte':
       return { min: false, max: true };
     case 'between':
       return { min: true, max: true };
   }
 }
 
+/** The condition's presence chips, normalized to an array. */
+export function presenceOf(condition: NumericCondition): string[] {
+  return condition.presence ?? [];
+}
+
 /**
- * True when the condition has every bound its operator requires.
- * An unready condition is treated as matching nothing.
+ * True when the condition's comparison has every bound its operator requires.
+ * A condition can still be usable without bounds if it carries a presence
+ * chip — see `isNumericConditionReady`.
  */
-export function isNumericConditionReady(condition: NumericCondition): boolean {
+function hasNumericBounds(condition: NumericCondition): boolean {
   switch (condition.operator) {
     case 'gt':
+    case 'gte':
       return condition.min !== null;
     case 'lt':
+    case 'lte':
       return condition.max !== null;
     case 'between':
       return condition.min !== null && condition.max !== null;
@@ -35,36 +47,51 @@ export function isNumericConditionReady(condition: NumericCondition): boolean {
 }
 
 /**
+ * True when the condition constrains anything at all: it has the bounds its
+ * operator requires, OR it carries a presence chip (`is N/A` / `has any
+ * value`), which is meaningful on its own. This is the single readiness rule,
+ * matching the categorical side where any selected value counts.
+ * An unready condition is a match-all no-op.
+ */
+export function isNumericConditionReady(condition: NumericCondition): boolean {
+  return hasNumericBounds(condition) || presenceOf(condition).length > 0;
+}
+
+/**
  * Test a single raw numeric value against the condition.
- * `>` and `<` are exclusive; `between` is inclusive on both ends.
+ * `>` and `<` are exclusive; `>=`, `<=` and `between` are inclusive.
  *
- * Null semantics (deliberate, current rule): a null value is treated as
- * OUTSIDE the numeric domain, so every positive operator returns false for it.
- * Asymmetry to be aware of: the NOT operator is applied as an index-based
- * complement over all proteins (see `complement()` in query-evaluate.ts), NOT
- * by inverting this predicate. A null-valued protein is excluded by a positive
- * op but RE-INCLUDED by `NOT <op>`. Categorical filters already expose
- * `__NA__` as the supported way to match/negate missing values; there is no
- * numeric equivalent yet.
+ * Null (missing) values are matched ONLY by an explicit `NA_VALUE` presence
+ * chip — no comparison operator ever matches a null, since a missing value
+ * sits outside the numeric domain. `ANY_VALUE` conversely matches every
+ * non-null value regardless of the comparison. Presence chips are unioned with
+ * the comparison, so `>= 0.5` plus an N/A chip reads "at least 0.5, or no
+ * value at all".
  *
- * This NOT + null combination is intentionally relied on: the nullable
- * `__eat_confidence` numeric annotation (reliability score on EAT-predicted
- * points) ships with `NOT(EAT_confidence < X)` as the reliability filter's
- * query condition, so sub-threshold predictions are hidden while curated
- * points — which have no confidence score, i.e. null — are re-included by the
- * NOT complement rather than getting hidden alongside them. Locked by the
- * evaluate-layer characterization tests in query-evaluate.test.ts
- * (describe('NOT + null (curated retained)')); change this predicate's null
- * handling only with that behavior in mind.
+ * This is what the `__eat_confidence` reliability filter uses: curated points
+ * carry no confidence score (null), so the slider synthesizes
+ * `>= X` + N/A chip to hide sub-threshold predictions while keeping curated
+ * points visible. It states that intent directly rather than relying on `NOT`
+ * to sweep nulls back in via an index complement — `NOT` now means "has a
+ * value AND does not match", so it excludes nulls (see query-evaluate.ts).
  */
 export function matchesNumericValue(value: number | null, condition: NumericCondition): boolean {
-  if (value === null) return false;
+  const presence = presenceOf(condition);
+
+  if (value === null) return presence.includes(NA_VALUE);
+  if (presence.includes(ANY_VALUE)) return true;
+  if (!hasNumericBounds(condition)) return false;
+
   const { operator, min, max } = condition;
   switch (operator) {
     case 'gt':
       return min !== null && value > min;
+    case 'gte':
+      return min !== null && value >= min;
     case 'lt':
       return max !== null && value < max;
+    case 'lte':
+      return max !== null && value <= max;
     case 'between':
       return min !== null && max !== null && value >= min && value <= max;
   }

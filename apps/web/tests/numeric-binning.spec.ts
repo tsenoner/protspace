@@ -773,8 +773,10 @@ async function setFilterValues(page: Page, annotation: string, values: string[])
 
 /**
  * Drive the numeric range filter for `annotation`. Numeric annotations now render
- * an operator dropdown (`>`, `<`, `between`) + one or two number fields instead of
- * a bin value picker, and filter on raw values (not bins). Sets the operator and
+ * an operator dropdown (`>`, `>=`, `<`, `<=`, `between`) + one or two number fields
+ * instead of a bin value picker, and filter on raw values (not bins). This helper
+ * drives only the exclusive comparisons it was written for; the inclusive ones and
+ * the N/A presence chips are covered separately. Sets the operator and
  * the relevant bound(s); the live match count / Apply-enabled state update after
  * the builder's debounced re-evaluation, which the callers wait on.
  */
