@@ -1,8 +1,10 @@
 """Tests for pipeline utility functions."""
 
+import logging
 from collections import Counter
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from protspace.data.loaders.embedding_set import (
@@ -343,6 +345,42 @@ class TestResolveAnnotationNames:
 
     def test_tsv_path(self):
         assert self._resolve(["data.tsv", "ec"]) == (["ec"], "data.tsv")
+
+
+# ---------------------------------------------------------------------------
+# annotation cache migration guidance
+# ---------------------------------------------------------------------------
+
+
+class TestAnnotationCacheGuidance:
+    def test_legacy_ted_label_warns_with_targeted_refetch(self, tmp_path, caplog):
+        pd.DataFrame(
+            {
+                "identifier": ["W6JQJ9"],
+                "ted_domains": ["3.40.50.2000|94.2;unclassified|96.7"],
+                "gene_name": [""],
+                "protein_name": [""],
+                "uniprot_kb_id": [""],
+            }
+        ).to_parquet(tmp_path / "all_annotations.parquet", index=False)
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[],
+                output_path=None,
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["ted_domains"],
+            )
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = pipeline._fetch_annotations(["W6JQJ9"])
+
+        assert result.loc[0, "ted_domains"].endswith("unclassified|96.7")
+        assert any(
+            "--refetch ted" in message and "legacy" in message
+            for message in caplog.messages
+        )
 
 
 # ---------------------------------------------------------------------------

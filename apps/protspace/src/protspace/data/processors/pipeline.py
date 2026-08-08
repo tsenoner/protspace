@@ -419,6 +419,18 @@ class ReductionPipeline:
                     else:
                         api_df = cached_df
 
+                    legacy_ted = api_df.get("ted_domains")
+                    if (
+                        legacy_ted is not None
+                        and legacy_ted.str.contains(
+                            r"(?:^|;)unclassified(?=\|)", regex=True, na=False
+                        ).any()
+                    ):
+                        logger.warning(
+                            "Cached TED annotations use the legacy 'unclassified' "
+                            "label. Run with --refetch ted to refresh them."
+                        )
+
                     # Warn if cached annotations are all empty
                     data_cols = [c for c in api_df.columns if c != "identifier"]
                     if data_cols:

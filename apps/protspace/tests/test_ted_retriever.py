@@ -98,8 +98,8 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_unclassified_domain(self, mock_requests, mock_cath_names):
-        """Domain with cath_label '-' shows as unclassified."""
+    def test_unlabeled_domain_preserves_ted_label(self, mock_requests, mock_cath_names):
+        """Domain with cath_label '-' keeps the TED source label."""
         mock_cath_names.return_value = {}
         mock_resp = MagicMock()
         mock_resp.json.return_value = _make_alphafold_response(
@@ -111,7 +111,33 @@ class TestTedRetriever:
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
 
-        assert "unclassified|90.5" in result[0].annotations["ted_domains"]
+        assert result[0].annotations["ted_domains"] == "-|90.5"
+
+    @patch(_CATH_NAMES_PATCH)
+    @patch(_REQUESTS_PATCH)
+    def test_unlabeled_domain_keeps_source_order_with_labeled_domains(
+        self, mock_requests, mock_cath_names
+    ):
+        """A mixed TED response keeps every domain in source order."""
+        mock_cath_names.return_value = {}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_alphafold_response(
+            [
+                _make_domain("3.40.50.2000", 94.1909),
+                _make_domain("-", 96.7064),
+                _make_domain("3.40.50.2000", 95.113),
+            ]
+        )
+        mock_resp.raise_for_status = MagicMock()
+        mock_requests.get.return_value = mock_resp
+
+        retriever = TedRetriever(headers=["W6JQJ9"], annotations=TED_ANNOTATIONS)
+        result = retriever.fetch_annotations()
+
+        assert (
+            result[0].annotations["ted_domains"]
+            == "3.40.50.2000|94.2;-|96.7;3.40.50.2000|95.1"
+        )
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)

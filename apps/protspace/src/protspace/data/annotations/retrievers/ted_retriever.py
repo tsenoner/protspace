@@ -16,6 +16,9 @@ _API_TIMEOUT = 10
 
 TED_ANNOTATIONS = ["ted_domains"]
 
+# TED's own label for a domain with no CATH assignment.
+_UNLABELED_CATH = "-"
+
 
 class TedRetriever(BaseAnnotationRetriever):
     """Retrieves TED domain annotations from the AlphaFold Database API."""
@@ -72,25 +75,26 @@ class TedRetriever(BaseAnnotationRetriever):
     def _format_domains(self, domains: list[dict]) -> str:
         """Format TED domains as semicolon-separated string.
 
-        Format: "{cath_label} ({cath_name})|{plddt}"
-        Example: "2.60.40.720 (Immunoglobulin-like)|95.1;3.40.50.300 (P-loop NTPases)|88.3"
+        Format: "{cath_label} ({cath_name})|{plddt}", falling back to
+        "{cath_label}|{plddt}" when no CATH name resolves, and to "-|{plddt}"
+        for a domain with no CATH assignment.
+        Example: "2.60.40.720 (Immunoglobulin-like)|95.1;-|88.3"
         """
         if not domains:
             return ""
 
         parts = []
         for domain in domains:
-            cath_label = domain.get("cath_label", "-")
+            cath_label = domain.get("cath_label") or _UNLABELED_CATH
             plddt = domain.get("plddt", 0)
 
-            if cath_label and cath_label != "-":
-                name = self._resolve_cath_name(cath_label)
-                if name:
-                    parts.append(f"{cath_label} ({encode_field(name)})|{plddt:.1f}")
-                else:
-                    parts.append(f"{cath_label}|{plddt:.1f}")
-            else:
-                parts.append(f"unclassified|{plddt:.1f}")
+            name = (
+                self._resolve_cath_name(cath_label)
+                if cath_label != _UNLABELED_CATH
+                else ""
+            )
+            label = f"{cath_label} ({encode_field(name)})" if name else cath_label
+            parts.append(f"{label}|{plddt:.1f}")
 
         return ";".join(parts)
 
