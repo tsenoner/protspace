@@ -110,6 +110,14 @@ export default defineConfig({
       testMatch: /brush-selection\.spec\.ts/,
     },
     {
+      name: 'zoom-indicator',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /zoom-indicator\.spec\.ts/,
+    },
+    {
       name: 'url-view-state',
       use: {
         ...devices['Desktop Chrome'],
