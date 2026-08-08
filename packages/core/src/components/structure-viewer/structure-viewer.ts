@@ -4,7 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { StructureService } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
-import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
+import { createMolstarViewer, type MolstarViewer, type StructureColorMode } from './molstar-loader';
 import { buildAlphaFoldUrl, buildUniProtUrl, buildInterProUrl } from './header-links';
 import {
   createStructureErrorEventDetail,
@@ -37,6 +37,10 @@ export class ProtspaceStructureViewer extends LitElement {
   @state() private _error: string | null = null;
   @state() private _viewer: MolstarViewer | null = null;
   @state() private _structureData: StructureData | null = null;
+  @state() private _colorMode: StructureColorMode = 'plddt';
+  private _requestedColorMode: StructureColorMode = 'plddt';
+  private _colorModeRequestId = 0;
+  private _colorModeChangeQueue: Promise<void> = Promise.resolve();
   private _scatterplotElement: Element | null = null;
 
   // Refs
@@ -155,6 +159,7 @@ export class ProtspaceStructureViewer extends LitElement {
     this._isLoading = true;
     this._error = null;
     this._structureData = null;
+    this._colorMode = 'plddt';
 
     // Dispatch loading event
     this._dispatchStructureLoadEvent('loading');
@@ -231,6 +236,10 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   private _cleanup() {
+    this._requestedColorMode = 'plddt';
+    this._colorModeRequestId += 1;
+    this._colorModeChangeQueue = Promise.resolve();
+
     if (this._viewer) {
       try {
         this._viewer.dispose();
@@ -288,6 +297,41 @@ export class ProtspaceStructureViewer extends LitElement {
 
   private _handleClose() {
     this.close(); // Use internal close method
+  }
+
+  private async _handleColorModeChange(mode: StructureColorMode) {
+    const viewer = this._viewer;
+    if (!viewer || this._requestedColorMode === mode) return;
+    if (mode === 'ted-domains' && !this._structureData?.tedDomains.length) return;
+
+    const tedDomains = this._structureData?.tedDomains ?? [];
+    this._requestedColorMode = mode;
+    const requestId = ++this._colorModeRequestId;
+
+    const applyColorMode = async () => {
+      if (this._viewer !== viewer || requestId !== this._colorModeRequestId) return;
+
+      try {
+        if (mode === 'ted-domains') {
+          await viewer.setColorTheme(mode, tedDomains);
+        } else {
+          await viewer.setColorTheme(mode);
+        }
+
+        if (this._viewer === viewer && requestId === this._colorModeRequestId) {
+          this._colorMode = mode;
+        }
+      } catch (error) {
+        if (this._viewer === viewer && requestId === this._colorModeRequestId) {
+          this._requestedColorMode = this._colorMode;
+        }
+        console.warn('[StructureViewer] Failed to change structure color mode:', error);
+      }
+    };
+
+    const colorModeChange = this._colorModeChangeQueue.then(applyColorMode, applyColorMode);
+    this._colorModeChangeQueue = colorModeChange;
+    await colorModeChange;
   }
 
   render() {
@@ -371,11 +415,49 @@ export class ProtspaceStructureViewer extends LitElement {
         <div class="viewer-content"></div>
       </div>
 
+      ${this._structureData && !this._isLoading && !this._error
+        ? html`
+            <div class="color-toolbar">
+              <span class="color-toolbar-label">Color by</span>
+              <div class="color-mode-group" role="group" aria-label="Structure color mode">
+                <button
+                  type="button"
+                  class="color-mode-button"
+                  data-color-mode="plddt"
+                  aria-pressed=${this._colorMode === 'plddt'}
+                  @click=${() => this._handleColorModeChange('plddt')}
+                >
+                  pLDDT
+                </button>
+                <button
+                  type="button"
+                  class="color-mode-button"
+                  data-color-mode="ted-domains"
+                  aria-pressed=${this._colorMode === 'ted-domains'}
+                  .disabled=${this._structureData.tedDomains.length === 0}
+                  title=${this._structureData.tedDomains.length === 0
+                    ? 'TED domain annotations are unavailable for this protein'
+                    : 'Color residues by TED domain'}
+                  @click=${() => this._handleColorModeChange('ted-domains')}
+                >
+                  TED domains
+                </button>
+              </div>
+            </div>
+          `
+        : ''}
       ${this.showTips && !this._error
         ? html`
             <div class="tips">
-              <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move. Scroll to
-              zoom.<br />Colors show pLDDT confidence (blue = high, red = low).
+              <span>
+                <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move. Scroll
+                to zoom.
+              </span>
+              <span class="color-description">
+                ${this._colorMode === 'ted-domains'
+                  ? 'Colors distinguish TED domains; gray residues are unassigned.'
+                  : 'Colors show pLDDT confidence (blue = high, red = low).'}
+              </span>
             </div>
           `
         : ''}

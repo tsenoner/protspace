@@ -194,9 +194,64 @@ const structureViewerStylesCore = css`
     border-radius: 0 0 6px 6px;
   }
 
+  .color-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    background: var(--disabled-bg);
+    border-top: 1px solid var(--protspace-viewer-border);
+    color: var(--protspace-viewer-text-muted);
+    font-size: 0.75rem;
+  }
+
+  .color-toolbar-label {
+    font-weight: 600;
+  }
+
+  .color-mode-group {
+    display: inline-flex;
+    overflow: hidden;
+    border: 1px solid var(--protspace-viewer-border);
+    border-radius: 0.3rem;
+  }
+
+  .color-mode-button {
+    border: 0;
+    border-left: 1px solid var(--protspace-viewer-border);
+    padding: 0.25rem 0.55rem;
+    background: var(--protspace-viewer-bg);
+    color: var(--protspace-viewer-text-muted);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .color-mode-button:first-child {
+    border-left: 0;
+  }
+
+  .color-mode-button[aria-pressed='true'] {
+    background: var(--primary);
+    color: white;
+  }
+
+  .color-mode-button:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--protspace-viewer-loading);
+    outline-offset: -2px;
+  }
+
+  .color-mode-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
   .tips {
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
     padding: 0.2rem 0.5rem;
     background: var(--disabled-bg);
