@@ -4,6 +4,7 @@ import {
   buildAlphaFoldUrl,
   buildUniProtUrl,
   buildInterProUrl,
+  buildTedUrl,
 } from './header-links';
 
 describe('header-links', () => {
@@ -74,6 +75,16 @@ describe('header-links', () => {
       expect(buildInterProUrl('A0A0C5B5G6')).toBe(
         'https://www.ebi.ac.uk/interpro/protein/UniProt/A0A0C5B5G6/',
       );
+    });
+  });
+
+  describe('buildTedUrl', () => {
+    it('builds a TED URL from the base accession', () => {
+      expect(buildTedUrl('W6JQJ9.2')).toBe('https://ted.cathdb.info/uniprot/W6JQJ9');
+    });
+
+    it('encodes special characters in the accession', () => {
+      expect(buildTedUrl('A B')).toBe('https://ted.cathdb.info/uniprot/A%20B');
     });
   });
 });

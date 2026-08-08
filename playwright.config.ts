@@ -58,7 +58,7 @@ export default defineConfig({
         // For better WebGL on CI, consider using xvfb with headless: false
         headless: !!process.env.CI,
       },
-      testMatch: /capture-static\.spec\.ts/,
+      testMatch: /capture-(?:helpers|static)\.spec\.ts/,
     },
     {
       name: 'animations',

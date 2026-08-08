@@ -27,3 +27,10 @@ export function buildUniProtUrl(proteinId: string): string {
 export function buildInterProUrl(proteinId: string): string {
   return `https://www.ebi.ac.uk/interpro/protein/UniProt/${encodeURIComponent(getBaseAccession(proteinId))}/`;
 }
+
+/**
+ * Build the TED protein page URL for a protein.
+ */
+export function buildTedUrl(proteinId: string): string {
+  return `https://ted.cathdb.info/uniprot/${encodeURIComponent(getBaseAccession(proteinId))}`;
+}

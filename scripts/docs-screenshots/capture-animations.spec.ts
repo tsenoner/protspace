@@ -1,6 +1,31 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+
+type DuplicateStackProbe = {
+  key: string;
+  x: number;
+  y: number;
+  points: unknown[];
+};
+
+type DuplicatePlotProbe = HTMLElement & {
+  config?: Record<string, unknown>;
+  data?: { projections?: Array<{ name: string }> };
+  selectedProjectionIndex: number;
+  updateComplete: Promise<unknown>;
+  _dupOverlay?: {
+    byKey?: Map<string, DuplicateStackProbe>;
+    expandedKey?: string | null;
+  };
+  _scales?: { x: (v: number) => number; y: (v: number) => number };
+  _transform?: { x: number; y: number; k: number };
+};
+
+type DuplicateControlBarProbe = HTMLElement & {
+  applyProjectionSelection(projection: string): void;
+  selectedProjection?: string;
+};
 
 /**
  * Collects screen-space coordinates of points whose currently-selected
@@ -520,13 +545,38 @@ test.describe('Scatterplot Animation Captures', () => {
 
     // Pre-enable the duplicate-counts setting so badges render without
     // animating the cog → checkbox path (keeps the GIF focused on the badge).
-    await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as
-        | (HTMLElement & { config?: Record<string, unknown> })
-        | null;
-      if (!plot) return;
+    await page.evaluate(async () => {
+      const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+      const controlBar = document.querySelector('#myControlBar') as DuplicateControlBarProbe | null;
+      if (!plot || !controlBar) {
+        throw new Error('Duplicate-badge capture needs #myPlot and #myControlBar');
+      }
+
+      const pca = plot.data?.projections?.find((projection) => projection.name.includes('PCA'));
+      if (!pca) {
+        throw new Error('Duplicate-badge capture requires a PCA projection');
+      }
+
+      controlBar.applyProjectionSelection(pca.name);
+      await plot.updateComplete;
       plot.config = { ...(plot.config ?? {}), enableDuplicateStackUI: true };
+      await plot.updateComplete;
     });
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+            const controlBar = document.querySelector(
+              '#myControlBar',
+            ) as DuplicateControlBarProbe | null;
+            const plotProjection = plot?.data?.projections?.[plot.selectedProjectionIndex]?.name;
+            return !!plotProjection && plotProjection === controlBar?.selectedProjection;
+          }),
+        { timeout: 1_000 },
+      )
+      .toBe(true);
 
     // Wait for the scatter-plot to (re)compute its duplicate stacks. The
     // overlay update is debounced behind the config change + a quadtree
@@ -534,19 +584,16 @@ test.describe('Scatterplot Animation Captures', () => {
     // stack appears.
     await page.waitForFunction(
       () => {
-        const plot = document.querySelector('#myPlot') as
-          | (HTMLElement & {
-              _duplicateStackByKey?: Map<string, { points: unknown[] }>;
-            })
-          | null;
-        const map = plot?._duplicateStackByKey;
+        const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+        const map = plot?._dupOverlay?.byKey;
         if (!map || map.size === 0) return false;
         for (const stack of map.values()) {
           if (stack.points.length > 1) return true;
         }
         return false;
       },
-      { timeout: 10_000 },
+      undefined,
+      { timeout: 10_000, polling: 200 },
     );
 
     await page.waitForTimeout(INITIAL_PAUSE);
@@ -561,15 +608,8 @@ test.describe('Scatterplot Animation Captures', () => {
     // Snapshot the duplicate-stack candidates so the heuristic can pick one.
     const collectStacks = async (): Promise<StackInfo[]> =>
       page.evaluate(() => {
-        const plot = document.querySelector('#myPlot') as
-          | (HTMLElement & {
-              _duplicateStackByKey?: Map<
-                string,
-                { key: string; x: number; y: number; points: unknown[] }
-              >;
-            })
-          | null;
-        const map = plot?._duplicateStackByKey;
+        const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+        const map = plot?._dupOverlay?.byKey;
         if (!map) return [];
         const out: StackInfo[] = [];
         for (const stack of map.values()) {
@@ -622,14 +662,8 @@ test.describe('Scatterplot Animation Captures', () => {
     // current scales + zoom transform, exactly like select-single.gif does.
     const stackToScreen = async (stackKey: string) =>
       page.evaluate((key: string) => {
-        const plot = document.querySelector('#myPlot') as
-          | (HTMLElement & {
-              _duplicateStackByKey?: Map<string, { x: number; y: number; points: unknown[] }>;
-              _scales?: { x: (v: number) => number; y: (v: number) => number };
-              _transform?: { x: number; y: number; k: number };
-            })
-          | null;
-        const stack = plot?._duplicateStackByKey?.get(key);
+        const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+        const stack = plot?._dupOverlay?.byKey?.get(key);
         if (!stack || !plot?._scales) return null;
         const transform = plot._transform ?? { x: 0, y: 0, k: 1 };
         const rect = plot.getBoundingClientRect();
@@ -652,17 +686,13 @@ test.describe('Scatterplot Animation Captures', () => {
     };
 
     // Re-wait for the anchor stack to be materialized in the current viewport.
-    // After a zoom/pan, _duplicateStackByKey rebuilds — poll until our
+    // After a zoom/pan, the duplicate-stack controller rebuilds — poll until our
     // anchor.key reappears with its multi-point membership.
     const waitForAnchorVisible = async () =>
       page.waitForFunction(
         (key: string) => {
-          const plot = document.querySelector('#myPlot') as
-            | (HTMLElement & {
-                _duplicateStackByKey?: Map<string, { points: unknown[] }>;
-              })
-            | null;
-          const stack = plot?._duplicateStackByKey?.get(key);
+          const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+          const stack = plot?._dupOverlay?.byKey?.get(key);
           return !!stack && stack.points.length > 1;
         },
         anchor.key,
@@ -670,16 +700,14 @@ test.describe('Scatterplot Animation Captures', () => {
       );
 
     // After clicking the underlying point, the spider should expand. Poll the
-    // private _expandedDuplicateStackKey to confirm the click landed and the
+    // controller's private expanded key to confirm the click landed and the
     // spider actually opened — without this, a missed click would silently
     // produce a blank GIF instead of failing the test.
     const waitForSpiderOpen = async () =>
       page.waitForFunction(
         (key: string) => {
-          const plot = document.querySelector('#myPlot') as
-            | (HTMLElement & { _expandedDuplicateStackKey?: string | null })
-            | null;
-          return plot?._expandedDuplicateStackKey === key;
+          const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+          return plot?._dupOverlay?.expandedKey === key;
         },
         anchor.key,
         { timeout: 2_000 },

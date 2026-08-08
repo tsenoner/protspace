@@ -57,7 +57,7 @@ The legend shows the current coloring scheme:
 
 ## Structure Viewer
 
-When you select a protein, the 3D viewer appears and fetches its structure from AlphaFold (if available). The viewer includes direct links to the [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), and [InterPro](https://www.interpro.org/) entries for the selected protein.
+When you select a protein, the 3D viewer appears and fetches its structure from AlphaFold (if available). The viewer includes direct links to the [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), [InterPro](https://www.interpro.org/), and [TED](https://ted.cathdb.info/) entries for the selected protein.
 
 <img src="./images/structure-viewer.png" alt="Structure Viewer - showing 3D protein structure" style="max-width: 50%; display: block; margin: 1em 0;" />
 

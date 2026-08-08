@@ -5,7 +5,7 @@ import { StructureService } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
-import { buildAlphaFoldUrl, buildUniProtUrl, buildInterProUrl } from './header-links';
+import { buildAlphaFoldUrl, buildInterProUrl, buildTedUrl, buildUniProtUrl } from './header-links';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
@@ -339,6 +339,16 @@ export class ProtspaceStructureViewer extends LitElement {
                     title="Open in InterPro"
                   >
                     InterPro
+                  </a>
+                  <span class="header-link-separator">&middot;</span>
+                  <a
+                    class="header-link"
+                    href=${buildTedUrl(this.proteinId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open in TED"
+                  >
+                    TED
                   </a>
                 </span>
               </div>
