@@ -76,9 +76,12 @@ class AnnotationTransformer:
             )
 
         if "xref_pdb" in transformed:
-            transformed["xref_pdb"] = self.uniprot_transformer.transform_xref_pdb(
-                transformed["xref_pdb"]
-            )
+            if transformed.get("uniprot_kb_id") == "":
+                transformed["xref_pdb"] = ""
+            else:
+                transformed["xref_pdb"] = self.uniprot_transformer.transform_xref_pdb(
+                    transformed["xref_pdb"]
+                )
 
         if "fragment" in transformed:
             transformed["fragment"] = self.uniprot_transformer.transform_fragment(

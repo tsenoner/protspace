@@ -9,7 +9,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from protspace.data.annotations.configuration import AnnotationConfiguration
+from protspace.data.annotations.configuration import (
+    TAXONOMY_LOOKUP_ANNOTATION,
+    AnnotationConfiguration,
+)
 from protspace.data.annotations.merging import AnnotationMerger
 from protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
@@ -38,6 +41,9 @@ from protspace.data.io.writers import AnnotationWriter
 
 logger = logging.getLogger(__name__)
 
+ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
+ANNOTATION_CACHE_VERSION = 1
+
 
 class ProteinAnnotationManager:
     """Orchestrator for protein annotation extraction workflow."""
@@ -50,6 +56,7 @@ class ProteinAnnotationManager:
         sequences: dict = None,
         cached_data: pd.DataFrame = None,
         sources_to_fetch: dict = None,
+        preserve_existing_cache_on_uniprot_failure: bool = False,
     ):
         """
         Initialize annotation manager.
@@ -61,11 +68,17 @@ class ProteinAnnotationManager:
             sequences: Dictionary mapping identifiers to sequences (for InterPro)
             cached_data: Previously cached DataFrame with annotations
             sources_to_fetch: Dict indicating which sources to fetch (uniprot, taxonomy, interpro)
+            preserve_existing_cache_on_uniprot_failure: Skip writing output when a
+                UniProt batch fails, leaving an existing cache available for retry
         """
         self.headers = headers
         self.output_path = output_path
         self.sequences = sequences
         self.cached_data = cached_data
+        self.preserve_existing_cache_on_uniprot_failure = (
+            preserve_existing_cache_on_uniprot_failure
+        )
+        self.uniprot_fetch_failed = False
         # Initialize configuration first so we can derive sources_to_fetch
         self.config = AnnotationConfiguration(annotations)
         self.user_annotations = self.config.user_annotations
@@ -172,7 +185,10 @@ class ProteinAnnotationManager:
         transformed_annotations = self.transformer.transform(merged_annotations)
 
         # 4. Create output
-        if self.output_path:
+        if self.output_path and not (
+            self.preserve_existing_cache_on_uniprot_failure
+            and self.uniprot_fetch_failed
+        ):
             df = self._save_and_load(transformed_annotations)
         else:
             df = DataFormatter.to_dataframe(transformed_annotations)
@@ -180,7 +196,7 @@ class ProteinAnnotationManager:
         # 5. Remove internal-only columns from final output
         # (organism_id for taxonomy, sequence for InterPro)
         # Keep columns that the user explicitly requested
-        internal_columns = ["organism_id", "sequence"]
+        internal_columns = [TAXONOMY_LOOKUP_ANNOTATION, "sequence"]
         if self.user_annotations:
             internal_columns = [
                 col for col in internal_columns if col not in self.user_annotations
@@ -206,13 +222,21 @@ class ProteinAnnotationManager:
                 headers=self.headers,
                 annotations=self.config.uniprot_annotations,
             )
-            return retriever.fetch_annotations()
+            annotations = retriever.fetch_annotations()
+            failed_batch_count = getattr(retriever, "failed_batch_count", 0)
+            self.uniprot_fetch_failed = (
+                isinstance(failed_batch_count, int) and failed_batch_count > 0
+            )
+            return annotations
         except Exception as e:
+            self.uniprot_fetch_failed = True
             failed_sources.append(f"UniProt ({str(e)})")
             logger.warning(f"Failed to retrieve UniProt annotations: {e}")
             # Create minimal annotation set with just identifiers
             return [
-                ProteinAnnotations(identifier=header, annotations={"organism_id": ""})
+                ProteinAnnotations(
+                    identifier=header, annotations={TAXONOMY_LOOKUP_ANNOTATION: ""}
+                )
                 for header in self.headers
             ]
 
@@ -315,7 +339,10 @@ class ProteinAnnotationManager:
     def _save_and_load(self, proteins: list[ProteinAnnotations]) -> pd.DataFrame:
         """Save to file and load back."""
         self.writer.write_parquet(
-            proteins, self.output_path, apply_transforms=False
+            proteins,
+            self.output_path,
+            apply_transforms=False,
+            dataframe_attrs={ANNOTATION_CACHE_VERSION_ATTR: ANNOTATION_CACHE_VERSION},
         )  # Already transformed
         return pd.read_parquet(self.output_path)
 
@@ -325,7 +352,7 @@ class ProteinAnnotationManager:
         id_counts = {}
 
         for protein in fetched_uniprot:
-            organism_id = protein.annotations.get("organism_id")
+            organism_id = protein.annotations.get(TAXONOMY_LOOKUP_ANNOTATION)
             if organism_id:
                 try:
                     org_id = int(organism_id)
@@ -382,7 +409,10 @@ class ProteinAnnotationManager:
         Returns:
             Dict mapping organism_id to taxonomy annotations (same format as TaxonomyRetriever)
         """
-        if self.cached_data is None or "organism_id" not in self.cached_data.columns:
+        if (
+            self.cached_data is None
+            or TAXONOMY_LOOKUP_ANNOTATION not in self.cached_data.columns
+        ):
             return {}
 
         # Find available taxonomy annotations in cache
@@ -395,7 +425,7 @@ class ProteinAnnotationManager:
 
         # Group by organism_id
         for _, row in self.cached_data.iterrows():
-            organism_id = row["organism_id"]
+            organism_id = row[TAXONOMY_LOOKUP_ANNOTATION]
             if pd.isna(organism_id) or organism_id == "":
                 continue
 

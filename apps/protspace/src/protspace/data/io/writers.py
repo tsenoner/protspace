@@ -70,6 +70,7 @@ class AnnotationWriter:
         proteins: list[ProteinAnnotations],
         path: Path,
         apply_transforms: bool = True,
+        dataframe_attrs: dict[str, object] | None = None,
     ):
         """
         Write annotations to Parquet file.
@@ -78,15 +79,20 @@ class AnnotationWriter:
             proteins: List of ProteinAnnotations
             path: Output file path
             apply_transforms: Whether to apply transformations (default: True)
+            dataframe_attrs: Optional attributes persisted in Parquet metadata
         """
         if not proteins:
             # Write empty DataFrame
             df = pd.DataFrame(columns=["identifier"])
+            df.attrs.update(dataframe_attrs or {})
             df.to_parquet(path, index=False)
             return
 
         # Convert to rows
-        csv_headers = ["identifier"] + list(proteins[0].annotations.keys())
+        annotation_headers = dict.fromkeys(
+            header for protein in proteins for header in protein.annotations
+        )
+        csv_headers = ["identifier", *annotation_headers]
         data_rows = []
 
         for protein in proteins:
@@ -102,4 +108,5 @@ class AnnotationWriter:
 
         # Create DataFrame and write
         df = pd.DataFrame(data_rows, columns=csv_headers)
+        df.attrs.update(dataframe_attrs or {})
         df.to_parquet(path, index=False)

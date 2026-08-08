@@ -350,7 +350,11 @@ class ReductionPipeline:
         self, headers: list[str], embedding_sets: list[EmbeddingSet] = None
     ) -> pd.DataFrame:
         """Fetch annotations from APIs with incremental caching support."""
-        from protspace.data.annotations.manager import ProteinAnnotationManager
+        from protspace.data.annotations.manager import (
+            ANNOTATION_CACHE_VERSION,
+            ANNOTATION_CACHE_VERSION_ATTR,
+            ProteinAnnotationManager,
+        )
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
         sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
@@ -397,6 +401,11 @@ class ReductionPipeline:
             if cache_path.exists():
                 cached_df = pd.read_parquet(cache_path)
                 cached_annotations = set(cached_df.columns) - {"identifier"}
+                legacy_pdb_cache = (
+                    "xref_pdb" in cached_annotations
+                    and cached_df.attrs.get(ANNOTATION_CACHE_VERSION_ATTR)
+                    != ANNOTATION_CACHE_VERSION
+                )
 
                 if annotations_list is None:
                     from protspace.data.annotations.configuration import (
@@ -409,7 +418,7 @@ class ReductionPipeline:
 
                 missing = required - cached_annotations
 
-                if not missing and not refetching_annotations:
+                if not missing and not refetching_annotations and not legacy_pdb_cache:
                     logger.warning("Using cached annotations")
                     if annotations_list:
                         cols = ["identifier"] + [
@@ -436,6 +445,7 @@ class ReductionPipeline:
                     return self._merge_csv(api_df, csv_df)
 
                 from protspace.data.annotations.configuration import (
+                    TAXONOMY_LOOKUP_ANNOTATION,
                     AnnotationConfiguration,
                 )
 
@@ -443,22 +453,33 @@ class ReductionPipeline:
                     cached_annotations, required
                 )
 
-                if refetching_annotations:
-                    # Override with explicitly requested sources
-                    sources = {src: src in refetch for src in _ANN_SOURCES}
+                if refetching_annotations or legacy_pdb_cache:
+                    if refetching_annotations:
+                        # Override with explicitly requested sources
+                        sources = {src: src in refetch for src in _ANN_SOURCES}
+                    if legacy_pdb_cache:
+                        sources["uniprot"] = True
+                        logger.warning(
+                            "Refreshing legacy UniProt annotation cache to apply "
+                            "current PDB availability semantics"
+                        )
                     refetched = [s for s in _ANN_SOURCES if sources[s]]
-                    logger.info(f"--refetch: re-fetching {', '.join(refetched)}")
+                    if refetching_annotations:
+                        logger.info(f"--refetch: re-fetching {', '.join(refetched)}")
                     # Drop cached columns for refetched sources so manager
                     # re-fetches them
                     from protspace.data.annotations.configuration import (
                         AnnotationConfiguration as AnnCfg,
                     )
 
+                    cached_by_source = AnnCfg.categorize_annotations_by_source(
+                        cached_annotations
+                    )
                     cols_to_drop = set()
                     for src in refetched:
-                        cols_to_drop |= AnnCfg.categorize_annotations_by_source(
-                            cached_annotations
-                        ).get(src, set())
+                        cols_to_drop |= cached_by_source.get(src, set())
+                    if cached_by_source["taxonomy"] and not sources["taxonomy"]:
+                        cols_to_drop.discard(TAXONOMY_LOOKUP_ANNOTATION)
                     if cols_to_drop:
                         cached_df = cached_df.drop(
                             columns=[c for c in cols_to_drop if c in cached_df.columns]
@@ -473,6 +494,7 @@ class ReductionPipeline:
                     sequences=sequences,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
+                    preserve_existing_cache_on_uniprot_failure=legacy_pdb_cache,
                 ).to_pd()
                 return self._merge_csv(api_df, csv_df)
             else:

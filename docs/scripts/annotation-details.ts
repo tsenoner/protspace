@@ -114,7 +114,7 @@ export const ANNOTATION_DETAILS: Record<string, AnnotationDetail> = {
   },
   xref_pdb: {
     detailsMarkdown:
-      'This flag reflects whether the entry has at least one cross-reference to the [Protein Data Bank](https://www.uniprot.org/help/PDB), i.e. an experimentally determined 3D structure (X-ray, NMR, or cryo-EM) covering all or part of the protein. It distinguishes structurally characterised proteins from those known only by sequence, which is useful when relating embedding clusters to structural coverage. ProtSpace stores it as a boolean, `True` or `False`. See [UniProt: PDB cross-references](https://www.uniprot.org/help/PDB).',
+      'This flag reflects whether the entry has at least one cross-reference to the [Protein Data Bank](https://www.uniprot.org/help/PDB), i.e. an experimentally determined 3D structure (X-ray, NMR, or cryo-EM) covering all or part of the protein. It distinguishes structurally characterised proteins from those known only by sequence, which is useful when relating embedding clusters to structural coverage. ProtSpace stores `True` when a resolved UniProt entry has a PDB cross-reference, `False` when a resolved entry has none, and an empty value (displayed as `N/A`) when no UniProt entry was resolved. See [UniProt: PDB cross-references](https://www.uniprot.org/help/PDB).',
     sourceUrl: 'https://www.uniprot.org/help/PDB',
   },
 

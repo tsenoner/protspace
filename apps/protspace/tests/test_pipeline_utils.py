@@ -3,6 +3,7 @@
 from collections import Counter
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from protspace.data.loaders.embedding_set import (
@@ -343,6 +344,185 @@ class TestResolveAnnotationNames:
 
     def test_tsv_path(self):
         assert self._resolve(["data.tsv", "ec"]) == (["ec"], "data.tsv")
+
+
+class TestAnnotationCacheMigration:
+    def test_legacy_pdb_migration_fetches_newly_required_taxonomy(
+        self, tmp_path, monkeypatch
+    ):
+        """Migration must add its UniProt refresh to missing-source fetches."""
+        from protspace.data.annotations.retrievers.taxonomy_retriever import (
+            TaxonomyRetriever,
+        )
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+            UniProtRetriever,
+        )
+
+        pd.DataFrame(
+            {
+                "identifier": ["P01308"],
+                "xref_pdb": ["True"],
+                "gene_name": ["STALE_GENE"],
+                "protein_name": ["Protein"],
+                "uniprot_kb_id": ["INS_HUMAN"],
+                "organism_id": ["9606"],
+            }
+        ).to_parquet(tmp_path / "all_annotations.parquet", index=False)
+
+        monkeypatch.setattr(
+            UniProtRetriever,
+            "fetch_annotations",
+            lambda _self: [
+                ProteinAnnotations(
+                    identifier="P01308",
+                    annotations={
+                        "xref_pdb": "1A7F",
+                        "gene_name": "INS",
+                        "protein_name": "Insulin",
+                        "uniprot_kb_id": "INS_HUMAN",
+                        "organism_id": "9606",
+                    },
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            TaxonomyRetriever,
+            "fetch_annotations",
+            lambda _self: {9606: {"annotations": {"genus": "Homo"}}},
+        )
+
+        result = ReductionPipeline(
+            PipelineConfig(
+                methods=[],
+                output_path=tmp_path / "unused.parquetbundle",
+                annotations=["xref_pdb", "genus"],
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+            )
+        )._fetch_annotations(["P01308"])
+
+        assert result["xref_pdb"].tolist() == ["True"]
+        assert result["genus"].tolist() == ["Homo"]
+
+    def test_failed_uniprot_migration_leaves_legacy_cache_for_retry(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """A partial migration fetch must not certify or replace legacy data."""
+        from protspace.data.annotations.retrievers import uniprot_retriever
+
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            {
+                "identifier": ["P01308"],
+                "xref_pdb": ["True"],
+                "gene_name": ["LEGACY_GENE"],
+                "protein_name": ["Legacy protein"],
+                "uniprot_kb_id": ["INS_HUMAN"],
+            }
+        ).to_parquet(cache_path, index=False)
+
+        def fail_batch(_accessions):
+            raise RuntimeError("temporary UniProt failure")
+
+        monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[],
+                output_path=tmp_path / "unused.parquetbundle",
+                annotations=["xref_pdb"],
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+            )
+        )
+
+        result = pipeline._fetch_annotations(["P01308"])
+
+        assert result["xref_pdb"].tolist() == [""]
+        preserved_cache = pd.read_parquet(cache_path)
+        assert preserved_cache.attrs == {}
+        assert preserved_cache["gene_name"].tolist() == ["LEGACY_GENE"]
+        assert "1 UniProt batch failed; 1 protein has empty annotations" in caplog.text
+
+    def test_legacy_pdb_migration_preserves_cached_taxonomy(
+        self, tmp_path, monkeypatch
+    ):
+        """Migration must retain taxonomy while replacing stale UniProt values."""
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+            UniProtRetriever,
+        )
+
+        legacy_cache = pd.DataFrame(
+            {
+                "identifier": ["unresolved", "resolved_without_pdb"],
+                "xref_pdb": ["True", "True"],
+                "gene_name": ["", "STALE_GENE"],
+                "protein_name": ["", "Protein"],
+                "uniprot_kb_id": ["", "NO_PDB_HUMAN"],
+                "organism_id": ["", "9606"],
+                "genus": ["", "Homo"],
+                "signal_peptide": ["True", "False"],
+            }
+        )
+        cache_path = tmp_path / "all_annotations.parquet"
+        legacy_cache.to_parquet(cache_path, index=False)
+
+        def fetch_current_annotations(_self):
+            return [
+                ProteinAnnotations(
+                    identifier="unresolved",
+                    annotations={
+                        "xref_pdb": "",
+                        "gene_name": "",
+                        "protein_name": "",
+                        "uniprot_kb_id": "",
+                        "organism_id": "",
+                    },
+                ),
+                ProteinAnnotations(
+                    identifier="resolved_without_pdb",
+                    annotations={
+                        "xref_pdb": "",
+                        "gene_name": "GENE",
+                        "protein_name": "Protein",
+                        "uniprot_kb_id": "NO_PDB_HUMAN",
+                        "organism_id": "9606",
+                    },
+                ),
+            ]
+
+        monkeypatch.setattr(
+            UniProtRetriever, "fetch_annotations", fetch_current_annotations
+        )
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[],
+                output_path=tmp_path / "unused.parquetbundle",
+                annotations=["xref_pdb", "genus", "signal_peptide"],
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+            )
+        )
+
+        headers = ["unresolved", "resolved_without_pdb"]
+        result = pipeline._fetch_annotations(headers)
+
+        assert result["xref_pdb"].tolist() == ["", "False"]
+        assert result["gene_name"].tolist() == ["", "GENE"]
+        assert result["genus"].tolist() == ["", "Homo"]
+        assert result["signal_peptide"].tolist() == ["True", "False"]
+        migrated_cache = pd.read_parquet(cache_path)
+        assert migrated_cache["genus"].tolist() == ["", "Homo"]
+        assert migrated_cache.attrs == {"protspace_annotation_cache_version": 1}
+
+        def fail_if_refetched(_self):
+            raise AssertionError("current cache should use the fast path")
+
+        monkeypatch.setattr(UniProtRetriever, "fetch_annotations", fail_if_refetched)
+        cached_result = pipeline._fetch_annotations(headers)
+        assert cached_result["xref_pdb"].tolist() == ["", "False"]
+        assert cached_result["genus"].tolist() == ["", "Homo"]
 
 
 # ---------------------------------------------------------------------------

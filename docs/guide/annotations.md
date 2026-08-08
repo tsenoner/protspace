@@ -174,9 +174,9 @@ Reviewed entries belong to UniProtKB/Swiss-Prot, the manually curated section wh
 
 **Has PDB structure**
 
-Whether an experimental 3D structure exists in the PDB for this protein.
+Whether a resolved UniProt entry has an experimental PDB structure; unavailable mappings are N/A.
 
-This flag reflects whether the entry has at least one cross-reference to the [Protein Data Bank](https://www.uniprot.org/help/PDB), i.e. an experimentally determined 3D structure (X-ray, NMR, or cryo-EM) covering all or part of the protein. It distinguishes structurally characterised proteins from those known only by sequence, which is useful when relating embedding clusters to structural coverage. ProtSpace stores it as a boolean, `True` or `False`. See [UniProt: PDB cross-references](https://www.uniprot.org/help/PDB).
+This flag reflects whether the entry has at least one cross-reference to the [Protein Data Bank](https://www.uniprot.org/help/PDB), i.e. an experimentally determined 3D structure (X-ray, NMR, or cryo-EM) covering all or part of the protein. It distinguishes structurally characterised proteins from those known only by sequence, which is useful when relating embedding clusters to structural coverage. ProtSpace stores `True` when a resolved UniProt entry has a PDB cross-reference, `False` when a resolved entry has none, and an empty value (displayed as `N/A`) when no UniProt entry was resolved. See [UniProt: PDB cross-references](https://www.uniprot.org/help/PDB).
 
 ## InterPro
 

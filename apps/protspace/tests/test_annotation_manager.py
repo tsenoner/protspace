@@ -439,6 +439,76 @@ class TestUniProtTransformer:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_cached_signal_peptide_states_survive_uniprot_refetch(
+        self, mock_uniprot_retriever
+    ):
+        """Refetching UniProt must not rewrite cached InterPro booleans."""
+        mock_uniprot_retriever.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier=identifier,
+                annotations={"uniprot_kb_id": f"{identifier}_HUMAN"},
+            )
+            for identifier in ("with_signal", "without_signal")
+        ]
+        cached_data = pd.DataFrame(
+            {
+                "identifier": ["with_signal", "without_signal"],
+                "signal_peptide": ["True", "False"],
+            }
+        )
+
+        result = ProteinAnnotationManager(
+            headers=["with_signal", "without_signal"],
+            annotations=["signal_peptide"],
+            cached_data=cached_data,
+            sources_to_fetch={
+                "uniprot": True,
+                "taxonomy": False,
+                "interpro": False,
+                "ted": False,
+                "biocentral": False,
+            },
+        ).to_pd()
+
+        assert result["signal_peptide"].tolist() == ["True", "False"]
+
+    def test_cached_pdb_states_survive_manager_round_trip(self, tmp_path):
+        """Canonical PDB states should remain stable when loaded from cache."""
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            {
+                "identifier": [
+                    "unresolved",
+                    "resolved_without_pdb",
+                    "resolved_with_pdb",
+                ],
+                "xref_pdb": ["", "False", "True"],
+                "uniprot_kb_id": ["", "NO_PDB", "HAS_PDB"],
+            }
+        ).to_parquet(cache_path, index=False)
+
+        manager = ProteinAnnotationManager(
+            headers=[
+                "unresolved",
+                "resolved_without_pdb",
+                "resolved_with_pdb",
+            ],
+            annotations=["xref_pdb"],
+            cached_data=pd.read_parquet(cache_path),
+            sources_to_fetch={
+                "uniprot": False,
+                "taxonomy": False,
+                "interpro": False,
+                "ted": False,
+                "biocentral": False,
+            },
+        )
+
+        result = manager.to_pd()
+
+        assert result["xref_pdb"].tolist() == ["", "False", "True"]
+
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_to_pd_complete_workflow(

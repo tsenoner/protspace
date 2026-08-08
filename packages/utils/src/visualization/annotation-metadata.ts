@@ -175,7 +175,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Has PDB structure',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Whether an experimental 3D structure exists in the PDB for this protein.',
+    description:
+      'Whether a resolved UniProt entry has an experimental PDB structure; unavailable mappings are N/A.',
     docsUrl: docs('xref_pdb'),
   },
 

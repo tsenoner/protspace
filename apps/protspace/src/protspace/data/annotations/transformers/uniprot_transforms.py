@@ -86,14 +86,16 @@ class UniProtTransformer:
     @staticmethod
     def transform_xref_pdb(value: str) -> str:
         """
-        Convert PDB IDs to True/False.
+        Convert PDB IDs to True/False while preserving canonical values.
 
         Args:
-            value: PDB IDs (semicolon-separated) or empty string
+            value: PDB IDs (semicolon-separated), canonical boolean, or empty string
 
         Returns:
             "True" if PDB structures exist, "False" otherwise
         """
+        if value in ("False", "True"):
+            return value
         if value and str(value).strip():
             return "True"
         return "False"

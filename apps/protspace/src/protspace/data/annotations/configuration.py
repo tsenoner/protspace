@@ -33,7 +33,8 @@ ALL_ANNOTATIONS = (
     + BIOCENTRAL_ANNOTATIONS
 )
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
-NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
+TAXONOMY_LOOKUP_ANNOTATION = "organism_id"
+NEEDED_UNIPROT_ANNOTATIONS = ["accession", TAXONOMY_LOOKUP_ANNOTATION]
 
 # User-facing UniProt annotations (excludes internal: sequence, organism_id)
 _UNIPROT_USER_ANNOTATIONS = [
@@ -162,7 +163,10 @@ class AnnotationConfiguration:
         }
 
         # Handle dependencies: taxonomy needs organism_id from UniProt
-        if sources_needed["taxonomy"] and "organism_id" not in cached_annotations:
+        if (
+            sources_needed["taxonomy"]
+            and TAXONOMY_LOOKUP_ANNOTATION not in cached_annotations
+        ):
             sources_needed["uniprot"] = True
 
         # Handle dependencies: interpro needs sequence from UniProt

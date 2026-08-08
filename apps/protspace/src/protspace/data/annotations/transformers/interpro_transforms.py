@@ -107,6 +107,8 @@ class InterProTransformer:
         Returns:
             "True" if signal peptide present, "False" otherwise
         """
+        if value in ("False", "True"):
+            return value
         if not value:
             return "False"
 

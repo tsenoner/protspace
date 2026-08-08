@@ -353,6 +353,8 @@ With `--keep-tmp` (default), all intermediate results are cached in `{output}/tm
 | DR projections | `proj_{name}_{method}_{hash}.npz` | Skip dimensionality reduction |
 
 - Annotation cache always includes scores regardless of `--no-scores`
+- Legacy annotation caches containing `xref_pdb` are refreshed from UniProt once to
+  migrate ambiguous pre-three-state values; cached columns from other sources are kept
 - DR projection caches are keyed by embedding name, method, dimensions, and all parameters — changing any parameter creates a new cache entry
 - Use `--refetch all` to bypass all caches, or `--refetch <stages>` selectively (e.g., `--refetch ted,biocentral`)
 
