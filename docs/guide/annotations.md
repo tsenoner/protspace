@@ -58,9 +58,9 @@ LightAttention is a lightweight neural network that uses softmax-weighted aggreg
 
 **Transmembrane** · ⚡ Predicted
 
-Transmembrane type (none / alpha-helical / beta-barrel) predicted by TMbed.
+Transmembrane type (non-transmembrane / alpha-helical / beta-barrel) predicted by TMbed.
 
-From the same TMbed per-residue topology (H = transmembrane helix, B = transmembrane beta strand, S = signal peptide), ProtSpace summarizes the membrane-spanning segments into a single protein-level category. Values are `alpha-helical` when transmembrane helices (H) are predicted, `beta-barrel` when transmembrane beta strands (B) are predicted, and `none` when neither is present. See [Bernhofer & Rost, BMC Bioinformatics 2022](https://doi.org/10.1186/s12859-022-04873-x).
+From the same TMbed per-residue topology (H = transmembrane helix, B = transmembrane beta strand, S = signal peptide), ProtSpace summarizes the membrane-spanning segments into protein-level categories. Values are `alpha-helical` when transmembrane helices (H) are predicted, `beta-barrel` when transmembrane beta strands (B) are predicted, and `non-transmembrane` when neither is present. A protein with both segment types carries both the `alpha-helical` and `beta-barrel` categories. See [Bernhofer & Rost, BMC Bioinformatics 2022](https://doi.org/10.1186/s12859-022-04873-x).
 
 ## UniProt
 

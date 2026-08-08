@@ -40,8 +40,12 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from biocentral_api._generated import Prediction
 
 from protspace.data.annotations.encoding import encode_field
+from protspace.data.annotations.retrievers.biocentral_retriever import (
+    BiocentralPredictionRetriever,
+)
 from protspace.stats.base import STATS_SCHEMA
 
 # Small enough to eyeball a failure, big enough for a category to have members.
@@ -78,6 +82,47 @@ LABEL_WITH_RESERVED_CHAR = "Kinase (EC 2.7.11.1); regulatory subunit"
 MULTI_HIT_CELL = f"{encode_field('DomA')}|0.91;{encode_field('DomB')}|0.82"
 
 
+def tmbed_predictions(value: object) -> list[Prediction]:
+    """Build the real generated prediction shape consumed by the adapter."""
+    return [
+        Prediction(
+            model_name="TMbed",
+            prediction_name="topology",
+            protocol="per_residue",
+            value=value,
+        )
+    ]
+
+
+# Derive this fixture value from the real annotation adapter rather than copying
+# its vocabulary into the contract test. A topology with only inside/outside
+# labels is a completed TMbed prediction with no membrane-spanning segment.
+NEGATIVE_TMBED_CATEGORY = BiocentralPredictionRetriever._extract_transmembrane(
+    tmbed_predictions("oooooiiiii")
+)
+
+# Keep one explicit missing-payload row separate from the fixture's other empty
+# rows. This catches an adapter that invents a negative biological result before
+# the bundle reader has a chance to normalize the missing representation.
+MISSING_TMBED_INDEX = 1
+MISSING_TMBED_VALUE = BiocentralPredictionRetriever._extract_transmembrane(
+    tmbed_predictions(None)
+)
+MISSING_SIGNAL_PEPTIDE_VALUE = BiocentralPredictionRetriever._extract_signal_peptide(
+    tmbed_predictions(None)
+)
+
+# Malformed payloads are unavailable predictions, not completed negatives. Keep
+# one explicit row so this producer decision is exercised through bundle ingestion.
+MALFORMED_TMBED_INDEX = 2
+MALFORMED_TMBED_VALUE = BiocentralPredictionRetriever._extract_transmembrane(
+    tmbed_predictions("garbage")
+)
+MALFORMED_SIGNAL_PEPTIDE_VALUE = BiocentralPredictionRetriever._extract_signal_peptide(
+    tmbed_predictions("garbage")
+)
+
+
 def build_annotations_table(ids: list[str]) -> pa.Table:
     """Mimic ``protspace annotate`` output: an ``identifier`` column plus annotations.
 
@@ -94,6 +139,16 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
         encode_field("Hydrolase")
     ] * rest
     domains = [MULTI_HIT_CELL] + [f"{encode_field('DomB')}|0.75"] * rest
+    predicted_transmembrane = [
+        NEGATIVE_TMBED_CATEGORY,
+        MISSING_TMBED_VALUE,
+        MALFORMED_TMBED_VALUE,
+    ] + [""] * (rest - 2)
+    predicted_signal_peptide = [
+        "False",
+        MISSING_SIGNAL_PEPTIDE_VALUE,
+        MALFORMED_SIGNAL_PEPTIDE_VALUE,
+    ] + [""] * (rest - 2)
 
     # A genuine double column with a null -- distinguishes "missing" from 0 and
     # from NaN across the language boundary. Real bundles carry both string-typed
@@ -106,6 +161,8 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
             "identifier": pa.array(ids, pa.string()),
             "family": pa.array(family, pa.string()),
             "domains": pa.array(domains, pa.string()),
+            "predicted_signal_peptide": pa.array(predicted_signal_peptide, pa.string()),
+            "predicted_transmembrane": pa.array(predicted_transmembrane, pa.string()),
             "length": pa.array(length, pa.float64()),
         }
     )
@@ -342,6 +399,9 @@ def main(out_dir: Path) -> None:
                 "largeProteinCount": LARGE_PROTEIN_COUNT,
                 "projectionCount": len(PROJECTIONS),
                 "labelWithReservedChar": LABEL_WITH_RESERVED_CHAR,
+                "negativeTransmembraneCategory": NEGATIVE_TMBED_CATEGORY,
+                "missingTransmembraneIndex": MISSING_TMBED_INDEX,
+                "malformedTmbedIndex": MALFORMED_TMBED_INDEX,
                 "nullLengthIndex": NULL_LENGTH_INDEX,
                 "statisticsColumns": STATS_SCHEMA.names,
                 "statisticsCategory": STATISTICS_CATEGORY,

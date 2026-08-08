@@ -309,7 +309,7 @@ async def test_pipeline_uses_normalized_fasta_for_embed_and_annotate(ctx):
     normalized = ctx.output_dir / "input.normalized.fasta"
     assert seen_inputs["embed"] == str(normalized)
     assert seen_inputs["annotate"] == str(normalized)
-    assert ">P12345" in normalized.read_text()
+    assert normalized.read_text() == ">P12345\nMAAAAAA\n"
 
 
 async def test_embed_failure_with_connection_refused_is_classified_as_biocentral_unavailable(

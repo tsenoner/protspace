@@ -439,6 +439,38 @@ class TestUniProtTransformer:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
+    @patch("src.protspace.data.annotations.manager.BiocentralPredictionRetriever")
+    @patch("src.protspace.data.annotations.manager.InterProRetriever")
+    def test_sequence_precedence_is_source_specific(
+        self, mock_interpro_retriever, mock_biocentral_retriever
+    ):
+        """InterPro hashes canonical sequences; Biocentral predicts submitted ones."""
+        manager = ProteinAnnotationManager(
+            headers=["P12345", "custom-protein"],
+            annotations=["pfam", "predicted_transmembrane"],
+            sequences={"P12345": "LOCAL", "custom-protein": "CUSTOM"},
+        )
+        uniprot_annotations = [
+            ProteinAnnotations(
+                identifier="P12345", annotations={"sequence": "CANONICAL"}
+            ),
+            ProteinAnnotations(identifier="custom-protein", annotations={}),
+        ]
+        mock_interpro_retriever.return_value.fetch_annotations.return_value = []
+        mock_biocentral_retriever.return_value.fetch_annotations.return_value = []
+
+        manager._fetch_interpro(uniprot_annotations, [])
+        manager._fetch_biocentral(uniprot_annotations, [])
+
+        assert mock_interpro_retriever.call_args.kwargs["sequences"] == {
+            "P12345": "CANONICAL",
+            "custom-protein": "CUSTOM",
+        }
+        assert mock_biocentral_retriever.call_args.kwargs["sequences"] == {
+            "P12345": "LOCAL",
+            "custom-protein": "CUSTOM",
+        }
+
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_to_pd_complete_workflow(

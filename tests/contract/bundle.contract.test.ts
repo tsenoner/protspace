@@ -27,6 +27,7 @@ import {
 // working tree, not built package output. (The vitest config still aliases
 // `@protspace/utils` — packages/core's own sources import it that way.)
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants';
+import { getProteinAnnotationValues } from '../../packages/utils/src/visualization/plot-data-accessors';
 
 const REPO_ROOT = resolve(__dirname, '../..');
 
@@ -40,6 +41,9 @@ interface Manifest {
   largeProteinCount: number;
   projectionCount: number;
   labelWithReservedChar: string;
+  negativeTransmembraneCategory: string;
+  missingTransmembraneIndex: number;
+  malformedTmbedIndex: number;
   nullLengthIndex: number;
   statisticsColumns: string[];
   statisticsCategory: string;
@@ -227,6 +231,41 @@ describe('annotation encoding across the language boundary', () => {
     expect(data.annotations.domains.values).toContain('DomB');
   });
 
+  it('preserves a negative TMbed prediction as a category', () => {
+    expect(data.annotations.predicted_transmembrane.values).toContain(
+      manifest.negativeTransmembraneCategory,
+    );
+  });
+
+  it('preserves a missing TMbed payload as N/A', () => {
+    expect(
+      getProteinAnnotationValues(
+        data,
+        manifest.missingTransmembraneIndex,
+        'predicted_transmembrane',
+      ),
+    ).toEqual(['__NA__']);
+  });
+
+  it('preserves a missing TMbed payload as N/A for signal peptide', () => {
+    expect(
+      getProteinAnnotationValues(
+        data,
+        manifest.missingTransmembraneIndex,
+        'predicted_signal_peptide',
+      ),
+    ).toEqual(['__NA__']);
+  });
+
+  it('preserves a malformed TMbed payload as N/A', () => {
+    expect(
+      getProteinAnnotationValues(data, manifest.malformedTmbedIndex, 'predicted_transmembrane'),
+    ).toEqual(['__NA__']);
+    expect(
+      getProteinAnnotationValues(data, manifest.malformedTmbedIndex, 'predicted_signal_peptide'),
+    ).toEqual(['__NA__']);
+  });
+
   it('reports a missing numeric value as missing rather than zero', () => {
     const lengths = data.numeric_annotation_data?.length;
     // Assert the length first: an out-of-range index yields `undefined`, which
@@ -286,6 +325,16 @@ describe('the optimized conversion path real datasets take', () => {
     expect(data.annotations.family.values.join('|')).not.toContain('%3B');
     expect(data.annotations.domains.values).toContain('DomA');
     expect(data.annotations.domains.values).toContain('DomB');
+    expect(data.annotations.predicted_transmembrane.values).toContain(
+      manifest.negativeTransmembraneCategory,
+    );
+    expect(
+      getProteinAnnotationValues(
+        data,
+        manifest.missingTransmembraneIndex,
+        'predicted_transmembrane',
+      ),
+    ).toEqual(['__NA__']);
 
     const lengths = data.numeric_annotation_data?.length;
     expect(lengths).toHaveLength(manifest.largeProteinCount);

@@ -61,7 +61,9 @@ def annotate(
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
     # Extract identifiers from input
-    if is_fasta_file(input):
+    input_is_fasta = is_fasta_file(input)
+    sequences = None
+    if input_is_fasta:
         from protspace.data.loaders.query import extract_identifiers_from_fasta
 
         headers = extract_identifiers_from_fasta(input)
@@ -82,10 +84,10 @@ def annotate(
     logger.info(f"Found {len(headers)} protein identifiers")
 
     # Resolve annotation names
+    from protspace.data.annotations.configuration import AnnotationConfiguration
+
     annotations_list = None
     if annotations:
-        from protspace.data.annotations.configuration import AnnotationConfiguration
-
         names = []
         for item in annotations:
             for part in item.split(","):
@@ -95,11 +97,23 @@ def annotate(
         if names:
             annotations_list = AnnotationConfiguration(names).user_annotations
 
+    if input_is_fasta:
+        config = AnnotationConfiguration(annotations_list)
+        if config.interpro_annotations or config.biocentral_annotations:
+            from protspace.data.io.fasta import parse_fasta
+            from protspace.data.loaders.h5 import parse_identifier
+
+            sequences = {
+                parse_identifier(header): sequence
+                for header, sequence in parse_fasta(input).items()
+            }
+
     # Fetch annotations
     df = ProteinAnnotationManager(
         headers=headers,
         annotations=annotations_list,
         output_path=None,
+        sequences=sequences,
     ).to_pd()
 
     if not scores:

@@ -241,16 +241,20 @@ class ProteinAnnotationManager:
             return {}
 
     def _build_sequence_map(
-        self, uniprot_annotations: list[ProteinAnnotations]
+        self,
+        uniprot_annotations: list[ProteinAnnotations],
+        *,
+        prefer_uniprot: bool = False,
     ) -> dict[str, str]:
         """Build a mapping from headers to sequences.
 
-        Merges local sequences (from FASTA, priority) with UniProt results (fallback).
+        Local FASTA sequences take priority by default. InterPro can request UniProt
+        priority because its precomputed matches are keyed by canonical sequence hash.
         """
         sequences = dict(self.sequences) if self.sequences else {}
         for protein in uniprot_annotations:
             seq = protein.annotations.get("sequence", "")
-            if seq and protein.identifier not in sequences:
+            if seq and (prefer_uniprot or protein.identifier not in sequences):
                 sequences[protein.identifier] = seq
         return sequences
 
@@ -262,7 +266,9 @@ class ProteinAnnotationManager:
             return []
 
         try:
-            sequences = self._build_sequence_map(uniprot_annotations)
+            sequences = self._build_sequence_map(
+                uniprot_annotations, prefer_uniprot=True
+            )
 
             retriever = InterProRetriever(
                 headers=self.headers,

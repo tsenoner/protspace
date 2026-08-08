@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+from biocentral_api._generated import Prediction
+
 from src.protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
@@ -14,6 +17,16 @@ def _make_prediction(model_name, value):
     pred.model_name = model_name
     pred.value = value
     return pred
+
+
+def _make_real_tmbed_prediction(value):
+    """Build the generated model returned by biocentral-api."""
+    return Prediction(
+        model_name="TMbed",
+        prediction_name="topology",
+        protocol="per_residue",
+        value=value,
+    )
 
 
 class TestBiocentralConstants:
@@ -45,6 +58,16 @@ class TestSignalPeptideExtraction:
         result = BiocentralPredictionRetriever._extract_signal_peptide(preds)
         assert result == ""
 
+    def test_none_payload_is_missing(self):
+        preds = [_make_real_tmbed_prediction(None)]
+        result = BiocentralPredictionRetriever._extract_signal_peptide(preds)
+        assert result == ""
+
+    def test_empty_payload_is_missing(self):
+        preds = [_make_real_tmbed_prediction("")]
+        result = BiocentralPredictionRetriever._extract_signal_peptide(preds)
+        assert result == ""
+
 
 class TestTransmembraneExtraction:
     """Test TMbed → transmembrane type derivation."""
@@ -67,7 +90,22 @@ class TestTransmembraneExtraction:
     def test_no_transmembrane(self):
         preds = [_make_prediction("TMbed", "oooooooooiiiiiiiiiii")]
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
-        assert result == "none"
+        assert result == "non-transmembrane"
+
+    def test_dot_label_is_non_transmembrane(self):
+        preds = [_make_real_tmbed_prediction("........")]
+        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
+        assert result == "non-transmembrane"
+
+    def test_none_payload_is_missing(self):
+        preds = [_make_real_tmbed_prediction(None)]
+        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
+        assert result == ""
+
+    def test_empty_payload_is_missing(self):
+        preds = [_make_real_tmbed_prediction("")]
+        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
+        assert result == ""
 
     def test_lowercase_labels(self):
         """TMbed uses lowercase h/b for non-TM side of helix/strand."""
@@ -79,6 +117,19 @@ class TestTransmembraneExtraction:
         preds = [_make_prediction("OtherModel", "something")]
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == ""
+
+
+class TestTmbedPayloadValidation:
+    @pytest.mark.parametrize(
+        "value",
+        [0, [], {}, "   ", b"abc", "garbage"],
+        ids=["zero", "list", "dict", "blank", "bytes", "unsupported-labels"],
+    )
+    def test_malformed_payload_is_missing_for_derived_annotations(self, value):
+        preds = [_make_real_tmbed_prediction(value)]
+
+        assert BiocentralPredictionRetriever._extract_signal_peptide(preds) == ""
+        assert BiocentralPredictionRetriever._extract_transmembrane(preds) == ""
 
 
 class TestPerSequenceExtraction:
