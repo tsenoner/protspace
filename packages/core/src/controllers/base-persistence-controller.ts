@@ -40,18 +40,7 @@ export abstract class BasePersistenceController<
     return this._fileSettings !== null;
   }
 
-  updateDatasetHash(
-    data:
-      | string[]
-      | {
-          protein_ids: string[];
-          annotations?: Record<
-            string,
-            { kind?: 'categorical' | 'numeric'; values?: (string | null)[] }
-          >;
-          numeric_annotation_data?: Record<string, (number | null)[]>;
-        },
-  ): boolean {
+  updateDatasetHash(data: Parameters<typeof generateDatasetHash>[0]): boolean {
     const newHash = generateDatasetHash(data);
     if (newHash !== this._datasetHash) {
       this._datasetHash = newHash;
@@ -75,7 +64,7 @@ export abstract class BasePersistenceController<
     datasetHash?: string,
     clearExistingStorage: boolean = true,
   ): void {
-    this._fileSettings = settings;
+    this._fileSettings = settings ? { ...settings } : null;
     this._appliedFileAnnotations.clear();
 
     const hashToUse = datasetHash || this._datasetHash;
@@ -87,7 +76,15 @@ export abstract class BasePersistenceController<
 
       for (const [annotationName, annotationSettings] of Object.entries(settings)) {
         const key = buildStorageKey(this.storageKeyPrefix, hashToUse, annotationName);
+        if (!clearExistingStorage && getStorageItem<TSettings | null>(key, null) !== null) {
+          delete (this._fileSettings as Record<string, TSettings>)[annotationName];
+          continue;
+        }
         setStorageItem(key, annotationSettings);
+      }
+
+      if (this._fileSettings && Object.keys(this._fileSettings).length === 0) {
+        this._fileSettings = null;
       }
     }
 

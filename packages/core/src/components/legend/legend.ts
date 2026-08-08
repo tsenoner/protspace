@@ -889,17 +889,20 @@ export class ProtspaceLegend extends LitElement {
             protein_ids: sourceData.protein_ids,
             annotations: sourceData.annotations,
             numeric_annotation_data: sourceData.numeric_annotation_data,
+            annotation_predicted: sourceData.annotation_predicted,
           }
         : {
             protein_ids: this.proteinIds,
             annotations: this.data?.annotations,
             numeric_annotation_data: this.data?.numeric_annotation_data,
+            annotation_predicted: this.data?.annotation_predicted,
           };
 
       this._persistenceController.updateDatasetHash({
         protein_ids: unfilteredData.protein_ids,
         annotations: unfilteredData.annotations,
         numeric_annotation_data: unfilteredData.numeric_annotation_data,
+        annotation_predicted: unfilteredData.annotation_predicted,
       });
     }
 
@@ -1003,6 +1006,8 @@ export class ProtspaceLegend extends LitElement {
    * @param settings - All annotation settings from the file, or null to clear
    * @param datasetHash - Optional dataset hash for localStorage keys (required when
    *                      the component's hash isn't yet computed from the new data)
+   * @param clearExistingStorage - Whether file settings replace existing dataset settings. When
+   *                               false, existing annotation settings retain precedence.
    */
   public setFileSettings(
     settings: LegendSettingsMap | null,

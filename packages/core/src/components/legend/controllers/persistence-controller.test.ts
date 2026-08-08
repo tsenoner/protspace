@@ -556,6 +556,34 @@ describe('PersistenceController', () => {
         expect(setStorageItem).toHaveBeenCalled();
       });
 
+      it('preserves existing annotation settings when clearing is disabled', () => {
+        const localSettings = {
+          ...fileSettings.annotation1,
+          shapeSize: 42,
+        };
+        vi.mocked(getStorageItem).mockImplementation((key, fallback) =>
+          key === 'legend_hash_protein1_annotation1' ? localSettings : fallback,
+        );
+        controller.updateDatasetHash(['protein1']);
+        controller.updateSelectedAnnotation('annotation1');
+
+        controller.setFileSettings(fileSettings, 'hash_protein1', false);
+        controller.loadSettings();
+
+        expect(removeAllStorageItemsByHash).not.toHaveBeenCalled();
+        expect(setStorageItem).not.toHaveBeenCalledWith(
+          'legend_hash_protein1_annotation1',
+          expect.anything(),
+        );
+        expect(setStorageItem).toHaveBeenCalledWith(
+          'legend_hash_protein1_annotation2',
+          fileSettings.annotation2,
+        );
+        expect(controller.hasFileSettingsForAnnotation('annotation1')).toBe(false);
+        expect(controller.hasFileSettingsForAnnotation('annotation2')).toBe(true);
+        expect(mockCallbacks.onSettingsLoaded).toHaveBeenCalledWith(localSettings);
+      });
+
       it('does not clear or persist settings when null is passed', () => {
         vi.clearAllMocks();
 

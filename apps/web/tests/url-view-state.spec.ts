@@ -6,7 +6,9 @@ import {
   clickLegendItem,
   dismissTourIfPresent,
   getFirstLegendItemValue,
+  getShapeSizeState,
   isLegendItemHidden,
+  setShapeSize,
   supportsExplorePersistedDataset,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
@@ -367,6 +369,41 @@ test.describe('URL-backed explore view state', () => {
       await waitForView(page, { annotation: targetAnnotation, projection: targetProjection });
     },
   );
+
+  test('preserves shape size across projection reloads and deep links', async ({ page }) => {
+    const shapeSize = 42;
+    // LEGEND_DEFAULTS.symbolSizeMultiplier, as used by calculatePointSize() in
+    // packages/core/src/components/legend/legend-helpers.ts. That helper also clamps via
+    // Math.max(10, ...), which this plain multiply omits — equivalent only while
+    // shapeSize >= 2, so keep this test above that. Specs can't import @protspace/core
+    // under Playwright's ESM loader, so the multiplier is mirrored rather than imported.
+    const SHAPE_SIZE_TO_POINT_SIZE = 8;
+    const expectedShapeState = { pointSize: shapeSize * SHAPE_SIZE_TO_POINT_SIZE, shapeSize };
+    await page.goto('/explore');
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+    await waitForExploreInteractionReady(page);
+
+    await setShapeSize(page, shapeSize);
+
+    await selectProjection(page, targetProjection);
+    await waitForView(page, { projection: targetProjection });
+    await expect.poll(() => getShapeSizeState(page)).toEqual(expectedShapeState);
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await waitForView(page, { projection: targetProjection });
+    await expect.poll(() => getShapeSizeState(page)).toEqual(expectedShapeState);
+
+    await page.goto(
+      `/explore?annotation=${encodeURIComponent(demoDefaultAnnotation)}&projection=${encodeURIComponent(demoDefaultProjection)}`,
+    );
+    await waitForExploreDataLoad(page);
+    await waitForView(page, {
+      annotation: demoDefaultAnnotation,
+      projection: demoDefaultProjection,
+    });
+    await expect.poll(() => getShapeSizeState(page)).toEqual(expectedShapeState);
+  });
 
   test('deep links render the requested view directly without an initial default swap', async ({
     page,

@@ -5,7 +5,9 @@ import {
   clickLegendItem,
   dismissTourIfPresent,
   getFirstLegendItemValue,
+  getShapeSizeState,
   isLegendItemHidden,
+  setShapeSize,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
@@ -285,7 +287,7 @@ async function hasLegacyNotificationHelperArtifacts(page: Page): Promise<boolean
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe('Dataset reload resets state (#178)', () => {
+test.describe('Dataset reload preserves legend state (#340)', () => {
   test.beforeEach(async ({ page }) => {
     // Each Playwright test receives a fresh context; shared storage state only
     // seeds the completed product-tour key, so OPFS starts empty here.
@@ -294,9 +296,7 @@ test.describe('Dataset reload resets state (#178)', () => {
     await dismissTourIfPresent(page);
   });
 
-  test('page reload restores default legend state and clears persisted hidden values', async ({
-    page,
-  }) => {
+  test('page reload restores persisted legend state and hidden values', async ({ page }) => {
     const itemValue = await getFirstLegendItemValue(page);
 
     expect(await isLegendItemHidden(page, itemValue)).toBe(false);
@@ -322,8 +322,8 @@ test.describe('Dataset reload resets state (#178)', () => {
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
-    expect(await isLegendItemHidden(page, itemValue)).toBe(false);
-    expect(await itemHiddenInStorage()).toBe(false);
+    expect(await isLegendItemHidden(page, itemValue)).toBe(true);
+    expect(await itemHiddenInStorage()).toBe(true);
   });
 });
 
@@ -369,6 +369,8 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
   test('reset to demo clears the persisted custom dataset', async ({ page }) => {
     const defaultCount = await getProteinCount(page);
+    const defaultShapeSize = await getShapeSizeState(page);
+    await setShapeSize(page, 42);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
     await page.waitForFunction(
@@ -385,6 +387,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     await loadDemoDatasetFromImportMenu(page);
     await waitForProteinCount(page, defaultCount);
+    await expect.poll(() => getShapeSizeState(page)).toEqual(defaultShapeSize);
 
     await page.reload();
     await waitForExploreDataLoad(page);

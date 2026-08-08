@@ -163,10 +163,15 @@ Numeric and multi-label annotations always render as circles; per-category shape
 
 Legend settings are saved per dataset and per annotation in the browser.
 
-- Saved examples: visibility, palette, ordering, numeric binning settings, and duplicate-count preferences
+- Saved examples: visibility, palette, ordering, Shape size / Point size, numeric binning settings,
+  and duplicate-count preferences
 - Numeric binning settings such as palette, gradient direction, strategy, and target bin count are restored on reload/import
 - Numeric hidden values and manual order are only restored when the current numeric topology still matches the saved one
+- Reloading the same demo dataset or opening another projection restores the saved settings for the
+  selected annotation
 - Use `Reset` in the settings dialog to clear saved preferences for the selected annotation
+- After loading a custom dataset, **Import → Load demo dataset** clears saved demo display settings
+  and reapplies the demo bundle defaults
 
 ## Multi-Label Annotations
 

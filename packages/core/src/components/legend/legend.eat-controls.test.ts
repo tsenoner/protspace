@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import {
+  buildStorageKey,
+  generateDatasetHash,
+  setStorageItem,
+  type LegendPersistedSettings,
+  type VisualizationData,
+} from '@protspace/utils';
 import './legend';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
@@ -41,8 +47,34 @@ async function setup() {
 describe('legend-owned EAT controls', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+    localStorage.clear();
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it('restores EAT legend settings from the controller dataset hash', async () => {
+    const { data, legend, plot } = await setup();
+    plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
+    await legend.updateComplete;
+    const datasetHash = generateDatasetHash(data);
+    const persistedSettings: LegendPersistedSettings = {
+      maxVisibleValues: 10,
+      shapeSize: 42,
+      sortMode: 'size-desc',
+      hiddenValues: [],
+      categories: {},
+      enableDuplicateStackUI: false,
+      selectedPaletteId: 'kellys',
+    };
+    const bundleSettings: LegendPersistedSettings = {
+      ...persistedSettings,
+      shapeSize: 30,
+    };
+    setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), persistedSettings);
+
+    legend.setFileSettings({ ec: bundleSettings }, datasetHash, false);
+
+    expect(legend.shapeSize).toBe(42);
   });
 
   it('renders the controls with counts', async () => {
