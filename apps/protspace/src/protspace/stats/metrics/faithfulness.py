@@ -38,7 +38,14 @@ from protspace.stats._sampling import id_seed, sorted_subsample
 from protspace.stats.base import DEFAULT_SAMPLE_THRESHOLD, StatContext, StatRow
 
 DEFAULT_K = 15
-DEFAULT_HARD_CEILING = 20000
+# No size ceiling by default. Every metric below runs on the deterministic
+# ``DEFAULT_SAMPLE_THRESHOLD`` subsample, so the O(n^2) work is bounded by the
+# SUBSAMPLE size and not by n -- a dataset of 573k rows and one of 20k rows are
+# both scored on 5,000 points and cost the same. The previous default of 20000
+# gated the bounded work on the unbounded number, which only ever suppressed
+# results that were cheap to produce. Set ``hard_ceiling`` explicitly to restore
+# a bail-out; ``None`` means "no ceiling".
+DEFAULT_HARD_CEILING = None
 DEFAULT_N_TRIPLETS_PER_POINT = 5
 
 
@@ -200,7 +207,8 @@ class FaithfulnessStatistic:
         if n < 3:
             return []
 
-        hard_ceiling = int(ctx.params.get("hard_ceiling", DEFAULT_HARD_CEILING))
+        ceiling_param = ctx.params.get("hard_ceiling", DEFAULT_HARD_CEILING)
+        hard_ceiling = None if ceiling_param is None else int(ceiling_param)
         base = {
             "space_kind": ctx.space_kind,
             "space_name": ctx.space_name,
@@ -213,9 +221,10 @@ class FaithfulnessStatistic:
             "destination": "projection_metadata",
         }
 
-        # Bail before the canonical sort/copy below: past the ceiling every metric
-        # is skipped anyway, so sorting and copying emb/coords would be pure waste.
-        if n > hard_ceiling:
+        # An explicit ceiling still bails before any copy. It is opt-in now
+        # (DEFAULT_HARD_CEILING is None) because the subsample below already bounds
+        # every metric's cost independently of n.
+        if hard_ceiling is not None and n > hard_ceiling:
             return [
                 StatRow(
                     metric="knn_overlap",
@@ -230,15 +239,15 @@ class FaithfulnessStatistic:
                 )
             ]
 
-        # Past the guards: upcast to float64 (now bounded by hard_ceiling rows) and
-        # resolve the embedding-aligned projection coords + ids.
-        emb = np.asarray(emb_raw, dtype=float)
-        # Use the projection coordinates ALIGNED to the embedding (id-intersection
+        # Resolve the embedding-aligned projection coords + ids, WITHOUT upcasting:
+        # the subsample below decides which rows are actually needed, and a full
+        # float64 copy of a 570k x 1024 embedding is ~4.7 GB spent to discard 99%
+        # of it. Use the coordinates ALIGNED to the embedding (id-intersection
         # join), falling back to full coords only when no aligned view was built.
         coords_src = (
             ctx.embedding_coords if ctx.embedding_coords is not None else ctx.coords
         )
-        coords = np.asarray(coords_src, dtype=float)
+        coords_raw = np.asarray(coords_src)
         ids = ctx.embedding_ids if ctx.embedding_ids is not None else ctx.ids
 
         # Canonicalise row order by id up front so EVERY metric depends only on the
@@ -247,8 +256,6 @@ class FaithfulnessStatistic:
         # sorting here (matching the id-derived subsample seed) makes random_triplet
         # reproducible across differently-ordered inputs too.
         canonical = np.argsort(np.asarray(ids), kind="stable")
-        emb = emb[canonical]
-        coords = coords[canonical]
         ids = [ids[int(i)] for i in canonical]
 
         k = int(ctx.params.get("k", DEFAULT_K))
@@ -258,15 +265,23 @@ class FaithfulnessStatistic:
         hi_metric = ctx.high_dim_metric or "euclidean"
 
         sampled = False
-        # Rows are already in canonical id order, so a positional draw is itself
-        # id-canonical and thus row-order invariant.
+        # Seeded from the FULL canonical id list, exactly as before, so the drawn
+        # subsample — and therefore every number this function returns — is
+        # unchanged by the reordering above.
         rng = np.random.default_rng(id_seed(ctx.rng_seed, ids))
         idx = sorted_subsample(n, sample_threshold, rng)
         if idx is not None:
-            emb = emb[idx]
-            coords = coords[idx]
+            # Gather straight from the source rows in one pass: canonical[idx] maps
+            # canonical positions back to original row positions, so this is the
+            # same rows the old emb[canonical][idx] produced.
+            take = canonical[idx]
             n = len(idx)
             sampled = True
+        else:
+            take = canonical
+
+        emb = np.asarray(emb_raw[take], dtype=float)
+        coords = np.asarray(coords_raw[take], dtype=float)
 
         # sklearn.manifold.trustworthiness requires n_neighbors < n / 2 (strict),
         # else it raises. Clamp accordingly so trustworthiness/continuity are not
