@@ -1,5 +1,10 @@
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
+import type {
+  PlotData,
+  PlotDataPoint,
+  ScatterplotConfig,
+  VisualizationData,
+} from '@protspace/utils';
 import { materializePlotDataPoint } from '@protspace/utils';
 // Type-only: nothing here needs the class at runtime. The reverse edge
 // (plot-interaction-controller.ts -> RenderWebGLTrigger) is `import type` as well,
@@ -634,8 +639,7 @@ export class WebglRenderPerfRunner {
    */
   private async _runDensityZoomScenario(iterations: number) {
     const host = this._hostAny();
-    // Phase 3 replaces this narrow shape with `Partial<ScatterplotConfig>`.
-    const prevConfig = host.config as { densityLayer?: 'off' | 'auto' | 'on' } | undefined;
+    const prevConfig = host.config as ScatterplotConfig | undefined;
     // The config change itself repaints, and that first density frame is the one
     // that compiles the programs and allocates the grid. Wait for THAT frame, not
     // just for an idle window: `updateComplete` resolves before the repaint's rAF,

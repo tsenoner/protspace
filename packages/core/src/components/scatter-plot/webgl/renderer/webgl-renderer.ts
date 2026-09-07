@@ -658,11 +658,7 @@ export class WebGLRenderer {
    * alpha to 1 at every zoom, keeping only the scaler from the closed form.
    */
   private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
-    // `densityLayer` joins ScatterplotConfig in Phase 3; until then it is read
-    // off the config the host already supplies.
-    const config = this.getConfig() as ScatterplotConfig & {
-      densityLayer?: 'off' | 'auto' | 'on';
-    };
+    const config = this.getConfig();
     const mode = config.densityLayer ?? 'off';
     if (mode === 'off') return null;
 

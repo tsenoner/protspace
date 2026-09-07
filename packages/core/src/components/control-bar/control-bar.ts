@@ -19,6 +19,7 @@ import {
   isEatConfidenceAnnotation,
   isSameReliability,
   NEUTRAL_BOUND,
+  type DensityLayerMode,
   type EatReliabilityState,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
@@ -29,6 +30,7 @@ import {
 } from './control-bar-helpers';
 import {
   createSelectionDisabledNotificationDetail,
+  type DensityLayerChangeDetail,
   type SelectionDisabledNotificationDetail,
 } from './control-bar.events';
 import './search';
@@ -70,6 +72,8 @@ export class ProtspaceControlBar extends LitElement {
   selectionMode: boolean = false;
   @property({ type: String, attribute: 'selection-tool' })
   selectionTool: 'rectangle' | 'lasso' = 'rectangle';
+  @property({ type: String, attribute: 'density-layer' })
+  densityLayer: DensityLayerMode = 'off';
   @property({ type: Number, attribute: 'selected-proteins-count' })
   selectedProteinsCount: number = 0;
   @property({ type: Boolean, attribute: 'isolation-mode' })
@@ -412,6 +416,24 @@ export class ProtspaceControlBar extends LitElement {
     );
   }
 
+  private handleDensityLayerChange(mode: DensityLayerMode) {
+    this.densityLayer = mode;
+    if (this.autoSync && this._scatterplotElement) {
+      const scatterplot = this._scatterplotElement as ScatterplotElementLike;
+      // Spread, never replace: `config` is a shallow-merged bag the host owns, and
+      // the scatter-plot never resets a key once set, so dropping one here would
+      // pin it at whatever it last was.
+      scatterplot.config = { ...(scatterplot.config ?? {}), densityLayer: mode };
+    }
+    this.dispatchEvent(
+      new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
+        detail: { densityLayer: mode },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   private handleClearSelections() {
     const customEvent = new CustomEvent('clear-selections', {
       detail: {},
@@ -667,6 +689,26 @@ export class ProtspaceControlBar extends LitElement {
 
         <!-- Right side controls -->
         <div class="right-controls">
+          <!-- Density heatmap mode -->
+          <div class="tool-toggle">
+            <select
+              id="density-layer-select"
+              aria-label="Density layer"
+              title="Density heatmap. Off: points only. Auto: fades in when points overplot, out as you zoom in. On: always shown. Mixed regions show the average colour."
+              @change=${(e: Event) =>
+                this.handleDensityLayerChange(
+                  (e.target as HTMLSelectElement).value as DensityLayerMode,
+                )}
+            >
+              ${(['off', 'auto', 'on'] as const).map(
+                (mode) =>
+                  html`<option value=${mode} .selected=${this.densityLayer === mode}>
+                    Density: ${mode}
+                  </option>`,
+              )}
+            </select>
+          </div>
+
           <!-- Selection actions group -->
           <div class="selection-group" data-driver-id="selection">
             <!-- Selection mode toggle -->

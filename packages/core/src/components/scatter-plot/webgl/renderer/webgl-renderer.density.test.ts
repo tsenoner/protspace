@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
+import type { DensityLayerMode } from '@protspace/utils';
 import type { ScalePair } from '../types';
 import type { GLResources } from './gl-resources';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
@@ -13,7 +14,7 @@ const scales = (): ScalePair => ({
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
 
-type Config = { width: number; height: number; densityLayer?: 'off' | 'auto' | 'on' };
+type Config = { width: number; height: number; densityLayer?: DensityLayerMode };
 
 function setup(
   config: Config,

@@ -223,7 +223,17 @@ export interface ScatterplotConfig {
    * Default: false (kept off to avoid O(n) duplicate stack computation on large datasets).
    */
   enableDuplicateStackUI?: boolean;
+  /**
+   * GPU density heatmap under the points. `off` renders the points alone, `auto`
+   * cross-fades the layer in as the visible points overplot and out as the user
+   * zooms in, `on` pins it at full strength.
+   *
+   * Default: 'off'.
+   */
+  densityLayer?: DensityLayerMode;
 }
+
+export type DensityLayerMode = 'off' | 'auto' | 'on';
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
 
