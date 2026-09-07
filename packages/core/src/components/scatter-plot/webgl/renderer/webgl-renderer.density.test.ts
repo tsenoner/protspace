@@ -5,7 +5,7 @@ import { WebGLRenderer } from './webgl-renderer';
 import type { ScalePair } from '../types';
 import type { GLResources } from './gl-resources';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
-import { plotData, styleGetters } from './test-support/renderer-fixture';
+import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
 import type * as DensityPass from './density-pass';
 
@@ -18,13 +18,17 @@ const scales = (): ScalePair => ({
 
 type Config = { width: number; height: number; densityLayer?: 'off' | 'auto' | 'on' };
 
-function setup(config: Config, opts: MockGLOptions = {}) {
+function setup(
+  config: Config,
+  opts: MockGLOptions = {},
+  getTransform: () => d3.ZoomTransform = () => d3.zoomIdentity,
+) {
   const { canvas, gl } = createMockCanvas(opts);
   const degraded: RendererDegradedDetail[] = [];
   const renderer = new WebGLRenderer(
     canvas,
     scales,
-    () => d3.zoomIdentity,
+    getTransform,
     () => config as never,
     styleGetters(),
     undefined,
@@ -199,6 +203,61 @@ describe('density layer, on', () => {
     on.renderer.render(plotData(50));
     expect(accumAllocations(on.gl)).toBe(2);
     on.renderer.destroy();
+  });
+});
+
+describe('density layer, auto', () => {
+  // 573,649 visible points in an 800 px view: the cross-fade's threshold sits at
+  // k = 5.36, so identity is deep in the "overplotted" half and k = 100 is past
+  // the far end of the fade.
+  const swissprot = () => plotData(573649);
+
+  it('skips the whole chain when the view is zoomed past the fade', () => {
+    const on = setup({ width: 800, height: 600, densityLayer: 'auto' }, {}, () =>
+      d3.zoomIdentity.scale(100),
+    );
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(swissprot());
+
+    expect(on.renderer.visiblePointCount).toBe(573649);
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+    // Not one texel of the grid is allocated for a frame that shows nothing.
+    expect(on.resources.density).toBeNull();
+    on.renderer.destroy();
+  });
+
+  it('runs the chain on an overplotted view', () => {
+    const on = setup({ width: 800, height: 600, densityLayer: 'auto' });
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(swissprot());
+
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
+    on.renderer.destroy();
+  });
+});
+
+describe('N_visible', () => {
+  it('counts the points staged with opacity > 0, not the staged slots', () => {
+    const pd = plotData(10);
+    // plotData fills every id with 'p'; the getter below keys off the index.
+    pd.proteinIds = Array.from({ length: 10 }, (_, i) => `p${i}`);
+    let hideOdd = true;
+    const { renderer } = makeRendererWithStyle({
+      ...styleGetters(),
+      getOpacity: (sp) => (hideOdd && Number(sp.id.slice(1)) % 2 === 1 ? 0 : 1),
+    });
+
+    renderer.render(pd);
+    // The staged count includes the opacity-0 slots, which is why the density
+    // cross-fade cannot use it: half of these points contribute nothing.
+    expect(renderer.drawnPointCount).toBe(10);
+    expect(renderer.visiblePointCount).toBe(5);
+
+    hideOdd = false;
+    renderer.invalidateStyleCache();
+    renderer.render(pd);
+    expect(renderer.visiblePointCount).toBe(10);
+    renderer.destroy();
   });
 });
 

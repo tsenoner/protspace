@@ -7,6 +7,7 @@ const EXPECTED_SCENARIOS = [
   'zoomFarOut',
   'dragCanvas',
   'dragContinuous',
+  'densityZoom',
   'clickPoint',
 ] as const;
 
@@ -15,9 +16,10 @@ const EXPECTED_SCENARIOS = [
  * or a zoom cannot require an upload: `uploadedBytes === 0` is the #456 gate, and
  * unlike a wall-clock threshold it means the same thing on every machine.
  *
- * `densityZoom` is listed before it exists. The loop below skips a scenario that
- * is absent, so naming it here costs nothing and stops the gate being forgotten
- * when the scenario lands.
+ * `densityZoom` is a camera scenario too: the density layer is driven by uniforms
+ * off the same buffers the point pass reads, so forcing it on must not upload a
+ * byte either. EXPECTED_SCENARIOS requires it, because the loop below silently
+ * skips a scenario that is absent.
  */
 const CAMERA_SCENARIOS = [
   'zoomInOut',

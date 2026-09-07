@@ -9,6 +9,42 @@
  * ever recompiles a program or generates GLSL.
  */
 
+/*
+ * Colour policy: what a heatmap pixel means, and what it does not.
+ *
+ * Per cell the colour is the kernel-weighted MEAN of the linearised category
+ * colours of the visible points in it, sum(c * w) / sum(w). The blur runs over
+ * numerator and denominator alike, so the ratio after blurring is still a
+ * weighted mean and the fringe has no dark rim. A pure cell matches its legend
+ * swatch exactly; a mixed cell shows a colour that is NOT in the legend. The
+ * control-bar tooltip says so: "mixed regions show the average colour".
+ *
+ * NA (NEUTRAL_VALUE_COLOR, '#888888', scatter-plot/config.ts) is just another
+ * colour in the mean, and greys out the regions it mixes into. Accepted as
+ * honest: the layer does not pretend NA is absent.
+ *
+ * Selection and highlight change only ALPHA, never colour (visibility-model.ts),
+ * and the accumulation weight is binary, so clicking a point changes neither the
+ * colour nor the brightness of the heatmap. Selected and hovered points are
+ * lifted into the second drawPoints run and drawn on top of it instead.
+ *
+ * Hidden legend categories reach the GPU as a_color.a = 0 through the colour-only
+ * re-stage, and that is the same buffer the point pass reads, so the layer and
+ * the legend cannot disagree. Query filters cull rows before PlotData exists, so
+ * filtered points are absent from both.
+ *
+ * A multi-label point contributes pointColors[0] only (stage-point.ts): pie
+ * slices live in the label atlas, which this pass never samples. Numeric
+ * annotations colour by bin, and the mean of two neighbouring bin colours along
+ * a gradient is a plausible in-between colour, the one case where the mean is
+ * also legible.
+ *
+ * If a real dataset averages to mud, the upgrade is not a category cap but
+ * order-independent coverage per category, sum(log(1 - alpha)) on a second
+ * attachment via gl.drawBuffers: one more target and one more draw per category,
+ * with no change to the shapes here.
+ */
+
 /** Blur sigma, in density grid cells. */
 export const DENSITY_SIGMA_GRID_PX = 2;
 /** Kernel half-width: ceil(3 * sigma) = 6, so 2 * 6 + 1 = 13 taps per pass. */

@@ -232,6 +232,7 @@ export class WebglRenderPerfRunner {
       await this._runZoomFarOutScenario(iterations);
       await this._runDragCanvasScenario(iterations);
       await this._runDragContinuousScenario(iterations);
+      await this._runDensityZoomScenario(iterations);
       await this._runClickPointScenario(iterations);
 
       const scenarios = this._recorder?.scenarios ?? [];
@@ -577,10 +578,15 @@ export class WebglRenderPerfRunner {
     this._requireInteraction().panBy(dx, dy);
   }
 
-  private async _runZoomInOutScenario(iterations: number) {
+  /**
+   * Zoom out by `factor` and back, `iterations` times, waiting for each frame to
+   * land. The body every zoom scenario shares: they differ only in the name they
+   * record under, the factor, and (for densityZoom) the config they force first.
+   */
+  private async _runZoomCycleScenario(name: PerfScenarioName, factor: number, iterations: number) {
     const host = this._hostAny();
     if (!this._interaction()?.isZoomReady)
-      throw new Error('WebGL perf runner: missing zoom support for zoomInOut scenario');
+      throw new Error(`WebGL perf runner: missing zoom support for ${name} scenario`);
 
     const prevSelectionMode = !!host.selectionMode;
     if (prevSelectionMode) {
@@ -590,15 +596,15 @@ export class WebglRenderPerfRunner {
 
     const originalTransform = host._transform ?? d3.zoomIdentity;
 
-    this._beginScenario('zoomInOut', iterations);
+    this._beginScenario(name, iterations);
     for (let i = 0; i < iterations; i++) {
       let prevSeq = this._recorder?.passSeq ?? 0;
-      this._applyZoomScale(PERF_MEASURE_ZOOM_FACTOR);
+      this._applyZoomScale(factor);
       let rendered = await this._waitForNextRender(prevSeq, 2000);
       if (rendered) await this._waitForRenderIdle(10, 2000);
 
       prevSeq = this._recorder?.passSeq ?? 0;
-      this._applyZoomScale(1 / PERF_MEASURE_ZOOM_FACTOR);
+      this._applyZoomScale(1 / factor);
       rendered = await this._waitForNextRender(prevSeq, 2000);
       if (rendered) await this._waitForRenderIdle(10, 2000);
     }
@@ -615,6 +621,34 @@ export class WebglRenderPerfRunner {
     }
   }
 
+  private async _runZoomInOutScenario(iterations: number) {
+    await this._runZoomCycleScenario('zoomInOut', PERF_MEASURE_ZOOM_FACTOR, iterations);
+  }
+
+  /**
+   * The same camera moves as `zoomInOut`, with the density layer forced on, so a
+   * run reports what the layer costs on top of a frame it already measures.
+   *
+   * `on`, not `auto`: every dataset in `datasets.json` is small enough that the
+   * cross-fade self-disables, so `auto` would measure nothing and still pass.
+   */
+  private async _runDensityZoomScenario(iterations: number) {
+    const host = this._hostAny();
+    const prevConfig = host.config;
+    host.config = { ...(prevConfig ?? {}), densityLayer: 'on' };
+    await host.updateComplete;
+    // The config change itself repaints, and that first density frame is the one
+    // that compiles the programs and allocates the grid. Let it land before the
+    // scenario window opens, or its cost lands in the scenario's median.
+    await this._waitForRenderIdle(10, 2000);
+    try {
+      await this._runZoomCycleScenario('densityZoom', PERF_MEASURE_ZOOM_FACTOR, iterations);
+    } finally {
+      host.config = prevConfig;
+      await host.updateComplete;
+    }
+  }
+
   /**
    * Zoom all the way out to the low end of the zoom extent and back. Both extremes
    * of the frame live here: the k = 0.1 pass is the most expensive point frame
@@ -624,41 +658,7 @@ export class WebglRenderPerfRunner {
    * back, and their medians differ by 3x.
    */
   private async _runZoomFarOutScenario(iterations: number) {
-    const host = this._hostAny();
-    if (!this._interaction()?.isZoomReady)
-      throw new Error('WebGL perf runner: missing zoom support for zoomFarOut scenario');
-
-    const prevSelectionMode = !!host.selectionMode;
-    if (prevSelectionMode) {
-      host.selectionMode = false;
-      await host.updateComplete;
-    }
-
-    const originalTransform = host._transform ?? d3.zoomIdentity;
-
-    this._beginScenario('zoomFarOut', iterations);
-    for (let i = 0; i < iterations; i++) {
-      let prevSeq = this._recorder?.passSeq ?? 0;
-      this._applyZoomScale(PERF_MEASURE_ZOOM_FAR_OUT_FACTOR);
-      let rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
-
-      prevSeq = this._recorder?.passSeq ?? 0;
-      this._applyZoomScale(1 / PERF_MEASURE_ZOOM_FAR_OUT_FACTOR);
-      rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
-    }
-    this._endScenario();
-
-    const prevSeq = this._recorder?.passSeq ?? 0;
-    this._requireInteraction().setTransform(originalTransform);
-    const rendered = await this._waitForNextRender(prevSeq, 2000);
-    if (rendered) await this._waitForRenderIdle(10, 2000);
-
-    if (prevSelectionMode !== !!host.selectionMode) {
-      host.selectionMode = prevSelectionMode;
-      await host.updateComplete;
-    }
+    await this._runZoomCycleScenario('zoomFarOut', PERF_MEASURE_ZOOM_FAR_OUT_FACTOR, iterations);
   }
 
   /**

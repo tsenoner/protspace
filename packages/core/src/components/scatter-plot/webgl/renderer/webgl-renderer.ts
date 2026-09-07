@@ -170,6 +170,12 @@ export class WebGLRenderer {
   private readonly degradeReported = new Set<RendererDegradedReason>();
 
   private currentPointCount = 0;
+  /**
+   * Points staged with opacity > 0 by the last visibility-changing stage. This
+   * is N_visible for the density cross-fade: `currentPointCount` counts the
+   * opacity-0 slots too, which are staged but contribute nothing on screen.
+   */
+  private visibleCount = 0;
   private positionsDirty = true;
   private stylesDirty = true;
   // Depth-order dirtiness is tracked separately from positionsDirty so callers
@@ -293,6 +299,11 @@ export class WebGLRenderer {
    */
   get drawnPointCount(): number {
     return this.currentPointCount;
+  }
+
+  /** See {@link visibleCount}. Drives the density layer's cross-fade. */
+  get visiblePointCount(): number {
+    return this.visibleCount;
   }
 
   /**
@@ -522,6 +533,7 @@ export class WebGLRenderer {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.currentPointCount = 0;
+    this.visibleCount = 0;
   }
 
   render(pd: PlotData) {
@@ -634,20 +646,24 @@ export class WebGLRenderer {
    * Per-frame density inputs, or null when the layer contributes nothing this
    * frame (so the whole chain, and its cost, is skipped).
    *
-   * Phase 1 stub: `on` only, weighted by the staged point count. Phase 2 adds
-   * the `auto` cross-fade and swaps in the visible count.
+   * `off` is a byte-identical frame to a build without the layer. `auto` runs
+   * the Embedding Atlas cross-fade over N_visible, so it fades out as the user
+   * zooms in and self-disables on datasets too small to overplot. `on` pins the
+   * alpha to 1 at every zoom, keeping only the scaler from the closed form.
    */
   private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
     // `densityLayer` joins ScatterplotConfig in Phase 3; until then it is read
     // off the config the host already supplies.
-    const mode = (this.getConfig() as { densityLayer?: 'off' | 'auto' | 'on' }).densityLayer;
-    if (mode !== 'on') return null;
+    const config = this.getConfig() as ScatterplotConfig & {
+      densityLayer?: 'off' | 'auto' | 'on';
+    };
+    const mode = config.densityLayer ?? 'off';
+    if (mode === 'off') return null;
 
     if (this.densityDisabled || !this.shouldUseGammaPipeline() || this.currentPointCount === 0) {
       return null;
     }
 
-    const config = this.getConfig();
     const viewDimensionCss = Math.max(
       config.width ?? DEFAULT_VIEWPORT_WIDTH,
       config.height ?? DEFAULT_VIEWPORT_HEIGHT,
@@ -659,11 +675,11 @@ export class WebGLRenderer {
       ((this.canvas.width / grid.width) * (this.canvas.height / grid.height)) /
       (this.dpr * this.dpr);
     const params = densityFrameParams(
-      this.currentPointCount,
+      this.visibleCount,
       transform.k,
       viewDimensionCss,
       cellAreaCss,
-      true,
+      mode === 'on',
     );
     if (params.alpha <= 0) return null;
 
@@ -976,6 +992,7 @@ export class WebGLRenderer {
     this.warnedGammaFallback = false;
     this.buffersInitialized = false;
     this.currentPointCount = 0;
+    this.visibleCount = 0;
     this.positionsDirty = true;
     this.stylesDirty = true;
     this.lastDataSignature = null;
@@ -1227,6 +1244,7 @@ export class WebGLRenderer {
     let idx = 0;
 
     if (needsReorder) {
+      this.visibleCount = 0;
       const count = maxPoints;
       const order = this.sortOrder;
       const depthScratch = this.sortDepths;
@@ -1263,6 +1281,7 @@ export class WebGLRenderer {
           sp.y = ys[srcSlot];
           sp.originalIndex = origIdx;
           const opacity = this.style.getOpacity(sp);
+          if (opacity > 0) this.visibleCount++;
 
           if (this.trackRenderedPointIds && opacity > 0) {
             this.renderedPointIds.add(sp.id);
@@ -1293,6 +1312,7 @@ export class WebGLRenderer {
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
     } else if (updateStyles) {
+      this.visibleCount = 0;
       // Color-only update: no reordering needed, just update color/shape buffers.
       // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
       const order = this.sortOrder;
@@ -1309,6 +1329,7 @@ export class WebGLRenderer {
           sp.y = srcYs[slot];
           sp.originalIndex = origIdx;
           const opacity = this.style.getOpacity(sp);
+          if (opacity > 0) this.visibleCount++;
 
           if (this.trackRenderedPointIds && opacity > 0) {
             this.renderedPointIds.add(sp.id);
