@@ -32,6 +32,23 @@ import {
   bindPointDrawState,
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
+import {
+  createDensityResources,
+  resizeDensityTargets,
+  destroyDensityResources,
+  accumulateAndBlurDensity,
+  compositeDensity,
+  type DensityCamera,
+  type DensityResources,
+} from './density-pass';
+import { densityFrameParams, type DensityFrameParams } from './density-crossfade';
+
+/** Everything the three density passes need for one frame. */
+interface DensityFrame {
+  res: DensityResources;
+  camera: DensityCamera;
+  params: DensityFrameParams;
+}
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
 import {
@@ -131,6 +148,12 @@ export class WebGLRenderer {
   private atlas: { plan: LabelAtlasPlan; texels: Uint8Array } | null = null;
   /** Latched after an allocation failure, so we do not retry it every populate. */
   private labelAtlasDisabled = false;
+  /**
+   * Latched after a density allocation or compile failure. Never triggers the
+   * gamma fallback: a device that cannot spare the density grid can still blend
+   * in linear light, and switching it to sRGB would be the larger visible change.
+   */
+  private densityDisabled = false;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -351,6 +374,8 @@ export class WebGLRenderer {
         const success = this.resizeLinearFramebuffer(physicalWidth, physicalHeight);
         if (!success) {
           this.handleGammaFallback('resize');
+        } else {
+          this.syncDensityTargets();
         }
       }
     }
@@ -380,6 +405,25 @@ export class WebGLRenderer {
     }
     this.resources.linearFramebuffer = fb;
     return true;
+  }
+
+  /** Allocate or re-allocate the density grid for the current canvas size. */
+  private syncDensityTargets() {
+    const gl = this.gl;
+    const res = this.resources.density;
+    if (!gl || !res || this.densityDisabled) return;
+    if (!resizeDensityTargets(gl, res, this.canvas.width, this.canvas.height)) {
+      this.disableDensity('density target incomplete');
+    }
+  }
+
+  private disableDensity(reason: string) {
+    this.densityDisabled = true;
+    console.warn(`WebGLRenderer: density layer disabled (${reason}).`);
+    if (this.gl && this.resources.density) {
+      destroyDensityResources(this.gl, this.resources.density);
+    }
+    this.resources.density = null;
   }
 
   private handleGammaFallback(reason?: string) {
@@ -413,6 +457,14 @@ export class WebGLRenderer {
       this.resources.linearFramebuffer = null;
     }
 
+    // The grid is 16 to 21 MB, and this is the device that just failed an
+    // allocation. Without the gamma pipeline there is no linear target to
+    // composite into, so it has nothing left to do either.
+    if (this.resources.density) {
+      destroyDensityResources(gl, this.resources.density);
+      this.resources.density = null;
+    }
+
     this.gammaCorrectionUniformLocations = null;
   }
 
@@ -420,6 +472,7 @@ export class WebGLRenderer {
     this.resources.gammaCorrectionProgram = null;
     this.gammaCorrectionUniformLocations = null;
     this.resources.linearFramebuffer = null;
+    this.resources.density = null;
   }
 
   private shouldUseGammaPipeline(): boolean {
@@ -528,12 +581,85 @@ export class WebGLRenderer {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    this.renderPoints(transform);
+    const density = this.densityFrame(transform);
+    if (density) {
+      accumulateAndBlurDensity(
+        gl,
+        density.res,
+        this.resources.pointVao,
+        this.currentPointCount,
+        density.camera,
+      );
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
+      gl.viewport(0, 0, framebuffer.width, framebuffer.height);
+    }
+
+    this.renderPoints(transform, density ? () => this.compositeDensity(density) : undefined);
 
     // Pass 2: Gamma correction to canvas
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
 
     this.renderGammaCorrection();
+  }
+
+  /**
+   * Per-frame density inputs, or null when the layer contributes nothing this
+   * frame (so the whole chain, and its cost, is skipped).
+   *
+   * Phase 1 stub: `on` only, weighted by the staged point count. Phase 2 adds
+   * the `auto` cross-fade and swaps in the visible count.
+   */
+  private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
+    // `densityLayer` joins ScatterplotConfig in Phase 3; until then it is read
+    // off the config the host already supplies.
+    const mode = (this.getConfig() as { densityLayer?: 'off' | 'auto' | 'on' }).densityLayer;
+    if (mode !== 'on') return null;
+
+    const res = this.resources.density;
+    if (!res || !res.accum || this.densityDisabled || this.currentPointCount === 0) return null;
+
+    const config = this.getConfig();
+    const viewDimensionCss = Math.max(
+      config.width ?? DEFAULT_VIEWPORT_WIDTH,
+      config.height ?? DEFAULT_VIEWPORT_HEIGHT,
+    );
+    // One grid cell, in CSS px^2.
+    const cellAreaCss =
+      ((this.canvas.width / res.accum.width) * (this.canvas.height / res.accum.height)) /
+      (this.dpr * this.dpr);
+    const params = densityFrameParams(
+      this.currentPointCount,
+      transform.k,
+      viewDimensionCss,
+      cellAreaCss,
+      true,
+    );
+    if (params.alpha <= 0) return null;
+
+    return {
+      res,
+      camera: {
+        width: this.canvas.width,
+        height: this.canvas.height,
+        transform: { x: transform.x, y: transform.y, k: transform.k },
+        dpr: this.dpr,
+        gamma: this.getEffectiveGamma(),
+      },
+      params,
+    };
+  }
+
+  /**
+   * The `drawPoints` seam: composite the blurred grid over the base run, then
+   * hand the point program and VAO back to the draw that follows.
+   */
+  private compositeDensity(density: DensityFrame) {
+    const gl = this.gl;
+    if (!gl) return;
+    compositeDensity(gl, density.res, density.params);
+    // Uniforms are per-program and survive the detour, so re-binding is enough.
+    gl.useProgram(this.resources.pointProgram);
+    gl.bindVertexArray(this.resources.pointVao);
   }
 
   private renderGammaCorrection() {
@@ -766,6 +892,17 @@ export class WebGLRenderer {
 
     this.setupQuad();
 
+    // After setupQuad: the density quad VAO is wired over that buffer. The
+    // accumulation pass draws the POINT vao, so it is linked against the point
+    // program's attribute indices.
+    if (this.gammaPipelineAvailable && this.resources.quadBuffer && this.pointAttribLocations) {
+      this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
+        dataPosition: this.pointAttribLocations.dataPosition,
+        color: this.pointAttribLocations.color,
+      });
+      if (!this.resources.density) this.disableDensity('density shaders failed to compile');
+    }
+
     // We want overlapping points to remain visible, so we do NOT use the depth buffer to cull.
     // Z-order is preserved via painter's algorithm (CPU sorting) in populateBuffers().
     setPointBlendState(gl);
@@ -776,6 +913,8 @@ export class WebGLRenderer {
     ) {
       this.handleGammaFallback('framebuffer incomplete');
     }
+
+    this.syncDensityTargets();
 
     return gl;
   }
@@ -810,6 +949,7 @@ export class WebGLRenderer {
     this.atlas = null;
     this.labelAtlasDisabled = false;
     this.labelAtlasActive = false;
+    this.densityDisabled = false;
     this.degradeReported.clear();
     this.gammaPipelineAvailable = true;
     this.warnedGammaFallback = false;
@@ -898,7 +1038,7 @@ export class WebGLRenderer {
   // Rendering
   // ============================================================================
 
-  private renderPoints(transform: d3.ZoomTransform) {
+  private renderPoints(transform: d3.ZoomTransform, afterBasePass?: () => void) {
     if (
       !this.gl ||
       this.currentPointCount === 0 ||
@@ -929,7 +1069,13 @@ export class WebGLRenderer {
       },
     );
 
-    drawPoints(gl, this.currentPointCount, this.selectionActive, this.selectedStartIndex);
+    drawPoints(
+      gl,
+      this.currentPointCount,
+      this.selectionActive,
+      this.selectedStartIndex,
+      afterBasePass,
+    );
 
     gl.bindVertexArray(null);
   }

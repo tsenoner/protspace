@@ -68,7 +68,7 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
 
     renderer.destroy();
 
-    expect(del.vao).toHaveBeenCalledTimes(1); // pointVao
+    expect(del.vao).toHaveBeenCalledTimes(2); // pointVao + the density quad VAO
     expect(del.buffer.mock.calls.length).toBeGreaterThanOrEqual(7); // 6 data buffers + quad
     expect(del.texture.mock.calls.length).toBeGreaterThanOrEqual(1); // labelColorTexture (+linearFramebuffer.texture when the gamma pipeline is available)
     expect(del.program.mock.calls.length).toBeGreaterThanOrEqual(1); // pointProgram (+gamma if available)
