@@ -5,7 +5,7 @@ import type {
   ScatterplotConfig,
   VisualizationData,
 } from '@protspace/utils';
-import { materializePlotDataPoint } from '@protspace/utils';
+import { DENSITY_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
 // Type-only: nothing here needs the class at runtime. The reverse edge
 // (plot-interaction-controller.ts -> RenderWebGLTrigger) is `import type` as well,
 // so neither module pulls the other into the runtime graph.
@@ -655,7 +655,7 @@ export class WebglRenderPerfRunner {
       // previous mode back explicitly.
       await this._setConfigAndWait(host, {
         ...(prevConfig ?? {}),
-        densityLayer: prevConfig?.densityLayer ?? 'off',
+        densityLayer: prevConfig?.densityLayer ?? DENSITY_DEFAULT,
       });
     }
   }

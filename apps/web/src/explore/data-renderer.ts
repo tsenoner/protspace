@@ -5,7 +5,7 @@ import type {
   ProtspaceStructureViewer,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
-import { isEatConfidenceAnnotation } from '@protspace/utils';
+import { DENSITY_DEFAULT, isEatConfidenceAnnotation } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
 import type { EffectiveExploreView } from './view-state';
 
@@ -261,7 +261,7 @@ export function createDataRenderer({
         tooltip: [...resolvedInitialView.tooltip],
         // `applyPlotState` never resets `config`, so the density mode in effect
         // after a dataset load is whatever the plot already carries.
-        density: plotElement.config?.densityLayer ?? 'off',
+        density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
       };
     } finally {
       if (isLargeDataset && !getIsDisposed()) {

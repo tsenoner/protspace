@@ -1,4 +1,4 @@
-import type { DensityLayerMode } from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -69,9 +69,6 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
 }
 
 const DENSITY_MODES: readonly DensityLayerMode[] = ['off', 'auto', 'on'];
-
-/** The default the URL omits; `resolveExploreView` falls back to it. */
-const DENSITY_DEFAULT: DensityLayerMode = 'off';
 
 function parseDensityParam(searchParams: URLSearchParams): {
   value: DensityLayerMode | undefined;

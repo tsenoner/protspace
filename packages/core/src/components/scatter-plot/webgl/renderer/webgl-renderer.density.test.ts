@@ -300,3 +300,28 @@ describe('density layer failure is not a gamma failure', () => {
     on.renderer.destroy();
   });
 });
+
+describe('context loss', () => {
+  it('clears the density latch so the next context can try again', () => {
+    // Without the reset a single failed allocation disables density for the
+    // lifetime of the element, including on the fresh context after a restore.
+    const { canvas, gl, setContextLost } = createMockCanvas();
+    const renderer = new WebGLRenderer(
+      canvas,
+      scales,
+      () => d3.zoomIdentity,
+      () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
+      styleGetters(),
+    );
+    renderer.render(plotData(50));
+    const priv = renderer as unknown as { densityDisabled: boolean };
+    priv.densityDisabled = true;
+
+    setContextLost(true);
+    vi.spyOn(gl as WebGL2RenderingContext, 'isContextLost').mockReturnValue(true);
+    renderer.render(plotData(50)); // ensureGL -> markContextLost -> resetRendererState
+
+    expect(priv.densityDisabled).toBe(false);
+    renderer.destroy();
+  });
+});

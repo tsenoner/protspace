@@ -659,7 +659,7 @@ export class WebGLRenderer {
    */
   private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
     const config = this.getConfig();
-    const mode = config.densityLayer ?? 'off';
+    const mode = config.densityLayer;
     if (mode === 'off') return null;
 
     if (this.densityDisabled || !this.shouldUseGammaPipeline() || this.currentPointCount === 0) {

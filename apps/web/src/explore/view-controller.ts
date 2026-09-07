@@ -1,5 +1,5 @@
 import type { ProtspaceControlBar, ProtspaceScatterplot } from '@protspace/core';
-import type { DensityLayerMode, VisualizationData } from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -98,7 +98,7 @@ export function createViewController({
       annotation,
       projection,
       tooltip,
-      density: plotElement.config?.densityLayer ?? 'off',
+      density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
     };
   };
 

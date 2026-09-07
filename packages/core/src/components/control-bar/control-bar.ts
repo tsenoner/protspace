@@ -16,6 +16,7 @@ import {
 } from '../../utils/dropdown-helpers';
 import {
   DEFAULT_EAT_RELIABILITY,
+  DENSITY_DEFAULT,
   isEatConfidenceAnnotation,
   isSameReliability,
   NEUTRAL_BOUND,
@@ -73,7 +74,7 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: String, attribute: 'selection-tool' })
   selectionTool: 'rectangle' | 'lasso' = 'rectangle';
   @property({ type: String, attribute: 'density-layer' })
-  densityLayer: DensityLayerMode = 'off';
+  densityLayer: DensityLayerMode = DENSITY_DEFAULT;
   @property({ type: Number, attribute: 'selected-proteins-count' })
   selectedProteinsCount: number = 0;
   @property({ type: Boolean, attribute: 'isolation-mode' })
