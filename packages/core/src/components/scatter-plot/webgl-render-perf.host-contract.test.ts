@@ -61,6 +61,7 @@ type PerfRunnerInternals = {
     active?: boolean,
   ): PerfScenarioRun | null;
   _endScenario(): void;
+  _runDragContinuousScenario(iterations: number): Promise<void>;
 };
 
 type PerfHostInternals = ProtspaceScatterplot & {
@@ -259,4 +260,55 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
       endRecording(runner);
     }
   });
+
+  it('records gpuSyncedMs no earlier than the CPU end of the same pass', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    const scenario = beginRecordingScenario(runner, 'zoomInOut');
+    try {
+      runner._applyZoomScale(3);
+      await nextFrame();
+
+      const pass = scenario.passes.find((p) => p.trigger === 'zoom');
+      expect(pass).toBeTruthy();
+      // Asserted first, so the >= below cannot pass on two zeroes: durationMs
+      // stays the CPU submission window and has to be a real measurement.
+      expect(Number.isFinite(pass?.durationMs)).toBe(true);
+      expect(pass?.durationMs).toBeGreaterThan(0);
+      expect(Number.isFinite(pass?.gpuSyncedMs)).toBe(true);
+      expect(pass?.gpuSyncedMs).toBeGreaterThanOrEqual(pass!.durationMs);
+    } finally {
+      endRecording(runner);
+    }
+  });
+
+  /**
+   * The union member alone is not falsifiable here: `packages/core/tsconfig.json`
+   * excludes `**​/*.test.ts`, so a misspelt `PerfScenarioName` never reaches
+   * `pnpm type-check`. Driving the scenario itself is, and it also locks the two
+   * things a pass-through name assertion would miss: that the sustained drag
+   * records passes, and that it leaves the camera where it found it.
+   */
+  it('dragContinuous records passes and restores the transform', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    runner._recorder = {
+      runId: 'host-contract',
+      iterations: 1,
+      passSeq: 0,
+      lastRenderEndTs: 0,
+      activeScenario: null,
+      scenarios: [],
+    };
+    try {
+      await runner._runDragContinuousScenario(1);
+
+      const scenario = runner._recorder?.scenarios.find((s) => s.name === 'dragContinuous');
+      expect(scenario).toBeTruthy();
+      expect(scenario?.passes.length ?? 0).toBeGreaterThan(0);
+      expect(mainGroupTransform(sp)).toMatch(/translate\(0\s*,\s*0\)/);
+    } finally {
+      runner._recorder = null;
+    }
+  }, 20_000);
 });

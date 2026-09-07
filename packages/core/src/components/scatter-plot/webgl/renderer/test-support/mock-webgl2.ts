@@ -82,6 +82,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     RENDERBUFFER: 0x8d41,
     ONE: 1,
     ONE_MINUS_SRC_ALPHA: 0x0303,
+    RGBA: 0x1908,
+    UNSIGNED_BYTE: 0x1401,
     MAX_TEXTURE_SIZE: 0x0d33,
     NO_ERROR: 0,
     INVALID_VALUE: 0x0501,
@@ -204,6 +206,9 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     uniformMatrix3fv: noop,
     uniform4fv: noop,
     pixelStorei: noop,
+    // Recording: WebGLRenderer.syncGpu() is defined by the fact that it makes this
+    // call, and by the fact that production frames never do.
+    readPixels: vi.fn(),
     disableVertexAttribArray: noop,
   };
   return obj;

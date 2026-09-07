@@ -282,6 +282,24 @@ export class WebGLRenderer {
     return this.uploadedBytes;
   }
 
+  /**
+   * Perf harness only: block until the GPU has finished the frame just submitted.
+   *
+   * `readPixels` on the default framebuffer (which both render paths leave bound)
+   * is the portable way to do this: it cannot return until the commands ahead of
+   * it have executed. Production frames never call it — the harness's `start()`
+   * returns null outside a recording scenario, so the sync sits behind that token
+   * and a stall this deliberate can never reach a user's frame.
+   */
+  syncGpu(): void {
+    const gl = this.gl;
+    if (!gl || this.isContextLost()) return;
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.syncScratch);
+  }
+
+  /** One pixel of destination for {@link syncGpu}; allocated once, never read. */
+  private readonly syncScratch = new Uint8Array(4);
+
   invalidatePositionCache() {
     this.positionsDirty = true;
   }

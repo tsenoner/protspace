@@ -17,11 +17,30 @@ const PERF_READY_TIMEOUT_MS = 10 * 60_000;
 const PERF_MEASURE_ZOOM_FACTOR = 3;
 const PERF_MEASURE_PAN_DISTANCE_PX = 160;
 const PERF_MEASURE_PAN_STEPS = 6;
+/**
+ * Frames in one `dragContinuous` iteration: half out, half back. One `panBy` per
+ * animation frame with no idle wait between them, which is what a real drag does
+ * and what `dragCanvas` (which settles after every step) cannot show.
+ */
+const PERF_MEASURE_DRAG_CONTINUOUS_FRAMES = 60;
+/**
+ * The low end of the zoom extent (`zoomExtent: [0.1, 1000]`, scatter-plot config).
+ * From k = 1 a single `zoomBy(0.1)` lands exactly on it, which is where the point
+ * pass is cheapest and any full-viewport pass is at its most expensive.
+ */
+const PERF_MEASURE_ZOOM_FAR_OUT_FACTOR = 0.1;
 const PERF_GLOBAL_RESULTS_KEY = '__protspaceWebGLRenderPerfMeasurements';
 
 export type RenderWebGLTrigger = 'zoom' | 'plot' | 'unknown';
 
-export type PerfScenarioName = 'annotationChange' | 'zoomInOut' | 'dragCanvas' | 'clickPoint';
+export type PerfScenarioName =
+  | 'annotationChange'
+  | 'zoomInOut'
+  | 'zoomFarOut'
+  | 'dragCanvas'
+  | 'dragContinuous'
+  | 'densityZoom'
+  | 'clickPoint';
 
 export type PerfRenderPass = {
   seq: number;
@@ -29,6 +48,16 @@ export type PerfRenderPass = {
   startTs: number;
   endTs: number;
   durationMs: number;
+  /**
+   * The same window as `durationMs`, extended past the last GL call until the GPU
+   * has actually finished the frame (the host syncs before calling `stop`).
+   *
+   * `durationMs` is CPU submission time and nothing more: a shader that costs the
+   * GPU 40 ms is invisible in it, because submitting the draw is all the CPU does.
+   * Kept as a second field rather than folded into `durationMs` so the recorded
+   * numbers stay comparable with the baselines taken before this existed.
+   */
+  gpuSyncedMs: number;
   /**
    * Points handed to the renderer. NOT the count drawn — see `drawnPoints`.
    * Kept as-is because the jsdom host-contract test asserts it against a
@@ -110,11 +139,18 @@ export class WebglRenderPerfRunner {
     return { trigger, startTs: performance.now() };
   }
 
+  /**
+   * `cpuEndTs` is the clock reading taken by the host *before* it blocks on the
+   * GPU. Passing it keeps `durationMs` meaning CPU submission time, so this run
+   * stays comparable with baselines recorded before the sync existed, while
+   * `gpuSyncedMs` measures through to GPU completion.
+   */
   public stop(
     token: PerfPassToken | null,
     renderedPoints: number,
     drawnPoints: number,
     uploadedBytes: number,
+    cpuEndTs?: number,
   ) {
     if (!token) return;
     const recorder = this._recorder;
@@ -128,7 +164,8 @@ export class WebglRenderPerfRunner {
       trigger: token.trigger,
       startTs: token.startTs,
       endTs,
-      durationMs: endTs - token.startTs,
+      durationMs: (cpuEndTs ?? endTs) - token.startTs,
+      gpuSyncedMs: endTs - token.startTs,
       renderedPoints,
       drawnPoints,
       uploadedBytes,
@@ -183,7 +220,9 @@ export class WebglRenderPerfRunner {
 
       await this._runAnnotationChangeScenario(iterations);
       await this._runZoomInOutScenario(iterations);
+      await this._runZoomFarOutScenario(iterations);
       await this._runDragCanvasScenario(iterations);
+      await this._runDragContinuousScenario(iterations);
       await this._runClickPointScenario(iterations);
 
       const scenarios = this._recorder?.scenarios ?? [];
@@ -362,6 +401,10 @@ export class WebglRenderPerfRunner {
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
+  private async _nextAnimationFrame() {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
   private async _collectPerfMetadata(): Promise<Record<string, unknown>> {
     const nav = navigator as unknown as {
       userAgent?: string;
@@ -415,6 +458,13 @@ export class WebglRenderPerfRunner {
           // corpus becomes evidence about the real distribution of this limit,
           // which we currently have none of.
           maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+          // The two extensions the float render targets need. Recorded per run so
+          // a browser that renders the plot but cannot do float blending is named
+          // by the results file rather than guessed at from a screenshot.
+          extensions: {
+            colorBufferFloat: !!gl.getExtension('EXT_color_buffer_float'),
+            floatBlend: !!gl.getExtension('EXT_float_blend'),
+          },
         };
         const debugExt = gl.getExtension('WEBGL_debug_renderer_info') as {
           UNMASKED_VENDOR_WEBGL: number;
@@ -542,6 +592,95 @@ export class WebglRenderPerfRunner {
       this._applyZoomScale(1 / PERF_MEASURE_ZOOM_FACTOR);
       rendered = await this._waitForNextRender(prevSeq, 2000);
       if (rendered) await this._waitForRenderIdle(10, 2000);
+    }
+    this._endScenario();
+
+    const prevSeq = this._recorder?.passSeq ?? 0;
+    this._requireInteraction().setTransform(originalTransform);
+    const rendered = await this._waitForNextRender(prevSeq, 2000);
+    if (rendered) await this._waitForRenderIdle(10, 2000);
+
+    if (prevSelectionMode !== !!host.selectionMode) {
+      host.selectionMode = prevSelectionMode;
+      await host.updateComplete;
+    }
+  }
+
+  /**
+   * Zoom all the way out to the low end of the zoom extent and back. The cheapest
+   * the point pass ever gets and the most a full-viewport pass ever costs, so a
+   * regression in anything that scales with covered area shows up here first.
+   */
+  private async _runZoomFarOutScenario(iterations: number) {
+    const host = this._hostAny();
+    if (!this._interaction()?.isZoomReady)
+      throw new Error('WebGL perf runner: missing zoom support for zoomFarOut scenario');
+
+    const prevSelectionMode = !!host.selectionMode;
+    if (prevSelectionMode) {
+      host.selectionMode = false;
+      await host.updateComplete;
+    }
+
+    const originalTransform = host._transform ?? d3.zoomIdentity;
+
+    this._beginScenario('zoomFarOut', iterations);
+    for (let i = 0; i < iterations; i++) {
+      let prevSeq = this._recorder?.passSeq ?? 0;
+      this._applyZoomScale(PERF_MEASURE_ZOOM_FAR_OUT_FACTOR);
+      let rendered = await this._waitForNextRender(prevSeq, 2000);
+      if (rendered) await this._waitForRenderIdle(10, 2000);
+
+      prevSeq = this._recorder?.passSeq ?? 0;
+      this._applyZoomScale(1 / PERF_MEASURE_ZOOM_FAR_OUT_FACTOR);
+      rendered = await this._waitForNextRender(prevSeq, 2000);
+      if (rendered) await this._waitForRenderIdle(10, 2000);
+    }
+    this._endScenario();
+
+    const prevSeq = this._recorder?.passSeq ?? 0;
+    this._requireInteraction().setTransform(originalTransform);
+    const rendered = await this._waitForNextRender(prevSeq, 2000);
+    if (rendered) await this._waitForRenderIdle(10, 2000);
+
+    if (prevSelectionMode !== !!host.selectionMode) {
+      host.selectionMode = prevSelectionMode;
+      await host.updateComplete;
+    }
+  }
+
+  /**
+   * A sustained drag: one pan per animation frame, never waiting for the previous
+   * frame to settle. `dragCanvas` waits out an idle window after every step, so it
+   * measures isolated frames; this one measures a queue. The achieved inter-frame
+   * interval is the gap between consecutive `startTs` values in the pass list, so
+   * a frame the GPU cannot keep up with is visible without a new pass field.
+   */
+  private async _runDragContinuousScenario(iterations: number) {
+    const host = this._hostAny();
+    if (!this._interaction()?.isZoomReady)
+      throw new Error('WebGL perf runner: missing zoom support for dragContinuous scenario');
+
+    const prevSelectionMode = !!host.selectionMode;
+    if (prevSelectionMode) {
+      host.selectionMode = false;
+      await host.updateComplete;
+    }
+
+    const originalTransform = host._transform ?? d3.zoomIdentity;
+
+    this._beginScenario('dragContinuous', iterations);
+    // panBy is transform space: d3 applies tx1 = tx0 + k*dx, so the pixel step has
+    // to be divided by k for the on-screen distance to match dragCanvas.
+    const k = (host._transform as { k: number } | undefined)?.k || 1;
+    const halfFrames = PERF_MEASURE_DRAG_CONTINUOUS_FRAMES / 2;
+    const step = PERF_MEASURE_PAN_DISTANCE_PX / PERF_MEASURE_PAN_STEPS / k;
+    for (let i = 0; i < iterations; i++) {
+      for (let s = 0; s < PERF_MEASURE_DRAG_CONTINUOUS_FRAMES; s++) {
+        await this._nextAnimationFrame();
+        this._applyZoomTranslate(s < halfFrames ? step : -step, 0);
+      }
+      await this._waitForRenderIdle(10, 2000);
     }
     this._endScenario();
 
