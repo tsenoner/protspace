@@ -1,3 +1,4 @@
+import type { DensityLayerMode } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -67,12 +68,37 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
+const DENSITY_MODES: readonly DensityLayerMode[] = ['off', 'auto', 'on'];
+
+/** The default the URL omits; `resolveExploreView` falls back to it. */
+const DENSITY_DEFAULT: DensityLayerMode = 'off';
+
+function parseDensityParam(searchParams: URLSearchParams): {
+  value: DensityLayerMode | undefined;
+  present: boolean;
+  normalize: boolean;
+} {
+  if (!searchParams.has('density')) {
+    return { value: undefined, present: false, normalize: false };
+  }
+  const all = searchParams.getAll('density');
+  const raw = (all[0] ?? '').trim() as DensityLayerMode;
+  const valid = DENSITY_MODES.includes(raw);
+  return {
+    value: valid ? raw : undefined,
+    present: true,
+    normalize: !valid || all.length > 1,
+  };
+}
+
 export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreViewRequestState {
   const tooltip = parseTooltipParam(searchParams);
+  const density = parseDensityParam(searchParams);
   const requested = {
     annotation: getRequestedValue(searchParams, 'annotation'),
     projection: getRequestedValue(searchParams, 'projection'),
     tooltip: tooltip.value,
+    density: density.value,
   };
 
   return {
@@ -81,6 +107,7 @@ export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreV
       annotation: searchParams.has('annotation'),
       projection: searchParams.has('projection'),
       tooltip: tooltip.present,
+      density: density.present,
     },
     normalize: {
       annotation:
@@ -90,6 +117,7 @@ export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreV
         (searchParams.has('projection') && requested.projection === undefined) ||
         searchParams.getAll('projection').length > 1,
       tooltip: tooltip.normalize,
+      density: density.normalize,
     },
   };
 }
@@ -101,11 +129,13 @@ export function createEmptyExploreViewRequest(): ExploreViewRequestState {
       annotation: false,
       projection: false,
       tooltip: false,
+      density: false,
     },
     normalize: {
       annotation: false,
       projection: false,
       tooltip: false,
+      density: false,
     },
   };
 }
@@ -120,16 +150,19 @@ export function cloneExploreViewRequest(
       tooltip: requestState.requested.tooltip
         ? [...requestState.requested.tooltip]
         : requestState.requested.tooltip,
+      density: requestState.requested.density,
     },
     present: {
       annotation: requestState.present.annotation,
       projection: requestState.present.projection,
       tooltip: requestState.present.tooltip,
+      density: requestState.present.density,
     },
     normalize: {
       annotation: requestState.normalize.annotation,
       projection: requestState.normalize.projection,
       tooltip: requestState.normalize.tooltip,
+      density: requestState.normalize.density,
     },
   };
 }
@@ -191,11 +224,13 @@ export function resolveExploreView(
       annotation: effectiveAnnotation,
       projection: projectionIsValid ? requestedProjection : availableProjections[0],
       tooltip: tooltip.value,
+      density: requested.density ?? DENSITY_DEFAULT,
     },
     matchesRequested: {
       annotation: annotationIsValid,
       projection: projectionIsValid,
       tooltip: tooltip.matches,
+      density: requested.density !== undefined,
     },
   };
 }
@@ -214,7 +249,19 @@ export function getResolvedExploreViewNormalization(
     tooltip:
       requestState.normalize.tooltip ||
       (requestState.present.tooltip && !resolved.matchesRequested.tooltip),
+    density:
+      requestState.normalize.density ||
+      (requestState.present.density && !resolved.matchesRequested.density),
   };
+}
+
+/** The default stays out of the URL; every other mode is written explicitly. */
+function setDensityParam(searchParams: URLSearchParams, density: DensityLayerMode) {
+  if (density === DENSITY_DEFAULT) {
+    searchParams.delete('density');
+    return;
+  }
+  searchParams.set('density', density);
 }
 
 function setTooltipParam(searchParams: URLSearchParams, tooltip: readonly string[]) {
@@ -243,6 +290,7 @@ export function buildSearchParamsWithExploreView(
     next.set('annotation', effective.annotation);
     next.set('projection', effective.projection);
     setTooltipParam(next, effective.tooltip);
+    setDensityParam(next, effective.density);
     return next;
   }
 
@@ -256,6 +304,10 @@ export function buildSearchParamsWithExploreView(
 
   if (options.normalize.tooltip) {
     setTooltipParam(next, effective.tooltip);
+  }
+
+  if (options.normalize.density) {
+    setDensityParam(next, effective.density);
   }
 
   return next;
@@ -279,7 +331,12 @@ export function getExploreViewSearchParamsUpdate(
     return next.toString() === searchParams.toString() ? null : { next, replace: false };
   }
 
-  if (!change.normalize.annotation && !change.normalize.projection && !change.normalize.tooltip) {
+  if (
+    !change.normalize.annotation &&
+    !change.normalize.projection &&
+    !change.normalize.tooltip &&
+    !change.normalize.density
+  ) {
     return null;
   }
 
