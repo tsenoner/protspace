@@ -91,6 +91,8 @@ export class WebGLRenderer {
   private gammaCorrectionUniformLocations: {
     linearTexture: WebGLUniformLocation | null;
     gamma: WebGLUniformLocation | null;
+    /** `a_position`, resolved with the uniforms so the gamma pass costs no lookup. */
+    position: number;
   } | null = null;
 
   private gamma = DEFAULT_GAMMA;
@@ -515,15 +517,13 @@ export class WebGLRenderer {
 
     const gl = this.gl;
 
-    // Pass 1: Render to linear RGB framebuffer
+    // Pass 1: Render to linear RGB framebuffer.
+    // No per-frame checkFramebufferStatus: it is a blocking round-trip to the
+    // driver, and completeness is already validated where the target is allocated
+    // (createLinearFramebuffer returns null on an incomplete one, and ensureGL
+    // falls back to direct rendering on that). Between allocations the status
+    // cannot change without a context loss, which isContextLost already catches.
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      this.handleGammaFallback('framebuffer incomplete during render');
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      this.renderDirect(transform);
-      return;
-    }
     gl.viewport(0, 0, framebuffer.width, framebuffer.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -852,6 +852,7 @@ export class WebGLRenderer {
         'u_linearTexture',
       ),
       gamma: gl.getUniformLocation(this.resources.gammaCorrectionProgram, 'u_gamma'),
+      position: gl.getAttribLocation(this.resources.gammaCorrectionProgram, 'a_position'),
     };
 
     return true;

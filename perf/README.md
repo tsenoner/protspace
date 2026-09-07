@@ -10,7 +10,8 @@ PERF_ITERATIONS=5 pnpm perf      # override iteration count
 ```
 
 This launches headed browsers (Chrome, Firefox, Safari), loads every dataset
-listed in `apps/web/public/data/datasets.json`, and runs four scenarios per dataset.
+listed in `apps/web/public/data/datasets.json`, and runs the scenarios in the
+table below against each one.
 
 The run blocks the Cloudflare Web Analytics beacon that `apps/web/index.html`
 loads. It has no place inside a measured window, and its cross-origin POST was

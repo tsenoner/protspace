@@ -6,9 +6,11 @@ export const QUAD_VERTICES = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -
  * TEXTURE0, apply `gamma`, draw the quad from `quadBuffer` (must already hold
  * QUAD_VERTICES). Assumes BLEND is already disabled by the caller.
  *
- * `uniforms` are the program's uniform locations resolved once at init (see
- * WebGLRenderer.gammaCorrectionUniformLocations) — passing them in avoids a
- * blocking `getUniformLocation` round-trip on every (per-frame) gamma pass.
+ * `uniforms` carries the program's uniform locations AND the `a_position`
+ * attribute location, all resolved once at init (see
+ * WebGLRenderer.gammaCorrectionUniformLocations). Passing them in avoids a
+ * blocking `getUniformLocation` / `getAttribLocation` round-trip on every
+ * (per-frame) gamma pass.
  */
 export function drawGammaQuad(
   gl: WebGL2RenderingContext,
@@ -19,6 +21,7 @@ export function drawGammaQuad(
   uniforms: {
     linearTexture: WebGLUniformLocation | null;
     gamma: WebGLUniformLocation | null;
+    position: number;
   },
 ): void {
   gl.useProgram(program);
@@ -28,7 +31,7 @@ export function drawGammaQuad(
   gl.uniform1f(uniforms.gamma, gamma);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-  const posLoc = gl.getAttribLocation(program, 'a_position');
+  const posLoc = uniforms.position;
   gl.enableVertexAttribArray(posLoc);
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 

@@ -84,4 +84,38 @@ did not exist yet) had load 27,232 ms and a CDP peak of 813,786,683 B.
 
 ## Post-harness delta (Task 0.6)
 
-Filled in after the Phase 0 harness lands; see `2026-09-07-573K_swissprot_v3-chrome.post-harness.json`.
+`2026-09-07-573K_swissprot_v3-chrome.post-harness.json` is the same v3 command re-run after the
+Phase 0 harness landed: `gpuSyncedMs`, the `dragContinuous` and `zoomFarOut` scenarios, and the two
+per-frame GL queries hoisted out of the frame (the gamma quad's `getAttribLocation` and the render
+path's `checkFramebufferStatus`). Load 6,522.2 ms, heap after load 283,118,529 B, CDP peak
+158,276,028 B, all within the spread of the pre-harness run.
+
+| Scenario           | median `durationMs` before |  after | median `gpuSyncedMs` after |
+| ------------------ | -------------------------: | -----: | -------------------------: |
+| `annotationChange` |                     186.30 | 190.55 |                     208.80 |
+| `zoomInOut`        |                       0.70 |   0.60 |                      16.00 |
+| `dragCanvas`       |                       1.00 |   0.80 |                      17.60 |
+| `clickPoint`       |                     414.90 | 409.50 |                     428.25 |
+| `zoomFarOut`       |                    not run |   1.00 |                      24.55 |
+| `dragContinuous`   |                    not run |   1.30 |                      10.70 |
+
+The two hoists remove one blocking `getAttribLocation` and one blocking `checkFramebufferStatus`
+per frame. Camera medians move by 0.1 to 0.2 ms in their favour, which is at the edge of the
+run-to-run spread on this machine, so treat the hoists as cheap hygiene rather than a measured win:
+the reason to keep them is that both calls are driver round-trips that stall the CPU, and the
+density passes will add per-frame GL work on top.
+
+**The number that changes the picture is `gpuSyncedMs`.** At 573K the CPU is done submitting a
+camera frame in under a millisecond while the GPU takes 16 to 25 ms to draw it: `zoomInOut` 0.60 ms
+CPU against 16.00 ms synced, `zoomFarOut` 1.00 against 24.55 (max 51.50). Every earlier baseline in
+this repo, this file's own tables above included, reports only the sub-millisecond half. So the
+frame budget at 573K is already close to spent before any density pass exists, and a density budget
+has to be argued against the 16 to 25 ms figure, not against 1 ms.
+
+`dragContinuous` records 600 passes for 10 iterations (60 animation frames each) with a median
+inter-frame interval of 11.20 ms. That interval is measured with the perf sync in place, so it
+includes the deliberate GPU stall and is not a frame rate the product would see; it is a
+before-and-after number for the same harness.
+
+Camera scenarios (`zoomInOut`, `zoomFarOut`, `dragCanvas`, `dragContinuous`) upload 0 bytes in every
+one of their 760 passes, and `drawnPoints === renderedPoints` in every pass of every scenario.

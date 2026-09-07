@@ -577,10 +577,11 @@ export class ExportRenderer {
       const quadBuffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, QUAD_VERTICES, gl.STATIC_DRAW);
-      // One-shot export pass: resolve the gamma uniforms inline (no per-frame cost here).
+      // One-shot export pass: resolve the gamma locations inline (no per-frame cost here).
       drawGammaQuad(gl, gammaCorrectionProgram, linearFramebuffer.texture, gamma, quadBuffer, {
         linearTexture: gl.getUniformLocation(gammaCorrectionProgram, 'u_linearTexture'),
         gamma: gl.getUniformLocation(gammaCorrectionProgram, 'u_gamma'),
+        position: gl.getAttribLocation(gammaCorrectionProgram, 'a_position'),
       });
       gl.deleteBuffer(quadBuffer);
     } else {
