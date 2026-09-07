@@ -33,6 +33,7 @@ import {
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
+  computeDensityGrid,
   createDensityResources,
   resizeDensityTargets,
   destroyDensityResources,
@@ -407,7 +408,34 @@ export class WebGLRenderer {
     return true;
   }
 
-  /** Allocate or re-allocate the density grid for the current canvas size. */
+  /**
+   * The density programs and their ~17 MB of float targets, created on the first
+   * frame that asks for them. Nothing here runs while the layer is off, which is
+   * the default, so a user who never turns it on never pays for it.
+   */
+  private ensureDensityResources(): DensityResources | null {
+    if (this.resources.density) return this.resources.density;
+    const gl = this.gl;
+    if (!gl || this.densityDisabled) return null;
+    // The density quad VAO is wired over the quad buffer setupQuad allocates, and
+    // the accumulation pass draws the POINT vao, so its program has to be linked
+    // against the point program's attribute indices.
+    if (!this.resources.quadBuffer || !this.pointAttribLocations) return null;
+
+    this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
+      dataPosition: this.pointAttribLocations.dataPosition,
+      color: this.pointAttribLocations.color,
+    });
+    if (!this.resources.density) {
+      this.disableDensity('density shaders failed to compile');
+      return null;
+    }
+    // Nulls `resources.density` again if the grid comes back incomplete.
+    this.syncDensityTargets();
+    return this.resources.density;
+  }
+
+  /** Re-allocate the density grid for the current canvas size, if it exists. */
   private syncDensityTargets() {
     const gl = this.gl;
     const res = this.resources.density;
@@ -615,17 +643,20 @@ export class WebGLRenderer {
     const mode = (this.getConfig() as { densityLayer?: 'off' | 'auto' | 'on' }).densityLayer;
     if (mode !== 'on') return null;
 
-    const res = this.resources.density;
-    if (!res || !res.accum || this.densityDisabled || this.currentPointCount === 0) return null;
+    if (this.densityDisabled || !this.shouldUseGammaPipeline() || this.currentPointCount === 0) {
+      return null;
+    }
 
     const config = this.getConfig();
     const viewDimensionCss = Math.max(
       config.width ?? DEFAULT_VIEWPORT_WIDTH,
       config.height ?? DEFAULT_VIEWPORT_HEIGHT,
     );
-    // One grid cell, in CSS px^2.
+    // One grid cell, in CSS px^2. Read from the grid PLAN, not from an allocated
+    // target, so a frame that contributes nothing allocates nothing.
+    const grid = computeDensityGrid(this.canvas.width, this.canvas.height);
     const cellAreaCss =
-      ((this.canvas.width / res.accum.width) * (this.canvas.height / res.accum.height)) /
+      ((this.canvas.width / grid.width) * (this.canvas.height / grid.height)) /
       (this.dpr * this.dpr);
     const params = densityFrameParams(
       this.currentPointCount,
@@ -635,6 +666,9 @@ export class WebGLRenderer {
       true,
     );
     if (params.alpha <= 0) return null;
+
+    const res = this.ensureDensityResources();
+    if (!res || !res.accum) return null;
 
     return {
       res,
@@ -892,17 +926,6 @@ export class WebGLRenderer {
 
     this.setupQuad();
 
-    // After setupQuad: the density quad VAO is wired over that buffer. The
-    // accumulation pass draws the POINT vao, so it is linked against the point
-    // program's attribute indices.
-    if (this.gammaPipelineAvailable && this.resources.quadBuffer && this.pointAttribLocations) {
-      this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
-        dataPosition: this.pointAttribLocations.dataPosition,
-        color: this.pointAttribLocations.color,
-      });
-      if (!this.resources.density) this.disableDensity('density shaders failed to compile');
-    }
-
     // We want overlapping points to remain visible, so we do NOT use the depth buffer to cull.
     // Z-order is preserved via painter's algorithm (CPU sorting) in populateBuffers().
     setPointBlendState(gl);
@@ -913,8 +936,6 @@ export class WebGLRenderer {
     ) {
       this.handleGammaFallback('framebuffer incomplete');
     }
-
-    this.syncDensityTargets();
 
     return gl;
   }

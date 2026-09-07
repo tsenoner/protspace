@@ -56,10 +56,26 @@ describe('DENSITY_ACCUM_VERTEX_SHADER', () => {
     expect(point).toHaveLength(4);
     expect(cameraUniforms(DENSITY_ACCUM_VERTEX_SHADER)).toEqual(point);
   });
+
+  // The camera lines end in NDC with y still pointing down; the flip belongs to
+  // gl_Position. Dropping the minus mirrors the whole layer about the horizon,
+  // and the three lines above stay byte-identical while it happens.
+  it('flips y into clip space', () => {
+    expect(DENSITY_ACCUM_VERTEX_SHADER).toContain(
+      'gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);',
+    );
+  });
 });
 
 describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
   it('guards the mean-colour divide against empty cells', () => {
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('n > 0.0 ?');
+  });
+
+  // The composite blends with ONE, ONE_MINUS_SRC_ALPHA, so the source has to be
+  // premultiplied. An un-premultiplied vec4(mean, alpha) is only wrong where
+  // alpha < 1, which is every fringe pixel and every `auto` cross-fade frame.
+  it('writes premultiplied linear colour', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('fragColor = vec4(mean * alpha, alpha);');
   });
 });

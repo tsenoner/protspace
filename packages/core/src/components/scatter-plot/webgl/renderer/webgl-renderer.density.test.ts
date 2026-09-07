@@ -79,6 +79,35 @@ describe('density layer, off', () => {
   });
 });
 
+/** RGBA32F texImage2D calls: the accumulation target, and nothing else. */
+const accumAllocations = (gl: Record<string, ReturnType<typeof vi.fn>>) =>
+  gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length;
+
+describe('density layer, off', () => {
+  it('compiles no density programs and allocates no targets', () => {
+    // ~17 MB of RGBA32F + RGBA16F and three shader compiles, on the default path
+    // for every user, is the whole cost of a feature they have not switched on.
+    const absent = setup({ width: 800, height: 600 });
+    const absentPrograms = vi.spyOn(absent.gl, 'createProgram');
+    absent.renderer.render(plotData(50));
+
+    expect(accumAllocations(absent.gl)).toBe(0);
+    expect(absent.resources.density).toBeNull();
+
+    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
+    const onPrograms = vi.spyOn(on.gl, 'createProgram');
+    on.renderer.render(plotData(50));
+
+    expect(accumAllocations(on.gl)).toBe(1);
+    expect(on.resources.density).not.toBeNull();
+    // Accumulate, blur, composite.
+    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 3);
+
+    absent.renderer.destroy();
+    on.renderer.destroy();
+  });
+});
+
 describe('density layer, on', () => {
   it('accumulates additively and adds three full-screen quad draws', () => {
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
@@ -160,17 +189,15 @@ describe('density layer, on', () => {
   it('reallocates the grid once per size change, not per render', () => {
     const config: Config = { width: 800, height: 600, densityLayer: 'on' };
     const on = setup(config);
-    const accumAllocations = () =>
-      on.gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length; // RGBA32F
 
     on.renderer.render(plotData(50));
-    expect(accumAllocations()).toBe(1);
+    expect(accumAllocations(on.gl)).toBe(1);
     on.renderer.render(plotData(50));
-    expect(accumAllocations()).toBe(1);
+    expect(accumAllocations(on.gl)).toBe(1);
 
     config.width = 1024;
     on.renderer.render(plotData(50));
-    expect(accumAllocations()).toBe(2);
+    expect(accumAllocations(on.gl)).toBe(2);
     on.renderer.destroy();
   });
 });
