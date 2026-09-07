@@ -148,7 +148,10 @@ SCENARIO_LABELS: dict[str, str] = {
     "annotationChange": "Annotation changes",
     "zoomInOut": "Zooming",
     "zommInOut": "Zooming",
+    "zoomFarOut": "Zooming far out",
     "dragCanvas": "Dragging",
+    "dragContinuous": "Dragging (sustained)",
+    "densityZoom": "Density zoom",
     "clickPoint": "Point selection",
 }
 
@@ -335,7 +338,15 @@ def main() -> int:
     x = np.arange(len(datasets_sorted))
     bar_width = 0.8 / max(1, len(browsers_sorted))
 
-    scenario_order = ["annotationChange", "zoomInOut", "dragCanvas", "clickPoint"]
+    scenario_order = [
+        "annotationChange",
+        "zoomInOut",
+        "zoomFarOut",
+        "dragCanvas",
+        "dragContinuous",
+        "densityZoom",
+        "clickPoint",
+    ]
     scenarios_sorted = [s for s in scenario_order if s in scenarios] + sorted(
         scenarios - set(scenario_order)
     )
