@@ -289,7 +289,7 @@ export class WebGLRenderer {
    *
    * `readPixels` on the default framebuffer (which both render paths leave bound)
    * is the portable way to do this: it cannot return until the commands ahead of
-   * it have executed. Production frames never call it — the harness's `start()`
+   * it have executed. Production frames never call it: the harness's `start()`
    * returns null outside a recording scenario, so the sync sits behind that token
    * and a stall this deliberate can never reach a user's frame.
    */

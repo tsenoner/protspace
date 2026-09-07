@@ -17,9 +17,15 @@ browser projects. Write `pnpm perf --project=chrome`.
 
 ## Machine
 
-Apple M4, 10 logical cores, `navigator.deviceMemory` 16, macOS. Chrome 149.0.7827.55 headed via
-Playwright, viewport 1920x1080, `devicePixelRatio` 1, `MAX_TEXTURE_SIZE` 16384.
+Apple M4, 10 logical cores, `navigator.deviceMemory` 16, macOS. Google Chrome 152.0.7977.83 headed
+via Playwright (stable channel), viewport 1920x1080, `devicePixelRatio` 1, `MAX_TEXTURE_SIZE` 16384.
 GPU string: `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)`.
+
+The browser version comes from `results[0].metadata.userAgentData.highEntropy.fullVersionList`
+(entry `Google Chrome`). Do not read it from `metadata.userAgent`: that is Playwright's
+`devices['Desktop Chrome']` descriptor, which reports 149 and `Windows NT 10.0` on this Mac.
+The viewport is from `perf/playwright.config.ts`; the JSON records `screen` (1920x1080) but no
+viewport of its own.
 
 Both runs are the same machine, the same session, minutes apart, on `perf/parquetbundle-v3` at
 `eb237b14` with no density code.
@@ -27,7 +33,8 @@ Both runs are the same machine, the same session, minutes apart, on `perf/parque
 ## Render passes, `durationMs` (CPU submission time, nothing waits for the GPU)
 
 573,649 points in every pass of both runs. `drawnPoints === renderedPoints === 573649` everywhere,
-so nothing was truncated.
+so nothing was truncated. p95 is nearest-rank (the `ceil(0.95 n)`-th sorted sample), not
+interpolated.
 
 ### v3 bundle (`573K_swissprot_v3`, 36.4 MB)
 
@@ -67,13 +74,16 @@ colours, so they upload by design.
 
 ## Load and heap
 
-|                                   |          v3 |          v2 |
-| --------------------------------- | ----------: | ----------: |
-| `load.loadDurationMs`             |     6,778.6 |    20,266.6 |
-| `load.heapAfterLoad.usedBytes`    | 282,618,195 | 539,648,402 |
-| `load.peakUsedDuringLoadBytes`    | 282,606,655 | 539,636,838 |
-| `load.heapSteady.usedBytes`       | 282,618,951 | 539,649,158 |
-| CDP sidecar `peakJSHeapUsedBytes` | 145,636,760 | 436,555,508 |
+|                                   |          v3 |                         v2 |
+| --------------------------------- | ----------: | -------------------------: |
+| `load.loadDurationMs`             |     6,778.6 |                   20,266.6 |
+| `load.heapAfterLoad.usedBytes`    | 282,618,195 |                539,648,402 |
+| `load.peakUsedDuringLoadBytes`    | 282,606,655 |                539,636,838 |
+| `load.heapSteady.usedBytes`       | 282,618,951 |                539,649,158 |
+| CDP sidecar `peakJSHeapUsedBytes` | 145,636,760 | 436,555,508 (not retained) |
+
+Only the v3 sidecar file was copied here; the v2 number is recorded above but its file was deleted
+by the next run.
 
 `loadDurationMs` covers the whole demo load, not just the bundle decode: fetch over the dev server,
 decode, staging and the readiness gate. The CDP sidecar samples out of process every ~200 ms and can
@@ -90,14 +100,28 @@ per-frame GL queries hoisted out of the frame (the gamma quad's `getAttribLocati
 path's `checkFramebufferStatus`). Load 6,522.2 ms, heap after load 283,118,529 B, CDP peak
 158,276,028 B, all within the spread of the pre-harness run.
 
-| Scenario           | median `durationMs` before |  after | median `gpuSyncedMs` after |
-| ------------------ | -------------------------: | -----: | -------------------------: |
-| `annotationChange` |                     186.30 | 190.55 |                     208.80 |
-| `zoomInOut`        |                       0.70 |   0.60 |                      16.00 |
-| `dragCanvas`       |                       1.00 |   0.80 |                      17.60 |
-| `clickPoint`       |                     414.90 | 409.50 |                     428.25 |
-| `zoomFarOut`       |                    not run |   1.00 |                      24.55 |
-| `dragContinuous`   |                    not run |   1.30 |                      10.70 |
+| Scenario                     | median `durationMs` before |  after | median `gpuSyncedMs` after | max `gpuSyncedMs` |
+| ---------------------------- | -------------------------: | -----: | -------------------------: | ----------------: |
+| `annotationChange`           |                     186.30 | 190.55 |                     208.80 |            655.80 |
+| `zoomInOut`                  |                       0.70 |   0.60 |                      16.00 |             27.20 |
+| `dragCanvas`                 |                       1.00 |   0.80 |                      17.60 |             33.50 |
+| `clickPoint`                 |                     414.90 | 409.50 |                     428.25 |            444.80 |
+| `zoomFarOut`, out to k = 0.1 |                    not run |   0.80 |                      37.50 |             51.50 |
+| `zoomFarOut`, back to k = 1  |                    not run |   1.05 |                      10.60 |             12.30 |
+| `dragContinuous`             |                    not run |   1.30 |                      10.70 |             28.30 |
+
+`zoomFarOut` is reported per phase because it is bimodal and a single median describes neither half.
+The scenario alternates `zoomBy(0.1)` then `zoomBy(10)` once per iteration, so ordered by `seq` the
+even-indexed passes are the k = 0.1 frame and the odd-indexed ones the return to k = 1:
+`[51.5, 9.2, 38.5, 9.4, 37.2, 11.2, ...]`. The combined median, 24.55 ms, is a value no frame ever
+took.
+
+That split also kills the premise the scenario was written on. k = 0.1 is the MOST expensive point
+frame, not the cheapest: `gl_PointSize` is a per-vertex attribute and does not scale with k
+(`export-shaders.ts`), so zooming out packs all 573K sprites into about 1% of the screen and
+same-pixel overdraw serialises the alpha blending. It is still the right scenario to watch, for the
+opposite reason: it is both the worst `off` frame and where a density accumulate saturates.
+`zoomInOut` shows the same signature (k = 3 median 13.60 ms against k = 1 median 18.25 ms).
 
 The two hoists remove one blocking `getAttribLocation` and one blocking `checkFramebufferStatus`
 per frame. Camera medians move by 0.1 to 0.2 ms in their favour, which is at the edge of the
@@ -106,14 +130,21 @@ the reason to keep them is that both calls are driver round-trips that stall the
 density passes will add per-frame GL work on top.
 
 **The number that changes the picture is `gpuSyncedMs`.** At 573K the CPU is done submitting a
-camera frame in under a millisecond while the GPU takes 16 to 25 ms to draw it: `zoomInOut` 0.60 ms
-CPU against 16.00 ms synced, `zoomFarOut` 1.00 against 24.55 (max 51.50). Every earlier baseline in
+camera frame in under a millisecond while the GPU takes 10 to 37 ms to draw it: `zoomInOut` 0.60 ms
+CPU against 16.00 ms synced, `zoomFarOut` 0.80 against 37.50 (max 51.50). Every earlier baseline in
 this repo, this file's own tables above included, reports only the sub-millisecond half. So the
 frame budget at 573K is already close to spent before any density pass exists, and a density budget
-has to be argued against the 16 to 25 ms figure, not against 1 ms.
+has to be argued against those figures, not against 1 ms.
 
-`dragContinuous` records 600 passes for 10 iterations (60 animation frames each) with a median
-inter-frame interval of 11.20 ms. That interval is measured with the perf sync in place, so it
+Two caveats on which figure to use. The isolated-frame scenarios (`zoomInOut`, `dragCanvas`,
+`zoomFarOut`) wait for an idle window plus a 16 ms poll sleep between steps, so they measure a GPU
+that has clocked down: pass 0 of every scenario runs 10 to 14 ms above its own steady state.
+`dragContinuous` is the only warm, sustained series here. Dropping its first 20 frames leaves
+n = 580 with median 10.70 ms, p95 13.50, sigma 1.91 and a standard error of the median near 0.10 ms,
+which makes it the one scenario where a sub-millisecond regression is measurable at all.
+
+`dragContinuous` records exactly 600 passes for 10 iterations (60 animation frames each, one render
+per pan) with a median inter-frame interval of 11.20 ms. That interval is measured with the perf sync in place, so it
 includes the deliberate GPU stall and is not a frame rate the product would see; it is a
 before-and-after number for the same harness.
 

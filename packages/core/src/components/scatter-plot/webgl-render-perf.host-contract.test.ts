@@ -67,6 +67,8 @@ type PerfRunnerInternals = {
 type PerfHostInternals = ProtspaceScatterplot & {
   _webglRenderPerf: PerfRunnerInternals;
   _interaction: PlotInteractionController | null;
+  /** Only `syncGpu` is needed here, and only to spy on it. */
+  _webglRenderer: { syncGpu: () => void } | null;
 };
 
 /**
@@ -265,10 +267,19 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
     const scenario = beginRecordingScenario(runner, 'zoomInOut');
+    // jsdom has no GL context, so syncGpu is a no-op here and the >= below would
+    // hold on clock ordering alone even with the sync deleted from _renderWebGL.
+    // Spying is what actually pins the call to the measured window.
+    const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
     try {
       runner._applyZoomScale(3);
       await nextFrame();
 
+      // One sync per RECORDED pass, which is the invariant `_renderWebGL` owes the
+      // harness. Not "once", because an unrelated 'plot' render can land in this
+      // window in jsdom and it is measured too.
+      expect(scenario.passes.length).toBeGreaterThan(0);
+      expect(sync).toHaveBeenCalledTimes(scenario.passes.length);
       const pass = scenario.passes.find((p) => p.trigger === 'zoom');
       expect(pass).toBeTruthy();
       // Asserted first, so the >= below cannot pass on two zeroes: durationMs
@@ -280,6 +291,19 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     } finally {
       endRecording(runner);
     }
+  });
+
+  it('never syncs the GPU outside a recording scenario', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
+
+    // No recorder, so `start()` returns null and the whole perf block is skipped.
+    // A sync that escaped that guard would stall every production frame.
+    sp._webglRenderPerf._recorder = null;
+    sp._webglRenderPerf._applyZoomScale(3);
+    await nextFrame();
+
+    expect(sync).not.toHaveBeenCalled();
   });
 
   /**
@@ -305,7 +329,18 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
 
       const scenario = runner._recorder?.scenarios.find((s) => s.name === 'dragContinuous');
       expect(scenario).toBeTruthy();
-      expect(scenario?.passes.length ?? 0).toBeGreaterThan(0);
+      // Exactly one render per pan, and one pan per animation frame:
+      // PERF_MEASURE_DRAG_CONTINUOUS_FRAMES (60) for one iteration. Anything
+      // looser stays green with the rAF pacing removed, because applyZoom cancels
+      // a pending render, so an unpaced loop collapses all 60 pans into one pass.
+      // Exactly one render per pan, and one pan per animation frame:
+      // PERF_MEASURE_DRAG_CONTINUOUS_FRAMES (60) for one iteration. Anything
+      // looser stays green with the rAF pacing removed, because applyZoom cancels
+      // a pending render, so an unpaced loop collapses all 60 pans into one pass.
+      // Counted by trigger, like the zoom and pan cases above: an unrelated 'plot'
+      // pass from the mount lands in this window in jsdom.
+      const zoomPasses = scenario?.passes.filter((p) => p.trigger === 'zoom') ?? [];
+      expect(zoomPasses.length).toBe(60);
       expect(mainGroupTransform(sp)).toMatch(/translate\(0\s*,\s*0\)/);
     } finally {
       runner._recorder = null;

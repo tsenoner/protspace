@@ -270,6 +270,13 @@ test.describe('WebGL render perf benchmark (headed)', () => {
             pass.uploadedBytes,
             `${r.dataset?.id} / ${name} uploaded bytes on a camera move`,
           ).toBe(0);
+          // Before the equality, or a pass carrying neither field satisfies
+          // `undefined === undefined` and the truncation half of the gate is
+          // asserting nothing at all.
+          expect(
+            pass.drawnPoints,
+            `${r.dataset?.id} / ${name} recorded no drawnPoints`,
+          ).toBeGreaterThan(0);
           expect(pass.drawnPoints, `${r.dataset?.id} / ${name} truncated`).toBe(
             pass.renderedPoints,
           );

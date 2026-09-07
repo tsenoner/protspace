@@ -25,8 +25,12 @@ const PERF_MEASURE_PAN_STEPS = 6;
 const PERF_MEASURE_DRAG_CONTINUOUS_FRAMES = 60;
 /**
  * The low end of the zoom extent (`zoomExtent: [0.1, 1000]`, scatter-plot config).
- * From k = 1 a single `zoomBy(0.1)` lands exactly on it, which is where the point
- * pass is cheapest and any full-viewport pass is at its most expensive.
+ * From k = 1 a single `zoomBy(0.1)` lands exactly on it, which is the MOST
+ * expensive frame the point pass ever draws, not the cheapest: `gl_PointSize` is
+ * a per-vertex attribute and does not scale with k, so zooming out packs the same
+ * sprite count into a fraction of the screen and same-pixel overdraw serialises
+ * the blending. Measured on an M4 at 573K: 37 ms at k = 0.1 against 10.7 ms at
+ * k = 1 (`gpuSyncedMs`, `perf/baselines/README.md`).
  */
 const PERF_MEASURE_ZOOM_FAR_OUT_FACTOR = 0.1;
 const PERF_GLOBAL_RESULTS_KEY = '__protspaceWebGLRenderPerfMeasurements';
@@ -144,6 +148,11 @@ export class WebglRenderPerfRunner {
    * GPU. Passing it keeps `durationMs` meaning CPU submission time, so this run
    * stays comparable with baselines recorded before the sync existed, while
    * `gpuSyncedMs` measures through to GPU completion.
+   *
+   * Note `endTs`, and therefore `lastRenderEndTs`, are post-sync: a scenario's
+   * idle window starts counting after the GPU stall, not after submission. That
+   * only delays the next step of a scenario, it does not enter any recorded
+   * number.
    */
   public stop(
     token: PerfPassToken | null,
@@ -607,9 +616,12 @@ export class WebglRenderPerfRunner {
   }
 
   /**
-   * Zoom all the way out to the low end of the zoom extent and back. The cheapest
-   * the point pass ever gets and the most a full-viewport pass ever costs, so a
-   * regression in anything that scales with covered area shows up here first.
+   * Zoom all the way out to the low end of the zoom extent and back. Both extremes
+   * of the frame live here: the k = 0.1 pass is the most expensive point frame
+   * there is (overdraw, see PERF_MEASURE_ZOOM_FAR_OUT_FACTOR) and it is also where
+   * a density accumulate saturates, so it is the first place a regression in
+   * either shows. Read the two phases separately: passes alternate out, back, out,
+   * back, and their medians differ by 3x.
    */
   private async _runZoomFarOutScenario(iterations: number) {
     const host = this._hostAny();
