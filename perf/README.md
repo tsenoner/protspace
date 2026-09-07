@@ -26,14 +26,28 @@ dataset, which is too slow to include in every full suite run:
 
 ```sh
 # Benchmark only the 573K SwissProt dataset, Chrome only
-PERF_DATASETS=573K_swissprot pnpm perf -- --project=chrome
+PERF_DATASETS=573K_swissprot pnpm perf --project=chrome
 
 # Multiple datasets
-PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf -- --project=chrome
+PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf --project=chrome
 ```
+
+Pass `--project=chrome` directly, with no `--` in front of it. pnpm 10 forwards a
+`--` to the script verbatim, so `pnpm perf -- --project=chrome` reaches Playwright
+as a positional test filter instead of a project filter and every browser project
+runs.
+
+A dataset ID is a **file name**: the in-page suite loads
+`/data/${datasetId}.parquetbundle` (`apps/web/src/perf/webgl-perf-suite.ts`). So
+`PERF_DATASETS=573K_swissprot` measures the v2 bundle
+`apps/web/public/data/573K_swissprot.parquetbundle`, and the ParquetBundle v3 file
+is a separate dataset id, `573K_swissprot_v3`. Neither 573K bundle is committed.
 
 The spec passes the IDs to the in-page suite via the `webglPerfDatasets` URL
 parameter, which overrides the default `datasets.json` list.
+
+Dated copies of runs worth comparing against live in `perf/baselines/`; see the
+README there.
 
 #### Budgets
 
