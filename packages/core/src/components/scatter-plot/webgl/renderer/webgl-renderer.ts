@@ -610,6 +610,13 @@ export class WebGLRenderer {
 
     const gl = this.gl;
 
+    // Before anything is bound: the first frame that wants the layer ALLOCATES the
+    // grid here, and createColorTarget ends by binding the default framebuffer
+    // (and on failure nothing rebinds afterwards). Allocating after the linear
+    // target was bound would send this frame's points to the default framebuffer,
+    // and pass 2 would then gamma-sample an empty linear target: a blank frame.
+    const density = this.densityFrame(transform);
+
     // Pass 1: Render to linear RGB framebuffer.
     // No per-frame checkFramebufferStatus: it is a blocking round-trip to the
     // driver, and completeness is already validated where the target is allocated
@@ -621,7 +628,6 @@ export class WebGLRenderer {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const density = this.densityFrame(transform);
     if (density) {
       accumulateAndBlurDensity(
         gl,

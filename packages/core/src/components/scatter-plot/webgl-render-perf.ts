@@ -634,19 +634,35 @@ export class WebglRenderPerfRunner {
    */
   private async _runDensityZoomScenario(iterations: number) {
     const host = this._hostAny();
-    const prevConfig = host.config;
-    host.config = { ...(prevConfig ?? {}), densityLayer: 'on' };
-    await host.updateComplete;
+    // Phase 3 replaces this narrow shape with `Partial<ScatterplotConfig>`.
+    const prevConfig = host.config as { densityLayer?: 'off' | 'auto' | 'on' } | undefined;
     // The config change itself repaints, and that first density frame is the one
-    // that compiles the programs and allocates the grid. Let it land before the
-    // scenario window opens, or its cost lands in the scenario's median.
-    await this._waitForRenderIdle(10, 2000);
+    // that compiles the programs and allocates the grid. Wait for THAT frame, not
+    // just for an idle window: `updateComplete` resolves before the repaint's rAF,
+    // so an idle-only wait can pass on the previous scenario's last render and let
+    // the allocating frame land inside the scenario window.
+    await this._setConfigAndWait(host, { ...(prevConfig ?? {}), densityLayer: 'on' });
     try {
       await this._runZoomCycleScenario('densityZoom', PERF_MEASURE_ZOOM_FACTOR, iterations);
     } finally {
-      host.config = prevConfig;
-      await host.updateComplete;
+      // The host merges `{ ...DEFAULT_CONFIG, ...prev, ...this.config }` with `prev`
+      // being the already-forced MERGED config, so restoring an object that merely
+      // omits `densityLayer` leaves the layer on for every later scenario. Write the
+      // previous mode back explicitly.
+      await this._setConfigAndWait(host, {
+        ...(prevConfig ?? {}),
+        densityLayer: prevConfig?.densityLayer ?? 'off',
+      });
     }
+  }
+
+  /** Assign `host.config` and wait for the repaint it triggers to land and settle. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async _setConfigAndWait(host: any, config: unknown) {
+    const prevSeq = this._recorder?.passSeq ?? 0;
+    host.config = config;
+    await host.updateComplete;
+    if (await this._waitForNextRender(prevSeq, 2000)) await this._waitForRenderIdle(10, 2000);
   }
 
   /**

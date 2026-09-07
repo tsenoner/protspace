@@ -62,10 +62,13 @@ type PerfRunnerInternals = {
   ): PerfScenarioRun | null;
   _endScenario(): void;
   _runDragContinuousScenario(iterations: number): Promise<void>;
+  _runDensityZoomScenario(iterations: number): Promise<void>;
 };
 
 type PerfHostInternals = ProtspaceScatterplot & {
   _webglRenderPerf: PerfRunnerInternals;
+  /** What the renderer's `getConfig()` bridge returns (`scatter-plot.ts:481`). */
+  _mergedConfig: { densityLayer?: string; pointSize?: number };
   _interaction: PlotInteractionController | null;
   /** Only `syncGpu` is needed here, and only to spy on it. */
   _webglRenderer: { syncGpu: () => void } | null;
@@ -345,5 +348,33 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     } finally {
       runner._recorder = null;
     }
+  }, 20_000);
+
+  /**
+   * `densityZoom` forces `densityLayer: 'on'` through `host.config`. Restoring the
+   * previous `config` object is not enough to undo it: `_reconcileConfigMerge`
+   * computes `{ ...DEFAULT_CONFIG, ...prev, ...this.config }` where `prev` is the
+   * already-forced MERGED config, so a key that is merely absent from the restored
+   * object survives and every later scenario (clickPoint runs straight after)
+   * measures the whole density chain.
+   */
+  it('densityZoom restores the previous density mode after the scenario', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    runner._recorder = {
+      runId: 'host-contract',
+      iterations: 1,
+      passSeq: 0,
+      lastRenderEndTs: 0,
+      activeScenario: null,
+      scenarios: [],
+    };
+    try {
+      await runner._runDensityZoomScenario(1);
+    } finally {
+      runner._recorder = null;
+    }
+
+    expect(sp._mergedConfig.densityLayer).toBe('off');
   }, 20_000);
 });

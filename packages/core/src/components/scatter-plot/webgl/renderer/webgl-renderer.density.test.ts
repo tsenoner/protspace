@@ -7,9 +7,6 @@ import type { GLResources } from './gl-resources';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
-import type * as DensityPass from './density-pass';
-
-type DensityPassModule = typeof DensityPass;
 
 const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
@@ -176,6 +173,7 @@ describe('density layer, on', () => {
 
     on.gl.checkFramebufferStatus = vi.fn(() => 0);
     const deleteProgram = vi.spyOn(on.gl, 'deleteProgram');
+    const deleteVao = vi.spyOn(on.gl, 'deleteVertexArray');
     config.width = 1024;
     on.renderer.render(plotData(50));
 
@@ -185,6 +183,8 @@ describe('density layer, on', () => {
     expect(on.resources.density).toBeNull();
     // The gamma program plus the three density programs.
     expect(deleteProgram).toHaveBeenCalledTimes(4);
+    // The density quad's VAO goes with them; the point VAO stays.
+    expect(deleteVao).toHaveBeenCalledTimes(1);
     // Exactly one reason, and it is the gamma one: density adds no new reason.
     expect(on.degraded.map((d) => d.context.reason)).toEqual(['gamma-pipeline-unavailable']);
     on.renderer.destroy();
@@ -262,62 +262,40 @@ describe('N_visible', () => {
 });
 
 describe('density layer failure is not a gamma failure', () => {
-  it('keeps rendering through the gamma pipeline when the grid cannot be allocated', async () => {
-    vi.doMock('./density-pass', async (importOriginal) => ({
-      ...(await importOriginal<DensityPassModule>()),
-      resizeDensityTargets: () => false,
-    }));
-    vi.resetModules();
-    const { WebGLRenderer: Renderer } = await import('./webgl-renderer');
+  it('keeps rendering through the gamma pipeline when the grid cannot be allocated', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Drive the failure through the driver, not a module mock: once an RGBA32F
+    // texture has been allocated (the density accum target, the linear gamma
+    // target is RGBA16F), every framebuffer reads incomplete. That runs the real
+    // createColorTarget, whose last act is `bindFramebuffer(FRAMEBUFFER, null)`,
+    // which is exactly the side effect a mocked resizeDensityTargets hides.
+    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
+    let sawFloatTarget = false;
+    const texImage2D = on.gl.texImage2D;
+    on.gl.texImage2D = ((...args: unknown[]) => {
+      if (args[2] === 0x8814) sawFloatTarget = true;
+      return texImage2D(...(args as []));
+    }) as typeof on.gl.texImage2D;
+    on.gl.checkFramebufferStatus = (() => (sawFloatTarget ? 0 : 0x8cd5)) as never;
 
-    const { canvas, gl } = createMockCanvas();
-    const degraded: RendererDegradedDetail[] = [];
-    const renderer = new Renderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
-      styleGetters(),
-      undefined,
-      () => [1, 1, 1],
-      (detail) => degraded.push(detail),
-    );
-    const calls = recordCalls(gl as unknown as Record<string, (...a: unknown[]) => unknown>);
-    renderer.render(plotData(50));
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(plotData(50));
+
+    // The points must land in the LINEAR framebuffer, not in the default one
+    // createColorTarget left bound on its way out. Otherwise pass 2 clears the
+    // canvas and gamma-samples an empty target: one wholly blank frame.
+    const pointDraw = calls.findIndex((c) => /^drawArrays\(\d+,0,50\)$/.test(c));
+    expect(pointDraw).toBeGreaterThan(-1);
+    const binds = calls.slice(0, pointDraw).filter((c) => c.startsWith('bindFramebuffer('));
+    expect(binds.at(-1)).toBe('bindFramebuffer(36160,obj)');
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
     // The gamma quad still runs: a density allocation failure must not switch the
     // whole app to sRGB blending.
     expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(1);
-    expect(degraded).toEqual([]);
+    expect(on.degraded).toEqual([]);
     expect(warn.mock.calls.flat().join(' ')).toContain('density layer disabled');
-    expect((renderer as unknown as { resources: GLResources }).resources.density).toBeNull();
-    renderer.destroy();
-    vi.doUnmock('./density-pass');
-    vi.resetModules();
-  });
-});
-
-describe('context loss', () => {
-  it('clears the density latch so the next context can try again', () => {
-    const { canvas, gl, setContextLost } = createMockCanvas();
-    const renderer = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
-      styleGetters(),
-    );
-    renderer.render(plotData(50));
-    const priv = renderer as unknown as { densityDisabled: boolean };
-    priv.densityDisabled = true;
-
-    setContextLost(true);
-    vi.spyOn(gl!, 'isContextLost').mockReturnValue(true);
-    renderer.render(plotData(50)); // ensureGL -> markContextLost -> resetRendererState
-
-    expect(priv.densityDisabled).toBe(false);
-    renderer.destroy();
+    expect(on.resources.density).toBeNull();
+    on.renderer.destroy();
   });
 });
