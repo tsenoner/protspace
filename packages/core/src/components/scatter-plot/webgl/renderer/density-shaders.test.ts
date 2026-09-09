@@ -158,7 +158,7 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
       'float line = N - smoothstep(N, max(w * N, N), min(f, N - f))',
       'line *= step(u_contourFloor, n) * step(o, N) * step(w, N)',
       'float alpha = line * u_densityAlpha',
-      'fragColor = vec4(mean * N * alpha, alpha)',
+      'fragColor = vec4(mix(mean, vec3(N), N) * alpha, alpha)',
     ]);
   });
 

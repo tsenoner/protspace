@@ -232,12 +232,12 @@ const DENSITY_CONTOUR_SPACING = 1.0;
  */
 const DENSITY_CONTOUR_LINE_PX = 0.6;
 /**
- * The line is the mean colour times this. Embedding Atlas draws on black and
- * lightens; ProtSpace is on white, so the line has to darken to read. With the
- * fill gone the line is all there is, so it darkens harder than the 0.45 that
- * only had to beat its own fill.
+ * The line is the mean point colour mixed this far toward white. The user wants
+ * the ring to read as "the points' colour, a bit lighter", like Embedding Atlas
+ * (which lightens on black); darkening (the earlier 0.35 multiplier) turned
+ * every ring near-black on white and lost the category hue.
  */
-const DENSITY_CONTOUR_DARKEN = 0.35;
+const DENSITY_CONTOUR_LIGHTEN = 0.35;
 /**
  * Levels per device pixel past which a line cannot be resolved. Above it the
  * ramp would smear into a solid band, which is exactly what the log of a field
@@ -278,7 +278,7 @@ void main() {
     line *= step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
           * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
     float alpha = line * u_densityAlpha;
-    fragColor = vec4(mean * ${DENSITY_CONTOUR_DARKEN.toFixed(2)} * alpha, alpha);
+    fragColor = vec4(mix(mean, vec3(1.0), ${DENSITY_CONTOUR_LIGHTEN.toFixed(2)}) * alpha, alpha);
     return;
   }
 
