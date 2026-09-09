@@ -17,10 +17,12 @@ import {
 import {
   DEFAULT_EAT_RELIABILITY,
   DENSITY_DEFAULT,
+  DENSITY_STYLE_DEFAULT,
   isEatConfidenceAnnotation,
   isSameReliability,
   NEUTRAL_BOUND,
   type DensityLayerMode,
+  type DensityLayerStyle,
   type EatReliabilityState,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
@@ -56,6 +58,26 @@ const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
+/**
+ * The density select is one control, not two: mode and style live as separate
+ * config fields, but the user picks a single option. The option values are the
+ * same five tokens `?density=` carries.
+ */
+const DENSITY_OPTIONS = {
+  off: { mode: 'off', style: DENSITY_STYLE_DEFAULT, label: 'Density: off' },
+  auto: { mode: 'auto', style: 'heatmap', label: 'Density: auto' },
+  on: { mode: 'on', style: 'heatmap', label: 'Density: on' },
+  'contour-auto': { mode: 'auto', style: 'contour', label: 'Contour: auto' },
+  'contour-on': { mode: 'on', style: 'contour', label: 'Contour: on' },
+} as const satisfies Record<
+  string,
+  { mode: DensityLayerMode; style: DensityLayerStyle; label: string }
+>;
+
+type DensityOption = keyof typeof DENSITY_OPTIONS;
+
+const DENSITY_OPTION_ORDER = Object.keys(DENSITY_OPTIONS) as DensityOption[];
+
 @customElement('protspace-control-bar')
 export class ProtspaceControlBar extends LitElement {
   @property({ type: Array }) projections: string[] = [];
@@ -75,6 +97,9 @@ export class ProtspaceControlBar extends LitElement {
   selectionTool: 'rectangle' | 'lasso' = 'rectangle';
   @property({ type: String, attribute: 'density-layer' })
   densityLayer: DensityLayerMode = DENSITY_DEFAULT;
+
+  @property({ type: String, attribute: 'density-style' })
+  densityStyle: DensityLayerStyle = DENSITY_STYLE_DEFAULT;
   @property({ type: Number, attribute: 'selected-proteins-count' })
   selectedProteinsCount: number = 0;
   @property({ type: Boolean, attribute: 'isolation-mode' })
@@ -417,18 +442,24 @@ export class ProtspaceControlBar extends LitElement {
     );
   }
 
-  private handleDensityLayerChange(mode: DensityLayerMode) {
+  private handleDensityLayerChange(option: DensityOption) {
+    const { mode, style } = DENSITY_OPTIONS[option];
     this.densityLayer = mode;
+    this.densityStyle = style;
     if (this.autoSync && this._scatterplotElement) {
       const scatterplot = this._scatterplotElement as ScatterplotElementLike;
       // Spread, never replace: `config` is a shallow-merged bag the host owns, and
       // the scatter-plot never resets a key once set, so dropping one here would
       // pin it at whatever it last was.
-      scatterplot.config = { ...(scatterplot.config ?? {}), densityLayer: mode };
+      scatterplot.config = {
+        ...(scatterplot.config ?? {}),
+        densityLayer: mode,
+        densityStyle: style,
+      };
     }
     this.dispatchEvent(
       new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
-        detail: { densityLayer: mode },
+        detail: { densityLayer: mode, densityStyle: style },
         bubbles: true,
         composed: true,
       }),
@@ -695,16 +726,21 @@ export class ProtspaceControlBar extends LitElement {
             <select
               id="density-layer-select"
               aria-label="Density layer"
-              title="Density heatmap. Off: points only. Auto: fades in when points overplot, out as you zoom in. On: always shown. Mixed regions show the average colour."
+              title="Density layer. Off: points only. Auto: fades in when points overplot, out as you zoom in. On: always shown. Contour draws the same density as banded iso-lines instead of a smooth heatmap. Mixed regions show the average colour."
               @change=${(e: Event) =>
                 this.handleDensityLayerChange(
-                  (e.target as HTMLSelectElement).value as DensityLayerMode,
+                  (e.target as HTMLSelectElement).value as DensityOption,
                 )}
             >
-              ${(['off', 'auto', 'on'] as const).map(
-                (mode) =>
-                  html`<option value=${mode} .selected=${this.densityLayer === mode}>
-                    Density: ${mode}
+              ${DENSITY_OPTION_ORDER.map(
+                (option) =>
+                  html`<option
+                    value=${option}
+                    .selected=${this.densityLayer === DENSITY_OPTIONS[option].mode &&
+                    (DENSITY_OPTIONS[option].mode === 'off' ||
+                      this.densityStyle === DENSITY_OPTIONS[option].style)}
+                  >
+                    ${DENSITY_OPTIONS[option].label}
                   </option>`,
               )}
             </select>

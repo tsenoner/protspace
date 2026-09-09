@@ -116,6 +116,20 @@ async function setDensity(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void
   await settle(page);
 }
 
+/** The frame as bytes, so two styles can be compared without a reference image. */
+async function frameSignature(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot');
+    const canvas = plot?.shadowRoot?.querySelector('canvas[data-key]') as HTMLCanvasElement | null;
+    if (!canvas) return '';
+    const copy = document.createElement('canvas');
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    copy.getContext('2d')?.drawImage(canvas, 0, 0);
+    return copy.toDataURL();
+  });
+}
+
 test.describe('density layer pixels', () => {
   test('composites above the points and respects hidden categories', async ({ page }) => {
     await watchForDegraded(page);
@@ -166,5 +180,44 @@ test.describe('density layer pixels', () => {
       })
       .toBeLessThan(paintedWithAll / 2);
     expect(await paintedPixels(page), 'the surviving category vanished too').toBeGreaterThan(0);
+  });
+
+  // The contour style through the URL, end to end: ?density=contour-on has to
+  // reach the shader, not just the select. Quantised bands paint a different
+  // picture from the smooth ramp, so a frame identical to ?density=on means the
+  // style never left the URL parser.
+  test('?density=contour-on paints a different layer from ?density=on', async ({ page }) => {
+    await watchForDegraded(page);
+    await page.goto('/explore?density=on');
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+    await settle(page);
+
+    test.skip(
+      await gammaPipelineUnavailable(page),
+      'renderer reported gamma-pipeline-unavailable: no float render targets here',
+    );
+
+    const heatmapAlpha = await centreAlpha(page);
+    const heatmapFrame = await frameSignature(page);
+    expect(heatmapAlpha, 'canvas pixels not readable').toBeGreaterThan(0);
+
+    await page.goto('/explore?density=contour-on');
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+    await settle(page);
+
+    expect(
+      await page.locator('protspace-control-bar').evaluate((bar) => {
+        const select = bar.shadowRoot?.querySelector('#density-layer-select');
+        return (select as HTMLSelectElement | null)?.value ?? '';
+      }),
+    ).toBe('contour-on');
+
+    const contourAlpha = await centreAlpha(page);
+    expect(contourAlpha, 'the contour layer added no coverage').toBeGreaterThan(0);
+    expect(await frameSignature(page), 'contour renders the same pixels as the heatmap').not.toBe(
+      heatmapFrame,
+    );
   });
 });

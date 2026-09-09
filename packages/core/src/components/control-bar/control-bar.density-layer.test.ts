@@ -3,11 +3,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import './control-bar';
-import type { DensityLayerMode, ScatterplotConfig } from '@protspace/utils';
+import type { DensityLayerMode, DensityLayerStyle, ScatterplotConfig } from '@protspace/utils';
 
 type Bar = HTMLElement & {
   autoSync?: boolean;
   densityLayer?: DensityLayerMode;
+  densityStyle?: DensityLayerStyle;
   updateComplete?: Promise<unknown>;
   _scatterplotElement?: unknown;
 };
@@ -47,11 +48,18 @@ describe('control-bar density layer select', () => {
     await controlBar.updateComplete;
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: 'auto' });
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      densityLayer: 'auto',
+      densityStyle: 'heatmap',
+    });
     expect(controlBar.densityLayer).toBe('auto');
     // The rest of the config has to survive the write: assigning a bare
     // `{ densityLayer }` would drop every other key the host had set.
-    expect(plot.config).toEqual({ pointSize: 42, densityLayer: 'auto' });
+    expect(plot.config).toEqual({
+      pointSize: 42,
+      densityLayer: 'auto',
+      densityStyle: 'heatmap',
+    });
   });
 
   it('shows the current mode as the selected option', async () => {
@@ -59,5 +67,40 @@ describe('control-bar density layer select', () => {
     await controlBar.updateComplete;
 
     expect(select()?.value).toBe('on');
+  });
+
+  // One select, five options: the style is not a second control, so a user who
+  // never wants contours never sees an extra widget, and the URL stays one param.
+  it.each([
+    ['off', 'off', 'heatmap'],
+    ['auto', 'auto', 'heatmap'],
+    ['on', 'on', 'heatmap'],
+    ['contour-auto', 'auto', 'contour'],
+    ['contour-on', 'on', 'contour'],
+  ])('option %s writes mode %s and style %s', async (value, mode, style) => {
+    const handler = vi.fn();
+    controlBar.addEventListener('density-layer-change', handler);
+
+    const el = select();
+    expect([...el!.options].map((o) => o.value)).toEqual([
+      'off',
+      'auto',
+      'on',
+      'contour-auto',
+      'contour-on',
+    ]);
+
+    el!.value = value;
+    el!.dispatchEvent(new Event('change'));
+    await controlBar.updateComplete;
+
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      densityLayer: mode,
+      densityStyle: style,
+    });
+    expect(controlBar.densityLayer).toBe(mode);
+    expect(controlBar.densityStyle).toBe(style);
+    expect(plot.config).toMatchObject({ densityLayer: mode, densityStyle: style });
+    expect(select()?.value).toBe(value);
   });
 });

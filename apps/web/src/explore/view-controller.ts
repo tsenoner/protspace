@@ -1,5 +1,11 @@
 import type { ProtspaceControlBar, ProtspaceScatterplot } from '@protspace/core';
-import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '@protspace/utils';
+import {
+  DENSITY_DEFAULT,
+  DENSITY_STYLE_DEFAULT,
+  type DensityLayerMode,
+  type DensityLayerStyle,
+  type VisualizationData,
+} from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -99,6 +105,7 @@ export function createViewController({
       projection,
       tooltip,
       density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
+      densityStyle: plotElement.config?.densityStyle ?? DENSITY_STYLE_DEFAULT,
     };
   };
 
@@ -114,11 +121,12 @@ export function createViewController({
     controlBar.applyTooltipAnnotationsSelection?.(tooltipAnnotations);
   };
 
-  const selectDensityLayer = (density: DensityLayerMode) => {
+  const selectDensityLayer = (density: DensityLayerMode, densityStyle: DensityLayerStyle) => {
     // The control bar owns the select, the plot owns the renderer input; both
     // need it, and `config` is a shallow-merged bag, so spread rather than replace.
     controlBar.densityLayer = density;
-    plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density };
+    controlBar.densityStyle = densityStyle;
+    plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density, densityStyle };
   };
 
   const arraysEqual = (a: readonly string[], b: readonly string[]) => {
@@ -164,7 +172,9 @@ export function createViewController({
     const projectionChanged = currentView?.projection !== effective.projection;
     const annotationChanged = currentView?.annotation !== effective.annotation;
     const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
-    const densityChanged = currentView?.density !== effective.density;
+    const densityChanged =
+      currentView?.density !== effective.density ||
+      currentView?.densityStyle !== effective.densityStyle;
 
     // The control bar dispatches its change events synchronously from these
     // apply* calls, and the app routes them back here as user changes. Guard
@@ -183,7 +193,7 @@ export function createViewController({
         selectTooltipAnnotations(effective.tooltip);
       }
       if (densityChanged) {
-        selectDensityLayer(effective.density);
+        selectDensityLayer(effective.density, effective.densityStyle);
       }
     } finally {
       isApplyingView = wasApplyingView;

@@ -1,4 +1,4 @@
-import type { DensityLayerMode } from '@protspace/utils';
+import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
 
 export interface RequestedExploreView {
   annotation?: string;
@@ -9,8 +9,10 @@ export interface RequestedExploreView {
    * requested an explicitly empty set.
    */
   tooltip?: string[];
-  /** Density heatmap mode. `undefined` means the URL did not request one. */
+  /** Density layer mode. `undefined` means the URL did not request one. */
   density?: DensityLayerMode;
+  /** Density layer style. Carried by the same `?density=` token as the mode. */
+  densityStyle?: DensityLayerStyle;
 }
 
 export interface ExploreViewNormalization {
@@ -36,6 +38,7 @@ export interface EffectiveExploreView {
   projection: string;
   tooltip: string[];
   density: DensityLayerMode;
+  densityStyle: DensityLayerStyle;
 }
 
 export interface ResolvedExploreView {

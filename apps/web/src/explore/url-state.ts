@@ -1,4 +1,9 @@
-import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
+import {
+  DENSITY_DEFAULT,
+  DENSITY_STYLE_DEFAULT,
+  type DensityLayerMode,
+  type DensityLayerStyle,
+} from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -68,23 +73,35 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
-const DENSITY_MODES: readonly DensityLayerMode[] = ['off', 'auto', 'on'];
+/**
+ * One param, five tokens. Mode and style stay separate fields everywhere else;
+ * the `contour-` prefix exists only here and in the control bar's option values.
+ * `off` has no style variant: off is off.
+ */
+const DENSITY_TOKENS: Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }> = {
+  off: { mode: 'off', style: DENSITY_STYLE_DEFAULT },
+  auto: { mode: 'auto', style: 'heatmap' },
+  on: { mode: 'on', style: 'heatmap' },
+  'contour-auto': { mode: 'auto', style: 'contour' },
+  'contour-on': { mode: 'on', style: 'contour' },
+};
 
 function parseDensityParam(searchParams: URLSearchParams): {
-  value: DensityLayerMode | undefined;
+  mode: DensityLayerMode | undefined;
+  style: DensityLayerStyle | undefined;
   present: boolean;
   normalize: boolean;
 } {
   if (!searchParams.has('density')) {
-    return { value: undefined, present: false, normalize: false };
+    return { mode: undefined, style: undefined, present: false, normalize: false };
   }
   const all = searchParams.getAll('density');
-  const raw = (all[0] ?? '').trim() as DensityLayerMode;
-  const valid = DENSITY_MODES.includes(raw);
+  const parsed = DENSITY_TOKENS[(all[0] ?? '').trim()];
   return {
-    value: valid ? raw : undefined,
+    mode: parsed?.mode,
+    style: parsed?.style,
     present: true,
-    normalize: !valid || all.length > 1,
+    normalize: !parsed || all.length > 1,
   };
 }
 
@@ -95,7 +112,8 @@ export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreV
     annotation: getRequestedValue(searchParams, 'annotation'),
     projection: getRequestedValue(searchParams, 'projection'),
     tooltip: tooltip.value,
-    density: density.value,
+    density: density.mode,
+    densityStyle: density.style,
   };
 
   return {
@@ -148,6 +166,7 @@ export function cloneExploreViewRequest(
         ? [...requestState.requested.tooltip]
         : requestState.requested.tooltip,
       density: requestState.requested.density,
+      densityStyle: requestState.requested.densityStyle,
     },
     present: {
       annotation: requestState.present.annotation,
@@ -222,6 +241,7 @@ export function resolveExploreView(
       projection: projectionIsValid ? requestedProjection : availableProjections[0],
       tooltip: tooltip.value,
       density: requested.density ?? DENSITY_DEFAULT,
+      densityStyle: requested.densityStyle ?? DENSITY_STYLE_DEFAULT,
     },
     matchesRequested: {
       annotation: annotationIsValid,
@@ -253,12 +273,21 @@ export function getResolvedExploreViewNormalization(
 }
 
 /** The default stays out of the URL; every other mode is written explicitly. */
-function setDensityParam(searchParams: URLSearchParams, density: DensityLayerMode) {
-  if (density === DENSITY_DEFAULT) {
+function setDensityParam(
+  searchParams: URLSearchParams,
+  density: DensityLayerMode,
+  style: DensityLayerStyle,
+) {
+  const token = Object.keys(DENSITY_TOKENS).find(
+    (key) => DENSITY_TOKENS[key].mode === density && DENSITY_TOKENS[key].style === style,
+  );
+  // No token means a pair the URL cannot express, which is only `off` with a
+  // style: off is off, and the style is dropped with it.
+  if (!token || (density === DENSITY_DEFAULT && style === DENSITY_STYLE_DEFAULT)) {
     searchParams.delete('density');
     return;
   }
-  searchParams.set('density', density);
+  searchParams.set('density', token);
 }
 
 function setTooltipParam(searchParams: URLSearchParams, tooltip: readonly string[]) {
@@ -287,7 +316,7 @@ export function buildSearchParamsWithExploreView(
     next.set('annotation', effective.annotation);
     next.set('projection', effective.projection);
     setTooltipParam(next, effective.tooltip);
-    setDensityParam(next, effective.density);
+    setDensityParam(next, effective.density, effective.densityStyle);
     return next;
   }
 
@@ -304,7 +333,7 @@ export function buildSearchParamsWithExploreView(
   }
 
   if (options.normalize.density) {
-    setDensityParam(next, effective.density);
+    setDensityParam(next, effective.density, effective.densityStyle);
   }
 
   return next;
