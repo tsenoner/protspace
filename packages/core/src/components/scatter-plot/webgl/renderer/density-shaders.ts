@@ -217,6 +217,12 @@ const DENSITY_CONTOUR_LEVELS = 4;
  * Levels per doubling of density. 1: the rings then span floor x 1.4 to
  * floor x 22.6, about the dynamic range of a real cluster's profile. Below 1
  * the rings spread past the cluster; above 1 they crowd back into worms.
+ *
+ * Try 0.75 if all rings sit on the rim at 573K: it spreads the same 5 rings over
+ * 6.7 octaves instead of 4.5, so they reach into a deep core, at the cost of the
+ * demo dataset's outermost ring floating further from its own points. That
+ * trade-off needs the eye, not the argument, so re-shoot the demo before keeping
+ * it.
  */
 const DENSITY_CONTOUR_SPACING = 1.0;
 /**
@@ -266,8 +272,10 @@ void main() {
     float line =
       1.0 - smoothstep(0.0, max(w * ${DENSITY_CONTOUR_LINE_PX.toFixed(2)}, 1e-6), min(f, 1.0 - f));
     // No fill, and three cuts: below the support floor, past the top level, and
-    // where the field is too steep for a line to mean anything.
-    line *= step(u_contourFloor, n) * step(o, ${DENSITY_CONTOUR_LEVELS.toFixed(1)})
+    // where the field is too steep for a line to mean anything. The ceiling is
+    // half a level past the last ring, not on it: cutting at the crossing itself
+    // keeps only the outer half of that ring's ramp and draws it at half width.
+    line *= step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
           * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
     float alpha = line * u_densityAlpha;
     fragColor = vec4(mean * ${DENSITY_CONTOUR_DARKEN.toFixed(2)} * alpha, alpha);
