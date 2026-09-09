@@ -227,10 +227,10 @@ const DENSITY_CONTOUR_LEVELS = 4;
 const DENSITY_CONTOUR_SPACING = 1.0;
 /**
  * Half-width, in device px, of the smoothstep ramp on either side of a level
- * crossing, so a line is about 2 x this wide. 0.6 reads as a hairline at dpr 2
- * and still anti-aliases at dpr 1.
+ * crossing, so a line is about 2 x this wide. 0.6 read as a hairline at dpr 2;
+ * the user asked for a bit thicker, so 0.9 (about 2 device px).
  */
-const DENSITY_CONTOUR_LINE_PX = 0.6;
+const DENSITY_CONTOUR_LINE_PX = 0.9;
 /**
  * The line is the mean point colour mixed this far toward white. The user wants
  * the ring to read as "the points' colour, a bit lighter", like Embedding Atlas
