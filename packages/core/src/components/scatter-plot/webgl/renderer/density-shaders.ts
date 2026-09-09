@@ -239,6 +239,13 @@ const DENSITY_CONTOUR_LINE_PX = 0.6;
  */
 const DENSITY_CONTOUR_LIGHTEN = 0.35;
 /**
+ * Opacity of one fill coat. Every ring a pixel sits inside lays down one coat of
+ * the line colour, so the fringe band is one coat pale and the core five coats
+ * deep, the way overlapping translucent filled contours mix. 0.1 keeps the
+ * points readable through the deepest core (five coats = 0.41).
+ */
+const DENSITY_CONTOUR_FILL_ALPHA = 0.1;
+/**
  * Levels per device pixel past which a line cannot be resolved. Above it the
  * ramp would smear into a solid band, which is exactly what the log of a field
  * decaying to zero does on the rim of a single point.
@@ -271,13 +278,17 @@ void main() {
     float w = fwidth(o);
     float line =
       1.0 - smoothstep(0.0, max(w * ${DENSITY_CONTOUR_LINE_PX.toFixed(2)}, 1e-6), min(f, 1.0 - f));
-    // No fill, and three cuts: below the support floor, past the top level, and
-    // where the field is too steep for a line to mean anything. The ceiling is
-    // half a level past the last ring, not on it: cutting at the crossing itself
-    // keeps only the outer half of that ring's ramp and draws it at half width.
+    // Three cuts: below the support floor, past the top level, and where the
+    // field is too steep for a line to mean anything. The ceiling is half a
+    // level past the last ring, not on it: cutting at the crossing itself keeps
+    // only the outer half of that ring's ramp and draws it at half width.
     line *= step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
           * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
-    float alpha = line * u_densityAlpha;
+    // One fill coat per enclosing ring (0 outside the outermost, LEVELS + 1 in
+    // the core), stacked like translucent layers so the core reads darker.
+    float coats = clamp(floor(o) + 1.0, 0.0, ${(DENSITY_CONTOUR_LEVELS + 1).toFixed(1)});
+    float fill = 1.0 - pow(1.0 - ${DENSITY_CONTOUR_FILL_ALPHA.toFixed(2)}, coats);
+    float alpha = (line + fill * (1.0 - line)) * u_densityAlpha;
     fragColor = vec4(mix(mean, vec3(1.0), ${DENSITY_CONTOUR_LIGHTEN.toFixed(2)}) * alpha, alpha);
     return;
   }

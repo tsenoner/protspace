@@ -29,9 +29,10 @@ function cameraUniforms(src: string): string[] {
 }
 
 /**
- * Every statement in the contour branch that writes `line`, `alpha` or
- * `fragColor`, in source order, whitespace collapsed and numeric literals
- * replaced by `N`. Any extra term anywhere in the alpha derivation changes it.
+ * Every statement in the contour branch that writes `line`, `coats`, `fill`,
+ * `alpha` or `fragColor`, in source order, whitespace collapsed and numeric
+ * literals replaced by `N`. Any extra term anywhere in the alpha derivation
+ * changes it.
  */
 function contourAlphaChain(src: string): string[] {
   const branch = src.slice(src.indexOf('if (u_style == 1)'), src.indexOf('float alpha = clamp('));
@@ -44,7 +45,7 @@ function contourAlphaChain(src: string): string[] {
         .trim()
         .replace(/(?<![\w.])\d+(?:\.\d+)?(?:e-?\d+)?/g, 'N'),
     )
-    .filter((stmt) => /^(?:float )?(?:line|alpha|fragColor)\s*[*+\-/]?=/.test(stmt));
+    .filter((stmt) => /^(?:float )?(?:line|coats|fill|alpha|fragColor)\s*[*+\-/]?=/.test(stmt));
 }
 
 describe('gaussianWeights', () => {
@@ -146,18 +147,20 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
     expect((DENSITY_COMPOSITE_FRAGMENT_SHADER.match(/texture\(u_density/g) ?? []).length).toBe(1);
   });
 
-  // Lines only. A fill would hide the points the layer is supposed to annotate,
-  // which is the whole point of the style, so this asserts the SHAPE of the
-  // alpha derivation rather than one of its lines: every statement in the branch
-  // that writes `line`, `alpha` or `fragColor`, in order, with the numeric
-  // literals blanked so tuning a constant does not fail it. A containment check
-  // on the alpha line alone stays green when a fill is smuggled in one line
-  // above it, which is exactly how a fill would come back.
-  it('derives the fragment from the line term and nothing else', () => {
+  // Lines over a stacked fill: one translucent coat per enclosing ring, so the
+  // core is darker than the fringe and nothing is painted outside the outermost
+  // ring. This asserts the SHAPE of the alpha derivation rather than one of its
+  // lines: every statement in the branch that writes `line`, `coats`, `fill`,
+  // `alpha` or `fragColor`, in order, with the numeric literals blanked so
+  // tuning a constant does not fail it. A containment check on the alpha line
+  // alone stays green when an extra term is smuggled in one line above it.
+  it('derives the fragment from the line term over one fill coat per ring', () => {
     expect(contourAlphaChain(DENSITY_COMPOSITE_FRAGMENT_SHADER)).toEqual([
       'float line = N - smoothstep(N, max(w * N, N), min(f, N - f))',
       'line *= step(u_contourFloor, n) * step(o, N) * step(w, N)',
-      'float alpha = line * u_densityAlpha',
+      'float coats = clamp(floor(o) + N, N, N)',
+      'float fill = N - pow(N - N, coats)',
+      'float alpha = (line + fill * (N - line)) * u_densityAlpha',
       'fragColor = vec4(mix(mean, vec3(N), N) * alpha, alpha)',
     ]);
   });
