@@ -239,12 +239,13 @@ const DENSITY_CONTOUR_LINE_PX = 0.6;
  */
 const DENSITY_CONTOUR_LIGHTEN = 0.35;
 /**
- * Opacity of one fill coat. Every ring a pixel sits inside lays down one coat of
- * the line colour, so the fringe band is one coat pale and the core five coats
- * deep, the way overlapping translucent filled contours mix. 0.2 leaves the
- * core two-thirds covered (five coats = 0.67), which the user asked for.
+ * Fill opacity of the band just inside the outermost ring and of the core inside
+ * the last ring; the bands between step linearly from one to the other, so the
+ * fill deepens ring by ring the way overlapping translucent filled contours
+ * mix. The user asked for 20 % to 80 %.
  */
-const DENSITY_CONTOUR_FILL_ALPHA = 0.2;
+const DENSITY_CONTOUR_FILL_OUTER = 0.2;
+const DENSITY_CONTOUR_FILL_CORE = 0.8;
 /**
  * Levels per device pixel past which a line cannot be resolved. Above it the
  * ramp would smear into a solid band, which is exactly what the log of a field
@@ -284,10 +285,12 @@ void main() {
     // only the outer half of that ring's ramp and draws it at half width.
     line *= step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
           * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
-    // One fill coat per enclosing ring (0 outside the outermost, LEVELS + 1 in
-    // the core), stacked like translucent layers so the core reads darker.
+    // Enclosing rings (0 outside the outermost, LEVELS + 1 in the core) pick the
+    // fill: OUTER for one, CORE for LEVELS + 1, a straight ramp between.
     float coats = clamp(floor(o) + 1.0, 0.0, ${(DENSITY_CONTOUR_LEVELS + 1).toFixed(1)});
-    float fill = 1.0 - pow(1.0 - ${DENSITY_CONTOUR_FILL_ALPHA.toFixed(2)}, coats);
+    float fill = step(0.5, coats)
+      * mix(${DENSITY_CONTOUR_FILL_OUTER.toFixed(2)}, ${DENSITY_CONTOUR_FILL_CORE.toFixed(2)},
+            (coats - 1.0) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)});
     float alpha = (line + fill * (1.0 - line)) * u_densityAlpha;
     fragColor = vec4(mix(mean, vec3(1.0), ${DENSITY_CONTOUR_LIGHTEN.toFixed(2)}) * alpha, alpha);
     return;
