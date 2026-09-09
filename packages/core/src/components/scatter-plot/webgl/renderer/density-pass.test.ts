@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { DENSITY_CONTOUR_FLOOR } from './density-shaders';
 import {
   computeDensityGrid,
   createColorTarget,
@@ -98,7 +99,13 @@ function resources(): DensityResources {
       gamma: { n: 'gamma' },
     },
     blurLoc: { source: { n: 'source' }, direction: { n: 'direction' } },
-    compositeLoc: { density: { n: 'density' }, alpha: { n: 'alpha' }, scaler: { n: 'scaler' } },
+    compositeLoc: {
+      density: { n: 'density' },
+      alpha: { n: 'alpha' },
+      scaler: { n: 'scaler' },
+      style: { n: 'style' },
+      contourFloor: { n: 'contourFloor' },
+    },
     quadVao: { k: 'quadVao' } as unknown as WebGLVertexArrayObject,
     accum: target('accum', 400, 300),
     ping: target('ping', 400, 300),
@@ -197,7 +204,7 @@ describe('accumulateAndBlurDensity', () => {
 describe('compositeDensity', () => {
   it('draws one premultiplied-over quad from the blurred target', () => {
     const { gl, calls } = mockGL();
-    compositeDensity(gl, resources(), { alpha: 0.5, scaler: 4 });
+    compositeDensity(gl, resources(), { alpha: 0.5, scaler: 4 }, 'heatmap');
 
     const draw = calls.indexOf('drawArrays:4,0,6');
     expect(draw).toBeGreaterThan(-1);
@@ -207,5 +214,18 @@ describe('compositeDensity', () => {
     expect(calls).toContain('bindTexture:pongTex');
     expect(calls).toContain('u1f:alpha:0.5');
     expect(calls).toContain('u1f:scaler:4');
+    expect(calls).toContain('u1i:style:0');
+  });
+
+  // The floor is absolute and written every composite, so a frame that forgets
+  // it inherits whatever the last program left there: on a fresh context that is
+  // 0, and log2(n / 0) draws lines over the whole canvas.
+  it('writes the style and the absolute contour floor on every frame', () => {
+    const { gl, calls } = mockGL();
+    compositeDensity(gl, resources(), { alpha: 1, scaler: 4 }, 'contour');
+    expect(calls).toContain('u1i:style:1');
+    expect(calls).toContain(`u1f:contourFloor:${DENSITY_CONTOUR_FLOOR}`);
+    // Screen-space lines, so nothing about the grid reaches the composite.
+    expect(calls.some((c) => c.startsWith('u2f:texel'))).toBe(false);
   });
 });

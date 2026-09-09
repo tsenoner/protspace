@@ -107,8 +107,8 @@ describe('density layer, off', () => {
 
     expect(accumAllocations(on.gl)).toBe(1);
     expect(on.resources.density).not.toBeNull();
-    // Accumulate, blur, composite.
-    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 3);
+    // Accumulate, the two blur kernels, composite.
+    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 4);
 
     absent.renderer.destroy();
     on.renderer.destroy();
@@ -216,8 +216,8 @@ describe('density layer, on', () => {
       (on.renderer as unknown as { gammaPipelineAvailable: boolean }).gammaPipelineAvailable,
     ).toBe(false);
     expect(on.resources.density).toBeNull();
-    // The gamma program plus the three density programs.
-    expect(deleteProgram).toHaveBeenCalledTimes(4);
+    // The gamma program plus the four density programs.
+    expect(deleteProgram).toHaveBeenCalledTimes(5);
     // The density quad's VAO goes with them; the point VAO stays.
     expect(deleteVao).toHaveBeenCalledTimes(1);
     // Exactly one reason, and it is the gamma one: density adds no new reason.

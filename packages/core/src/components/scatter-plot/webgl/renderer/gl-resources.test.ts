@@ -99,8 +99,8 @@ describe('GLResources', () => {
     const res = new GLResources();
     res.density = makeDensity();
     res.deleteAll(gl);
-    // accum + blur + composite programs, the quad VAO, and the one live target.
-    expect(gl.deleteProgram).toHaveBeenCalledTimes(3);
+    // accum + the two blur kernels + composite programs, the quad VAO, and the one live target.
+    expect(gl.deleteProgram).toHaveBeenCalledTimes(4);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteFramebuffer).toHaveBeenCalledTimes(1);
     expect(gl.deleteTexture).toHaveBeenCalledTimes(1);

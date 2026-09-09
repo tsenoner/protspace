@@ -122,14 +122,18 @@ void main() {
   v_texCoord = (a_position + 1.0) * 0.5;
 }`;
 
-const TAPS = gaussianWeights(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS)
-  .map(
-    (w, i) =>
-      `  c += texture(u_source, v_texCoord + u_direction * ${(i - DENSITY_BLUR_RADIUS).toFixed(1)}) * ${w.toFixed(8)};`,
-  )
-  .join('\n');
-
-export const DENSITY_BLUR_FRAGMENT_SHADER = `#version 300 es
+/**
+ * One separable-blur program source at the given sigma. The kernel is baked at
+ * module load, so no frame ever recompiles a program or generates GLSL.
+ */
+function blurSource(sigma: number, radius: number): string {
+  const taps = gaussianWeights(sigma, radius)
+    .map(
+      (w, i) =>
+        `  c += texture(u_source, v_texCoord + u_direction * ${(i - radius).toFixed(1)}) * ${w.toFixed(8)};`,
+    )
+    .join('\n');
+  return `#version 300 es
 precision highp float;
 
 uniform sampler2D u_source;
@@ -140,32 +144,100 @@ out vec4 fragColor;
 
 void main() {
   vec4 c = vec4(0.0);
-${TAPS}
+${taps}
   fragColor = c;
 }`;
+}
+
+export const DENSITY_BLUR_FRAGMENT_SHADER = blurSource(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
 
 /**
- * Contour style: how many bands sit between an empty cell and a fully opaque
- * fill, one band per doubling of density. So the bands span the 5 octaves below
- * the heatmap's saturation point (n * scaler = 1) and keep going above it,
- * which is what the flat pale core needs: a linear or 1 - exp quantisation puts
- * the whole core in the top band and draws no lines in it at all. Embedding
- * Atlas's 0.1 quantization step is 10 linear bands over the same range; on
- * their data the core does not saturate.
+ * The contour style blurs three times wider than the heatmap, and needs its own
+ * kernel to do it. At sigma 2 the level field still carries every 5-point clump
+ * in a cluster, so the iso-lines came out as a knot of micro-loops around each
+ * of them instead of the few nested rings the reference picture shows. The
+ * heatmap wants the opposite: it REPLACES the points, so it has to stay sharp
+ * enough to show where they actually are.
  *
- * 5, not 10: band 1 starts at 1/32 of the saturation density, which is
- * DENSITY_MIN_DENSITY, the density at which the auto cross-fade decides a view
- * is overplotted at all. At 10 the fringe below that fell in bands 1 to 5 and
- * every isolated point wore a half-opaque grey disc with a dark rim, where the
- * heatmap gives it 0.03.
+ * 6, not 4 or 8: at 4 the loops were still there on the demo dataset, at 8 the
+ * outermost ring floated a cluster-radius clear of its own points.
  */
-const DENSITY_CONTOUR_LEVELS = 5;
+export const DENSITY_CONTOUR_SIGMA_GRID_PX = 6;
+/** ceil(3 * sigma) = 18, so 37 taps per pass. Contour style only. */
+export const DENSITY_CONTOUR_BLUR_RADIUS = Math.ceil(3 * DENSITY_CONTOUR_SIGMA_GRID_PX);
+export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
+  DENSITY_CONTOUR_SIGMA_GRID_PX,
+  DENSITY_CONTOUR_BLUR_RADIUS,
+);
+
+/*
+ * Contour style v2: iso-LINES, no fill.
+ *
+ * Points draw underneath and the selection above; the layer contributes only
+ * thin lines, so the picture stays the scatter plot with its density annotated,
+ * the way Embedding Atlas draws it. The heatmap style (u_style == 0) is
+ * untouched by everything below.
+ *
+ * The level field is continuous, one step per doubling of density above the
+ * support floor, and a line is drawn where it crosses an integer. fwidth turns
+ * that into a fixed screen-space width at any zoom and any grid size, which is
+ * what the old 4-neighbour band compare could not do: its lines were two grid
+ * texels wide, i.e. 4 device px, and got fatter as the grid got coarser.
+ */
+
 /**
- * Iso-line colour = the band's mean colour times this. Embedding Atlas draws on
- * black and lightens; ProtSpace is on white, so the line has to go the other way
- * to read at all against its own fill.
+ * Coincident points whose blurred peak the outermost line sits at. Absolute, in
+ * points, NOT relative to the frame's scaler: that is what makes an isolated
+ * point ringless at every zoom, and what makes the lines dissolve as zooming in
+ * spreads a cluster below 5 points per grid cell. 5, not 2 or 3: at 3 the 105K
+ * fringe still grew rings around pairs of points.
  */
-const DENSITY_CONTOUR_DARKEN = 0.45;
+export const DENSITY_CONTOUR_MIN_POINTS = 5;
+/**
+ * Blurred peak of ONE point, in the same units as the composite's `n`. The
+ * accumulation writes 1.0 into a single grid cell and the separable normalised
+ * gaussian runs over it, so the peak survives as centreWeight^2; k coincident
+ * points therefore peak at k * this.
+ */
+const DENSITY_ONE_POINT_PEAK =
+  gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS)[
+    DENSITY_CONTOUR_BLUR_RADIUS
+  ] ** 2;
+/** The `u_contourFloor` uniform: no line below this blurred density. */
+export const DENSITY_CONTOUR_FLOOR = DENSITY_CONTOUR_MIN_POINTS * DENSITY_ONE_POINT_PEAK;
+
+/**
+ * Lines above the floor, so at most LEVELS + 1 rings on a cluster of any depth.
+ * Without a ceiling log2 keeps adding a ring per doubling and the 573K core
+ * silts up with wormy micro-loops; with it the core simply goes clean.
+ * 4 gives the 5 rings the reference picture shows on a typical cluster.
+ */
+const DENSITY_CONTOUR_LEVELS = 4;
+/**
+ * Levels per doubling of density. 1: the rings then span floor x 1.4 to
+ * floor x 22.6, about the dynamic range of a real cluster's profile. Below 1
+ * the rings spread past the cluster; above 1 they crowd back into worms.
+ */
+const DENSITY_CONTOUR_SPACING = 1.0;
+/**
+ * Half-width, in device px, of the smoothstep ramp on either side of a level
+ * crossing, so a line is about 2 x this wide. 0.6 reads as a hairline at dpr 2
+ * and still anti-aliases at dpr 1.
+ */
+const DENSITY_CONTOUR_LINE_PX = 0.6;
+/**
+ * The line is the mean colour times this. Embedding Atlas draws on black and
+ * lightens; ProtSpace is on white, so the line has to darken to read. With the
+ * fill gone the line is all there is, so it darkens harder than the 0.45 that
+ * only had to beat its own fill.
+ */
+const DENSITY_CONTOUR_DARKEN = 0.35;
+/**
+ * Levels per device pixel past which a line cannot be resolved. Above it the
+ * ramp would smear into a solid band, which is exactly what the log of a field
+ * decaying to zero does on the rim of a single point.
+ */
+const DENSITY_CONTOUR_MAX_SLOPE = 1.0;
 
 export const DENSITY_COMPOSITE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
@@ -174,25 +246,10 @@ uniform sampler2D u_density;   // blurred: rgb = sum(linear colour), a = smoothe
 uniform float u_densityAlpha;
 uniform float u_densityScaler;
 uniform int u_style;           // 0 = heatmap, 1 = contour
-uniform vec2 u_texel;          // one density GRID texel in uv: (1/gridW, 1/gridH)
+uniform float u_contourFloor;  // blurred density of DENSITY_CONTOUR_MIN_POINTS coincident points
 
 in vec2 v_texCoord;
 out vec4 fragColor;
-
-/*
- * Band index of one grid cell. The contour branch reads it at the centre and at
- * the four edge neighbours; a line is where they disagree.
- *
- * log2, not the heatmap's clamp(n * scaler): the ramp saturates the whole core
- * to 1 by design, so a linear quantisation of it draws every line around the
- * rim and none inside. One band per doubling of density has no ceiling, and the
- * epsilon floors the empty fringe at band 0 instead of log2(0).
- */
-float densityBand(vec2 uv) {
-  float n = texture(u_density, uv).a;
-  float octaves = log2(max(n * u_densityScaler, 1e-6)) + ${DENSITY_CONTOUR_LEVELS.toFixed(1)};
-  return max(0.0, floor(octaves));
-}
 
 void main() {
   vec4 d = texture(u_density, v_texCoord);       // LINEAR upsample from the grid
@@ -200,25 +257,20 @@ void main() {
   vec3 mean = n > 0.0 ? d.rgb / n : vec3(0.0);   // kernel-weighted mean colour, 0/0 guarded
 
   if (u_style == 1) {
-    float band = densityBand(v_texCoord);
-    float east = densityBand(v_texCoord + vec2(u_texel.x, 0.0));
-    float west = densityBand(v_texCoord - vec2(u_texel.x, 0.0));
-    float north = densityBand(v_texCoord + vec2(0.0, u_texel.y));
-    float south = densityBand(v_texCoord - vec2(0.0, u_texel.y));
-    float edge = abs(band - east) + abs(band - west) + abs(band - north) + abs(band - south);
-    // Same n > 0.0 guard: outside the support mean is 0 and a line there would
-    // be black, not "the mean colour darkened".
-    float line = (n > 0.0 && edge > 0.0) ? 1.0 : 0.0;
-    // Fill at the band's own alpha. A line takes the alpha of the DENSER of the
-    // two bands it separates, so rim lines are as faint as the fringe they
-    // outline and only the core draws at full strength; both still scale with
-    // u_densityAlpha, so the whole layer fades together with the cross-fade.
-    float outer = max(max(east, west), max(north, south));
-    float bandAlpha = min(band / ${DENSITY_CONTOUR_LEVELS.toFixed(1)}, 1.0) * u_densityAlpha;
-    float lineAlpha = min(max(band, outer) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)}, 1.0) * u_densityAlpha;
-    float alpha = mix(bandAlpha, lineAlpha, line);
-    vec3 c = mix(mean, mean * ${DENSITY_CONTOUR_DARKEN.toFixed(2)}, line);
-    fragColor = vec4(c * alpha, alpha);
+    // Continuous level from the ONE fetch above. The -0.5 puts the outermost
+    // ring half a level inside the floor, so the floor cut below trims nothing
+    // visible. The frame's scaler is deliberately absent: levels are absolute.
+    float o = log2(max(n, 1e-8) / u_contourFloor) * ${DENSITY_CONTOUR_SPACING.toFixed(1)} - 0.5;
+    float f = fract(o);
+    float w = fwidth(o);
+    float line =
+      1.0 - smoothstep(0.0, max(w * ${DENSITY_CONTOUR_LINE_PX.toFixed(2)}, 1e-6), min(f, 1.0 - f));
+    // No fill, and three cuts: below the support floor, past the top level, and
+    // where the field is too steep for a line to mean anything.
+    line *= step(u_contourFloor, n) * step(o, ${DENSITY_CONTOUR_LEVELS.toFixed(1)})
+          * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
+    float alpha = line * u_densityAlpha;
+    fragColor = vec4(mean * ${DENSITY_CONTOUR_DARKEN.toFixed(2)} * alpha, alpha);
     return;
   }
 

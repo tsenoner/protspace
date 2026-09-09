@@ -206,6 +206,13 @@ test.describe('density layer pixels', () => {
   // style never left the URL parser.
   test('?density=contour-on paints a different layer from ?density=on', async ({ page }) => {
     await watchForDegraded(page);
+    // The points alone, so the two styles can be compared by what each ADDS.
+    await page.goto('/explore?density=off');
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+    await settle(page);
+    const pointsOnlyPainted = await paintedPixels(page);
+
     await page.goto('/explore?density=on');
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
@@ -218,6 +225,7 @@ test.describe('density layer pixels', () => {
 
     const heatmapAlpha = await centreAlpha(page);
     const heatmapBlock = await centreBlock(page);
+    const heatmapPainted = await paintedPixels(page);
     expect(heatmapAlpha, 'canvas pixels not readable').toBeGreaterThan(0);
     expect(heatmapBlock.length, 'canvas pixels not readable').toBeGreaterThan(0);
 
@@ -239,6 +247,16 @@ test.describe('density layer pixels', () => {
 
     const contourAlpha = await centreAlpha(page);
     expect(contourAlpha, 'the contour layer added no coverage').toBeGreaterThan(0);
+    // Lines, not fill. The heatmap paints every cell it covers; the contour
+    // paints iso-lines over the same field and leaves the points visible
+    // between them, so it has to cover a fraction of the area. A contour style
+    // that grew a fill back would land within a few percent of the heatmap here.
+    const contourAdded = (await paintedPixels(page)) - pointsOnlyPainted;
+    const heatmapAdded = heatmapPainted - pointsOnlyPainted;
+    expect(heatmapAdded, 'the heatmap covered nothing to compare against').toBeGreaterThan(0);
+    expect(contourAdded, 'the contour style is filling, not drawing lines').toBeLessThan(
+      heatmapAdded / 2,
+    );
     expect(
       await page.locator('protspace-control-bar').evaluate((bar) => {
         const select = bar.shadowRoot?.querySelector('#density-layer-select');

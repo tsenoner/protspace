@@ -18,7 +18,9 @@ import {
   DENSITY_ACCUM_FRAGMENT_SHADER,
   DENSITY_QUAD_VERTEX_SHADER,
   DENSITY_BLUR_FRAGMENT_SHADER,
+  DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
   DENSITY_COMPOSITE_FRAGMENT_SHADER,
+  DENSITY_CONTOUR_FLOOR,
 } from './density-shaders';
 
 /** Grid side = device pixels / this. */
@@ -36,6 +38,11 @@ export interface ColorTarget {
   height: number;
 }
 
+interface BlurLocations {
+  source: WebGLUniformLocation | null;
+  direction: WebGLUniformLocation | null;
+}
+
 interface AccumLocations {
   resolution: WebGLUniformLocation | null;
   transform: WebGLUniformLocation | null;
@@ -46,15 +53,18 @@ interface AccumLocations {
 export interface DensityResources {
   accumProgram: WebGLProgram;
   blurProgram: WebGLProgram;
+  /** Same shape, three times the sigma. The contour style blurs with this one. */
+  contourBlurProgram: WebGLProgram;
   compositeProgram: WebGLProgram;
   accumLoc: AccumLocations;
-  blurLoc: { source: WebGLUniformLocation | null; direction: WebGLUniformLocation | null };
+  blurLoc: BlurLocations;
+  contourBlurLoc: BlurLocations;
   compositeLoc: {
     density: WebGLUniformLocation | null;
     alpha: WebGLUniformLocation | null;
     scaler: WebGLUniformLocation | null;
     style: WebGLUniformLocation | null;
-    texel: WebGLUniformLocation | null;
+    contourFloor: WebGLUniformLocation | null;
   };
   /** a_position over the renderer's existing quad buffer, so the composite never
    *  touches attribute state while the point VAO is bound mid-draw. */
@@ -148,18 +158,27 @@ export function createDensityResources(
     DENSITY_BLUR_FRAGMENT_SHADER,
     { a_position: QUAD_ATTRIB_INDEX },
   );
+  const contourBlurProgram = createProgramFromSources(
+    gl,
+    DENSITY_QUAD_VERTEX_SHADER,
+    DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
+    { a_position: QUAD_ATTRIB_INDEX },
+  );
   const compositeProgram = createProgramFromSources(
     gl,
     DENSITY_QUAD_VERTEX_SHADER,
     DENSITY_COMPOSITE_FRAGMENT_SHADER,
     { a_position: QUAD_ATTRIB_INDEX },
   );
-  const quadVao = accumProgram && blurProgram && compositeProgram ? gl.createVertexArray() : null;
+  const quadVao =
+    accumProgram && blurProgram && contourBlurProgram && compositeProgram
+      ? gl.createVertexArray()
+      : null;
 
-  if (!accumProgram || !blurProgram || !compositeProgram || !quadVao) {
-    if (accumProgram) gl.deleteProgram(accumProgram);
-    if (blurProgram) gl.deleteProgram(blurProgram);
-    if (compositeProgram) gl.deleteProgram(compositeProgram);
+  if (!accumProgram || !blurProgram || !contourBlurProgram || !compositeProgram || !quadVao) {
+    for (const p of [accumProgram, blurProgram, contourBlurProgram, compositeProgram]) {
+      if (p) gl.deleteProgram(p);
+    }
     if (quadVao) gl.deleteVertexArray(quadVao);
     return null;
   }
@@ -173,6 +192,7 @@ export function createDensityResources(
   return {
     accumProgram,
     blurProgram,
+    contourBlurProgram,
     compositeProgram,
     accumLoc: {
       resolution: gl.getUniformLocation(accumProgram, 'u_resolution'),
@@ -184,12 +204,16 @@ export function createDensityResources(
       source: gl.getUniformLocation(blurProgram, 'u_source'),
       direction: gl.getUniformLocation(blurProgram, 'u_direction'),
     },
+    contourBlurLoc: {
+      source: gl.getUniformLocation(contourBlurProgram, 'u_source'),
+      direction: gl.getUniformLocation(contourBlurProgram, 'u_direction'),
+    },
     compositeLoc: {
       density: gl.getUniformLocation(compositeProgram, 'u_density'),
       alpha: gl.getUniformLocation(compositeProgram, 'u_densityAlpha'),
       scaler: gl.getUniformLocation(compositeProgram, 'u_densityScaler'),
       style: gl.getUniformLocation(compositeProgram, 'u_style'),
-      texel: gl.getUniformLocation(compositeProgram, 'u_texel'),
+      contourFloor: gl.getUniformLocation(compositeProgram, 'u_contourFloor'),
     },
     quadVao,
     accum: null,
@@ -245,6 +269,7 @@ export function destroyDensityResources(gl: WebGL2RenderingContext, res: Density
   gl.deleteVertexArray(res.quadVao);
   gl.deleteProgram(res.accumProgram);
   gl.deleteProgram(res.blurProgram);
+  gl.deleteProgram(res.contourBlurProgram);
   gl.deleteProgram(res.compositeProgram);
 }
 
@@ -267,6 +292,7 @@ export function accumulateAndBlurDensity(
   pointVao: WebGLVertexArrayObject | null,
   pointCount: number,
   camera: DensityCamera,
+  style: DensityLayerStyle,
 ): void {
   const { accum, ping, pong } = res;
   if (!accum || !ping || !pong) return;
@@ -293,21 +319,23 @@ export function accumulateAndBlurDensity(
 
   // Pass 2: separable gaussian, accum -> ping (x) -> pong (y).
   gl.disable(gl.BLEND);
-  gl.useProgram(res.blurProgram);
+  const isContour = style === 'contour';
+  const blurLoc = isContour ? res.contourBlurLoc : res.blurLoc;
+  gl.useProgram(isContour ? res.contourBlurProgram : res.blurProgram);
   gl.activeTexture(gl.TEXTURE0);
-  gl.uniform1i(res.blurLoc.source, 0);
+  gl.uniform1i(blurLoc.source, 0);
   gl.bindVertexArray(res.quadVao);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, ping.framebuffer);
   gl.viewport(0, 0, ping.width, ping.height);
   gl.bindTexture(gl.TEXTURE_2D, accum.texture);
-  gl.uniform2f(res.blurLoc.direction, 1 / accum.width, 0);
+  gl.uniform2f(blurLoc.direction, 1 / accum.width, 0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, pong.framebuffer);
   gl.viewport(0, 0, pong.width, pong.height);
   gl.bindTexture(gl.TEXTURE_2D, ping.texture);
-  gl.uniform2f(res.blurLoc.direction, 0, 1 / accum.height);
+  gl.uniform2f(blurLoc.direction, 0, 1 / accum.height);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 
   gl.bindVertexArray(null);
@@ -334,12 +362,10 @@ export function compositeDensity(
   gl.uniform1f(res.compositeLoc.alpha, params.alpha);
   gl.uniform1f(res.compositeLoc.scaler, params.scaler);
   gl.uniform1i(res.compositeLoc.style, style === 'contour' ? 1 : 0);
-  // Grid texels, not canvas texels. A pixel is a line pixel when its band
-  // differs from the band one tap away, so the drawn line is two tap offsets
-  // wide: this ties the line weight to the density grid (about 4 canvas px at
-  // dpr 1) rather than to the canvas resolution. The blurred field is bilinear,
-  // so any offset finds every band crossing; halving this thins the lines.
-  gl.uniform2f(res.compositeLoc.texel, 1 / pong.width, 1 / pong.height);
+  // Absolute, in blurred points per grid cell, so it does not move with the
+  // frame's scaler: below it the contour style draws nothing, which is what
+  // keeps a ring off an isolated point and dissolves the lines on zoom-in.
+  gl.uniform1f(res.compositeLoc.contourFloor, DENSITY_CONTOUR_FLOOR);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(res.quadVao);

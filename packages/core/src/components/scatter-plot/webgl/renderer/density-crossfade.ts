@@ -11,6 +11,16 @@
 const DENSITY_MIN_DENSITY = 1 / 32;
 /** The ramp saturates at (1 / DENSITY_SATURATION) = 5x the mean cell count. EA value. */
 const DENSITY_SATURATION = 0.2;
+/**
+ * The same midpoint for the CONTOUR style, which engages far earlier because it
+ * answers a different question. The heatmap replaces points the eye can no
+ * longer separate, so it waits for overplotting; contour lines sit over the
+ * points and only annotate them, so they are useful on the ~7.8K demo dataset
+ * at k = 1, where the mean density is about 1/185 points per CSS px^2 and the
+ * heatmap's 1/32 gives alpha 0. 1/1024 puts the fade midpoint two zoom steps
+ * above the default view, so the lines are solid at k = 1 and gone by k = 4.
+ */
+export const DENSITY_CONTOUR_MIN_DENSITY = 1 / 1024;
 
 export interface DensityFrameParams {
   /** 0 = layer skipped entirely, 1 = fully shown. */
@@ -36,6 +46,7 @@ export function densityFrameParams(
   viewDimensionCss: number,
   cellAreaCss: number,
   forceOn: boolean,
+  minDensity: number = DENSITY_MIN_DENSITY,
 ): DensityFrameParams {
   if (visibleCount <= 0 || k <= 0 || viewDimensionCss <= 0 || cellAreaCss <= 0) {
     return { alpha: 0, scaler: 0 };
@@ -44,8 +55,8 @@ export function densityFrameParams(
   const meanPointDensity = visibleCount / (k * k * viewDimensionCss * viewDimensionCss);
   const scaler = DENSITY_SATURATION / (meanPointDensity * cellAreaCss);
   if (forceOn) return { alpha: 1, scaler };
-  // The k at which meanPointDensity == DENSITY_MIN_DENSITY.
-  const threshold = Math.sqrt(visibleCount / DENSITY_MIN_DENSITY) / viewDimensionCss;
+  // The k at which meanPointDensity == minDensity.
+  const threshold = Math.sqrt(visibleCount / minDensity) / viewDimensionCss;
   const factor = (Math.min(Math.max((Math.log(k) - Math.log(threshold)) * 2, -1), 1) + 1) / 2;
   return { alpha: 1 - factor, scaler };
 }

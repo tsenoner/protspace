@@ -6,6 +6,11 @@ import {
   DENSITY_ACCUM_VERTEX_SHADER,
   DENSITY_BLUR_FRAGMENT_SHADER,
   DENSITY_COMPOSITE_FRAGMENT_SHADER,
+  DENSITY_CONTOUR_MIN_POINTS,
+  DENSITY_CONTOUR_FLOOR,
+  DENSITY_CONTOUR_SIGMA_GRID_PX,
+  DENSITY_CONTOUR_BLUR_RADIUS,
+  DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
 } from './density-shaders';
 import { POINT_VERTEX_SHADER } from './export-shaders';
 
@@ -36,6 +41,19 @@ describe('gaussianWeights', () => {
 describe('DENSITY_BLUR_FRAGMENT_SHADER', () => {
   it('bakes exactly one texture tap per kernel weight', () => {
     expect((DENSITY_BLUR_FRAGMENT_SHADER.match(/texture\(u_source/g) ?? []).length).toBe(13);
+  });
+
+  // The contour style needs a field smooth enough for a handful of nested rings
+  // rather than one loop per clump, and the heatmap needs the opposite, so the
+  // two sigmas cannot be the same constant. This is the guard on that split:
+  // a contour kernel that quietly narrows back to 13 taps brings the worms back.
+  it('bakes a second, three times wider kernel for the contour style', () => {
+    expect(DENSITY_CONTOUR_SIGMA_GRID_PX).toBe(3 * DENSITY_SIGMA_GRID_PX);
+    expect((DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER.match(/texture\(u_source/g) ?? []).length).toBe(
+      37,
+    );
+    // Same uniforms, so one pass sequence drives either program.
+    expect(DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER).toContain('uniform vec2 u_direction;');
   });
 });
 
@@ -81,34 +99,89 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
 
   // The heatmap branch is the shipped look; the contour branch is a second
   // reading of the same texture behind u_style, so the heatmap line above and
-  // the guard above it must survive unchanged when the branch is added.
-  it('quantises the ramped density into bands for the contour branch', () => {
+  // the guard above it must survive unchanged when the branch changes.
+  it('derives a continuous level field from the single bilinear fetch', () => {
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform int u_style;');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('float densityBand(vec2 uv)');
-    // One band per doubling of density, five octaves below the heatmap's
-    // saturation point, so band 1 starts at DENSITY_MIN_DENSITY. A linear or
-    // 1 - exp quantisation of the same ramp puts the whole saturated core in
-    // one band and draws no lines inside it; a wider span (10 octaves) fills
-    // the sparse fringe the heatmap leaves nearly transparent.
+    // One step per doubling above the floor, offset by half a step so the
+    // outermost ring sits inside the support and the floor cut trims nothing.
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain(
-      'float octaves = log2(max(n * u_densityScaler, 1e-6)) + 5.0;',
+      'float o = log2(max(n, 1e-8) / u_contourFloor) * 1.0 - 0.5;',
     );
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('return max(0.0, floor(octaves));');
+    // Absolute levels: the frame's scaler moves with zoom and would drag the
+    // rings with it, which is the opposite of the fade-on-zoom-in the floor buys.
+    const contour = DENSITY_COMPOSITE_FRAGMENT_SHADER.slice(
+      DENSITY_COMPOSITE_FRAGMENT_SHADER.indexOf('if (u_style == 1)'),
+      DENSITY_COMPOSITE_FRAGMENT_SHADER.indexOf('float alpha = clamp('),
+    );
+    expect(contour).not.toContain('u_densityScaler');
   });
 
-  // Four edge neighbours, one grid texel away, are what turn a band field into
-  // iso-lines. The drawn line is two tap offsets wide, so the grid texel ties
-  // the line weight to the density grid instead of to the canvas resolution;
-  // the blurred field is bilinear, so any offset still finds every crossing.
-  it('samples the four edge neighbours one grid texel away', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform vec2 u_texel;');
-    for (const tap of [
-      'densityBand(v_texCoord + vec2(u_texel.x, 0.0))',
-      'densityBand(v_texCoord - vec2(u_texel.x, 0.0))',
-      'densityBand(v_texCoord + vec2(0.0, u_texel.y))',
-      'densityBand(v_texCoord - vec2(0.0, u_texel.y))',
-    ]) {
-      expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain(tap);
-    }
+  // Screen-space width, not grid-space: fwidth is what keeps a line ~1 px at any
+  // zoom and any grid size. The 4-neighbour compare it replaces drew a strip two
+  // grid texels wide, so it fattened whenever the grid got coarser.
+  it('draws anti-aliased lines from fwidth and takes no neighbour taps', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('float w = fwidth(o);');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('min(f, 1.0 - f)');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).not.toContain('u_texel');
+    // One fetch for the whole shader.
+    expect((DENSITY_COMPOSITE_FRAGMENT_SHADER.match(/texture\(u_density/g) ?? []).length).toBe(1);
+  });
+
+  // Lines only. A fill would hide the points the layer is supposed to annotate,
+  // which is what the whole style change is about, and it is one `*` away from
+  // coming back by accident.
+  it('emits nothing but the line: alpha is the line times the cross-fade', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('float alpha = line * u_densityAlpha;');
+  });
+
+  // Three cuts, all needed: the floor keeps rings off isolated points, the
+  // ceiling stops a deep core silting up with micro-loops, the slope cut stops
+  // the log's unbounded gradient at the support rim smearing into a solid band.
+  it('cuts the line below the floor, past the top level, and where it cannot resolve', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform float u_contourFloor;');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('step(u_contourFloor, n)');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('step(o, 4.0)');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('step(w, 1.0)');
+  });
+});
+
+describe('DENSITY_CONTOUR_FLOOR', () => {
+  // The whole point of the floor: it is a point COUNT, not a fraction of the
+  // frame's scaler, so the shader can compare it against the blurred `n`.
+  // One point deposits 1.0 in one grid cell and the separable normalised kernel
+  // runs over it twice, so its peak is centreWeight^2.
+  it('is the blurred peak of DENSITY_CONTOUR_MIN_POINTS coincident points', () => {
+    const w0 = gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS)[
+      DENSITY_CONTOUR_BLUR_RADIUS
+    ]!;
+    expect(DENSITY_CONTOUR_FLOOR).toBeCloseTo(DENSITY_CONTOUR_MIN_POINTS * w0 * w0, 12);
+    expect(DENSITY_CONTOUR_MIN_POINTS).toBe(5);
+  });
+
+  // The mapping, evaluated in JS the way the shader evaluates it: a single point
+  // is below the floor at every zoom (that is what "no ring on a singleton"
+  // means), and a cluster deep enough to saturate still draws only 5 rings.
+  it('maps one point below the first ring and caps a deep core at 5 rings', () => {
+    const w0 = gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS)[
+      DENSITY_CONTOUR_BLUR_RADIUS
+    ]!;
+    // The shader's own arithmetic: level, then the cuts, then the integer
+    // crossings at or below it.
+    const rings = (points: number) => {
+      const n = points * w0 * w0;
+      if (n < DENSITY_CONTOUR_FLOOR) return 0;
+      const o = Math.log2(n / DENSITY_CONTOUR_FLOOR) * 1.0 - 0.5;
+      return o < 0 ? 0 : Math.min(Math.floor(o), 4) + 1;
+    };
+    // No ring on a singleton, or on a pair, at any zoom: the floor is absolute.
+    expect(rings(1)).toBe(0);
+    expect(rings(4)).toBe(0);
+    // The first ring sits half a level above the floor, at sqrt(2) x 5 points.
+    expect(rings(7)).toBe(0);
+    expect(rings(8)).toBe(1);
+    expect(rings(40)).toBe(3);
+    // 160 points is the deepest core that adds a ring; past it the ceiling holds.
+    expect(rings(160)).toBe(5);
+    expect(rings(1e6)).toBe(5);
   });
 });

@@ -48,7 +48,11 @@ import {
   type DensityCamera,
   type DensityResources,
 } from './density-pass';
-import { densityFrameParams, type DensityFrameParams } from './density-crossfade';
+import {
+  densityFrameParams,
+  DENSITY_CONTOUR_MIN_DENSITY,
+  type DensityFrameParams,
+} from './density-crossfade';
 
 /** Everything the three density passes need for one frame. */
 interface DensityFrame {
@@ -642,6 +646,7 @@ export class WebGLRenderer {
         this.resources.pointVao,
         this.currentPointCount,
         density.camera,
+        density.style,
       );
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
       gl.viewport(0, 0, framebuffer.width, framebuffer.height);
@@ -683,12 +688,14 @@ export class WebGLRenderer {
     const cellAreaCss =
       ((this.canvas.width / grid.width) * (this.canvas.height / grid.height)) /
       (this.dpr * this.dpr);
+    const style = config.densityStyle ?? DENSITY_STYLE_DEFAULT;
     const params = densityFrameParams(
       this.visibleCount,
       transform.k,
       viewDimensionCss,
       cellAreaCss,
       mode === 'on',
+      style === 'contour' ? DENSITY_CONTOUR_MIN_DENSITY : undefined,
     );
     if (params.alpha <= 0) return null;
 
@@ -705,7 +712,7 @@ export class WebGLRenderer {
         gamma: this.getEffectiveGamma(),
       },
       params,
-      style: config.densityStyle ?? DENSITY_STYLE_DEFAULT,
+      style,
     };
   }
 
