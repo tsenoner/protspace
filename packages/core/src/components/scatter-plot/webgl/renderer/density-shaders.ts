@@ -146,14 +146,20 @@ ${TAPS}
 
 /**
  * Contour style: how many bands sit between an empty cell and a fully opaque
- * fill, one band per doubling of density. So the bands span the 10 octaves
- * below the heatmap's saturation point (n * scaler = 1) and keep going above
- * it, which is what the flat pale core needs: a linear or 1 - exp quantisation
- * puts the whole core in the top band and draws no lines in it at all.
- * Embedding Atlas's 0.1 quantization step is 10 linear bands over the same
- * range; on their data the core does not saturate.
+ * fill, one band per doubling of density. So the bands span the 5 octaves below
+ * the heatmap's saturation point (n * scaler = 1) and keep going above it,
+ * which is what the flat pale core needs: a linear or 1 - exp quantisation puts
+ * the whole core in the top band and draws no lines in it at all. Embedding
+ * Atlas's 0.1 quantization step is 10 linear bands over the same range; on
+ * their data the core does not saturate.
+ *
+ * 5, not 10: band 1 starts at 1/32 of the saturation density, which is
+ * DENSITY_MIN_DENSITY, the density at which the auto cross-fade decides a view
+ * is overplotted at all. At 10 the fringe below that fell in bands 1 to 5 and
+ * every isolated point wore a half-opaque grey disc with a dark rim, where the
+ * heatmap gives it 0.03.
  */
-const DENSITY_CONTOUR_LEVELS = 10;
+const DENSITY_CONTOUR_LEVELS = 5;
 /**
  * Iso-line colour = the band's mean colour times this. Embedding Atlas draws on
  * black and lightens; ProtSpace is on white, so the line has to go the other way
@@ -195,18 +201,22 @@ void main() {
 
   if (u_style == 1) {
     float band = densityBand(v_texCoord);
-    float edge = 0.0;
-    edge += abs(band - densityBand(v_texCoord + vec2(u_texel.x, 0.0)));
-    edge += abs(band - densityBand(v_texCoord - vec2(u_texel.x, 0.0)));
-    edge += abs(band - densityBand(v_texCoord + vec2(0.0, u_texel.y)));
-    edge += abs(band - densityBand(v_texCoord - vec2(0.0, u_texel.y)));
+    float east = densityBand(v_texCoord + vec2(u_texel.x, 0.0));
+    float west = densityBand(v_texCoord - vec2(u_texel.x, 0.0));
+    float north = densityBand(v_texCoord + vec2(0.0, u_texel.y));
+    float south = densityBand(v_texCoord - vec2(0.0, u_texel.y));
+    float edge = abs(band - east) + abs(band - west) + abs(band - north) + abs(band - south);
     // Same n > 0.0 guard: outside the support mean is 0 and a line there would
     // be black, not "the mean colour darkened".
     float line = (n > 0.0 && edge > 0.0) ? 1.0 : 0.0;
-    // Fill at the band's own alpha, lines at the layer's full alpha, so both
-    // fade together with the cross-fade.
+    // Fill at the band's own alpha. A line takes the alpha of the DENSER of the
+    // two bands it separates, so rim lines are as faint as the fringe they
+    // outline and only the core draws at full strength; both still scale with
+    // u_densityAlpha, so the whole layer fades together with the cross-fade.
+    float outer = max(max(east, west), max(north, south));
     float bandAlpha = min(band / ${DENSITY_CONTOUR_LEVELS.toFixed(1)}, 1.0) * u_densityAlpha;
-    float alpha = mix(bandAlpha, u_densityAlpha, line);
+    float lineAlpha = min(max(band, outer) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)}, 1.0) * u_densityAlpha;
+    float alpha = mix(bandAlpha, lineAlpha, line);
     vec3 c = mix(mean, mean * ${DENSITY_CONTOUR_DARKEN.toFixed(2)}, line);
     fragColor = vec4(c * alpha, alpha);
     return;

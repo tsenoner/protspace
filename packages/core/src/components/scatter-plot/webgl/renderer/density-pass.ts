@@ -334,8 +334,11 @@ export function compositeDensity(
   gl.uniform1f(res.compositeLoc.alpha, params.alpha);
   gl.uniform1f(res.compositeLoc.scaler, params.scaler);
   gl.uniform1i(res.compositeLoc.style, style === 'contour' ? 1 : 0);
-  // Grid texels, not canvas texels: the contour taps have to step one density
-  // cell, or the lines come out as wide as the composite's linear upsample.
+  // Grid texels, not canvas texels. A pixel is a line pixel when its band
+  // differs from the band one tap away, so the drawn line is two tap offsets
+  // wide: this ties the line weight to the density grid (about 4 canvas px at
+  // dpr 1) rather than to the canvas resolution. The blurred field is bilinear,
+  // so any offset finds every band crossing; halving this thins the lines.
   gl.uniform2f(res.compositeLoc.texel, 1 / pong.width, 1 / pong.height);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

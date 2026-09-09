@@ -116,18 +116,36 @@ async function setDensity(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void
   await settle(page);
 }
 
-/** The frame as bytes, so two styles can be compared without a reference image. */
-async function frameSignature(page: Page): Promise<string> {
-  return page.evaluate(() => {
+/** RGBA of a centre block, so two styles can be compared without a reference image. */
+async function centreBlock(page: Page, half = 64): Promise<number[]> {
+  return page.evaluate((h) => {
     const plot = document.querySelector('#myPlot');
     const canvas = plot?.shadowRoot?.querySelector('canvas[data-key]') as HTMLCanvasElement | null;
-    if (!canvas) return '';
+    if (!canvas) return [];
     const copy = document.createElement('canvas');
     copy.width = canvas.width;
     copy.height = canvas.height;
-    copy.getContext('2d')?.drawImage(canvas, 0, 0);
-    return copy.toDataURL();
-  });
+    const ctx = copy.getContext('2d');
+    if (!ctx) return [];
+    ctx.drawImage(canvas, 0, 0);
+    const x = Math.max(0, Math.round(canvas.width / 2) - h);
+    const y = Math.max(0, Math.round(canvas.height / 2) - h);
+    return Array.from(ctx.getImageData(x, y, h * 2, h * 2).data);
+  }, half);
+}
+
+/** Pixels differing by more than a JPEG-ish tolerance on any channel. */
+function differingPixels(a: readonly number[], b: readonly number[]): number {
+  let differing = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    for (let c = 0; c < 4; c++) {
+      if (Math.abs(a[i + c] - b[i + c]) > 8) {
+        differing++;
+        break;
+      }
+    }
+  }
+  return differing;
 }
 
 test.describe('density layer pixels', () => {
@@ -199,25 +217,33 @@ test.describe('density layer pixels', () => {
     );
 
     const heatmapAlpha = await centreAlpha(page);
-    const heatmapFrame = await frameSignature(page);
+    const heatmapBlock = await centreBlock(page);
     expect(heatmapAlpha, 'canvas pixels not readable').toBeGreaterThan(0);
+    expect(heatmapBlock.length, 'canvas pixels not readable').toBeGreaterThan(0);
 
     await page.goto('/explore?density=contour-on');
     await dismissTourIfPresent(page);
     await waitForExploreDataLoad(page);
     await settle(page);
 
+    // The frame comparison first, and against a count rather than an inequality:
+    // a `not.toBe` on the whole frame passes on one stray pixel, and a select
+    // assertion placed above it would fail first and never exercise this at all.
+    // A heatmap frame compared with itself scores 0 here, so the threshold is
+    // what makes this test red when the style stops reaching the shader.
+    const contourBlock = await centreBlock(page);
+    const changed = differingPixels(heatmapBlock, contourBlock);
+    expect(changed, 'contour renders the same pixels as the heatmap').toBeGreaterThan(
+      heatmapBlock.length / 4 / 20,
+    );
+
+    const contourAlpha = await centreAlpha(page);
+    expect(contourAlpha, 'the contour layer added no coverage').toBeGreaterThan(0);
     expect(
       await page.locator('protspace-control-bar').evaluate((bar) => {
         const select = bar.shadowRoot?.querySelector('#density-layer-select');
         return (select as HTMLSelectElement | null)?.value ?? '';
       }),
     ).toBe('contour-on');
-
-    const contourAlpha = await centreAlpha(page);
-    expect(contourAlpha, 'the contour layer added no coverage').toBeGreaterThan(0);
-    expect(await frameSignature(page), 'contour renders the same pixels as the heatmap').not.toBe(
-      heatmapFrame,
-    );
   });
 });

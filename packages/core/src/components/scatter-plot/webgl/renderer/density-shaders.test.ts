@@ -85,18 +85,21 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
   it('quantises the ramped density into bands for the contour branch', () => {
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform int u_style;');
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('float densityBand(vec2 uv)');
-    // One band per doubling of density, ten octaves below the heatmap's
-    // saturation point. A linear or 1 - exp quantisation of the same ramp puts
-    // the whole saturated core in one band and draws no lines inside it.
+    // One band per doubling of density, five octaves below the heatmap's
+    // saturation point, so band 1 starts at DENSITY_MIN_DENSITY. A linear or
+    // 1 - exp quantisation of the same ramp puts the whole saturated core in
+    // one band and draws no lines inside it; a wider span (10 octaves) fills
+    // the sparse fringe the heatmap leaves nearly transparent.
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain(
-      'float octaves = log2(max(n * u_densityScaler, 1e-6)) + 10.0;',
+      'float octaves = log2(max(n * u_densityScaler, 1e-6)) + 5.0;',
     );
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('return max(0.0, floor(octaves));');
   });
 
   // Four edge neighbours, one grid texel away, are what turn a band field into
-  // iso-lines. Sampling at the canvas texel instead would draw lines two grid
-  // cells thick at the composite's linear upsample.
+  // iso-lines. The drawn line is two tap offsets wide, so the grid texel ties
+  // the line weight to the density grid instead of to the canvas resolution;
+  // the blurred field is bilinear, so any offset still finds every crossing.
   it('samples the four edge neighbours one grid texel away', () => {
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform vec2 u_texel;');
     for (const tap of [
