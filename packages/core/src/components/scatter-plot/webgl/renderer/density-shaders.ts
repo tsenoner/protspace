@@ -144,20 +144,74 @@ ${TAPS}
   fragColor = c;
 }`;
 
+/**
+ * Contour style: how many bands sit between an empty cell and a fully opaque
+ * fill, one band per doubling of density. So the bands span the 10 octaves
+ * below the heatmap's saturation point (n * scaler = 1) and keep going above
+ * it, which is what the flat pale core needs: a linear or 1 - exp quantisation
+ * puts the whole core in the top band and draws no lines in it at all.
+ * Embedding Atlas's 0.1 quantization step is 10 linear bands over the same
+ * range; on their data the core does not saturate.
+ */
+const DENSITY_CONTOUR_LEVELS = 10;
+/**
+ * Iso-line colour = the band's mean colour times this. Embedding Atlas draws on
+ * black and lightens; ProtSpace is on white, so the line has to go the other way
+ * to read at all against its own fill.
+ */
+const DENSITY_CONTOUR_DARKEN = 0.45;
+
 export const DENSITY_COMPOSITE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_density;   // blurred: rgb = sum(linear colour), a = smoothed count
 uniform float u_densityAlpha;
 uniform float u_densityScaler;
+uniform int u_style;           // 0 = heatmap, 1 = contour
+uniform vec2 u_texel;          // one density GRID texel in uv: (1/gridW, 1/gridH)
 
 in vec2 v_texCoord;
 out vec4 fragColor;
+
+/*
+ * Band index of one grid cell. The contour branch reads it at the centre and at
+ * the four edge neighbours; a line is where they disagree.
+ *
+ * log2, not the heatmap's clamp(n * scaler): the ramp saturates the whole core
+ * to 1 by design, so a linear quantisation of it draws every line around the
+ * rim and none inside. One band per doubling of density has no ceiling, and the
+ * epsilon floors the empty fringe at band 0 instead of log2(0).
+ */
+float densityBand(vec2 uv) {
+  float n = texture(u_density, uv).a;
+  float octaves = log2(max(n * u_densityScaler, 1e-6)) + ${DENSITY_CONTOUR_LEVELS.toFixed(1)};
+  return max(0.0, floor(octaves));
+}
 
 void main() {
   vec4 d = texture(u_density, v_texCoord);       // LINEAR upsample from the grid
   float n = d.a;
   vec3 mean = n > 0.0 ? d.rgb / n : vec3(0.0);   // kernel-weighted mean colour, 0/0 guarded
+
+  if (u_style == 1) {
+    float band = densityBand(v_texCoord);
+    float edge = 0.0;
+    edge += abs(band - densityBand(v_texCoord + vec2(u_texel.x, 0.0)));
+    edge += abs(band - densityBand(v_texCoord - vec2(u_texel.x, 0.0)));
+    edge += abs(band - densityBand(v_texCoord + vec2(0.0, u_texel.y)));
+    edge += abs(band - densityBand(v_texCoord - vec2(0.0, u_texel.y)));
+    // Same n > 0.0 guard: outside the support mean is 0 and a line there would
+    // be black, not "the mean colour darkened".
+    float line = (n > 0.0 && edge > 0.0) ? 1.0 : 0.0;
+    // Fill at the band's own alpha, lines at the layer's full alpha, so both
+    // fade together with the cross-fade.
+    float bandAlpha = min(band / ${DENSITY_CONTOUR_LEVELS.toFixed(1)}, 1.0) * u_densityAlpha;
+    float alpha = mix(bandAlpha, u_densityAlpha, line);
+    vec3 c = mix(mean, mean * ${DENSITY_CONTOUR_DARKEN.toFixed(2)}, line);
+    fragColor = vec4(c * alpha, alpha);
+    return;
+  }
+
   float alpha = clamp(n * u_densityScaler, 0.0, 1.0) * u_densityAlpha;
   // Premultiplied linear, the same convention POINT_FRAGMENT_SHADER writes.
   fragColor = vec4(mean * alpha, alpha);

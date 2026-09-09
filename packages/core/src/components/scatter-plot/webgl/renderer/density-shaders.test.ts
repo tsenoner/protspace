@@ -78,4 +78,34 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
   it('writes premultiplied linear colour', () => {
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('fragColor = vec4(mean * alpha, alpha);');
   });
+
+  // The heatmap branch is the shipped look; the contour branch is a second
+  // reading of the same texture behind u_style, so the heatmap line above and
+  // the guard above it must survive unchanged when the branch is added.
+  it('quantises the ramped density into bands for the contour branch', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform int u_style;');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('float densityBand(vec2 uv)');
+    // One band per doubling of density, ten octaves below the heatmap's
+    // saturation point. A linear or 1 - exp quantisation of the same ramp puts
+    // the whole saturated core in one band and draws no lines inside it.
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain(
+      'float octaves = log2(max(n * u_densityScaler, 1e-6)) + 10.0;',
+    );
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('return max(0.0, floor(octaves));');
+  });
+
+  // Four edge neighbours, one grid texel away, are what turn a band field into
+  // iso-lines. Sampling at the canvas texel instead would draw lines two grid
+  // cells thick at the composite's linear upsample.
+  it('samples the four edge neighbours one grid texel away', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform vec2 u_texel;');
+    for (const tap of [
+      'densityBand(v_texCoord + vec2(u_texel.x, 0.0))',
+      'densityBand(v_texCoord - vec2(u_texel.x, 0.0))',
+      'densityBand(v_texCoord + vec2(0.0, u_texel.y))',
+      'densityBand(v_texCoord - vec2(0.0, u_texel.y))',
+    ]) {
+      expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain(tap);
+    }
+  });
 });

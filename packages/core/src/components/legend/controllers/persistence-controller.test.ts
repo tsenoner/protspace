@@ -30,6 +30,7 @@ vi.mock('@protspace/utils', () => ({
   },
   NA_VALUE: '__NA__',
   DENSITY_DEFAULT: 'off',
+  DENSITY_STYLE_DEFAULT: 'heatmap',
   NA_DISPLAY: 'N/A',
   isNAValue: (value: unknown) => value === '__NA__',
 }));

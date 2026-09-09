@@ -9,7 +9,13 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
+import {
+  DENSITY_STYLE_DEFAULT,
+  type DensityLayerStyle,
+  type PlotData,
+  type PlotDataPoint,
+  type ScatterplotConfig,
+} from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -49,6 +55,7 @@ interface DensityFrame {
   res: DensityResources;
   camera: DensityCamera;
   params: DensityFrameParams;
+  style: DensityLayerStyle;
 }
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
@@ -698,6 +705,7 @@ export class WebGLRenderer {
         gamma: this.getEffectiveGamma(),
       },
       params,
+      style: config.densityStyle ?? DENSITY_STYLE_DEFAULT,
     };
   }
 
@@ -708,7 +716,7 @@ export class WebGLRenderer {
   private compositeDensity(density: DensityFrame) {
     const gl = this.gl;
     if (!gl) return;
-    compositeDensity(gl, density.res, density.params);
+    compositeDensity(gl, density.res, density.params, density.style);
     // Uniforms are per-program and survive the detour, so re-binding is enough.
     gl.useProgram(this.resources.pointProgram);
     gl.bindVertexArray(this.resources.pointVao);

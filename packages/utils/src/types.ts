@@ -232,9 +232,20 @@ export interface ScatterplotConfig {
    * Default: 'off'.
    */
   densityLayer?: DensityLayerMode;
+  /**
+   * How the blurred density is drawn once `densityLayer` decides it shows at
+   * all. `heatmap` is the smooth ramp; `contour` quantises it into bands and
+   * outlines them with iso-lines. The mode logic, including the `auto`
+   * cross-fade, is identical either way.
+   *
+   * Default: 'heatmap'.
+   */
+  densityStyle?: DensityLayerStyle;
 }
 
 export type DensityLayerMode = 'off' | 'auto' | 'on';
+
+export type DensityLayerStyle = 'heatmap' | 'contour';
 
 /**
  * The one spelling of the density layer's default mode: `DEFAULT_CONFIG`, the
@@ -242,6 +253,9 @@ export type DensityLayerMode = 'off' | 'auto' | 'on';
  * so flipping the default is a one-line change here.
  */
 export const DENSITY_DEFAULT: DensityLayerMode = 'off';
+
+/** The one spelling of the density layer's default style. See DENSITY_DEFAULT. */
+export const DENSITY_STYLE_DEFAULT: DensityLayerStyle = 'heatmap';
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
 

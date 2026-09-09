@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
-import type { DensityLayerMode } from '@protspace/utils';
+import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
 import type { ScalePair } from '../types';
 import type { GLResources } from './gl-resources';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
@@ -14,7 +14,12 @@ const scales = (): ScalePair => ({
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
 
-type Config = { width: number; height: number; densityLayer?: DensityLayerMode };
+type Config = {
+  width: number;
+  height: number;
+  densityLayer?: DensityLayerMode;
+  densityStyle?: DensityLayerStyle;
+};
 
 function setup(
   config: Config,
@@ -120,6 +125,35 @@ describe('density layer, on', () => {
     // Two blur passes, the composite, and the gamma quad. The mock's TRIANGLES
     // constant is not asserted; the 6-vertex count is what identifies a quad.
     expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(4);
+    on.renderer.destroy();
+  });
+
+  // The contour style is a branch inside the composite shader, not a fourth
+  // pass: if it ever grows its own draw, this count moves off 4 and the seam
+  // (base points, composite, selected points) has silently changed shape.
+  it('sets the contour style uniform without adding a pass', () => {
+    const on = setup({ width: 800, height: 600, densityLayer: 'on', densityStyle: 'contour' });
+    vi.spyOn(on.gl, 'getUniformLocation').mockImplementation(((_p: unknown, name: unknown) => ({
+      name,
+    })) as never);
+    const uniform1i = vi.spyOn(on.gl, 'uniform1i');
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(plotData(50));
+
+    expect(uniform1i.mock.calls).toContainEqual([{ name: 'u_style' }, 1]);
+    expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(4);
+    on.renderer.destroy();
+  });
+
+  it('leaves the style uniform at 0 for the heatmap', () => {
+    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
+    vi.spyOn(on.gl, 'getUniformLocation').mockImplementation(((_p: unknown, name: unknown) => ({
+      name,
+    })) as never);
+    const uniform1i = vi.spyOn(on.gl, 'uniform1i');
+    on.renderer.render(plotData(50));
+
+    expect(uniform1i.mock.calls).toContainEqual([{ name: 'u_style' }, 0]);
     on.renderer.destroy();
   });
 

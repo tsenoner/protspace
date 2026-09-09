@@ -10,6 +10,7 @@
  * reads (about 1 MB at 1080p, 4 MB at retina).
  */
 
+import type { DensityLayerStyle } from '@protspace/utils';
 import { createProgramFromSources } from '../shader-utils';
 import type { DensityFrameParams } from './density-crossfade';
 import {
@@ -52,6 +53,8 @@ export interface DensityResources {
     density: WebGLUniformLocation | null;
     alpha: WebGLUniformLocation | null;
     scaler: WebGLUniformLocation | null;
+    style: WebGLUniformLocation | null;
+    texel: WebGLUniformLocation | null;
   };
   /** a_position over the renderer's existing quad buffer, so the composite never
    *  touches attribute state while the point VAO is bound mid-draw. */
@@ -185,6 +188,8 @@ export function createDensityResources(
       density: gl.getUniformLocation(compositeProgram, 'u_density'),
       alpha: gl.getUniformLocation(compositeProgram, 'u_densityAlpha'),
       scaler: gl.getUniformLocation(compositeProgram, 'u_densityScaler'),
+      style: gl.getUniformLocation(compositeProgram, 'u_style'),
+      texel: gl.getUniformLocation(compositeProgram, 'u_texel'),
     },
     quadVao,
     accum: null,
@@ -317,6 +322,7 @@ export function compositeDensity(
   gl: WebGL2RenderingContext,
   res: DensityResources,
   params: DensityFrameParams,
+  style: DensityLayerStyle,
 ): void {
   const { pong } = res;
   if (!pong) return;
@@ -327,6 +333,10 @@ export function compositeDensity(
   gl.uniform1i(res.compositeLoc.density, 0);
   gl.uniform1f(res.compositeLoc.alpha, params.alpha);
   gl.uniform1f(res.compositeLoc.scaler, params.scaler);
+  gl.uniform1i(res.compositeLoc.style, style === 'contour' ? 1 : 0);
+  // Grid texels, not canvas texels: the contour taps have to step one density
+  // cell, or the lines come out as wide as the composite's linear upsample.
+  gl.uniform2f(res.compositeLoc.texel, 1 / pong.width, 1 / pong.height);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(res.quadVao);
