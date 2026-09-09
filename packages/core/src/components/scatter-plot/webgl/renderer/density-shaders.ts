@@ -171,11 +171,11 @@ export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
 );
 
 /*
- * Contour style v2: iso-LINES, no fill.
+ * Contour style v2: iso-lines over a stacked translucent fill.
  *
- * Points draw underneath and the selection above; the layer contributes only
- * thin lines, so the picture stays the scatter plot with its density annotated,
- * the way Embedding Atlas draws it. The heatmap style (u_style == 0) is
+ * Points draw underneath and the selection above; the layer contributes thin
+ * lines and, inside them, one pale coat per enclosing ring, so the picture stays
+ * the scatter plot with its density annotated, the way Embedding Atlas draws it. The heatmap style (u_style == 0) is
  * untouched by everything below.
  *
  * The level field is continuous, one step per doubling of density above the
@@ -241,10 +241,10 @@ const DENSITY_CONTOUR_LIGHTEN = 0.35;
 /**
  * Opacity of one fill coat. Every ring a pixel sits inside lays down one coat of
  * the line colour, so the fringe band is one coat pale and the core five coats
- * deep, the way overlapping translucent filled contours mix. 0.1 keeps the
- * points readable through the deepest core (five coats = 0.41).
+ * deep, the way overlapping translucent filled contours mix. 0.2 leaves the
+ * core two-thirds covered (five coats = 0.67), which the user asked for.
  */
-const DENSITY_CONTOUR_FILL_ALPHA = 0.1;
+const DENSITY_CONTOUR_FILL_ALPHA = 0.2;
 /**
  * Levels per device pixel past which a line cannot be resolved. Above it the
  * ramp would smear into a solid band, which is exactly what the log of a field
