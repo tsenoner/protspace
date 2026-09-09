@@ -60,6 +60,8 @@ describe('loadDefaultDataset when the demo bundle cannot be fetched', () => {
     expect(setCurrentDatasetIsDemo).not.toHaveBeenCalled();
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(loadFromFile).not.toHaveBeenCalled();
+    // Rooted at the app base so /explore/ (trailing slash) still finds it.
+    expect(fetch).toHaveBeenCalledWith('/data.parquetbundle');
     expect(registerFileLoad).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledTimes(1);
     expect(mocks.error.mock.calls[0]?.[0]).toMatchObject({

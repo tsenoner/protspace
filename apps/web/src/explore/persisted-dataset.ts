@@ -50,7 +50,10 @@ export function createPersistedDatasetController({
     try {
       console.log('Loading data from data.parquetbundle...');
 
-      const response = await fetch('./data.parquetbundle');
+      // Rooted at the app base, not the current route: a relative URL under
+      // /explore/ (trailing slash) resolves to /explore/data.parquetbundle, which
+      // the SPA fallback answers with index.html and the demo never loads.
+      const response = await fetch(`${import.meta.env.BASE_URL}data.parquetbundle`);
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
