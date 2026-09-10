@@ -227,17 +227,19 @@ const DENSITY_CONTOUR_LEVELS = 4;
 const DENSITY_CONTOUR_SPACING = 1.0;
 /**
  * Half-width, in device px, of the smoothstep ramp on either side of a level
- * crossing, so a line is about 2 x this wide. 0.6 read as a hairline at dpr 2;
- * the user asked for a bit thicker, so 0.9 (about 2 device px).
+ * crossing, so a line is about 2 x this wide. 0.6 read as a hairline at dpr 2 and
+ * 0.9 still read thin; 2 (about 4 device px) gives the contour rings real weight.
  */
-const DENSITY_CONTOUR_LINE_PX = 0.9;
+const DENSITY_CONTOUR_LINE_PX = 2;
 /**
- * The line is the mean point colour mixed this far toward white. The user wants
- * the ring to read as "the points' colour, a bit lighter", like Embedding Atlas
- * (which lightens on black); darkening (the earlier 0.35 multiplier) turned
- * every ring near-black on white and lost the category hue.
+ * The line and fill are the mean point colour mixed this far toward white. The
+ * user wants the ring to read as "the points' colour, a bit lighter", like
+ * Embedding Atlas (which lightens on black); darkening (the earlier 0.35
+ * multiplier) turned every ring near-black on white and lost the category hue.
+ * 0.35 washed the hue out toward grey, so 0.15 keeps the rings close to the
+ * points' own colour.
  */
-const DENSITY_CONTOUR_LIGHTEN = 0.35;
+const DENSITY_CONTOUR_LIGHTEN = 0.15;
 /**
  * Fill opacity of the band just inside the outermost ring and of the core inside
  * the last ring; the bands between step linearly from one to the other, so the
