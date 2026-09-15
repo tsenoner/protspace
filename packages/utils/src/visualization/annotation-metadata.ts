@@ -422,14 +422,10 @@ export function annotationLabel(column: string, annotation?: Pick<Annotation, 'r
 /**
  * Whether an annotation should be offered for a search query.
  *
- * The query matches a substring of the displayed label, or the start of one of the
- * words in the column name. The asymmetry is deliberate: a column name is a machine
- * identifier built by joining words, so a mid-word hit in it is almost always an
- * accident — searching `ted` used to return every `predicted_*` column, none of which
- * shows the letters "ted" anywhere on screen. A label is prose the reader is looking
- * at, so a mid-word hit there is what they meant (`cellular` → `Subcellular location`).
- *
- * Shared so that every annotation picker agrees on what a query means.
+ * Matches a substring of the displayed label, or the query starting at a word
+ * boundary of the column name (both split on `_`/`-`). The asymmetry keeps
+ * `ted` out of every `predicted_*` column — none of which shows those letters —
+ * while `predicted_membrane` still finds itself.
  */
 export function annotationMatchesQuery(
   column: string,
@@ -441,10 +437,10 @@ export function annotationMatchesQuery(
 
   if (annotationLabel(column, annotation).toLowerCase().includes(needle)) return true;
 
-  return column
-    .toLowerCase()
-    .split(/[_-]+/)
-    .some((word) => word.startsWith(needle));
+  // Compare word-wise so a separator in the query still lines up, and so a
+  // match can only begin where a word does.
+  const words = (value: string) => value.toLowerCase().replace(/[_-]+/g, ' ');
+  return ` ${words(column)}`.includes(` ${words(needle)}`);
 }
 
 /** Source/group for an annotation (registry source, else `Other`). */

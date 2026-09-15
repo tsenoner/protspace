@@ -76,12 +76,13 @@ accessible and dismissable, and SHALL be absent when there is no description and
 - **WHEN** a documentation popover is open and the user presses Escape or clicks outside it
 - **THEN** the popover closes
 
-### Requirement: Annotation search matches displayed text or a column-name word
+### Requirement: Annotation search matches a label substring or a column-name word
 
 Every annotation picker SHALL match a search query against an annotation when the query is a
-substring of that annotation's displayed label, or a prefix of one of the words in its column
-name, and SHALL NOT match on an arbitrary substring of the column name. All annotation pickers
-SHALL apply this same rule.
+substring of that annotation's label, or begins at a word boundary of its column name, and
+SHALL NOT match on an arbitrary substring of the column name. A column SHALL remain findable
+by its own full name, separators included. All annotation pickers SHALL apply this same rule,
+through one shared implementation.
 
 #### Scenario: A query does not match the middle of a column name
 
@@ -95,6 +96,11 @@ SHALL apply this same rule.
 
 - **WHEN** the reader searches for `predicted`
 - **THEN** every `predicted_*` annotation is offered
+
+#### Scenario: A column is findable by its own full name
+
+- **WHEN** the reader types a complete column name such as `predicted_membrane`
+- **THEN** that annotation is offered, the separator notwithstanding
 
 #### Scenario: A partial word of a label still matches
 
