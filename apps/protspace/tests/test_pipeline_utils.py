@@ -1,5 +1,6 @@
 """Tests for pipeline utility functions."""
 
+import logging
 from collections import Counter
 from unittest.mock import patch
 
@@ -750,6 +751,87 @@ class TestLegacyTedLabelMigration:
 
         assert _migrate_legacy_ted_labels(df) is True
         assert df.loc[0, "ted_domains"] == "-|94.2;1.10.10.10|88.0;-|96.7"
+
+
+# ---------------------------------------------------------------------------
+# complete annotation cache
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteAnnotationCache:
+    def test_fills_only_missing_cached_lengths_from_fasta(self, tmp_path):
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n>cached_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        cached = pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                },
+                {
+                    "identifier": "cached_protein",
+                    "length": "110",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                },
+            ]
+        )
+        cached.to_parquet(cache_path, index=False)
+        embedding_set = _make_es(
+            "test", ["custom_protein", "cached_protein"], fasta_path=fasta_path
+        )
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8", "110"]
+        assert pd.read_parquet(cache_path)["length"].tolist() == ["", "110"]
+
+    def test_still_warns_when_every_cached_annotation_is_empty(self, tmp_path, caplog):
+        """The FASTA length fallback must not mask a wholly empty cache."""
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                }
+            ]
+        ).to_parquet(cache_path, index=False)
+        embedding_set = _make_es("test", ["custom_protein"], fasta_path=fasta_path)
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8"]
+        assert "All cached annotations are empty" in caplog.text
 
 
 # ---------------------------------------------------------------------------

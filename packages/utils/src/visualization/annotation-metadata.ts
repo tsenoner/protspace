@@ -146,7 +146,7 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Sequence length',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Length of the protein sequence in amino acids.',
+    description: 'UniProt sequence length, or a matching local FASTA length when missing.',
     docsUrl: docs('length'),
   },
   protein_existence: {

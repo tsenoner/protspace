@@ -38,10 +38,29 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.annotations.transformers.transformer import AnnotationTransformer
+from protspace.data.io.fasta import count_residues
 from protspace.data.io.formatters import DataFormatter
 from protspace.data.io.writers import AnnotationWriter
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_fasta_sequence_length(
+    identifier: str,
+    length: str,
+    sequences: dict[str, str],
+) -> str:
+    """Return a FASTA-derived residue count, or *length* if none can be derived.
+
+    Callers filter out non-empty lengths first: a UniProt length always wins.
+    A sequence made up entirely of ``*``/``-`` markers has no residues, so it
+    yields no usable length either and *length* is returned unchanged.
+    """
+    sequence = sequences.get(identifier)
+    if not sequence:
+        return length
+    residues = count_residues(sequence)
+    return str(residues) if residues > 0 else length
 
 
 class ProteinAnnotationManager:
@@ -144,6 +163,7 @@ class ProteinAnnotationManager:
             if self.sources_to_fetch["uniprot"]
             else cached_uniprot
         )
+        uniprot_annotations = self._fill_missing_fasta_lengths(uniprot_annotations)
         taxonomy_annotations = (
             self._fetch_taxonomy(uniprot_annotations, failed_sources)
             if self.sources_to_fetch["taxonomy"]
@@ -190,6 +210,12 @@ class ProteinAnnotationManager:
         ):
             df = self._save_and_load(transformed_annotations)
         else:
+            if self.output_path and self.uniprot_fetch_failed:
+                logger.warning(
+                    "Not writing the annotation cache at %s: the UniProt request "
+                    "failed, so any existing cache is left in place.",
+                    self.output_path,
+                )
             df = DataFormatter.to_dataframe(transformed_annotations)
 
         # 5. Remove internal-only columns from final output
@@ -214,6 +240,55 @@ class ProteinAnnotationManager:
 
         return df
 
+    def _fill_missing_fasta_lengths(
+        self, proteins: list[ProteinAnnotations]
+    ) -> list[ProteinAnnotations]:
+        """Fill empty sequence lengths from matching local FASTA sequences.
+
+        Rows that need no fallback are returned untouched; a filled row is
+        returned as a copy so the fallback can never leak into a retriever's or
+        the cache DataFrame's own dicts.
+        """
+        if not proteins or not self.sequences:
+            return proteins
+
+        filled = False
+        key_missing = False
+        result = []
+        for protein in proteins:
+            annotations = protein.annotations
+            length = annotations.get("length", "")
+            if "length" not in annotations:
+                key_missing = True
+            if length:
+                result.append(protein)
+                continue
+            resolved = resolve_fasta_sequence_length(
+                protein.identifier, length, self.sequences
+            )
+            if not resolved:
+                result.append(protein)
+                continue
+            filled = True
+            result.append(
+                protein._replace(annotations={**annotations, "length": resolved})
+            )
+
+        if not filled:
+            return proteins
+        if not key_missing:
+            return result
+
+        # Downstream formatters derive their columns from the first row, so a
+        # "length" key added to only some rows would be dropped (or silently
+        # blanked) depending on row order. Keep the key on every row.
+        return [
+            protein
+            if "length" in protein.annotations
+            else protein._replace(annotations={**protein.annotations, "length": ""})
+            for protein in result
+        ]
+
     def _fetch_uniprot(self, failed_sources: list) -> list[ProteinAnnotations]:
         """Fetch UniProt annotations."""
         try:
@@ -226,7 +301,6 @@ class ProteinAnnotationManager:
             self.uniprot_fetch_failed = True
             failed_sources.append(f"UniProt ({str(e)})")
             logger.warning(f"Failed to retrieve UniProt annotations: {e}")
-            # Create minimal annotation set with just identifiers
             return [
                 ProteinAnnotations(
                     identifier=header, annotations={TAXONOMY_LOOKUP_ANNOTATION: ""}

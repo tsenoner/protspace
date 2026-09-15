@@ -439,6 +439,78 @@ class TestUniProtTransformer:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
+    @pytest.mark.parametrize(
+        "uniprot_length,sequence,expected",
+        [
+            ("", "MPEPTIDE", "8"),  # missing length is filled from the FASTA
+            ("110", "MPEPTIDE", "110"),  # a non-empty UniProt length wins
+            ("", "M-PEP*", "4"),  # '-' gaps and '*' terminators are not residues
+            ("", "---***", ""),  # a marker-only sequence has no residues to use
+        ],
+    )
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_fasta_sequence_length_fallback(
+        self, mock_uniprot_retriever, uniprot_length, sequence, expected
+    ):
+        mock_uniprot_retriever.return_value.failed_batch_count = 0
+        mock_uniprot_retriever.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="custom_protein",
+                annotations={"length": uniprot_length},
+            )
+        ]
+        extractor = ProteinAnnotationExtractor(
+            headers=["custom_protein"],
+            annotations=["length"],
+            sequences={"custom_protein": sequence},
+        )
+
+        result = extractor.to_pd()
+
+        assert result.loc[0, "length"] == expected
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_retains_length_column_when_uniprot_request_fails(
+        self, mock_uniprot_retriever
+    ):
+        mock_uniprot_retriever.return_value.fetch_annotations.side_effect = (
+            RuntimeError("offline")
+        )
+        extractor = ProteinAnnotationExtractor(
+            headers=["no_sequence", "custom_protein"],
+            annotations=["length"],
+            sequences={"custom_protein": "MPEPTIDE"},
+        )
+
+        result = extractor.to_pd()
+
+        assert result["length"].tolist() == ["", "8"]
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_does_not_cache_annotations_when_uniprot_request_fails(
+        self, mock_uniprot_retriever, tmp_path
+    ):
+        """A failed fetch must not overwrite the annotation cache.
+
+        Persisting all-empty failure rows would make the next run see nothing
+        missing and serve empty annotations from the cache instead of
+        re-fetching.
+        """
+        mock_uniprot_retriever.return_value.fetch_annotations.side_effect = (
+            RuntimeError("offline")
+        )
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationExtractor(
+            headers=["custom_protein"],
+            annotations=["length"],
+            output_path=cache_path,
+            preserve_existing_cache_on_uniprot_failure=True,
+        ).to_pd()
+
+        assert not cache_path.exists()
+        assert result["identifier"].tolist() == ["custom_protein"]
+
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_cached_signal_peptide_states_survive_uniprot_refetch(
         self, mock_uniprot_retriever

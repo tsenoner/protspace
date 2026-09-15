@@ -209,6 +209,43 @@ def test_embed_cli_rejects_unknown_backend(tmp_path):
     assert result.exit_code != 0
 
 
+def test_prepare_directory_h5_attaches_fasta_to_embedding_set(tmp_path, monkeypatch):
+    h5_dir = tmp_path / "embeddings"
+    h5_dir.mkdir()
+    with h5py.File(h5_dir / "model.h5", "w") as h5_file:
+        h5_file.attrs["model_name"] = "prot_t5"
+        h5_file.create_dataset("custom_protein", data=np.ones(4, dtype=np.float32))
+
+    fasta = tmp_path / "input.fasta"
+    fasta.write_text(">custom_protein\nMPEPTIDE\n")
+    captured = {}
+
+    def capture_run(self, embedding_sets):
+        captured["fasta_path"] = embedding_sets[0].fasta_path
+        return self.config.output_path
+
+    monkeypatch.setattr(
+        "protspace.data.processors.pipeline.ReductionPipeline.run", capture_run
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            str(h5_dir),
+            "-f",
+            str(fasta),
+            "-o",
+            str(tmp_path / "out"),
+            "--no-log",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["fasta_path"] == fasta
+
+
 def test_embed_cli_continues_after_a_failing_model(tmp_path, monkeypatch):
     """One model failing must not abandon the models that follow it.
 

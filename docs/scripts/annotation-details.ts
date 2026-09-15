@@ -94,7 +94,7 @@ export const ANNOTATION_DETAILS: Record<string, AnnotationDetail> = {
   },
   length: {
     detailsMarkdown:
-      "This is the number of amino acid residues in the entry's canonical sequence and is the most direct measure of protein size. Values are positive integers, ranging from a few dozen residues for short peptides to tens of thousands for the largest proteins such as titin. Because sequence length influences how a pLM pools its per-residue representation, colouring by length can reveal whether apparent embedding structure tracks protein size. See [UniProt: Sequences](https://www.uniprot.org/help/sequences).",
+      "When UniProt provides a length, this is the number of amino acid residues in the entry's canonical sequence. If UniProt does not provide a length and a matching FASTA sequence is available, ProtSpace derives the value from that local sequence, excluding `*` terminator and `-` gap markers; a non-empty UniProt length always takes precedence. Values are positive integers, ranging from a few dozen residues for short peptides to tens of thousands for the largest proteins such as titin. Because sequence length influences how a pLM pools its per-residue representation, colouring by length can reveal whether apparent embedding structure tracks protein size. See [UniProt: Sequences](https://www.uniprot.org/help/sequences).",
     sourceUrl: 'https://www.uniprot.org/help/sequences',
   },
   protein_existence: {
