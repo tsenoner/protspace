@@ -505,7 +505,6 @@ class TestIntegration:
             headers=["custom_protein"],
             annotations=["length"],
             output_path=cache_path,
-            preserve_existing_cache_on_uniprot_failure=True,
         ).to_pd()
 
         assert not cache_path.exists()
@@ -1356,3 +1355,136 @@ class TestStripScores:
         assert result["go_bp"].iloc[0] == "apoptotic process;signal transduction"
         assert result["go_mf"].iloc[0] == "kinase activity;ATP binding"
         assert result["go_cc"].iloc[0] == "cytoplasm;nucleus"
+
+
+class TestUniProtFailureCacheWrite:
+    """A UniProt retrieval that lost batches must not persist its empty rows."""
+
+    @staticmethod
+    def _retriever(failed_batches: int):
+        retriever = Mock()
+        retriever.failed_batch_count = failed_batches
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+            )
+        ]
+        return retriever
+
+    @patch("src.protspace.data.annotations.manager.TedRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_a_failed_source_is_dropped_without_discarding_the_others(
+        self, mock_uniprot, mock_ted, tmp_path
+    ):
+        """One flaky source must not cost the expensive one its cache.
+
+        TED failing should not throw away a completed UniProt fetch: the next
+        run then refetches only TED, because the column-based completeness
+        check sees exactly that column missing.
+        """
+        retriever = self._retriever(failed_batches=0)
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={**dict.fromkeys(UNIPROT_ANNOTATIONS, ""), "length": "110"},
+            )
+        ]
+        mock_uniprot.return_value = retriever
+        mock_ted.return_value.failed_lookup_count = 3
+        mock_ted.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(identifier="P01308", annotations={"ted_domains": ""})
+        ]
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationManager(
+            headers=["P01308"],
+            annotations=["length", "ted_domains"],
+            output_path=cache_path,
+        ).to_pd()
+
+        cached = pd.read_parquet(cache_path)
+        assert "length" in cached.columns, "a completed source must still be cached"
+        assert "ted_domains" not in cached.columns, "a failed source must not be"
+        # The run itself still reports everything it fetched.
+        assert result["length"].tolist() == ["110"]
+
+    @patch("src.protspace.data.annotations.manager.TedRetriever")
+    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_dropping_uniprot_also_drops_the_taxonomy_it_keys(
+        self, mock_uniprot, mock_taxonomy, mock_ted, tmp_path
+    ):
+        """Cached taxonomy is read back through UniProt's organism_id.
+
+        Caching taxonomy without it leaves a cache the next run reads as
+        complete (the taxonomy columns are all there) and cannot resolve, so
+        every requested rank silently vanishes from that run's output.
+        """
+        retriever = self._retriever(failed_batches=1)
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={
+                    **dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                    "organism_id": "9606",
+                },
+            )
+        ]
+        mock_uniprot.return_value = retriever
+        mock_taxonomy.return_value.failed_batch_count = 0
+        mock_taxonomy.return_value.fetch_annotations.return_value = {
+            9606: {"annotations": {"genus": "Homo"}}
+        }
+        mock_ted.return_value.failed_lookup_count = 0
+        mock_ted.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308", annotations={"ted_domains": "x|1.0"}
+            )
+        ]
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        ProteinAnnotationManager(
+            headers=["P01308"],
+            annotations=["genus", "ted_domains"],
+            output_path=cache_path,
+        ).to_pd()
+
+        cached = pd.read_parquet(cache_path)
+        assert "ted_domains" in cached.columns, (
+            "a completed source must still be cached"
+        )
+        assert "genus" not in cached.columns, (
+            "taxonomy is unreadable without organism_id, so it must not be cached"
+        )
+
+    @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_cache_write_follows_batch_success(
+        self, mock_retriever, tmp_path, failed_batches, cache_written
+    ):
+        mock_retriever.return_value = self._retriever(failed_batches)
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationManager(
+            headers=["P01308"], annotations=["length"], output_path=cache_path
+        ).to_pd()
+
+        assert cache_path.exists() is cache_written
+        assert result["identifier"].tolist() == ["P01308"]
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_lost_batch_leaves_an_existing_cache_untouched(
+        self, mock_retriever, tmp_path
+    ):
+        mock_retriever.return_value = self._retriever(failed_batches=1)
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame({"identifier": ["P01308"], "length": ["110"]}).to_parquet(
+            cache_path, index=False
+        )
+
+        ProteinAnnotationManager(
+            headers=["P01308"], annotations=["length"], output_path=cache_path
+        ).to_pd()
+
+        assert pd.read_parquet(cache_path)["length"].tolist() == ["110"]

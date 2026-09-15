@@ -1,70 +1,4 @@
-# annotation-cache-semantics Specification
-
-## Purpose
-
-How cached annotation results stay correct across format and schema changes: refreshing caches written by an older layout rather than trusting them, and keeping repeated reads of a cached value idempotent.
-
-## Requirements
-
-### Requirement: Legacy PDB annotation caches are refreshed safely
-
-ProtSpace SHALL NOT reuse an annotation cache containing `xref_pdb` as authoritative
-when that cache lacks the current annotation-semantics marker. It SHALL refetch the
-UniProt source once and reuse cached values from other sources.
-
-#### Scenario: Complete legacy PDB cache is reused
-
-- **WHEN** an unversioned annotation cache contains `xref_pdb` and every requested
-  annotation
-- **THEN** ProtSpace refetches the UniProt source and stamps the rewritten cache as
-  current
-
-#### Scenario: Legacy cache has unaffected source data
-
-- **WHEN** an unversioned annotation cache contains `xref_pdb` alongside cached
-  InterPro values
-- **THEN** ProtSpace refetches only the UniProt source and reuses the cached InterPro
-  values
-
-#### Scenario: Legacy cache is missing a newly requested source
-
-- **WHEN** an unversioned annotation cache contains `xref_pdb` and a run requests an
-  annotation from a source the cache lacks
-- **THEN** ProtSpace fetches that source in addition to refreshing UniProt
-
-#### Scenario: Cached taxonomy depends on the UniProt organism identifier
-
-- **WHEN** an unversioned annotation cache contains `xref_pdb` and cached taxonomy
-  values, and the run requests taxonomy
-- **THEN** ProtSpace keeps the cached organism identifier available to the taxonomy
-  lookup
-
-#### Scenario: An unresolved protein precedes a taxonomy-bearing protein
-
-- **WHEN** the first cached row has no taxonomy values and a later row does
-- **THEN** ProtSpace still reuses the cached taxonomy for the rows that carry it
-
-#### Scenario: Legacy cache has no PDB annotation
-
-- **WHEN** an unversioned annotation cache does not contain `xref_pdb`
-- **THEN** ProtSpace reuses it without a forced UniProt refresh
-
-#### Scenario: A UniProt batch fails during migration
-
-- **WHEN** a migration-triggered UniProt refresh cannot retrieve one or more batches
-- **THEN** ProtSpace does not mark the legacy cache as current, so a subsequent run
-  retries the migration
-
-### Requirement: Cached signal-peptide booleans are idempotent
-
-ProtSpace SHALL preserve exact canonical `True` and `False` signal-peptide values when
-cached InterPro annotations pass through the shared transformer again.
-
-#### Scenario: UniProt is refetched with cached InterPro values
-
-- **WHEN** a run refetches UniProt while retaining cached `signal_peptide` values
-  containing `True` and `False`
-- **THEN** ProtSpace emits the same `True` and `False` values unchanged
+## ADDED Requirements
 
 ### Requirement: An incomplete annotation retrieval never overwrites the cache
 
@@ -149,3 +83,54 @@ writes regardless.
   a retryable status
 - **THEN** ProtSpace retries it with backoff up to a bounded number of attempts
 - **AND** only a request still failing after those attempts counts as lost data
+
+## MODIFIED Requirements
+
+### Requirement: Legacy PDB annotation caches are refreshed safely
+
+ProtSpace SHALL NOT reuse an annotation cache containing `xref_pdb` as authoritative
+when that cache lacks the current annotation-semantics marker. It SHALL refetch the
+UniProt source once and reuse cached values from other sources.
+
+#### Scenario: Complete legacy PDB cache is reused
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and every requested
+  annotation
+- **THEN** ProtSpace refetches the UniProt source and stamps the rewritten cache as
+  current
+
+#### Scenario: Legacy cache has unaffected source data
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` alongside cached
+  InterPro values
+- **THEN** ProtSpace refetches only the UniProt source and reuses the cached InterPro
+  values
+
+#### Scenario: Legacy cache is missing a newly requested source
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and a run requests an
+  annotation from a source the cache lacks
+- **THEN** ProtSpace fetches that source in addition to refreshing UniProt
+
+#### Scenario: Cached taxonomy depends on the UniProt organism identifier
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and cached taxonomy
+  values, and the run requests taxonomy
+- **THEN** ProtSpace keeps the cached organism identifier available to the taxonomy
+  lookup
+
+#### Scenario: An unresolved protein precedes a taxonomy-bearing protein
+
+- **WHEN** the first cached row has no taxonomy values and a later row does
+- **THEN** ProtSpace still reuses the cached taxonomy for the rows that carry it
+
+#### Scenario: Legacy cache has no PDB annotation
+
+- **WHEN** an unversioned annotation cache does not contain `xref_pdb`
+- **THEN** ProtSpace reuses it without a forced UniProt refresh
+
+#### Scenario: A UniProt batch fails during migration
+
+- **WHEN** a migration-triggered UniProt refresh cannot retrieve one or more batches
+- **THEN** ProtSpace does not mark the legacy cache as current, so a subsequent run
+  retries the migration

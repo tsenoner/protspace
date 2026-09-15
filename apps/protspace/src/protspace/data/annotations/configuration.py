@@ -40,6 +40,23 @@ NEEDED_UNIPROT_ANNOTATIONS = ["accession", TAXONOMY_LOOKUP_ANNOTATION]
 # directly cannot mutate the shared constant.
 INTERNAL_ANNOTATIONS = (TAXONOMY_LOOKUP_ANNOTATION, "sequence")
 
+# Which columns each annotation source owns. Single source of truth: the cache
+# uses it to keep a source that did not finish out of the parquet, and
+# `categorize_annotations_by_source` to route requested columns to a fetcher.
+SOURCE_ANNOTATIONS: dict[str, set[str]] = {
+    "uniprot": set(UNIPROT_ANNOTATIONS),
+    "taxonomy": set(TAXONOMY_ANNOTATIONS),
+    "interpro": set(INTERPRO_ANNOTATIONS),
+    "ted": set(TED_ANNOTATIONS),
+    "biocentral": set(BIOCENTRAL_ANNOTATIONS),
+}
+
+# Sources whose *cached* columns cannot be read back without a column another
+# source owns: `_extract_cached_taxonomy` is keyed on UniProt's organism_id, so
+# a cache holding taxonomy but no organism_id reads as complete and yields
+# nothing. Dropping a source from the cache must therefore drop its dependents.
+SOURCE_CACHE_DEPENDENTS: dict[str, set[str]] = {"uniprot": {"taxonomy"}}
+
 # User-facing UniProt annotations (excludes internal: sequence, organism_id)
 _UNIPROT_USER_ANNOTATIONS = [
     "annotation_score",
@@ -134,11 +151,8 @@ class AnnotationConfiguration:
             Dictionary mapping source names to sets of annotations from that source
         """
         return {
-            "uniprot": annotations & set(UNIPROT_ANNOTATIONS),
-            "taxonomy": annotations & set(TAXONOMY_ANNOTATIONS),
-            "interpro": annotations & set(INTERPRO_ANNOTATIONS),
-            "ted": annotations & set(TED_ANNOTATIONS),
-            "biocentral": annotations & set(BIOCENTRAL_ANNOTATIONS),
+            source: annotations & columns
+            for source, columns in SOURCE_ANNOTATIONS.items()
         }
 
     @staticmethod

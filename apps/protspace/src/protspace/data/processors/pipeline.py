@@ -617,7 +617,12 @@ class ReductionPipeline:
                     sequences=sequences,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
-                    preserve_existing_cache_on_uniprot_failure=bool(refresh_columns),
+                    # --refetch annotations is the documented remedy for a cache
+                    # poisoned by an earlier partial failure, so there the cached
+                    # columns are exactly what must not be protected. The failed
+                    # source is still dropped rather than written empty, so the
+                    # poison leaves the cache and the next run refetches it.
+                    protect_cached_columns=not refetching_annotations,
                 )
                 api_df = manager.to_pd()
                 if legacy_uniprot is not None and manager.uniprot_fetch_failed:

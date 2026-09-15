@@ -99,12 +99,13 @@ def annotate(
             annotations_list = AnnotationConfiguration(names).user_annotations
 
     # Fetch annotations
-    df = ProteinAnnotationManager(
+    manager = ProteinAnnotationManager(
         headers=headers,
         annotations=annotations_list,
         output_path=None,
         sequences=sequences,
-    ).to_pd()
+    )
+    df = manager.to_pd()
 
     if not scores:
         from protspace.data.annotations.scores import strip_scores_from_df
@@ -120,3 +121,17 @@ def annotate(
     pq.write_table(table, str(output))
 
     typer.echo(f"Saved annotations for {len(headers)} proteins to {output}")
+
+    # Unlike the cache, this file is the user's deliverable, so it is written
+    # either way -- a partial result beats no result. But a source that did not
+    # finish emits empty values indistinguishable from a real absence, so say
+    # so rather than reporting a clean run. Deliberately not a non-zero exit:
+    # the hosted prepare service treats that as a failed job and would discard
+    # a bundle the user can still use.
+    if manager.incomplete_sources:
+        incomplete = ", ".join(sorted(manager.incomplete_sources))
+        logger.warning(
+            f"Incomplete annotations from: {incomplete}. The affected proteins "
+            f"have empty values in {output}, which cannot be told apart from a "
+            "genuine absence. Re-run to fetch them."
+        )
