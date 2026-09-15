@@ -33,7 +33,12 @@ ALL_ANNOTATIONS = (
     + BIOCENTRAL_ANNOTATIONS
 )
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
-NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
+TAXONOMY_LOOKUP_ANNOTATION = "organism_id"
+NEEDED_UNIPROT_ANNOTATIONS = ["accession", TAXONOMY_LOOKUP_ANNOTATION]
+# Fetched only to drive other lookups (taxonomy, InterPro); stripped from output
+# unless the user asked for them explicitly. A tuple so callers that bind it
+# directly cannot mutate the shared constant.
+INTERNAL_ANNOTATIONS = (TAXONOMY_LOOKUP_ANNOTATION, "sequence")
 
 # User-facing UniProt annotations (excludes internal: sequence, organism_id)
 _UNIPROT_USER_ANNOTATIONS = [
@@ -162,7 +167,10 @@ class AnnotationConfiguration:
         }
 
         # Handle dependencies: taxonomy needs organism_id from UniProt
-        if sources_needed["taxonomy"] and "organism_id" not in cached_annotations:
+        if (
+            sources_needed["taxonomy"]
+            and TAXONOMY_LOOKUP_ANNOTATION not in cached_annotations
+        ):
             sources_needed["uniprot"] = True
 
         # Handle dependencies: interpro needs sequence from UniProt
@@ -205,7 +213,7 @@ class AnnotationConfiguration:
                 raise ValueError(
                     f"Unknown annotation '{annotation}'.{hint}\n"
                     f"  Groups: {groups}\n"
-                    f"  See https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
+                    f"  See https://protspace.app/docs/guide/annotations"
                 )
             if annotation not in normalized_annotations:
                 normalized_annotations.append(annotation)

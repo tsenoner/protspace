@@ -559,6 +559,43 @@ describe('numeric-binning', () => {
       expect(result.annotationData[i]).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it('gives an all-missing numeric column one N/A bin instead of hiding every point', () => {
+    // Reachable from a subset export (isolation / query filter) whose surviving
+    // rows are all null. Leaving every index on the -1 sentinel rendered an empty
+    // legend and a blank plot.
+    const result = materializeNumericAnnotation(
+      [null, null, null],
+      {
+        binCount: 5,
+        strategy: 'linear',
+        paletteId: 'viridis',
+      },
+      'int',
+    );
+
+    expect(result.annotation.values).toEqual([NA_VALUE]);
+    expect(result.annotation.colors).toEqual([NA_DEFAULT_COLOR]);
+    expect(result.annotation.sourceKind).toBe('numeric');
+    expect(result.annotation.numericType).toBe('int');
+    expect(result.annotation.numericMetadata?.bins).toEqual([]);
+    expect(Array.from(result.annotationData as Int32Array)).toEqual([0, 0, 0]);
+  });
+
+  it('emits nothing at all for a numeric column with zero rows', () => {
+    const result = materializeNumericAnnotation(
+      [],
+      {
+        binCount: 5,
+        strategy: 'linear',
+        paletteId: 'viridis',
+      },
+      'float',
+    );
+
+    expect(result.annotation.values).toEqual([]);
+    expect(Array.from(result.annotationData as Int32Array)).toEqual([]);
+  });
 });
 
 describe('materializeVisualizationData null-selection gate', () => {

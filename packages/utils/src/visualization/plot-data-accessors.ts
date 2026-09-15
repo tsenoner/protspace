@@ -1,5 +1,6 @@
 import type { VisualizationData, NumericAnnotationType, PredictedCell } from '../types.js';
 import { getProteinAnnotationIndices } from './annotation-data-access.js';
+import { isAutoClusterColumnName } from './annotation-statistics.js';
 import { getPredictedCell, getPredictedCellValues } from './eat-overlay.js';
 import { getNumericBinLabelMap } from './numeric-binning.js';
 import { toInternalValue } from './missing-values.js';
@@ -121,6 +122,23 @@ function buildAnnotationBlock(
   includeEatProvenance: boolean,
 ): AnnotationBlock {
   const predicted = includeEatProvenance ? getPredictedCell(data, proteinIdx, key) : null;
+  // An auto-cluster membership column carries each point's own silhouette after the
+  // `|`. The legend strips already report every cluster's silhouette, on the scale
+  // the rest of the app uses, so the point-level number is dropped rather than making
+  // cluster columns the one annotation that shows a separation score per protein.
+  // Dropped on read, not only at write time, because bundles prepared before this
+  // still carry the suffix.
+  //
+  // Judged from the column name, never from `data.statisticsRows`: a filtered or isolated
+  // view clears those rows, so a bundle exported from one still carries this column and its
+  // suffix but nothing to recognise it by — and the score would come back mislabelled
+  // "Bitscore", which `getAnnotationHeaderType` assigns to any surviving score.
+  let scores: (number[] | null)[] = [];
+  if (!isAutoClusterColumnName(key)) {
+    scores = predicted
+      ? (predicted.scores?.map((values) => (values ? [...values] : null)) ?? [])
+      : getProteinScores(data, proteinIdx, key);
+  }
   return {
     key,
     displayValues: predicted
@@ -128,9 +146,7 @@ function buildAnnotationBlock(
       : getProteinDisplayValues(data, proteinIdx, key),
     numericValue: getProteinNumericValue(data, proteinIdx, key),
     numericType: getProteinNumericType(data, key),
-    scores: predicted
-      ? (predicted.scores?.map((scores) => (scores ? [...scores] : null)) ?? [])
-      : getProteinScores(data, proteinIdx, key),
+    scores,
     evidence: predicted
       ? [...(predicted.evidence ?? [])]
       : getProteinEvidence(data, proteinIdx, key),

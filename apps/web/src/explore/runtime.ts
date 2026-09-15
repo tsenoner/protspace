@@ -1,4 +1,8 @@
 import '@protspace/core'; // Registers all web components
+import type { RendererDegradedDetail } from '@protspace/core';
+import type { EatReliabilityState } from '@protspace/utils';
+import { notify } from '../lib/notify';
+import { getRendererDegradedNotification } from './notifications';
 import { startProductTour } from '../tour/product-tour';
 import { bindControlBarEvents } from './control-bar-events';
 import { createDatasetController } from './dataset-controller';
@@ -47,14 +51,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     return NOOP_CONTROLLER;
   }
 
-  const {
-    controlBar,
-    dataLoader,
-    legendElement,
-    plotElement,
-    selectedProteinElement,
-    structureViewer,
-  } = elements;
+  const { controlBar, dataLoader, legendElement, plotElement, structureViewer } = elements;
   const lifecycle = createLifecycle();
 
   const setCurrentDatasetName = (name: string) => {
@@ -220,7 +217,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const interactionController = createInteractionController({
     legendElement,
     plotElement,
-    selectedProteinElement,
     structureViewer,
   });
 
@@ -282,19 +278,25 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'legend-error',
     interactionController.handleLegendError,
   );
-  // Two-way reliability mirror (#6b): the legend slider drives the shared
-  // NOT(EAT_confidence < x) query filter on the control bar, and a direct edit of
-  // that filter pulls the slider back. Each direction guards on the threshold
-  // value so they can't ping-pong.
+  // Two-way reliability mirror (#6b): the legend control drives the shared
+  // `EAT_confidence >= x or N/A` query filter on the control bar, and a direct edit of
+  // that filter pulls the control back. Each direction guards on the reliability
+  // state, keyed per eat-confidence column, so they can't ping-pong.
   addTrackedEventListener(lifecycle, legendElement, 'eat-overlay-change', (event: Event) => {
-    const { confidenceThreshold } = (
-      event as CustomEvent<{ enabled: boolean; confidenceThreshold: number }>
+    // The full state (mode + both bounds) is what reaches the query — the scalar
+    // threshold alone cannot express "hide above" or "keep between".
+    const { reliability } = (
+      event as CustomEvent<{
+        enabled: boolean;
+        confidenceThreshold: number;
+        reliability: EatReliabilityState;
+      }>
     ).detail;
-    controlBar.setEatConfidenceThreshold(legendElement.selectedAnnotation, confidenceThreshold);
+    controlBar.setEatReliability(legendElement.selectedAnnotation, reliability);
   });
   addTrackedEventListener(lifecycle, controlBar, 'eat-threshold-mirror', (event: Event) => {
-    const { value } = (event as CustomEvent<{ value: number }>).detail;
-    legendElement.setReliabilityThreshold(value);
+    const { state } = (event as CustomEvent<{ value: number; state: EatReliabilityState }>).detail;
+    legendElement.setReliabilityState(state);
   });
   addTrackedEventListener(
     lifecycle,
@@ -320,6 +322,13 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'data-change',
     interactionController.handlePlotDataChange,
   );
+  // The renderer reports capability reductions (device texture limits, a refused
+  // GPU allocation, the gamma fallback) that were previously silent or
+  // console-only. Latched once per reason in the renderer, deduped again here.
+  addTrackedEventListener(lifecycle, plotElement, 'renderer-degraded', (event: Event) => {
+    const detail = (event as CustomEvent<RendererDegradedDetail>).detail;
+    notify.warning(getRendererDegradedNotification(detail));
+  });
   addTrackedEventListener(lifecycle, plotElement, 'file-dropped', (event: Event) => {
     const file = (event as CustomEvent<{ file?: File }>).detail.file;
     if (file) {

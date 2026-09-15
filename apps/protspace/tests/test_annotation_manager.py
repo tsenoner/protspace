@@ -452,6 +452,7 @@ class TestIntegration:
     def test_fasta_sequence_length_fallback(
         self, mock_uniprot_retriever, uniprot_length, sequence, expected
     ):
+        mock_uniprot_retriever.return_value.failed_batch_count = 0
         mock_uniprot_retriever.return_value.fetch_annotations.return_value = [
             ProteinAnnotations(
                 identifier="custom_protein",
@@ -489,11 +490,11 @@ class TestIntegration:
     def test_does_not_cache_annotations_when_uniprot_request_fails(
         self, mock_uniprot_retriever, tmp_path
     ):
-        """A failed fetch must not leave a schema-complete, all-empty cache.
+        """A failed fetch must not overwrite the annotation cache.
 
-        The failure rows carry the full UniProt schema, so persisting them would
-        make the next run see nothing missing and serve empty annotations from
-        the cache instead of re-fetching.
+        Persisting all-empty failure rows would make the next run see nothing
+        missing and serve empty annotations from the cache instead of
+        re-fetching.
         """
         mock_uniprot_retriever.return_value.fetch_annotations.side_effect = (
             RuntimeError("offline")
@@ -504,10 +505,82 @@ class TestIntegration:
             headers=["custom_protein"],
             annotations=["length"],
             output_path=cache_path,
+            preserve_existing_cache_on_uniprot_failure=True,
         ).to_pd()
 
         assert not cache_path.exists()
-        assert result["length"].tolist() == [""]
+        assert result["identifier"].tolist() == ["custom_protein"]
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_cached_signal_peptide_states_survive_uniprot_refetch(
+        self, mock_uniprot_retriever
+    ):
+        """Refetching UniProt must not rewrite cached InterPro booleans."""
+        mock_uniprot_retriever.return_value.failed_batch_count = 0
+        mock_uniprot_retriever.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier=identifier,
+                annotations={"uniprot_kb_id": f"{identifier}_HUMAN"},
+            )
+            for identifier in ("with_signal", "without_signal")
+        ]
+        cached_data = pd.DataFrame(
+            {
+                "identifier": ["with_signal", "without_signal"],
+                "signal_peptide": ["True", "False"],
+            }
+        )
+
+        result = ProteinAnnotationManager(
+            headers=["with_signal", "without_signal"],
+            annotations=["signal_peptide"],
+            cached_data=cached_data,
+            sources_to_fetch={
+                "uniprot": True,
+                "taxonomy": False,
+                "interpro": False,
+                "ted": False,
+                "biocentral": False,
+            },
+        ).to_pd()
+
+        assert result["signal_peptide"].tolist() == ["True", "False"]
+
+    def test_cached_pdb_states_survive_manager_round_trip(self, tmp_path):
+        """Canonical PDB states should remain stable when loaded from cache."""
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            {
+                "identifier": [
+                    "unresolved",
+                    "resolved_without_pdb",
+                    "resolved_with_pdb",
+                ],
+                "xref_pdb": ["", "False", "True"],
+                "uniprot_kb_id": ["", "NO_PDB", "HAS_PDB"],
+            }
+        ).to_parquet(cache_path, index=False)
+
+        manager = ProteinAnnotationManager(
+            headers=[
+                "unresolved",
+                "resolved_without_pdb",
+                "resolved_with_pdb",
+            ],
+            annotations=["xref_pdb"],
+            cached_data=pd.read_parquet(cache_path),
+            sources_to_fetch={
+                "uniprot": False,
+                "taxonomy": False,
+                "interpro": False,
+                "ted": False,
+                "biocentral": False,
+            },
+        )
+
+        result = manager.to_pd()
+
+        assert result["xref_pdb"].tolist() == ["", "False", "True"]
 
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
@@ -517,6 +590,7 @@ class TestIntegration:
         """Test complete workflow from initialization to DataFrame creation."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -550,6 +624,7 @@ class TestIntegration:
         """Test workflow with file output."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -585,6 +660,7 @@ class TestIntegration:
         """Test that only requested annotations are returned."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -617,6 +693,7 @@ class TestIntegration:
         """Test that internal columns (organism_id) are removed from final output."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -650,6 +727,7 @@ class TestIntegration:
         """Test that internal columns are kept in cache file but removed from returned DataFrame."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )

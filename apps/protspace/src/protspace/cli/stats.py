@@ -159,8 +159,8 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
     Rewrites the annotations parquet in place with the computed ``cluster_*``
-    membership columns joined by identifier (each value a ``cluster N`` label with
-    the per-point silhouette attached as ``|score``). Added columns are stringified
+    membership columns joined by identifier (each value a bare ``cluster N``
+    label). Added columns are stringified
     (absent → empty) so they match the prepare path's all-string annotations and the
     frontend's content-based type inference. ``frame`` reuses an already-loaded
     DataFrame instead of re-reading ``ann_path``. Returns the names of columns added
@@ -228,8 +228,7 @@ def stats(
             "-a",
             "--annotations",
             help="Annotations parquet to enrich in place with per-protein "
-            "cluster-membership columns (per-point silhouette attached as |score). "
-            "Omit to skip per-protein outputs.",
+            "cluster-membership columns. Omit to skip per-protein outputs.",
             rich_help_panel="Input",
         ),
     ] = None,
@@ -313,9 +312,8 @@ def stats(
     )
 
     reductions = _load_reductions(projections, default_metric=metric)
-    # Per-protein output (cluster membership with attached per-point silhouette) is
-    # only computed when there's an annotations file to land it in — silhouette_samples
-    # is O(n^2), so we don't pay for it with nowhere to write.
+    # Per-protein output (the cluster membership column, and the self-validity rows
+    # gated on it) is only computed when there's an annotations file to land it in.
     params = {"cluster_selection": cluster_selection.value}
     if annotations is None:
         params["cluster_annotations"] = False

@@ -142,8 +142,8 @@ def compute_statistics(
         rng_seed: deterministic seed.
         params: tunables — ``k``, ``k_max``, ``sample_threshold``, ``hard_ceiling``,
             ``max_fit_sample``, ``n_triplets_per_point``; ``cluster_selection``
-            (``elbow`` | ``silhouette`` | ``both``); ``cluster_annotations`` and
-            ``include_scores`` (per-protein membership column + attached silhouette).
+            (``elbow`` | ``silhouette`` | ``both``); ``cluster_annotations``
+            (per-protein membership column).
         annotations: annotation name -> {protein id -> category label}. When
             supplied, threaded into every projection's ``StatContext`` and also
             drives a once-per-embedding pass (see below) so annotation-validity

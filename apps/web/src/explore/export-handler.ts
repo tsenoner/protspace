@@ -217,6 +217,8 @@ export function createExportHandler({
         }
 
         const filename = generateBundleFilename(includeSettings);
+        // Subset exports carry no statistics by construction: sliceVisualizationDataByIndices
+        // strips them, so whole-dataset scores can never describe an isolated/filtered slice.
         exportParquetBundle(currentData, filename, {
           includeSettings,
           settings,

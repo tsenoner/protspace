@@ -29,6 +29,7 @@ export function resolvePointLocations(
       labelColors: gl.getUniformLocation(program, 'u_labelColors'),
       labelTextureSize: gl.getUniformLocation(program, 'u_labelTextureSize'),
       maxLabels: gl.getUniformLocation(program, 'u_maxLabels'),
+      labelAtlasCapacity: gl.getUniformLocation(program, 'u_labelAtlasCapacity'),
     },
   };
 }

@@ -113,6 +113,7 @@ function renderSettingsDialogToContainer(overrides = {}) {
         hasPersistedSettings: false,
         selectedPaletteId: 'viridis',
         reverseGradient: false,
+        hasCategoryScores: false,
         ...overrides,
       },
       callbacks,
@@ -134,6 +135,29 @@ describe('renderSettingsDialog', () => {
       section.textContent?.trim(),
     );
     expect(sections).not.toContain('Annotation type');
+  });
+
+  it('keeps "By separation" checked on reload, before this projection\'s scores arrive', () => {
+    // The deliberate reload case: hasCategoryScores is false (statistics have not synced
+    // yet) but the persisted sort mode is still 'silhouette-desc'. Dropping the option here
+    // would render the radio group with nothing checked.
+    const { container } = renderSettingsDialogToContainer({
+      selectedAnnotation: 'major_group',
+      isNumericAnnotation: false,
+      annotationSortModes: { major_group: 'silhouette-desc' },
+      hasCategoryScores: false,
+    });
+
+    const labels = [...container.querySelectorAll('label')].map((label) =>
+      label.textContent?.trim(),
+    );
+    expect(labels).toContain('By separation');
+
+    const checkedLabel = [...container.querySelectorAll('input[type="radio"]')]
+      .find((input) => (input as HTMLInputElement).checked)
+      ?.closest('label')
+      ?.textContent?.trim();
+    expect(checkedLabel).toBe('By separation');
   });
 });
 

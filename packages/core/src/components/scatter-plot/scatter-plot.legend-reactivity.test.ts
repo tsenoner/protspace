@@ -17,9 +17,8 @@
  *     does not (GREEN after F-31). This is observable without connecting and
  *     without any `updateComplete` await (which hangs on an un-appended element).
  *
- *   - INV-08 colorOnly guardrail: colorOnly=true skips `invalidateDepthOrder()`
- *     + virtualization invalidation; colorOnly=false forces them. Must stay
- *     GREEN across the batch.
+ *   - INV-08 colorOnly guardrail: colorOnly=true skips `invalidateDepthOrder()`;
+ *     colorOnly=false forces it. Must stay GREEN across the batch.
  *
  *   - F-19 key-validation: a malformed/partial detail must NOT overwrite the
  *     mapping fields with `undefined`. Today the handlers blind-cast
@@ -47,7 +46,7 @@
  * driven DIRECTLY (not via dispatchEvent), matching the sibling tests that call
  * private handlers directly.
  */
-import { vi, describe, it, expect, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 
 vi.hoisted(() => {
@@ -86,6 +85,16 @@ function makeData(): VisualizationData {
 type WebglStub = {
   invalidateDepthOrder: ReturnType<typeof vi.fn>;
   invalidateStyleCache: ReturnType<typeof vi.fn>;
+  /**
+   * Not asserted on, but required: `_scheduleNumericAnnotationRefresh` queues a
+   * requestAnimationFrame whose callback reaches `setStyleSignature`. That fires
+   * after the test that scheduled it has finished, so a missing method throws
+   * from inside jsdom's frame callback — outside any test's scope, where it
+   * becomes an unhandled error that fails `vitest --run` while every assertion
+   * still passes. Whether the frame lands before teardown is a timing race, so
+   * the stub has to cover the whole path, not just the calls under test.
+   */
+  setStyleSignature: ReturnType<typeof vi.fn>;
 };
 
 type Internals = HTMLElement & {
@@ -97,7 +106,6 @@ type Internals = HTMLElement & {
   _shapeMapping: Record<string, string> | null;
   _styleGettersCache: unknown;
   _renderPlot(): void;
-  _invalidateVirtualizationCache(): void;
   _webglRenderer: WebglStub;
   _numericRecomputeRunning: boolean;
   _handleZOrderChange(event: Event): void;
@@ -116,6 +124,7 @@ function makeEl(): Internals {
   (el as unknown as { _webglRenderer: WebglStub })._webglRenderer = {
     invalidateDepthOrder: vi.fn(),
     invalidateStyleCache: vi.fn(),
+    setStyleSignature: vi.fn(),
   };
   return el;
 }
@@ -127,7 +136,26 @@ function zOrderEvent(detail: unknown): Event {
   return new CustomEvent('legend-zorder-change', { detail });
 }
 
-afterEach(() => vi.restoreAllMocks());
+// `_scheduleNumericAnnotationRefresh` queues a requestAnimationFrame. Every
+// assertion in this file is synchronous and none wants that frame's body — but
+// jsdom runs it after the scheduling test returns, against the deliberately
+// minimal `_plotData` and renderer stubs here, and it throws from inside the
+// frame callback where no test can catch it. That is an unhandled error, which
+// fails `vitest --run` even though every assertion passed. Whether the frame
+// lands before teardown is a timing race, so it surfaced as an intermittent CI
+// failure rather than a consistent one.
+//
+// Holding the callbacks unrun keeps the file to the synchronous, never-connected
+// contract its header describes.
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', () => 1);
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('legend mapping handlers — single render path (F-31)', () => {
   it('z-order change renders once imperatively and schedules NO second (Lit) render', () => {
@@ -169,10 +197,9 @@ describe('legend mapping handlers — single render path (F-31)', () => {
 });
 
 describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stays GREEN)', () => {
-  it('colorOnly=true does NOT call invalidateDepthOrder / virtualization invalidate', () => {
+  it('colorOnly=true does NOT call invalidateDepthOrder', () => {
     const el = makeEl();
     vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
-    const virtSpy = vi.spyOn(el, '_invalidateVirtualizationCache').mockImplementation(() => {});
 
     el._handleColorMappingChange(
       colorMappingEvent({
@@ -183,13 +210,11 @@ describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stay
     );
 
     expect(el._webglRenderer.invalidateDepthOrder).not.toHaveBeenCalled();
-    expect(virtSpy).not.toHaveBeenCalled();
   });
 
-  it('colorOnly=false DOES call invalidateDepthOrder + virtualization invalidate', () => {
+  it('colorOnly=false DOES call invalidateDepthOrder', () => {
     const el = makeEl();
     vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
-    const virtSpy = vi.spyOn(el, '_invalidateVirtualizationCache').mockImplementation(() => {});
 
     el._handleColorMappingChange(
       colorMappingEvent({
@@ -200,7 +225,6 @@ describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stay
     );
 
     expect(el._webglRenderer.invalidateDepthOrder).toHaveBeenCalledTimes(1);
-    expect(virtSpy).toHaveBeenCalledTimes(1);
   });
 });
 

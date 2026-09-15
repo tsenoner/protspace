@@ -147,7 +147,7 @@ const scatterplotStylesCore = css`
     border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
     box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
     color: #475569;
-    font-size: 0.6875rem;
+    font-size: var(--text-caption);
     font-weight: var(--font-medium);
     letter-spacing: 0.01em;
     border-radius: 0.375rem;
@@ -214,7 +214,7 @@ const scatterplotStylesCore = css`
     border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
     box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
     color: #334155;
-    font-size: 0.6875rem;
+    font-size: var(--text-caption);
     font-weight: var(--font-medium);
     border-radius: 0.375rem;
   }

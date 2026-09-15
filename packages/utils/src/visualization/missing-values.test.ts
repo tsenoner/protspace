@@ -85,6 +85,14 @@ describe('normalizeMissingValue', () => {
     }
   });
 
+  it('normalizes the NA_VALUE sentinel spelling itself', () => {
+    // The bundle writer drops NA_VALUE from a categorical cell unconditionally, so
+    // a category literally spelled `__NA__` would be deleted on export. Reserving
+    // the spelling at ingestion keeps writer and reader agreeing on what it means.
+    expect(normalizeMissingValue(NA_VALUE)).toBe(null);
+    expect(normalizeMissingValue('__na__')).toBe(null);
+  });
+
   it('keeps "missing" as a real categorical value', () => {
     expect(normalizeMissingValue('missing')).toBe('missing');
     expect(normalizeMissingValue('Missing')).toBe('Missing');

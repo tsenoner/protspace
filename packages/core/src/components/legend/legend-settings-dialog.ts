@@ -26,6 +26,8 @@ export interface SettingsDialogState {
   hasPersistedSettings: boolean;
   selectedPaletteId: string;
   reverseGradient: boolean;
+  /** Whether the selected annotation has per-category silhouette scores to sort by. */
+  hasCategoryScores: boolean;
 }
 
 /**
@@ -256,7 +258,9 @@ function renderCategoricalPalettePreview(selectedPalette: readonly string[]): Te
 /**
  * Returns the appropriate sort mode for a given category
  */
-function getSortModeForCategory(category: 'size' | 'alpha' | 'manual'): LegendSortMode {
+function getSortModeForCategory(
+  category: 'size' | 'alpha' | 'manual' | 'silhouette',
+): LegendSortMode {
   switch (category) {
     case 'size':
       return 'size-asc';
@@ -264,6 +268,8 @@ function getSortModeForCategory(category: 'size' | 'alpha' | 'manual'): LegendSo
       return 'alpha-asc';
     case 'manual':
       return 'manual';
+    case 'silhouette':
+      return 'silhouette-desc';
   }
 }
 
@@ -285,8 +291,11 @@ function renderSortingSection(
   const isSize = currentMode.startsWith('size');
   const isAlphabetic = currentMode.startsWith('alpha');
   const isManual = currentMode.startsWith('manual');
+  // Both directions, or the radio group renders with nothing checked after the header's
+  // reverse button has flipped the mode to ascending.
+  const isSilhouette = currentMode === 'silhouette-desc' || currentMode === 'silhouette-asc';
 
-  const handleTypeChange = (category: 'size' | 'alpha' | 'manual') => {
+  const handleTypeChange = (category: 'size' | 'alpha' | 'manual' | 'silhouette') => {
     callbacks.onSortModeChange(aname, getSortModeForCategory(category));
   };
 
@@ -299,6 +308,12 @@ function renderSortingSection(
         { checked: isSize, label: 'By category size', category: 'size' as const },
         { checked: isAlphabetic, label: 'Alphabetical', category: 'alpha' as const },
         { checked: isManual, label: 'Manual order', category: 'manual' as const },
+        // Keep the option present when it's already selected, even if this projection's
+        // statistics are absent (e.g. after a reload): otherwise the radio group would
+        // render with nothing checked.
+        ...(state.hasCategoryScores || isSilhouette
+          ? [{ checked: isSilhouette, label: 'By separation', category: 'silhouette' as const }]
+          : []),
       ];
 
   return renderSection(

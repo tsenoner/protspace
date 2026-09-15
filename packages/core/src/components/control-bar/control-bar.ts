@@ -9,8 +9,19 @@ import type {
   DataLoaderElement,
   StructureViewerElement,
 } from './types';
-import { handleDropdownEscape, isAnyDropdownOpen } from '../../utils/dropdown-helpers';
-import { isEatConfidenceAnnotation } from '@protspace/utils';
+import {
+  handleDropdownEscape,
+  isAnyDropdownOpen,
+  scrollHighlightedIntoView,
+} from '../../utils/dropdown-helpers';
+import {
+  DEFAULT_EAT_RELIABILITY,
+  isEatConfidenceAnnotation,
+  isSameReliability,
+  NEUTRAL_BOUND,
+  type EatReliabilityState,
+  type ProjectionStatisticRow,
+} from '@protspace/utils';
 import {
   EXPORT_DEFAULTS,
   toggleProteinSelection,
@@ -23,9 +34,21 @@ import {
 import './search';
 import './annotation-select';
 import './query-builder';
-import type { FilterQuery, FilterQueryItem, NumericCondition } from './query-types';
-import { createCondition, createNumericCondition, isFilterGroup } from './query-types';
+import type { FilterQuery } from './query-types';
+import { createCondition } from './query-types';
 import { evaluateQuery, hasConfiguredCondition } from './query-evaluate';
+import {
+  findConditionsForAnnotation,
+  replaceConditionsForAnnotation,
+} from './query-annotation-conditions';
+import {
+  conditionsForReliability,
+  reliabilityFromConditions,
+  sameConditions,
+} from './eat-reliability';
+
+/** Stable empty statistics — a fresh [] per render would dirty the child on every update. */
+const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
@@ -77,10 +100,13 @@ export class ProtspaceControlBar extends LitElement {
   @state() private showProjectionMenu: boolean = false;
   @state() private filterQuery: FilterQuery = [];
   @state() private filterActive = false;
-  // Last reliability threshold reflected across the slider<->query mirror. Both
-  // directions compare against it so the forward (slider->query) and reverse
-  // (query->slider) paths can't ping-pong on an unchanged value (#6b).
-  private _lastEmittedThreshold = 0;
+  // Last reliability state reflected across the control<->query mirror, PER
+  // eat-confidence column. Both directions compare against it so the forward
+  // (control->query) and reverse (query->control) paths can't ping-pong on an
+  // unchanged value (#6b). Keyed because a single shared scalar let a change on
+  // one base be de-duplicated against another base's threshold, silently
+  // dropping it or writing it onto the wrong annotation (#380).
+  private _lastMirroredState = new Map<string, EatReliabilityState>();
   @state() private _currentData: ProtspaceData | undefined;
   @state() private projectionHighlightIndex: number = -1;
 
@@ -102,6 +128,28 @@ export class ProtspaceControlBar extends LitElement {
   private _onDataIsolationReset = (event: Event) => this._handleDataIsolationReset(event);
   private _onAutoDisableSelection = (event: Event) => this._handleAutoDisableSelection(event);
   private _onBrushSelection = (event: Event) => this._handleBrushSelection(event);
+  // Bound fields, not inline closures: an inline closure cannot be removed, so every
+  // re-attach of this element stacked another handler (and leaked the detached element).
+  private _onAnnotationOpened = () => {
+    this.showProjectionMenu = false;
+    this.showFilterMenu = false;
+    this.showExportMenu = false;
+    this.showImportMenu = false;
+    // Close search when annotation opens
+    this.shadowRoot
+      ?.querySelector('protspace-protein-search')
+      ?.dispatchEvent(new CustomEvent('close-search', { bubbles: false }));
+  };
+  private _onSearchOpened = () => {
+    this.showProjectionMenu = false;
+    this.showFilterMenu = false;
+    this.showExportMenu = false;
+    this.showImportMenu = false;
+    // Close annotation when search opens
+    this.shadowRoot
+      ?.querySelector('protspace-annotation-select')
+      ?.dispatchEvent(new CustomEvent('close-dropdown', { bubbles: false }));
+  };
 
   static styles = controlBarStyles;
 
@@ -255,14 +303,13 @@ export class ProtspaceControlBar extends LitElement {
    * Works for all dropdown types (.dropdown-item, .filter-menu-list-item)
    */
   private scrollDropdownItemIntoView() {
-    this.updateComplete.then(() => {
-      const highlighted =
-        this.shadowRoot?.querySelector('.dropdown-item.highlighted') ||
-        this.shadowRoot?.querySelector('.filter-menu-list-item.highlighted');
-      if (highlighted) {
-        highlighted.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
-    });
+    this.updateComplete.then(() =>
+      scrollHighlightedIntoView(
+        this.shadowRoot,
+        '.dropdown-item.highlighted',
+        '.filter-menu-list-item.highlighted',
+      ),
+    );
   }
 
   applyAnnotationSelection(annotation: string) {
@@ -373,25 +420,11 @@ export class ProtspaceControlBar extends LitElement {
     });
     this.dispatchEvent(customEvent);
 
-    // If auto-sync is enabled, directly clear selections in scatterplot
-    if (this.autoSync && this._scatterplotElement) {
-      if ('selectedProteinIds' in this._scatterplotElement) {
-        (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [];
-        this.selectedProteinsCount = 0;
-      }
-    }
-
-    // Clear search chips
-    this.selectedIdsChips = [];
-
-    // Dispatch a single, consistent event for all selection changes
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: [] },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    // Previously this reset `selectedProteinsCount` inside the auto-sync branch, so
+    // clearing while `autoSync` was false (as `data-renderer.ts` sets it during a data
+    // swap) emptied the chips but left the count stale — keeping the Clear button live
+    // and Escape firing against an empty selection.
+    this._commitSelection([]);
   }
 
   private handleSplitData() {
@@ -521,7 +554,7 @@ export class ProtspaceControlBar extends LitElement {
     // filter channel is reset in parallel by applyPlotState.
     this.filterQuery = [];
     this.filterActive = false;
-    this._lastEmittedThreshold = 0;
+    this._lastMirroredState.clear();
   }
 
   private openFileDialog() {
@@ -611,6 +644,8 @@ export class ProtspaceControlBar extends LitElement {
               .annotationDefinitions=${this._currentData?.annotations ?? {}}
               .eatAnnotations=${this._eatAnnotationKeys}
               .selectedAnnotation=${this.selectedAnnotation}
+              .selectedProjection=${this.selectedProjection}
+              .statisticsRows=${this._currentData?.statisticsRows ?? NO_STATISTICS}
               .tooltipAnnotations=${this.tooltipAnnotations}
               @annotation-select=${this.handleAnnotationSelected}
               @tooltip-annotation-toggle=${this.handleTooltipAnnotationToggle}
@@ -626,6 +661,7 @@ export class ProtspaceControlBar extends LitElement {
             @selection-change=${this._handleSearchSelectionChange}
             @add-selection=${this._handleSearchSelectionAdd}
             @add-selection-multiple=${this._handleSearchSelectionAddMultiple}
+            @remove-selection=${this._handleSearchSelectionRemove}
           ></protspace-protein-search>
         </div>
 
@@ -1047,29 +1083,9 @@ export class ProtspaceControlBar extends LitElement {
     document.addEventListener('click', this._onDocumentClick);
     document.addEventListener('keydown', this._onDocumentKeydown);
 
-    // Listen for annotation opening
-    this.addEventListener('annotation-opened', () => {
-      this.showProjectionMenu = false;
-      this.showFilterMenu = false;
-      this.showExportMenu = false;
-      this.showImportMenu = false;
-      // Close search when annotation opens
-      this.shadowRoot
-        ?.querySelector('protspace-protein-search')
-        ?.dispatchEvent(new CustomEvent('close-search', { bubbles: false }));
-    });
-
-    // Listen for search opening
-    this.addEventListener('search-opened', () => {
-      this.showProjectionMenu = false;
-      this.showFilterMenu = false;
-      this.showExportMenu = false;
-      this.showImportMenu = false;
-      // Close annotation when search opens
-      this.shadowRoot
-        ?.querySelector('protspace-annotation-select')
-        ?.dispatchEvent(new CustomEvent('close-dropdown', { bubbles: false }));
-    });
+    // Listen for annotation / search opening
+    this.addEventListener('annotation-opened', this._onAnnotationOpened);
+    this.addEventListener('search-opened', this._onSearchOpened);
 
     if (this.autoSync) {
       this._setupAutoSync();
@@ -1080,6 +1096,8 @@ export class ProtspaceControlBar extends LitElement {
     super.disconnectedCallback();
     document.removeEventListener('click', this._onDocumentClick);
     document.removeEventListener('keydown', this._onDocumentKeydown);
+    this.removeEventListener('annotation-opened', this._onAnnotationOpened);
+    this.removeEventListener('search-opened', this._onSearchOpened);
 
     if (this._scatterplotElement) {
       this._scatterplotElement.removeEventListener('data-change', this._onDataChange);
@@ -1102,7 +1120,7 @@ export class ProtspaceControlBar extends LitElement {
     // NEW base's threshold: re-derive from that base's eat-confidence condition and
     // mirror it out. The value-compare guard inside keeps this from ping-ponging.
     if (changed.has('selectedAnnotation')) {
-      this._emitEatThresholdMirror();
+      this._emitEatThresholdMirror(true);
     }
   }
 
@@ -1273,6 +1291,39 @@ export class ProtspaceControlBar extends LitElement {
     this.requestUpdate();
   }
 
+  /**
+   * Single commit point for every selection change: mirror the new selection into local
+   * state, into the scatterplot when auto-syncing, and out on `protein-selection-change`.
+   * Each caller only derives `newSelection`; keeping the commit here stops the four steps
+   * from drifting apart across the handlers that share them.
+   */
+  private _commitSelection(newSelection: string[]) {
+    this.selectedIdsChips = newSelection;
+    this.selectedProteinsCount = newSelection.length;
+    if (
+      this.autoSync &&
+      this._scatterplotElement &&
+      'selectedProteinIds' in this._scatterplotElement
+    ) {
+      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
+    }
+    this.dispatchEvent(
+      new CustomEvent('protein-selection-change', {
+        detail: { proteinIds: newSelection.slice() },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** Load a protein into every mounted structure viewer. */
+  private _loadIntoStructureViewers(proteinId: string) {
+    const viewers = Array.from(
+      document.querySelectorAll('protspace-structure-viewer'),
+    ) as StructureViewerElement[];
+    viewers.forEach((v) => v?.loadProtein?.(proteinId));
+  }
+
   private _handleProteinSelection(event: Event) {
     const customEvent = event as CustomEvent<{
       proteinId: string;
@@ -1293,22 +1344,7 @@ export class ProtspaceControlBar extends LitElement {
         this.selectedIdsChips.length === 1 && this.selectedIdsChips[0] === proteinId;
       newSelection = isOnlySelected ? [] : [proteinId];
     }
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
-    }
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._commitSelection(newSelection);
     this.requestUpdate();
   }
 
@@ -1374,7 +1410,7 @@ export class ProtspaceControlBar extends LitElement {
       (a) => !TOOLTIP_ONLY_ANNOTATIONS.has(a),
     );
     // The query-filter column picker can filter on the synthesized `__eat_confidence`
-    // columns (e.g. NOT(EAT_confidence < X)), but they're not meaningful to color by.
+    // columns (e.g. `EAT_confidence >= X or N/A`), but they're not meaningful to color by.
     this._filterableAnnotations = fullAnnotationKeys;
     this.annotations = fullAnnotationKeys.filter(
       (key) => !isEatConfidenceAnnotation(data.annotations?.[key]),
@@ -1454,53 +1490,25 @@ export class ProtspaceControlBar extends LitElement {
   // Search selection handler
   private _handleSearchSelectionChange(event: CustomEvent<{ proteinIds: string[] }>) {
     // This handles programmatic changes and clearing from within the search component
-    const newSelection = event.detail.proteinIds;
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
-    }
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._commitSelection(event.detail.proteinIds);
   }
 
   private _handleSearchSelectionAdd(event: CustomEvent<{ proteinId: string }>) {
     const { proteinId } = event.detail;
     if (!proteinId || this.selectedIdsChips.includes(proteinId)) return;
 
-    const newSelection = [...this.selectedIdsChips, proteinId];
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
+    this._commitSelection([...this.selectedIdsChips, proteinId]);
+    this._loadIntoStructureViewers(proteinId);
+  }
 
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
-    }
+  private _handleSearchSelectionRemove(event: CustomEvent<{ proteinId: string }>) {
+    const { proteinId } = event.detail;
+    if (!proteinId || !this.selectedIdsChips.includes(proteinId)) return;
 
-    const viewers = Array.from(
-      document.querySelectorAll('protspace-structure-viewer'),
-    ) as StructureViewerElement[];
-    viewers.forEach((v) => v?.loadProtein?.(proteinId));
-
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    // No structure-viewer call here: removal has no "the protein you just picked" to show.
+    // The app-level `protein-selection-change` listener still re-points the viewer at the
+    // new last-remaining protein (or leaves it alone once the selection empties).
+    this._commitSelection(this.selectedIdsChips.filter((id) => id !== proteinId));
   }
 
   private _handleSearchSelectionAddMultiple(event: CustomEvent<{ proteinIds: string[] }>) {
@@ -1512,31 +1520,8 @@ export class ProtspaceControlBar extends LitElement {
 
     if (newUniqueIds.length === 0) return;
 
-    const newSelection = [...this.selectedIdsChips, ...newUniqueIds];
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
-
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
-    }
-
-    const lastAddedId = newUniqueIds[newUniqueIds.length - 1];
-    const viewers = Array.from(
-      document.querySelectorAll('protspace-structure-viewer'),
-    ) as StructureViewerElement[];
-    viewers.forEach((v) => v?.loadProtein?.(lastAddedId));
-
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._commitSelection([...this.selectedIdsChips, ...newUniqueIds]);
+    this._loadIntoStructureViewers(newUniqueIds[newUniqueIds.length - 1]);
   }
 
   private _handleBrushSelection(event: Event) {
@@ -1544,29 +1529,8 @@ export class ProtspaceControlBar extends LitElement {
     const ids = Array.isArray(customEvent.detail?.proteinIds) ? customEvent.detail.proteinIds : [];
 
     // When selectionMode is active, merge with existing; otherwise replace
-    const newSelection = this.selectionMode
-      ? mergeProteinSelections(this.selectedIdsChips, ids)
-      : ids.slice();
-
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
-
-    // Sync with scatterplot if auto-sync is enabled
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
-    }
-
-    // Dispatch a single, consistent event for all selection changes
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
+    this._commitSelection(
+      this.selectionMode ? mergeProteinSelections(this.selectedIdsChips, ids) : ids.slice(),
     );
   }
 
@@ -1596,7 +1560,7 @@ export class ProtspaceControlBar extends LitElement {
   private _handleQueryChanged(e: CustomEvent<{ query: FilterQuery }>) {
     this.filterQuery = e.detail.query;
     // Reverse mirror (#6b): when the user edits the query directly, keep the
-    // legend reliability slider in sync with any NOT(EAT_confidence < X) condition.
+    // legend reliability slider in sync with any `EAT_confidence >= X or N/A` condition.
     this._emitEatThresholdMirror();
   }
 
@@ -1621,9 +1585,25 @@ export class ProtspaceControlBar extends LitElement {
     const proteinIds = this._currentData?.protein_ids;
     if (!proteinIds) return;
 
-    const matchedIds = Array.from(matchedIndices)
-      .map((i) => proteinIds[i])
-      .filter((id): id is string => id !== undefined);
+    // One pass, no intermediates: at Swiss-Prot scale the `Array.from -> map -> filter`
+    // chain allocated three arrays of up to N ids for what is one lookup per index,
+    // and this runs on every slider commit.
+    const matchedIds: string[] = [];
+    for (const index of matchedIndices) {
+      const id = proteinIds[index];
+      if (id !== undefined) matchedIds.push(id);
+    }
+
+    // A query that matches nothing used to be pushed as an ACTIVE filter, which
+    // blanked the canvas: `_getVisibleProteinIdsSet()` reads an empty
+    // `filteredProteinIds` as "nothing is visible". Reaching that state was easy —
+    // a self-contradicting pair of conditions — and there was no way back, because
+    // Apply is disabled and Cancel does not revert. Leave the plot as it is
+    // instead; the query builder still reports the 0 count (#380).
+    if (matchedIds.length === 0) {
+      this._clearFilterChannel(sp);
+      return;
+    }
 
     sp.filteredProteinIds = matchedIds;
     sp.filtersActive = true;
@@ -1644,9 +1624,7 @@ export class ProtspaceControlBar extends LitElement {
     const sp = this._scatterplotElement as ScatterplotElementLike;
 
     if (!hasConfiguredCondition(this.filterQuery)) {
-      sp.filteredProteinIds = [];
-      sp.filtersActive = false;
-      this.filterActive = false;
+      this._clearFilterChannel(sp);
       return;
     }
 
@@ -1654,65 +1632,104 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   /**
-   * Forward mirror (#6b): the legend reliability slider drives the query. For
-   * `x > 0` upsert a single `NOT(EAT_confidence < x)` condition on the selected
-   * base annotation's eat-confidence column; for `x <= 0` remove it. Then run the
-   * same apply path as a query. The eat-confidence column is resolved by runtime
-   * identity (role + base), which also matches the collision-renamed
-   * `__eat_confidence__runtime_N` variant that a suffix check would miss.
+   * Release the filter channel so every protein returns, leaving isolation alone.
+   *
+   * Only writes when something is actually set. `filteredProteinIds` is an Array
+   * property compared by identity, so assigning a fresh `[]` over an already-empty
+   * one still marks the plot dirty and triggers a full geometry rebuild plus a
+   * `data-change` round trip through the legend's population counts — an O(N) pass
+   * over every protein for a no-op.
+   */
+  private _clearFilterChannel(sp: ScatterplotElementLike): void {
+    if (sp.filtersActive || (sp.filteredProteinIds?.length ?? 0) > 0) {
+      sp.filteredProteinIds = [];
+      sp.filtersActive = false;
+    }
+    this.filterActive = false;
+  }
+
+  /**
+   * Scalar entry point for the reliability filter, kept as the published component's
+   * back-compat surface: "hide below `x`" is `atLeast` with no upper bound, and
+   * `x <= 0` constrains nothing and so removes the condition. `setEatReliability`
+   * does the resync, the column lookup and the apply.
    */
   public setEatConfidenceThreshold(baseKey: string, x: number): void {
-    // Always resync `_currentData` from the scatter plot's materialized snapshot
-    // before deriving the condition. On a dataset switch the seed can fire before
-    // the plot's data-change event has refreshed `_currentData`, and
-    // clearForNewDataset does NOT reset it — so a stale snapshot would resolve the
-    // eat-confidence column and map matched indices against the PREVIOUS dataset's
-    // protein ids. Reading the plot's current data directly (memoized, cheap)
-    // removes that timing dependency and mirrors the filter-menu-open path.
+    // No clamping here: `conditionsForReliability` normalizes the state it is handed,
+    // and the raw request is never stored.
+    this.setEatReliability(baseKey, { mode: 'atLeast', min: x, max: NEUTRAL_BOUND.max });
+  }
+
+  /**
+   * Forward mirror, generalised (#380). The control owns the reliability condition
+   * for one base annotation and replaces it wholesale on every change, at any depth
+   * in the query. It used to pattern-match a single fixed shape at the top level, so
+   * a hand-built condition with a different operator, or one nested in a group, was
+   * invisible — and a change appended a second, contradictory condition beside it.
+   */
+  public setEatReliability(baseKey: string, state: EatReliabilityState): void {
+    // Resync `_currentData` from the plot's materialized snapshot first: on a
+    // dataset switch the seed can fire before the data-change event refreshes it,
+    // and a stale snapshot would map matched indices against the previous dataset.
     if (this._scatterplotElement) {
       const sp = this._scatterplotElement as ScatterplotElementLike;
       this._currentData = sp.getMaterializedData?.() ?? sp.getCurrentData?.() ?? this._currentData;
     }
 
-    const threshold = Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0;
     const key = this._findEatConfidenceAnnotationKey(baseKey);
-    // Scope the read/write to THIS base's eat-confidence column so tuning one
-    // transferred base's slider can't clobber or misread another base's filter.
-    const current = this._thresholdForKey(key);
-    // Value-compare guard: the query already reflects this threshold, so
-    // re-applying would be redundant and could ping-pong with the reverse mirror.
-    if (threshold === current) return;
+    if (!key) return;
 
-    this._lastEmittedThreshold = threshold;
-    // Remove ONLY this base's reliability condition; every other condition
-    // (other bases' eat filters, unrelated user filters) is preserved.
-    const next = key
-      ? this.filterQuery.filter((item) => !this._isReliabilityConditionForKey(item, key))
-      : [...this.filterQuery];
-    if (threshold > 0 && key) {
-      next.push(
-        createNumericCondition({
-          annotation: key,
-          operator: 'lt',
-          max: threshold,
-          logicalOp: 'NOT',
-        }),
-      );
-    }
-    this.filterQuery = next;
+    const existing = findConditionsForAnnotation(this.filterQuery, key);
+    // A reliability state is one un-negated condition, or none at all.
+    const nextConditions = conditionsForReliability(key, state, existing[0]?.id);
+    const [replacement = null] = nextConditions;
+
+    // Record what the query will READ BACK as, not what was requested. The reverse
+    // mirror compares this against `reliabilityFromConditions`, and state -> conditions
+    // is not injective: `atMost 0..1` emits nothing and reads back as the `atLeast`
+    // default. Storing the request made the two disagree, so an unrelated edit in the
+    // filter dialog fired a spurious mirror that snapped the mode select back.
+    //
+    // Written BEFORE the de-dupe guard below. A mode picked before its bound —
+    // "Hide above" while the upper bound is still 1 — constrains nothing, so the guard
+    // returns early; skipping the record left the reverse mirror with no entry for this
+    // column, and a missing entry used to mean "emit unconditionally", which snapped the
+    // mode select back to "Hide below" on the next unrelated edit in the filter dialog.
+    this._lastMirroredState.set(key, reliabilityFromConditions(nextConditions));
+
+    // Guard, scoped to THIS base: the query already expresses this state, so
+    // re-applying would be redundant and could ping-pong with the reverse mirror.
+    // Compare the CONDITIONS, not the states they derive from — see `sameConditions`.
+    if (sameConditions(existing, nextConditions)) return;
+
+    this.filterQuery = replaceConditionsForAnnotation(this.filterQuery, key, replacement);
     this._applyQuery();
   }
 
-  private _emitEatThresholdMirror(): void {
-    // Scope to the SELECTED base: the slider shows the threshold for the base the
-    // user is currently coloring by, so switching annotation moves it to that base.
+  /**
+   * Reverse mirror: tell the legend what the query says for the SELECTED base.
+   *
+   * `force` is set when the selected annotation changed. The control is then
+   * showing the PREVIOUS base's position and must be repositioned even if this
+   * base's state is unchanged since the control bar last wrote it — the de-dupe
+   * guard exists only to stop the two directions ping-ponging within one base.
+   */
+  private _emitEatThresholdMirror(force = false): void {
     const key = this._findEatConfidenceAnnotationKey(this.selectedAnnotation);
-    const derived = this._thresholdForKey(key);
-    if (derived === this._lastEmittedThreshold) return;
-    this._lastEmittedThreshold = derived;
+    if (!key) return;
+    // Conditions are matched by their column, not by their shape, which is what lets
+    // every operator mirror — including one the user built by hand, at any depth.
+    const derived = reliabilityFromConditions(findConditionsForAnnotation(this.filterQuery, key));
+    // No record yet means nothing has moved this column off its resting position, so
+    // that is what the legend is already showing. Treating a missing entry as "emit
+    // unconditionally" instead made every first query edit push the `atLeast` default
+    // onto a control the user may have already set to another mode.
+    const last = this._lastMirroredState.get(key) ?? DEFAULT_EAT_RELIABILITY;
+    if (!force && isSameReliability(last, derived)) return;
+    this._lastMirroredState.set(key, derived);
     this.dispatchEvent(
       new CustomEvent('eat-threshold-mirror', {
-        detail: { value: derived },
+        detail: { state: derived, value: derived.min },
         bubbles: true,
         composed: true,
       }),
@@ -1731,48 +1748,14 @@ export class ProtspaceControlBar extends LitElement {
     return undefined;
   }
 
-  /**
-   * True when `item` is the reliability filter `NOT(<key> < X)` for the specific
-   * eat-confidence column `key` — numeric, that exact column, `lt`, negated.
-   */
-  private _isReliabilityConditionForKey(
-    item: FilterQueryItem,
-    key: string,
-  ): item is NumericCondition {
-    return (
-      !isFilterGroup(item) &&
-      item.kind === 'numeric' &&
-      item.annotation === key &&
-      item.operator === 'lt' &&
-      item.logicalOp === 'NOT'
-    );
-  }
-
-  /** The reliability `NOT(<key> < X)` condition for eat-confidence column `key`, if present. */
-  private _findReliabilityConditionForKey(
-    query: FilterQuery,
-    key: string,
-  ): NumericCondition | undefined {
-    return query.find((item): item is NumericCondition =>
-      this._isReliabilityConditionForKey(item, key),
-    );
-  }
-
-  /** The current reliability threshold for eat-confidence column `key` (0 if none/unresolved). */
-  private _thresholdForKey(key: string | undefined): number {
-    return key ? (this._findReliabilityConditionForKey(this.filterQuery, key)?.max ?? 0) : 0;
-  }
-
   private _handleQueryReset() {
     if (!this._scatterplotElement) return;
     const sp = this._scatterplotElement as ScatterplotElementLike;
     // Clear only the filter channel; any manual isolation the user created
     // independently of the filter is left untouched.
-    sp.filteredProteinIds = [];
-    sp.filtersActive = false;
+    this._clearFilterChannel(sp);
 
     this.filterQuery = [createCondition()];
-    this.filterActive = false;
     // A full reset drops any reliability condition too, so pull the legend slider
     // back to 0 via the reverse mirror.
     this._emitEatThresholdMirror();

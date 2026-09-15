@@ -36,20 +36,3 @@ export function materializePlotDataPoint(pd: PlotData, slot: number): PlotDataPo
 export function clonePlotData(pd: PlotData): PlotData {
   return { ...pd };
 }
-
-/** Gather a subset PlotData for the given slots (used only by >1M viewport virtualization). */
-export function gatherPlotData(pd: PlotData, slots: ArrayLike<number>): PlotData {
-  const n = slots.length;
-  const xs = new Float32Array(n);
-  const ys = new Float32Array(n);
-  const zs = pd.zs ? new Float32Array(n) : null;
-  const originalIndices = new Int32Array(n);
-  for (let i = 0; i < n; i++) {
-    const slot = slots[i];
-    xs[i] = pd.xs[slot];
-    ys[i] = pd.ys[slot];
-    if (zs && pd.zs) zs[i] = pd.zs[slot];
-    originalIndices[i] = plotDataOriginalIndex(pd, slot);
-  }
-  return { length: n, xs, ys, zs, originalIndices, proteinIds: pd.proteinIds };
-}

@@ -19,6 +19,9 @@ import typer
 
 from protspace.cli.app import PANEL_START, app, setup_logging
 from protspace.cli.common_options import (
+    EMBEDDER_HELP_LICENSE,
+    EMBEDDER_HELP_MODELS,
+    EMBEDDER_MODELS,
     Backend,
     ClusterSelection,
     Metric,
@@ -29,6 +32,7 @@ from protspace.cli.common_options import (
     Opt_FpRatio,
     Opt_LearningRate,
     Opt_MaxIter,
+    Opt_MaxLength,
     Opt_Methods,
     Opt_Metric,
     Opt_MinDist,
@@ -39,27 +43,13 @@ from protspace.cli.common_options import (
     Opt_RandomState,
     Opt_Similarity,
     Opt_Verbose,
+    build_embed_config,
+    require_similarity_extra,
 )
 
 logger = logging.getLogger(__name__)
 
-ANNOTATIONS_URL = (
-    "https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
-)
-EMBEDDER_MODELS = {
-    "prot_t5",
-    "prost_t5",
-    "esm2_8m",
-    "esm2_35m",
-    "esm2_150m",
-    "esm2_650m",
-    "esm2_3b",
-    "ankh_base",
-    "ankh_large",
-    "ankh3_large",
-    "esmc_300m",
-    "esmc_600m",
-}
+ANNOTATIONS_URL = "https://protspace.app/docs/guide/annotations"
 
 
 # ---------------------------------------------------------------------------
@@ -94,10 +84,7 @@ Opt_Embedder = Annotated[
         "--embedder",
         help=(
             "pLM model(s), comma-separated. "
-            "Models: prot_t5, prost_t5, esm2_8m, esm2_35m, esm2_150m, "
-            "esm2_650m, esm2_3b, ankh_base, ankh_large, ankh3_large, "
-            "esmc_300m, esmc_600m. "
-            "Note: ankh_*, ankh3_*, esmc_600m are non-commercial licenses."
+            f"{EMBEDDER_HELP_MODELS} {EMBEDDER_HELP_LICENSE}"
         ),
         rich_help_panel="Embedding",
     ),
@@ -126,9 +113,8 @@ Opt_Stats = Annotated[
     typer.Option(
         "--stats/--no-stats",
         help="Compute projection quality statistics (cluster-validity + "
-        "faithfulness); adds cluster_* membership columns (with per-point "
-        "silhouette confidence) + legend styles to the bundle. Opt-in (off by "
-        "default): can be slow on large runs.",
+        "faithfulness); adds cluster_* membership columns + legend styles to the "
+        "bundle. Opt-in (off by default): can be slow on large runs.",
         rich_help_panel="Output",
     ),
 ]
@@ -311,6 +297,7 @@ def prepare(
     embedder: Opt_Embedder = None,
     backend: Opt_Backend = Backend.biocentral,
     batch_size: Opt_BatchSize = None,
+    max_length: Opt_MaxLength = None,
     # Projection
     methods: Opt_Methods = None,
     similarity: Opt_Similarity = False,
@@ -378,6 +365,16 @@ def prepare(
         is_fasta_file(spec[0]) for spec in input_specs if not spec[0].is_dir()
     )
 
+    # Both similarity preconditions are pure argument checks, so they run before
+    # anything is read: similarity happens last, and failing here rather than at
+    # the import site keeps a full HDF5 load (or embed) off the wasted path.
+    # `has_fasta` is extension-based, the same test the input loop branches on,
+    # so this is exactly "the loop will not produce a FASTA for similarity".
+    if similarity:
+        if fasta is None and not query and not has_fasta:
+            raise typer.BadParameter("-s requires FASTA. Use -f when input is HDF5.")
+        require_similarity_extra()
+
     embedders = _parse_embedders(embedder)
 
     if embedders and not has_fasta and not query:
@@ -428,22 +425,7 @@ def prepare(
         query_uniprot,
     )
 
-    if backend == Backend.local:
-        from protspace.data.embedding.local import LocalEmbedConfig
-
-        embed_config = (
-            LocalEmbedConfig(batch_size=batch_size)
-            if batch_size is not None
-            else LocalEmbedConfig()
-        )
-    else:
-        from protspace.data.embedding.biocentral import EmbedConfig
-
-        embed_config = (
-            EmbedConfig(batch_size=batch_size)
-            if batch_size is not None
-            else EmbedConfig()
-        )
+    embed_config = build_embed_config(backend, batch_size, max_length)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
 
@@ -485,23 +467,16 @@ def prepare(
 
         elif input_specs:
             for path, name_override in input_specs:
-                if path.is_dir() or path.suffix.lower() in EMBEDDING_EXTENSIONS:
-                    if path.is_dir():
-                        h5s = sorted(
-                            f
-                            for ext in EMBEDDING_EXTENSIONS
-                            for f in path.glob(f"*{ext}")
-                        )
-                        if not h5s:
-                            logger.warning(f"No embedding files in: {path}")
-                            continue
-                    else:
-                        h5s = [path]
+                if path.is_dir():
+                    h5s = sorted(
+                        f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
+                    )
+                    if not h5s:
+                        logger.warning(f"No embedding files in: {path}")
+                        continue
                     emb_set = load_h5(h5s, name_override=name_override)
-                    # Attach FASTA path from -f flag if provided (for sequence reuse)
-                    if fasta_for_similarity:
-                        emb_set.fasta_path = fasta_for_similarity
-                    embedding_sets.append(emb_set)
+                elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
+                    emb_set = load_h5([path], name_override=name_override)
                 elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
                     _embed_all(
                         embedders,
@@ -513,18 +488,35 @@ def prepare(
                         force_reembed="embed" in refetch_stages,
                     )
                     fasta_for_similarity = path
+                    continue
                 else:
                     raise typer.BadParameter(f"Unsupported file: {path}")
+
+                # -f carries the sequences into the bundle, and it applies to
+                # every HDF5 input -- a directory of them as much as one file.
+                if fasta_for_similarity:
+                    emb_set.fasta_path = fasta_for_similarity
+                embedding_sets.append(emb_set)
 
         if not embedding_sets:
             raise typer.BadParameter("No valid input data found.")
 
+        # --- FASTA coverage ---
+        # Before similarity, not after: an uncovered protein inverts the whole
+        # MDS projection rather than degrading its own row.
+        if fasta_for_similarity is not None and embedding_sets:
+            from protspace.data.loaders.fasta import check_fasta_coverage
+
+            check_fasta_coverage(
+                fasta_for_similarity,
+                embedding_sets[0].headers,
+                required=bool(similarity),
+            )
+
         # --- Similarity ---
+        # Both preconditions were checked before any input was read, so
+        # `fasta_for_similarity` is set here whenever `similarity` is on.
         if similarity:
-            if fasta_for_similarity is None:
-                raise typer.BadParameter(
-                    "-s requires FASTA. Use -f when input is HDF5."
-                )
             from protspace.data.loaders import compute_similarity
 
             embedding_sets.append(

@@ -1,6 +1,4 @@
 import { test, type Page } from '@playwright/test';
-import * as path from 'path';
-import * as fs from 'fs';
 
 /**
  * Collects screen-space coordinates of points whose currently-selected
@@ -80,7 +78,8 @@ async function collectClusterScreenPoints(
   }, substringMatch);
 }
 import {
-  TEMP_VIDEOS_DIR,
+  INITIAL_PAUSE,
+  saveTestVideo,
   dismissProductTour,
   waitForDataLoad,
   waitForLegend,
@@ -107,41 +106,11 @@ import {
   printActionSummary,
 } from './helpers';
 
-// Shared constants for animation timing
-// Initial pause after data loads to show the initial state before animation starts
-// This time will be trimmed from the final GIF to remove loading screen
-const INITIAL_PAUSE = 2000; // 2 seconds
-
-// Ensure temp videos directory exists
-test.beforeAll(async () => {
-  if (!fs.existsSync(TEMP_VIDEOS_DIR)) {
-    fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
-  }
-});
-
 // After each test, copy the video to our temp directory with a proper name
 test.afterEach(async ({ page }, testInfo) => {
   // Print action summary before closing
   printActionSummary();
-
-  // Get the video from the test
-  const video = page.video();
-  if (video) {
-    // Create a sanitized filename from the test title
-    const sanitizedName = testInfo.title
-      .replace(/\.gif.*$/, '')
-      .replace(/[^a-zA-Z0-9-_]/g, '-')
-      .toLowerCase();
-
-    const destPath = path.join(TEMP_VIDEOS_DIR, `${sanitizedName}.webm`);
-
-    // Close the page first to finalize the video recording
-    await page.close();
-
-    // Now saveAs() will work because the video is finalized
-    await video.saveAs(destPath);
-    console.log(`🎬 Video saved: ${destPath}`);
-  }
+  await saveTestVideo(page, testInfo);
 });
 
 test.describe('Zoom Animation', () => {

@@ -1,11 +1,25 @@
-import { Page } from '@playwright/test';
+import { test, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import * as path from 'path';
+import * as fs from 'fs';
 
 // Output directory for screenshots
 export const IMAGES_DIR = path.join(__dirname, '../../docs/explore/images');
 
 // Output directory for temporary videos (before GIF conversion)
 export const TEMP_VIDEOS_DIR = path.join(__dirname, '../../temp-videos');
+
+/**
+ * Viewport every capture runs at. Mirrors the `screenshots`/`animations`
+ * projects in `playwright.config.ts`; specs that open their own context must
+ * use this so captured images stay a consistent size.
+ */
+export const SCREENSHOT_VIEWPORT = { width: 1536, height: 864 } as const;
+
+/**
+ * Pause at the top of each animation so the GIF opens on a settled frame.
+ * `convert-to-gif.ts` trims this span back off, so the two must stay in sync.
+ */
+export const INITIAL_PAUSE = 2000;
 
 /**
  * Dismiss the product tour by setting the localStorage flag that marks it as
@@ -41,21 +55,35 @@ async function awaitTwoFrames(page: Page): Promise<void> {
  * `#progressive-loading` overlay (loading-overlay.ts) to fully remove
  * itself — without this, screenshots can land during the 500 ms fade-out.
  */
-export async function waitForDataLoad(page: Page, timeout = 30000): Promise<void> {
+export async function waitForDataLoad(
+  page: Page,
+  options: { timeout?: number; expectedProteinCount?: number } = {},
+): Promise<void> {
+  const { timeout = 30000, expectedProteinCount } = options;
   await page.waitForSelector('#myPlot', { timeout });
 
   // Wait for the data property AND the post-render derived state used by
   // the animation tests (`_plotData`, `_scales`). When both are populated
   // the canvas has rendered at least once.
+  //
+  // `_plotData` is a struct of typed arrays carrying its own `length`, not an
+  // Array, so probe the property. An `Array.isArray` check here never passes
+  // and silently starves every capture into a hook timeout.
+  //
+  // `expectedProteinCount` pins the gate to one specific dataset, for specs
+  // that hand-feed a bundle and must not proceed on a different one.
   await page.waitForFunction(
-    () => {
+    (expected) => {
       const plot = document.querySelector('#myPlot') as any;
       if (!plot) return false;
-      if (!plot.data?.protein_ids?.length) return false;
-      if (!Array.isArray(plot._plotData) || plot._plotData.length === 0) return false;
+      const loaded = plot.data?.protein_ids?.length;
+      if (!loaded) return false;
+      if (expected !== undefined && loaded !== expected) return false;
+      if (!(plot._plotData?.length > 0)) return false;
       if (!plot._scales) return false;
       return true;
     },
+    expectedProteinCount,
     { timeout, polling: 200 },
   );
 
@@ -571,9 +599,136 @@ export async function clickResetButton(page: Page): Promise<void> {
 
 /**
  * Get video path from test result for GIF conversion.
+ *
+ * The name is derived from the test title the same way `convert-to-gif.ts`
+ * parses it back, so the two stay in step: everything from `.gif` onwards is
+ * dropped, then anything unsafe for a filename is collapsed to `-`.
  */
 export function getVideoOutputPath(testName: string): string {
-  return path.join(TEMP_VIDEOS_DIR, `${testName}.webm`);
+  const sanitized = testName
+    .replace(/\.gif.*$/, '')
+    .replace(/[^a-zA-Z0-9-_]/g, '-')
+    .toLowerCase();
+  return path.join(TEMP_VIDEOS_DIR, `${sanitized}.webm`);
+}
+
+/**
+ * Persist the recording Playwright made for the current test.
+ *
+ * Closes the page first: `saveAs()` only resolves once the recording has been
+ * finalized, which happens on close. Safe to call when video is disabled.
+ */
+export async function saveTestVideo(page: Page, testInfo: TestInfo): Promise<void> {
+  const video = page.video();
+  if (!video) return;
+
+  fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
+  const destPath = getVideoOutputPath(testInfo.title);
+
+  await page.close();
+  await video.saveAs(destPath);
+  console.log(`🎬 Video saved: ${destPath}`);
+}
+
+/**
+ * Share one pre-loaded page across every test in a static-capture spec.
+ *
+ * Loading and parsing a bundle costs far more than the screenshots do, so it
+ * happens once in `beforeAll`. Registers the `beforeAll`/`afterAll` pair and
+ * returns the accessor tests use to reach the page.
+ */
+export function createSharedCapturePage(load: (page: Page) => Promise<void>): () => Page {
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
+
+  test.beforeAll(async ({ browser }) => {
+    fs.mkdirSync(IMAGES_DIR, { recursive: true });
+    context = await browser.newContext({ viewport: { ...SCREENSHOT_VIEWPORT } });
+    page = await context.newPage();
+    await load(page);
+  });
+
+  test.afterAll(async () => {
+    await page?.close();
+    page = null;
+    await context?.close();
+    context = null;
+  });
+
+  return () => {
+    if (!page) {
+      throw new Error('shared capture page not initialized — beforeAll did not run');
+    }
+    return page;
+  };
+}
+
+/** Pick an annotation from the control bar's dropdown by its data key. */
+export async function selectAnnotation(page: Page, annotation: string): Promise<void> {
+  const controlBar = page.locator('protspace-control-bar');
+  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
+  await controlBar.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
+  await page.waitForFunction(
+    (key) => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (Element & { selectedAnnotation?: string })
+        | null;
+      return plot?.selectedAnnotation === key;
+    },
+    annotation,
+    { polling: 100 },
+  );
+}
+
+/**
+ * Screen coordinates of a protein's marker, in page space.
+ *
+ * Mirrors the projection the renderer applies: the scale maps data space into
+ * the canvas, then the zoom transform is applied on top. Reads `_plotData`,
+ * so it accounts for filtering and isolation reordering the slots.
+ */
+export async function getProteinScreenPosition(
+  page: Page,
+  proteinId: string,
+): Promise<{ x: number; y: number }> {
+  return page.evaluate((id) => {
+    const plot = document.querySelector('protspace-scatterplot') as
+      | (HTMLElement & {
+          _plotData?: {
+            length: number;
+            xs: Float32Array;
+            ys: Float32Array;
+            originalIndices: Int32Array | null;
+            proteinIds: string[];
+          };
+          _scales?: { x(value: number): number; y(value: number): number };
+          _transform?: { x: number; y: number; k: number };
+        })
+      | null;
+    const canvas = plot?.shadowRoot?.querySelector('canvas');
+    const data = plot?._plotData;
+    const scales = plot?._scales;
+    const transform = plot?._transform;
+    if (!plot || !canvas || !data || !scales || !transform) {
+      throw new Error('Scatter plot geometry is not ready');
+    }
+
+    const proteinIndex = data.proteinIds.indexOf(id);
+    // `Int32Array` has its own `findIndex`, so search it in place rather than
+    // copying the whole slot table into a JS array on every lookup.
+    const slot = data.originalIndices
+      ? data.originalIndices.findIndex((value) => value === proteinIndex)
+      : proteinIndex;
+    if (proteinIndex < 0 || slot < 0) {
+      throw new Error(`Protein ${id} is not in the rendered view`);
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + scales.x(data.xs[slot]) * transform.k + transform.x,
+      y: rect.top + scales.y(data.ys[slot]) * transform.k + transform.y,
+    };
+  }, proteinId);
 }
 
 /**

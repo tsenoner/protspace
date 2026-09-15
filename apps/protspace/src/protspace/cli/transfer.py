@@ -131,8 +131,10 @@ def run_transfer(
 
     if total_transferred == 0:
         logger.warning(
-            "No annotations were transferred. Check the --reference-* rules and "
-            "that query proteins have missing values in the target column(s)."
+            "No annotations were transferred: the target column(s) have either "
+            "no missing values to fill or no values to transfer from. If you "
+            "passed --query-* / --reference-* filters, check they select the "
+            "proteins you meant."
         )
     return out
 
@@ -179,7 +181,7 @@ def transfer(
         list[str] | None,
         typer.Option(
             "--query-id-prefix",
-            help="Only transfer to query IDs with this prefix (repeatable).",
+            help="Restrict queries to IDs with this prefix (default: any protein missing a value).",
             rich_help_panel="Query filters (which proteins receive labels)",
         ),
     ] = None,
@@ -195,7 +197,7 @@ def transfer(
         list[str] | None,
         typer.Option(
             "--reference-id-prefix",
-            help="Only use references whose ID has this prefix (repeatable).",
+            help="Restrict references to IDs with this prefix (default: any protein that has a value).",
             rich_help_panel="Reference filters (which proteins provide labels)",
         ),
     ] = None,
@@ -223,7 +225,13 @@ def transfer(
     ] = "cosine",
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """Fill missing annotations from nearest neighbours (EAT)."""
+    """Fill missing annotations from nearest neighbours (EAT).
+
+    With no query/reference filters, transfer runs *within* the bundle: every
+    protein missing a value in a --transfer column receives one from its
+    nearest neighbour among the proteins that have one. Use the filters only to
+    narrow that down (e.g. to label one species from another).
+    """
     setup_logging(verbose)
 
     import io

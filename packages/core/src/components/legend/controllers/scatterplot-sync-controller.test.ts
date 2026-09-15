@@ -108,6 +108,30 @@ describe('ScatterplotSyncController', () => {
       );
     });
 
+    it('removes the control bar listeners, including projection-change, on disconnect', () => {
+      // The scatterplot-listener spy above cannot see this: the control bar is a separate
+      // element, discovered and listened to independently (`_onScatterplotDiscovered`).
+      // Never removing `PROJECTION_CHANGE` here would leak a listener on every legend
+      // disconnect/reconnect cycle.
+      document.body.appendChild(mockScatterplot as unknown as Node);
+      const controlBar = document.createElement('protspace-control-bar');
+      document.body.appendChild(controlBar);
+      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
+      controller.hostConnected();
+
+      const removeEventListenerSpy = vi.spyOn(controlBar, 'removeEventListener');
+      controller.hostDisconnected();
+
+      expect(removeEventListenerSpy).toHaveBeenCalledWith(
+        LEGEND_EVENTS.ANNOTATION_CHANGE,
+        expect.any(Function),
+      );
+      expect(removeEventListenerSpy).toHaveBeenCalledWith(
+        LEGEND_EVENTS.PROJECTION_CHANGE,
+        expect.any(Function),
+      );
+    });
+
     it('stops discovery retries', () => {
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       controller.hostConnected();
@@ -216,7 +240,11 @@ describe('ScatterplotSyncController', () => {
 
       controller.forceSync();
 
-      expect(mockCallbacks.onDataChange).toHaveBeenCalledWith(expect.any(Object), 'test-feature');
+      expect(mockCallbacks.onDataChange).toHaveBeenCalledWith(
+        expect.any(Object),
+        'test-feature',
+        expect.any(String),
+      );
     });
 
     it('does nothing when no scatterplot', () => {
@@ -224,6 +252,46 @@ describe('ScatterplotSyncController', () => {
       controller.forceSync();
 
       expect(mockCallbacks.onDataChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('_selectedProjectionName (resolved via forceSync)', () => {
+    it.each([
+      [
+        'resolves the name at the current index',
+        1,
+        [{ name: 'UMAP 2' }, { name: 'PCA 2' }],
+        'PCA 2',
+      ],
+      [
+        'defaults to index 0 when selectedProjectionIndex is unset',
+        undefined,
+        [{ name: 'UMAP 2' }, { name: 'PCA 2' }],
+        'UMAP 2',
+      ],
+      ['falls back to an empty string when the index is out of range', 5, [{ name: 'UMAP 2' }], ''],
+    ] as const)('%s', (_label, selectedProjectionIndex, projections, expectedName) => {
+      document.body.appendChild(mockScatterplot as unknown as Node);
+      mockScatterplot.getCurrentData = vi.fn().mockReturnValue({
+        protein_ids: ['p1', 'p2'],
+        projections,
+        annotations: { 'test-feature': { values: ['a', 'b'] } },
+        annotation_data: { 'test-feature': ['a', 'b'] },
+      });
+      if (selectedProjectionIndex !== undefined) {
+        mockScatterplot.selectedProjectionIndex = selectedProjectionIndex;
+      }
+      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
+      controller.hostConnected();
+      vi.mocked(mockCallbacks.onDataChange).mockClear();
+
+      controller.forceSync();
+
+      expect(mockCallbacks.onDataChange).toHaveBeenCalledWith(
+        expect.any(Object),
+        'test-feature',
+        expectedName,
+      );
     });
   });
 
@@ -270,6 +338,53 @@ describe('ScatterplotSyncController', () => {
       controller.syncHiddenValues();
 
       expect(mockScatterplot.hiddenAnnotationValues).toEqual([]);
+    });
+
+    // Both arrays are `@property({ type: Array })` on the scatterplot, so Lit compares them by
+    // reference: handing it an equal-but-new array is recorded as a change. The scatterplot reads
+    // a change to `hiddenAnnotationValues` as "the user changed what is visible" and drops the EAT
+    // provenance connectors, so a resync that changed nothing used to wipe them. A projection
+    // switch runs exactly such a resync (`_handleProjectionChange`), which is how switching
+    // projection cleared the connectors — asserted end-to-end in eat-visualization.spec.ts.
+    it('keeps the same array instances when nothing actually changed', () => {
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1', 'hidden2']);
+      mockCallbacks.getOtherConcreteValues = vi.fn().mockReturnValue(['other1']);
+
+      controller.syncHiddenValues();
+      const hiddenAfterFirst = mockScatterplot.hiddenAnnotationValues;
+      const otherAfterFirst = mockScatterplot.otherAnnotationValues;
+
+      // A fresh array with identical contents each time, exactly like the real callbacks.
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1', 'hidden2']);
+      mockCallbacks.getOtherConcreteValues = vi.fn().mockReturnValue(['other1']);
+      controller.syncHiddenValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).toBe(hiddenAfterFirst);
+      expect(mockScatterplot.otherAnnotationValues).toBe(otherAfterFirst);
+    });
+
+    it('still replaces the array when the contents differ', () => {
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1']);
+      controller.syncHiddenValues();
+      const first = mockScatterplot.hiddenAnnotationValues;
+
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1', 'hidden2']);
+      controller.syncHiddenValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).not.toBe(first);
+      expect(mockScatterplot.hiddenAnnotationValues).toEqual(['hidden1', 'hidden2']);
+    });
+
+    it('treats a reordering as a change', () => {
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'b']);
+      controller.syncHiddenValues();
+      const first = mockScatterplot.hiddenAnnotationValues;
+
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['b', 'a']);
+      controller.syncHiddenValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).not.toBe(first);
+      expect(mockScatterplot.hiddenAnnotationValues).toEqual(['b', 'a']);
     });
   });
 

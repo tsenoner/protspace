@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   buildStorageKey,
   getStorageItem,
+  hasStorageItem,
   setStorageItem,
   removeStorageItem,
   removeAllStorageItemsByHash,
@@ -190,6 +191,37 @@ describe('setStorageItem', () => {
 
     const stored = localStorageMock.getItem('overwriteKey');
     expect(JSON.parse(stored!)).toEqual({ updated: true });
+  });
+});
+
+describe('hasStorageItem', () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    vi.clearAllMocks();
+  });
+
+  it('should report presence without deserialising the value', () => {
+    localStorageMock.setItem('presentKey', 'not valid json{{{');
+
+    // Deliberately unparseable: "is anything saved?" must not depend on the value being
+    // readable, or a corrupted entry would read as absent and be silently overwritten.
+    expect(hasStorageItem('presentKey')).toBe(true);
+    expect(hasStorageItem('missingKey')).toBe(false);
+  });
+
+  it('should return false when localStorage is unavailable rather than throwing', () => {
+    // Safari private browsing, a browser blocking site data, and a test runner with no storage
+    // backend all throw on access rather than returning null. `hasPersistedSettings` runs on the
+    // legend's rebuild path, so a throw here takes down legend rendering, not just persistence.
+    const originalGetItem = localStorageMock.getItem;
+    localStorageMock.getItem = vi.fn(() => {
+      throw new Error('The operation is insecure.');
+    });
+
+    expect(() => hasStorageItem('anyKey')).not.toThrow();
+    expect(hasStorageItem('anyKey')).toBe(false);
+
+    localStorageMock.getItem = originalGetItem;
   });
 });
 

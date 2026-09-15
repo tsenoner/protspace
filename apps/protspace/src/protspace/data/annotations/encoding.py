@@ -16,10 +16,35 @@ literal keeps names maximally readable.
 
 import re
 
+import pandas as pd
 import pyarrow as pa
 
 BUNDLE_FORMAT_VERSION = 2
 FORMAT_VERSION_KEY = b"protspace_format_version"
+
+# Columns of the intermediate annotation cache (``all_annotations.parquet``)
+# whose *stored meaning* changed, keyed by the cache version that changed it.
+# This is distinct from BUNDLE_FORMAT_VERSION above, which versions the wire
+# format the frontend reads: here the schema is unchanged and only the
+# interpretation of a cell moved, so a stale value cannot be repaired locally
+# and has to be refetched (or dropped) instead of reused.
+#
+#   v1: xref_pdb distinguishes "no UniProt entry" ("") from "no PDB" ("False")
+#
+# To record a new semantics change, add an entry — the version is derived from
+# this table, so the two cannot drift apart. The pipeline reads nothing else to
+# decide which columns and sources a legacy cache must refresh.
+CACHE_SEMANTICS_CHANGES: dict[int, frozenset[str]] = {
+    1: frozenset({"xref_pdb"}),
+}
+ANNOTATION_CACHE_VERSION = max(CACHE_SEMANTICS_CHANGES)
+ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
+
+# Boolean-ish annotations (``xref_pdb``, ``signal_peptide``, ...) persist as these
+# exact strings. Cached values are read back and re-transformed on resumed runs,
+# so every transform that emits one must also accept one unchanged — otherwise a
+# second pass reinterprets its own output as raw source data.
+CANONICAL_BOOLEANS = ("False", "True")
 
 # Chars that must be percent-encoded inside any free-text token.
 _RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
@@ -46,6 +71,38 @@ def read_format_version(table: pa.Table) -> int:
         return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
     except (TypeError, ValueError):
         return 1
+
+
+def read_annotation_cache_version(df: pd.DataFrame) -> int:
+    """Return the annotation cache's semantic version, defaulting legacy caches to 0.
+
+    pandas round-trips ``DataFrame.attrs`` through the Parquet file's key-value
+    metadata, so an unstamped cache is one written before versioning existed.
+    """
+    try:
+        return int(df.attrs.get(ANNOTATION_CACHE_VERSION_ATTR, 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def annotation_cache_version_attrs() -> dict[str, int]:
+    """Return the ``DataFrame.attrs`` marking a cache as current."""
+    return {ANNOTATION_CACHE_VERSION_ATTR: ANNOTATION_CACHE_VERSION}
+
+
+def stale_cache_columns(df: pd.DataFrame) -> set[str]:
+    """Return the columns of ``df`` whose values predate their current meaning.
+
+    Empty for a cache stamped with the current version, so the common resumed
+    run pays only one metadata lookup.
+    """
+    version = read_annotation_cache_version(df)
+    return {
+        column
+        for changed_at, columns in CACHE_SEMANTICS_CHANGES.items()
+        if version < changed_at
+        for column in columns
+    } & set(df.columns)
 
 
 def _split_legacy_hits(value: str) -> list[str]:

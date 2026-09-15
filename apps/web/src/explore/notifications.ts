@@ -1,6 +1,7 @@
 import type {
   DataErrorEventDetail,
   LegendErrorEventDetail,
+  RendererDegradedDetail,
   SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
@@ -164,6 +165,32 @@ export function getSelectionDisabledNotification(
     description: detail.message,
     durationMs: 5_000,
     dedupeKey: `selection-disabled:${reason}:${dataSize}`,
+  };
+}
+
+/**
+ * Copy for a renderer capability reduction.
+ *
+ * Every one of these was previously silent or console-only, on hardware that
+ * never said anything was out of range. The toast shows the user-facing message;
+ * the report action carries the measured numbers instead, because the device
+ * limit and the point count are what identify the device class in a bug report.
+ */
+export function getRendererDegradedNotification(detail: RendererDegradedDetail): NotifyOptions {
+  const context = detail.context;
+  const reason = context?.reason ?? 'unknown';
+  return {
+    title: 'Rendering quality reduced.',
+    description: detail.message,
+    durationMs: 10_000,
+    dedupeKey: `renderer-degraded:${reason}`,
+    action: buildReportAction(
+      'Rendering',
+      context
+        ? `${reason} (maxTextureSize=${context.maxTextureSize}, stride=${context.stride}, ` +
+            `points=${context.pointCount}${context.detail ? `, cause=${context.detail}` : ''})`
+        : detail.message,
+    ),
   };
 }
 

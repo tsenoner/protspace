@@ -5,10 +5,13 @@ import {
   isSparseMultiValueAnnotationData,
 } from './annotation-data-access';
 import {
+  DEFAULT_EAT_RELIABILITY,
+  clampReliabilityBound,
   getEatBaseAnnotationKey,
   getEatConfidenceAnnotationKey,
   hasEatPredictions,
   materializeEatOverlay,
+  normalizeReliability,
   parseEatCompanionColumn,
 } from './eat-overlay';
 
@@ -97,5 +100,72 @@ describe('EAT overlay helpers', () => {
     expect(rows.base.byteLength).toBe(size * Int32Array.BYTES_PER_ELEMENT);
     expect(rows.overrides.size).toBe(1);
     expect(rows.overrides.get(size - 1)).toEqual([0, 1]);
+  });
+});
+
+describe('normalizeReliability', () => {
+  it('blanks the bound its mode does not use', () => {
+    // Both mirror directions compare states for equality, and the query round-trip
+    // always reads back the canonical spelling. A caller that leaves the unused bound
+    // at its previous value would never compare equal, so the de-dupe guard would
+    // never fire and every repeat call would rewrite the query.
+    expect(normalizeReliability({ mode: 'atLeast', min: 0.3, max: 0.7 })).toEqual({
+      mode: 'atLeast',
+      min: 0.3,
+      max: 1,
+    });
+    expect(normalizeReliability({ mode: 'atMost', min: 0.3, max: 0.7 })).toEqual({
+      mode: 'atMost',
+      min: 0,
+      max: 0.7,
+    });
+  });
+
+  it('orders an inverted band instead of emitting an unsatisfiable one', () => {
+    // The two sliders move independently, so the lower can be dragged past the upper.
+    // `between 0.8..0.5` evaluates as `v >= 0.8 && v <= 0.5`, which nothing satisfies.
+    expect(normalizeReliability({ mode: 'between', min: 0.8, max: 0.5 })).toEqual({
+      mode: 'between',
+      min: 0.5,
+      max: 0.8,
+    });
+  });
+
+  it('clamps a non-finite bound rather than propagating NaN', () => {
+    expect(normalizeReliability({ mode: 'atLeast', min: Number.NaN, max: 1 })).toEqual({
+      mode: 'atLeast',
+      min: 0,
+      max: 1,
+    });
+  });
+
+  it('falls a non-finite bound back to its OWN neutral position', () => {
+    // An emptied upper box means "no constraint above", i.e. 1. Defaulting it to 0 —
+    // the LOWER bound's neutral position — turned it into `<= 0`, which hides every
+    // prediction: the exact opposite filter.
+    expect(normalizeReliability({ mode: 'atMost', min: 0, max: Number.NaN })).toEqual({
+      mode: 'atMost',
+      min: 0,
+      max: 1,
+    });
+  });
+
+  it('leaves the canonical default untouched', () => {
+    expect(normalizeReliability(DEFAULT_EAT_RELIABILITY)).toEqual(DEFAULT_EAT_RELIABILITY);
+  });
+});
+
+describe('clampReliabilityBound', () => {
+  it('falls back per bound, so an emptied box reads as "no constraint on this side"', () => {
+    // The upper bound's "constrains nothing" position is 1, not 0 — falling back to 0
+    // there would turn an emptied box into a filter that hides every prediction.
+    expect(clampReliabilityBound(Number.NaN)).toBe(0);
+    expect(clampReliabilityBound(Number.NaN, 1)).toBe(1);
+  });
+
+  it('clamps a finite bound into 0..1', () => {
+    expect(clampReliabilityBound(-0.5)).toBe(0);
+    expect(clampReliabilityBound(1.5)).toBe(1);
+    expect(clampReliabilityBound(0.42)).toBe(0.42);
   });
 });

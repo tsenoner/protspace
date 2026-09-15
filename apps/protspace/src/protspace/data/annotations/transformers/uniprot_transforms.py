@@ -13,9 +13,25 @@ from pathlib import Path
 
 import requests
 
-from protspace.data.annotations.encoding import encode_field
+from protspace.data.annotations.encoding import (
+    CANONICAL_BOOLEANS,
+    encode_field,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _is_blank(value) -> bool:
+    """True for a cell that carries no value.
+
+    Cached annotations are read back through pandas, which represents an absent
+    cell as ``NaN`` rather than ``""``. ``NaN`` is truthy and stringifies to
+    ``"nan"``, so a plain truthiness test would read a missing cell as data.
+    """
+    if value is None or value != value:  # NaN is the only value unequal to itself
+        return True
+    return not str(value).strip()
+
 
 # ExPASy ENZYME database for EC name resolution
 ENZYME_DAT_URL = "https://ftp.expasy.org/databases/enzyme/enzyme.dat"
@@ -84,19 +100,28 @@ class UniProtTransformer:
         return first
 
     @staticmethod
-    def transform_xref_pdb(value: str) -> str:
+    def transform_xref_pdb(value: str, uniprot_kb_id: str | None = None) -> str:
         """
-        Convert PDB IDs to True/False.
+        Convert PDB IDs to True/False while preserving canonical values.
 
         Args:
-            value: PDB IDs (semicolon-separated) or empty string
+            value: PDB IDs (semicolon-separated), canonical boolean, or empty string
+            uniprot_kb_id: Sibling UniProt identifier used as resolution context.
+                An explicitly blank identifier means the protein has no UniProt
+                entry, so PDB availability stays missing rather than "False".
+                ``None`` means no context was supplied (column not selected).
 
         Returns:
-            "True" if PDB structures exist, "False" otherwise
+            "" if the protein has no resolved UniProt entry, otherwise "True"
+            if PDB structures exist and "False" if not
         """
-        if value and str(value).strip():
-            return "True"
-        return "False"
+        if uniprot_kb_id is not None and _is_blank(uniprot_kb_id):
+            return ""
+        if value in CANONICAL_BOOLEANS:
+            return value
+        if _is_blank(value):
+            return "False"
+        return "True"
 
     @staticmethod
     def transform_fragment(value: str) -> str:

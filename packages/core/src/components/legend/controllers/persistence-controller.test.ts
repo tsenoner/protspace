@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ReactiveControllerHost } from 'lit';
 import { PersistenceController, type PersistenceCallbacks } from './persistence-controller';
 import type { LegendItem } from '../types';
@@ -21,6 +21,7 @@ vi.mock('@protspace/utils', () => ({
     (prefix: string, hash: string, annotation: string) => `${prefix}_${hash}_${annotation}`,
   ),
   getStorageItem: vi.fn(),
+  hasStorageItem: vi.fn(),
   setStorageItem: vi.fn(),
   removeStorageItem: vi.fn(),
   removeAllStorageItemsByHash: vi.fn(),
@@ -36,6 +37,7 @@ import {
   generateDatasetHash,
   buildStorageKey,
   getStorageItem,
+  hasStorageItem,
   setStorageItem,
   removeStorageItem,
   removeAllStorageItemsByHash,
@@ -338,47 +340,29 @@ describe('PersistenceController', () => {
     });
   });
 
+  // Delegation only. The guard itself (absent/throwing `localStorage` under Safari private
+  // browsing or blocked site data) is pinned in `storage-service.test.ts`, where it lives —
+  // this controller must not reach past `hasStorageItem` and re-implement it.
   describe('hasPersistedSettings', () => {
-    const mockGetItem = vi.fn();
-    const originalLocalStorage = global.localStorage;
-
     beforeEach(() => {
-      Object.defineProperty(global, 'localStorage', {
-        value: {
-          getItem: mockGetItem,
-          setItem: vi.fn(),
-          removeItem: vi.fn(),
-          clear: vi.fn(),
-          length: 0,
-          key: vi.fn(),
-        },
-        configurable: true,
-      });
-      mockGetItem.mockReset();
+      vi.mocked(hasStorageItem).mockReset();
     });
 
-    afterEach(() => {
-      Object.defineProperty(global, 'localStorage', {
-        value: originalLocalStorage,
-        configurable: true,
-      });
-    });
-
-    it('returns false without storage key or when no item exists', () => {
+    it('returns false without a storage key, without consulting storage at all', () => {
       expect(controller.hasPersistedSettings()).toBe(false);
+      expect(hasStorageItem).not.toHaveBeenCalled();
+    });
 
+    it('reports what the shared storage helper says, for the scoped key', () => {
       controller.updateDatasetHash(['protein1']);
       controller.updateSelectedAnnotation('annotation1');
-      mockGetItem.mockReturnValue(null);
-      expect(controller.hasPersistedSettings()).toBe(false);
-    });
 
-    it('returns true when item exists', () => {
-      controller.updateDatasetHash(['protein1']);
-      controller.updateSelectedAnnotation('annotation1');
-      mockGetItem.mockReturnValue('{"some": "data"}');
+      vi.mocked(hasStorageItem).mockReturnValue(false);
+      expect(controller.hasPersistedSettings()).toBe(false);
+
+      vi.mocked(hasStorageItem).mockReturnValue(true);
       expect(controller.hasPersistedSettings()).toBe(true);
-      expect(mockGetItem).toHaveBeenCalledWith('legend_hash_protein1_annotation1');
+      expect(hasStorageItem).toHaveBeenCalledWith('legend_hash_protein1_annotation1');
     });
   });
 

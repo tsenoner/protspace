@@ -1,5 +1,9 @@
 import type { LegendErrorEventDetail, LegendErrorSource } from './legend.events';
-import type { AnnotationData, AnnotationPredictedData } from '@protspace/utils';
+import type {
+  AnnotationData,
+  AnnotationPredictedData,
+  ProjectionStatisticRow,
+} from '@protspace/utils';
 
 /**
  * A legend item representing a category.
@@ -28,6 +32,8 @@ export interface OtherItem {
 
 export interface ScatterplotData {
   protein_ids: string[];
+  /** Parsed rows of the bundle's optional statistics part; absent without `--stats`. */
+  statisticsRows?: readonly ProjectionStatisticRow[];
   annotations: Record<
     string,
     {

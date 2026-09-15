@@ -1,8 +1,8 @@
-import { test, type BrowserContext, type Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 import * as path from 'path';
-import * as fs from 'fs';
 import {
   IMAGES_DIR,
+  createSharedCapturePage,
   dismissProductTour,
   waitForDataLoad,
   waitForLegend,
@@ -13,42 +13,12 @@ import {
 // Static screenshots share one page across the whole spec — the dataset is
 // large to load and parse, so we pay that cost once in beforeAll and reset
 // only the per-test mutations in beforeEach.
-let sharedContext: BrowserContext | null = null;
-let sharedPage: Page | null = null;
-
-function getPage(): Page {
-  if (!sharedPage) {
-    throw new Error('sharedPage not initialized — beforeAll did not run');
-  }
-  return sharedPage;
-}
-
-test.beforeAll(async ({ browser }) => {
-  if (!fs.existsSync(IMAGES_DIR)) {
-    fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  }
-
-  sharedContext = await browser.newContext({
-    viewport: { width: 1536, height: 864 },
-  });
-  sharedPage = await sharedContext.newPage();
-
-  await sharedPage.goto('/explore');
-  await dismissProductTour(sharedPage);
-  await waitForDataLoad(sharedPage);
-  await waitForLegend(sharedPage);
-  await waitForControlBar(sharedPage);
-});
-
-test.afterAll(async () => {
-  if (sharedPage) {
-    await sharedPage.close();
-    sharedPage = null;
-  }
-  if (sharedContext) {
-    await sharedContext.close();
-    sharedContext = null;
-  }
+const getPage = createSharedCapturePage(async (page) => {
+  await page.goto('/explore');
+  await dismissProductTour(page);
+  await waitForDataLoad(page);
+  await waitForLegend(page);
+  await waitForControlBar(page);
 });
 
 /**

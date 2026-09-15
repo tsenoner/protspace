@@ -41,25 +41,11 @@ export function createViewController({
   controlBar,
 }: ViewControllerOptions): ViewController {
   let latestViewRequest = createEmptyExploreViewRequest();
-  let activeViewChangeSource: ExploreViewChangeSource | null = null;
-  let activeViewChangeResetFrame = 0;
+  let isApplyingView = false;
   const subscribers = new Set<(change: ExploreViewChange) => void>();
 
   const emitViewChange = (change: ExploreViewChange) => {
     subscribers.forEach((callback) => callback(change));
-  };
-
-  const scheduleActiveViewChangeSourceReset = (source: ExploreViewChangeSource) => {
-    if (activeViewChangeResetFrame) {
-      cancelAnimationFrame(activeViewChangeResetFrame);
-    }
-
-    activeViewChangeResetFrame = requestAnimationFrame(() => {
-      if (activeViewChangeSource === source) {
-        activeViewChangeSource = null;
-      }
-      activeViewChangeResetFrame = 0;
-    });
   };
 
   const getViewOptions = (data: VisualizationData | undefined) => ({
@@ -170,17 +156,25 @@ export function createViewController({
     const annotationChanged = currentView?.annotation !== effective.annotation;
     const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
 
-    activeViewChangeSource = source;
-    if (projectionChanged) {
-      selectProjection(effective.projection);
+    // The control bar dispatches its change events synchronously from these
+    // apply* calls, and the app routes them back here as user changes. Guard
+    // only that synchronous window: anything arriving later is a real user
+    // interaction, not an echo of what we just applied.
+    const wasApplyingView = isApplyingView;
+    isApplyingView = true;
+    try {
+      if (projectionChanged) {
+        selectProjection(effective.projection);
+      }
+      if (annotationChanged) {
+        selectAnnotation(effective.annotation);
+      }
+      if (tooltipChanged) {
+        selectTooltipAnnotations(effective.tooltip);
+      }
+    } finally {
+      isApplyingView = wasApplyingView;
     }
-    if (annotationChanged) {
-      selectAnnotation(effective.annotation);
-    }
-    if (tooltipChanged) {
-      selectTooltipAnnotations(effective.tooltip);
-    }
-    scheduleActiveViewChangeSourceReset(source);
 
     emitViewChange({
       effective,
@@ -192,7 +186,7 @@ export function createViewController({
   };
 
   const emitCurrentUserViewChange = () => {
-    if (activeViewChangeSource) {
+    if (isApplyingView) {
       return;
     }
 
@@ -240,10 +234,6 @@ export function createViewController({
       };
     },
     dispose() {
-      if (activeViewChangeResetFrame) {
-        cancelAnimationFrame(activeViewChangeResetFrame);
-        activeViewChangeResetFrame = 0;
-      }
       subscribers.clear();
     },
   };

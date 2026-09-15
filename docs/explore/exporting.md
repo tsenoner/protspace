@@ -24,17 +24,17 @@ Click **Figure Editor** to open a full-screen editor with live preview. This is 
 Key features:
 
 - **Journal presets** for Nature, Science, Cell, PNAS, PLOS, and presentations
-- **Photoshop-style Dimensions panel** — Width/Height/DPI, unit toggle (px/mm/in/cm), Resample on/off, aspect-lock chain
-- **Overlays** — circles, arrows, and text labels to annotate your figure
-- **Zoom insets** — true geometric magnification with a per-inset Dot size slider
-- **Legend customization** — position, font size in pt or px, columns, free-floating placement
-- **Click-to-select + Delete/Backspace** — click an overlay or inset (canvas or sidebar) and press Delete to remove it
-- **Persistent settings** — your layout is saved to localStorage and optionally embedded in `.parquetbundle` files
-- **Print-correct output** — PNG includes pHYs DPI metadata; PDF page size is mm-accurate
+- **Photoshop-style Dimensions panel**, Width/Height/DPI, unit toggle (px/mm/in/cm), Resample on/off, aspect-lock chain
+- **Overlays**, circles, arrows, and text labels to annotate your figure
+- **Zoom insets**, true geometric magnification with a per-inset Dot size slider
+- **Legend customization**, position, font size in pt or px, columns, free-floating placement
+- **Click-to-select + Delete/Backspace**, click an overlay or inset (canvas or sidebar) and press Delete to remove it
+- **Persistent settings**, your layout is saved to localStorage and optionally embedded in `.parquetbundle` files
+- **Print-correct output**, PNG includes pHYs DPI metadata; PDF page size is mm-accurate
 
 ### Quick Export
 
-Click **Quick Export** to download an image immediately using default or previously saved settings. No preview — useful when you've already configured the Figure Editor and want the same output again.
+Click **Quick Export** to download an image immediately using default or previously saved settings. No preview, useful when you've already configured the Figure Editor and want the same output again.
 
 ## Parquet Export
 
@@ -42,6 +42,16 @@ Export a `.parquetbundle` file that can be loaded back into ProtSpace or shared.
 
 - **Include legend settings**: Saves your current legend customizations (colors, shapes, ordering, visibility, palette) inside the file. Anyone who loads it will see the same visual configuration.
 - **Figure editor settings**: When legend settings are included, the Figure Editor state (dimensions, DPI, legend layout, overlays, insets) is also saved. This lets you reopen the Figure Editor exactly where you left off.
+
+If the bundle you loaded carried statistics (prepared with `protspace ... --stats`), the export
+re-emits them byte for byte, even with **Include legend settings** off. See
+[Separation Scores](/explore/separation-scores) for what those scores drive.
+
+::: warning Export fails on a reserved value
+Export stops with an error, rather than writing a corrupt file, if any annotation value or category
+name contains the literal text `---PARQUET_DELIMITER---`. That string separates the bundle's parts,
+so it cannot appear inside one.
+:::
 
 ## Protein IDs Export
 
@@ -55,6 +65,9 @@ Exports a plain text file with one protein ID per line. Useful for downstream an
 | No isolation      | All proteins           |
 
 Use isolation to export specific subsets.
+
+A subset export drops the statistics: the scores were computed over the whole dataset, so keeping
+them in a slice would make them read as describing that slice.
 
 ## Next Steps
 

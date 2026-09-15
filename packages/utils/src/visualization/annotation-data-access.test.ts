@@ -4,6 +4,7 @@ import {
   getProteinAnnotationCount,
   getFirstAnnotationIndex,
   isMultilabelAnnotationData,
+  isMultilabelAnnotationDataCached,
   sliceAnnotationData,
 } from './annotation-data-access';
 
@@ -130,5 +131,40 @@ describe('annotation-data-access', () => {
       expect(isMultilabelAnnotationData(Int32Array.from([0, 1]))).toBe(false);
       expect(isMultilabelAnnotationData([[0], [1, 2]])).toBe(true);
     });
+  });
+});
+
+describe('isMultilabelAnnotationDataCached', () => {
+  it('agrees with the uncached form on every storage shape', () => {
+    const dense: number[][] = [[0], [1, 2], [0]];
+    const single: number[][] = [[0], [1], [0]];
+    const compact = Int32Array.from([0, 1, 2]);
+
+    for (const data of [dense, single, compact]) {
+      expect(isMultilabelAnnotationDataCached(data)).toBe(isMultilabelAnnotationData(data));
+    }
+  });
+
+  it('memoizes per storage object, not per content', () => {
+    // The memo exists because the dense form is O(N) and callers want the answer
+    // on every style-getter rebuild — a legend hide, a selection, a projection
+    // switch.
+    //
+    // Mutating storage in place is precisely what production never does, and what
+    // the memo's soundness rests on. It is used here purely as an observation
+    // device: a re-read would flip the answer, so the STALE result is the memo,
+    // caught in the act. Asserting two `true`s instead would pass just as well
+    // with the memo deleted.
+    const a: number[][] = [[0], [1, 2]];
+    expect(isMultilabelAnnotationDataCached(a)).toBe(true);
+
+    a[1] = [1];
+    expect(isMultilabelAnnotationData(a)).toBe(false);
+    expect(isMultilabelAnnotationDataCached(a)).toBe(true);
+
+    // Equal-content but distinct storage is computed independently, so a fresh
+    // dataset cannot inherit another's answer.
+    const b: number[][] = [[0], [1]];
+    expect(isMultilabelAnnotationDataCached(b)).toBe(false);
   });
 });

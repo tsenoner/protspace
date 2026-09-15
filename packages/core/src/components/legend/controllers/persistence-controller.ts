@@ -1,5 +1,10 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
-import { setStorageItem, removeStorageItem, type LegendSettingsMap } from '@protspace/utils';
+import {
+  setStorageItem,
+  removeStorageItem,
+  hasStorageItem,
+  type LegendSettingsMap,
+} from '@protspace/utils';
 import type {
   LegendPersistedSettings,
   LegendItem,
@@ -196,12 +201,17 @@ export class PersistenceController
   }
 
   /**
-   * Check if there are persisted settings for current dataset/annotation
+   * Check if there are persisted settings for current dataset/annotation.
+   *
+   * Goes through `hasStorageItem` rather than touching `localStorage` directly: this runs on the
+   * legend's main rebuild path (`_updateLegendItems`), so a throw here — Safari private browsing,
+   * site data blocked — took down legend rendering entirely rather than just losing the saved
+   * settings it is asking about.
    */
   hasPersistedSettings(): boolean {
     const key = this._getStorageKey();
     if (!key) return false;
-    return localStorage.getItem(key) !== null;
+    return hasStorageItem(key);
   }
 
   /**

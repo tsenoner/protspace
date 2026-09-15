@@ -1,5 +1,6 @@
 // Bundle writer
 export {
+  concatenateBuffers,
   createParquetBundle,
   exportParquetBundle,
   generateBundleFilename,

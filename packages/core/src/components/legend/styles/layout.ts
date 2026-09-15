@@ -1,4 +1,24 @@
 import { css } from 'lit';
+import { srOnlyMixin } from '../../../styles/mixins';
+
+/**
+ * The reliability band's drag handle. Stated once and interpolated into both vendor
+ * pseudo-elements: `::-webkit-slider-thumb` and `::-moz-range-thumb` cannot be grouped
+ * into one selector (an engine drops the whole rule on a selector it does not know),
+ * so the declarations are what has to be shared. Two hand-kept copies meant a thumb
+ * resize applied to the webkit one was invisible in Chrome dev and CI and showed up
+ * only in Firefox.
+ */
+const bandThumb = css`
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--legend-bg, #fff);
+  border-radius: 50%;
+  background: var(--legend-accent-color, var(--primary, #2563eb));
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 20%);
+  cursor: grab;
+  pointer-events: auto;
+`;
 
 /**
  * Legend Layout Styles
@@ -39,17 +59,7 @@ export const layoutStyles = css`
     position: relative;
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
+  ${srOnlyMixin}
 
   .legend-header {
     display: flex;
@@ -159,10 +169,94 @@ export const layoutStyles = css`
     color: var(--legend-text-secondary);
   }
 
-  .eat-threshold > input[type='range'] {
-    display: block;
+  /*
+   * Every mode renders ONE track. It carries one thumb per bound the mode filters on,
+   * so the control keeps its shape when the mode changes. The range inputs are stacked
+   * on top of each other, transparent and inert, so what the user sees is the track and
+   * fill drawn below them; only the thumbs take pointer events, which is what lets two
+   * bounds be dragged independently on a shared bar.
+   */
+  .eat-threshold-band {
+    position: relative;
+    height: 1.05rem;
+    margin: 0.15rem 0 0;
+  }
+
+  .eat-threshold-track {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    left: 0;
+    height: 0.3rem;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: var(--legend-track-color, #3f4652);
+  }
+
+  /* The kept band. Positioned from both ends, so it reads as "what survives the filter". */
+  .eat-threshold-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 999px;
+    background: var(--legend-accent-color, var(--primary, #2563eb));
+  }
+
+  .eat-threshold-band input[type='range'] {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
+    height: 100%;
     margin: 0;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    /* The shared track must not swallow the other thumb's drags. */
+    pointer-events: none;
+  }
+
+  .eat-threshold-band input[type='range']:focus-visible {
+    outline: 2px solid var(--legend-accent-color, var(--primary, #2563eb));
+    outline-offset: 2px;
+    border-radius: 999px;
+  }
+
+  .eat-threshold-band input[type='range']::-webkit-slider-runnable-track {
+    background: transparent;
+    border: none;
+  }
+
+  .eat-threshold-band input[type='range']::-moz-range-track {
+    background: transparent;
+    border: none;
+  }
+
+  .eat-threshold-band input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    ${bandThumb}
+  }
+
+  .eat-threshold-band input[type='range']::-moz-range-thumb {
+    ${bandThumb}
+  }
+
+  .eat-threshold-band.is-disabled {
+    opacity: 0.6;
+  }
+
+  .eat-threshold-band.is-disabled input[type='range']::-webkit-slider-thumb {
+    cursor: default;
+  }
+
+  .eat-threshold-band.is-disabled input[type='range']::-moz-range-thumb {
+    cursor: default;
+  }
+
+  /* Separates the two percent boxes: "25 – 41 %". */
+  .eat-threshold-sep {
+    color: var(--legend-text-secondary);
   }
 
   .eat-threshold-percent {
@@ -179,6 +273,29 @@ export const layoutStyles = css`
 
   .eat-threshold-info {
     flex: 0 0 auto;
+  }
+
+  /*
+   * The mode select replaces what used to be a static "Hide below reliability"
+   * label, so it must not grow the row: the EAT legend is asserted to stay inside
+   * its group with no horizontal overflow down to a 320px viewport.
+   */
+  .eat-threshold-mode {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.1rem 0.2rem;
+    border: 1px solid var(--legend-border);
+    border-radius: 0.25rem;
+    background: var(--legend-bg);
+    color: var(--legend-text-color);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .eat-threshold-mode:disabled {
+    cursor: default;
+    opacity: 0.6;
   }
 
   .eat-legend-counts {
@@ -230,5 +347,31 @@ export const layoutStyles = css`
     color: var(--legend-text-secondary);
     font-style: italic;
     padding: 1rem 0;
+  }
+
+  .score-strips {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--legend-border);
+  }
+
+  .score-strips-note {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    /* 0.72rem, the size every other secondary line in this stylesheet uses, and the same as
+       .score-strips-caveat below — the two say the same kind of thing about the strips. */
+    font-size: 0.72rem;
+    color: var(--legend-text-secondary);
+    border-bottom: 1px solid var(--legend-border);
+  }
+
+  /* Sits inside .score-strips, which already owns the padding and bottom border. */
+  .score-strips-caveat {
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    color: var(--legend-text-secondary);
   }
 `;

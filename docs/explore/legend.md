@@ -33,6 +33,22 @@ Categorical annotations can group less frequent values into `Other` once the vis
 
 Numeric annotations do **not** use `Other`. They are binned directly from the raw numeric values.
 
+## Transferred Annotations (EAT)
+
+When the selected annotation carries values borrowed from nearby annotated proteins, a `Predicted (transferred)` section appears at the very top of the legend panel, above the separation strips. It holds a `Show` checkbox that adds the borrowed values to the plot and the legend rows, or removes them so those proteins fall back to `N/A`; a reliability filter — a mode dropdown (`Hide below`, `Hide above`, `Keep between`) with a slider, plus a second slider for the band — that hides predictions falling outside the chosen range; and a count of `Observed` against `Predicted by EAT` proteins. Curated values are never hidden by it in any mode, and the section is absent for annotations that have no transferred values.
+
+See [Transferred Annotations (EAT)](/explore/eat) for where the borrowed values come from and how to read them in the plot.
+
+## Separation Score Strips
+
+When the dataset was prepared with statistics and the selected annotation was scored in the current projection, two strips appear near the top of the legend panel, above the category list: one for `Silhouette`, one for `Davies–Bouldin`. Each plots one dot per category, in that category's legend color, so you can see which values sit apart from the rest and which overlap.
+
+- Hovering a dot highlights the matching legend row, and hovering a row highlights its dot.
+- Clicking a dot toggles that category, exactly like clicking its legend row.
+- While a filter or isolation narrows the view, the strips are replaced by the note `Separation scores are hidden while the view is filtered.`
+
+See [Separation Scores](/explore/separation-scores) for what the numbers mean and how they are computed.
+
 ## Settings
 
 Click the cog icon in the top-right corner of the legend for advanced options.
@@ -54,6 +70,8 @@ Categorical annotations support three sort modes:
 - `Alphabetical`
 - `Manual order`
 
+A fourth mode, `By separation`, appears only when the selected annotation carries per-category [separation scores](/explore/separation-scores) for the current projection, and orders categories by how cleanly each one separates. It is display-only: it reorders the list without changing which categories fall into `Other`, and it keeps working while the view is filtered.
+
 Numeric annotations support two sort modes:
 
 - `By numeric value`
@@ -63,6 +81,7 @@ The arrow button next to the cog reverses the current sort direction:
 
 - Numeric `By numeric value`: low-to-high vs high-to-low
 - Numeric `Manual order`: reverses the current manual order
+- Categorical `By separation`: best-separating first vs worst-separating first
 - Categorical: preserves the legacy reverse behavior
 
 ### Numeric Bin Distribution
@@ -113,6 +132,25 @@ Common reasons:
 
 This is why you might see `10` requested bins become `9`, and `9` become `8`, without anything being wrong.
 
+## Predicted Annotations
+
+Some annotations are computational predictions rather than experimentally curated records. When one
+is selected, the legend header shows a ⚡ **Predicted** badge next to the annotation title, followed
+by the note `Computationally predicted, not experimentally curated.` The same ⚡ marker appears next
+to the annotation in the control bar's annotation dropdown.
+
+The badge marks columns produced by a machine-learning model, a de-novo sequence-topology
+predictor, or predicted 3D structure. Reference signature matches such as Pfam, CATH-Gene3D and
+SUPERFAMILY, and curated or factual UniProt and Taxonomy fields, are not badged. Any unknown column
+whose name starts with `predicted_` is treated as a prediction.
+
+Which built-in columns carry the badge is listed per annotation in the
+[Annotations reference](/guide/annotations), which is generated from the same table the app reads.
+
+The ⚡ badge is a property of the whole column and is decided from the annotation's name, not from
+its values, so it is not the same thing as the `EAT` badge, which marks an otherwise curated column
+in which some individual proteins carry a transferred value.
+
 ## Colors, Gradients, And Shapes
 
 ### Categorical Palettes
@@ -153,7 +191,7 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 ### Shapes
 
-Every category renders as a circle by default. To assign a different shape (square, diamond, plus, triangle-up, triangle-down) to an individual category, click the category's color/shape swatch in the legend — the popover has a Shape section underneath the color picker.
+Every category renders as a circle by default. To assign a different shape (square, diamond, plus, triangle-up, triangle-down) to an individual category, click the category's color/shape swatch in the legend, the popover has a Shape section underneath the color picker.
 
 Numeric and multi-label annotations always render as circles; per-category shape assignment is not available for those.
 
@@ -166,6 +204,18 @@ Legend settings are saved per dataset and per annotation in the browser.
 - Numeric hidden values and manual order are only restored when the current numeric topology still matches the saved one
 - Use `Reset` in the settings dialog to clear saved preferences for the selected annotation
 
+## Styling From The Python CLI
+
+`protspace style` can pre-set legend styling inside a bundle, but its keys are categorical only. For
+a numeric annotation the web app reinterprets or ignores most of them, because numeric legend
+entries are bin IDs such as `num:quantile:150:200` rather than per-value keys.
+
+`Bin distribution` and `Reverse gradient direction` are UI-only settings and cannot be authored from
+the CLI.
+
+See [How CLI keys are reinterpreted for numeric columns](/guide/styling#how-cli-keys-are-reinterpreted-for-numeric-columns)
+for the per-key reference.
+
 ## Multi-Label Annotations
 
 When proteins have multiple values, such as multiple EC numbers:
@@ -176,5 +226,6 @@ When proteins have multiple values, such as multiple EC numbers:
 
 ## Next Steps
 
+- [Separation Scores](/explore/separation-scores) - the strips at the top of the legend panel, and how well each category separates
 - [Control Bar Features](/explore/control-bar) - projections, filters, export, and import
 - [Viewing 3D Structures](/explore/structures) - AlphaFold integration

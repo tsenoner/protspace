@@ -6,6 +6,11 @@ export const protspaceTipsStyles = css`
     top: 0.5rem;
     left: 3rem;
     z-index: 10;
+
+    /* Gap between the trigger and the card, read by the card's top offset and by the
+       invisible hover bridge that spans it. Same name and value as the sibling
+       projection-metadata card, whose .trigger/.content rules these duplicate. */
+    --card-gap: 0.5rem;
   }
 
   .trigger {
@@ -59,7 +64,7 @@ export const protspaceTipsStyles = css`
 
   .content {
     position: absolute;
-    top: calc(100% + 0.5rem);
+    top: calc(100% + var(--card-gap));
     left: 0;
     min-width: 18rem;
     max-width: min(24rem, calc(100vw - 2rem));
@@ -89,7 +94,7 @@ export const protspaceTipsStyles = css`
     bottom: 100%;
     left: 0;
     width: 100%;
-    height: 0.5rem; /* matches the gap: top: calc(100% + 0.5rem) */
+    height: var(--card-gap);
   }
 
   :host(:hover) .content,
@@ -153,7 +158,7 @@ export const protspaceTipsStyles = css`
   .section-label td {
     padding-top: 0.625rem;
     padding-bottom: 0.1875rem;
-    font-size: 0.6875rem;
+    font-size: var(--text-caption);
     font-weight: 600;
     color: #94a3b8;
     text-transform: uppercase;
