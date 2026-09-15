@@ -6,14 +6,14 @@ import * as fs from 'fs';
 export const IMAGES_DIR = path.join(__dirname, '../../docs/explore/images');
 
 // Output directory for temporary videos (before GIF conversion)
-export const TEMP_VIDEOS_DIR = path.join(__dirname, '../../temp-videos');
+const TEMP_VIDEOS_DIR = path.join(__dirname, '../../temp-videos');
 
 /**
  * Viewport every capture runs at. Mirrors the `screenshots`/`animations`
  * projects in `playwright.config.ts`; specs that open their own context must
  * use this so captured images stay a consistent size.
  */
-export const SCREENSHOT_VIEWPORT = { width: 1536, height: 864 } as const;
+const SCREENSHOT_VIEWPORT = { width: 1536, height: 864 } as const;
 
 /**
  * Pause at the top of each animation so the GIF opens on a settled frame.
@@ -89,7 +89,7 @@ export async function waitForDataLoad(
 
   // The loading overlay fades out (opacity 0.5s) then removes itself ~500 ms
   // later. Wait for the element to be gone from the DOM.
-  await page.waitForFunction(() => !document.getElementById('progressive-loading'), {
+  await page.waitForFunction(() => !document.getElementById('progressive-loading'), undefined, {
     timeout,
     polling: 100,
   });
@@ -110,51 +110,11 @@ export async function waitForLegend(page: Page, timeout = 15000): Promise<void> 
       const items = legend.shadowRoot.querySelectorAll('.legend-item');
       return items.length > 0;
     },
+    undefined,
     { timeout, polling: 200 },
   );
 
   await awaitTwoFrames(page);
-}
-
-/**
- * Wait for WebGL context to be ready in a canvas element.
- * This ensures WebGL is fully initialized before capturing screenshots.
- */
-export async function waitForWebGLContext(
-  page: Page,
-  selector: string = 'canvas',
-  timeout = 30000,
-): Promise<void> {
-  await page.waitForFunction(
-    (sel) => {
-      const canvas = document.querySelector(sel) as HTMLCanvasElement;
-      if (!canvas) return false;
-
-      // Try to get WebGL2 or WebGL context
-      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-      if (!gl) return false;
-
-      // Check if context is actually working (not lost)
-      const isContextLost = gl.isContextLost ? gl.isContextLost() : false;
-      if (isContextLost) return false;
-
-      // Additional check: ensure canvas has non-zero dimensions
-      return canvas.width > 0 && canvas.height > 0;
-    },
-    selector,
-    { timeout, polling: 500 },
-  );
-
-  // Wait for a frame to ensure rendering has started
-  await page.evaluate(() => {
-    return new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          resolve();
-        });
-      });
-    });
-  });
 }
 
 /**
@@ -175,6 +135,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
       const computedStyle = window.getComputedStyle(viewer);
       return computedStyle.display !== 'none' && viewer.style.display !== 'none';
     },
+    undefined,
     { timeout, polling: 500 },
   );
 
@@ -193,6 +154,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
 
         return !!(plugin || nestedPlugin);
       },
+      undefined,
       { timeout: 15000, polling: 1000 },
     );
     // If plugin found, wait a bit more for canvas rendering and structure loading
@@ -212,6 +174,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
           const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
           return !!gl && !(gl.isContextLost && gl.isContextLost());
         },
+        undefined,
         { timeout: 10000, polling: 500 },
       );
 
@@ -233,92 +196,6 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
     console.log('Note: Mol* plugin did not load in time, capturing current state');
     await page.waitForTimeout(1000);
   }
-}
-
-/**
- * Capture a screenshot of a specific element with optional padding.
- */
-export async function captureElement(
-  page: Page,
-  selector: string,
-  filename: string,
-  options: {
-    padding?: number;
-    fullPage?: boolean;
-  } = {},
-): Promise<string> {
-  const { fullPage = false } = options;
-  const outputPath = path.join(IMAGES_DIR, filename);
-
-  if (fullPage) {
-    await page.screenshot({
-      path: outputPath,
-      fullPage: true,
-    });
-  } else {
-    const element = page.locator(selector);
-    await element.screenshot({
-      path: outputPath,
-    });
-  }
-
-  console.log(`📸 Captured: ${filename}`);
-  return outputPath;
-}
-
-/**
- * Capture a screenshot of a shadow DOM element.
- * Since Playwright can't directly screenshot shadow DOM elements,
- * we use evaluate to get bounding box and clip the screenshot.
- */
-export async function captureShadowElement(
-  page: Page,
-  hostSelector: string,
-  shadowSelector: string,
-  filename: string,
-  padding = 10,
-): Promise<string> {
-  const outputPath = path.join(IMAGES_DIR, filename);
-
-  // Get the bounding box of the shadow DOM element
-  const box = await page.evaluate(
-    ({ hostSel, shadowSel }) => {
-      const host = document.querySelector(hostSel);
-      if (!host || !host.shadowRoot) return null;
-
-      const element = host.shadowRoot.querySelector(shadowSel);
-      if (!element) return null;
-
-      const rect = element.getBoundingClientRect();
-      return {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      };
-    },
-    { hostSel: hostSelector, shadowSel: shadowSelector },
-  );
-
-  if (!box) {
-    throw new Error(`Could not find shadow element: ${hostSelector} >> ${shadowSelector}`);
-  }
-
-  // Add padding
-  const clip = {
-    x: Math.max(0, box.x - padding),
-    y: Math.max(0, box.y - padding),
-    width: box.width + padding * 2,
-    height: box.height + padding * 2,
-  };
-
-  await page.screenshot({
-    path: outputPath,
-    clip,
-  });
-
-  console.log(`📸 Captured shadow element: ${filename}`);
-  return outputPath;
 }
 
 /**
@@ -354,80 +231,11 @@ export async function clickProteinPoint(page: Page): Promise<void> {
   });
 
   if (proteinId) {
-    await logAction(page, 'mouse', 'Click Protein Point', `Load protein: ${proteinId}`);
+    logAction('mouse', 'Click Protein Point', `Load protein: ${proteinId}`);
   }
 
   // Give the structure viewer time to load
   await page.waitForTimeout(1000);
-}
-
-/**
- * Perform a box selection on the scatterplot.
- */
-export async function boxSelect(
-  page: Page,
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-): Promise<void> {
-  const plot = page.locator('#myPlot');
-  const box = await plot.boundingBox();
-
-  if (!box) throw new Error('Could not get scatterplot bounding box');
-
-  // Calculate absolute positions
-  const absStartX = box.x + startX;
-  const absStartY = box.y + startY;
-  const absEndX = box.x + endX;
-  const absEndY = box.y + endY;
-
-  // Perform drag selection
-  await page.mouse.move(absStartX, absStartY);
-  await page.mouse.down();
-  await page.mouse.move(absEndX, absEndY, { steps: 20 });
-  await page.mouse.up();
-}
-
-/**
- * Zoom the scatterplot using mouse wheel.
- */
-export async function zoomScatterplot(page: Page, deltaY: number, steps = 5): Promise<void> {
-  const plot = page.locator('#myPlot');
-  const box = await plot.boundingBox();
-
-  if (!box) throw new Error('Could not get scatterplot bounding box');
-
-  // Move to center of plot
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-
-  await page.mouse.move(centerX, centerY);
-
-  // Zoom in steps for smoother animation
-  const stepDelta = deltaY / steps;
-  for (let i = 0; i < steps; i++) {
-    await page.mouse.wheel(0, stepDelta);
-    await page.waitForTimeout(100);
-  }
-}
-
-/**
- * Pan the scatterplot by dragging.
- */
-export async function panScatterplot(page: Page, deltaX: number, deltaY: number): Promise<void> {
-  const plot = page.locator('#myPlot');
-  const box = await plot.boundingBox();
-
-  if (!box) throw new Error('Could not get scatterplot bounding box');
-
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-
-  await page.mouse.move(centerX, centerY);
-  await page.mouse.down({ button: 'middle' });
-  await page.mouse.move(centerX + deltaX, centerY + deltaY, { steps: 20 });
-  await page.mouse.up({ button: 'middle' });
 }
 
 /**
@@ -445,7 +253,7 @@ export async function toggleLegendItem(page: Page, index = 0): Promise<void> {
     button?.click();
   }, index);
 
-  await logAction(page, 'mouse', 'Toggle Legend Item', `Toggle category ${index}`);
+  logAction('mouse', 'Toggle Legend Item', `Toggle category ${index}`);
   await page.waitForTimeout(500);
 }
 
@@ -472,27 +280,7 @@ export async function doubleClickLegendItem(page: Page, index = 0): Promise<void
     button.dispatchEvent(event);
   }, index);
 
-  await logAction(page, 'mouse', 'Double Click Legend Item', `Isolate category ${index}`);
-  await page.waitForTimeout(500);
-}
-
-/**
- * Open the export menu in the control bar.
- */
-export async function openExportMenu(page: Page): Promise<void> {
-  // Click the export button in the control bar
-  await page.evaluate(() => {
-    const controlBar = document.querySelector('#myControlBar');
-    if (!controlBar || !controlBar.shadowRoot) return;
-
-    const exportButton = controlBar.shadowRoot.querySelector(
-      '[data-export-button], .export-button, button[title*="Export"]',
-    );
-    if (exportButton) {
-      (exportButton as HTMLElement).click();
-    }
-  });
-
+  logAction('mouse', 'Double Click Legend Item', `Isolate category ${index}`);
   await page.waitForTimeout(500);
 }
 
@@ -512,7 +300,7 @@ export async function enableSelectionMode(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Enable Selection Mode', 'Click select button');
+  logAction('mouse', 'Enable Selection Mode', 'Click select button');
   await page.waitForTimeout(300);
 }
 
@@ -553,7 +341,7 @@ export async function clickClearButton(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Click Clear Button', 'Clear all selections');
+  logAction('mouse', 'Click Clear Button', 'Clear all selections');
   await page.waitForTimeout(300);
 }
 
@@ -573,7 +361,7 @@ export async function clickIsolateButton(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Click Isolate Button', 'Isolate selected proteins');
+  logAction('mouse', 'Click Isolate Button', 'Isolate selected proteins');
   await page.waitForTimeout(300);
 }
 
@@ -593,7 +381,7 @@ export async function clickResetButton(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Click Reset Button', 'Reset to original dataset');
+  logAction('mouse', 'Click Reset Button', 'Reset to original dataset');
   await page.waitForTimeout(300);
 }
 
@@ -604,7 +392,7 @@ export async function clickResetButton(page: Page): Promise<void> {
  * parses it back, so the two stay in step: everything from `.gif` onwards is
  * dropped, then anything unsafe for a filename is collapsed to `-`.
  */
-export function getVideoOutputPath(testName: string): string {
+function getVideoOutputPath(testName: string): string {
   const sanitized = testName
     .replace(/\.gif.*$/, '')
     .replace(/[^a-zA-Z0-9-_]/g, '-')
@@ -784,7 +572,7 @@ export async function getProteinScreenPosition(
 /**
  * Action tracking interface for logging all user interactions.
  */
-export interface ActionLog {
+interface ActionLog {
   type: 'mouse' | 'keyboard';
   action: string;
   details: string;
@@ -871,12 +659,7 @@ export async function initVisualIndicators(page: Page): Promise<void> {
  * Log an action to console (for debugging).
  * Visual indicators are shown separately via showClickIndicator and showKeyboardIndicator.
  */
-export async function logAction(
-  page: Page,
-  type: 'mouse' | 'keyboard',
-  action: string,
-  details: string,
-): Promise<void> {
+export function logAction(type: 'mouse' | 'keyboard', action: string, details: string): void {
   const logEntry: ActionLog = {
     type,
     action,
@@ -888,13 +671,6 @@ export async function logAction(
   // Log to console only
   const icon = type === 'mouse' ? '🖱️' : '⌨️';
   console.log(`${icon} ${action}: ${details}`);
-}
-
-/**
- * Get all logged actions.
- */
-export function getActionLogs(): ActionLog[] {
-  return [...actionLogs];
 }
 
 /**
@@ -993,8 +769,7 @@ export async function trackedMouseMove(
   y: number,
   options?: { steps?: number },
 ): Promise<void> {
-  await logAction(
-    page,
+  logAction(
     'mouse',
     'Mouse Move',
     `Move to (${Math.round(x)}, ${Math.round(y)})${options?.steps ? ` with ${options.steps} steps` : ''}`,
@@ -1014,12 +789,7 @@ export async function trackedMouseClick(
   const button = options?.button || 'left';
   const count = options?.clickCount || 1;
   const action = count === 2 ? 'Double Click' : 'Click';
-  await logAction(
-    page,
-    'mouse',
-    action,
-    `${button} button at (${Math.round(x)}, ${Math.round(y)})`,
-  );
+  logAction('mouse', action, `${button} button at (${Math.round(x)}, ${Math.round(y)})`);
   await page.mouse.click(x, y, options);
 }
 
@@ -1031,7 +801,7 @@ export async function trackedMouseDown(
   options?: { button?: 'left' | 'right' | 'middle' },
 ): Promise<void> {
   const button = options?.button || 'left';
-  await logAction(page, 'mouse', 'Mouse Down', `${button} button pressed`);
+  logAction('mouse', 'Mouse Down', `${button} button pressed`);
   await page.mouse.down(options);
 }
 
@@ -1043,7 +813,7 @@ export async function trackedMouseUp(
   options?: { button?: 'left' | 'right' | 'middle' },
 ): Promise<void> {
   const button = options?.button || 'left';
-  await logAction(page, 'mouse', 'Mouse Up', `${button} button released`);
+  logAction('mouse', 'Mouse Up', `${button} button released`);
   await page.mouse.up(options);
 }
 
@@ -1052,12 +822,7 @@ export async function trackedMouseUp(
  */
 export async function trackedMouseWheel(page: Page, deltaX: number, deltaY: number): Promise<void> {
   const direction = deltaY < 0 ? 'Zoom In' : deltaY > 0 ? 'Zoom Out' : 'Scroll';
-  await logAction(
-    page,
-    'mouse',
-    'Mouse Wheel',
-    `${direction} (deltaX: ${deltaX}, deltaY: ${deltaY})`,
-  );
+  logAction('mouse', 'Mouse Wheel', `${direction} (deltaX: ${deltaX}, deltaY: ${deltaY})`);
   await page.mouse.wheel(deltaX, deltaY);
 }
 
@@ -1066,7 +831,7 @@ export async function trackedMouseWheel(page: Page, deltaX: number, deltaY: numb
  */
 export async function trackedKeyboardDown(page: Page, key: string): Promise<void> {
   const keyName = key === 'Meta' ? '⌘ (Cmd)' : key === 'Control' ? 'Ctrl' : key;
-  await logAction(page, 'keyboard', 'Key Down', keyName);
+  logAction('keyboard', 'Key Down', keyName);
   await page.keyboard.down(key);
 }
 
@@ -1075,21 +840,8 @@ export async function trackedKeyboardDown(page: Page, key: string): Promise<void
  */
 export async function trackedKeyboardUp(page: Page, key: string): Promise<void> {
   const keyName = key === 'Meta' ? '⌘ (Cmd)' : key === 'Control' ? 'Ctrl' : key;
-  await logAction(page, 'keyboard', 'Key Up', keyName);
+  logAction('keyboard', 'Key Up', keyName);
   await page.keyboard.up(key);
-}
-
-/**
- * Wrapper for keyboard.press that logs the action.
- */
-export async function trackedKeyboardPress(
-  page: Page,
-  key: string,
-  options?: { delay?: number },
-): Promise<void> {
-  const keyName = key === 'Escape' ? 'Esc' : key;
-  await logAction(page, 'keyboard', 'Key Press', keyName);
-  await page.keyboard.press(key, options);
 }
 
 /**
@@ -1103,7 +855,7 @@ export async function showKeyboardIndicator(page: Page, key: string): Promise<vo
     indicator.textContent = 'Hold ⌘/Ctrl';
     indicator.style.display = 'block';
   });
-  await logAction(page, 'keyboard', 'Modifier Key', `Hold ${key === 'Meta' ? '⌘ (Cmd)' : 'Ctrl'}`);
+  logAction('keyboard', 'Modifier Key', `Hold ${key === 'Meta' ? '⌘ (Cmd)' : 'Ctrl'}`);
 }
 
 /**
@@ -1167,7 +919,7 @@ export async function showActionLabel(
     },
     { text: label, dur: durationMs, posX: x, posY: y },
   );
-  await logAction(page, 'mouse', 'Action Label', label);
+  logAction('mouse', 'Action Label', label);
 }
 
 /**
@@ -1180,81 +932,5 @@ export async function hideKeyboardIndicator(page: Page): Promise<void> {
       indicator.style.display = 'none';
     }
   });
-  await logAction(page, 'keyboard', 'Modifier Key', 'Released');
-}
-
-/**
- * Rotate the structure viewer by simulating mouse drag.
- * This simulates left-click and drag to rotate the 3D structure.
- */
-export async function rotateStructureViewer(
-  page: Page,
-  deltaX: number,
-  deltaY: number,
-  steps = 20,
-): Promise<void> {
-  const viewer = page.locator('#myStructureViewer');
-  const box = await viewer.boundingBox();
-
-  if (!box) throw new Error('Could not get structure viewer bounding box');
-
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-
-  await logAction(
-    page,
-    'mouse',
-    'Rotate Structure',
-    `Drag rotation (Δx: ${deltaX}, Δy: ${deltaY}, ${steps} steps)`,
-  );
-
-  // Move to center and start drag
-  await trackedMouseMove(page, centerX, centerY);
-  await trackedMouseDown(page);
-
-  // Drag in steps for smooth rotation
-  const stepX = deltaX / steps;
-  const stepY = deltaY / steps;
-  for (let i = 0; i < steps; i++) {
-    await page.mouse.move(centerX + stepX * (i + 1), centerY + stepY * (i + 1), { steps: 1 });
-    await page.waitForTimeout(20);
-  }
-
-  await trackedMouseUp(page);
-  // Wait for rendering to catch up
-  await page.waitForTimeout(100);
-}
-
-/**
- * Zoom the structure viewer by simulating mouse wheel.
- */
-export async function zoomStructureViewer(page: Page, deltaY: number, steps = 5): Promise<void> {
-  const viewer = page.locator('#myStructureViewer');
-  const box = await viewer.boundingBox();
-
-  if (!box) throw new Error('Could not get structure viewer bounding box');
-
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-
-  const direction = deltaY < 0 ? 'Zoom In' : 'Zoom Out';
-  await logAction(
-    page,
-    'mouse',
-    'Zoom Structure',
-    `${direction} (deltaY: ${deltaY}, ${steps} steps)`,
-  );
-
-  // Move to center
-  await trackedMouseMove(page, centerX, centerY);
-
-  // Zoom in steps for smoother animation
-  const stepDelta = deltaY / steps;
-  for (let i = 0; i < steps; i++) {
-    await page.mouse.wheel(0, stepDelta);
-    await page.waitForTimeout(50);
-  }
-
-  // Wait for rendering to catch up
-  await page.waitForTimeout(100);
+  logAction('keyboard', 'Modifier Key', 'Released');
 }

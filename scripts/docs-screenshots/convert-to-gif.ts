@@ -109,7 +109,7 @@ async function convertToGif(
       if (result.error || result.status !== 0) {
         throw result.error || new Error(`ffmpeg exited with code ${result.status}`);
       }
-    } catch (error) {
+    } catch {
       // Fall back to single-pass if palette generation fails
       console.log(`  Palette generation failed, using single-pass conversion...`);
       const singlePassFilter =

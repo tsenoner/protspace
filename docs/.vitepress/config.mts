@@ -24,6 +24,15 @@ export default defineConfig({
     },
   },
 
+  // The Explore pages carry several multi-megabyte GIFs — scatterplot.md alone
+  // references four totalling ~22 MB. Without this they all fetch on page load,
+  // including the ones below the fold that most readers never scroll to.
+  markdown: {
+    image: {
+      lazyLoading: true,
+    },
+  },
+
   // Internal planning/spec notes and per-folder contributor READMEs: not part
   // of the user-facing docs site.
   srcExclude: ['superpowers/**', '**/README.md'],
