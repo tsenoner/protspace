@@ -129,7 +129,7 @@ test.describe('Zoom Animation', () => {
     stepDelay: number,
   ): Promise<void> {
     const direction = deltaY < 0 ? 'Zoom In' : 'Zoom Out';
-    await logAction('mouse', 'Zoom Animation', `${direction} (${steps} steps, ${deltaY} delta)`);
+    logAction('mouse', 'Zoom Animation', `${direction} (${steps} steps, ${deltaY} delta)`);
     for (let i = 0; i < steps; i++) {
       await trackedMouseWheel(page, 0, deltaY);
       await page.waitForTimeout(stepDelay);
@@ -271,7 +271,7 @@ test.describe('Scatterplot Animation Captures', () => {
       // Fallback: click on center area
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
-      await logAction(
+      logAction(
         'mouse',
         'Click (Fallback)',
         `Click center at (${Math.round(centerX)}, ${Math.round(centerY)})`,
@@ -356,7 +356,7 @@ test.describe('Scatterplot Animation Captures', () => {
       await page.waitForTimeout(1500);
     } else {
       // Fallback: use the helper function
-      await logAction('mouse', 'Click Clear Button', 'Clear all selections');
+      logAction('mouse', 'Click Clear Button', 'Clear all selections');
       await clickClearButton(page);
       await page.waitForTimeout(1500);
     }
@@ -420,7 +420,7 @@ test.describe('Scatterplot Animation Captures', () => {
     const endX = clusterBBox ? clusterBBox.x2 : box.x + box.width * 0.7;
     const endY = clusterBBox ? clusterBBox.y2 : box.y + box.height * 0.7;
 
-    await logAction(
+    logAction(
       'mouse',
       'Box Selection',
       `Drag from (${Math.round(startX)}, ${Math.round(startY)}) to (${Math.round(endX)}, ${Math.round(endY)})`,
@@ -508,7 +508,8 @@ test.describe('Scatterplot Animation Captures', () => {
         }
         return false;
       },
-      { timeout: 10_000 },
+      undefined,
+      { timeout: 10_000, polling: 200 },
     );
 
     await page.waitForTimeout(INITIAL_PAUSE);
@@ -914,7 +915,7 @@ test.describe('Legend Animation Captures', () => {
     await showClickIndicator(page, naHandleCoords.x, naHandleCoords.y);
     await page.waitForTimeout(200);
 
-    await logAction('mouse', 'Drag Legend Item', 'Drag N/A to first position');
+    logAction('mouse', 'Drag Legend Item', 'Drag N/A to first position');
 
     // Use plain mouse events so Sortable.js (handle: '.drag-handle') detects the drag
     await page.mouse.move(naHandleCoords.x, naHandleCoords.y);
@@ -1000,7 +1001,7 @@ test.describe('Legend Animation Captures', () => {
       await page.waitForTimeout(300);
       await showClickIndicator(page, viewButtonCoords.x, viewButtonCoords.y);
     }
-    await logAction('mouse', 'Click View Button', 'Open Others dialog');
+    logAction('mouse', 'Click View Button', 'Open Others dialog');
     await page.evaluate(() => {
       const legend = document.querySelector('#myLegend');
       if (!legend || !legend.shadowRoot) return;
@@ -1071,7 +1072,7 @@ test.describe('Legend Animation Captures', () => {
       await page.waitForTimeout(300);
       await showClickIndicator(page, extractButtonCoords.x, extractButtonCoords.y);
     }
-    await logAction('mouse', 'Click Extract Button', `Extract ${extractName}`);
+    logAction('mouse', 'Click Extract Button', `Extract ${extractName}`);
     await page.evaluate(() => {
       const legend = document.querySelector('#myLegend');
       if (!legend || !legend.shadowRoot) return;
