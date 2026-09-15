@@ -22,4 +22,4 @@
 
 ## 4. Archive
 
-- [ ] 4.1 Run the archive as the last commit on the branch, before merge
+- [x] 4.1 Run the archive as the last commit on the branch, before merge
