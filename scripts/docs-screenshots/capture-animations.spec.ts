@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 
 type DuplicateStackProbe = {
   key: string;
@@ -9,20 +9,12 @@ type DuplicateStackProbe = {
 
 type DuplicatePlotProbe = HTMLElement & {
   config?: Record<string, unknown>;
-  data?: { projections?: Array<{ name: string }> };
-  selectedProjectionIndex: number;
-  updateComplete: Promise<unknown>;
   _dupOverlay?: {
     byKey?: Map<string, DuplicateStackProbe>;
     expandedKey?: string | null;
   };
   _scales?: { x: (v: number) => number; y: (v: number) => number };
   _transform?: { x: number; y: number; k: number };
-};
-
-type DuplicateControlBarProbe = HTMLElement & {
-  applyProjectionSelection(projection: string): void;
-  selectedProjection?: string;
 };
 
 /**
@@ -108,6 +100,7 @@ import {
   dismissProductTour,
   waitForDataLoad,
   waitForLegend,
+  selectProjection,
   toggleLegendItem,
   doubleClickLegendItem,
   enableSelectionMode,
@@ -512,40 +505,17 @@ test.describe('Scatterplot Animation Captures', () => {
   test('duplicate-badges.gif - Cross-projection duplicate badge and spiderfy', async ({ page }) => {
     await initVisualIndicators(page);
 
-    // Pre-enable the duplicate-counts setting so badges render without
+    // Pin PCA — it stacks identical projections densely enough to badge — then
+    // pre-enable the duplicate-counts setting so badges render without
     // animating the cog → checkbox path (keeps the GIF focused on the badge).
-    await page.evaluate(async () => {
+    await selectProjection(page, 'PCA');
+    await page.evaluate(() => {
       const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-      const controlBar = document.querySelector('#myControlBar') as DuplicateControlBarProbe | null;
-      if (!plot || !controlBar) {
-        throw new Error('Duplicate-badge capture needs #myPlot and #myControlBar');
+      if (!plot) {
+        throw new Error('Duplicate-badge capture needs #myPlot');
       }
-
-      const pca = plot.data?.projections?.find((projection) => projection.name.includes('PCA'));
-      if (!pca) {
-        throw new Error('Duplicate-badge capture requires a PCA projection');
-      }
-
-      controlBar.applyProjectionSelection(pca.name);
-      await plot.updateComplete;
       plot.config = { ...(plot.config ?? {}), enableDuplicateStackUI: true };
-      await plot.updateComplete;
     });
-
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-            const controlBar = document.querySelector(
-              '#myControlBar',
-            ) as DuplicateControlBarProbe | null;
-            const plotProjection = plot?.data?.projections?.[plot.selectedProjectionIndex]?.name;
-            return !!plotProjection && plotProjection === controlBar?.selectedProjection;
-          }),
-        { timeout: 1_000 },
-      )
-      .toBe(true);
 
     // Wait for the scatter-plot to (re)compute its duplicate stacks. The
     // overlay update is debounced behind the config change + a quadtree
@@ -754,11 +724,11 @@ test.describe('Scatterplot Animation Captures', () => {
     await page.waitForTimeout(1500); // hold to show the selected state
 
     // Click the badge to collapse. The badge is drawn at screen offset
-    // (+10, -10) from the stack's transformed center (see
-    // _renderDuplicateBadgesCanvas in scatter-plot.ts). _handleCanvasClick
-    // first nulls _expandedDuplicateStackKey, then runs a quadtree hit-test;
-    // clicking the badge lands outside the underlying point's hit radius,
-    // so the collapse sticks instead of re-toggling.
+    // (+10, -10) from the stack's transformed center (BADGE_OFFSET in
+    // duplicate-stacks/duplicate-badges-canvas-renderer.ts). The canvas click
+    // handler first collapses the expanded stack, then runs a quadtree
+    // hit-test; clicking the badge lands outside the underlying point's hit
+    // radius, so the collapse sticks instead of re-toggling.
     const badgeX = target.screenX + 10;
     const badgeY = target.screenY - 10;
     await trackedMouseMove(page, badgeX, badgeY, { steps: 6 });

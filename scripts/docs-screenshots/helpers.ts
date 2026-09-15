@@ -681,6 +681,56 @@ export async function selectAnnotation(page: Page, annotation: string): Promise<
 }
 
 /**
+ * Switch the control bar to the first projection whose name contains `match`,
+ * then wait for the scatter-plot to adopt it. Returns the resolved name.
+ *
+ * Drives `applyProjectionSelection()` directly instead of clicking the
+ * dropdown, unlike `selectAnnotation()`: the animation specs record video, so
+ * an open menu would land in the GIF.
+ */
+export async function selectProjection(page: Page, match: string): Promise<string> {
+  const projection = await page.evaluate((needle) => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { data?: { projections?: Array<{ name: string }> } })
+      | null;
+    const controlBar = document.querySelector('#myControlBar') as
+      | (Element & { applyProjectionSelection(name: string): void })
+      | null;
+    if (!plot || !controlBar) {
+      throw new Error('selectProjection needs #myPlot and #myControlBar');
+    }
+
+    const target = plot.data?.projections?.find((p) => p.name.includes(needle));
+    if (!target) {
+      throw new Error(`No projection matching "${needle}"`);
+    }
+
+    controlBar.applyProjectionSelection(target.name);
+    return target.name;
+  }, match);
+
+  // Gate on the name we asked for, not on the plot agreeing with the control
+  // bar: both are set synchronously by `applyProjectionSelection`, so a
+  // control-bar-vs-plot comparison passes even when the switch never happened.
+  await page.waitForFunction(
+    (name) => {
+      const plot = document.querySelector('#myPlot') as
+        | (Element & {
+            data?: { projections?: Array<{ name: string }> };
+            selectedProjectionIndex?: number;
+          })
+        | null;
+      if (!plot || plot.selectedProjectionIndex === undefined) return false;
+      return plot.data?.projections?.[plot.selectedProjectionIndex]?.name === name;
+    },
+    projection,
+    { timeout: 5_000, polling: 100 },
+  );
+
+  return projection;
+}
+
+/**
  * Screen coordinates of a protein's marker, in page space.
  *
  * Mirrors the projection the renderer applies: the scale maps data space into
