@@ -10,20 +10,45 @@ The Colab notebook converts protein embeddings into a visualization-ready `.parq
 
 1. Reads your embeddings from an HDF5 file (.h5)
 2. Applies dimensionality reduction (PCA, UMAP, t-SNE, PaCMAP, MDS, LocalMAP)
-3. Retrieves annotations from UniProt, InterPro, and NCBI Taxonomy
+3. Retrieves annotations from UniProt, InterPro, Taxonomy, TED, and Biocentral
 4. Creates the `.parquetbundle` file ready for ProtSpace
 
 ## Quickest path: drop a FASTA
 
-If your ProtSpace deployment runs the prep backend, you can skip the notebook
-entirely: drag a `.fasta` / `.fa` / `.fna` file (≤ 1500 sequences,
-≤ 2000 residues each) onto the Explore drop zone. The server will embed,
-project, annotate, and bundle, and the visualization opens automatically.
+If your ProtSpace deployment runs the prep backend, you can skip the notebook entirely: drag a
+`.fasta` / `.fa` / `.fna` file onto the Explore drop zone. The server embeds, projects, annotates,
+and bundles your sequences, and the visualization opens automatically.
 
-Behind the scenes this is the same pipeline as `protspace prepare -i seqs.fasta -e prot_t5 -m pca2,umap2`,
-with sensible defaults baked in. Use the notebook or the CLI for any non-default
-configuration (different embedder, additional projections, advanced annotation
-sources).
+Limits enforced on this path:
+
+| Limit                 | Value                    |
+| --------------------- | ------------------------ |
+| Sequences per file    | 20 minimum, 1500 maximum |
+| Residues per sequence | 2000                     |
+| Upload size           | 8 MB                     |
+| Job wall-clock time   | 420 seconds (7 minutes)  |
+
+Behind the scenes the service runs the same CLI subcommands you would run yourself: `protspace embed
+-e prot_t5` and `protspace annotate -a default` in parallel, then `protspace project -m pca2,umap2`,
+then `protspace bundle`. You get exactly the `PCA_2` and `UMAP_2` projections. Use the notebook or
+the CLI for any non-default configuration (different embedder, additional projections, other
+annotation sources).
+
+::: tip
+FASTA headers are normalized before embedding, so `sp|P12345|NAME_HUMAN` becomes `P12345`.
+:::
+
+::: warning Self-hosting
+There is no feature flag or capability probe, the drop zone always posts to `/api/prepare`. To
+enable this path on your own deployment you must run the
+[prep service](https://github.com/tsenoner/protspace/blob/main/apps/prep/README.md) and build the
+web app with `VITE_PREP_API_BASE` pointing at it. Without both, a FASTA drop fails with an upload
+error.
+:::
+
+Unlike `.parquetbundle` loading, this path uploads your sequences to a server. See
+[Importing Data](/explore/importing-data) for the full in-app flow, progress reporting, and error
+handling.
 
 ## Step 1: Get Protein Embeddings
 
@@ -54,7 +79,7 @@ For advanced users with custom embeddings, save them as an HDF5 file where each 
 
 ## Step 2: Run the Notebook
 
-1. Click the Colab badge above to open the notebook
+1. Click the Colab badge at the top of this page to open the notebook
 2. Run the first cell to install dependencies (~1 minute)
 3. Upload your `.h5` embeddings file
 
@@ -62,17 +87,11 @@ For advanced users with custom embeddings, save them as an HDF5 file where each 
 
 ### Annotations
 
-Choose which annotations to include from three sources:
+Choose which annotations to include. They come from five sources: UniProt, InterPro, Taxonomy, TED,
+and Biocentral (predicted).
 
-| Source         | Examples                                                                                              |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| **UniProt**    | protein_families, ec, go_bp, cc_subcellular_location, ...                                             |
-| **InterPro**   | pfam, cath, panther, smart, superfamily, ...                                                          |
-| **Taxonomy**   | kingdom, phylum, class, order, family, genus, species                                                 |
-| **TED**        | ted_domains (AlphaFold structure-based domain annotations)                                            |
-| **Biocentral** | predicted_subcellular_location, predicted_membrane, predicted_signal_peptide, predicted_transmembrane |
-
-See the [ProtSpace Python package](https://github.com/tsenoner/protspace) for the complete list of available annotations per source.
+See the [Annotations reference](/guide/annotations) for the complete per-column catalogue: what each
+annotation means, where it comes from, and which ones are predicted.
 
 ::: tip
 First-time taxonomy selection downloads a database (~1 minute).
@@ -101,11 +120,31 @@ Fine-tune settings for each method:
 | MDS      | N Init, Max Iter                |
 | LocalMAP | N Neighbors, MN Ratio, FP Ratio |
 
+### Quality statistics (Optional)
+
+Tick **Compute quality statistics** to score how well your annotations separate, and how faithfully
+each projection preserves the original embedding. This is the notebook's equivalent of the CLI's
+`--stats` flag. It is off by default, and the cost grows with dataset size.
+
+ProtSpace renders these scores in the legend and the projection metadata panel. See
+[Separation Scores](/explore/separation-scores).
+
 ## Step 4: Generate and Download
 
-1. Click **"Generate Bundle"**
+1. Click **Generate**
 2. Wait for processing (time depends on dataset size)
 3. Download your `.parquetbundle` file
+
+## Optional: fill missing annotations (EAT)
+
+The Preparation notebook has an **Embedding Annotation Transfer** panel below the Generate button.
+It fills blank annotation values on your query proteins from their nearest annotated neighbour in
+embedding space, with a reliability score attached. The
+[Transfer notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Transfer.ipynb)
+runs the same transfer on its own, using the `protspace transfer` CLI.
+
+Transferred values get their own legend section and their own marker style in the plot, so you can
+always tell them apart from curated ones. See [Transferred Annotations (EAT)](/explore/eat).
 
 ## Step 5: Visualize in ProtSpace
 

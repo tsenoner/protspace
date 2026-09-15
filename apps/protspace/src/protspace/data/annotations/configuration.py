@@ -33,7 +33,29 @@ ALL_ANNOTATIONS = (
     + BIOCENTRAL_ANNOTATIONS
 )
 ALWAYS_INCLUDED_ANNOTATIONS = ["gene_name", "protein_name", "uniprot_kb_id"]
-NEEDED_UNIPROT_ANNOTATIONS = ["accession", "organism_id"]
+TAXONOMY_LOOKUP_ANNOTATION = "organism_id"
+NEEDED_UNIPROT_ANNOTATIONS = ["accession", TAXONOMY_LOOKUP_ANNOTATION]
+# Fetched only to drive other lookups (taxonomy, InterPro); stripped from output
+# unless the user asked for them explicitly. A tuple so callers that bind it
+# directly cannot mutate the shared constant.
+INTERNAL_ANNOTATIONS = (TAXONOMY_LOOKUP_ANNOTATION, "sequence")
+
+# Which columns each annotation source owns. Single source of truth: the cache
+# uses it to keep a source that did not finish out of the parquet, and
+# `categorize_annotations_by_source` to route requested columns to a fetcher.
+SOURCE_ANNOTATIONS: dict[str, set[str]] = {
+    "uniprot": set(UNIPROT_ANNOTATIONS),
+    "taxonomy": set(TAXONOMY_ANNOTATIONS),
+    "interpro": set(INTERPRO_ANNOTATIONS),
+    "ted": set(TED_ANNOTATIONS),
+    "biocentral": set(BIOCENTRAL_ANNOTATIONS),
+}
+
+# Sources whose *cached* columns cannot be read back without a column another
+# source owns: `_extract_cached_taxonomy` is keyed on UniProt's organism_id, so
+# a cache holding taxonomy but no organism_id reads as complete and yields
+# nothing. Dropping a source from the cache must therefore drop its dependents.
+SOURCE_CACHE_DEPENDENTS: dict[str, set[str]] = {"uniprot": {"taxonomy"}}
 
 # User-facing UniProt annotations (excludes internal: sequence, organism_id)
 _UNIPROT_USER_ANNOTATIONS = [
@@ -129,11 +151,8 @@ class AnnotationConfiguration:
             Dictionary mapping source names to sets of annotations from that source
         """
         return {
-            "uniprot": annotations & set(UNIPROT_ANNOTATIONS),
-            "taxonomy": annotations & set(TAXONOMY_ANNOTATIONS),
-            "interpro": annotations & set(INTERPRO_ANNOTATIONS),
-            "ted": annotations & set(TED_ANNOTATIONS),
-            "biocentral": annotations & set(BIOCENTRAL_ANNOTATIONS),
+            source: annotations & columns
+            for source, columns in SOURCE_ANNOTATIONS.items()
         }
 
     @staticmethod
@@ -162,7 +181,10 @@ class AnnotationConfiguration:
         }
 
         # Handle dependencies: taxonomy needs organism_id from UniProt
-        if sources_needed["taxonomy"] and "organism_id" not in cached_annotations:
+        if (
+            sources_needed["taxonomy"]
+            and TAXONOMY_LOOKUP_ANNOTATION not in cached_annotations
+        ):
             sources_needed["uniprot"] = True
 
         # Handle dependencies: interpro needs sequence from UniProt
@@ -205,7 +227,7 @@ class AnnotationConfiguration:
                 raise ValueError(
                     f"Unknown annotation '{annotation}'.{hint}\n"
                     f"  Groups: {groups}\n"
-                    f"  See https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
+                    f"  See https://protspace.app/docs/guide/annotations"
                 )
             if annotation not in normalized_annotations:
                 normalized_annotations.append(annotation)

@@ -9,6 +9,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import (
     SETTINGS_FILENAME,
@@ -191,8 +192,7 @@ class BaseProcessor:
             df = df.rename(columns={self.identifier_col: "protein_id"})
 
         # Remove internal columns that are only needed for processing/caching
-        internal_columns = ["organism_id", "sequence"]
-        cols_to_drop = [c for c in internal_columns if c in df.columns]
+        cols_to_drop = [c for c in INTERNAL_ANNOTATIONS if c in df.columns]
         if cols_to_drop:
             df = df.drop(columns=cols_to_drop)
 

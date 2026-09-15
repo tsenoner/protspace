@@ -495,8 +495,9 @@ export const parseAnnotationValue = (
  * one rare value. Note this only catches a *net* imbalance (depth != 0 at the end): a stray
  * '(' in one hit cancelled by a stray ')' in a later hit leaves the final depth at 0, so the
  * inter-hit ';' (seen while depth was > 0) is silently swallowed and those two hits merge.
- * Both are symptoms of unsanitized names; sanitizing at the source is tracked in
- * tsenoner/protspace#56.
+ * Both are symptoms of unsanitized v1 names. Sanitizing at the source shipped in bundle
+ * format v2, which percent-encodes ';' (tsenoner/protspace-legacy#56, closed), so this
+ * paren-aware scan now only guards legacy v1 bundles.
  */
 function splitOnTopLevelSemicolons(value: string): string[] {
   // Fast path: with no '(' the depth stays 0 throughout, so the paren-aware scan
@@ -642,6 +643,59 @@ function buildCoordinateMap(
   return coordMap;
 }
 
+/**
+ * Re-apply the numeric identity carried by the annotations part's parquet schema
+ * (derived by `readNumericColumnTypes` in bundle.ts).
+ *
+ * `inferAnnotationType` derives kind/numericType from the values alone, which is
+ * correct whenever a column carries values but has a blind spot: a numeric column
+ * whose rows are all missing — an isolation-mode or query-filtered export — has
+ * nothing to infer from, so it reloads as a categorical column holding one
+ * `__NA__` category and loses its gradient legend and `>`/`<`/`between` operators.
+ *
+ * Only an INTEGER physical type is treated as authoritative for the int/float
+ * distinction. Bundles written before this writer stored *every* numeric column
+ * as DOUBLE, so DOUBLE carries no int/float information and must not be allowed
+ * to re-label their integer annotations; inference stays in charge there.
+ *
+ * Columns stored as text — the `protspace` CLI stringifies its annotation frame —
+ * carry no numeric physical type at all, so they are absent from `declared` and
+ * keep pure inference.
+ */
+function restoreDeclaredNumericAnnotations(
+  data: VisualizationData,
+  declared: Readonly<Record<string, 'int' | 'float'>>,
+): VisualizationData {
+  for (const [column, numericType] of Object.entries(declared)) {
+    const annotation = data.annotations[column];
+    if (!annotation) continue;
+
+    if (annotation.kind === 'numeric') {
+      // Values survived, so inference already had everything it needed — except
+      // that an integral column can only be stored INT32/INT64 by this writer.
+      if (numericType === 'int' && annotation.numericType !== 'int') {
+        data.annotations[column] = { ...annotation, numericType };
+      }
+      continue;
+    }
+
+    // Only rescue the genuinely ambiguous case — a column that carries no value
+    // at all. Anything with a real category was legitimately inferred as
+    // categorical and must not be reinterpreted.
+    if (annotation.values.some((value) => value != null && !isNAValue(value))) continue;
+
+    data.annotations[column] = createNumericAnnotation(numericType, annotation.runtime);
+    data.numeric_annotation_data ??= {};
+    data.numeric_annotation_data[column] = new Array<number | null>(data.protein_ids.length).fill(
+      null,
+    );
+    delete data.annotation_data[column];
+    delete data.annotation_scores?.[column];
+    delete data.annotation_evidence?.[column];
+  }
+  return data;
+}
+
 export function convertParquetToVisualizationData(
   input: BundleExtractionResult | Rows,
   projectionsMetadata?: Rows,
@@ -655,6 +709,7 @@ export function convertParquetToVisualizationData(
   // `BundleExtractionResult` carries the version detected from the bundle's parquet
   // key-value metadata by `extractRowsFromParquetBundle` (bundle.ts).
   const formatVersion = Array.isArray(input) ? 1 : input.formatVersion;
+  const declaredNumeric = Array.isArray(input) ? {} : (input.numericColumnTypes ?? {});
 
   validateRowsBasic(rows);
 
@@ -666,12 +721,16 @@ export function convertParquetToVisualizationData(
     hasProjectionName && hasXY
       ? convertBundleFormatData(rows, columnNames, meta, formatVersion)
       : convertLegacyFormatData(rows, columnNames, formatVersion);
-  return carryStatistics(normalizeEatCompanionColumns(converted), input);
+  return carryStatistics(
+    restoreDeclaredNumericAnnotations(normalizeEatCompanionColumns(converted), declaredNumeric),
+    input,
+  );
 }
 
 /**
- * Attach the bundle's unparsed statistics part so an export can re-emit it.
- * Raw `Rows` input never carries one.
+ * Attach the bundle's statistics part: the unparsed bytes so an export can re-emit them,
+ * and the parsed rows so the UI can render them. Raw `Rows` input (plain .parquet / legacy
+ * reads) never carries either, so it passes straight through.
  */
 function carryStatistics(
   data: VisualizationData,
@@ -679,6 +738,7 @@ function carryStatistics(
 ): VisualizationData {
   if (!Array.isArray(input) && input.statistics) {
     data.statistics = input.statistics;
+    data.statisticsRows = input.statisticsRows ?? undefined;
   }
   return data;
 }
@@ -716,6 +776,7 @@ export function convertParquetToVisualizationDataOptimized(
   }
   return convertLargeDatasetOptimized(input)
     .then(normalizeEatCompanionColumns)
+    .then((data) => restoreDeclaredNumericAnnotations(data, input.numericColumnTypes ?? {}))
     .then((data) => carryStatistics(data, input));
 }
 

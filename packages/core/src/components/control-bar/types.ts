@@ -6,15 +6,9 @@ import type {
   NumericAnnotationDisplaySettingsMap,
   AnnotationData,
   AnnotationPredictedData,
+  ProjectionStatisticRow,
+  LegendSortMode,
 } from '@protspace/utils';
-
-export type LegendSortModeLike =
-  | 'size-asc'
-  | 'size-desc'
-  | 'alpha-asc'
-  | 'alpha-desc'
-  | 'manual'
-  | 'manual-reverse';
 
 export interface ProtspaceData {
   projections?: Array<{ name: string; metadata?: { dimension?: 2 | 3 } }>;
@@ -50,6 +44,8 @@ export interface ProtspaceData {
   numeric_annotation_data?: Record<string, (number | null)[]>;
   protein_ids?: string[];
   annotation_predicted?: AnnotationPredictedData;
+  /** Rows of the bundle's optional statistics part (backend `--stats`); absent otherwise. */
+  statisticsRows?: readonly ProjectionStatisticRow[];
 }
 
 export interface DataChangeDetail {
@@ -68,12 +64,8 @@ export interface ScatterplotElementLike extends Element {
   filteredProteinIds?: string[];
   filtersActive?: boolean;
   numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
-  annotationSortModes?: Record<string, LegendSortModeLike>;
+  annotationSortModes?: Record<string, LegendSortMode>;
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
-  runWebGLRenderPerfMeasurements?: (
-    iterations?: number,
-    options?: { download?: boolean; dataset?: { id: string; url?: string; proteinCount?: number } },
-  ) => Promise<unknown>;
 
   // Data access
   getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => ProtspaceData | undefined;

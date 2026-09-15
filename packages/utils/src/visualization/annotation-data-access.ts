@@ -6,6 +6,35 @@ export function isSparseMultiValueAnnotationData(
   return 'kind' in data && data.kind === 'sparse-multi';
 }
 
+/**
+ * Memo for {@link isMultilabelAnnotationDataCached}.
+ *
+ * Sound because no producer mutates an `AnnotationData` in place — every one
+ * builds a fresh object (conversion, the EAT overlay, numeric binning, and the
+ * isolation path all return new storage), so object identity implies unchanged
+ * content. A WeakMap keeps a released dataset collectable.
+ */
+const multilabelMemo = new WeakMap<object, boolean>();
+
+/**
+ * {@link isMultilabelAnnotationData}, memoized per storage object.
+ *
+ * The uncached form is O(N) for dense array storage, and callers want it on
+ * every style-getter rebuild — which happens on a legend hide, a selection, a
+ * projection switch. At 573K proteins that is a full sweep for a question whose
+ * answer cannot change without the storage object itself changing.
+ *
+ * `Int32Array` storage answers in O(1) and the sparse form scans only its
+ * overrides, so those paths are cheap either way; the memo is for the dense one.
+ */
+export function isMultilabelAnnotationDataCached(data: AnnotationData): boolean {
+  const cached = multilabelMemo.get(data as object);
+  if (cached !== undefined) return cached;
+  const result = isMultilabelAnnotationData(data);
+  multilabelMemo.set(data as object, result);
+  return result;
+}
+
 /** Return whether any protein has more than one categorical value. */
 export function isMultilabelAnnotationData(data: AnnotationData): boolean {
   if (isSparseMultiValueAnnotationData(data)) {

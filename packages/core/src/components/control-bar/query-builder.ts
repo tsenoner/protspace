@@ -2,17 +2,10 @@ import { LitElement, html, css } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
-import type {
-  FilterQuery,
-  FilterQueryItem,
-  FilterCondition,
-  FilterGroup,
-  LogicalOp,
-} from './query-types';
-import { createCondition, createGroup, isFilterGroup } from './query-types';
+import type { FilterQuery, FilterCondition, FilterGroup, LogicalOp } from './query-types';
+import { clearLeadingOpInList, createCondition, createGroup, isFilterGroup } from './query-types';
 import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
 import { queryBuilderStyles } from './query-builder.styles';
-import { buttonMixin } from '../../styles/mixins';
 import { renderCloseIcon } from '../legend/legend-other-dialog';
 import './query-condition-row';
 
@@ -27,7 +20,6 @@ import './query-condition-row';
 @customElement('protspace-query-builder')
 class ProtspaceQueryBuilder extends LitElement {
   static styles = [
-    buttonMixin,
     queryBuilderStyles,
     css`
       :host {
@@ -172,38 +164,17 @@ class ProtspaceQueryBuilder extends LitElement {
     }
   }
 
-  /**
-   * Clears a leftover leading 'AND'/'OR' from an item that has become the
-   * new first item (top-level, or first condition of a group). The first-row
-   * operator <select> offers only blank/NOT, so a stale 'AND'/'OR' would render
-   * blank while the data disagrees. 'NOT' stays (it is displayable and
-   * meaningfully complements the first item); 'undefined' is already correct.
-   * Pure: returns a new object only when a change is needed.
-   */
-  private _clearLeadingOp(item: FilterQueryItem): FilterQueryItem {
-    if (item.logicalOp === 'AND' || item.logicalOp === 'OR') {
-      return { ...item, logicalOp: undefined };
-    }
-    return item;
-  }
-
   private _handleConditionRemoved(e: CustomEvent<{ id: string }>, groupId: string | null) {
     e.stopPropagation();
     const removedId = e.detail.id;
     if (groupId === null) {
       const filtered = this.query.filter((item) => item.id !== removedId);
-      const newQuery =
-        filtered.length > 0 ? [this._clearLeadingOp(filtered[0]), ...filtered.slice(1)] : filtered;
-      this._dispatchQueryChanged(newQuery);
+      this._dispatchQueryChanged(clearLeadingOpInList(filtered));
     } else {
       const newQuery = this.query.map((item) => {
         if (isFilterGroup(item) && item.id === groupId) {
           const conditions = item.conditions.filter((c) => c.id !== removedId);
-          const normalized =
-            conditions.length > 0
-              ? [this._clearLeadingOp(conditions[0]), ...conditions.slice(1)]
-              : conditions;
-          return { ...item, conditions: normalized };
+          return { ...item, conditions: clearLeadingOpInList(conditions) };
         }
         return item;
       });

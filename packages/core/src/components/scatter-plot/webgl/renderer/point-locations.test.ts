@@ -48,6 +48,7 @@ describe('resolvePointLocations', () => {
         'labelTextureSize',
         'maxLabels',
         'knockoutColor',
+        'labelAtlasCapacity',
         'resolution',
         'transform',
       ].sort(),

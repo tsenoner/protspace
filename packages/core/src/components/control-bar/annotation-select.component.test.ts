@@ -4,13 +4,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './annotation-select';
 import './control-bar';
+import type { ProjectionStatisticRow } from '@protspace/utils';
 import type { ProtspaceData } from './types';
 
 type AnnotationSelectElement = HTMLElement & {
   annotations: string[];
   selectedAnnotation: string;
+  selectedProjection: string;
   tooltipAnnotations: string[];
   eatAnnotations: string[];
+  statisticsRows: readonly ProjectionStatisticRow[];
   updateComplete: Promise<unknown>;
 };
 
@@ -18,8 +21,10 @@ async function setup(initial: Partial<AnnotationSelectElement> = {}) {
   const el = document.createElement('protspace-annotation-select') as AnnotationSelectElement;
   el.annotations = initial.annotations ?? ['gene_name', 'pfam', 'species'];
   el.selectedAnnotation = initial.selectedAnnotation ?? 'pfam';
+  el.selectedProjection = initial.selectedProjection ?? '';
   el.tooltipAnnotations = initial.tooltipAnnotations ?? [];
   el.eatAnnotations = initial.eatAnnotations ?? [];
+  el.statisticsRows = initial.statisticsRows ?? [];
   document.body.appendChild(el);
   await el.updateComplete;
   return el;
@@ -154,6 +159,148 @@ describe('protspace-annotation-select tooltip extras', () => {
 
     expect(selectSpy).toHaveBeenCalledTimes(1);
     expect((selectSpy.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'gene_name' });
+  });
+});
+
+describe('protspace-annotation-select statistics badge', () => {
+  const statRow = (over: Partial<ProjectionStatisticRow> = {}): ProjectionStatisticRow => ({
+    space_kind: 'projection',
+    space_name: 'umap',
+    annotation: 'major_group',
+    stat_family: 'annotation_validity',
+    label_kind: 'annotation',
+    metric: 'silhouette',
+    metric_kind: 'validity',
+    value: 0.42,
+    ...over,
+  });
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  // Neither annotation ships built-in docs, so neither row has an ⓘ of its own.
+  const CUSTOM_ANNOTATIONS = ['major_group', 'seq_start'];
+
+  /** A `cluster_agreement` row for the elbow-K clustering on `umap`, recovering `major_group`. */
+  const agreementRow = (over: Partial<ProjectionStatisticRow> = {}): ProjectionStatisticRow =>
+    statRow({
+      stat_family: 'cluster_agreement',
+      label_kind: 'kmeans_elbow',
+      metric: 'adjusted_rand',
+      metric_kind: 'agreement',
+      value: 0.62,
+      ...over,
+    });
+
+  it('badges only the annotations the bundle scored, without adding an icon', async () => {
+    // The numbers live in the projection-metadata panel now; the badge only says they exist.
+    const el = await setup({
+      annotations: [...CUSTOM_ANNOTATIONS, 'gene_name'],
+      statisticsRows: [statRow()],
+      selectedProjection: 'umap',
+    });
+    await openDropdown(el);
+
+    expect(getRowFor(el, 'major_group').querySelector('.stats-badge')?.textContent).toBe('STATS');
+    expect(getRowFor(el, 'seq_start').querySelector('.stats-badge')).toBeNull();
+
+    // `major_group` ships no description, so a badge must not conjure an ⓘ; `gene_name` has one
+    // and keeps it.
+    expect(getRowFor(el, 'major_group').querySelector('protspace-info-popover')).toBeNull();
+    expect(getRowFor(el, 'gene_name').querySelector('protspace-info-popover')).not.toBeNull();
+  });
+
+  it('drops the badge when the statistics are for a different projection', async () => {
+    const el = await setup({
+      annotations: CUSTOM_ANNOTATIONS,
+      statisticsRows: [statRow()],
+      selectedProjection: 'pca',
+    });
+    await openDropdown(el);
+
+    expect(getRowFor(el, 'major_group').querySelector('.stats-badge')).toBeNull();
+  });
+
+  it('updates the badge when selectedProjection changes after the first render', async () => {
+    // The cold-cache case above (projection set before first render) cannot see a stale
+    // `hasStats` cache: willUpdate's `changed.has('selectedProjection')` clear is what makes
+    // a LIVE projection switch drop a badge that was already true for the old projection.
+    const el = await setup({
+      annotations: CUSTOM_ANNOTATIONS,
+      statisticsRows: [statRow()],
+      selectedProjection: 'umap',
+    });
+    await openDropdown(el);
+    expect(getRowFor(el, 'major_group').querySelector('.stats-badge')?.textContent).toBe('STATS');
+
+    el.selectedProjection = 'pca';
+    await el.updateComplete;
+
+    expect(getRowFor(el, 'major_group').querySelector('.stats-badge')).toBeNull();
+  });
+
+  it('drops the badge for an ordinary annotation whose only score is an agreement row', async () => {
+    // A category can vanish from validity under subsampling while the (unsampled) agreement
+    // pass still recovers it. annotationStatSummary alone stays non-null on that agreement row,
+    // but the panel renders no block for it (no validity, and this isn't a cluster_* column),
+    // so the badge must not claim otherwise.
+    const el = await setup({
+      annotations: CUSTOM_ANNOTATIONS,
+      statisticsRows: [agreementRow()],
+      selectedProjection: 'umap',
+    });
+    await openDropdown(el);
+
+    expect(getRowFor(el, 'major_group').querySelector('.stats-badge')).toBeNull();
+  });
+
+  it('badges a cluster_* column from the agreement rows naming its own clustering', async () => {
+    // annotationStatSummary is always null for a cluster_* column (cluster columns are never
+    // scored annotations), so the badge must come from clusterAgreement instead.
+    const el = await setup({
+      annotations: [...CUSTOM_ANNOTATIONS, 'cluster_elbow_umap'],
+      statisticsRows: [agreementRow()],
+      selectedProjection: 'umap',
+    });
+    await openDropdown(el);
+
+    expect(getRowFor(el, 'cluster_elbow_umap').querySelector('.stats-badge')?.textContent).toBe(
+      'STATS',
+    );
+  });
+
+  it('does not rebuild the list when the pointer crosses a row', async () => {
+    const el = await setup({
+      annotations: CUSTOM_ANNOTATIONS,
+      statisticsRows: [statRow()],
+      selectedProjection: 'umap',
+    });
+    await openDropdown(el);
+
+    // Node-identity alone passes vacuously: lit's keyless `.map()` diffing reuses each row's DOM
+    // node in place regardless of whether the handler runs. Watch for any DOM mutation instead —
+    // hovering is presentation (CSS `:hover`) and must not touch the DOM at all.
+    const container = el.shadowRoot!.querySelector('.annotation-list-container') as HTMLElement;
+    const records: MutationRecord[] = [];
+    const observer = new MutationObserver((mutations) => records.push(...mutations));
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
+
+    getRowFor(el, 'seq_start').dispatchEvent(new MouseEvent('mouseenter'));
+    await el.updateComplete;
+    records.push(...observer.takeRecords());
+    observer.disconnect();
+
+    expect(records).toHaveLength(0);
   });
 });
 

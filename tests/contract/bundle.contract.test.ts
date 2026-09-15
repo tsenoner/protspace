@@ -41,6 +41,8 @@ interface Manifest {
   projectionCount: number;
   labelWithReservedChar: string;
   nullLengthIndex: number;
+  statisticsColumns: string[];
+  statisticsCategory: string;
 }
 
 let outDir: string;
@@ -145,6 +147,23 @@ describe('bundle layouts the producer can write', () => {
     // the magic bytes: a part sliced with the wrong bounds is still non-null.
     expect(extraction.statistics).not.toBeNull();
     expect(new TextDecoder().decode(new Uint8Array(extraction.statistics!, 0, 4))).toBe('PAR1');
+
+    // The render-side view of the same part. Carrying the bytes is what an export
+    // needs; parsing them is what every ⓘ popover and score strip needs, and the
+    // reader's schema guard fails that half silently (it warns and returns null,
+    // which is indistinguishable from a bundle prepared without `--stats`). So
+    // assert the parse against the producer's own schema, from the manifest.
+    expect(extraction.statisticsRows).not.toBeNull();
+    // Sorted on both sides: a column added or renamed on either half of the seam
+    // must fail, but the physical column order is not part of the contract.
+    expect(Object.keys(extraction.statisticsRows![0]).sort()).toEqual(
+      [...manifest.statisticsColumns].sort(),
+    );
+    // NULL `category` is the aggregate rows; a set one is the per-category
+    // decomposition. Both must survive, since the reader tells them apart by it.
+    const categories = extraction.statisticsRows!.map((row) => row.category);
+    expect(categories).toContain(manifest.statisticsCategory);
+    expect(categories.filter((category) => category == null)).not.toHaveLength(0);
   });
 
   it('reads a 5-part bundle whose settings slot is the zero-byte sentinel', async () => {

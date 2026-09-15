@@ -91,6 +91,58 @@ export interface Projection {
   dimension: 2 | 3;
 }
 
+/**
+ * One row of the optional `statistics.parquet` bundle part (tidy long format, 10 columns).
+ * Emitted by the backend's `--stats` flag; absent from bundles prepared without it.
+ *
+ * Rows are keyed by `space_name` (a projection name, or the source embedding name when
+ * `space_kind === 'embedding'`) plus `annotation` (`''` for non-annotation rows such as
+ * `n_clusters`). Always filter on `stat_family` *and* `space_kind` — the same `metric`
+ * name appears once per (space × annotation).
+ */
+export interface ProjectionStatisticRow {
+  space_kind: 'embedding' | 'projection';
+  /** Projection name, or the embedding name for `space_kind === 'embedding'`. */
+  space_name: string;
+  /** Annotation the row was scored on; `''` for rows that aren't annotation-scoped. */
+  annotation: string;
+  stat_family: 'annotation_validity' | 'cluster_agreement' | 'cluster_validity';
+  label_kind: string;
+  metric: string;
+  /** `'meta'` rows (e.g. `n_clusters`) are information, not scores. */
+  metric_kind: 'validity' | 'agreement' | 'meta';
+  value: number;
+  /**
+   * One category of `annotation` when the metric was decomposed per category;
+   * absent on the aggregate row, and absent entirely on bundles written before
+   * the column existed. Deliberately NOT in `PROJECTION_STATISTIC_COLUMNS`:
+   * that list is the required set the reader's schema guard checks, so adding
+   * it would reject every bundle already prepared with `--stats`. Same for
+   * `extra_json` below.
+   */
+  category?: string;
+  /** Per-metric provenance as a JSON string (sample size, seed, …). */
+  extra_json?: string;
+}
+
+/**
+ * Required column names of the statistics part, in the writer's order — the set the reader's
+ * schema guard insists on. The optional columns (`extra_json`, `category`) are deliberately
+ * excluded: a bundle prepared before either existed must still be read, so requiring them
+ * would reject it. `satisfies` ties the list to `ProjectionStatisticRow`, so renaming a column
+ * in only one of them is a compile error instead of a reader/type drift the guard can't see.
+ */
+export const PROJECTION_STATISTIC_COLUMNS = [
+  'space_kind',
+  'space_name',
+  'annotation',
+  'stat_family',
+  'label_kind',
+  'metric',
+  'metric_kind',
+  'value',
+] as const satisfies readonly (keyof ProjectionStatisticRow)[];
+
 export interface VisualizationData {
   protein_ids: string[];
   projections: Projection[];
@@ -103,9 +155,17 @@ export interface VisualizationData {
   annotation_evidence?: Record<string, (string | null)[][]>;
   /**
    * Raw projection-statistics parquet part (bundle part 5) as read, carried
-   * unparsed so an export re-emits it instead of dropping it.
+   * unparsed so an export re-emits it instead of dropping it. This is the
+   * authoritative copy — a column the reader below does not model still survives
+   * a load/export round trip, because nothing re-serializes this part.
    */
   statistics?: ArrayBuffer;
+  /**
+   * The same part parsed for rendering, derived from `statistics` at load and never
+   * written back to it. The two must be cleared together whenever the underlying data
+   * changes; `sliceVisualizationDataByIndices` is the one place that happens.
+   */
+  statisticsRows?: readonly ProjectionStatisticRow[];
 }
 
 export interface PlotDataPoint {
@@ -177,7 +237,16 @@ export type LegendSortMode =
   | 'alpha-asc'
   | 'alpha-desc'
   | 'manual'
-  | 'manual-reverse';
+  | 'manual-reverse'
+  /** Best-separating category first. Display order only; the "Other" bucket stays size-driven. */
+  | 'silhouette-desc'
+  /**
+   * Worst-separating category first — what the legend header's reverse button produces from
+   * `silhouette-desc`. It must exist as a real mode: that button derives its result by string
+   * surgery on the current mode, so without this it minted a value outside this union, which
+   * `sanitizeLegendSettingsEntry` rejects — discarding the annotation's whole persisted block.
+   */
+  | 'silhouette-asc';
 
 export interface PersistedCategoryData {
   zOrder: number;
@@ -233,7 +302,7 @@ export interface BundleSettings {
   eatOverlayEnabled?: boolean;
   /**
    * Saved reliability-slider position (0…1, default 0). On load it seeds the
-   * slider, which derives a `NOT(EAT_confidence < x)` query filter only when
+   * slider, which derives an `EAT_confidence >= x or N/A` query filter only when
    * above 0 — so an absent or `0` value means no reliability filter (#6b).
    */
   eatConfidenceThreshold?: number;

@@ -1,7 +1,7 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import type { ScatterplotData, OtherItem } from '../types';
 import {
-  isMultilabelAnnotationData,
+  isMultilabelAnnotationDataCached,
   type NumericAnnotationDisplaySettingsMap,
   type ScatterplotConfig,
 } from '@protspace/utils';
@@ -23,6 +23,21 @@ import type {
   LegendZOrderChangeEvent,
 } from '../legend-mapping-events';
 
+/**
+ * Same members in the same order.
+ *
+ * `hiddenAnnotationValues` and `otherAnnotationValues` are `@property({ type: Array })` on the
+ * scatterplot, so Lit's default `hasChanged` compares them by reference: assigning a freshly
+ * built array with identical contents is recorded as a change. Downstream that is not merely
+ * wasted work. `_reconcileProvenanceConnectors` (scatter-plot.ts) reads a change to
+ * `hiddenAnnotationValues` as "the user changed what is visible" and drops the EAT provenance
+ * connectors, and `_visibilityModelKey` compares the same array by reference, so the whole
+ * visibility model is rebuilt. Both must fire on a real edit and neither on a no-op resync.
+ */
+function sameOrder(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 /** Maximum number of retries when looking for scatterplot element */
 const MAX_DISCOVERY_RETRIES = 10;
 /** Delay between retries in ms */
@@ -32,7 +47,11 @@ const DISCOVERY_RETRY_DELAY = 100;
  * Callback interface for scatterplot sync events
  */
 export interface ScatterplotSyncCallbacks {
-  onDataChange: (data: ScatterplotData, selectedAnnotation: string) => void;
+  onDataChange: (
+    data: ScatterplotData,
+    selectedAnnotation: string,
+    selectedProjectionName: string,
+  ) => void;
   onAnnotationChange: (annotation: string) => void;
   getHiddenValues: () => string[];
   getOtherItems: () => OtherItem[];
@@ -55,6 +74,7 @@ export class ScatterplotSyncController implements ReactiveController {
   private _controlBarElement: Element | null = null;
   private _boundHandleDataChange: (e: Event) => void;
   private _boundHandleAnnotationChange: (e: Event) => void;
+  private _boundHandleProjectionChange: () => void;
   private _discoveryRetryCount = 0;
   private _discoveryTimeoutId: number | null = null;
   private _mutationObserver: MutationObserver | null = null;
@@ -70,6 +90,7 @@ export class ScatterplotSyncController implements ReactiveController {
 
     this._boundHandleDataChange = this._handleDataChange.bind(this);
     this._boundHandleAnnotationChange = this._handleAnnotationChange.bind(this);
+    this._boundHandleProjectionChange = this._handleProjectionChange.bind(this);
   }
 
   hostConnected(): void {
@@ -96,7 +117,11 @@ export class ScatterplotSyncController implements ReactiveController {
     const currentData = this._scatterplotElement?.getCurrentData?.();
     const annotationData = currentData?.annotation_data?.[selectedAnnotation];
 
-    return annotationData ? isMultilabelAnnotationData(annotationData) : false;
+    // Cached: this runs from `_renderColorPicker`, i.e. on every legend re-render
+    // while the picker is open, and dense storage makes the uncached form an O(N)
+    // sweep over 573K proteins for an answer that cannot change without the
+    // storage object changing.
+    return annotationData ? isMultilabelAnnotationDataCached(annotationData) : false;
   }
 
   /**
@@ -117,11 +142,16 @@ export class ScatterplotSyncController implements ReactiveController {
         this.callbacks.getHiddenValues(),
         this.callbacks.getOtherItems(),
       );
-      this._scatterplotElement.hiddenAnnotationValues = [...expandedHidden];
+      if (!sameOrder(this._scatterplotElement.hiddenAnnotationValues ?? [], expandedHidden)) {
+        this._scatterplotElement.hiddenAnnotationValues = [...expandedHidden];
+      }
     }
 
     if (supportsOtherValues(this._scatterplotElement)) {
-      this._scatterplotElement.otherAnnotationValues = this.callbacks.getOtherConcreteValues();
+      const otherValues = this.callbacks.getOtherConcreteValues();
+      if (!sameOrder(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
+        this._scatterplotElement.otherAnnotationValues = otherValues;
+      }
     }
   }
 
@@ -131,7 +161,10 @@ export class ScatterplotSyncController implements ReactiveController {
   syncOtherValues(): void {
     if (!this._scatterplotElement || !supportsOtherValues(this._scatterplotElement)) return;
 
-    this._scatterplotElement.otherAnnotationValues = this.callbacks.getOtherConcreteValues();
+    const otherValues = this.callbacks.getOtherConcreteValues();
+    if (!sameOrder(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
+      this._scatterplotElement.otherAnnotationValues = otherValues;
+    }
   }
 
   syncNumericAnnotationSettings(): void {
@@ -287,6 +320,10 @@ export class ScatterplotSyncController implements ReactiveController {
         LEGEND_EVENTS.ANNOTATION_CHANGE,
         this._boundHandleAnnotationChange,
       );
+      this._controlBarElement.addEventListener(
+        LEGEND_EVENTS.PROJECTION_CHANGE,
+        this._boundHandleProjectionChange,
+      );
     }
 
     this._syncWithScatterplot();
@@ -345,6 +382,16 @@ export class ScatterplotSyncController implements ReactiveController {
     this._discoveryRetryCount = 0;
   }
 
+  /**
+   * Name of the projection the scatterplot is showing. Statistics are scored per
+   * projection, so the legend needs the name, but the scatterplot tracks position.
+   * Returns '' when the index is out of range, which reads downstream as "no scores".
+   */
+  private _selectedProjectionName(data: ScatterplotData): string {
+    const index = this._scatterplotElement?.selectedProjectionIndex ?? 0;
+    return data.projections?.[index]?.name ?? '';
+  }
+
   private _handleDataChange(event: Event): void {
     const customEvent = event as CustomEvent;
     const { data } = customEvent.detail;
@@ -353,7 +400,7 @@ export class ScatterplotSyncController implements ReactiveController {
       const selectedAnnotation = this._scatterplotElement.selectedAnnotation;
 
       if (selectedAnnotation) {
-        this.callbacks.onDataChange(data, selectedAnnotation);
+        this.callbacks.onDataChange(data, selectedAnnotation, this._selectedProjectionName(data));
       }
     }
   }
@@ -362,6 +409,17 @@ export class ScatterplotSyncController implements ReactiveController {
     const customEvent = event as CustomEvent;
     const { annotation } = customEvent.detail;
     this.callbacks.onAnnotationChange(annotation);
+  }
+
+  /**
+   * Silhouette and Davies-Bouldin are scored per projection, but switching the
+   * projection alone changes neither `data` nor `filteredProteinIds`/`filtersActive`,
+   * so the scatterplot's own `data-change` dispatch (its geometry-inputs guard) never
+   * fires for it. Re-run the sync explicitly so the strips track the new projection
+   * instead of continuing to show the previous one.
+   */
+  private _handleProjectionChange(): void {
+    this._syncWithScatterplot();
   }
 
   private _syncWithScatterplot(): void {
@@ -373,7 +431,11 @@ export class ScatterplotSyncController implements ReactiveController {
     if (!currentData || !selectedAnnotation) return;
 
     this.syncNumericAnnotationSettings();
-    this.callbacks.onDataChange(currentData, selectedAnnotation);
+    this.callbacks.onDataChange(
+      currentData,
+      selectedAnnotation,
+      this._selectedProjectionName(currentData),
+    );
   }
 
   private _cleanup(): void {
@@ -391,6 +453,10 @@ export class ScatterplotSyncController implements ReactiveController {
       this._controlBarElement.removeEventListener(
         LEGEND_EVENTS.ANNOTATION_CHANGE,
         this._boundHandleAnnotationChange,
+      );
+      this._controlBarElement.removeEventListener(
+        LEGEND_EVENTS.PROJECTION_CHANGE,
+        this._boundHandleProjectionChange,
       );
     }
   }

@@ -137,6 +137,60 @@ class TestAnnotationTransformerTransform:
         assert result[0].identifier == "P01308"
         assert result[1].identifier == "P01315"
 
+    @pytest.mark.parametrize(
+        ("uniprot_kb_id", "xref_pdb", "expected"),
+        [
+            ("", "", ""),
+            ("NO_PDB_HUMAN", "", "False"),
+            ("HBA_HUMAN", "1A3N", "True"),
+        ],
+    )
+    def test_transform_xref_pdb_preserves_uniprot_mapping_state(
+        self, uniprot_kb_id, xref_pdb, expected
+    ):
+        """PDB availability is missing unless a UniProt entry resolved."""
+        proteins = [
+            ProteinAnnotations(
+                identifier="protein",
+                annotations={
+                    "uniprot_kb_id": uniprot_kb_id,
+                    "xref_pdb": xref_pdb,
+                },
+            )
+        ]
+
+        result = AnnotationTransformer().transform(proteins)
+
+        assert result[0].annotations["xref_pdb"] == expected
+
+    @pytest.mark.parametrize(
+        ("uniprot_kb_id", "xref_pdb", "expected"),
+        [
+            (float("nan"), float("nan"), ""),
+            ("HBA_HUMAN", float("nan"), "False"),
+        ],
+    )
+    def test_transform_xref_pdb_treats_nan_cells_as_missing(
+        self, uniprot_kb_id, xref_pdb, expected
+    ):
+        """A parquet null reads back as NaN, which is truthy and stringifies.
+
+        Without an explicit blank check it would be read as a PDB hit.
+        """
+        proteins = [
+            ProteinAnnotations(
+                identifier="protein",
+                annotations={
+                    "uniprot_kb_id": uniprot_kb_id,
+                    "xref_pdb": xref_pdb,
+                },
+            )
+        ]
+
+        result = AnnotationTransformer().transform(proteins)
+
+        assert result[0].annotations["xref_pdb"] == expected
+
     def test_transform_with_interpro_annotations(self):
         """Test transformation with InterPro annotations."""
         transformer = AnnotationTransformer()

@@ -2,7 +2,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
-import type { ScalePair, WebGLStyleGetters } from '../types';
+import type { ScalePair } from '../types';
+import { MAX_LABELS } from './label-atlas-plan';
+import { styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
 /**
@@ -18,29 +20,20 @@ const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
-const style = (): WebGLStyleGetters => ({
-  getColors: () => ['#f00'],
-  getPointSize: () => 9,
-  getOpacity: () => 1,
-  getDepth: () => 0,
-  getShape: () => 'circle',
-  isPredicted: () => false,
-});
-
 type ExportRendererSeam = {
   exportRenderer: {
     renderToCanvas: (...args: unknown[]) => HTMLCanvasElement;
   };
 };
 
-function setup(transform: d3.ZoomTransform) {
+function setup(transform: d3.ZoomTransform, colors?: string[]) {
   const { canvas } = createMockCanvas({});
   const renderer = new WebGLRenderer(
     canvas,
     scales,
     () => transform,
     () => ({ width: 800, height: 600 }),
-    style(),
+    styleGetters(colors),
   );
   // Intercept the off-screen export pass (needs a real WebGL2 context we don't
   // have under jsdom). We only assert which transform the facade forwards.
@@ -50,9 +43,23 @@ function setup(transform: d3.ZoomTransform) {
   return { renderer, spy };
 }
 
-function forwardedTransform(spy: ReturnType<typeof vi.fn>) {
-  const opts = spy.mock.calls[0][3] as { transform: { x: number; y: number; k: number } };
-  return { x: opts.transform.x, y: opts.transform.y, k: opts.transform.k };
+type ExportSpy = ReturnType<typeof setup>['spy'];
+
+/**
+ * The options object the facade forwarded to the export pass. One accessor for
+ * every forwarded field, typed off the real spy, so a new assertion needs
+ * neither another helper nor a cast at its call site.
+ */
+function forwarded(spy: ExportSpy) {
+  return spy.mock.calls[0][3] as {
+    transform: { x: number; y: number; k: number };
+    labelStride: number | null;
+  };
+}
+
+function forwardedTransform(spy: ExportSpy) {
+  const { transform } = forwarded(spy);
+  return { x: transform.x, y: transform.y, k: transform.k };
 }
 
 describe('WebGLRenderer.renderToCanvas — resetView transform handling (#294)', () => {
@@ -64,7 +71,7 @@ describe('WebGLRenderer.renderToCanvas — resetView transform handling (#294)',
 
     renderer.renderToCanvas(400, 300);
 
-    expect(forwardedTransform(spy as unknown as ReturnType<typeof vi.fn>)).toEqual({
+    expect(forwardedTransform(spy)).toEqual({
       x: 120,
       y: 60,
       k: 3,
@@ -77,7 +84,7 @@ describe('WebGLRenderer.renderToCanvas — resetView transform handling (#294)',
 
     renderer.renderToCanvas(400, 300, 1, undefined, undefined, true);
 
-    expect(forwardedTransform(spy as unknown as ReturnType<typeof vi.fn>)).toEqual({
+    expect(forwardedTransform(spy)).toEqual({
       x: 0,
       y: 0,
       k: 1,
@@ -91,10 +98,38 @@ describe('WebGLRenderer.renderToCanvas — resetView transform handling (#294)',
 
     renderer.renderToCanvas(200, 200, 1, dataDomain, undefined, true);
 
-    expect(forwardedTransform(spy as unknown as ReturnType<typeof vi.fn>)).toEqual({
+    expect(forwardedTransform(spy)).toEqual({
       x: 0,
       y: 0,
       k: 1,
     });
+  });
+});
+
+describe('WebGLRenderer.renderToCanvas — inherited label-atlas stride', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('asks the style getters, not the last render, whether an atlas is wanted', () => {
+    // The export stages through these getters, so its atlas decision has to come
+    // from the same authority as its colours. `this.atlas` records only what the
+    // last completed render staged, and is legitimately null while a multi-label
+    // annotation is selected — nothing forces a render before an export, so the
+    // window between an annotation switch and the next frame would otherwise
+    // export dominant colours for a multi-label view.
+    const { renderer, spy } = setup(d3.zoomIdentity, ['#f00', '#0f0']);
+
+    renderer.renderToCanvas(400, 300);
+
+    // Full fidelity: with no live plan there is no screen cap to stay under, so
+    // the export is free to plan against its own context's limit.
+    expect(forwarded(spy).labelStride).toBe(MAX_LABELS);
+  });
+
+  it('inherits no atlas for a single-label view', () => {
+    const { renderer, spy } = setup(d3.zoomIdentity);
+
+    renderer.renderToCanvas(400, 300);
+
+    expect(forwarded(spy).labelStride).toBeNull();
   });
 });

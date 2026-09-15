@@ -268,13 +268,11 @@ def test_annotation_columns_are_typed_in_protein_annotations_table():
 
     table = BaseProcessor({}, {})._create_protein_annotations_table(metadata)
     cols = table.column_names
-    # Single membership column; per-point silhouette is attached to its value.
+    # Single membership column, holding a bare category with no attached score.
     assert "cluster_elbow_P" in cols and "silhouette_P" not in cols
     d = table.to_pydict()
     for v in d["cluster_elbow_P"]:
-        label, _, score = v.partition("|")
-        assert label.startswith("cluster ")  # categorical part
-        float(score)  # attached per-point silhouette parses as a number
+        assert v.startswith("cluster ") and "|" not in v
 
 
 def test_router_multi_embedding_routes_each_projection_to_its_own_scores():

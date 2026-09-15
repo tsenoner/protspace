@@ -1,21 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
-
-// Stub requestAnimationFrame/cancelAnimationFrame for Node environment
-beforeEach(() => {
-  let nextId = 1;
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-    const id = nextId++;
-    setTimeout(() => cb(0), 0);
-    return id;
-  });
-  vi.stubGlobal('cancelAnimationFrame', (_id: number) => {});
-});
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 function createMockElements() {
   const plotElement = {
@@ -208,6 +194,43 @@ describe('createViewController', () => {
 
     const fresh = viewController.getLatestViewRequest();
     expect(fresh.requested.annotation).toBe('pfam');
+  });
+
+  it('suppresses the control-bar echo of an applied view', () => {
+    const { controlBar, viewController } = setup();
+    const changes: ExploreViewChange[] = [];
+    viewController.subscribeToViewChanges((change) => changes.push(change));
+
+    // The real control bar dispatches annotation-change synchronously, which the
+    // app forwards back into the view controller as a user change.
+    const applyAnnotation = controlBar.applyAnnotationSelection;
+    controlBar.applyAnnotationSelection = vi.fn((annotation: string) => {
+      applyAnnotation(annotation);
+      viewController.handleUserAnnotationChange();
+    });
+
+    viewController.applyViewSelection(makeRequest('pfam', 'UMAP'), 'url');
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].source).toBe('url');
+  });
+
+  it('emits a user change that lands right after a url-applied view', () => {
+    const { controlBar, plotElement, viewController } = setup();
+    const changes: ExploreViewChange[] = [];
+    viewController.subscribeToViewChanges((change) => changes.push(change));
+
+    viewController.applyViewSelection(makeRequest('ec', 'UMAP', ['pfam']), 'url');
+    changes.length = 0;
+
+    // User toggles the extra tooltip annotation back off before the next frame.
+    controlBar.tooltipAnnotations = [];
+    plotElement.tooltipAnnotations = [];
+    viewController.handleUserTooltipAnnotationsChange();
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].source).toBe('user');
+    expect(changes[0].effective.tooltip).toEqual([]);
   });
 
   it('dispose clears subscribers', () => {

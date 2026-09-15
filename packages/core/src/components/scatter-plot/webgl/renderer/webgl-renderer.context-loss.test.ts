@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
 import type { PlotData } from '@protspace/utils';
-import type { ScalePair, WebGLStyleGetters } from '../types';
+import type { ScalePair } from '../types';
+import { styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
@@ -21,15 +22,6 @@ const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
-const style = (): WebGLStyleGetters => ({
-  getColors: () => ['#f00'],
-  getPointSize: () => 9,
-  getOpacity: () => 1,
-  getDepth: () => 0,
-  getShape: () => 'circle',
-  isPredicted: () => false,
-});
-
 describe('WebGLRenderer context loss + restore (F-09 characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
@@ -57,7 +49,7 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
-      style(),
+      styleGetters(),
       onLost,
     );
     const ev = new Event('webglcontextlost', { cancelable: true });
@@ -74,7 +66,7 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
-      style(),
+      styleGetters(),
       onLost,
     );
     r.destroy();
@@ -96,7 +88,7 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
-      style(),
+      styleGetters(),
     );
     r.render(pd); // sets lastRenderedData
     const renderSpy = vi.spyOn(r, 'render');
@@ -113,7 +105,7 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
-      style(),
+      styleGetters(),
     );
     const types = addSpy.mock.calls.map((c) => c[0]);
     expect(types).toContain('webglcontextlost');
@@ -144,7 +136,7 @@ describe('WebGLRenderer gamma fallback (F-09 characterization lock)', () => {
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
-      style(),
+      styleGetters(),
     );
     r.render(pd); // ensureGL detects missing extensions → gammaPipelineAvailable = false
     const getGamma = (r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma.bind(r);
@@ -159,7 +151,7 @@ describe('WebGLRenderer gamma fallback (F-09 characterization lock)', () => {
       scales,
       () => d3.zoomIdentity,
       () => ({ width: 800, height: 600 }),
-      style(),
+      styleGetters(),
     );
     r.render(pd);
     expect((r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma()).toBe(1.0);

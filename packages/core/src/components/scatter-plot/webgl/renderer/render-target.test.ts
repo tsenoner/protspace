@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { bindAndClearTarget, setPointBlendState, drawPoints } from './render-target';
+import {
+  bindAndClearTarget,
+  setPointBlendState,
+  drawPoints,
+  bindPointDrawState,
+} from './render-target';
+import type { PointUniformLocations } from '../types';
 
 function mockGL() {
   const calls: string[] = [];
@@ -83,5 +89,84 @@ describe('drawPoints', () => {
     const { gl, calls } = mockGL();
     drawPoints(gl, 100, true, 100);
     expect(calls).toEqual(['enable:1', 'blendFunc:1,771', 'drawArrays:0,0,100']);
+  });
+});
+
+describe('bindPointDrawState label-atlas uniforms', () => {
+  function uniformMockGL() {
+    const pushed: Record<string, unknown> = {};
+    const gl = {
+      TEXTURE1: 0x84c1,
+      TEXTURE_2D: 0x0de1,
+      useProgram: () => {},
+      activeTexture: () => {},
+      bindTexture: () => {},
+      bindVertexArray: () => {},
+      enable: () => {},
+      disable: () => {},
+      blendFunc: () => {},
+      depthMask: () => {},
+      uniform1f: (loc: { n: string }, v: number) => {
+        pushed[loc.n] = v;
+      },
+      uniform1i: (loc: { n: string }, v: number) => {
+        pushed[loc.n] = v;
+      },
+      uniform2f: (loc: { n: string }, a: number, b: number) => {
+        pushed[loc.n] = [a, b];
+      },
+      uniform3f: (loc: { n: string }, a: number, b: number, c: number) => {
+        pushed[loc.n] = [a, b, c];
+      },
+    } as unknown as WebGL2RenderingContext;
+    const uniforms = {
+      resolution: { n: 'resolution' },
+      transform: { n: 'transform' },
+      dpr: { n: 'dpr' },
+      gamma: { n: 'gamma' },
+      knockoutColor: { n: 'knockoutColor' },
+      labelColors: { n: 'labelColors' },
+      labelTextureSize: { n: 'labelTextureSize' },
+      maxLabels: { n: 'maxLabels' },
+      labelAtlasCapacity: { n: 'labelAtlasCapacity' },
+    } as unknown as PointUniformLocations;
+    return { gl, uniforms, pushed };
+  }
+
+  const baseParams = {
+    width: 800,
+    height: 600,
+    transform: { x: 0, y: 0, k: 1 },
+    dpr: 1,
+    gamma: 2.2,
+    knockoutColor: [1, 1, 1] as const,
+  };
+
+  it('pushes the planned geometry so the shader indexes the atlas it was given', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: {
+        width: 2048,
+        height: 2241,
+        stride: 8,
+        pointCapacity: 573_696,
+        byteLength: 2048 * 2241 * 4,
+      },
+    });
+    expect(pushed.maxLabels).toBe(8);
+    expect(pushed.labelTextureSize).toEqual([2048, 2241]);
+    expect(pushed.labelAtlasCapacity).toBe(573_696);
+  });
+
+  it('pushes zero capacity when no atlas is allocated, disabling the pie branch', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+    });
+    expect(pushed.labelAtlasCapacity).toBe(0);
+    // The remaining three describe the 1x1 placeholder that stands in for the atlas.
+    expect(pushed.labelTextureSize).toEqual([1, 1]);
   });
 });

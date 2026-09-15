@@ -8,6 +8,11 @@ logger = logging.getLogger(__name__)
 FASTA_EXTENSIONS = {".fasta", ".fa", ".faa"}
 
 
+def count_residues(sequence: str) -> int:
+    """Count amino-acid residues, ignoring ``*`` terminators and ``-`` gaps."""
+    return len(sequence) - sequence.count("*") - sequence.count("-")
+
+
 def is_fasta_file(path: Path) -> bool:
     """Check whether *path* has a recognised FASTA extension."""
     return path.suffix.lower() in FASTA_EXTENSIONS

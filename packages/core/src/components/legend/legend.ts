@@ -14,13 +14,24 @@ import {
   normalizeNumericPaletteId,
   resolveNumericAnnotationDisplaySettings,
   annotationLabel,
-  clamp01,
-  DEFAULT_EAT_CONFIDENCE_THRESHOLD,
+  clampReliabilityBound,
+  isSameReliability,
+  normalizeReliability,
+  DEFAULT_EAT_RELIABILITY,
+  NEUTRAL_BOUND,
+  RELIABILITY_BOUNDS,
   hasEatPredictionsForAnnotation,
   isPredictedAnnotation,
   getAnnotationMeta,
+  annotationCategoryScores,
+  isAutoClusterColumn,
+  metricDisplay,
+  AUTO_CLUSTER_SCORE_CAVEAT,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
+  type EatReliabilityMode,
+  type EatReliabilityState,
+  type CategoryScore,
 } from '@protspace/utils';
 import type { LegendSettingsMap } from '@protspace/utils';
 
@@ -39,6 +50,8 @@ import {
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
+import './category-score-strip';
+import type { ScoreStripPoint } from './category-score-strip';
 
 // Controllers
 import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
@@ -84,6 +97,83 @@ import { createLegendErrorEventDetail } from './legend.events';
  * points) is deferred to a drag-pause/release so dragging stays smooth.
  */
 const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
+
+/**
+ * Smallest gap the two `between` thumbs may be dragged to. Doubles as the sliders'
+ * `step`, so "one step apart" is literally true: the thumbs never occupy the same
+ * pixel, where whichever sits on top would be the only one the pointer could reach.
+ */
+const EAT_BAND_MIN_GAP = 0.01;
+
+/**
+ * A 0..1 bound as a CSS percentage. Rounded because the multiplication is lossy —
+ * `(1 - 0.41) * 100` is `59.00000000000001`, which would otherwise be written into the
+ * style attribute verbatim. Two decimals is finer than the sliders' own 0.01 step.
+ */
+const bandPercent = (value: number): number => Number((value * 100).toFixed(2));
+
+/**
+ * Which end of the reliability range a control edits. Deliberately the field name on
+ * `EatReliabilityState`, so a bound indexes its own value, its own neutral position
+ * (`NEUTRAL_BOUND`) and its own row in `RELIABILITY_BOUNDS` with no hand-written
+ * lower/upper -> min/max mapping in between.
+ */
+type EatBound = 'min' | 'max';
+
+const EAT_BOUNDS: readonly EatBound[] = ['min', 'max'];
+
+function boundsForMode(mode: EatReliabilityMode): readonly EatBound[] {
+  const uses = RELIABILITY_BOUNDS[mode];
+  return EAT_BOUNDS.filter((bound) => uses[bound]);
+}
+
+/**
+ * Which bounds each mode renders a thumb and a percent box for — derived from the
+ * shared `RELIABILITY_BOUNDS` rather than restated, so the control cannot offer a
+ * widget for a bound the filter ignores. `atMost` used to render the lower bound
+ * anyway, disabled and stuck at 0: a dead slider and a dead number box taking up half
+ * the control. Keyed by the mode union, so a fourth mode is a compile error here.
+ */
+const EAT_BOUNDS_FOR_MODE: Record<EatReliabilityMode, readonly EatBound[]> = {
+  atLeast: boundsForMode('atLeast'),
+  atMost: boundsForMode('atMost'),
+  between: boundsForMode('between'),
+};
+
+/**
+ * Per-bound identity and accessible names. `soloLabel` is what the slider is called
+ * when its mode renders it alone — a single thumb is the filter's threshold, not one
+ * end of a band.
+ */
+const EAT_BOUND_UI: Record<
+  EatBound,
+  { id: string; sliderLabel: string; soloLabel: string; percentLabel: string }
+> = {
+  min: {
+    id: 'eat-reliability-threshold',
+    sliderLabel: 'EAT reliability filter lower bound',
+    soloLabel: 'EAT reliability filter threshold',
+    percentLabel: 'EAT reliability filter percentage',
+  },
+  max: {
+    id: 'eat-reliability-upper',
+    sliderLabel: 'EAT reliability filter upper bound',
+    soloLabel: 'EAT reliability filter upper bound',
+    percentLabel: 'EAT reliability upper bound percentage',
+  },
+};
+
+/**
+ * What each mode actually does to the plot. The popover sits beside the mode select,
+ * so it has to describe the mode that is selected; it used to say "predictions below
+ * this reliability are hidden" unconditionally, which is false in two of the three.
+ */
+const EAT_RELIABILITY_EFFECT: Record<EatReliabilityMode, string> = {
+  atLeast: 'Predictions below this reliability are hidden (filtered out). Set to 0% to show all.',
+  atMost: 'Predictions above the upper bound are hidden (filtered out). Set to 100% to show all.',
+  between:
+    'Only predictions between the two bounds are kept; everything outside the band is hidden. Widen the band to 0–100% to show all.',
+};
 
 // Types
 import type {
@@ -163,8 +253,41 @@ export class ProtspaceLegend extends LitElement {
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
   @state() private _eatCounts: EatPopulationCounts | null = null;
+  @state() private _categoryScores: CategoryScore[] = [];
+  /**
+   * Whether the current annotation is one of the backend's auto-clustering membership
+   * columns, whose separation scores are optimistic by construction. Derived alongside
+   * `_categoryScores` because both need `statisticsRows`, which render time does not see.
+   */
+  @state() private _isClusterAnnotation = false;
+  /**
+   * Category under the pointer, from a legend row or from a score strip. Read by
+   * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrip`
+   * (each strip's `highlighted` binding), so a hover in either place lights up both.
+   */
+  @state() private _hoveredCategory: string | null = null;
   @state() private _eatOverlayEnabled = true;
-  @state() private _eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+  /**
+   * The reliability filter's position: which side(s) of the scale it constrains, and
+   * where (#380). `atLeast` hides low-confidence predictions (the original, default
+   * behaviour); `atMost` hides high-confidence ones, which is how you inspect what you
+   * would throw away; `between` isolates a band — the mid-confidence transfers worth
+   * reviewing by hand. Curated proteins stay visible in all three.
+   *
+   * One field rather than a mode and two loose bounds: the three are only ever written
+   * together, by `_setReliability`, and holding them apart meant every reader had to
+   * reassemble them and every writer had to remember all three.
+   *
+   * `hasChanged` compares by value because `_setReliability` always assigns a fresh
+   * normalized object — under Lit's default identity check, re-normalizing an unchanged
+   * position would re-render the whole legend. `prev` is undefined for the initial
+   * field write, which Lit performs from the constructor.
+   */
+  @state({
+    hasChanged: (next: EatReliabilityState, prev: EatReliabilityState | undefined) =>
+      prev === undefined || !isSameReliability(next, prev),
+  })
+  private _reliability: EatReliabilityState = DEFAULT_EAT_RELIABILITY;
   @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
   private _keyboardReorderSnapshot: {
@@ -227,7 +350,8 @@ export class ProtspaceLegend extends LitElement {
   // ─────────────────────────────────────────────────────────────────
 
   private _scatterplotController = new ScatterplotSyncController(this, {
-    onDataChange: (data, annotation) => this._handleScatterplotDataChange(data, annotation),
+    onDataChange: (data, annotation, projectionName) =>
+      this._handleScatterplotDataChange(data, annotation, projectionName),
     onAnnotationChange: (annotation) => this._handleAnnotationChange(annotation),
     getHiddenValues: () => this._hiddenValues,
     getOtherItems: () => this._otherItems,
@@ -670,6 +794,43 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
+   * Display order for the legend list. Every mode but `silhouette-desc` has already been
+   * applied upstream and is carried by `zOrder`; scores arrive too late for that path, so
+   * they are applied here. Deliberately display-only: bucket membership stays size-driven,
+   * so switching sort never changes which categories are visible.
+   */
+  private _sortLegendItemsForDisplay(): LegendItem[] {
+    const items = [...this._legendItems];
+    const mode = this._currentSortMode;
+    if (mode !== 'silhouette-desc' && mode !== 'silhouette-asc') {
+      return items.sort((a, b) => a.zOrder - b.zOrder);
+    }
+    // Indexed once rather than a `.find()` per comparison: the comparator runs
+    // O(items · log items) times and the scan is O(categories), so a legend with a few
+    // hundred categories paid hundreds of thousands of string compares per rebuild.
+    const scoreByCategory = new Map(
+      this._categoryScores.map((score) => [score.category, score.silhouette]),
+    );
+    const scoreOf = (value: string): number =>
+      scoreByCategory.get(value) ?? Number.NEGATIVE_INFINITY;
+    // Ascending is the header reverse button's result. Unscored categories keep sorting last
+    // either way: they sit at -Infinity, so the ascending branch negates only the scored gap.
+    const descending = mode === 'silhouette-desc';
+    return items.sort((a, b) => {
+      // "Other" is a bucket, not a category, so it has no score and stays last.
+      if (a.value === LEGEND_VALUES.OTHER) return 1;
+      if (b.value === LEGEND_VALUES.OTHER) return -1;
+      const scoreA = scoreOf(a.value);
+      const scoreB = scoreOf(b.value);
+      const unscored = scoreA === Number.NEGATIVE_INFINITY || scoreB === Number.NEGATIVE_INFINITY;
+      const diff = unscored || descending ? scoreB - scoreA : scoreA - scoreB;
+      // `||` (not `!== 0 ? … :`) so an unscored pair, where diff is NaN, also falls
+      // through to the zOrder tiebreak instead of coercing to a no-op comparator.
+      return diff || a.zOrder - b.zOrder;
+    });
+  }
+
+  /**
    * Get the set of currently visible values (from legend items, excluding "Other").
    * Used to preserve membership when sort mode changes.
    * N/A items use '__NA__' as their value.
@@ -877,9 +1038,9 @@ export class ProtspaceLegend extends LitElement {
       this._rebuildLegendItems();
     }
 
-    // Update sorted items cache when legend items change
-    if (changedProperties.has('_legendItems')) {
-      this._sortedLegendItems = [...this._legendItems].sort((a, b) => a.zOrder - b.zOrder);
+    // Update sorted items cache when legend items or their scores change
+    if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
+      this._sortedLegendItems = this._sortLegendItemsForDisplay();
     }
 
     // Initialize Sortable when container becomes available
@@ -992,7 +1153,14 @@ export class ProtspaceLegend extends LitElement {
     this._numericManualOrderIdsByAnnotation = {};
     this._eatCounts = null;
     this._eatOverlayEnabled = true;
-    this._eatConfidenceThreshold = DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+    // A drag left in flight must not survive the switch: its debounced commit would
+    // emit the reset position against the NEW dataset, after the seed has already run.
+    this._cancelEatThresholdCommit();
+    // Reset the whole reliability position, not just the lower bound. A bundle
+    // restores the threshold only, so a mode left over from the previous dataset
+    // would reinterpret it: "hide below 60%" saved in this bundle would load as
+    // "hide above <the previous dataset's upper bound>" — the opposite filter.
+    this._setReliability(DEFAULT_EAT_RELIABILITY);
     this._clearKeyboardReorderState();
 
     // Reset isolation state
@@ -1030,44 +1198,81 @@ export class ProtspaceLegend extends LitElement {
 
   /**
    * Reliability slider position (0…1). The slider no longer dims points itself;
-   * it drives the shared `NOT(EAT_confidence < x)` query filter via the control
+   * it drives the shared `EAT_confidence >= x or N/A` query filter via the control
    * bar. Exposed so bundle export can persist the saved slider position (#6b).
    */
   public get reliabilityThreshold(): number {
-    return this._eatConfidenceThreshold;
+    return this._reliability.min;
   }
 
+  /**
+   * Bundle restore: the saved overlay switch plus the saved reliability position.
+   *
+   * A bundle stores the LOWER bound only, so restoring it means "hide below x" — the
+   * mode has to come along with it. Writing the bound into whatever mode the control
+   * happens to be in loses it outright in `atMost` (normalization blanks the bound that
+   * mode ignores, so a saved 60% restores as no filter) and reinterprets it in `between`
+   * (a band against a stale upper bound). Both contradict the documented round trip,
+   * which is that a bundle reopens on "Hide below" at the saved value.
+   */
   public applyEatSettings(enabled: boolean, threshold: number): void {
-    // A discrete apply (overlay toggle, bundle import) supersedes any pending
-    // debounced threshold commit — cancel it so it can't fire a stale late emit.
+    // A discrete apply supersedes any pending debounced threshold commit — cancel it
+    // so it can't fire a stale late emit.
     this._cancelEatThresholdCommit();
-    const normalizedThreshold = Number.isFinite(threshold)
-      ? Math.min(1, Math.max(0, threshold))
-      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
-    this._eatOverlayEnabled = enabled;
-    this._eatConfidenceThreshold = normalizedThreshold;
+    this._setReliability({ mode: 'atLeast', min: threshold, max: NEUTRAL_BOUND.max });
+    this._applyEatOverlayEnabled(enabled);
+  }
 
-    // The overlay switch still coalesces predictions into the base annotation on
-    // the scatter plot. The threshold, however, only feeds the reliability query
-    // filter now — it is emitted (below) and forwarded to the control bar, not
-    // pushed onto the scatter plot as a dimming input.
+  /**
+   * Publish the overlay switch. The switch still coalesces predictions into the base
+   * annotation on the scatter plot; the reliability position only feeds the query
+   * filter, so it rides the emit rather than being pushed onto the plot as a dimming
+   * input.
+   *
+   * Separate from `applyEatSettings` because the switch decides visibility and nothing
+   * else. Routing it through the restore path made every toggle a bundle restore too,
+   * which snapped the mode back to "Hide below" and dropped the bound with it — in
+   * `atMost` the lower bound it round-tripped is 0, so flipping the switch off and on
+   * silently cleared a "hide above 40%" filter.
+   */
+  private _applyEatOverlayEnabled(enabled: boolean): void {
+    this._eatOverlayEnabled = enabled;
     const scatterplot = this._scatterplotController.scatterplot;
     if (this.autoSync && scatterplot) {
       scatterplot.eatOverlayEnabled = enabled;
     }
-
     this._emitEatOverlayChange();
   }
 
+  /** The reliability filter as the control bar models it: a mode plus bounds. */
+  public get reliabilityState(): EatReliabilityState {
+    return this._reliability;
+  }
+
   /**
-   * Reverse mirror: set the slider position from the query filter WITHOUT
-   * re-emitting `eat-overlay-change`, so the control-bar->legend direction does
-   * not loop back into the legend->control-bar direction (#6b).
+   * The one writer for the reliability position, so the control and the query it
+   * mirrors cannot disagree about what a state means. Every rule — clamping, blanking
+   * the bound the mode ignores, ordering a crossed band — lives in the shared
+   * `normalizeReliability`; the legend used to restate each of them by hand and had
+   * already drifted (a band dragged past itself stayed crossed on screen while the
+   * control bar filtered on the ordered one).
    */
-  public setReliabilityThreshold(value: number): void {
-    this._eatConfidenceThreshold = Number.isFinite(value)
-      ? Math.min(1, Math.max(0, value))
-      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+  private _setReliability(state: EatReliabilityState): void {
+    this._reliability = normalizeReliability(state);
+  }
+
+  /**
+   * Reverse mirror: set the control's position from the query filter WITHOUT
+   * re-emitting `eat-overlay-change`, so the control-bar->legend direction does not
+   * loop back into the legend->control-bar direction (#6b).
+   *
+   * Cancels any pending drag commit first: a discrete update from the query side
+   * supersedes an in-flight drag, and leaving the timer armed let a stale late emit
+   * overwrite what the user had just typed into the Filter builder (#380).
+   */
+  public setReliabilityState(state: EatReliabilityState): void {
+    this._cancelEatThresholdCommit();
+    this._setReliability(state);
   }
 
   private _emitEatOverlayChange(): void {
@@ -1075,7 +1280,8 @@ export class ProtspaceLegend extends LitElement {
       new CustomEvent('eat-overlay-change', {
         detail: {
           enabled: this._eatOverlayEnabled,
-          confidenceThreshold: this._eatConfidenceThreshold,
+          confidenceThreshold: this._reliability.min,
+          reliability: this._reliability,
         },
         bubbles: true,
         composed: true,
@@ -1084,35 +1290,225 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _handleEatOverlayToggle(event: Event): void {
-    this.applyEatSettings(
-      (event.currentTarget as HTMLInputElement).checked,
-      this._eatConfidenceThreshold,
-    );
+    // A discrete decision, like a mode change: it supersedes any pending drag commit.
+    this._cancelEatThresholdCommit();
+    this._applyEatOverlayEnabled((event.currentTarget as HTMLInputElement).checked);
   }
 
-  private _handleEatThresholdInput(event: Event): void {
-    this._setEatConfidenceThresholdLive(Number((event.currentTarget as HTMLInputElement).value));
+  /** Which bounds the selected mode filters on, and therefore which controls exist. */
+  private get _activeBounds(): readonly EatBound[] {
+    return EAT_BOUNDS_FOR_MODE[this._reliability.mode];
   }
 
-  private _handleEatThresholdPercentInput(event: Event): void {
-    const value = Number((event.currentTarget as HTMLInputElement).value);
-    if (!Number.isFinite(value)) return;
-    this._setEatConfidenceThresholdLive(value / 100);
+  private _reliabilityHelpText(): string {
+    const label = annotationLabel(this.selectedAnnotation);
+    const effect = EAT_RELIABILITY_EFFECT[this._reliability.mode];
+    return `${effect} Curated “${label}” annotations always stay visible. This mirrors a Filter condition on “${label} — EAT confidence”.`;
+  }
+
+  private _handleEatModeChange(event: Event): void {
+    const mode = (event.currentTarget as HTMLSelectElement).value as EatReliabilityMode;
+    // `normalizeReliability` blanks the bound the new mode does not use, so switching
+    // modes cannot leave a stale constraint applied from a side the user can no longer
+    // see or edit.
+    this._setReliability({ ...this._reliability, mode });
+    // A mode change is a discrete decision, not a drag — apply it immediately.
+    this._cancelEatThresholdCommit();
+    this._emitEatOverlayChange();
   }
 
   /**
-   * Threshold drag: update the slider's visual value immediately (thumb + percent
+   * All three modes share ONE layout: the mode select and its bound(s) on a heading row,
+   * then a single track carrying one thumb per bound the mode actually filters on.
+   *
+   * The modes used to look like different controls. `atMost` rendered a dead, disabled
+   * lower slider above its real one plus a separate "Upper bound" label row — four rows
+   * against `atLeast`'s two — so switching modes reshuffled the panel and left widgets on
+   * screen that did nothing.
+   *
+   * The fill always marks what SURVIVES the filter, which a plain range input cannot do:
+   * it fills from the left, so `atLeast` (which keeps everything ABOVE the thumb) was
+   * colouring exactly the hidden half, while `atMost` happened to be right. Drawing the
+   * kept region explicitly makes the bar mean one thing in every mode.
+   */
+  private _renderReliabilityBand() {
+    const disabled = !this._eatOverlayEnabled;
+    const bounds = this._activeBounds;
+    const { min, max } = this._reliability;
+    // An absent bound does not clip the kept region: `atLeast` keeps up to the top,
+    // `atMost` from the bottom.
+    const fillLeft = bounds.includes('min') ? min : NEUTRAL_BOUND.min;
+    const fillRight = bounds.includes('max') ? NEUTRAL_BOUND.max - max : NEUTRAL_BOUND.min;
+
+    return html`
+      <div class="eat-threshold-heading">
+        ${this._renderReliabilityModeSelect()}
+        <span class="eat-threshold-value">
+          ${bounds.map(
+            (bound, index) => html`
+              ${index > 0
+                ? html`<span class="eat-threshold-sep" aria-hidden="true">–</span>`
+                : null}
+              ${this._renderReliabilityPercent(bound, disabled)}
+            `,
+          )}
+          <span aria-hidden="true">%</span>
+          ${this._renderReliabilityInfo()}
+        </span>
+      </div>
+      <div class="eat-threshold-band ${disabled ? 'is-disabled' : ''}">
+        <span class="eat-threshold-track" aria-hidden="true">
+          <span
+            class="eat-threshold-fill"
+            style=${`left:${bandPercent(fillLeft)}%;right:${bandPercent(fillRight)}%`}
+          ></span>
+        </span>
+        ${bounds.map((bound) => this._renderReliabilityRange(bound, disabled))}
+      </div>
+    `;
+  }
+
+  private _renderReliabilityRange(bound: EatBound, disabled: boolean) {
+    const ui = EAT_BOUND_UI[bound];
+    return html`
+      <input
+        id=${ui.id}
+        type="range"
+        min=${NEUTRAL_BOUND.min}
+        max=${NEUTRAL_BOUND.max}
+        step=${EAT_BAND_MIN_GAP}
+        .value=${String(this._reliability[bound])}
+        ?disabled=${disabled}
+        aria-label=${this._activeBounds.length > 1 ? ui.sliderLabel : ui.soloLabel}
+        @input=${(event: Event) => this._handleEatBoundInput(bound, event)}
+        @change=${this._flushEatThresholdCommit}
+      />
+    `;
+  }
+
+  private _renderReliabilityPercent(bound: EatBound, disabled: boolean) {
+    return html`
+      <input
+        class="eat-threshold-percent"
+        type="number"
+        min="0"
+        max="100"
+        step="1"
+        .value=${String(Math.round(this._reliability[bound] * 100))}
+        ?disabled=${disabled}
+        aria-label=${EAT_BOUND_UI[bound].percentLabel}
+        @input=${(event: Event) => this._handleEatBoundPercentInput(bound, event)}
+        @change=${this._flushEatThresholdCommit}
+      />
+    `;
+  }
+
+  private _renderReliabilityModeSelect() {
+    return html`
+      <select
+        class="eat-threshold-mode"
+        aria-label="EAT reliability filter mode"
+        .value=${this._reliability.mode}
+        ?disabled=${!this._eatOverlayEnabled}
+        @change=${this._handleEatModeChange}
+      >
+        <option value="atLeast">Hide below</option>
+        <option value="atMost">Hide above</option>
+        <option value="between">Keep between</option>
+      </select>
+    `;
+  }
+
+  private _renderReliabilityInfo() {
+    return html`
+      <protspace-info-popover
+        class="eat-threshold-info"
+        .description=${this._reliabilityHelpText()}
+        label="EAT reliability filter"
+        align="right"
+      ></protspace-info-popover>
+    `;
+  }
+
+  private _handleEatBoundInput(bound: EatBound, event: Event): void {
+    const slider = event.currentTarget as HTMLInputElement;
+    const applied = this._setEatBoundLive(bound, Number(slider.value));
+
+    // Re-pin the slider when a clamp moved the value, or the thumb sails past its
+    // neighbour on screen while the filter uses the clamped bound. Lit cannot do this
+    // for us: a `.value` binding dirty-checks against the value Lit last committed, not
+    // against the DOM, so once the clamp holds the state still the browser is free to
+    // keep driving the input and Lit sees nothing to write. (`live()` is the idiomatic
+    // fix, but this package externalizes only bare `lit`, so importing a directive
+    // bundles a second lit-html copy — which fails at runtime with
+    // `currentDirective._$initialize is not a function`.)
+    const pinned = String(applied);
+    if (slider.value !== pinned) slider.value = pinned;
+  }
+
+  private _handleEatBoundPercentInput(bound: EatBound, event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const raw = input.value;
+    // An emptied box reads as "no constraint on this side" — but it cannot be routed
+    // through `clampReliabilityBound`'s non-finite fallback to say so, because a number
+    // input reports an empty (or unparseable) field as `''` and `Number('')` is 0, not
+    // NaN. On the UPPER bound that 0 is `confidence <= 0`, which hides every prediction:
+    // the exact opposite of clearing the field.
+    const empty = raw.trim() === '';
+    const requested = empty ? NEUTRAL_BOUND[bound] : Number(raw) / 100;
+    if (!Number.isFinite(requested)) return;
+
+    const applied = this._setEatBoundLive(bound, requested);
+    // Re-pin only when a clamp actually moved the value, for the reason the slider does:
+    // a clamp that holds the state still leaves Lit's `.value` dirty-check nothing to
+    // write, so the box would keep displaying a bound the filter is not using. A box the
+    // user is still typing a valid number into is left alone, and so is an emptied one —
+    // pinning that would type the neutral bound back in under them.
+    if (empty || applied === requested) return;
+    const pinned = String(Math.round(applied * 100));
+    if (input.value !== pinned) input.value = pinned;
+  }
+
+  /**
+   * Bound drag: update the slider's visual value immediately (thumb + percent
    * readout stay live), but debounce the expensive downstream apply — the
    * `eat-overlay-change` emit that re-runs the reliability query and rebuilds
    * geometry — to a drag-pause/release.
    */
-  private _setEatConfidenceThresholdLive(value: number): void {
-    // clamp01(NaN) is NaN; keep the non-finite fallback the immediate apply used
-    // (unreachable via the current handlers, but defensive/consistent).
-    this._eatConfidenceThreshold = Number.isFinite(value)
-      ? clamp01(value)
-      : DEFAULT_EAT_CONFIDENCE_THRESHOLD;
+  private _setEatBoundLive(bound: EatBound, value: number): number {
+    // Each bound falls back to its own "constrains nothing" position, so a non-finite
+    // value reads as no constraint on that side.
+    const next = this._clampBandBound(bound, clampReliabilityBound(value, NEUTRAL_BOUND[bound]));
+    // Through the one writer, so a live drag lands in the same canonical form as every
+    // other path and what the thumbs settle on is the band the filter will apply.
+    this._setReliability({ ...this._reliability, [bound]: next });
     this._debounceEatThresholdCommit();
+    // The bound the state actually settled on, so the caller pins its control onto the
+    // value the filter will use. Not `next`: normalization runs after the band clamp and
+    // can still move it (a band whose upper bound sits at 0 clamps the lower one to
+    // -0.01, which `normalizeReliability` then pulls back to 0).
+    return this._reliability[bound];
+  }
+
+  /**
+   * On the shared `between` track a thumb stops at its neighbour instead of passing it.
+   *
+   * Two independent bars could cross, and the crossed pair was only put back in order
+   * later, by `normalizeReliability` at commit time — so the bounds swapped under the
+   * user's thumb, and which band they ended up with depended on whether they happened
+   * to pause for the debounce mid-drag. On one track that would be visible nonsense:
+   * the fill would invert. Stopping at the neighbour is what a range control does, and
+   * it makes the crossed state unreachable rather than corrected after the fact.
+   *
+   * The bounds stop one step short of each other so the two thumbs can never land on
+   * the same pixel, where the one on top would be the only one you could grab.
+   */
+  private _clampBandBound(bound: EatBound, value: number): number {
+    const { mode, min, max } = this._reliability;
+    if (mode !== 'between') return value;
+    return bound === 'min'
+      ? Math.min(value, max - EAT_BAND_MIN_GAP)
+      : Math.max(value, min + EAT_BAND_MIN_GAP);
   }
 
   private _debounceEatThresholdCommit(): void {
@@ -1142,7 +1538,11 @@ export class ProtspaceLegend extends LitElement {
     }
   }
 
-  private _handleScatterplotDataChange(data: ScatterplotData, selectedAnnotation: string): void {
+  private _handleScatterplotDataChange(
+    data: ScatterplotData,
+    selectedAnnotation: string,
+    selectedProjectionName: string,
+  ): void {
     this._clearKeyboardReorderState();
     const scatterplot = this._scatterplotController.scatterplot;
     this._eatOverlayEnabled = scatterplot?.eatOverlayEnabled ?? true;
@@ -1168,6 +1568,22 @@ export class ProtspaceLegend extends LitElement {
     };
     this._updateAnnotationValues(data, selectedAnnotation);
     this._eatCounts = computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
+    // Taken from the unsliced element, not from the incoming payload.
+    // `sliceVisualizationDataByIndices` strips `statisticsRows` from a filtered or isolated
+    // view on purpose (a slice must not carry scores that describe the whole dataset), so
+    // reading them off `data` made every filter look identical to "this annotation was never
+    // scored" -- which is why this used to need a sticky per-annotation memory to tell the two
+    // apart. The scores are whole-dataset facts about the annotation, so the legend reads them
+    // from the whole dataset and decides separately whether to plot them (`_renderScoreStrips`).
+    // Same escape hatch the dataset hash in `updated()` already uses, and the same source the
+    // sibling projection-metadata panel is handed.
+    const statisticsRows = scatterplot?.data?.statisticsRows ?? data.statisticsRows;
+    this._categoryScores = annotationCategoryScores(
+      statisticsRows,
+      selectedAnnotation,
+      selectedProjectionName,
+    );
+    this._isClusterAnnotation = isAutoClusterColumn(statisticsRows, selectedAnnotation);
     this.proteinIds = data.protein_ids;
 
     // Sync isolation state
@@ -2245,44 +2661,7 @@ export class ProtspaceLegend extends LitElement {
                     <span>Show</span>
                   </label>
                 </div>
-                <div class="eat-threshold">
-                  <div class="eat-threshold-heading">
-                    <label for="eat-reliability-threshold">Hide below reliability</label>
-                    <span class="eat-threshold-value">
-                      <input
-                        class="eat-threshold-percent"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        .value=${String(Math.round(this._eatConfidenceThreshold * 100))}
-                        ?disabled=${!this._eatOverlayEnabled}
-                        aria-label="EAT reliability filter percentage"
-                        @input=${this._handleEatThresholdPercentInput}
-                        @change=${this._flushEatThresholdCommit}
-                      />
-                      <span aria-hidden="true">%</span>
-                      <protspace-info-popover
-                        class="eat-threshold-info"
-                        .description=${`Predictions below this reliability are hidden (filtered out); curated “${annotationLabel(this.selectedAnnotation)}” annotations always stay visible. Set to 0% to show all. This mirrors a Filter condition on “${annotationLabel(this.selectedAnnotation)} — EAT confidence”.`}
-                        label="EAT reliability filter"
-                        align="right"
-                      ></protspace-info-popover>
-                    </span>
-                  </div>
-                  <input
-                    id="eat-reliability-threshold"
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    .value=${String(this._eatConfidenceThreshold)}
-                    ?disabled=${!this._eatOverlayEnabled}
-                    aria-label="EAT reliability filter threshold"
-                    @input=${this._handleEatThresholdInput}
-                    @change=${this._flushEatThresholdCommit}
-                  />
-                </div>
+                <div class="eat-threshold">${this._renderReliabilityBand()}</div>
                 ${this._eatOverlayEnabled && this._eatCounts
                   ? html`
                       <div
@@ -2306,6 +2685,7 @@ export class ProtspaceLegend extends LitElement {
               </section>
             `
           : ''}
+        ${this._renderScoreStrips()}
         ${LegendRenderer.renderLegendContent(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
@@ -2315,9 +2695,153 @@ export class ProtspaceLegend extends LitElement {
     `;
   }
 
+  private _setHoveredCategory(category: string | null): void {
+    // Nothing reads the hover when there are no scores: `_renderScoreStrips` returns before
+    // the `highlighted` binding and `_renderLegendItem` gates its class on the same emptiness.
+    // Assigning null over null is a no-op for Lit, so a stats-less dataset stops re-rendering
+    // the whole legend on every row the pointer crosses, while a stale highlight still clears
+    // if the scores go away mid-hover.
+    this._hoveredCategory = this._categoryScores.length === 0 ? null : category;
+  }
+
+  /**
+   * Dots for one metric, in the legend's own colours so the mapping to rows is legible
+   * before any hover happens. A category swept into the "Other" bucket still gets a dot,
+   * greyed: the scores are computed over the whole dataset regardless of what the legend
+   * chooses to show, and dropping those dots would misstate the distribution.
+   */
+  /**
+   * Strip geometry, derived in `willUpdate` rather than in render: it depends only on the
+   * legend items and the scores, while the most frequent cause of a legend re-render is a
+   * hover, which changes neither. Plain fields, not `@state`: they are computed before render
+   * from properties that are already reactive, so making them reactive would only add a
+   * second update cycle. Written in `willUpdate` and not `updated()` for the same reason --
+   * after render they would paint one cycle stale.
+   */
+  private _silhouettePoints: ScoreStripPoint[] = [];
+  private _daviesBouldinPoints: ScoreStripPoint[] = [];
+  private _daviesBouldinDomain: [number, number] = [0, 1];
+
+  protected willUpdate(changedProperties: Map<string, unknown>): void {
+    if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
+      this._deriveStripPoints();
+    }
+  }
+
+  private _deriveStripPoints(): void {
+    // One map for both strips: it is keyed by the same legend items either way.
+    const colorByValue = new Map(this._legendItems.map((item) => [item.value, item.color]));
+    // Davies-Bouldin has no embedding-space counterpart on CategoryScore, so only the
+    // silhouette strip's tooltip carries a ceiling.
+    this._silhouettePoints = this._stripPoints(
+      colorByValue,
+      (score) => score.silhouette,
+      (score) => score.silhouetteEmbedding,
+    );
+    this._daviesBouldinPoints = this._stripPoints(colorByValue, (score) => score.daviesBouldin);
+    // Silhouette is bounded to [-1, 1], so its axis is fixed and comparable across datasets.
+    // Davies-Bouldin is unbounded above, so it scales to the data at hand. Folded rather than
+    // spread into Math.min/max: the argument list would grow with the category count, and a
+    // high-cardinality annotation would blow the call-argument limit.
+    let low = Infinity;
+    let high = -Infinity;
+    for (const point of this._daviesBouldinPoints) {
+      if (point.value < low) low = point.value;
+      if (point.value > high) high = point.value;
+    }
+    this._daviesBouldinDomain = this._daviesBouldinPoints.length > 0 ? [low, high] : [0, 1];
+  }
+
+  private _stripPoints(
+    colorByValue: Map<string, string>,
+    pick: (score: CategoryScore) => number | null,
+    pickCeiling?: (score: CategoryScore) => number | null,
+  ): ScoreStripPoint[] {
+    const points: ScoreStripPoint[] = [];
+    for (const score of this._categoryScores) {
+      const value = pick(score);
+      if (value === null) continue;
+      points.push({
+        category: score.category,
+        value,
+        color: colorByValue.get(score.category) ?? '#888',
+        ceiling: pickCeiling?.(score) ?? null,
+      });
+    }
+    return points;
+  }
+
+  private _renderScoreStrips() {
+    // Nothing to plot: this annotation was never scored, or the bundle carries no statistics.
+    if (this._categoryScores.length === 0) return '';
+    // Scored, but the view is showing a subset. The numbers describe the whole dataset and do
+    // not recompute, so plotting them beside a narrowed legend would misdescribe what is on
+    // screen; the strips step aside and say so. Gated on the live filter/isolation state
+    // directly, which is the actual question -- the scores themselves are read from the
+    // unsliced dataset (see `_handleScatterplotDataChange`) and so stay available for sorting.
+    const scatterplot = this._scatterplotController.scatterplot;
+    if (this.isolationMode || scatterplot?.filtersActive) {
+      return html`<p class="score-strips-note">
+        Separation scores are hidden while the view is filtered.
+      </p>`;
+    }
+
+    const silhouette = this._silhouettePoints;
+    const daviesBouldin = this._daviesBouldinPoints;
+    const dbDomain = this._daviesBouldinDomain;
+
+    return html`
+      <section
+        class="score-strips"
+        aria-label="Separation by category"
+        @strip-hover=${(event: CustomEvent<{ category: string | null }>) =>
+          this._setHoveredCategory(event.detail.category)}
+        @strip-click=${(event: CustomEvent<{ category: string }>) => {
+          if (this._legendItems.some((item) => item.value === event.detail.category)) {
+            this._handleItemClick(event.detail.category);
+          }
+        }}
+      >
+        ${this._renderScoreStrip('silhouette', silhouette, [-1, 1])}
+        ${daviesBouldin.length > 0
+          ? this._renderScoreStrip('davies_bouldin', daviesBouldin, dbDomain)
+          : ''}
+        <!-- Stated here rather than only in the projection-metadata panel: this is where
+             the per-category numbers are actually read, and a user hovering rows may
+             never open that panel. -->
+        ${this._isClusterAnnotation
+          ? html`<p class="score-strips-caveat">${AUTO_CLUSTER_SCORE_CAVEAT}</p>`
+          : ''}
+      </section>
+    `;
+  }
+
+  /**
+   * One metric's strip. Name and optimisation direction come from `metricDisplay`, the same
+   * entry the metadata panel's rows read, so the two panels cannot name a metric differently
+   * and a metric added to that map arrives here already labelled.
+   */
+  private _renderScoreStrip(metric: string, points: ScoreStripPoint[], domain: [number, number]) {
+    const { label, higherIsBetter, description } = metricDisplay(metric);
+    return html`
+      <protspace-score-strip
+        label=${label}
+        .description=${description}
+        .higherIsBetter=${higherIsBetter}
+        .points=${points}
+        .domain=${domain}
+        .highlighted=${this._hoveredCategory}
+      ></protspace-score-strip>
+    `;
+  }
+
   private _renderLegendItem(item: LegendItem, sortedIndex: number) {
     const selected = isItemSelected(item, this.selectedItems);
-    const classes = getItemClasses(item, selected, false);
+    const classes = `${getItemClasses(item, selected, false)}${
+      this._categoryScores.length > 0 && item.value === this._hoveredCategory
+        ? ' legend-item-score-hover'
+        : ''
+    }`;
     const otherCount = item.value === LEGEND_VALUES.OTHER ? this._otherItems.length : undefined;
 
     return LegendRenderer.renderLegendItem(
@@ -2333,6 +2857,7 @@ export class ProtspaceLegend extends LitElement {
         },
         onKeyDown: (e: KeyboardEvent) => this._handleItemKeyDown(e, item, sortedIndex),
         onDragHandleKeyDown: (e: KeyboardEvent) => this._handleDragHandleKeyDown(e, item),
+        onHover: (category) => this._setHoveredCategory(category),
         onSymbolClick:
           item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation()
             ? (e: MouseEvent) => this._handleSymbolClick(item, e)
@@ -2396,6 +2921,7 @@ export class ProtspaceLegend extends LitElement {
       logBinningAvailable: this.annotationData.numericMetadata?.logSupported ?? true,
       hasPersistedSettings: this._persistenceController.hasPersistedSettings(),
       selectedPaletteId: this._dialogSettings.selectedPaletteId,
+      hasCategoryScores: this._categoryScores.length > 0,
     };
 
     const callbacks: SettingsDialogCallbacks = {

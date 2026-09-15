@@ -8,10 +8,18 @@ from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 
-import h5py
 import numpy as np
 from biocentral_api import BiocentralAPI, CommonEmbedder, batched
 from tqdm import tqdm
+
+# Re-exported: the HDF5 layer moved to `store` so neither backend owns it, but
+# local.py, cli/annotate.py and existing importers still reach it from here.
+from protspace.data.embedding.store import (  # noqa: F401
+    finish_run,
+    load_existing_ids,
+    save_embeddings,
+    validate_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +45,14 @@ EXTRA_SHORT_KEYS: dict[str, str] = {
 
 # Combined lookup for help text and error messages.
 ALL_SHORT_KEYS: dict[str, str] = {**MODEL_SHORT_KEYS, **EXTRA_SHORT_KEYS}
+
+# Shortcuts this API accepts but does not actually serve: biotrainer has no
+# dedicated ESM-C embedder and its generic loader substring-matches "esm" in
+# "ESMplusplus", loading the checkpoint as a vanilla ESM-2 — so the request
+# succeeds and returns embeddings orthogonal to the real model (cosine ~0.02).
+# Declared, not enforced: the CLI still accepts the combination, and the Colab
+# notebook is what refuses it. Drop this once Biocentral is fixed.
+BIOCENTRAL_INVALID: frozenset[str] = frozenset({"esmc_300m", "esmc_600m"})
 
 DEFAULT_EMBEDDER = "prot_t5"
 
@@ -107,27 +123,6 @@ def derive_h5_cache_path(fasta_path: Path, embedder: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# HDF5 helpers
-# ---------------------------------------------------------------------------
-
-
-def load_existing_ids(h5_path: Path) -> set[str]:
-    """Return the set of dataset keys already present in *h5_path*."""
-    if not h5_path.exists():
-        return set()
-    with h5py.File(h5_path, "r") as f:
-        return set(f.keys())
-
-
-def save_embeddings(h5_path: Path, embeddings: dict[str, np.ndarray]) -> None:
-    """Append embeddings to an HDF5 file (one dataset per protein)."""
-    with h5py.File(h5_path, "a") as f:
-        for protein_id, emb in embeddings.items():
-            if protein_id not in f:
-                f.create_dataset(protein_id, data=emb.astype(np.float32))
-
-
-# ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
 
@@ -143,9 +138,15 @@ def embed_sequences(
     Supports deduplication, length-sorting, batching, resume (skips IDs
     already present in *h5_path*), and a tqdm progress bar.
 
+    Raises ``ValueError`` if any requested sequence could not be embedded; the
+    partial HDF5 is kept so a rerun only embeds what is missing.
+
     Returns the path to the completed HDF5 file.
     """
     cfg = embed_config or EmbedConfig()
+
+    # Reject HDF5-hostile identifiers before spending a single API call on them.
+    validate_headers(sequences)
 
     # Resume: skip already-embedded sequences
     existing_ids = load_existing_ids(h5_path)
@@ -201,7 +202,6 @@ def embed_sequences(
 
     # Batch and embed
     api_batches = list(batched(unique_ids, batch_size_limit=cfg.batch_size))
-    total_embedded = 0
     failed_batches = 0
 
     pbar = tqdm(total=len(remaining), desc="Embedding", unit="seq")
@@ -222,38 +222,41 @@ def embed_sequences(
                     reduce=True,
                 ).run()
 
-            if result is not None:
-                emb_dict = result.to_dict()
-                if emb_dict:
-                    # Expand embeddings to all IDs sharing the same sequence
-                    expanded: dict[str, np.ndarray] = {}
-                    for rep_id, emb in emb_dict.items():
-                        seq = unique_seqs[rep_id]
-                        for pid in seq_to_ids[seq]:
-                            expanded[pid] = emb
-                    save_embeddings(h5_path, expanded)
-                    total_embedded += len(expanded)
+            emb_dict = result.to_dict() if result is not None else {}
 
-                    missing_reps = set(batch_seqs) - set(emb_dict)
-                    if missing_reps:
-                        logger.warning(
-                            "Batch %d: %d unique sequence(s) missing from response",
-                            batch_idx + 1,
-                            len(missing_reps),
-                        )
-            else:
+            if not emb_dict:
                 failed_batches += 1
                 logger.error(
-                    "Batch %d/%d: API returned None",
+                    "Batch %d/%d: no embeddings returned (%d seqs)",
                     batch_idx + 1,
                     len(api_batches),
+                    len(batch_ids),
                 )
+            else:
+                # Expand embeddings to all IDs sharing the same sequence
+                expanded: dict[str, np.ndarray] = {}
+                for rep_id, emb in emb_dict.items():
+                    seq = unique_seqs[rep_id]
+                    for pid in seq_to_ids[seq]:
+                        expanded[pid] = emb
+                save_embeddings(h5_path, expanded)
 
-            # Count all proteins covered by this batch (including duplicates)
-            batch_protein_count = sum(
-                len(seq_to_ids[unique_seqs[pid]]) for pid in batch_ids
-            )
-            pbar.update(batch_protein_count)
+                missing_reps = batch_seqs.keys() - emb_dict.keys()
+                if missing_reps:
+                    # A short response is a partial failure, not a note: it leaves
+                    # holes in the .h5 that load_h5 will happily accept.
+                    failed_batches += 1
+                    logger.error(
+                        "Batch %d/%d: %d of %d unique sequence(s) missing from response",
+                        batch_idx + 1,
+                        len(api_batches),
+                        len(missing_reps),
+                        len(batch_seqs),
+                    )
+
+                # Advance by what was written, never by the batch size: a bar driven
+                # by batch counts reaches 100% even when nothing was embedded.
+                pbar.update(len(expanded))
 
         except Exception:
             failed_batches += 1
@@ -263,10 +266,9 @@ def embed_sequences(
                 len(api_batches),
                 len(batch_ids),
             )
-            batch_protein_count = sum(
-                len(seq_to_ids[unique_seqs[pid]]) for pid in batch_ids
-            )
-            pbar.update(batch_protein_count)
+
+        if failed_batches:
+            pbar.set_postfix(failed=failed_batches)
 
         # Small delay between batches
         if batch_idx < len(api_batches) - 1:
@@ -274,13 +276,12 @@ def embed_sequences(
 
     pbar.close()
 
-    # Summary
-    print(f"\nDone. Embedded {total_embedded:,} / {len(remaining):,} sequences.")
-    if failed_batches:
-        print(f"Failed batches: {failed_batches} (rerun to retry)")
-    print(f"Output: {h5_path}")
-
-    return h5_path
+    return finish_run(
+        h5_path,
+        remaining,
+        context=f"{failed_batches} of {len(api_batches)} batch(es) failed",
+        retry_hint="Check the Biocentral server status and rerun.",
+    )
 
 
 def probe_embedder(

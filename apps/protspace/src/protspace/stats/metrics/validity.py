@@ -6,27 +6,34 @@ and/or by **max silhouette** (``ctx.params["cluster_selection"]`` = ``elbow`` |
 ``label_kind`` (``kmeans_elbow`` / ``kmeans_silhouette``). The chosen K is
 emitted as a ``metric_kind="meta"`` row (``n_clusters``).
 
-This auto-clustering is no longer self-scored (no silhouette / Davies-Bouldin /
-Calinski-Harabasz on the KMeans labels themselves — that was circular: KMeans
-optimises inertia, then silhouette grades the KMeans result against itself).
-Instead, when ``ctx.annotations`` are supplied, each auto-clustering is compared
+Each auto-clustering is also scored as if it were an annotation: its membership
+labels are handed to ``AnnotationValidityStatistic`` (``label_kind`` naming the
+K-selection rather than ``"annotation"``), giving silhouette / Davies-Bouldin /
+Calinski-Harabasz, aggregate and per-category, filed under the membership
+column's own name. These are descriptive, not a verdict: KMeans drew the
+boundaries being graded, and a ``kmeans_silhouette`` K was chosen by maximising
+the silhouette itself. The per-category values are the useful part, saying which
+cluster is tight and which is mush, which no aggregate can.
+
+Separately, when ``ctx.annotations`` are supplied, each auto-clustering is compared
 against every annotation's category labels via **ARI** (``adjusted_rand``) and
 **NMI** (``normalized_mutual_info``) — ``stat_family="cluster_agreement"``,
 ``metric_kind="agreement"`` — reusing the KMeans labels already computed (no
 second sweep). Annotation-based *validity* (silhouette/DBI/CH scored on the
 annotation's own categories) lives in ``AnnotationValidityStatistic``.
 
-Each labelling also becomes a per-protein ``cluster_*`` membership column whose
-per-point silhouette rides along as an attached ``value|score`` confidence — the
-same convention as UniProt evidence codes / InterPro bit scores — so no separate
-silhouette column is needed. Suppressed when ``ctx.params["include_scores"]`` is
-False (``--no-scores``).
+Each labelling also becomes a per-protein ``cluster_*`` membership column holding a
+plain ``cluster N`` label, the same shape as a curated categorical annotation. It
+formerly attached each point's own silhouette as a ``value|score`` confidence; the
+per-cluster rows above report that separation on the scale the rest of the app reads,
+so the point-level value is no longer computed.
 
 scikit-learn imports are function-local to keep CLI startup fast.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import NamedTuple
 
 import numpy as np
@@ -40,10 +47,8 @@ from protspace.stats.base import (
     StatRow,
 )
 from protspace.stats.cluster.kmeans_elbow import kmeans_elbow
+from protspace.stats.metrics.annotation_validity import AnnotationValidityStatistic
 
-# silhouette_samples is O(n^2) with no sampling escape hatch (unlike the aggregate
-# mean), so the per-point column is skipped beyond this point count.
-DEFAULT_SILHOUETTE_HARD_CEILING = 20000
 # Above this many points the KMeans elbow sweep fits on a random subsample (+predict)
 # rather than the full projection, bounding cost at 570k+ scale.
 DEFAULT_MAX_FIT_SAMPLE = 50_000
@@ -144,26 +149,11 @@ class ClusterValidityStatistic:
         unique_labels = np.unique(labels)
         achieved = int(len(unique_labels))
 
-        # Decide up front whether the exact per-point silhouette will be computed.
-        # Its per-point values ride along on the membership column below as a
-        # `|score` confidence; no aggregate self-validity row is emitted for it.
-        silhouette_ok = 2 <= k <= n - 1
-        hard_ceiling = int(
-            params.get("silhouette_hard_ceiling", DEFAULT_SILHOUETTE_HARD_CEILING)
-        )
         want_per_point = (
             params.get("cluster_annotations", True)
             and achieved >= 2
             and len(ctx.ids) == n
         )
-        per_point_samples = None
-        if want_per_point and silhouette_ok and n <= hard_ceiling:
-            try:
-                from sklearn.metrics import silhouette_samples
-
-                per_point_samples = silhouette_samples(X, labels)
-            except Exception:  # noqa: BLE001 - per-point silhouette is best-effort
-                per_point_samples = None
 
         meta_extra = {
             "requested_k": k,
@@ -189,40 +179,55 @@ class ClusterValidityStatistic:
             )
         ]
 
-        # Per-protein membership: a categorical `cluster N` label, with the per-point
-        # silhouette attached as a `value|score` confidence (like ECO / InterPro bit
-        # scores) so a single column carries both membership and its confidence.
+        # Per-protein membership: a plain categorical `cluster N` label, exactly the
+        # shape of a curated annotation. It used to carry each point's own silhouette
+        # as a `value|score` confidence, which was the only per-point separation score
+        # anywhere in the app; the per-cluster rows emitted below say the same thing on
+        # the scale every other annotation is read on, so the point-level value is no
+        # longer computed (silhouette_samples is O(n^2) and had to be ceiling-capped).
         if want_per_point:
-            include_scores = bool(params.get("include_scores", True))
-            sil_by_id = {}
-            if per_point_samples is not None:
-                sil_by_id = {
-                    pid: float(s)
-                    for pid, s in zip(ctx.ids, per_point_samples, strict=False)
-                }
-
-            def _membership(pid, lbl):
-                label = f"cluster {int(lbl)}"
-                if include_scores and pid in sil_by_id:
-                    return f"{label}|{sil_by_id[pid]:.4f}"
-                return label
+            labels_by_id = {
+                pid: f"cluster {int(lbl)}"
+                for pid, lbl in zip(ctx.ids, labels, strict=False)
+            }
 
             rows.append(
                 AnnotationColumn(
                     name=col_name,
                     kind="categorical",
-                    values={
-                        pid: _membership(pid, lbl)
-                        for pid, lbl in zip(ctx.ids, labels, strict=False)
-                    },
+                    values=dict(labels_by_id),
                     extra={
                         "projection": ctx.space_name,
                         "selection": selection_name,
                         "k": k,
                         "seed": rng_seed,
                         "computed": True,
-                        "has_silhouette_score": bool(sil_by_id) and include_scores,
                     },
+                )
+            )
+
+            # How well this clustering separates in the projection it was found in,
+            # scored by the very statistic that scores curated annotations, so the
+            # frontend reads a cluster column through the same rows as any other
+            # annotation (strips, per-row scores, the metadata panel) with no
+            # special case. Gated on `want_per_point`: without a membership column
+            # the clustering can never be selected in the UI, so its scores would
+            # be orphan rows.
+            #
+            # These are optimistic by construction -- KMeans drew the boundaries
+            # being graded, and for `kmeans_silhouette` K was chosen by maximising
+            # this very number. The frontend states that caveat; the rows are still
+            # worth emitting because the per-category values say which cluster is
+            # tight and which is mush, which no aggregate can.
+            #
+            # `replace` keeps every other context field (coords, ids, seed, params)
+            # so the scoring conditions match a real annotation's exactly, including
+            # the subsample at DEFAULT_SAMPLE_THRESHOLD. Scoring the same
+            # `labels_by_id` the column above was built from means the column and its
+            # scores can never describe different labellings.
+            rows.extend(
+                AnnotationValidityStatistic(label_kind=label_kind).compute(
+                    replace(ctx, annotations={col_name: labels_by_id})
                 )
             )
 

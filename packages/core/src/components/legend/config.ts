@@ -66,4 +66,5 @@ export const LEGEND_EVENTS = {
   ERROR: 'legend-error',
   DATA_CHANGE: 'data-change',
   ANNOTATION_CHANGE: 'annotation-change',
+  PROJECTION_CHANGE: 'projection-change',
 } as const;

@@ -24,7 +24,10 @@ def _make_domain(cath_label="2.60.40.720", plddt=95.1, start=109, end=287):
     }
 
 
-_REQUESTS_PATCH = "src.protspace.data.annotations.retrievers.ted_retriever.requests"
+# TED fetches through the shared retry helper, so that is the seam to patch.
+_REQUESTS_PATCH = (
+    "src.protspace.data.annotations.retrievers.ted_retriever.get_with_retry"
+)
 _CATH_NAMES_PATCH = (
     "src.protspace.data.annotations.retrievers.ted_retriever.get_cath_names"
 )
@@ -35,7 +38,7 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_single_domain(self, mock_requests, mock_cath_names):
+    def test_single_domain(self, mock_get, mock_cath_names):
         """Single domain with CATH name."""
         mock_cath_names.return_value = {"2.60.40.720": "Immunoglobulin-like"}
         mock_resp = MagicMock()
@@ -43,7 +46,7 @@ class TestTedRetriever:
             [_make_domain("2.60.40.720", 95.1)]
         )
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
@@ -57,7 +60,7 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_multiple_domains(self, mock_requests, mock_cath_names):
+    def test_multiple_domains(self, mock_get, mock_cath_names):
         """Protein with multiple domains."""
         mock_cath_names.return_value = {
             "2.60.40.720": "Immunoglobulin-like",
@@ -71,7 +74,7 @@ class TestTedRetriever:
             ]
         )
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P04637"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
@@ -83,13 +86,13 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_no_domains(self, mock_requests, mock_cath_names):
+    def test_no_domains(self, mock_get, mock_cath_names):
         """Protein with no domains returns empty string."""
         mock_cath_names.return_value = {}
         mock_resp = MagicMock()
         mock_resp.json.return_value = {}  # Empty response
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
@@ -98,36 +101,112 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_unclassified_domain(self, mock_requests, mock_cath_names):
-        """Domain with cath_label '-' shows as unclassified."""
+    def test_unlabeled_domain_preserves_ted_label(self, mock_get, mock_cath_names):
+        """Domain with cath_label '-' keeps the TED source label."""
         mock_cath_names.return_value = {}
         mock_resp = MagicMock()
         mock_resp.json.return_value = _make_alphafold_response(
             [_make_domain("-", 90.5)]
         )
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
 
-        assert "unclassified|90.5" in result[0].annotations["ted_domains"]
+        assert result[0].annotations["ted_domains"] == "-|90.5"
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_api_error_returns_empty(self, mock_requests, mock_cath_names):
+    def test_unlabeled_domain_keeps_source_order_with_labeled_domains(
+        self, mock_get, mock_cath_names
+    ):
+        """A mixed TED response keeps every domain in source order."""
+        mock_cath_names.return_value = {}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_alphafold_response(
+            [
+                _make_domain("3.40.50.2000", 94.1909),
+                _make_domain("-", 96.7064),
+                _make_domain("3.40.50.2000", 95.113),
+            ]
+        )
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        retriever = TedRetriever(headers=["W6JQJ9"], annotations=TED_ANNOTATIONS)
+        result = retriever.fetch_annotations()
+
+        assert (
+            result[0].annotations["ted_domains"]
+            == "3.40.50.2000|94.2;-|96.7;3.40.50.2000|95.1"
+        )
+
+    @patch(_CATH_NAMES_PATCH)
+    @patch(_REQUESTS_PATCH)
+    def test_null_plddt_does_not_drop_the_other_domains(
+        self, mock_get, mock_cath_names
+    ):
+        """A null pLDDT must not blank the whole accession via the outer except."""
+        mock_cath_names.return_value = {}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = _make_alphafold_response(
+            [
+                _make_domain("3.40.50.2000", None),
+                _make_domain("2.60.40.720", 88.25),
+            ]
+        )
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        retriever = TedRetriever(headers=["W6JQJ9"], annotations=TED_ANNOTATIONS)
+        result = retriever.fetch_annotations()
+
+        assert (
+            result[0].annotations["ted_domains"] == "3.40.50.2000|0.0;2.60.40.720|88.2"
+        )
+
+    @patch(_CATH_NAMES_PATCH)
+    @patch(_REQUESTS_PATCH)
+    def test_api_error_returns_empty(self, mock_get, mock_cath_names):
         """API error returns empty annotation."""
         mock_cath_names.return_value = {}
-        mock_requests.get.side_effect = Exception("Connection error")
+        mock_get.side_effect = Exception("Connection error")
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
 
         assert result[0].annotations["ted_domains"] == ""
+        assert retriever.failed_lookup_count == 1
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_cath_name_not_found(self, mock_requests, mock_cath_names):
+    def test_unknown_accession_is_an_absence_not_a_failed_lookup(
+        self, mock_get, mock_cath_names
+    ):
+        """A 404 is AlphaFold's normal answer for an accession it does not model.
+
+        Counting it as a lost lookup would mark the whole TED source incomplete
+        on any ordinary run — custom identifiers and unmodelled proteins both
+        404 — and keep the column out of the annotation cache forever.
+        """
+        mock_cath_names.return_value = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.raise_for_status.side_effect = AssertionError(
+            "a 404 must not be raised as a failure"
+        )
+        mock_get.return_value = mock_resp
+
+        retriever = TedRetriever(headers=["NOT_IN_AFDB"], annotations=TED_ANNOTATIONS)
+        result = retriever.fetch_annotations()
+
+        assert result[0].annotations["ted_domains"] == ""
+        assert retriever.failed_lookup_count == 0
+
+    @patch(_CATH_NAMES_PATCH)
+    @patch(_REQUESTS_PATCH)
+    def test_cath_name_not_found(self, mock_get, mock_cath_names):
         """CATH code without a name shows code only."""
         mock_cath_names.return_value = {}  # No names
         mock_resp = MagicMock()
@@ -135,7 +214,7 @@ class TestTedRetriever:
             [_make_domain("3.40.50.2300", 96.8)]
         )
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
@@ -144,7 +223,7 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_partial_cath_code(self, mock_requests, mock_cath_names):
+    def test_partial_cath_code(self, mock_get, mock_cath_names):
         """Partial CATH code (3 numbers) resolves directly from CATH names."""
         mock_cath_names.return_value = {
             "2.60.40": "Immunoglobulin-like",
@@ -155,7 +234,7 @@ class TestTedRetriever:
             [_make_domain("2.60.40", 91.0)]
         )
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()
@@ -166,7 +245,7 @@ class TestTedRetriever:
 
     @patch(_CATH_NAMES_PATCH)
     @patch(_REQUESTS_PATCH)
-    def test_ted_name_with_semicolon_is_encoded(self, mock_requests, mock_cath_names):
+    def test_ted_name_with_semicolon_is_encoded(self, mock_get, mock_cath_names):
         """CATH domain names containing ';' must be percent-encoded by the real emit path.
 
         Regression guard for the `encode_field` wrap in `_format_domains`
@@ -185,7 +264,7 @@ class TestTedRetriever:
             [_make_domain("2.60.40.720", 95.1)]
         )
         mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_get.return_value = mock_resp
 
         retriever = TedRetriever(headers=["P01308"], annotations=TED_ANNOTATIONS)
         result = retriever.fetch_annotations()

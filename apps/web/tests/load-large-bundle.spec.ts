@@ -6,6 +6,11 @@ import {
   waitForExploreDataLoad,
   getFirstLegendItemValue,
 } from './helpers/explore';
+import {
+  distinctCanvasColors,
+  simulateTextureLimit,
+  simulatedGlStats,
+} from './helpers/gl-simulation';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const SPROT_FIXTURE = path.resolve(SPEC_DIR, 'fixtures/sprot_50.parquetbundle');
@@ -188,5 +193,57 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
         ).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+/**
+ * The reduced-stride path, which only a real large bundle reaches.
+ *
+ * At 573,649 proteins the atlas is 2048 x 2241, so a device reporting the
+ * WebGL2 floor of 2048 cannot hold it — this is the case the issue reported, on
+ * the dataset the app ships. The demo dataset is far too small to reach it
+ * (2048 x 31), which is why this lives here rather than in the default suite.
+ */
+test.describe('label atlas at Swiss-Prot scale on a floor-limit device', () => {
+  test.skip(
+    !fixtureAvailable,
+    'Fixture sprot_50.parquetbundle not present; copy from protspace/data/other/sprot/.',
+  );
+  test.setTimeout(180_000);
+
+  test('reduces slices to fit, and still draws every protein', async ({ page }) => {
+    await simulateTextureLimit(page, 2048);
+
+    await page.goto('/explore');
+    await dismissTourIfPresent(page);
+
+    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+    await page
+      .locator('protspace-data-loader')
+      .locator('input[type="file"]')
+      .setInputFiles(SPROT_FIXTURE);
+    await waitForExploreDataLoad(page, 120_000);
+
+    // Nothing the device would refuse was ever issued. On the pre-fix renderer
+    // this records [[2048, 2241]] and then a refused update on every restage.
+    const stats = await simulatedGlStats(page);
+    expect(
+      stats.refusedAllocations,
+      `renderer issued allocations the device refuses: ${JSON.stringify(stats.refusedAllocations)}`,
+    ).toEqual([]);
+    expect(stats.refusedUpdates).toBe(0);
+
+    // Fidelity drops; coverage does not.
+    const proteinCount = await page.evaluate(() => {
+      const plot = document.querySelector('#myPlot') as
+        | (Element & { data?: { protein_ids?: { length?: number } } })
+        | null;
+      return plot?.data?.protein_ids?.length ?? 0;
+    });
+    expect(proteinCount).toBe(573_649);
+
+    const colors = await distinctCanvasColors(page);
+    expect(colors.length).toBeGreaterThan(1);
+    expect(colors.every((c) => c === '0,0,0')).toBe(false);
   });
 });

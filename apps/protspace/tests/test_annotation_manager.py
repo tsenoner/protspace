@@ -439,6 +439,148 @@ class TestUniProtTransformer:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
+    @pytest.mark.parametrize(
+        "uniprot_length,sequence,expected",
+        [
+            ("", "MPEPTIDE", "8"),  # missing length is filled from the FASTA
+            ("110", "MPEPTIDE", "110"),  # a non-empty UniProt length wins
+            ("", "M-PEP*", "4"),  # '-' gaps and '*' terminators are not residues
+            ("", "---***", ""),  # a marker-only sequence has no residues to use
+        ],
+    )
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_fasta_sequence_length_fallback(
+        self, mock_uniprot_retriever, uniprot_length, sequence, expected
+    ):
+        mock_uniprot_retriever.return_value.failed_batch_count = 0
+        mock_uniprot_retriever.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="custom_protein",
+                annotations={"length": uniprot_length},
+            )
+        ]
+        extractor = ProteinAnnotationExtractor(
+            headers=["custom_protein"],
+            annotations=["length"],
+            sequences={"custom_protein": sequence},
+        )
+
+        result = extractor.to_pd()
+
+        assert result.loc[0, "length"] == expected
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_retains_length_column_when_uniprot_request_fails(
+        self, mock_uniprot_retriever
+    ):
+        mock_uniprot_retriever.return_value.fetch_annotations.side_effect = (
+            RuntimeError("offline")
+        )
+        extractor = ProteinAnnotationExtractor(
+            headers=["no_sequence", "custom_protein"],
+            annotations=["length"],
+            sequences={"custom_protein": "MPEPTIDE"},
+        )
+
+        result = extractor.to_pd()
+
+        assert result["length"].tolist() == ["", "8"]
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_does_not_cache_annotations_when_uniprot_request_fails(
+        self, mock_uniprot_retriever, tmp_path
+    ):
+        """A failed fetch must not overwrite the annotation cache.
+
+        Persisting all-empty failure rows would make the next run see nothing
+        missing and serve empty annotations from the cache instead of
+        re-fetching.
+        """
+        mock_uniprot_retriever.return_value.fetch_annotations.side_effect = (
+            RuntimeError("offline")
+        )
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationExtractor(
+            headers=["custom_protein"],
+            annotations=["length"],
+            output_path=cache_path,
+        ).to_pd()
+
+        assert not cache_path.exists()
+        assert result["identifier"].tolist() == ["custom_protein"]
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_cached_signal_peptide_states_survive_uniprot_refetch(
+        self, mock_uniprot_retriever
+    ):
+        """Refetching UniProt must not rewrite cached InterPro booleans."""
+        mock_uniprot_retriever.return_value.failed_batch_count = 0
+        mock_uniprot_retriever.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier=identifier,
+                annotations={"uniprot_kb_id": f"{identifier}_HUMAN"},
+            )
+            for identifier in ("with_signal", "without_signal")
+        ]
+        cached_data = pd.DataFrame(
+            {
+                "identifier": ["with_signal", "without_signal"],
+                "signal_peptide": ["True", "False"],
+            }
+        )
+
+        result = ProteinAnnotationManager(
+            headers=["with_signal", "without_signal"],
+            annotations=["signal_peptide"],
+            cached_data=cached_data,
+            sources_to_fetch={
+                "uniprot": True,
+                "taxonomy": False,
+                "interpro": False,
+                "ted": False,
+                "biocentral": False,
+            },
+        ).to_pd()
+
+        assert result["signal_peptide"].tolist() == ["True", "False"]
+
+    def test_cached_pdb_states_survive_manager_round_trip(self, tmp_path):
+        """Canonical PDB states should remain stable when loaded from cache."""
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            {
+                "identifier": [
+                    "unresolved",
+                    "resolved_without_pdb",
+                    "resolved_with_pdb",
+                ],
+                "xref_pdb": ["", "False", "True"],
+                "uniprot_kb_id": ["", "NO_PDB", "HAS_PDB"],
+            }
+        ).to_parquet(cache_path, index=False)
+
+        manager = ProteinAnnotationManager(
+            headers=[
+                "unresolved",
+                "resolved_without_pdb",
+                "resolved_with_pdb",
+            ],
+            annotations=["xref_pdb"],
+            cached_data=pd.read_parquet(cache_path),
+            sources_to_fetch={
+                "uniprot": False,
+                "taxonomy": False,
+                "interpro": False,
+                "ted": False,
+                "biocentral": False,
+            },
+        )
+
+        result = manager.to_pd()
+
+        assert result["xref_pdb"].tolist() == ["", "False", "True"]
+
     @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_to_pd_complete_workflow(
@@ -447,6 +589,7 @@ class TestIntegration:
         """Test complete workflow from initialization to DataFrame creation."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -480,6 +623,7 @@ class TestIntegration:
         """Test workflow with file output."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -515,6 +659,7 @@ class TestIntegration:
         """Test that only requested annotations are returned."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -547,6 +692,7 @@ class TestIntegration:
         """Test that internal columns (organism_id) are removed from final output."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -580,6 +726,7 @@ class TestIntegration:
         """Test that internal columns are kept in cache file but removed from returned DataFrame."""
         # Setup mocks
         mock_uniprot_instance = Mock()
+        mock_uniprot_instance.failed_batch_count = 0
         mock_uniprot_instance.fetch_annotations.return_value = (
             SAMPLE_PROTEIN_ANNOTATIONS
         )
@@ -1208,3 +1355,136 @@ class TestStripScores:
         assert result["go_bp"].iloc[0] == "apoptotic process;signal transduction"
         assert result["go_mf"].iloc[0] == "kinase activity;ATP binding"
         assert result["go_cc"].iloc[0] == "cytoplasm;nucleus"
+
+
+class TestUniProtFailureCacheWrite:
+    """A UniProt retrieval that lost batches must not persist its empty rows."""
+
+    @staticmethod
+    def _retriever(failed_batches: int):
+        retriever = Mock()
+        retriever.failed_batch_count = failed_batches
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+            )
+        ]
+        return retriever
+
+    @patch("src.protspace.data.annotations.manager.TedRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_a_failed_source_is_dropped_without_discarding_the_others(
+        self, mock_uniprot, mock_ted, tmp_path
+    ):
+        """One flaky source must not cost the expensive one its cache.
+
+        TED failing should not throw away a completed UniProt fetch: the next
+        run then refetches only TED, because the column-based completeness
+        check sees exactly that column missing.
+        """
+        retriever = self._retriever(failed_batches=0)
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={**dict.fromkeys(UNIPROT_ANNOTATIONS, ""), "length": "110"},
+            )
+        ]
+        mock_uniprot.return_value = retriever
+        mock_ted.return_value.failed_lookup_count = 3
+        mock_ted.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(identifier="P01308", annotations={"ted_domains": ""})
+        ]
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationManager(
+            headers=["P01308"],
+            annotations=["length", "ted_domains"],
+            output_path=cache_path,
+        ).to_pd()
+
+        cached = pd.read_parquet(cache_path)
+        assert "length" in cached.columns, "a completed source must still be cached"
+        assert "ted_domains" not in cached.columns, "a failed source must not be"
+        # The run itself still reports everything it fetched.
+        assert result["length"].tolist() == ["110"]
+
+    @patch("src.protspace.data.annotations.manager.TedRetriever")
+    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_dropping_uniprot_also_drops_the_taxonomy_it_keys(
+        self, mock_uniprot, mock_taxonomy, mock_ted, tmp_path
+    ):
+        """Cached taxonomy is read back through UniProt's organism_id.
+
+        Caching taxonomy without it leaves a cache the next run reads as
+        complete (the taxonomy columns are all there) and cannot resolve, so
+        every requested rank silently vanishes from that run's output.
+        """
+        retriever = self._retriever(failed_batches=1)
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={
+                    **dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                    "organism_id": "9606",
+                },
+            )
+        ]
+        mock_uniprot.return_value = retriever
+        mock_taxonomy.return_value.failed_batch_count = 0
+        mock_taxonomy.return_value.fetch_annotations.return_value = {
+            9606: {"annotations": {"genus": "Homo"}}
+        }
+        mock_ted.return_value.failed_lookup_count = 0
+        mock_ted.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308", annotations={"ted_domains": "x|1.0"}
+            )
+        ]
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        ProteinAnnotationManager(
+            headers=["P01308"],
+            annotations=["genus", "ted_domains"],
+            output_path=cache_path,
+        ).to_pd()
+
+        cached = pd.read_parquet(cache_path)
+        assert "ted_domains" in cached.columns, (
+            "a completed source must still be cached"
+        )
+        assert "genus" not in cached.columns, (
+            "taxonomy is unreadable without organism_id, so it must not be cached"
+        )
+
+    @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_cache_write_follows_batch_success(
+        self, mock_retriever, tmp_path, failed_batches, cache_written
+    ):
+        mock_retriever.return_value = self._retriever(failed_batches)
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationManager(
+            headers=["P01308"], annotations=["length"], output_path=cache_path
+        ).to_pd()
+
+        assert cache_path.exists() is cache_written
+        assert result["identifier"].tolist() == ["P01308"]
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_lost_batch_leaves_an_existing_cache_untouched(
+        self, mock_retriever, tmp_path
+    ):
+        mock_retriever.return_value = self._retriever(failed_batches=1)
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame({"identifier": ["P01308"], "length": ["110"]}).to_parquet(
+            cache_path, index=False
+        )
+
+        ProteinAnnotationManager(
+            headers=["P01308"], annotations=["length"], output_path=cache_path
+        ).to_pd()
+
+        assert pd.read_parquet(cache_path)["length"].tolist() == ["110"]

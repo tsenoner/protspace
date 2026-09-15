@@ -20,6 +20,8 @@ const VALID_SORT_MODES: LegendSortMode[] = [
   'alpha-desc',
   'manual',
   'manual-reverse',
+  'silhouette-desc',
+  'silhouette-asc',
 ];
 
 const VALID_NUMERIC_BINNING_STRATEGIES: NumericBinningStrategy[] = [

@@ -4,7 +4,8 @@ import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
 import { ExportRenderer } from './export-renderer';
 import type { PlotData } from '@protspace/utils';
-import type { ScalePair, WebGLStyleGetters } from '../types';
+import type { ScalePair } from '../types';
+import { styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
 const pd: PlotData = {
@@ -19,14 +20,6 @@ const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
-const style = (): WebGLStyleGetters => ({
-  getColors: () => ['#f00'],
-  getPointSize: () => 9,
-  getOpacity: () => 1,
-  getDepth: () => 0,
-  getShape: () => 'circle',
-  isPredicted: () => false,
-});
 const config = { width: 800, height: 600 };
 
 function makeRenderer() {
@@ -36,7 +29,7 @@ function makeRenderer() {
     scales,
     () => d3.zoomIdentity,
     () => config,
-    style(),
+    styleGetters(),
   );
 }
 

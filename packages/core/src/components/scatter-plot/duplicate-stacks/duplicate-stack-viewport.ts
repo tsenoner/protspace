@@ -43,7 +43,7 @@ export function pointInWindow(p: { px: number; py: number }, win: ViewportWindow
   return p.px >= win.minX && p.px <= win.maxX && p.py >= win.minY && p.py <= win.maxY;
 }
 
-/** Cache key shared by virtualization, badge culling, and overlays — they must agree. */
+/** Cache key shared by badge culling and overlays — they must agree. */
 export function buildViewKey(transform: ZoomTransform, width: number, height: number): string {
   // Coerce k the same way the overlay render path does (`transform.k || 1`) so a
   // degenerate k=0 keys to the geometry actually rendered, never a stale view.

@@ -168,6 +168,9 @@ importers:
       eslint:
         specifier: ^10.5.0
         version: 10.5.0(jiti@2.7.0)
+      hyparquet-writer:
+        specifier: ^0.7.0
+        version: 0.7.0
       jsdom:
         specifier: ^27.4.0
         version: 27.4.0

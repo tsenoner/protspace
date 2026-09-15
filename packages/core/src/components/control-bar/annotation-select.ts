@@ -1,14 +1,18 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
-import { handleDropdownEscape } from '../../utils/dropdown-helpers';
+import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
 import {
   annotationLabel,
+  annotationStatSummary,
+  clusterAgreement,
   getAnnotationMeta,
+  hasAnnotationStats,
   isPredictedAnnotation,
   type Annotation,
+  type ProjectionStatisticRow,
 } from '@protspace/utils';
 import '../common/info-popover';
 
@@ -26,6 +30,10 @@ class ProtspaceAnnotationSelect extends LitElement {
   @property({ type: String, attribute: 'selected-annotation' }) selectedAnnotation: string = '';
   @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String }) placeholder: string = 'Select annotation';
+  /** Rows of the bundle's optional statistics part; empty when it was prepared without `--stats`. */
+  @property({ type: Array }) statisticsRows: readonly ProjectionStatisticRow[] = [];
+  /** Projection the statistics are reported for; statistics are scored per projection. */
+  @property({ type: String, attribute: 'selected-projection' }) selectedProjection: string = '';
 
   @state() private open: boolean = false;
   @state() private query: string = '';
@@ -33,13 +41,22 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // Listen for parent-initiated close
-    this.addEventListener('close-dropdown', () => {
-      this.open = false;
-      this.query = '';
-      this.highlightIndex = -1;
-    });
+    // Listen for parent-initiated close. Bound field, not an inline closure: an inline
+    // one cannot be removed, so every re-attach of this element would stack another
+    // handler and leak the detached element.
+    this.addEventListener('close-dropdown', this._handleCloseDropdown);
   }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener('close-dropdown', this._handleCloseDropdown);
+  }
+
+  private _handleCloseDropdown = () => {
+    this.open = false;
+    this.query = '';
+    this.highlightIndex = -1;
+  };
 
   private toggleDropdown(event?: Event) {
     event?.stopPropagation();
@@ -80,42 +97,30 @@ class ProtspaceAnnotationSelect extends LitElement {
       return;
     }
 
-    const filtered = this.getFilteredGroupedAnnotations();
-    const flatAnnotations = this.flattenGroupedAnnotations(filtered);
-
-    if (event.key === 'Escape') {
-      handleDropdownEscape(event, () => {
+    handleListboxKeydown(event, {
+      // Lazy: only the arrow and Enter keys pay for re-filtering the list.
+      getValues: () => this.flattenGroupedAnnotations(this.getFilteredGroupedAnnotations()),
+      highlightIndex: this.highlightIndex,
+      setHighlightIndex: (index) => {
+        this.highlightIndex = index;
+        this.scrollToHighlighted();
+      },
+      onEscape: () => {
         this.open = false;
         this.query = '';
         this.highlightIndex = -1;
-      });
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      if (flatAnnotations.length > 0) {
-        this.highlightIndex = Math.min(this.highlightIndex + 1, flatAnnotations.length - 1);
-        this.scrollToHighlighted();
-      }
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (flatAnnotations.length > 0) {
-        this.highlightIndex = Math.max(this.highlightIndex - 1, 0);
-        this.scrollToHighlighted();
-      }
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      if (this.highlightIndex >= 0 && this.highlightIndex < flatAnnotations.length) {
-        this.selectAnnotation(flatAnnotations[this.highlightIndex], event);
-      }
-    }
+      },
+      onSelect: (annotation) => this.selectAnnotation(annotation, event),
+      root: this.shadowRoot,
+      itemSelector: '.dropdown-item',
+      valueAttribute: 'data-annotation',
+    });
   }
 
   private scrollToHighlighted() {
-    this.updateComplete.then(() => {
-      const highlighted = this.shadowRoot?.querySelector('.dropdown-item.highlighted');
-      if (highlighted) {
-        highlighted.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
-    });
+    this.updateComplete.then(() =>
+      scrollHighlightedIntoView(this.shadowRoot, '.dropdown-item.highlighted'),
+    );
   }
 
   private selectAnnotation(annotation: string, event?: Event) {
@@ -201,6 +206,43 @@ class ProtspaceAnnotationSelect extends LitElement {
     return flat;
   }
 
+  /**
+   * Which annotations the panel would show at least one metric row for in this projection,
+   * rebuilt only when those inputs change: render() re-runs on every search keystroke and arrow
+   * press while the dropdown is open, and deriving each row's answer there re-scans the whole
+   * statistics table per row. The scores themselves live in the projection-metadata panel; the
+   * badge only says they exist.
+   */
+  private hasStats = new Map<string, boolean>();
+
+  willUpdate(changed: PropertyValues<this>) {
+    if (changed.has('statisticsRows') || changed.has('selectedProjection')) {
+      this.hasStats.clear();
+    }
+  }
+
+  /**
+   * Shares `hasAnnotationStats` with the projection-metadata panel's render gate rather than
+   * re-deriving "has stats" from `annotationStatSummary` alone: that would go stale for an
+   * ordinary annotation with agreement rows but no validity rows (badges something the panel
+   * renders empty) and for a `cluster_*` column, which never has a `summary` of its own but does
+   * have agreement rows naming it (would badge nothing for something the panel does render).
+   */
+  private hasStatistics(annotation: string): boolean {
+    let scored = this.hasStats.get(annotation);
+    if (scored === undefined) {
+      const summary = annotationStatSummary(
+        this.statisticsRows,
+        annotation,
+        this.selectedProjection,
+      );
+      const agreement = clusterAgreement(this.statisticsRows, annotation);
+      scored = hasAnnotationStats(summary, agreement);
+      this.hasStats.set(annotation, scored);
+    }
+    return scored;
+  }
+
   render() {
     const filtered = this.getFilteredGroupedAnnotations();
     const displayText = this.selectedAnnotation
@@ -256,6 +298,9 @@ class ProtspaceAnnotationSelect extends LitElement {
                             <div class="annotation-section-header">${group.category}</div>
                             <div class="annotation-section-items">
                               ${group.annotations.map((annotation) => {
+                                // Hover styling comes from `dropdownMixin`'s `.dropdown-item:hover`.
+                                // Mirroring it into `highlightIndex` re-rendered every row per row
+                                // the pointer crossed. The index is for keyboard navigation only.
                                 const itemIndex = currentIndex++;
                                 const isHighlighted = itemIndex === this.highlightIndex;
                                 const isSelected = annotation === this.selectedAnnotation;
@@ -264,6 +309,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                 const definition = this.annotationDefinitions[annotation];
                                 const meta = getAnnotationMeta(annotation, definition);
                                 const hasDocs = meta.description.length > 0 || !!meta.docsUrl;
+                                const stats = this.hasStatistics(annotation);
                                 return html`
                                   <div
                                     class="dropdown-item ${isHighlighted
@@ -271,9 +317,6 @@ class ProtspaceAnnotationSelect extends LitElement {
                                       : ''} ${isSelected ? 'selected' : ''}"
                                     data-annotation=${annotation}
                                     @click=${(e: Event) => this.selectAnnotation(annotation, e)}
-                                    @mouseenter=${() => {
-                                      this.highlightIndex = itemIndex;
-                                    }}
                                   >
                                     <span
                                       class="primary-indicator"
@@ -303,10 +346,18 @@ class ProtspaceAnnotationSelect extends LitElement {
                                           >EAT</span
                                         >`
                                       : ''}
+                                    ${stats
+                                      ? html`<span
+                                          class="stats-badge"
+                                          title="Quality statistics available: select this annotation and open the projection metadata panel"
+                                          aria-label="Quality statistics available"
+                                          >STATS</span
+                                        >`
+                                      : ''}
                                     ${isPredictedAnnotation(annotation)
                                       ? html`<span
                                           class="predicted-badge"
-                                          title="Predicted — computational, not experimentally curated"
+                                          title="Predicted: computational, not experimentally curated"
                                           aria-label="Predicted"
                                           >⚡</span
                                         >`

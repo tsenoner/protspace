@@ -19,7 +19,6 @@ import {
   clonePlotData,
   plotDataId,
   materializePlotDataPoint,
-  gatherPlotData,
   materializeEatOverlay,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
@@ -38,10 +37,10 @@ import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
 import type { VisibilityModel } from './styling/visibility-model';
-import { MAX_POINTS_DIRECT_RENDER, WebGLRenderer, computeSizeScaleFactor } from './webgl';
+import { MAX_RENDERABLE_POINTS, WebGLRenderer, computeSizeScaleFactor } from './webgl';
 import { resolveColor } from './webgl/color-utils';
+import type { RendererDegradedDetail } from './scatter-plot.events';
 import { QuadtreeIndex } from './interaction/quadtree-index';
-import { computeViewportWindow, buildViewKey } from './duplicate-stacks/duplicate-stack-viewport';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
 import {
@@ -52,7 +51,7 @@ import {
 import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
   WebglRenderPerfRunner,
-  type PerfDatasetInfo,
+  type PerfRunOptions,
   type RenderWebGLTrigger,
 } from './webgl-render-perf';
 import {
@@ -70,12 +69,6 @@ export type {
   ProvenanceConnectorRequest,
   ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
-
-// Visualization is only needed for viewport culling on very large datasets.
-// For <= MAX_POINTS_DIRECT_RENDER we can render the full set once and then pan/zoom via uniforms
-// (no per-frame quadtree queries or buffer rebuilds), which is substantially faster for ~500k points.
-const VIRTUALIZATION_THRESHOLD = MAX_POINTS_DIRECT_RENDER;
-const VIRTUALIZATION_PADDING = 100;
 
 // Hit-test tuning (shared by hover + click). Search radius is in screen px and
 // is divided by the zoom factor so the data-space radius stays constant; the
@@ -211,10 +204,6 @@ export class ProtspaceScatterplot extends LitElement {
     eatOverlayEnabled: boolean;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
-  // F-17: advanced on every quadtree rebuild and folded into the virtualization
-  // cacheKey so a rebuild forces a miss even when the transform is unchanged
-  // (otherwise un-hidden points stay missing until a pan/zoom changes the key).
-  private _quadtreeGeneration = 0;
   // Slot list the quadtree was last rebuilt with (legend/filter-visible
   // slots). Retained for the duplicate-badge capture path (#301): the
   // full-extent compute iterates it against the raw PlotData arrays instead
@@ -223,9 +212,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _hoverRaf: number | null = null;
   private _commitSelectionRafId: number | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
-  private _visiblePlotData: PlotData = EMPTY_PLOT_DATA;
   private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
-  private _virtualizationCacheKey: string | null = null;
   private _hoveredProteinId: string | null = null;
   private _cachedScales: ScalePair | null = null;
   private _scalesCacheDeps: {
@@ -499,9 +486,18 @@ export class ProtspaceScatterplot extends LitElement {
         getDepth: (p: PlotDataPoint) => this._getDepth(p),
         getShape: (p: PlotDataPoint) => this._getPointShape(p),
         isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
+        isMultilabel: () => this._getStyleGetters().isMultilabel(),
       },
       this._handleWebglContextLost,
       () => resolveColor(getComputedStyle(this).backgroundColor),
+      (detail) =>
+        this.dispatchEvent(
+          new CustomEvent<RendererDegradedDetail>('renderer-degraded', {
+            detail,
+            bubbles: true,
+            composed: true,
+          }),
+        ),
     );
     this._updateStyleSignature();
     this._webglRenderer.setStyleSignature(this._styleSig);
@@ -620,10 +616,9 @@ export class ProtspaceScatterplot extends LitElement {
     this._styleGettersCache = null;
 
     if (this._plotData.length > 0) {
-      // INV-08: color-only changes skip depth re-sort + virtualization invalidation.
+      // INV-08: color-only changes skip the depth re-sort.
       if (!colorOnly) {
         this._webglRenderer?.invalidateDepthOrder();
-        this._invalidateVirtualizationCache();
       }
       this._webglRenderer?.invalidateStyleCache();
       this._renderPlot(); // single render path (F-31)
@@ -972,7 +967,6 @@ export class ProtspaceScatterplot extends LitElement {
       // Without this, old and new PlotData coexist in memory during processing
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
       this._plotData = EMPTY_PLOT_DATA;
-      this._visiblePlotData = EMPTY_PLOT_DATA;
       this._quadtreeIndex.clear();
       this._webglRenderer?.releaseDataReferences();
 
@@ -993,7 +987,6 @@ export class ProtspaceScatterplot extends LitElement {
 
     // Invalidate scales cache when plot data changes
     this._invalidateScalesCache();
-    this._invalidateVirtualizationCache();
   }
 
   private _refreshSelectedAnnotationValues(dataToUse: VisualizationData) {
@@ -1008,7 +1001,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._plotData = clonePlotData(this._plotData);
     this._lastDataRef = dataToUse;
     this._styleGettersCache = null;
-    this._invalidateVirtualizationCache();
   }
 
   private _scheduleNumericAnnotationRefresh() {
@@ -1153,11 +1145,7 @@ export class ProtspaceScatterplot extends LitElement {
     if (!this._plotData.length || !this._scales) {
       this._visibleSlots = null;
       this._dupOverlay.resetState();
-      // F-17: an emptied quadtree also changes the indexed slot set; bump the
-      // generation and invalidate so the transform-keyed cache cannot serve a
-      // stale slot set. No render here — there is nothing to draw.
-      this._quadtreeGeneration++;
-      this._invalidateVirtualizationCache();
+      // No render here — there is nothing to draw.
       return;
     }
     const pd = this._plotData;
@@ -1186,12 +1174,8 @@ export class ProtspaceScatterplot extends LitElement {
     // re-trigger them after the deferred quadtree rebuild.
     this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
 
-    // F-17: any rebuild can change the indexed (isInteractive) slot set, so the
-    // transform-keyed virtualization cache is now stale even if the transform is
-    // unchanged. Bump the generation (folded into the cacheKey), force a miss,
-    // and schedule a render so un-hidden points reappear without a pan/zoom.
-    this._quadtreeGeneration++;
-    this._invalidateVirtualizationCache();
+    // A rebuild can change the indexed (isInteractive) slot set, so re-render to
+    // make un-hidden points reappear without waiting for a pan or zoom.
     this._renderPlot();
   }
 
@@ -1274,7 +1258,6 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     this._mergedConfig = { ...this._mergedConfig, width, height };
-    this._invalidateVirtualizationCache();
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
     this._scheduleQuadtreeRebuild();
     this._renderPlot();
@@ -1381,60 +1364,46 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _renderWebGL(trigger: RenderWebGLTrigger = 'unknown') {
     if (!this._webglRenderer) return;
+    // `start` returns null unless a benchmark scenario is recording, which is the
+    // normal case — so the byte accounting stays behind the token rather than
+    // running on every frame for a `stop` that discards it.
     const perfToken = this._webglRenderPerf.start(trigger);
+    const bytesBefore = perfToken ? this._webglRenderer.uploadedBytesTotal : 0;
 
     const pd = this._getPointsForRendering();
 
-    this._webglRenderer.setTrackRenderedPointIds(pd.length > MAX_POINTS_DIRECT_RENDER);
+    this._webglRenderer.setTrackRenderedPointIds(pd.length > MAX_RENDERABLE_POINTS);
     this._webglRenderer.render(pd);
-    this._interaction?.mainGroup?.selectAll('.protein-point').remove();
 
-    this._webglRenderPerf.stop(perfToken, pd.length);
+    if (perfToken) {
+      this._webglRenderPerf.stop(
+        perfToken,
+        pd.length,
+        this._webglRenderer.drawnPointCount,
+        this._webglRenderer.uploadedBytesTotal - bytesBefore,
+      );
+    }
   }
 
-  public async runWebGLRenderPerfMeasurements(
-    iterations?: number,
-    options?: { download?: boolean; dataset?: PerfDatasetInfo },
-  ) {
+  public async runWebGLRenderPerfMeasurements(iterations?: number, options?: PerfRunOptions) {
     return this._webglRenderPerf.runWebGLRenderPerfMeasurements(iterations, options);
   }
 
+  /**
+   * The points handed to the renderer: always the full set, and always the SAME
+   * object, so a camera move cannot trip the renderer's dirty check.
+   *
+   * This used to cull to the viewport above 1,000,000 points, materialising a
+   * fresh PlotData per frame. Because the dirty check is length-sensitive, that
+   * turned every pan and zoom into a full re-stage — 888 ms for a zoom at 1M
+   * against 1.0 ms just below it — for a cull that removed zero points at full
+   * extent and 23% even at 3x zoom (#456). The quadtree it queried is still
+   * built and still used, by hover, click, brush and lasso; it is only off the
+   * render path.
+   */
   private _getPointsForRendering(): PlotData {
-    if (!this._scales || this._plotData.length === 0) {
-      this._visiblePlotData = EMPTY_PLOT_DATA;
-      return EMPTY_PLOT_DATA;
-    }
-
-    // For smaller datasets, pass all points - renderer handles display mode
-    if (this._plotData.length < VIRTUALIZATION_THRESHOLD || !this._quadtreeIndex.hasTree()) {
-      this._visiblePlotData = this._plotData;
-      return this._plotData;
-    }
-
-    // For very large datasets, apply viewport culling
-    const config = this._mergedConfig;
-    const transform = this._transform;
-
-    const { minX, maxX, minY, maxY } = computeViewportWindow(
-      transform,
-      config,
-      VIRTUALIZATION_PADDING,
-    );
-
-    const cacheKey = `${buildViewKey(transform, config.width, config.height)}|${this._quadtreeGeneration}`;
-    if (this._virtualizationCacheKey !== cacheKey) {
-      const slots = this._quadtreeIndex.queryByPixels(minX, minY, maxX, maxY);
-      this._visiblePlotData = gatherPlotData(this._plotData, slots);
-      this._virtualizationCacheKey = cacheKey;
-    }
-
-    return this._visiblePlotData;
-  }
-
-  private _invalidateVirtualizationCache() {
-    this._virtualizationCacheKey = null;
-    this._visiblePlotData = this._plotData;
-    // Reset visible data to full dataset on any invalidation.
+    if (!this._scales || this._plotData.length === 0) return EMPTY_PLOT_DATA;
+    return this._plotData;
   }
 
   private _updateSelectionOverlays(options: { duplicateImmediate?: boolean } = {}) {
@@ -1943,6 +1912,9 @@ export class ProtspaceScatterplot extends LitElement {
 
         <protspace-projection-metadata
           .projection=${this.data?.projections[this.selectedProjectionIndex] ?? null}
+          .statisticsRows=${this.data?.statisticsRows}
+          selected-annotation=${this.selectedAnnotation}
+          .viewIsSubset=${this.filtersActive || this.isIsolationMode()}
         ></protspace-projection-metadata>
 
         <protspace-tips

@@ -6,7 +6,7 @@ test.describe('Documentation screenshot wait helpers', () => {
     test.setTimeout(2_000);
     await page.setContent('<button id="myPlot">plot</button>');
 
-    await expect(waitForDataLoad(page, 100)).rejects.toThrow(/Timeout 100ms exceeded/);
+    await expect(waitForDataLoad(page, { timeout: 100 })).rejects.toThrow(/Timeout 100ms exceeded/);
   });
 
   test('waitForDataLoad honors its loading-overlay timeout', async ({ page }) => {
@@ -25,7 +25,7 @@ test.describe('Documentation screenshot wait helpers', () => {
       plot._scales = {};
     });
 
-    await expect(waitForDataLoad(page, 100)).rejects.toThrow(/Timeout 100ms exceeded/);
+    await expect(waitForDataLoad(page, { timeout: 100 })).rejects.toThrow(/Timeout 100ms exceeded/);
   });
 
   test('waitForLegend honors its item timeout', async ({ page }) => {
