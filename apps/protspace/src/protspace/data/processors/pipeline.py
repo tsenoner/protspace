@@ -617,7 +617,6 @@ class ReductionPipeline:
                     sequences=sequences,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
-                    preserve_existing_cache_on_uniprot_failure=bool(refresh_columns),
                 )
                 api_df = manager.to_pd()
                 if legacy_uniprot is not None and manager.uniprot_fetch_failed:

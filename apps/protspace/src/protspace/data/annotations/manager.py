@@ -74,7 +74,7 @@ class ProteinAnnotationManager:
         sequences: dict = None,
         cached_data: pd.DataFrame = None,
         sources_to_fetch: dict = None,
-        preserve_existing_cache_on_uniprot_failure: bool = False,
+        preserve_existing_cache_on_uniprot_failure: bool = True,
     ):
         """
         Initialize annotation manager.
@@ -87,7 +87,11 @@ class ProteinAnnotationManager:
             cached_data: Previously cached DataFrame with annotations
             sources_to_fetch: Dict indicating which sources to fetch (uniprot, taxonomy, interpro)
             preserve_existing_cache_on_uniprot_failure: Skip writing output when a
-                UniProt batch fails, leaving an existing cache available for retry
+                UniProt batch fails, leaving an existing cache available for retry.
+                On by default: a failed batch yields the full annotation schema
+                with empty values, so caching it would make the next run's
+                column-based completeness check treat the cache as current and
+                serve those empty values instead of refetching.
         """
         self.headers = headers
         self.output_path = output_path
