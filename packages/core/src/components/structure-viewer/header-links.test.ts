@@ -5,6 +5,7 @@ import {
   buildUniProtUrl,
   buildInterProUrl,
   buildTedUrl,
+  RESOURCE_LINKS,
 } from './header-links';
 
 describe('header-links', () => {
@@ -85,6 +86,19 @@ describe('header-links', () => {
 
     it('encodes special characters in the accession', () => {
       expect(buildTedUrl('A B')).toBe('https://ted.cathdb.info/uniprot/A%20B');
+    });
+  });
+
+  describe('RESOURCE_LINKS', () => {
+    it('renders the whole row, in order, from the matching builders', () => {
+      expect(
+        RESOURCE_LINKS.map((resource) => [resource.label, resource.build('W6JQJ9.2')]),
+      ).toEqual([
+        ['AlphaFold', 'https://alphafold.ebi.ac.uk/entry/W6JQJ9'],
+        ['UniProt', 'https://www.uniprot.org/uniprotkb/W6JQJ9/entry'],
+        ['InterPro', 'https://www.ebi.ac.uk/interpro/protein/UniProt/W6JQJ9/'],
+        ['TED', 'https://ted.cathdb.info/uniprot/W6JQJ9'],
+      ]);
     });
   });
 });

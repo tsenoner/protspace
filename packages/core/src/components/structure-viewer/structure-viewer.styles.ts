@@ -51,14 +51,21 @@ const structureViewerStylesCore = css`
     font-weight: 500;
     color: var(--protspace-viewer-text);
     margin: 0;
-    text-decoration: none;
-    cursor: pointer;
-    transition:
-      color 0.2s,
-      text-decoration-color 0.2s;
   }
 
+  /*
+   * Two stacked rows: what this is, then where it goes. The resource row used
+   * to sit inline with the title and the accession, where it read as more
+   * metadata rather than as something pressable.
+   */
   .header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  .header-title-row {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
@@ -73,33 +80,64 @@ const structureViewerStylesCore = css`
   .header-links {
     display: flex;
     align-items: baseline;
-    gap: 0.25rem;
+    flex-wrap: wrap;
+    column-gap: 0.35rem;
+    row-gap: 0.1rem;
     font-size: 0.75rem;
   }
 
   .header-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.1rem;
     color: var(--protspace-viewer-text-muted);
     text-decoration: none;
     cursor: pointer;
-    transition:
-      color 0.2s,
-      text-decoration-color 0.2s;
+    transition: color 0.2s;
   }
 
-  .header-link-separator {
+  /*
+   * Underline the label only. A text-decoration set on the anchor propagates
+   * into its descendants and cannot be cancelled there, so underlining the
+   * anchor would drag the arrow and the separator under the same line.
+   */
+  .header-link-label {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: color-mix(in srgb, var(--protspace-viewer-text-muted) 45%, transparent);
+    text-underline-offset: 2px;
+    transition: text-decoration-color 0.2s;
+  }
+
+  /*
+   * The separator is a CSS rule rather than a hand-placed element, so adding a
+   * resource cannot forget one or misplace it. It trails its own link rather
+   * than leading the next one, so a wrapped row starts on a label.
+   */
+  .header-link:not(:last-child)::after {
+    content: '·';
+    margin-left: 0.35rem;
     color: var(--protspace-viewer-text-muted);
     opacity: 0.5;
   }
 
-  .title:hover,
-  .title:focus-visible,
-  .header-link:hover,
-  .header-link:focus-visible {
-    text-decoration: underline;
-    text-underline-offset: 2px;
+  .header-link-external {
+    font-size: 0.85em;
+    line-height: 1;
+    opacity: 0.7;
   }
 
-  .title:focus-visible,
+  .header-link:hover,
+  .header-link:focus-visible {
+    color: var(--protspace-viewer-text);
+  }
+
+  .header-link:hover .header-link-label,
+  .header-link:focus-visible .header-link-label {
+    text-decoration-style: solid;
+    text-decoration-color: currentColor;
+  }
+
   .header-link:focus-visible {
     outline: 2px solid var(--protspace-viewer-loading);
     outline-offset: 2px;

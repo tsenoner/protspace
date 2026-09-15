@@ -34,3 +34,22 @@ export function buildInterProUrl(proteinId: string): string {
 export function buildTedUrl(proteinId: string): string {
   return `https://ted.cathdb.info/uniprot/${encodeURIComponent(getBaseAccession(proteinId))}`;
 }
+
+/** One external destination in the structure viewer's resource row. */
+interface ResourceLink {
+  /** Row label, and the text the tooltip is built from. */
+  label: string;
+  /** Destination URL for a protein ID, versioned or not. */
+  build: (proteinId: string) => string;
+}
+
+/**
+ * The resource row, in render order. Adding a destination here adds it to the
+ * header; the template holds no per-resource markup.
+ */
+export const RESOURCE_LINKS: readonly ResourceLink[] = [
+  { label: 'AlphaFold', build: buildAlphaFoldUrl },
+  { label: 'UniProt', build: buildUniProtUrl },
+  { label: 'InterPro', build: buildInterProUrl },
+  { label: 'TED', build: buildTedUrl },
+];

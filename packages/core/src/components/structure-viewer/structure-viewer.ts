@@ -5,13 +5,7 @@ import { StructureService } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
-import {
-  buildAlphaFoldUrl,
-  buildInterProUrl,
-  buildTedUrl,
-  buildUniProtUrl,
-  getBaseAccession,
-} from './header-links';
+import { RESOURCE_LINKS, getBaseAccession } from './header-links';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
@@ -316,46 +310,25 @@ export class ProtspaceStructureViewer extends LitElement {
         ? html`
             <div class="header">
               <div class="header-info">
-                <a
-                  class="title"
-                  href=${buildAlphaFoldUrl(this.proteinId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open in AlphaFold DB"
-                >
-                  ${this.title}
-                </a>
-                <span class="protein-id">${this.proteinId}</span>
+                <div class="header-title-row">
+                  <span class="title">${this.title}</span>
+                  <span class="protein-id">${this.proteinId}</span>
+                </div>
                 <span class="header-links">
-                  <a
-                    class="header-link"
-                    href=${buildUniProtUrl(this.proteinId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in UniProt"
-                  >
-                    UniProt
-                  </a>
-                  <span class="header-link-separator">&middot;</span>
-                  <a
-                    class="header-link"
-                    href=${buildInterProUrl(this.proteinId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in InterPro"
-                  >
-                    InterPro
-                  </a>
-                  <span class="header-link-separator">&middot;</span>
-                  <a
-                    class="header-link"
-                    href=${buildTedUrl(this.proteinId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in TED"
-                  >
-                    TED
-                  </a>
+                  ${RESOURCE_LINKS.map(
+                    (resource) => html`
+                      <a
+                        class="header-link"
+                        href=${resource.build(this.proteinId as string)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open in ${resource.label} (opens in a new tab)"
+                      >
+                        <span class="header-link-label">${resource.label}</span
+                        ><span class="header-link-external" aria-hidden="true">↗</span>
+                      </a>
+                    `,
+                  )}
                 </span>
               </div>
               <div class="header-actions">

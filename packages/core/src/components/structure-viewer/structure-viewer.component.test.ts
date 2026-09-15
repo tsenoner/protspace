@@ -35,15 +35,21 @@ describe('protspace-structure-viewer resource links', () => {
     );
 
     // Assert the whole row, in order: a `.find()` on the TED label alone would
-    // still pass if UniProt and InterPro had disappeared.
+    // still pass if its peers had disappeared.
     expect(
       links.map((link) => ({
-        label: link.textContent?.trim(),
+        label: link.querySelector('.header-link-label')?.textContent?.trim(),
         href: link.getAttribute('href'),
         rel: link.getAttribute('rel'),
         target: link.getAttribute('target'),
       })),
     ).toEqual([
+      {
+        label: 'AlphaFold',
+        href: 'https://alphafold.ebi.ac.uk/entry/W6JQJ9',
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
       {
         label: 'UniProt',
         href: 'https://www.uniprot.org/uniprotkb/W6JQJ9/entry',
@@ -63,5 +69,17 @@ describe('protspace-structure-viewer resource links', () => {
         target: '_blank',
       },
     ]);
+  });
+
+  it('renders the title as plain text, not a hidden AlphaFold link', async () => {
+    const viewer = document.createElement('protspace-structure-viewer') as StructureViewerElement;
+    viewer.autoSync = false;
+    viewer.proteinId = 'W6JQJ9.2';
+    document.body.appendChild(viewer);
+    await viewer.updateComplete;
+
+    const title = viewer.shadowRoot!.querySelector('.title');
+    expect(title?.tagName).toBe('SPAN');
+    expect(viewer.shadowRoot!.querySelector('a.title')).toBeNull();
   });
 });
