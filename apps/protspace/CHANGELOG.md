@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v4.12.2 (2026-09-15)
+
+### Bug Fixes
+
+- **annotations**: Cache per source, so one unavailable API costs only its own columns
+  ([`780ff26`](https://github.com/tsenoner/protspace/commit/780ff26ec08e32c825fad1c30e4775cfbff1a24c))
+
+- **annotations**: Close the gaps the per-source cache design opened
+  ([`f0f30c9`](https://github.com/tsenoner/protspace/commit/f0f30c98bb45252aae0072a6d59e88e7f4b25152))
+
+- **annotations**: Never cache a UniProt fetch that lost batches
+  ([`513cdaf`](https://github.com/tsenoner/protspace/commit/513cdaf5b6c8e014d6bbebb4316aaa32dc683230))
+
+- **annotations**: Retry transient HTTP failures before treating them as data loss
+  ([`063ed62`](https://github.com/tsenoner/protspace/commit/063ed62882c13dff927e45eb1b9a78a75e556437))
+
+
 ## v4.12.1 (2026-09-15)
 
 
