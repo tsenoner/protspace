@@ -358,7 +358,7 @@ export async function clickProteinPoint(page: Page): Promise<void> {
   });
 
   if (proteinId) {
-    await logAction(page, 'mouse', 'Click Protein Point', `Load protein: ${proteinId}`);
+    await logAction('mouse', 'Click Protein Point', `Load protein: ${proteinId}`);
   }
 
   // Give the structure viewer time to load
@@ -449,7 +449,7 @@ export async function toggleLegendItem(page: Page, index = 0): Promise<void> {
     button?.click();
   }, index);
 
-  await logAction(page, 'mouse', 'Toggle Legend Item', `Toggle category ${index}`);
+  await logAction('mouse', 'Toggle Legend Item', `Toggle category ${index}`);
   await page.waitForTimeout(500);
 }
 
@@ -476,7 +476,7 @@ export async function doubleClickLegendItem(page: Page, index = 0): Promise<void
     button.dispatchEvent(event);
   }, index);
 
-  await logAction(page, 'mouse', 'Double Click Legend Item', `Isolate category ${index}`);
+  await logAction('mouse', 'Double Click Legend Item', `Isolate category ${index}`);
   await page.waitForTimeout(500);
 }
 
@@ -516,7 +516,7 @@ export async function enableSelectionMode(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Enable Selection Mode', 'Click select button');
+  await logAction('mouse', 'Enable Selection Mode', 'Click select button');
   await page.waitForTimeout(300);
 }
 
@@ -557,7 +557,7 @@ export async function clickClearButton(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Click Clear Button', 'Clear all selections');
+  await logAction('mouse', 'Click Clear Button', 'Clear all selections');
   await page.waitForTimeout(300);
 }
 
@@ -577,7 +577,7 @@ export async function clickIsolateButton(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Click Isolate Button', 'Isolate selected proteins');
+  await logAction('mouse', 'Click Isolate Button', 'Isolate selected proteins');
   await page.waitForTimeout(300);
 }
 
@@ -597,7 +597,7 @@ export async function clickResetButton(page: Page): Promise<void> {
     }
   });
 
-  await logAction(page, 'mouse', 'Click Reset Button', 'Reset to original dataset');
+  await logAction('mouse', 'Click Reset Button', 'Reset to original dataset');
   await page.waitForTimeout(300);
 }
 
@@ -826,7 +826,6 @@ export async function initVisualIndicators(page: Page): Promise<void> {
  * Visual indicators are shown separately via showClickIndicator and showKeyboardIndicator.
  */
 export async function logAction(
-  page: Page,
   type: 'mouse' | 'keyboard',
   action: string,
   details: string,
@@ -948,7 +947,6 @@ export async function trackedMouseMove(
   options?: { steps?: number },
 ): Promise<void> {
   await logAction(
-    page,
     'mouse',
     'Mouse Move',
     `Move to (${Math.round(x)}, ${Math.round(y)})${options?.steps ? ` with ${options.steps} steps` : ''}`,
@@ -968,12 +966,7 @@ export async function trackedMouseClick(
   const button = options?.button || 'left';
   const count = options?.clickCount || 1;
   const action = count === 2 ? 'Double Click' : 'Click';
-  await logAction(
-    page,
-    'mouse',
-    action,
-    `${button} button at (${Math.round(x)}, ${Math.round(y)})`,
-  );
+  await logAction('mouse', action, `${button} button at (${Math.round(x)}, ${Math.round(y)})`);
   await page.mouse.click(x, y, options);
 }
 
@@ -985,7 +978,7 @@ export async function trackedMouseDown(
   options?: { button?: 'left' | 'right' | 'middle' },
 ): Promise<void> {
   const button = options?.button || 'left';
-  await logAction(page, 'mouse', 'Mouse Down', `${button} button pressed`);
+  await logAction('mouse', 'Mouse Down', `${button} button pressed`);
   await page.mouse.down(options);
 }
 
@@ -997,7 +990,7 @@ export async function trackedMouseUp(
   options?: { button?: 'left' | 'right' | 'middle' },
 ): Promise<void> {
   const button = options?.button || 'left';
-  await logAction(page, 'mouse', 'Mouse Up', `${button} button released`);
+  await logAction('mouse', 'Mouse Up', `${button} button released`);
   await page.mouse.up(options);
 }
 
@@ -1006,12 +999,7 @@ export async function trackedMouseUp(
  */
 export async function trackedMouseWheel(page: Page, deltaX: number, deltaY: number): Promise<void> {
   const direction = deltaY < 0 ? 'Zoom In' : deltaY > 0 ? 'Zoom Out' : 'Scroll';
-  await logAction(
-    page,
-    'mouse',
-    'Mouse Wheel',
-    `${direction} (deltaX: ${deltaX}, deltaY: ${deltaY})`,
-  );
+  await logAction('mouse', 'Mouse Wheel', `${direction} (deltaX: ${deltaX}, deltaY: ${deltaY})`);
   await page.mouse.wheel(deltaX, deltaY);
 }
 
@@ -1020,7 +1008,7 @@ export async function trackedMouseWheel(page: Page, deltaX: number, deltaY: numb
  */
 export async function trackedKeyboardDown(page: Page, key: string): Promise<void> {
   const keyName = key === 'Meta' ? '⌘ (Cmd)' : key === 'Control' ? 'Ctrl' : key;
-  await logAction(page, 'keyboard', 'Key Down', keyName);
+  await logAction('keyboard', 'Key Down', keyName);
   await page.keyboard.down(key);
 }
 
@@ -1029,7 +1017,7 @@ export async function trackedKeyboardDown(page: Page, key: string): Promise<void
  */
 export async function trackedKeyboardUp(page: Page, key: string): Promise<void> {
   const keyName = key === 'Meta' ? '⌘ (Cmd)' : key === 'Control' ? 'Ctrl' : key;
-  await logAction(page, 'keyboard', 'Key Up', keyName);
+  await logAction('keyboard', 'Key Up', keyName);
   await page.keyboard.up(key);
 }
 
@@ -1042,7 +1030,7 @@ export async function trackedKeyboardPress(
   options?: { delay?: number },
 ): Promise<void> {
   const keyName = key === 'Escape' ? 'Esc' : key;
-  await logAction(page, 'keyboard', 'Key Press', keyName);
+  await logAction('keyboard', 'Key Press', keyName);
   await page.keyboard.press(key, options);
 }
 
@@ -1057,7 +1045,7 @@ export async function showKeyboardIndicator(page: Page, key: string): Promise<vo
     indicator.textContent = 'Hold ⌘/Ctrl';
     indicator.style.display = 'block';
   });
-  await logAction(page, 'keyboard', 'Modifier Key', `Hold ${key === 'Meta' ? '⌘ (Cmd)' : 'Ctrl'}`);
+  await logAction('keyboard', 'Modifier Key', `Hold ${key === 'Meta' ? '⌘ (Cmd)' : 'Ctrl'}`);
 }
 
 /**
@@ -1121,7 +1109,7 @@ export async function showActionLabel(
     },
     { text: label, dur: durationMs, posX: x, posY: y },
   );
-  await logAction(page, 'mouse', 'Action Label', label);
+  await logAction('mouse', 'Action Label', label);
 }
 
 /**
@@ -1134,7 +1122,7 @@ export async function hideKeyboardIndicator(page: Page): Promise<void> {
       indicator.style.display = 'none';
     }
   });
-  await logAction(page, 'keyboard', 'Modifier Key', 'Released');
+  await logAction('keyboard', 'Modifier Key', 'Released');
 }
 
 /**
@@ -1156,7 +1144,6 @@ export async function rotateStructureViewer(
   const centerY = box.y + box.height / 2;
 
   await logAction(
-    page,
     'mouse',
     'Rotate Structure',
     `Drag rotation (Δx: ${deltaX}, Δy: ${deltaY}, ${steps} steps)`,
@@ -1192,12 +1179,7 @@ export async function zoomStructureViewer(page: Page, deltaY: number, steps = 5)
   const centerY = box.y + box.height / 2;
 
   const direction = deltaY < 0 ? 'Zoom In' : 'Zoom Out';
-  await logAction(
-    page,
-    'mouse',
-    'Zoom Structure',
-    `${direction} (deltaY: ${deltaY}, ${steps} steps)`,
-  );
+  await logAction('mouse', 'Zoom Structure', `${direction} (deltaY: ${deltaY}, ${steps} steps)`);
 
   // Move to center
   await trackedMouseMove(page, centerX, centerY);

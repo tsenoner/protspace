@@ -70,10 +70,7 @@ async function resetStaticState(page: Page): Promise<void> {
  * Dispatches the same event the Export-menu's "Figure Editor" button fires —
  * skips dropdown timing and viewport clipping.
  */
-async function openFigureEditor(
-  page: import('@playwright/test').Page,
-  timeout = 10_000,
-): Promise<void> {
+async function openFigureEditor(page: Page, timeout = 10_000): Promise<void> {
   await page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
     cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
@@ -101,10 +98,7 @@ async function openFigureEditor(
  * Wait for the control bar to be fully rendered with all elements styled.
  * This fixes the gray control-bar issue by waiting for shadow DOM elements.
  */
-async function waitForControlBar(
-  page: import('@playwright/test').Page,
-  timeout = 15000,
-): Promise<void> {
+async function waitForControlBar(page: Page, timeout = 15000): Promise<void> {
   await page.waitForSelector('#myControlBar', { timeout });
 
   // Wait for the control bar shadow DOM to be fully rendered

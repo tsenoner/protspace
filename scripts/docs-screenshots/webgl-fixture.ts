@@ -20,7 +20,7 @@ export const test = base.extend({
  */
 export async function createWebGLBrowser() {
   return await chromium.launch({
-    headless: process.env.CI ? 'new' : false,
+    headless: !!process.env.CI,
     args: [
       '--use-gl=egl', // Better WebGL support (use 'angle' on Windows if needed)
       '--enable-webgl',

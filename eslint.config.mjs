@@ -33,5 +33,29 @@ export default [
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+  {
+    // The docs-screenshot pipeline is tooling, not shipped code: it drives a
+    // browser, so it reaches into component internals that carry no public
+    // types, and it reports progress on stdout. Both rules are errors/warnings
+    // worth keeping in packages/ and noise here.
+    files: ['scripts/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
+    rules: {
+      '@typescript-eslint/consistent-type-imports': ['error'],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
+      '@typescript-eslint/no-explicit-any': ['warn'],
+      'no-console': 'off',
+    },
+  },
   prettier,
 ];

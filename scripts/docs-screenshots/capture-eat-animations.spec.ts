@@ -39,7 +39,6 @@ test.afterEach(async ({ page }, testInfo) => {
 test('eat-connectors.gif - Tracing where a transferred value came from', async ({ page }) => {
   const { source, target, dependantCount } = await pickProvenanceDemoPair(page, DEMO_ANNOTATION);
   await logAction(
-    page,
     'mouse',
     'Provenance pair',
     `${target} borrowed from ${source} (${dependantCount} dependants)`,
@@ -104,7 +103,7 @@ test('eat-reliability.gif - Hiding predictions below a reliability threshold', a
     );
     await thresholdPercent.fill(percent);
     await thresholdPercent.press('Enter');
-    await logAction(page, 'keyboard', 'Reliability threshold', `${percent}%`);
+    await logAction('keyboard', 'Reliability threshold', `${percent}%`);
     await page.waitForTimeout(BEAT);
   }
 
@@ -114,6 +113,6 @@ test('eat-reliability.gif - Hiding predictions below a reliability threshold', a
   await showActionLabel(page, 'Back to 0%', box.x + box.width / 2, box.y + box.height / 2);
   await thresholdPercent.fill('0');
   await thresholdPercent.press('Enter');
-  await logAction(page, 'keyboard', 'Reliability threshold', '0%');
+  await logAction('keyboard', 'Reliability threshold', '0%');
   await page.waitForTimeout(BEAT * 2);
 });
