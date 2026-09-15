@@ -45,3 +45,15 @@
 - [x] 6.5 Synchronize user-facing annotation metadata and identifier-matching
       documentation.
 - [x] 6.6 Run focused, package, docs, OpenSpec, and repository verification gates.
+
+## 7. Review Follow-up: Schema-Uniform Failure Fallout
+
+- [x] 7.1 Load the EC name map only for rows that carry an EC number, so an
+      offline UniProt failure no longer triggers an ExPASy download.
+- [x] 7.2 Skip the annotation cache write when UniProt retrieval fails wholesale
+      so the next run re-fetches instead of reusing empty rows.
+- [x] 7.3 Emit the empty-cache warning before the FASTA length fallback.
+- [x] 7.4 Leave a marker-only FASTA sequence's length missing instead of `0`.
+- [x] 7.5 Copy filled annotation rows and keep the `length` key on every row.
+- [x] 7.6 Reuse `parse_fasta_normalized` in `ReductionPipeline._extract_sequences`.
+- [x] 7.7 Re-run the package lint, format, and non-slow test gates.

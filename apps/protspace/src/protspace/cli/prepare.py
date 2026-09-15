@@ -485,19 +485,19 @@ def prepare(
 
         elif input_specs:
             for path, name_override in input_specs:
-                if path.is_dir():
-                    h5s = sorted(
-                        f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
-                    )
-                    if not h5s:
-                        logger.warning(f"No embedding files in: {path}")
-                        continue
+                if path.is_dir() or path.suffix.lower() in EMBEDDING_EXTENSIONS:
+                    if path.is_dir():
+                        h5s = sorted(
+                            f
+                            for ext in EMBEDDING_EXTENSIONS
+                            for f in path.glob(f"*{ext}")
+                        )
+                        if not h5s:
+                            logger.warning(f"No embedding files in: {path}")
+                            continue
+                    else:
+                        h5s = [path]
                     emb_set = load_h5(h5s, name_override=name_override)
-                    if fasta_for_similarity:
-                        emb_set.fasta_path = fasta_for_similarity
-                    embedding_sets.append(emb_set)
-                elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
-                    emb_set = load_h5([path], name_override=name_override)
                     # Attach FASTA path from -f flag if provided (for sequence reuse)
                     if fasta_for_similarity:
                         emb_set.fasta_path = fasta_for_similarity

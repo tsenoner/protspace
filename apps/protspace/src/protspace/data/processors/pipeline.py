@@ -296,14 +296,12 @@ class ReductionPipeline:
     @staticmethod
     def _extract_sequences(embedding_sets: list[EmbeddingSet]) -> dict[str, str]:
         """Extract protein sequences from FASTA files referenced by embedding sets."""
+        from protspace.data.loaders.fasta import parse_fasta_normalized
+
         sequences = {}
         for emb_set in embedding_sets:
             if emb_set.fasta_path and Path(emb_set.fasta_path).exists():
-                from protspace.data.io.fasta import parse_fasta
-                from protspace.data.loaders.h5 import parse_identifier
-
-                raw = parse_fasta(Path(emb_set.fasta_path))
-                sequences.update({parse_identifier(h): s for h, s in raw.items()})
+                sequences.update(parse_fasta_normalized(Path(emb_set.fasta_path)))
         return sequences
 
     def _validate_headers(self, embedding_sets: list[EmbeddingSet]) -> list[str]:
@@ -352,7 +350,7 @@ class ReductionPipeline:
         """Fetch annotations from APIs with incremental caching support."""
         from protspace.data.annotations.manager import (
             ProteinAnnotationManager,
-            _resolve_fasta_sequence_length,
+            resolve_fasta_sequence_length,
         )
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
@@ -422,23 +420,10 @@ class ReductionPipeline:
                     else:
                         api_df = cached_df
 
-                    if "length" in api_df.columns and sequences:
-                        identifier_col = api_df.columns[0]
-                        api_df = api_df.copy()
-                        api_df["length"] = [
-                            _resolve_fasta_sequence_length(
-                                identifier,
-                                length,
-                                sequences,
-                            )
-                            for identifier, length in zip(
-                                api_df[identifier_col],
-                                api_df["length"],
-                                strict=True,
-                            )
-                        ]
-
-                    # Warn if cached annotations are all empty
+                    # Warn if cached annotations are all empty. Checked *before*
+                    # the FASTA length fallback below, otherwise a derived
+                    # length makes a wholly useless cache look populated and
+                    # silently suppresses this warning.
                     data_cols = [c for c in api_df.columns if c != "identifier"]
                     if data_cols:
                         non_empty = api_df[data_cols].apply(
@@ -451,6 +436,21 @@ class ReductionPipeline:
                                 "Use --refetch annotations to re-fetch, or provide "
                                 "a FASTA file with -f."
                             )
+
+                    if "length" in api_df.columns and sequences:
+                        missing_lengths = ~api_df["length"].astype(bool)
+                        if missing_lengths.any():
+                            api_df = api_df.copy()
+                            api_df.loc[missing_lengths, "length"] = [
+                                resolve_fasta_sequence_length(
+                                    identifier, length, sequences
+                                )
+                                for identifier, length in zip(
+                                    api_df.loc[missing_lengths, "identifier"],
+                                    api_df.loc[missing_lengths, "length"],
+                                    strict=True,
+                                )
+                            ]
 
                     return self._merge_csv(api_df, csv_df)
 

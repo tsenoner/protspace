@@ -63,3 +63,22 @@ provide a sequence length.
 - **WHEN** a protein's UniProt annotation has an empty sequence length and no
   matching non-empty FASTA sequence is available
 - **THEN** the output sequence length remains missing
+
+#### Scenario: Matching FASTA sequence contains only non-residue markers
+
+- **WHEN** a matching FASTA sequence consists solely of `*` terminator or `-`
+  gap markers
+- **THEN** the output sequence length remains missing rather than becoming zero
+
+#### Scenario: Warm cache holds no annotation values at all
+
+- **WHEN** every cached annotation value is empty and the FASTA fallback fills
+  the sequence length
+- **THEN** the empty-cache warning is still emitted
+
+#### Scenario: UniProt retrieval fails while an annotation cache path is set
+
+- **WHEN** UniProt retrieval fails wholesale and an annotation cache path is
+  configured
+- **THEN** the schema-complete empty rows are returned without being persisted
+  to the cache, so the next run re-fetches instead of reusing them

@@ -98,7 +98,11 @@ class AnnotationTransformer:
                     transformed[go_key]
                 )
 
-        if "ec" in transformed:
+        # Only pay for the ExPASy ENZYME download when there is an EC number to
+        # name. Rows can carry an empty "ec" (e.g. the whole UniProt request
+        # failed) and fetching the database there would stall on the network
+        # that just failed.
+        if transformed.get("ec"):
             if self._ec_name_map is None:
                 self._ec_name_map = UniProtTransformer._get_ec_name_map()
             transformed["ec"] = self.uniprot_transformer.transform_ec(

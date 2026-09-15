@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def parse_fasta_normalized(fasta_path: Path) -> dict[str, str]:
+    """Parse *fasta_path* into ``{normalized identifier: sequence}``.
+
+    Header identifiers are remapped the same way H5 keys are
+    (``sp|P12345|NAME`` -> ``P12345``) so the two always agree.
+    """
+    from protspace.data.io.fasta import parse_fasta
+
+    return {
+        parse_identifier(header): sequence
+        for header, sequence in parse_fasta(fasta_path).items()
+    }
+
+
 def embed_fasta(
     fasta_path: Path,
     embedder: str,
@@ -43,14 +57,11 @@ def embed_fasta(
         raise ValueError(f"Unknown backend {backend!r}; use 'local' or 'biocentral'.")
 
     from protspace.data.embedding.biocentral import derive_h5_cache_path
-    from protspace.data.io.fasta import parse_fasta
 
-    raw_sequences = parse_fasta(fasta_path)
-    if not raw_sequences:
+    # Keys are remapped: sp|P12345|NAME → P12345 (shared by both backends).
+    sequences = parse_fasta_normalized(fasta_path)
+    if not sequences:
         raise ValueError(f"No sequences found in {fasta_path}")
-
-    # Remap keys: sp|P12345|NAME → P12345 (shared by both backends).
-    sequences = {parse_identifier(header): seq for header, seq in raw_sequences.items()}
 
     if backend == "local":
         from protspace.data.embedding.local import embed_sequences

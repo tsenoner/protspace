@@ -1,5 +1,6 @@
 """Tests for pipeline utility functions."""
 
+import logging
 from collections import Counter
 
 import numpy as np
@@ -375,11 +376,8 @@ class TestCompleteAnnotationCache:
             ]
         )
         cached.to_parquet(cache_path, index=False)
-        embedding_set = EmbeddingSet(
-            name="test",
-            data=np.zeros((2, 2), dtype=np.float32),
-            headers=["custom_protein", "cached_protein"],
-            fasta_path=fasta_path,
+        embedding_set = _make_es(
+            "test", ["custom_protein", "cached_protein"], fasta_path=fasta_path
         )
         pipeline = ReductionPipeline(
             PipelineConfig(
@@ -395,6 +393,39 @@ class TestCompleteAnnotationCache:
 
         assert result["length"].tolist() == ["8", "110"]
         assert pd.read_parquet(cache_path)["length"].tolist() == ["", "110"]
+
+    def test_still_warns_when_every_cached_annotation_is_empty(self, tmp_path, caplog):
+        """The FASTA length fallback must not mask a wholly empty cache."""
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                }
+            ]
+        ).to_parquet(cache_path, index=False)
+        embedding_set = _make_es("test", ["custom_protein"], fasta_path=fasta_path)
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8"]
+        assert "All cached annotations are empty" in caplog.text
 
 
 # ---------------------------------------------------------------------------

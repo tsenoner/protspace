@@ -88,6 +88,11 @@ non-empty cached or UniProt value is retained. The cached Parquet file itself is
 not rewritten on a read-only complete-cache hit; the derived value is local to
 the current output, preserving existing cache lifecycle semantics.
 
+The existing "all cached annotations are empty" check runs _before_ the
+fallback. A derived length would otherwise make an entirely useless cache look
+populated and permanently suppress the warning that tells the user to
+`--refetch annotations`.
+
 ### Supply sequences at the standalone annotation boundary
 
 When `protspace annotate` receives FASTA input, it will parse the file into an
@@ -113,6 +118,22 @@ UniProt annotation schema, matching the retriever's invalid-identifier and
 batch-failure paths. Downstream formatters derive their columns from the first
 row, so uniform keys prevent FASTA-derived lengths from being retained or
 dropped based on row order.
+
+The fallback rows apply the same rule: when the fallback adds a `length` key to
+a row that did not have one, every row gets the key so the column cannot be
+dropped or blanked by row order either.
+
+The complete schema carries two consequences that must be contained, because
+both are reached exactly when the network is unavailable:
+
+- Transformation must not treat an empty `ec` value as a reason to download the
+  ExPASy ENZYME database. The EC name map is loaded only when a row actually
+  carries an EC number.
+- The empty rows must not be persisted to `all_annotations.parquet`. A
+  schema-complete cache looks complete to the next run's
+  `required - cached_annotations` check, which would then serve empty
+  annotations from the cache instead of re-fetching. On a wholesale UniProt
+  failure the rows are returned but the cache write is skipped, with a warning.
 
 ## Risks / Trade-offs
 
