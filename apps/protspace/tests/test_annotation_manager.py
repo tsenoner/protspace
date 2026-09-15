@@ -1409,6 +1409,55 @@ class TestUniProtFailureCacheWrite:
         # The run itself still reports everything it fetched.
         assert result["length"].tolist() == ["110"]
 
+    @patch("src.protspace.data.annotations.manager.TedRetriever")
+    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_dropping_uniprot_also_drops_the_taxonomy_it_keys(
+        self, mock_uniprot, mock_taxonomy, mock_ted, tmp_path
+    ):
+        """Cached taxonomy is read back through UniProt's organism_id.
+
+        Caching taxonomy without it leaves a cache the next run reads as
+        complete (the taxonomy columns are all there) and cannot resolve, so
+        every requested rank silently vanishes from that run's output.
+        """
+        retriever = self._retriever(failed_batches=1)
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={
+                    **dict.fromkeys(UNIPROT_ANNOTATIONS, ""),
+                    "organism_id": "9606",
+                },
+            )
+        ]
+        mock_uniprot.return_value = retriever
+        mock_taxonomy.return_value.failed_batch_count = 0
+        mock_taxonomy.return_value.fetch_annotations.return_value = {
+            9606: {"annotations": {"genus": "Homo"}}
+        }
+        mock_ted.return_value.failed_lookup_count = 0
+        mock_ted.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308", annotations={"ted_domains": "x|1.0"}
+            )
+        ]
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        ProteinAnnotationManager(
+            headers=["P01308"],
+            annotations=["genus", "ted_domains"],
+            output_path=cache_path,
+        ).to_pd()
+
+        cached = pd.read_parquet(cache_path)
+        assert "ted_domains" in cached.columns, (
+            "a completed source must still be cached"
+        )
+        assert "genus" not in cached.columns, (
+            "taxonomy is unreadable without organism_id, so it must not be cached"
+        )
+
     @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_cache_write_follows_batch_success(

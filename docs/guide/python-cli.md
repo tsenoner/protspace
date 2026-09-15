@@ -360,13 +360,16 @@ subsequent runs:
 
 The annotation cache always stores scores; `--no-scores` strips them from the output afterwards.
 
-If some UniProt data could not be retrieved, the annotation cache is **not** written: a partly
-empty cache is indistinguishable from one where those proteins genuinely have no UniProt entry, so
-caching it would make every later run reuse the gaps instead of refetching. The run still returns
-everything it did retrieve, and the next run fetches the rest. Transient HTTP failures are retried
-with backoff first, so this is reserved for a source that is genuinely unavailable. Use
-`--refetch annotations` to rewrite the cache regardless — that is the repair path for a cache
-already holding empty values.
+If a source could not be fully retrieved, its columns are **left out of the cache**: a partly empty
+column is indistinguishable from one where those proteins genuinely have no entry, so caching it
+would make every later run reuse the gaps instead of refetching. Sources that did complete are
+still cached, so one flaky API does not cost an expensive UniProt fetch — unless leaving the failed
+source out would overwrite an existing cache with fewer columns, in which case the cache is kept
+untouched. Either way the run still returns everything it did retrieve, and the next run fetches
+the rest. Transient HTTP failures are retried with backoff first, so this is reserved for a source
+that is genuinely unavailable. Use `--refetch annotations` to rewrite the cache regardless — that
+is the repair path for a cache already holding empty values. See
+[Fetching & Caching](/guide/fetching-and-caching) for the full picture.
 
 Legacy annotation caches are migrated when they are read:
 

@@ -128,12 +128,20 @@ writes regardless.
 - **WHEN** a run with `--keep-tmp` retrieves every requested UniProt batch
 - **THEN** ProtSpace writes the annotation cache as before
 
-#### Scenario: An explicit refetch rewrites the cache regardless
+#### Scenario: An explicit refetch clears what it could not replace
 
 - **WHEN** `--refetch annotations` is requested and the retrieval loses batches
-- **THEN** ProtSpace still writes the annotation cache
-- **AND** a cache already holding empty values is replaced by what this run
-  recovered
+- **THEN** ProtSpace rewrites the annotation cache without the failed source's
+  columns, rather than leaving the cached values in place
+- **AND** the next run fetches that source instead of reading the values the
+  refetch was asked to replace
+
+#### Scenario: A source fetched one request per protein is retried sparingly
+
+- **WHEN** a source is fetched with one request per protein rather than in
+  batches
+- **THEN** ProtSpace retries each request with a smaller budget, so a full
+  outage does not pay the default backoff once per protein
 
 #### Scenario: A transient HTTP failure is retried before it counts as a loss
 

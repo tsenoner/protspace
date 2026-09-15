@@ -407,7 +407,10 @@ class TestUniProtFailureCacheWriteThroughPipeline:
 
         pipeline._fetch_annotations(["P01308"])
 
-        assert pd.read_parquet(cache_path)["length"].tolist() != ["POISONED"]
+        # The repair could not refetch the column, so it removes it instead of
+        # stranding the bad values: the next run then sees `length` missing and
+        # fetches it, rather than reading "POISONED" as cached truth.
+        assert "length" not in pd.read_parquet(cache_path).columns
 
 
 class TestAnnotationCacheMigration:

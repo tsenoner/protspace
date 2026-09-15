@@ -618,13 +618,11 @@ class ReductionPipeline:
                     cached_data=cached_df,
                     sources_to_fetch=sources,
                     # --refetch annotations is the documented remedy for a cache
-                    # poisoned by an earlier partial failure. Declining to write
-                    # on this path would leave that cache in place and discard
-                    # the good data the repair just recovered, so the explicit
-                    # request wins over the guard.
-                    preserve_existing_cache_on_uniprot_failure=(
-                        not refetching_annotations
-                    ),
+                    # poisoned by an earlier partial failure, so there the cached
+                    # columns are exactly what must not be protected. The failed
+                    # source is still dropped rather than written empty, so the
+                    # poison leaves the cache and the next run refetches it.
+                    protect_cached_columns=not refetching_annotations,
                 )
                 api_df = manager.to_pd()
                 if legacy_uniprot is not None and manager.uniprot_fetch_failed:

@@ -8,9 +8,12 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 from protspace.data.annotations.configuration import (
     INTERNAL_ANNOTATIONS,
+    SOURCE_ANNOTATIONS,
+    SOURCE_CACHE_DEPENDENTS,
     TAXONOMY_LOOKUP_ANNOTATION,
     AnnotationConfiguration,
 )
@@ -44,16 +47,6 @@ from protspace.data.io.writers import AnnotationWriter
 
 logger = logging.getLogger(__name__)
 
-# Which columns each annotation source owns, used to keep a source that did not
-# finish out of the cache without discarding the sources that did.
-SOURCE_ANNOTATIONS = {
-    "uniprot": set(UNIPROT_ANNOTATIONS),
-    "taxonomy": set(TAXONOMY_ANNOTATIONS),
-    "interpro": set(INTERPRO_ANNOTATIONS),
-    "ted": set(TED_ANNOTATIONS),
-    "biocentral": set(BIOCENTRAL_ANNOTATIONS),
-}
-
 
 def resolve_fasta_sequence_length(
     identifier: str,
@@ -84,7 +77,7 @@ class ProteinAnnotationManager:
         sequences: dict = None,
         cached_data: pd.DataFrame = None,
         sources_to_fetch: dict = None,
-        preserve_existing_cache_on_uniprot_failure: bool = True,
+        protect_cached_columns: bool = True,
     ):
         """
         Initialize annotation manager.
@@ -96,21 +89,19 @@ class ProteinAnnotationManager:
             sequences: Dictionary mapping identifiers to sequences (for InterPro)
             cached_data: Previously cached DataFrame with annotations
             sources_to_fetch: Dict indicating which sources to fetch (uniprot, taxonomy, interpro)
-            preserve_existing_cache_on_uniprot_failure: Skip writing output when a
-                UniProt batch fails, leaving an existing cache available for retry.
-                On by default: a failed batch yields the full annotation schema
-                with empty values, so caching it would make the next run's
-                column-based completeness check treat the cache as current and
-                serve those empty values instead of refetching.
+            protect_cached_columns: Leave an existing cache alone rather than
+                replacing its columns with fewer, when a source did not finish.
+                On by default: a source that failed emits empty values that
+                cannot be told apart from a real absence, and values already
+                cached were written by a run where that source completed. An
+                explicit refetch turns this off, because there the cached values
+                are what the user is trying to replace.
         """
         self.headers = headers
         self.output_path = output_path
         self.sequences = sequences
         self.cached_data = cached_data
-        self.preserve_existing_cache_on_uniprot_failure = (
-            preserve_existing_cache_on_uniprot_failure
-        )
-        self.uniprot_fetch_failed = False
+        self._protect_cached_columns = protect_cached_columns
         # Sources whose retrieval did not complete this run. Their columns are
         # all-empty placeholders, indistinguishable from real absences, so they
         # must not reach the cache.
@@ -136,6 +127,11 @@ class ProteinAnnotationManager:
         self.transformer = AnnotationTransformer()
         self.merger = AnnotationMerger()
         self.writer = AnnotationWriter(transformer=self.transformer)
+
+    @property
+    def uniprot_fetch_failed(self) -> bool:
+        """Whether the UniProt retrieval lost data this run."""
+        return "uniprot" in self.incomplete_sources
 
     def to_pd(self) -> pd.DataFrame:
         """
@@ -246,72 +242,96 @@ class ProteinAnnotationManager:
 
         return df
 
+    def _uncacheable_sources(self) -> set[str]:
+        """Sources that must stay out of the cache this run.
+
+        A source that did not finish, plus every source whose cached columns are
+        read back through it: taxonomy is looked up by UniProt's ``organism_id``,
+        so caching taxonomy without it leaves a cache that reads as complete and
+        resolves to nothing.
+        """
+        sources = set(self.incomplete_sources)
+        for source in self.incomplete_sources:
+            sources |= SOURCE_CACHE_DEPENDENTS.get(source, set())
+        return sources
+
     def _incomplete_columns(self) -> set[str]:
-        """Columns whose source did not finish, so their values are placeholders."""
+        """Columns that must not reach the cache, by source."""
         return set().union(
-            *(SOURCE_ANNOTATIONS[source] for source in self.incomplete_sources),
-            set(),
+            *(SOURCE_ANNOTATIONS[source] for source in self._uncacheable_sources())
         )
+
+    def _cached_columns(self) -> set[str]:
+        """Column names already on disk, read from the parquet footer only."""
+        if not self.output_path.exists():
+            return set()
+        return set(pq.read_schema(self.output_path).names)
 
     def _write_cache_and_frame(
         self, proteins: list[ProteinAnnotations]
     ) -> pd.DataFrame:
         """Return the run's annotations, caching only the sources that completed.
 
-        A source that did not finish emits all-empty values that are
-        indistinguishable from a real absence, so caching them would make the
-        next run's column-based completeness check reuse the gaps forever.
-        Columns from sources that *did* finish are still worth caching, so only
-        the incomplete ones are dropped — except when that would shrink a cache
-        already on disk, where keeping what is there is strictly better.
+        A source that did not finish emits all-empty values indistinguishable
+        from a real absence, so caching them would make the next run's
+        column-based completeness check reuse the gaps forever. Columns from
+        sources that *did* finish are still worth caching, so only the
+        incomplete ones are dropped (plus the sources that depend on them --
+        see :meth:`_uncacheable_sources`).
+
+        Dropping shrinks the cache, which is the right trade when the columns
+        being dropped are untrustworthy but the wrong one when the cache already
+        holds good values for them. So a cache that already has those columns is
+        left alone -- unless this run was an explicit refetch, where the user has
+        said the cached values are the problem.
         """
         if not self.output_path:
             return DataFormatter.to_dataframe(proteins)
 
-        guard_on = self.preserve_existing_cache_on_uniprot_failure
-        drop = self._incomplete_columns() if guard_on else set()
+        drop = self._incomplete_columns()
+        df = DataFormatter.to_dataframe(proteins)
         if not drop:
-            return self._save_and_load(proteins)
+            self._write_cache(df)
+            return df
 
-        remaining = {key for protein in proteins for key in protein.annotations} - drop
-        existing = (
-            set(pd.read_parquet(self.output_path).columns)
-            if self.output_path.exists()
-            else set()
-        )
-        # Nothing worth keeping, or keeping it would shrink what is already
-        # cached: in both cases leave the cache alone.
-        if not remaining or existing & drop:
+        incomplete = ", ".join(sorted(self.incomplete_sources))
+        remaining = set(df.columns) - drop - {"identifier"}
+        # An explicit refetch skips both guards: leaving the cache alone there
+        # would strand exactly the values the user asked to replace, and writing
+        # without the failed source's columns is what removes them, so the next
+        # run fetches that source instead of reading stale ones.
+        shadowed = bool(self._cached_columns() & drop)
+        if self._protect_cached_columns and (not remaining or shadowed):
+            reason = (
+                "the cache already holds those columns"
+                if shadowed
+                else "nothing else was retrieved either"
+            )
             logger.warning(
                 "Not caching annotations at %s: %s could not be fully retrieved, "
-                "and the cache already holds those columns. This run's "
-                "annotations are still returned. Use --refetch annotations to "
-                "rewrite the cache regardless.",
+                "and %s. This run's annotations are still returned. Use "
+                "--refetch annotations to rewrite the cache regardless.",
                 self.output_path,
-                ", ".join(sorted(self.incomplete_sources)),
+                incomplete,
+                reason,
             )
-            return DataFormatter.to_dataframe(proteins)
+            return df
 
         logger.warning(
             "Caching annotations at %s without %s: that source could not be "
-            "fully retrieved, so the next run fetches it again instead of "
-            "reusing empty values.",
+            "fully retrieved, so its columns are left out and the next run "
+            "fetches it again instead of reusing empty values.",
             self.output_path,
-            ", ".join(sorted(self.incomplete_sources)),
+            incomplete,
         )
-        self._save_and_load(
-            [
-                protein._replace(
-                    annotations={
-                        key: value
-                        for key, value in protein.annotations.items()
-                        if key not in drop
-                    }
-                )
-                for protein in proteins
-            ]
-        )
-        return DataFormatter.to_dataframe(proteins)
+        self._write_cache(df.drop(columns=[c for c in df.columns if c in drop]))
+        return df
+
+    def _write_cache(self, df: pd.DataFrame) -> None:
+        """Persist *df* as the annotation cache, stamped with the current semantics."""
+        df = df.copy()
+        df.attrs.update(annotation_cache_version_attrs())
+        df.to_parquet(self.output_path, index=False)
 
     def _fill_missing_fasta_lengths(
         self, proteins: list[ProteinAnnotations]
@@ -371,7 +391,6 @@ class ProteinAnnotationManager:
             )
             annotations = retriever.fetch_annotations()
         except Exception as e:
-            self.uniprot_fetch_failed = True
             self.incomplete_sources.add("uniprot")
             failed_sources.append(f"UniProt ({str(e)})")
             logger.warning(f"Failed to retrieve UniProt annotations: {e}")
@@ -384,8 +403,7 @@ class ProteinAnnotationManager:
 
         # Read outside the try: a problem reading the failure counter must not be
         # swallowed as "UniProt is unreachable" and discard a successful fetch.
-        self.uniprot_fetch_failed = retriever.failed_batch_count > 0
-        if self.uniprot_fetch_failed:
+        if retriever.failed_batch_count > 0:
             self.incomplete_sources.add("uniprot")
         return annotations
 
@@ -446,7 +464,10 @@ class ProteinAnnotationManager:
                 annotations=self.config.interpro_annotations,
                 sequences=sequences,
             )
-            return retriever.fetch_annotations()
+            annotations = retriever.fetch_annotations()
+            if retriever.failed_batch_count:
+                self.incomplete_sources.add("interpro")
+            return annotations
         except Exception as e:
             self.incomplete_sources.add("interpro")
             failed_sources.append(f"InterPro ({str(e)})")
@@ -497,16 +518,6 @@ class ProteinAnnotationManager:
             failed_sources.append(f"TED ({str(e)})")
             logger.warning(f"Failed to retrieve TED annotations: {e}")
             return []
-
-    def _save_and_load(self, proteins: list[ProteinAnnotations]) -> pd.DataFrame:
-        """Save to file and load back."""
-        self.writer.write_parquet(
-            proteins,
-            self.output_path,
-            apply_transforms=False,  # Already transformed
-            dataframe_attrs=annotation_cache_version_attrs(),
-        )
-        return pd.read_parquet(self.output_path)
 
     @staticmethod
     def _get_taxon_counts(fetched_uniprot: list[ProteinAnnotations]) -> dict:

@@ -24,7 +24,9 @@ def _backoff_seconds(attempt: int, response: requests.Response | None) -> float:
     if response is not None:
         retry_after = response.headers.get("Retry-After", "")
         try:
-            return min(float(retry_after), MAX_BACKOFF_SECONDS)
+            # Clamped from below too: a negative or NaN ``Retry-After`` would
+            # otherwise reach ``time.sleep`` and abort the whole fetch.
+            return max(0.0, min(float(retry_after), MAX_BACKOFF_SECONDS))
         except ValueError:
             pass
     return min(BACKOFF_BASE_SECONDS * 2 ** (attempt - 1), MAX_BACKOFF_SECONDS)
@@ -34,34 +36,45 @@ def get_with_retry(
     url: str,
     params: dict | None = None,
     timeout: int = API_TIMEOUT,
+    attempts: int = MAX_ATTEMPTS,
 ) -> requests.Response:
     """GET *url*, retrying transient failures with exponential backoff.
 
     Retries timeouts, connection errors and the status codes in
     ``RETRYABLE_STATUS``. A non-retryable 4xx is raised immediately: a bad
     accession does not become good by asking again.
+
+    *attempts* lets a per-item caller lower the budget: a source fetched one
+    request per protein cannot afford the default on a full outage, where the
+    backoff would be paid hundreds of thousands of times.
     """
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         response = None
         try:
             response = requests.get(url, params=params, timeout=timeout)
             if response.status_code not in RETRYABLE_STATUS:
                 response.raise_for_status()
                 return response
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            if attempt == MAX_ATTEMPTS:
+        except (
+            requests.Timeout,
+            requests.ConnectionError,
+            # A connection dropped mid-body: the request failed just as surely,
+            # but it is not a ConnectionError.
+            requests.exceptions.ChunkedEncodingError,
+        ) as exc:
+            if attempt == attempts:
                 raise
-            logger.debug(f"{url} failed ({exc}); retrying {attempt}/{MAX_ATTEMPTS}")
+            logger.debug(f"{url} failed ({exc}); retrying {attempt}/{attempts}")
             time.sleep(_backoff_seconds(attempt, None))
             continue
 
         # Retryable status.
-        if attempt == MAX_ATTEMPTS:
+        if attempt == attempts:
             response.raise_for_status()
         delay = _backoff_seconds(attempt, response)
         logger.debug(
             f"{url} returned {response.status_code}; retrying in {delay:.1f}s "
-            f"({attempt}/{MAX_ATTEMPTS})"
+            f"({attempt}/{attempts})"
         )
         time.sleep(delay)
 

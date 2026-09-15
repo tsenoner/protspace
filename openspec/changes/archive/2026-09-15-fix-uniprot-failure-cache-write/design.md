@@ -108,3 +108,27 @@ written: a partial result beats no result. It does not exit non-zero, because
 `apps/prep` treats a non-zero exit as a failed job and would discard a bundle the
 user can still use — the same "never hard-fail, warn on stderr" rule the embed
 path follows. It warns and names the incomplete source instead.
+
+## Review follow-ups
+
+Two bugs the per-source design introduced, both found before merge:
+
+- Dropping UniProt while keeping taxonomy produced a cache that read as complete
+  but could not be resolved — taxonomy is looked up by `organism_id`, a UniProt
+  column, so the next run lost every rank. `SOURCE_CACHE_DEPENDENTS` now drops a
+  source together with anything read back through it.
+- `failed_lookup_count` counted AlphaFold 404s, which are the normal answer for
+  an accession TED does not model. That marked TED incomplete on essentially
+  every real run, so its column would never have been cached.
+
+The retry precondition was also under-scoped: it was argued for all sources but
+implemented only in `paginated_get`, leaving TED — one request per protein, so
+two orders of magnitude more requests than UniProt — unretried. TED now uses the
+helper with a reduced attempt budget, since a per-item caller cannot afford the
+default backoff on a full outage.
+
+Finally, `--refetch` originally turned the whole guard off, which let a
+partially-failed repair write empty values straight back into the cache. The
+guard now stays on and only the _protection of existing columns_ is lifted: the
+failed source's columns are removed rather than overwritten with empties, so the
+repair clears what it could not replace instead of stranding it.

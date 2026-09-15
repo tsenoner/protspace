@@ -42,3 +42,16 @@
 - [x] 6.3 Cache per source instead of all-or-nothing
 - [x] 6.4 Warn from `annotate`, without failing the hosted prepare job
 - [x] 6.5 Document the whole fetch/cache model in `docs/guide/fetching-and-caching.md`
+
+## 7. Final review pass
+
+- [x] 7.1 Drop taxonomy from the cache whenever UniProt is dropped, so a cache
+      cannot hold ranks it can no longer resolve
+- [x] 7.2 Treat an AlphaFold 404 as a real absence, not a lost TED lookup
+- [x] 7.3 Give `InterProRetriever` the failure counter it silently lacked
+- [x] 7.4 Route TED through the retry helper with a per-item attempt budget
+- [x] 7.5 Clamp `Retry-After` from below; retry `ChunkedEncodingError`
+- [x] 7.6 Rename the guard to `protect_cached_columns` and make an explicit
+      refetch clear the columns it could not replace
+- [x] 7.7 Build the cache frame once and drop columns on it (9.3s/2.26GB ->
+      2.3s/0.31GB at Swiss-Prot scale)

@@ -8,11 +8,15 @@ from tqdm import tqdm
 from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
+from protspace.data.annotations.retrievers.http_utils import get_with_retry
 
 logger = logging.getLogger(__name__)
 
 ALPHAFOLD_DOMAINS_URL = "https://alphafold.ebi.ac.uk/api/domains"
 _API_TIMEOUT = 10
+# TED is fetched one request per accession, so a full outage would otherwise
+# pay the default backoff hundreds of thousands of times.
+_MAX_ATTEMPTS = 2
 
 TED_ANNOTATIONS = ["ted_domains"]
 
@@ -66,7 +70,20 @@ class TedRetriever(BaseAnnotationRetriever):
     def _fetch_domains(self, accession: str) -> list[dict]:
         """Fetch TED domains for a single protein from AlphaFold DB API."""
         url = f"{ALPHAFOLD_DOMAINS_URL}/{accession}"
-        resp = requests.get(url, timeout=_API_TIMEOUT)
+        # One request per protein, so the retry budget is deliberately small:
+        # on a full AlphaFold outage the backoff is paid once per accession.
+        try:
+            resp = get_with_retry(url, timeout=_API_TIMEOUT, attempts=_MAX_ATTEMPTS)
+        except requests.HTTPError as exc:
+            resp = exc.response
+            if resp is None or resp.status_code != 404:
+                raise
+        if resp.status_code == 404:
+            # AlphaFold has no entry for this accession -- a real absence, the
+            # normal answer for a non-UniProt identifier or an unmodelled
+            # protein. Raising here would count it as a lost lookup and keep
+            # the whole TED column out of the cache on every ordinary run.
+            return []
         resp.raise_for_status()
         data = resp.json()
 

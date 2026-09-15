@@ -90,7 +90,9 @@ exponential backoff, honouring `Retry-After`. Only a request still failing after
 counts as lost data. A malformed request (`400`, `404`) is not retried — asking again will not help.
 
 This matters at scale: UniProt is queried 100 accessions at a time, so a Swiss-Prot-sized run is
-thousands of sequential requests, and without retries a single blip would be near-certain.
+thousands of sequential requests, and without retries a single blip would be near-certain. Sources
+fetched one request per protein (TED) use a smaller retry budget, so a full outage does not multiply
+the backoff by the number of proteins.
 
 ## Forcing a refresh
 
@@ -106,9 +108,10 @@ protspace prepare -i data.h5 -o out --refetch all           # everything
 Stages: `query`, `embed`, `similarity`, `projections`, `uniprot`, `taxonomy`, `interpro`, `ted`,
 `biocentral`. Shorthands: `all`, `annotations`.
 
-`--refetch annotations` is also the **repair path**: if a cache already holds empty values — from an
-older ProtSpace version, or a run made before you supplied `-f` — it rewrites the cache from what it
-retrieves, rather than declining to overwrite.
+`--refetch annotations` is also the **repair path**. If a cache already holds empty values — from an
+older ProtSpace version, or a run made before you supplied `-f` — a refetch replaces them with what
+it retrieves. If it still cannot retrieve a source, it removes that source's columns from the cache
+rather than leaving the old values in place, so the next run fetches them instead of trusting them.
 
 To skip caching altogether, pass `--no-keep-tmp`. Nothing is written to `{output}/tmp/`, and every
 run starts from scratch.
