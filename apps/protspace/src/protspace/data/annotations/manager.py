@@ -216,8 +216,12 @@ class ProteinAnnotationManager:
         else:
             if self.output_path and self.uniprot_fetch_failed:
                 logger.warning(
-                    "Not writing the annotation cache at %s: the UniProt request "
-                    "failed, so any existing cache is left in place.",
+                    "Not caching annotations at %s: some UniProt data could not "
+                    "be retrieved, and caching an incomplete result would make "
+                    "the next run reuse it instead of refetching. This run's "
+                    "annotations are still returned; the next run refetches "
+                    "them. Use --refetch annotations to rewrite the cache "
+                    "regardless.",
                     self.output_path,
                 )
             df = DataFormatter.to_dataframe(transformed_annotations)

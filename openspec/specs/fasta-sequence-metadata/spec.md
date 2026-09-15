@@ -89,10 +89,3 @@ provide a sequence length.
 - **WHEN** every cached annotation value is empty and the FASTA fallback fills
   the sequence length
 - **THEN** the empty-cache warning is still emitted
-
-#### Scenario: UniProt retrieval fails while an annotation cache path is set
-
-- **WHEN** UniProt retrieval fails wholesale and an annotation cache path is
-  configured
-- **THEN** the schema-complete empty rows are returned without being persisted
-  to the cache, so the next run re-fetches instead of reusing them

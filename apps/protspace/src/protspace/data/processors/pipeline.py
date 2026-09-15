@@ -617,6 +617,14 @@ class ReductionPipeline:
                     sequences=sequences,
                     cached_data=cached_df,
                     sources_to_fetch=sources,
+                    # --refetch annotations is the documented remedy for a cache
+                    # poisoned by an earlier partial failure. Declining to write
+                    # on this path would leave that cache in place and discard
+                    # the good data the repair just recovered, so the explicit
+                    # request wins over the guard.
+                    preserve_existing_cache_on_uniprot_failure=(
+                        not refetching_annotations
+                    ),
                 )
                 api_df = manager.to_pd()
                 if legacy_uniprot is not None and manager.uniprot_fetch_failed:

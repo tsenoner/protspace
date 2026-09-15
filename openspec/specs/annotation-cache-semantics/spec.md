@@ -10,56 +10,50 @@ How cached annotation results stay correct across format and schema changes: ref
 
 ProtSpace SHALL NOT reuse an annotation cache containing `xref_pdb` as authoritative
 when that cache lacks the current annotation-semantics marker. It SHALL refetch the
-UniProt source because persisted positive values are ambiguous, preserve cached values
-from unaffected sources, and mark the transformed replacement cache as current.
+UniProt source once and reuse cached values from other sources.
 
 #### Scenario: Complete legacy PDB cache is reused
 
-- **WHEN** `all_annotations.parquet` contains every requested annotation including
-  `xref_pdb` but lacks the current annotation-cache version
-- **THEN** ProtSpace refetches the UniProt annotations instead of returning the cache
-  fast path
-- **AND** the rewritten cache carries the current annotation-cache version
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and every requested
+  annotation
+- **THEN** ProtSpace refetches the UniProt source and stamps the rewritten cache as
+  current
 
 #### Scenario: Legacy cache has unaffected source data
 
-- **WHEN** a legacy PDB cache also contains cached annotations from another source
-- **THEN** ProtSpace preserves those unaffected source columns while refreshing the
-  UniProt columns
+- **WHEN** an unversioned annotation cache contains `xref_pdb` alongside cached
+  InterPro values
+- **THEN** ProtSpace refetches only the UniProt source and reuses the cached InterPro
+  values
 
 #### Scenario: Legacy cache is missing a newly requested source
 
-- **WHEN** a legacy PDB cache lacks a requested annotation owned by a non-UniProt source
-- **THEN** ProtSpace fetches that missing source in addition to refreshing UniProt
-- **AND** the requested annotation is present in the current run's output
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and a run requests an
+  annotation from a source the cache lacks
+- **THEN** ProtSpace fetches that source in addition to refreshing UniProt
 
 #### Scenario: Cached taxonomy depends on the UniProt organism identifier
 
-- **WHEN** a legacy PDB cache contains taxonomy annotations and their cached
-  `organism_id` lookup key, and taxonomy is not being refetched
-- **THEN** ProtSpace retains the lookup key long enough to rehydrate the cached taxonomy
-- **AND** merges that taxonomy against the freshly fetched UniProt annotations
-- **AND** subsequent reuse of the migrated cache preserves the taxonomy without another
-  migration refresh
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and cached taxonomy
+  values, and the run requests taxonomy
+- **THEN** ProtSpace keeps the cached organism identifier available to the taxonomy
+  lookup
 
 #### Scenario: An unresolved protein precedes a taxonomy-bearing protein
 
-- **WHEN** an unresolved protein without taxonomy keys is the first migrated record and
-  a later resolved protein has a cached taxonomy annotation
-- **THEN** the rewritten Parquet schema includes that later taxonomy annotation
-- **AND** subsequent reuse of the migrated cache preserves its values
+- **WHEN** the first cached row has no taxonomy values and a later row does
+- **THEN** ProtSpace still reuses the cached taxonomy for the rows that carry it
 
 #### Scenario: Legacy cache has no PDB annotation
 
 - **WHEN** an unversioned annotation cache does not contain `xref_pdb`
-- **THEN** ProtSpace applies the existing incremental-cache rules without forcing a
-  UniProt refresh for this migration
+- **THEN** ProtSpace reuses it without a forced UniProt refresh
 
 #### Scenario: A UniProt batch fails during migration
 
 - **WHEN** a migration-triggered UniProt refresh cannot retrieve one or more batches
-- **THEN** ProtSpace does not replace the legacy cache or mark it as current
-- **AND** a subsequent run retries the migration
+- **THEN** ProtSpace does not mark the legacy cache as current, so a subsequent run
+  retries the migration
 
 ### Requirement: Cached signal-peptide booleans are idempotent
 
@@ -72,13 +66,14 @@ cached InterPro annotations pass through the shared transformer again.
   containing `True` and `False`
 - **THEN** ProtSpace emits the same `True` and `False` values unchanged
 
-### Requirement: A failed UniProt retrieval never overwrites the annotation cache
+### Requirement: An incomplete annotation retrieval never overwrites the cache
 
-ProtSpace SHALL NOT write the annotation cache when a UniProt retrieval did not
-complete, whether it failed wholesale or lost individual batches. A failed batch
-yields the full annotation schema with empty values, so persisting it would make
-a later run's column-based completeness check read the cache as current and
-serve those empty values instead of refetching.
+ProtSpace SHALL NOT write the annotation cache when a retrieval did not complete,
+unless the run explicitly asked to refetch. A failed batch yields the full
+annotation schema with empty values, so persisting it would make a later run's
+column-based completeness check read the cache as current and serve those empty
+values instead of refetching. An explicit refetch is the documented repair for a
+cache already holding such values, so it writes regardless.
 
 #### Scenario: A UniProt batch fails while creating the cache
 
@@ -109,3 +104,17 @@ serve those empty values instead of refetching.
 
 - **WHEN** a run with `--keep-tmp` retrieves every requested UniProt batch
 - **THEN** ProtSpace writes the annotation cache as before
+
+#### Scenario: An explicit refetch rewrites the cache regardless
+
+- **WHEN** `--refetch annotations` is requested and the retrieval loses batches
+- **THEN** ProtSpace still writes the annotation cache
+- **AND** a cache already holding empty values is replaced by what this run
+  recovered
+
+#### Scenario: A transient HTTP failure is retried before it counts as a loss
+
+- **WHEN** a request to an annotation API times out, cannot connect, or returns
+  a retryable status
+- **THEN** ProtSpace retries it with backoff up to a bounded number of attempts
+- **AND** only a request still failing after those attempts counts as lost data

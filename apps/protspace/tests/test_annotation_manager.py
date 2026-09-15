@@ -505,7 +505,6 @@ class TestIntegration:
             headers=["custom_protein"],
             annotations=["length"],
             output_path=cache_path,
-            preserve_existing_cache_on_uniprot_failure=True,
         ).to_pd()
 
         assert not cache_path.exists()
@@ -1359,12 +1358,7 @@ class TestStripScores:
 
 
 class TestUniProtFailureCacheWrite:
-    """A UniProt retrieval that lost batches must not persist its empty rows.
-
-    A failed batch is absorbed by the retriever, which substitutes the full
-    annotation schema with empty values. Caching that makes the next run's
-    column-based completeness check read the cache as current.
-    """
+    """A UniProt retrieval that lost batches must not persist its empty rows."""
 
     @staticmethod
     def _retriever(failed_batches: int):
@@ -1378,16 +1372,19 @@ class TestUniProtFailureCacheWrite:
         ]
         return retriever
 
+    @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_lost_batch_does_not_create_the_cache(self, mock_retriever, tmp_path):
-        mock_retriever.return_value = self._retriever(failed_batches=1)
+    def test_cache_write_follows_batch_success(
+        self, mock_retriever, tmp_path, failed_batches, cache_written
+    ):
+        mock_retriever.return_value = self._retriever(failed_batches)
         cache_path = tmp_path / "all_annotations.parquet"
 
         result = ProteinAnnotationManager(
             headers=["P01308"], annotations=["length"], output_path=cache_path
         ).to_pd()
 
-        assert not cache_path.exists()
+        assert cache_path.exists() is cache_written
         assert result["identifier"].tolist() == ["P01308"]
 
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
@@ -1405,14 +1402,3 @@ class TestUniProtFailureCacheWrite:
         ).to_pd()
 
         assert pd.read_parquet(cache_path)["length"].tolist() == ["110"]
-
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_complete_retrieval_still_writes_the_cache(self, mock_retriever, tmp_path):
-        mock_retriever.return_value = self._retriever(failed_batches=0)
-        cache_path = tmp_path / "all_annotations.parquet"
-
-        ProteinAnnotationManager(
-            headers=["P01308"], annotations=["length"], output_path=cache_path
-        ).to_pd()
-
-        assert cache_path.exists()

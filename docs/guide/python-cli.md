@@ -360,6 +360,14 @@ subsequent runs:
 
 The annotation cache always stores scores; `--no-scores` strips them from the output afterwards.
 
+If some UniProt data could not be retrieved, the annotation cache is **not** written: a partly
+empty cache is indistinguishable from one where those proteins genuinely have no UniProt entry, so
+caching it would make every later run reuse the gaps instead of refetching. The run still returns
+everything it did retrieve, and the next run fetches the rest. Transient HTTP failures are retried
+with backoff first, so this is reserved for a source that is genuinely unavailable. Use
+`--refetch annotations` to rewrite the cache regardless — that is the repair path for a cache
+already holding empty values.
+
 Legacy annotation caches are migrated when they are read:
 
 - A cache that spelled an unassigned [TED domain](/guide/annotations#ted_domains) `unclassified` is

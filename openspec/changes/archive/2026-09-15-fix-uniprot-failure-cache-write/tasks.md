@@ -23,3 +23,14 @@
 ## 4. Archive
 
 - [x] 4.1 Run the archive as the last commit on the branch, before merge
+
+## 5. Review follow-ups
+
+- [x] 5.1 Retry transient HTTP failures with backoff in `paginated_get`
+- [x] 5.2 Let `--refetch annotations` write the cache regardless
+- [x] 5.3 Pipeline-level regression tests for both
+- [x] 5.4 Correct the row-partial rationale and rename the deferred fix to provenance
+- [x] 5.5 Fold the subsumed migration scenario into the general requirement
+- [x] 5.6 Drop the misfiled, stale cache scenario from `fasta-sequence-metadata`
+- [x] 5.7 Document the behaviour in `docs/guide/python-cli.md`
+- [x] 5.8 Rewrite the skip-write warning to say what actually happened

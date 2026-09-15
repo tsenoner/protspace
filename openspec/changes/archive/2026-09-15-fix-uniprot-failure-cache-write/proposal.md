@@ -30,7 +30,13 @@ UniProt data, until someone runs `--refetch annotations`.
   so the first `--keep-tmp` run — the one that creates the cache — is covered.
 - Generalize the existing spec requirement from "during migration" to any
   UniProt retrieval failure.
-- Add regression coverage for a partial batch failure, which no test covered.
+- Retry transient HTTP failures with backoff in `paginated_get`, so a blip is not
+  recorded as permanent data loss. Without this the guard would make the cache
+  effectively unwritable at Swiss-Prot scale (~5,730 sequential requests).
+- Let `--refetch annotations` write the cache regardless, keeping the documented
+  repair path able to repair.
+- Add regression coverage for a partial batch failure, at both the manager and
+  the pipeline level, and for the retry behaviour.
 
 ## Impact
 

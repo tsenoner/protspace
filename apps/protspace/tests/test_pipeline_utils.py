@@ -362,6 +362,54 @@ def _cache_pipeline(tmp_path, **overrides):
     )
 
 
+class TestUniProtFailureCacheWriteThroughPipeline:
+    """The guard has to hold on the paths a user actually runs.
+
+    The manager-level tests pin the decision; these pin the wiring, because the
+    pipeline change is a *deletion* of an explicit argument and a future call
+    site could silently reinstate the old behavior.
+    """
+
+    @staticmethod
+    def _fail_one_batch(monkeypatch):
+        from protspace.data.annotations.retrievers import uniprot_retriever
+
+        def fail_batch(_accessions):
+            raise RuntimeError("temporary UniProt failure")
+
+        monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
+
+    def test_a_lost_batch_does_not_create_the_cache(self, tmp_path, monkeypatch):
+        """The first --keep-tmp run is the one that would bake the empties in."""
+        self._fail_one_batch(monkeypatch)
+        pipeline = _cache_pipeline(tmp_path, annotations=["length"])
+
+        pipeline._fetch_annotations(["P01308"])
+
+        assert not (tmp_path / "all_annotations.parquet").exists()
+
+    def test_refetch_rewrites_the_cache_even_when_a_batch_is_lost(
+        self, tmp_path, monkeypatch
+    ):
+        """--refetch is the documented repair, so it must beat the guard.
+
+        Declining here would strand a cache poisoned by an earlier run and throw
+        away the good data the repair recovered.
+        """
+        self._fail_one_batch(monkeypatch)
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame({"identifier": ["P01308"], "length": ["POISONED"]}).to_parquet(
+            cache_path, index=False
+        )
+        pipeline = _cache_pipeline(
+            tmp_path, annotations=["length"], refetch_stages={"uniprot"}
+        )
+
+        pipeline._fetch_annotations(["P01308"])
+
+        assert pd.read_parquet(cache_path)["length"].tolist() != ["POISONED"]
+
+
 class TestAnnotationCacheMigration:
     def test_legacy_pdb_migration_fetches_newly_required_taxonomy(
         self, tmp_path, monkeypatch
