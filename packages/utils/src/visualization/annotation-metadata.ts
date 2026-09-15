@@ -419,6 +419,30 @@ export function annotationLabel(column: string, annotation?: Pick<Annotation, 'r
   return getAnnotationMeta(column, annotation).label;
 }
 
+/**
+ * Whether an annotation should be offered for a search query.
+ *
+ * Matches a substring of the displayed label, or the query starting at a word
+ * boundary of the column name (both split on `_`/`-`). The asymmetry keeps
+ * `ted` out of every `predicted_*` column — none of which shows those letters —
+ * while `predicted_membrane` still finds itself.
+ */
+export function annotationMatchesQuery(
+  column: string,
+  query: string,
+  annotation?: Pick<Annotation, 'runtime'>,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+
+  if (annotationLabel(column, annotation).toLowerCase().includes(needle)) return true;
+
+  // Compare word-wise so a separator in the query still lines up, and so a
+  // match can only begin where a word does.
+  const words = (value: string) => value.toLowerCase().replace(/[_-]+/g, ' ');
+  return ` ${words(column)}`.includes(` ${words(needle)}`);
+}
+
 /** Source/group for an annotation (registry source, else `Other`). */
 export function annotationSource(
   column: string,

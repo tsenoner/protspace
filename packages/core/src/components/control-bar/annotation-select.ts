@@ -3,7 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
-import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
+import { filterGroupedAnnotations, type GroupedAnnotation } from './annotation-categories';
 import {
   annotationLabel,
   annotationStatSummary,
@@ -163,36 +163,11 @@ class ProtspaceAnnotationSelect extends LitElement {
   }
 
   /**
-   * Categorize annotations using the shared utility.
-   */
-  private categorizeAnnotations(annotations: string[]): GroupedAnnotation[] {
-    return groupAnnotations(annotations, this.annotationDefinitions);
-  }
-
-  /**
-   * Filter annotations based on search query
+   * Group and filter annotations using the shared utility, so this picker and
+   * the query builder's cannot drift apart.
    */
   private getFilteredGroupedAnnotations(): GroupedAnnotation[] {
-    const grouped = this.categorizeAnnotations(this.annotations);
-    const queryLower = this.query.trim().toLowerCase();
-
-    if (!queryLower) {
-      return grouped;
-    }
-
-    // Filter each category's annotations by column name or friendly label
-    return grouped
-      .map((group) => ({
-        ...group,
-        annotations: group.annotations.filter(
-          (annotation) =>
-            annotation.toLowerCase().includes(queryLower) ||
-            annotationLabel(annotation, this.annotationDefinitions[annotation])
-              .toLowerCase()
-              .includes(queryLower),
-        ),
-      }))
-      .filter((group) => group.annotations.length > 0); // Remove empty categories
+    return filterGroupedAnnotations(this.annotations, this.query, this.annotationDefinitions);
   }
 
   /**
