@@ -5,7 +5,13 @@ import { StructureService } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
-import { buildAlphaFoldUrl, buildInterProUrl, buildTedUrl, buildUniProtUrl } from './header-links';
+import {
+  buildAlphaFoldUrl,
+  buildInterProUrl,
+  buildTedUrl,
+  buildUniProtUrl,
+  getBaseAccession,
+} from './header-links';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
@@ -180,7 +186,7 @@ export class ProtspaceStructureViewer extends LitElement {
       this._dispatchStructureLoadEvent('loaded');
     } catch (error) {
       const originalError = error instanceof Error ? error : undefined;
-      const formattedId = this.proteinId?.split('.')[0] ?? this.proteinId ?? '';
+      const formattedId = this.proteinId ? getBaseAccession(this.proteinId) : '';
       const genericMessage = `No 3D structure was found for ${formattedId}.`;
       const fallbackMessage = 'Failed to load structure. Please try again.';
 

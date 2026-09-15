@@ -13,10 +13,9 @@ type StructureViewerElement = HTMLElement & {
 describe('protspace-structure-viewer resource links', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      vi.fn(() => 1),
-    );
+    // The component defers _loadStructure() (a network fetch) to a rAF
+    // callback; swallowing the callback keeps the render assertion offline.
+    vi.stubGlobal('requestAnimationFrame', () => 1);
   });
 
   afterEach(() => {
@@ -31,18 +30,38 @@ describe('protspace-structure-viewer resource links', () => {
     document.body.appendChild(viewer);
     await viewer.updateComplete;
 
-    const tedLink = Array.from(
+    const links = Array.from(
       viewer.shadowRoot!.querySelectorAll<HTMLAnchorElement>('.header-link'),
-    ).find((link) => link.textContent?.trim() === 'TED');
+    );
 
-    expect({
-      href: tedLink?.getAttribute('href'),
-      rel: tedLink?.getAttribute('rel'),
-      target: tedLink?.getAttribute('target'),
-    }).toEqual({
-      href: 'https://ted.cathdb.info/uniprot/W6JQJ9',
-      rel: 'noopener noreferrer',
-      target: '_blank',
-    });
+    // Assert the whole row, in order: a `.find()` on the TED label alone would
+    // still pass if UniProt and InterPro had disappeared.
+    expect(
+      links.map((link) => ({
+        label: link.textContent?.trim(),
+        href: link.getAttribute('href'),
+        rel: link.getAttribute('rel'),
+        target: link.getAttribute('target'),
+      })),
+    ).toEqual([
+      {
+        label: 'UniProt',
+        href: 'https://www.uniprot.org/uniprotkb/W6JQJ9/entry',
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
+      {
+        label: 'InterPro',
+        href: 'https://www.ebi.ac.uk/interpro/protein/UniProt/W6JQJ9/',
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
+      {
+        label: 'TED',
+        href: 'https://ted.cathdb.info/uniprot/W6JQJ9',
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
+    ]);
   });
 });
