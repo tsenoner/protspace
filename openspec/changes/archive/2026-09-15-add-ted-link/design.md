@@ -30,12 +30,12 @@ Alternatives considered:
 
 ### Test the observable link and the URL boundary
 
-Add a jsdom component regression that renders a versioned protein ID and asserts that the real TED anchor has the expected href, new-tab target, and rel attributes. Add focused pure-helper cases for the exact TED pattern, version stripping, and encoding. The component test prevents an unused builder from appearing to fix the issue.
+Add a jsdom component regression that renders a versioned protein ID and asserts the whole rendered link row in order — label, href, `target`, and `rel` for UniProt, InterPro, and TED. Asserting the row rather than the TED anchor alone is what makes "beside" testable: a check scoped to TED still passes if the other two links disappear. Add focused pure-helper cases for the exact TED pattern, version stripping, and encoding. Together they prevent an unused builder from appearing to fix the issue.
 
 ## Risks / Trade-offs
 
 - **TED may not have a page for every UniProt accession** → Match the existing UniProt/InterPro behavior: expose the deterministic destination and let the external service report availability.
-- **The extra label could tighten header space** → Reuse the existing wrapping flex container and compact link styles; verify the rendered desktop flow without introducing new layout rules.
+- **The extra label could tighten header space** → Reuse the compact link styles and add no layout rules. `.header-links` is a non-wrapping flex row, but its parent `.header-info` wraps, so a third label pushes the whole group onto its own line rather than overflowing.
 
 ## Migration Plan
 

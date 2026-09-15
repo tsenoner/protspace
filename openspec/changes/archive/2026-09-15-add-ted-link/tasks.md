@@ -13,5 +13,8 @@
 
 - [x] 3.1 Repeat the original browser reproduction and verify the TED label and exact href.
 - [x] 3.2 Run the affected package checks and the repository-mandated `pnpm precommit` gate.
-- [x] 3.3 Repair the stale image-pipeline readiness checks, update the Explore descriptions, and
-      regenerate their shared structure-viewer screenshot.
+- [x] 3.3 Update the Explore descriptions and regenerate their shared structure-viewer screenshot.
+- [x] 3.4 Rebind the duplicate-badge capture spec to the renamed scatter-plot internals so the
+      image pipeline runs, and regenerate the GIF it produces.
+- [x] 3.5 Merge `main`, resolve the docs-screenshot pipeline conflicts, and apply the
+      reuse/simplification review findings.
