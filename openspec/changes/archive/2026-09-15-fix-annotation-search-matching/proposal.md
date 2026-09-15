@@ -23,7 +23,8 @@ column name _only_, so a reader who searches for the label they can see finds no
 ## What Changes
 
 - Match a query against a column name by word, not by arbitrary substring: the query must
-  begin one of the words in the column name.
+  begin where a word does. Query and column are both split on `_`/`-`, so a column is still
+  findable by its own full name.
 - Keep matching the friendly label as a substring, so partial words the reader can actually
   see still work.
 - Move the rule into one shared helper and have both the annotation dropdown and the query

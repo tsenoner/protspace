@@ -2,7 +2,7 @@
 
 - [x] 1.1 Cover the reported case: `ted` matches `ted_domains` and none of `predicted_*`.
 - [x] 1.2 Cover that `predicted`, `membrane`, `cellular` and `loc` still match.
-- [x] 1.3 Cover that both pickers filter identically.
+- [x] 1.3 Make both pickers filter through one shared function, and test that function.
 
 ## 2. Implementation
 

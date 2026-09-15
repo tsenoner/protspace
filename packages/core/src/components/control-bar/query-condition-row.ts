@@ -4,9 +4,9 @@ import { customElement } from '../../utils/safe-custom-element';
 import type { FilterCondition, LogicalOp, NumericCondition } from './query-types';
 import { ANY_VALUE, createCondition, createNumericCondition } from './query-types';
 import type { ProtspaceData } from './types';
-import { groupAnnotations } from './annotation-categories';
+import { filterGroupedAnnotations } from './annotation-categories';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
-import { annotationMatchesQuery, isNumericAnnotation } from '@protspace/utils';
+import { isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
 import { renderValueChip } from './query-presence';
 import './query-value-picker';
@@ -94,16 +94,15 @@ class ProtspaceQueryConditionRow extends LitElement {
     category: string;
     items: { name: string; index: number }[];
   }[] {
-    const queryLower = this._annotationSearch.trim().toLowerCase();
     let flatIndex = 0;
-    return groupAnnotations(this.annotations, this.data?.annotations)
-      .map((g) => ({
-        category: g.category,
-        items: g.annotations
-          .filter((a) => annotationMatchesQuery(a, queryLower, this.data?.annotations?.[a]))
-          .map((name) => ({ name, index: flatIndex++ })),
-      }))
-      .filter((g) => g.items.length > 0);
+    return filterGroupedAnnotations(
+      this.annotations,
+      this._annotationSearch,
+      this.data?.annotations,
+    ).map((g) => ({
+      category: g.category,
+      items: g.annotations.map((name) => ({ name, index: flatIndex++ })),
+    }));
   }
 
   /** Flattened filtered list — the sequence keyboard navigation walks. */

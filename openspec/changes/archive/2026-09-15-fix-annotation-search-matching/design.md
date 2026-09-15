@@ -25,8 +25,14 @@ what produces the `ted` → four-Biocentral-rows result.
 
 ### Match column names by word, labels by substring
 
-A query matches a column when it is a prefix of one of the words in the column name
-(split on `_` and `-`), or a substring of the friendly label.
+A query matches a column when it begins at a word boundary of the column name, or is a
+substring of the friendly label. Query and column are both normalised on `_`/`-` first.
+
+Normalising _both_ sides is the part that is easy to get wrong. A rule that only splits the
+column and then asks for `word.startsWith(query)` looks equivalent and is not: no word can
+ever start with a needle that still contains a separator, so every multi-word column stops
+matching its own name. On this registry that was 16 of 38 columns — typing `predicted_`
+emptied the list and never recovered.
 
 The asymmetry is the point. Column names are machine identifiers built by joining words,
 so a word boundary is meaningful in them and a mid-word hit is almost always an accident —
@@ -67,6 +73,14 @@ possible because the rule is written twice.
   `predicted_subcellular_location` _by column name_. It still matches by label, and every
   registry column has a label. A column with no registry entry falls back to a label
   derived from its own name, so the word rule still reaches it.
+- **A match can still be on text the picker does not draw, and this change does not fix
+  that.** The dropdown renders only the label, so a column-name hit (`predicted` → four rows
+  reading "Membrane", "Signal peptide", …) is unexplained. The query builder renders only the
+  column name, so a label hit (`swiss` → `reviewed`) is unexplained in the other direction.
+  This removes the worst case — a hit on neither, which is what `ted` was — but "every match
+  is accountable" needs the pickers to show what matched. `query-value-picker` already
+  highlights matched substrings via `_highlightMatch`; copying that, and rendering both label
+  and column name, is the real end state. Deliberately out of scope here.
 
 ## Migration Plan
 

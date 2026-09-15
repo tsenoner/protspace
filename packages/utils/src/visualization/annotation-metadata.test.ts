@@ -12,6 +12,14 @@ import {
   prettifyAnnotationName,
 } from './annotation-metadata';
 
+/** The Biocentral ML columns, spelled out once. */
+const BIOCENTRAL_COLUMNS = [
+  'predicted_membrane',
+  'predicted_signal_peptide',
+  'predicted_subcellular_location',
+  'predicted_transmembrane',
+];
+
 describe('annotation-metadata registry', () => {
   it('resolves known annotations to their metadata', () => {
     const ec = getAnnotationMeta('ec');
@@ -22,12 +30,7 @@ describe('annotation-metadata registry', () => {
   });
 
   it('flags the Biocentral predictions as predicted', () => {
-    for (const column of [
-      'predicted_subcellular_location',
-      'predicted_membrane',
-      'predicted_signal_peptide',
-      'predicted_transmembrane',
-    ]) {
+    for (const column of BIOCENTRAL_COLUMNS) {
       expect(ANNOTATION_METADATA[column]?.isPredicted).toBe(true);
       expect(ANNOTATION_METADATA[column]?.source).toBe('Biocentral');
     }
@@ -62,12 +65,7 @@ describe('annotation-metadata registry', () => {
   });
 
   it('keeps the predicted_ prefix on the Biocentral ML columns', () => {
-    for (const column of [
-      'predicted_subcellular_location',
-      'predicted_membrane',
-      'predicted_signal_peptide',
-      'predicted_transmembrane',
-    ]) {
+    for (const column of BIOCENTRAL_COLUMNS) {
       expect(column.startsWith(PREDICTED_PREFIX)).toBe(true);
     }
   });
@@ -166,52 +164,44 @@ describe('prettifyAnnotationName', () => {
 });
 
 describe('annotationMatchesQuery', () => {
-  const BIOCENTRAL = [
-    'predicted_membrane',
-    'predicted_signal_peptide',
-    'predicted_subcellular_location',
-    'predicted_transmembrane',
-  ];
-
   it('does not match the middle of a column name', () => {
-    // `ted` lives inside `predicted`, and none of these columns display it.
-    expect(BIOCENTRAL.filter((c) => annotationMatchesQuery(c, 'ted'))).toEqual([]);
-  });
-
-  it('matches the TED column the reader was looking for', () => {
+    // `ted` lives inside `predicted`, and these columns display "Membrane",
+    // "Signal peptide", "Subcellular location", "Transmembrane" — no "ted".
+    expect(BIOCENTRAL_COLUMNS.filter((c) => annotationMatchesQuery(c, 'ted'))).toEqual([]);
     expect(annotationMatchesQuery('ted_domains', 'ted')).toBe(true);
   });
 
-  it('still matches a column name by whole word', () => {
-    expect(BIOCENTRAL.every((c) => annotationMatchesQuery(c, 'predicted'))).toBe(true);
+  it('finds every column by its own full name, separators and all', () => {
+    // The word rule has to split the query too, or typing the name you know
+    // empties the list at the underscore.
+    for (const column of Object.keys(ANNOTATION_METADATA)) {
+      expect(annotationMatchesQuery(column, column)).toBe(true);
+    }
+  });
+
+  it('matches a column name by word', () => {
+    expect(BIOCENTRAL_COLUMNS.every((c) => annotationMatchesQuery(c, 'predicted'))).toBe(true);
     expect(annotationMatchesQuery('predicted_subcellular_location', 'loc')).toBe(true);
   });
 
   it('matches a partial word of the displayed label', () => {
-    // `Subcellular location` / `Transmembrane` — mid-word, but on screen.
+    // mid-word, but on screen: "Subcellular location", "Transmembrane"
     expect(annotationMatchesQuery('predicted_subcellular_location', 'cellular')).toBe(true);
     expect(annotationMatchesQuery('predicted_transmembrane', 'membrane')).toBe(true);
+    // a hyphenated label is matched as typed, not word-split: "CATH-Gene3D"
+    expect(annotationMatchesQuery('cath', 'cath-gene3d')).toBe(true);
   });
 
-  it('treats an empty query as matching everything', () => {
+  it('treats an empty query as matching everything, case-insensitively', () => {
     expect(annotationMatchesQuery('predicted_membrane', '   ')).toBe(true);
-  });
-
-  it('is case-insensitive', () => {
     expect(annotationMatchesQuery('ted_domains', 'TED')).toBe(true);
   });
 
   it('reaches a column outside the registry through its derived label', () => {
-    expect(annotationMatchesQuery('my_custom_score', 'custom')).toBe(true);
+    // No registry entry, so the label is the prettified column name — which
+    // means a mid-word query does reach it. That is the rule working: the
+    // reader is looking at "My custom score".
+    expect(annotationMatchesQuery('my_custom_score', 'core')).toBe(true);
     expect(annotationMatchesQuery('my_custom_score', 'zzz')).toBe(false);
-  });
-
-  it('matches mid-word when the column name IS the displayed label', () => {
-    // An unregistered column's label is its own prettified name, so a mid-word
-    // query still reaches it. That is the rule working, not a leak: the reader
-    // is looking at "Predicted foo". Registered columns like predicted_membrane
-    // display "Membrane" instead, which is why `ted` no longer reaches them.
-    expect(annotationMatchesQuery('predicted_foo', 'ted')).toBe(true);
-    expect(annotationMatchesQuery('predicted_membrane', 'ted')).toBe(false);
   });
 });
