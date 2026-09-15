@@ -1,6 +1,9 @@
 # CHANGELOG
 
 
+## v4.12.1 (2026-09-15)
+
+
 ## v4.12.0 (2026-08-19)
 
 
@@ -302,6 +305,18 @@
 - Correct four defects the review agents found in the statistics feature
   ([`87cac68`](https://github.com/tsenoner/protspace/commit/87cac682a4fe353201c488e7ac77a8281713a939))
 
+- **annotate**: Pass fasta sequences to annotation manager
+  ([`5cab319`](https://github.com/tsenoner/protspace/commit/5cab3198d6ee059a65502879437b5d1bbc546c91))
+
+- **annotations**: Enrich complete cache lengths from fasta
+  ([`0e000cb`](https://github.com/tsenoner/protspace/commit/0e000cbf764cff159f2e7e62cffa4c3f9835f942))
+
+- **annotations**: Handle fasta length edge cases
+  ([`5826d8d`](https://github.com/tsenoner/protspace/commit/5826d8d9c9512af8660bec3ac2e853b52da995f6))
+
+- **annotations**: Harden fasta length fallback and cut per-protein cost
+  ([`eb66f22`](https://github.com/tsenoner/protspace/commit/eb66f22f6d341a8c0a378e5f162b757a9382f220))
+
 - **annotations**: Preserve cached annotation semantics
   ([`3fbe03a`](https://github.com/tsenoner/protspace/commit/3fbe03a837aea83846d5eb166870c9e3dc45f812))
 
@@ -322,6 +337,9 @@
 
 - **protspace**: Address legacy TED cache output
   ([`31c5a93`](https://github.com/tsenoner/protspace/commit/31c5a93496f8e9f53c60b5e42cf03050891da2b6))
+
+- **protspace**: Derive missing length from fasta
+  ([`b02521f`](https://github.com/tsenoner/protspace/commit/b02521f6dff1af198eb9156d68b12b967aa83624))
 
 - **protspace**: Preserve unlabeled TED domain names
   ([`b724fba`](https://github.com/tsenoner/protspace/commit/b724fba0b7ac550a53aa18e521153258877c2268))
@@ -363,6 +381,9 @@
   ([`a66b347`](https://github.com/tsenoner/protspace/commit/a66b3474fad58dd4a32dfa28122135d8048be4a2))
 
 ### Testing
+
+- **annotate**: Hoist UniProtRetriever import to module level
+  ([`b584582`](https://github.com/tsenoner/protspace/commit/b5845824d737ad627a0d3cf87e93be16feb7df7e))
 
 - **stats**: Pin per-category decomposition invariants against aggregate-repeat bugs
   ([`45d20e9`](https://github.com/tsenoner/protspace/commit/45d20e90a6e5b68cdf12ffc8f6a5df350f2ac059))
