@@ -6,7 +6,7 @@ import { ANY_VALUE, createCondition, createNumericCondition } from './query-type
 import type { ProtspaceData } from './types';
 import { groupAnnotations } from './annotation-categories';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
-import { isNumericAnnotation } from '@protspace/utils';
+import { annotationMatchesQuery, isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
 import { renderValueChip } from './query-presence';
 import './query-value-picker';
@@ -100,7 +100,7 @@ class ProtspaceQueryConditionRow extends LitElement {
       .map((g) => ({
         category: g.category,
         items: g.annotations
-          .filter((a) => !queryLower || a.toLowerCase().includes(queryLower))
+          .filter((a) => annotationMatchesQuery(a, queryLower, this.data?.annotations?.[a]))
           .map((name) => ({ name, index: flatIndex++ })),
       }))
       .filter((g) => g.items.length > 0);

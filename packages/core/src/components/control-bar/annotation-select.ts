@@ -7,6 +7,7 @@ import { groupAnnotations, type GroupedAnnotation } from './annotation-categorie
 import {
   annotationLabel,
   annotationStatSummary,
+  annotationMatchesQuery,
   clusterAgreement,
   getAnnotationMeta,
   hasAnnotationStats,
@@ -174,22 +175,17 @@ class ProtspaceAnnotationSelect extends LitElement {
    */
   private getFilteredGroupedAnnotations(): GroupedAnnotation[] {
     const grouped = this.categorizeAnnotations(this.annotations);
-    const queryLower = this.query.trim().toLowerCase();
+    const query = this.query.trim();
 
-    if (!queryLower) {
+    if (!query) {
       return grouped;
     }
 
-    // Filter each category's annotations by column name or friendly label
     return grouped
       .map((group) => ({
         ...group,
-        annotations: group.annotations.filter(
-          (annotation) =>
-            annotation.toLowerCase().includes(queryLower) ||
-            annotationLabel(annotation, this.annotationDefinitions[annotation])
-              .toLowerCase()
-              .includes(queryLower),
+        annotations: group.annotations.filter((annotation) =>
+          annotationMatchesQuery(annotation, query, this.annotationDefinitions[annotation]),
         ),
       }))
       .filter((group) => group.annotations.length > 0); // Remove empty categories
