@@ -2,7 +2,7 @@
 
 The control bar at the top provides tools for data management, selection, export, and import.
 
-![Control bar overview](./images/control-bar-annotated.png)
+<img src="./images/control-bar-annotated.png" alt="Control bar overview" width="1536" height="88" loading="eager" fetchpriority="high" />
 
 ## 1. Projection Selector
 

@@ -2,7 +2,7 @@
 
 The ProtSpace Explore page provides an interactive environment for visualizing and analyzing protein embeddings.
 
-![Interface Overview - Full page layout showing scatterplot, legend, and control bar](./images/interface-overview.png)
+<img src="./images/interface-overview.png" alt="Interface Overview - Full page layout showing scatterplot, legend, and control bar" width="1536" height="864" loading="eager" fetchpriority="high" />
 
 ## Page Layout
 

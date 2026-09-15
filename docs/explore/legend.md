@@ -6,7 +6,7 @@ The legend panel lets you filter, customize, and explore protein annotations. Mo
 
 Click any legend row to toggle its visibility:
 
-![Toggle visibility](./images/legend-toggle.gif)
+<img src="./images/legend-toggle.gif" alt="Toggle visibility" width="1000" height="563" loading="eager" fetchpriority="high" />
 
 - Click once to hide that value.
 - Click again to show it.
