@@ -79,7 +79,7 @@ async function openFigureEditor(
     cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
   });
 
-  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), {
+  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
     timeout,
   });
   await page.waitForFunction(
@@ -90,6 +90,7 @@ async function openFigureEditor(
       const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
       return !!c && c.width > 0 && c.height > 0;
     },
+    undefined,
     { timeout, polling: 250 },
   );
   // Settle: rAF redraw + font readiness.
@@ -130,6 +131,7 @@ async function waitForControlBar(
       // Check that annotation select has annotations loaded
       return annotationSelect.annotations && annotationSelect.annotations.length > 0;
     },
+    undefined,
     { timeout, polling: 200 },
   );
 
@@ -327,6 +329,7 @@ test.describe('Control Bar Screenshots', () => {
         if (!controlBar?.shadowRoot) return false;
         return !!controlBar.shadowRoot.querySelector('.dropdown-menu');
       },
+      undefined,
       { timeout: 5000, polling: 200 },
     );
 
@@ -415,6 +418,7 @@ test.describe('Control Bar Screenshots', () => {
 
         return !!annotationSelect.shadowRoot.querySelector('.dropdown-menu');
       },
+      undefined,
       { timeout: 5000, polling: 200 },
     );
 
@@ -689,6 +693,7 @@ test.describe('Control Bar Screenshots', () => {
           | null;
         return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
       },
+      undefined,
       { timeout: 5_000, polling: 200 },
     );
     // Let the query builder finish first paint and resolve match counts.

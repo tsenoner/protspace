@@ -89,7 +89,7 @@ export async function waitForDataLoad(
 
   // The loading overlay fades out (opacity 0.5s) then removes itself ~500 ms
   // later. Wait for the element to be gone from the DOM.
-  await page.waitForFunction(() => !document.getElementById('progressive-loading'), {
+  await page.waitForFunction(() => !document.getElementById('progressive-loading'), undefined, {
     timeout,
     polling: 100,
   });
@@ -110,6 +110,7 @@ export async function waitForLegend(page: Page, timeout = 15000): Promise<void> 
       const items = legend.shadowRoot.querySelectorAll('.legend-item');
       return items.length > 0;
     },
+    undefined,
     { timeout, polling: 200 },
   );
 
@@ -175,6 +176,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
       const computedStyle = window.getComputedStyle(viewer);
       return computedStyle.display !== 'none' && viewer.style.display !== 'none';
     },
+    undefined,
     { timeout, polling: 500 },
   );
 
@@ -193,6 +195,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
 
         return !!(plugin || nestedPlugin);
       },
+      undefined,
       { timeout: 15000, polling: 1000 },
     );
     // If plugin found, wait a bit more for canvas rendering and structure loading
@@ -212,6 +215,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
           const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
           return !!gl && !(gl.isContextLost && gl.isContextLost());
         },
+        undefined,
         { timeout: 10000, polling: 500 },
       );
 
