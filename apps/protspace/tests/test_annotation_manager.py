@@ -1372,6 +1372,43 @@ class TestUniProtFailureCacheWrite:
         ]
         return retriever
 
+    @patch("src.protspace.data.annotations.manager.TedRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_a_failed_source_is_dropped_without_discarding_the_others(
+        self, mock_uniprot, mock_ted, tmp_path
+    ):
+        """One flaky source must not cost the expensive one its cache.
+
+        TED failing should not throw away a completed UniProt fetch: the next
+        run then refetches only TED, because the column-based completeness
+        check sees exactly that column missing.
+        """
+        retriever = self._retriever(failed_batches=0)
+        retriever.fetch_annotations.return_value = [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={**dict.fromkeys(UNIPROT_ANNOTATIONS, ""), "length": "110"},
+            )
+        ]
+        mock_uniprot.return_value = retriever
+        mock_ted.return_value.failed_lookup_count = 3
+        mock_ted.return_value.fetch_annotations.return_value = [
+            ProteinAnnotations(identifier="P01308", annotations={"ted_domains": ""})
+        ]
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        result = ProteinAnnotationManager(
+            headers=["P01308"],
+            annotations=["length", "ted_domains"],
+            output_path=cache_path,
+        ).to_pd()
+
+        cached = pd.read_parquet(cache_path)
+        assert "length" in cached.columns, "a completed source must still be cached"
+        assert "ted_domains" not in cached.columns, "a failed source must not be"
+        # The run itself still reports everything it fetched.
+        assert result["length"].tolist() == ["110"]
+
     @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_cache_write_follows_batch_success(

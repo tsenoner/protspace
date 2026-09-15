@@ -87,9 +87,24 @@ and `--refetch annotations` gives an explicit way out, but the cost is real at
 Swiss-Prot scale. It is accepted because the alternative is a cache that is
 confidently wrong and never repairs itself.
 
-Not addressed here: taxonomy, TED and Biocentral absorb their failures into the
-same all-empty shape and expose no signal at all (`failed_batch_count` exists
-only on `UniProtRetriever`), so a Biocentral outage still poisons the cache. The
-requirement is written against retrieval generally, but only UniProt reports the
-loss. `protspace annotate` is also unguarded: it passes `output_path=None`, so
-it writes its own parquet without consulting `uniprot_fetch_failed`.
+### Per source, not all-or-nothing
+
+Extending the guard to taxonomy, TED and Biocentral by skipping the whole write
+whenever any source failed would repeat the mistake retry was added to fix:
+Biocentral is known to be intermittently unavailable, so an opt-in flaky source
+would block caching an expensive UniProt fetch. Instead each source reports
+whether it completed, and only the incomplete ones are left out of the cache.
+The column-based completeness check then refetches exactly those next run, which
+is the mechanism already used for a cache that never had the column.
+
+The one case that still skips entirely is when dropping would overwrite an
+existing cache with fewer columns — keeping what is on disk is strictly better
+than replacing it with less.
+
+### `annotate` warns rather than failing
+
+`protspace annotate` writes the user's deliverable, not a cache, so it is always
+written: a partial result beats no result. It does not exit non-zero, because
+`apps/prep` treats a non-zero exit as a failed job and would discard a bundle the
+user can still use — the same "never hard-fail, warn on stderr" rule the embed
+path follows. It warns and names the incomplete source instead.

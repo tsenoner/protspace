@@ -35,6 +35,11 @@ UniProt data, until someone runs `--refetch annotations`.
   effectively unwritable at Swiss-Prot scale (~5,730 sequential requests).
 - Let `--refetch annotations` write the cache regardless, keeping the documented
   repair path able to repair.
+- Give taxonomy, TED and Biocentral the failure signals only UniProt had, and
+  cache per source: a source that did not complete is left out, the ones that
+  did are still cached.
+- Warn from `protspace annotate` when a source was incomplete, since it
+  bypasses the cache guard by writing the user's file directly.
 - Add regression coverage for a partial batch failure, at both the manager and
   the pipeline level, and for the retry behaviour.
 

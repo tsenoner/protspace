@@ -44,6 +44,16 @@ from protspace.data.io.writers import AnnotationWriter
 
 logger = logging.getLogger(__name__)
 
+# Which columns each annotation source owns, used to keep a source that did not
+# finish out of the cache without discarding the sources that did.
+SOURCE_ANNOTATIONS = {
+    "uniprot": set(UNIPROT_ANNOTATIONS),
+    "taxonomy": set(TAXONOMY_ANNOTATIONS),
+    "interpro": set(INTERPRO_ANNOTATIONS),
+    "ted": set(TED_ANNOTATIONS),
+    "biocentral": set(BIOCENTRAL_ANNOTATIONS),
+}
+
 
 def resolve_fasta_sequence_length(
     identifier: str,
@@ -101,6 +111,10 @@ class ProteinAnnotationManager:
             preserve_existing_cache_on_uniprot_failure
         )
         self.uniprot_fetch_failed = False
+        # Sources whose retrieval did not complete this run. Their columns are
+        # all-empty placeholders, indistinguishable from real absences, so they
+        # must not reach the cache.
+        self.incomplete_sources: set[str] = set()
         # Initialize configuration first so we can derive sources_to_fetch
         self.config = AnnotationConfiguration(annotations)
         self.user_annotations = self.config.user_annotations
@@ -208,23 +222,7 @@ class ProteinAnnotationManager:
         transformed_annotations = self.transformer.transform(merged_annotations)
 
         # 4. Create output
-        if self.output_path and not (
-            self.preserve_existing_cache_on_uniprot_failure
-            and self.uniprot_fetch_failed
-        ):
-            df = self._save_and_load(transformed_annotations)
-        else:
-            if self.output_path and self.uniprot_fetch_failed:
-                logger.warning(
-                    "Not caching annotations at %s: some UniProt data could not "
-                    "be retrieved, and caching an incomplete result would make "
-                    "the next run reuse it instead of refetching. This run's "
-                    "annotations are still returned; the next run refetches "
-                    "them. Use --refetch annotations to rewrite the cache "
-                    "regardless.",
-                    self.output_path,
-                )
-            df = DataFormatter.to_dataframe(transformed_annotations)
+        df = self._write_cache_and_frame(transformed_annotations)
 
         # 5. Remove internal-only columns from final output
         # (organism_id for taxonomy, sequence for InterPro)
@@ -247,6 +245,73 @@ class ProteinAnnotationManager:
             return df[columns_to_keep]
 
         return df
+
+    def _incomplete_columns(self) -> set[str]:
+        """Columns whose source did not finish, so their values are placeholders."""
+        return set().union(
+            *(SOURCE_ANNOTATIONS[source] for source in self.incomplete_sources),
+            set(),
+        )
+
+    def _write_cache_and_frame(
+        self, proteins: list[ProteinAnnotations]
+    ) -> pd.DataFrame:
+        """Return the run's annotations, caching only the sources that completed.
+
+        A source that did not finish emits all-empty values that are
+        indistinguishable from a real absence, so caching them would make the
+        next run's column-based completeness check reuse the gaps forever.
+        Columns from sources that *did* finish are still worth caching, so only
+        the incomplete ones are dropped — except when that would shrink a cache
+        already on disk, where keeping what is there is strictly better.
+        """
+        if not self.output_path:
+            return DataFormatter.to_dataframe(proteins)
+
+        guard_on = self.preserve_existing_cache_on_uniprot_failure
+        drop = self._incomplete_columns() if guard_on else set()
+        if not drop:
+            return self._save_and_load(proteins)
+
+        remaining = {key for protein in proteins for key in protein.annotations} - drop
+        existing = (
+            set(pd.read_parquet(self.output_path).columns)
+            if self.output_path.exists()
+            else set()
+        )
+        # Nothing worth keeping, or keeping it would shrink what is already
+        # cached: in both cases leave the cache alone.
+        if not remaining or existing & drop:
+            logger.warning(
+                "Not caching annotations at %s: %s could not be fully retrieved, "
+                "and the cache already holds those columns. This run's "
+                "annotations are still returned. Use --refetch annotations to "
+                "rewrite the cache regardless.",
+                self.output_path,
+                ", ".join(sorted(self.incomplete_sources)),
+            )
+            return DataFormatter.to_dataframe(proteins)
+
+        logger.warning(
+            "Caching annotations at %s without %s: that source could not be "
+            "fully retrieved, so the next run fetches it again instead of "
+            "reusing empty values.",
+            self.output_path,
+            ", ".join(sorted(self.incomplete_sources)),
+        )
+        self._save_and_load(
+            [
+                protein._replace(
+                    annotations={
+                        key: value
+                        for key, value in protein.annotations.items()
+                        if key not in drop
+                    }
+                )
+                for protein in proteins
+            ]
+        )
+        return DataFormatter.to_dataframe(proteins)
 
     def _fill_missing_fasta_lengths(
         self, proteins: list[ProteinAnnotations]
@@ -307,6 +372,7 @@ class ProteinAnnotationManager:
             annotations = retriever.fetch_annotations()
         except Exception as e:
             self.uniprot_fetch_failed = True
+            self.incomplete_sources.add("uniprot")
             failed_sources.append(f"UniProt ({str(e)})")
             logger.warning(f"Failed to retrieve UniProt annotations: {e}")
             return [
@@ -319,6 +385,8 @@ class ProteinAnnotationManager:
         # Read outside the try: a problem reading the failure counter must not be
         # swallowed as "UniProt is unreachable" and discard a successful fetch.
         self.uniprot_fetch_failed = retriever.failed_batch_count > 0
+        if self.uniprot_fetch_failed:
+            self.incomplete_sources.add("uniprot")
         return annotations
 
     def _fetch_taxonomy(
@@ -339,8 +407,12 @@ class ProteinAnnotationManager:
             retriever = TaxonomyRetriever(
                 taxon_ids=unique_taxons, annotations=self.config.taxonomy_annotations
             )
-            return retriever.fetch_annotations()
+            annotations = retriever.fetch_annotations()
+            if retriever.failed_batch_count:
+                self.incomplete_sources.add("taxonomy")
+            return annotations
         except Exception as e:
+            self.incomplete_sources.add("taxonomy")
             failed_sources.append(f"Taxonomy ({str(e)})")
             logger.warning(f"Failed to retrieve Taxonomy annotations: {e}")
             return {}
@@ -376,6 +448,7 @@ class ProteinAnnotationManager:
             )
             return retriever.fetch_annotations()
         except Exception as e:
+            self.incomplete_sources.add("interpro")
             failed_sources.append(f"InterPro ({str(e)})")
             logger.warning(f"Failed to retrieve InterPro annotations: {e}")
             return []
@@ -395,8 +468,12 @@ class ProteinAnnotationManager:
                 annotations=self.config.biocentral_annotations,
                 sequences=sequences,
             )
-            return retriever.fetch_annotations()
+            annotations = retriever.fetch_annotations()
+            if retriever.prediction_failed:
+                self.incomplete_sources.add("biocentral")
+            return annotations
         except Exception as e:
+            self.incomplete_sources.add("biocentral")
             failed_sources.append(f"Biocentral ({str(e)})")
             logger.warning(f"Failed to retrieve Biocentral predictions: {e}")
             return []
@@ -411,8 +488,12 @@ class ProteinAnnotationManager:
                 headers=self.headers,
                 annotations=self.config.ted_annotations,
             )
-            return retriever.fetch_annotations()
+            annotations = retriever.fetch_annotations()
+            if retriever.failed_lookup_count:
+                self.incomplete_sources.add("ted")
+            return annotations
         except Exception as e:
+            self.incomplete_sources.add("ted")
             failed_sources.append(f"TED ({str(e)})")
             logger.warning(f"Failed to retrieve TED annotations: {e}")
             return []

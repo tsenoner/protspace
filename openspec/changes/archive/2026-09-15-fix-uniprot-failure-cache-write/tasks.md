@@ -34,3 +34,11 @@
 - [x] 5.6 Drop the misfiled, stale cache scenario from `fasta-sequence-metadata`
 - [x] 5.7 Document the behaviour in `docs/guide/python-cli.md`
 - [x] 5.8 Rewrite the skip-write warning to say what actually happened
+
+## 6. Generalise beyond UniProt
+
+- [x] 6.1 Failure signals for taxonomy, TED and Biocentral retrievers
+- [x] 6.2 Track `incomplete_sources` on the manager
+- [x] 6.3 Cache per source instead of all-or-nothing
+- [x] 6.4 Warn from `annotate`, without failing the hosted prepare job
+- [x] 6.5 Document the whole fetch/cache model in `docs/guide/fetching-and-caching.md`

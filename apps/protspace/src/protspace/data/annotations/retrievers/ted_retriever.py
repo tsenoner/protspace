@@ -28,6 +28,8 @@ class TedRetriever(BaseAnnotationRetriever):
         self.headers = headers or []
         self.annotations = annotations
         self._cath_names = None
+        # Accessions whose lookup failed, as opposed to having no domains.
+        self.failed_lookup_count = 0
 
     def fetch_annotations(self) -> list[tuple]:
         """Fetch TED domain annotations for all proteins."""
@@ -47,6 +49,7 @@ class TedRetriever(BaseAnnotationRetriever):
                     domains = self._fetch_domains(accession)
                     ted_value = self._format_domains(domains)
                 except Exception as e:
+                    self.failed_lookup_count += 1
                     logger.debug(f"Failed to fetch TED domains for {accession}: {e}")
                     ted_value = ""
 

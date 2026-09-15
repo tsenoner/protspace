@@ -2,19 +2,42 @@
 
 ### Requirement: An incomplete annotation retrieval never overwrites the cache
 
-ProtSpace SHALL NOT write the annotation cache when a retrieval did not complete,
-unless the run explicitly asked to refetch. A failed batch yields the full
-annotation schema with empty values, so persisting it would make a later run's
-column-based completeness check read the cache as current and serve those empty
-values instead of refetching. An explicit refetch is the documented repair for a
-cache already holding such values, so it writes regardless.
+ProtSpace SHALL NOT cache annotations from a source whose retrieval did not
+complete, unless the run explicitly asked to refetch. Such a source emits empty
+values that are indistinguishable from a real absence, so persisting them would
+make a later run's column-based completeness check read the cache as current and
+serve the gaps instead of refetching. Sources that did complete are still
+cached, so one unavailable source does not discard the others' work. An explicit
+refetch is the documented repair for a cache already holding such values, so it
+writes regardless.
 
 #### Scenario: A UniProt batch fails while creating the cache
 
 - **WHEN** a run with `--keep-tmp` and no existing cache loses one or more
-  UniProt batches
+  UniProt batches, and every requested annotation comes from UniProt
 - **THEN** ProtSpace does not create the annotation cache
 - **AND** the run still returns every annotation it did retrieve
+
+#### Scenario: One source fails while another completes
+
+- **WHEN** a run requests annotations from two sources and only one of them
+  completes
+- **THEN** ProtSpace caches the completed source's columns
+- **AND** omits the incomplete source's columns, so the next run fetches only
+  that source
+
+#### Scenario: A source other than UniProt does not complete
+
+- **WHEN** a taxonomy batch, a TED lookup or a Biocentral prediction fails
+- **THEN** ProtSpace treats that source as incomplete for caching, exactly as it
+  treats an incomplete UniProt retrieval
+
+#### Scenario: The standalone annotate command reports an incomplete source
+
+- **WHEN** `protspace annotate` finishes with a source that did not complete
+- **THEN** it still writes the requested output file
+- **AND** it warns which source was incomplete and that the affected values
+  cannot be told apart from a genuine absence
 
 #### Scenario: A UniProt batch fails with a cache already present
 

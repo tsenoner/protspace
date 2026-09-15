@@ -39,6 +39,9 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         self.headers = headers or []
         self.annotations = annotations or BIOCENTRAL_ANNOTATIONS
         self.sequences = sequences or {}
+        # Set when predictions could not be produced at all, so empty
+        # predictions are not mistaken for negative ones.
+        self.prediction_failed = False
 
     def fetch_annotations(self) -> list[tuple]:
         """Fetch prediction annotations for all proteins."""
@@ -93,6 +96,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
             api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
             api = api.wait_until_healthy(max_wait_seconds=30)
         except Exception as e:
+            self.prediction_failed = True
             logger.warning(f"Biocentral API not available: {e}")
             return {}
 
@@ -148,6 +152,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                 ).run_with_progress()
             return result
         except Exception as e:
+            self.prediction_failed = True
             logger.warning(f"Biocentral prediction failed: {e}")
             return {}
 

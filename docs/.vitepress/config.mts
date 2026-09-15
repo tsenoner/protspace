@@ -79,6 +79,7 @@ export default defineConfig({
           { text: 'Using Python CLI', link: '/guide/python-cli' },
           { text: 'Data Format Reference', link: '/guide/data-format' },
           { text: 'Annotation Reference', link: '/guide/annotations' },
+          { text: 'Fetching & Caching', link: '/guide/fetching-and-caching' },
           { text: 'Annotation Styling', link: '/guide/styling' },
         ],
       },
