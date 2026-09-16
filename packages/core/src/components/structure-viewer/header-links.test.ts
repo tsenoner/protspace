@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getBaseAccession,
   buildAlphaFoldUrl,
   buildUniProtUrl,
   buildInterProUrl,
@@ -9,24 +8,6 @@ import {
 } from './header-links';
 
 describe('header-links', () => {
-  describe('getBaseAccession', () => {
-    it('returns the ID unchanged when there is no dot', () => {
-      expect(getBaseAccession('P0DQE9')).toBe('P0DQE9');
-    });
-
-    it('strips the version suffix after the first dot', () => {
-      expect(getBaseAccession('P0DQE9.2')).toBe('P0DQE9');
-    });
-
-    it('handles multiple dots by splitting on the first one', () => {
-      expect(getBaseAccession('A0A.1.2')).toBe('A0A');
-    });
-
-    it('handles an empty string', () => {
-      expect(getBaseAccession('')).toBe('');
-    });
-  });
-
   describe('buildAlphaFoldUrl', () => {
     it('builds the correct AlphaFold DB URL', () => {
       expect(buildAlphaFoldUrl('P0DQE9')).toBe('https://alphafold.ebi.ac.uk/entry/P0DQE9');

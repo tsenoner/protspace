@@ -1,11 +1,11 @@
 import { LitElement, html } from 'lit';
 import { property, state, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { StructureService } from '@protspace/utils';
+import { StructureService, getBaseAccession } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
-import { RESOURCE_LINKS, getBaseAccession } from './header-links';
+import { RESOURCE_LINKS } from './header-links';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
