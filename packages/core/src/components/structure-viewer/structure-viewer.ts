@@ -291,7 +291,8 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   render() {
-    if (!this.proteinId) {
+    const { proteinId } = this;
+    if (!proteinId) {
       return html`
         <div class="viewer-container">
           <div class="empty-container">
@@ -312,24 +313,26 @@ export class ProtspaceStructureViewer extends LitElement {
               <div class="header-info">
                 <div class="header-title-row">
                   <span class="title">${this.title}</span>
-                  <span class="protein-id">${this.proteinId}</span>
+                  <span class="protein-id">${proteinId}</span>
                 </div>
-                <span class="header-links">
+                <ul class="header-links" role="list" aria-label="External resources">
                   ${RESOURCE_LINKS.map(
                     (resource) => html`
-                      <a
-                        class="header-link"
-                        href=${resource.build(this.proteinId as string)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Open in ${resource.label} (opens in a new tab)"
-                      >
-                        <span class="header-link-label">${resource.label}</span
-                        ><span class="header-link-external" aria-hidden="true">↗</span>
-                      </a>
+                      <li class="header-links-item">
+                        <a
+                          class="header-link"
+                          href=${resource.build(proteinId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open in ${resource.label} (opens in a new tab)"
+                        >
+                          <span class="header-link-label">${resource.label}</span
+                          ><span class="header-link-external" aria-hidden="true">↗</span>
+                        </a>
+                      </li>
                     `,
                   )}
-                </span>
+                </ul>
               </div>
               <div class="header-actions">
                 ${this.showCloseButton

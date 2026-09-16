@@ -53,11 +53,7 @@ const structureViewerStylesCore = css`
     margin: 0;
   }
 
-  /*
-   * Two stacked rows: what this is, then where it goes. The resource row used
-   * to sit inline with the title and the accession, where it read as more
-   * metadata rather than as something pressable.
-   */
+  /* Two stacked rows: what this is, then where it goes. */
   .header-info {
     display: flex;
     flex-direction: column;
@@ -83,7 +79,15 @@ const structureViewerStylesCore = css`
     flex-wrap: wrap;
     column-gap: 0.35rem;
     row-gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
     font-size: 0.75rem;
+  }
+
+  .header-links-item {
+    display: inline-flex;
+    align-items: baseline;
   }
 
   .header-link {
@@ -99,7 +103,7 @@ const structureViewerStylesCore = css`
   /*
    * Underline the label only. A text-decoration set on the anchor propagates
    * into its descendants and cannot be cancelled there, so underlining the
-   * anchor would drag the arrow and the separator under the same line.
+   * anchor would drag the arrow under the same line.
    */
   .header-link-label {
     text-decoration: underline;
@@ -111,11 +115,15 @@ const structureViewerStylesCore = css`
 
   /*
    * The separator is a CSS rule rather than a hand-placed element, so adding a
-   * resource cannot forget one or misplace it. It trails its own link rather
-   * than leading the next one, so a wrapped row starts on a label.
+   * resource cannot forget one or misplace it. It hangs off the list item, not
+   * the link, so it stays out of the link's name, click area and focus ring,
+   * and it trails its own item so a wrapped row starts on a label. The empty
+   * alt text keeps screen readers from announcing it; the first declaration is
+   * the fallback for engines without that syntax.
    */
-  .header-link:not(:last-child)::after {
+  .header-links-item:not(:last-child)::after {
     content: '·';
+    content: '·' / '';
     margin-left: 0.35rem;
     color: var(--protspace-viewer-text-muted);
     opacity: 0.5;

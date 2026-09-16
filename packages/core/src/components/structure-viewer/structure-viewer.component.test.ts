@@ -2,17 +2,23 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RESOURCE_LINKS } from './header-links';
 import './structure-viewer';
 
-type StructureViewerElement = HTMLElement & {
-  autoSync: boolean;
-  proteinId: string | null;
-  updateComplete: Promise<unknown>;
-};
+const PROTEIN_ID = 'W6JQJ9.2';
+
+async function mount(): Promise<ShadowRoot> {
+  // Typed as ProtspaceStructureViewer through its HTMLElementTagNameMap entry.
+  const viewer = document.createElement('protspace-structure-viewer');
+  viewer.autoSync = false;
+  viewer.proteinId = PROTEIN_ID;
+  document.body.appendChild(viewer);
+  await viewer.updateComplete;
+  return viewer.shadowRoot!;
+}
 
 describe('protspace-structure-viewer resource links', () => {
   beforeEach(() => {
-    document.body.innerHTML = '';
     // The component defers _loadStructure() (a network fetch) to a rAF
     // callback; swallowing the callback keeps the render assertion offline.
     vi.stubGlobal('requestAnimationFrame', () => 1);
@@ -23,63 +29,30 @@ describe('protspace-structure-viewer resource links', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders TED beside the existing protein resources', async () => {
-    const viewer = document.createElement('protspace-structure-viewer') as StructureViewerElement;
-    viewer.autoSync = false;
-    viewer.proteinId = 'W6JQJ9.2';
-    document.body.appendChild(viewer);
-    await viewer.updateComplete;
+  it('renders every resource link, in order, as a safe new-tab link', async () => {
+    const root = await mount();
+    const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('.header-link'));
 
-    const links = Array.from(
-      viewer.shadowRoot!.querySelectorAll<HTMLAnchorElement>('.header-link'),
-    );
-
-    // Assert the whole row, in order: a `.find()` on the TED label alone would
-    // still pass if its peers had disappeared.
+    // Assert the whole row, in order: a `.find()` on one label alone would
+    // still pass if its peers had disappeared. The URLs themselves are pinned
+    // in header-links.test.ts.
     expect(
-      links.map((link) => ({
-        label: link.querySelector('.header-link-label')?.textContent?.trim(),
-        href: link.getAttribute('href'),
-        rel: link.getAttribute('rel'),
-        target: link.getAttribute('target'),
-      })),
-    ).toEqual([
-      {
-        label: 'AlphaFold',
-        href: 'https://alphafold.ebi.ac.uk/entry/W6JQJ9',
-        rel: 'noopener noreferrer',
-        target: '_blank',
-      },
-      {
-        label: 'UniProt',
-        href: 'https://www.uniprot.org/uniprotkb/W6JQJ9/entry',
-        rel: 'noopener noreferrer',
-        target: '_blank',
-      },
-      {
-        label: 'InterPro',
-        href: 'https://www.ebi.ac.uk/interpro/protein/UniProt/W6JQJ9/',
-        rel: 'noopener noreferrer',
-        target: '_blank',
-      },
-      {
-        label: 'TED',
-        href: 'https://ted.cathdb.info/uniprot/W6JQJ9',
-        rel: 'noopener noreferrer',
-        target: '_blank',
-      },
-    ]);
+      links.map((link) => [
+        link.querySelector('.header-link-label')?.textContent?.trim(),
+        link.getAttribute('href'),
+      ]),
+    ).toEqual(RESOURCE_LINKS.map((resource) => [resource.label, resource.build(PROTEIN_ID)]));
+
+    for (const link of links) {
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      // The separator is drawn on the list item; a link must not contain it.
+      expect(link.parentElement?.matches('ul[role="list"] > li.header-links-item')).toBe(true);
+    }
   });
 
   it('renders the title as plain text, not a hidden AlphaFold link', async () => {
-    const viewer = document.createElement('protspace-structure-viewer') as StructureViewerElement;
-    viewer.autoSync = false;
-    viewer.proteinId = 'W6JQJ9.2';
-    document.body.appendChild(viewer);
-    await viewer.updateComplete;
-
-    const title = viewer.shadowRoot!.querySelector('.title');
-    expect(title?.tagName).toBe('SPAN');
-    expect(viewer.shadowRoot!.querySelector('a.title')).toBeNull();
+    const root = await mount();
+    expect(root.querySelector('.title')?.tagName).toBe('SPAN');
   });
 });
