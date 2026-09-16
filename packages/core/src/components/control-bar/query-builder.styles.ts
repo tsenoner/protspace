@@ -487,3 +487,11 @@ export const queryBuilderStyles = [
     }
   `,
 ];
+
+/** The builder's own host fills its modal; the rows and pickers sharing the sheet above do not. */
+export const queryBuilderHostStyles = css`
+  :host {
+    width: 100%;
+    height: 100%;
+  }
+`;
