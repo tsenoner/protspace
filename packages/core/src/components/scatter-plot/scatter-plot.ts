@@ -2141,6 +2141,62 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.closeExpanded();
   }
 
+  /** Key of the currently-open duplicate-badge spider, or null. */
+  getExpandedDuplicateStackKey(): string | null {
+    return this._dupOverlay.getExpandedKey();
+  }
+
+  /**
+   * The duplicate stacks in the current viewport: key, data-space centre and member count.
+   * Rebuilt on every pan and zoom, so a key can drop out and come back.
+   */
+  getDuplicateStacks(): { key: string; x: number; y: number; count: number }[] {
+    return this._dupOverlay
+      .getStacks()
+      .map((stack) => ({ key: stack.key, x: stack.x, y: stack.y, count: stack.points.length }));
+  }
+
+  /**
+   * Viewport (client) coordinates of a data-space point under the current zoom, or null before
+   * the plot has data to scale. The exact inverse of the pointer hit-test, which reads
+   * `d3.pointer` against the interaction SVG — through that SVG's screen matrix, `viewBox`
+   * scaling included — so hovering or clicking the returned position lands on the point.
+   * Automation (e2e tests, the docs captures) uses this instead of re-deriving it from private
+   * fields.
+   */
+  dataToClient(x: number, y: number): { x: number; y: number } | null {
+    const scales = this._scales;
+    if (!scales || this._plotData.length === 0) return null;
+    const t = this._transform;
+    const svgX = scales.x(x) * t.k + t.x;
+    const svgY = scales.y(y) * t.k + t.y;
+    const ctm = this._svg?.getScreenCTM?.();
+    if (ctm) {
+      return {
+        x: ctm.a * svgX + ctm.c * svgY + ctm.e,
+        y: ctm.b * svgX + ctm.d * svgY + ctm.f,
+      };
+    }
+    // No layout to ask (jsdom, or not yet rendered): approximate the SVG's origin by the host's.
+    const rect = this.getBoundingClientRect();
+    return { x: rect.left + svgX, y: rect.top + svgY };
+  }
+
+  /**
+   * Viewport coordinates of a protein's marker, or null when the protein is not plotted (unknown,
+   * or isolated away) or the plot has nothing to scale yet. Linear in the number of proteins.
+   */
+  getProteinClientPosition(proteinId: string): { x: number; y: number } | null {
+    const plotData = this._plotData;
+    const proteinIndex = plotData.proteinIds.indexOf(proteinId);
+    if (proteinIndex < 0) return null;
+    const slot = plotData.originalIndices
+      ? plotData.originalIndices.indexOf(proteinIndex)
+      : proteinIndex;
+    if (slot < 0 || slot >= plotData.length) return null;
+    return this.dataToClient(plotData.xs[slot], plotData.ys[slot]);
+  }
+
   /**
    * Clear isolation state without reprocessing. Use before loading new data.
    * Dispatches `data-isolation-reset` when state actually changed, so listeners

@@ -234,6 +234,16 @@ export class DuplicateStackOverlayController {
     return this.expandedKey !== null;
   }
 
+  /** Key of the expanded stack, or null when no spider is open. */
+  getExpandedKey(): string | null {
+    return this.expandedKey;
+  }
+
+  /** The duplicate stacks (two or more members) found in the current viewport. */
+  getStacks(): readonly ViewportDuplicateStack[] {
+    return this.stacks;
+  }
+
   /** Collapse the currently-open duplicate-badge spider, if any. */
   closeExpanded(): void {
     this.collapseExpanded();

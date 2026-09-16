@@ -62,26 +62,24 @@ export async function waitForDataLoad(
   const { timeout = 30000, expectedProteinCount } = options;
   await page.waitForSelector('#myPlot', { timeout });
 
-  // Wait for the data property AND the post-render derived state used by
-  // the animation tests (`_plotData`, `_scales`). When both are populated
-  // the canvas has rendered at least once.
-  //
-  // `_plotData` is a struct of typed arrays carrying its own `length`, not an
-  // Array, so probe the property. An `Array.isArray` check here never passes
-  // and silently starves every capture into a hook timeout.
+  // Wait for the data property AND for the plot to have points it can place on
+  // screen, which is what the animation tests go on to ask it for.
+  // `dataToClient` answers null until there is plotted data with scales.
   //
   // `expectedProteinCount` pins the gate to one specific dataset, for specs
   // that hand-feed a bundle and must not proceed on a different one.
   await page.waitForFunction(
     (expected) => {
-      const plot = document.querySelector('#myPlot') as any;
-      if (!plot) return false;
-      const loaded = plot.data?.protein_ids?.length;
-      if (!loaded) return false;
+      const plot = document.querySelector('#myPlot') as
+        | (Element & {
+            data?: { protein_ids?: string[] };
+            dataToClient?(x: number, y: number): { x: number; y: number } | null;
+          })
+        | null;
+      const loaded = plot?.data?.protein_ids?.length;
+      if (!plot || !loaded) return false;
       if (expected !== undefined && loaded !== expected) return false;
-      if (!(plot._plotData?.length > 0)) return false;
-      if (!plot._scales) return false;
-      return true;
+      return plot.dataToClient?.(0, 0) != null;
     },
     expectedProteinCount,
     { timeout, polling: 200 },
@@ -519,11 +517,8 @@ export async function selectProjection(page: Page, match: string): Promise<strin
 }
 
 /**
- * Screen coordinates of a protein's marker, in page space.
- *
- * Mirrors the projection the renderer applies: the scale maps data space into
- * the canvas, then the zoom transform is applied on top. Reads `_plotData`,
- * so it accounts for filtering and isolation reordering the slots.
+ * Screen coordinates of a protein's marker, in page space, from the scatter
+ * plot's own projection — so it accounts for zoom, filtering and isolation.
  */
 export async function getProteinScreenPosition(
   page: Page,
@@ -531,41 +526,15 @@ export async function getProteinScreenPosition(
 ): Promise<{ x: number; y: number }> {
   return page.evaluate((id) => {
     const plot = document.querySelector('protspace-scatterplot') as
-      | (HTMLElement & {
-          _plotData?: {
-            length: number;
-            xs: Float32Array;
-            ys: Float32Array;
-            originalIndices: Int32Array | null;
-            proteinIds: string[];
-          };
-          _scales?: { x(value: number): number; y(value: number): number };
-          _transform?: { x: number; y: number; k: number };
+      | (Element & {
+          getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
         })
       | null;
-    const canvas = plot?.shadowRoot?.querySelector('canvas');
-    const data = plot?._plotData;
-    const scales = plot?._scales;
-    const transform = plot?._transform;
-    if (!plot || !canvas || !data || !scales || !transform) {
-      throw new Error('Scatter plot geometry is not ready');
+    const position = plot?.getProteinClientPosition(id);
+    if (!position) {
+      throw new Error(`Protein ${id} is not plotted, or the scatter plot has no geometry yet`);
     }
-
-    const proteinIndex = data.proteinIds.indexOf(id);
-    // `Int32Array` has its own `findIndex`, so search it in place rather than
-    // copying the whole slot table into a JS array on every lookup.
-    const slot = data.originalIndices
-      ? data.originalIndices.findIndex((value) => value === proteinIndex)
-      : proteinIndex;
-    if (proteinIndex < 0 || slot < 0) {
-      throw new Error(`Protein ${id} is not in the rendered view`);
-    }
-
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: rect.left + scales.x(data.xs[slot]) * transform.k + transform.x,
-      y: rect.top + scales.y(data.ys[slot]) * transform.k + transform.y,
-    };
+    return position;
   }, proteinId);
 }
 

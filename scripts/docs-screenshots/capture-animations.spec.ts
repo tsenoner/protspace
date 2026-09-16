@@ -1,42 +1,38 @@
 import { test, type Page } from '@playwright/test';
 
-type DuplicateStackProbe = {
-  key: string;
-  x: number;
-  y: number;
-  points: unknown[];
-};
-
-type DuplicatePlotProbe = HTMLElement & {
+/**
+ * The scatter plot as these captures drive it: its public properties and the
+ * read accessors it exposes for automation. No private fields, so an internal
+ * refactor breaks the type check here instead of silently blanking a GIF.
+ */
+type PlotProbe = HTMLElement & {
   config?: Record<string, unknown>;
-  _dupOverlay?: {
-    byKey?: Map<string, DuplicateStackProbe>;
-    expandedKey?: string | null;
+  selectedAnnotation?: string;
+  data?: {
+    protein_ids: string[];
+    annotations?: Record<string, { values: Array<string | null> }>;
+    annotation_data?: Record<string, Int32Array | number[][]>;
   };
-  _scales?: { x: (v: number) => number; y: (v: number) => number };
-  _transform?: { x: number; y: number; k: number };
+  dataToClient(x: number, y: number): { x: number; y: number } | null;
+  getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
+  getDuplicateStacks(): { key: string; x: number; y: number; count: number }[];
+  getExpandedDuplicateStackKey(): string | null;
 };
 
 /**
- * Collects screen-space coordinates of points whose currently-selected
+ * Collects screen-space coordinates of plotted proteins whose currently-selected
  * annotation value contains `substringMatch`, then trims outliers via MAD.
  * Reads annotation indices from `plot.data` (handles both Int32Array and
- * number[][] storage) since the on-plot points are bare lazy objects after
- * Phase 2.5.
+ * number[][] storage).
  */
 async function collectClusterScreenPoints(
   page: Page,
   substringMatch: string,
 ): Promise<Array<{ sx: number; sy: number }> | null> {
   return page.evaluate((needle: string) => {
-    const plot = document.querySelector('#myPlot') as any;
-    if (!plot?._plotData?.length || !plot._scales || !plot.data) return null;
-
-    const plotData = plot._plotData;
-    const scales = plot._scales;
-    const transform = plot._transform || { x: 0, y: 0, k: 1 };
-    const plotRect = plot.getBoundingClientRect();
-    const annotation = plot.selectedAnnotation;
+    const plot = document.querySelector('#myPlot') as PlotProbe | null;
+    const annotation = plot?.selectedAnnotation;
+    if (!plot?.data || !annotation) return null;
 
     const annotationDef = plot.data.annotations?.[annotation];
     const annotationRows = plot.data.annotation_data?.[annotation];
@@ -60,15 +56,12 @@ async function collectClusterScreenPoints(
     };
 
     const targetPoints: Array<{ sx: number; sy: number }> = [];
-    for (let i = 0; i < plotData.length; i++) {
-      const origIdx = plotData.originalIndices ? plotData.originalIndices[i] : i;
-      const values = readValuesAt(origIdx);
-      if (values.some((v: string | null) => v?.includes(needle))) {
-        const sx = plotRect.left + scales.x(plotData.xs[i]) * transform.k + transform.x;
-        const sy = plotRect.top + scales.y(plotData.ys[i]) * transform.k + transform.y;
-        targetPoints.push({ sx, sy });
-      }
-    }
+    plot.data.protein_ids.forEach((id, proteinIndex) => {
+      if (!readValuesAt(proteinIndex).some((v) => v.includes(needle))) return;
+      // null when the protein is not plotted (filtered or isolated away)
+      const position = plot.getProteinClientPosition(id);
+      if (position) targetPoints.push({ sx: position.x, sy: position.y });
+    });
 
     if (targetPoints.length === 0) return null;
 
@@ -226,59 +219,27 @@ test.describe('Scatterplot Animation Captures', () => {
     const modifierKey = process.platform === 'darwin' ? 'Meta' : 'Control';
 
     // Get screen coordinates of visible protein points
-    const pointCoords = await page.evaluate((_plotBox) => {
-      const plot = document.querySelector('#myPlot') as any;
-      if (!plot?._plotData?.length || !plot._scales) return null;
+    const pointCoords = await page.evaluate(() => {
+      const plot = document.querySelector('#myPlot') as PlotProbe | null;
+      const ids = plot?.data?.protein_ids;
+      if (!plot || !ids?.length) return null;
 
-      const plotData = plot._plotData;
-      const scales = plot._scales;
-      const transform = plot._transform || { x: 0, y: 0, k: 1 };
-
-      // Get the plot element's bounding box
-      const plotElement = plot.getBoundingClientRect();
-
-      // Get points that are likely visible (near center of data range)
+      const plotRect = plot.getBoundingClientRect();
       const visiblePoints: Array<{ screenX: number; screenY: number; id: string }> = [];
 
-      // Sample 5 points from different parts of the plot
-      const sampleIndices = [
-        Math.floor(plotData.length * 0.15),
-        Math.floor(plotData.length * 0.31),
-        Math.floor(plotData.length * 0.5),
-        Math.floor(plotData.length * 0.75),
-        Math.floor(plotData.length * 0.85),
-      ];
-
-      for (const idx of sampleIndices) {
-        if (idx < plotData.length) {
-          const point = plotData[idx];
-          if (point && scales) {
-            // Calculate screen coordinates (scales return coordinates relative to plot)
-            const plotX = scales.x(point.x);
-            const plotY = scales.y(point.y);
-
-            // Apply transform
-            const transformedX = plotX * transform.k + transform.x;
-            const transformedY = plotY * transform.k + transform.y;
-
-            // Convert to absolute screen coordinates
-            const screenX = plotElement.left + transformedX;
-            const screenY = plotElement.top + transformedY;
-
-            // Check if within plot bounds (with some margin)
-            if (
-              transformedX >= -50 &&
-              transformedX <= plotElement.width + 50 &&
-              transformedY >= -50 &&
-              transformedY <= plotElement.height + 50
-            ) {
-              visiblePoints.push({
-                screenX,
-                screenY,
-                id: point.id,
-              });
-            }
-          }
+      // Sample 5 proteins from different parts of the dataset
+      for (const fraction of [0.15, 0.31, 0.5, 0.75, 0.85]) {
+        const id = ids[Math.floor(ids.length * fraction)];
+        const position = plot.getProteinClientPosition(id);
+        // Keep it only if it lands within the plot (with some margin)
+        if (
+          position &&
+          position.x >= plotRect.left - 50 &&
+          position.x <= plotRect.right + 50 &&
+          position.y >= plotRect.top - 50 &&
+          position.y <= plotRect.bottom + 50
+        ) {
+          visiblePoints.push({ screenX: position.x, screenY: position.y, id });
         }
       }
 
@@ -503,7 +464,7 @@ test.describe('Scatterplot Animation Captures', () => {
     // animating the cog → checkbox path (keeps the GIF focused on the badge).
     await selectProjection(page, 'PCA');
     await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
+      const plot = document.querySelector('#myPlot') as PlotProbe | null;
       if (!plot) {
         throw new Error('Duplicate-badge capture needs #myPlot');
       }
@@ -512,17 +473,11 @@ test.describe('Scatterplot Animation Captures', () => {
 
     // Wait for the scatter-plot to (re)compute its duplicate stacks. The
     // overlay update is debounced behind the config change + a quadtree
-    // rebuild, so poll the private cache until at least one multi-point
-    // stack appears.
+    // rebuild, so poll until at least one stack appears.
     await page.waitForFunction(
       () => {
-        const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-        const map = plot?._dupOverlay?.byKey;
-        if (!map || map.size === 0) return false;
-        for (const stack of map.values()) {
-          if (stack.points.length > 1) return true;
-        }
-        return false;
+        const plot = document.querySelector('#myPlot') as PlotProbe | null;
+        return (plot?.getDuplicateStacks().length ?? 0) > 0;
       },
       undefined,
       { timeout: 10_000, polling: 200 },
@@ -540,21 +495,8 @@ test.describe('Scatterplot Animation Captures', () => {
     // Snapshot the duplicate-stack candidates so the heuristic can pick one.
     const collectStacks = async (): Promise<StackInfo[]> =>
       page.evaluate(() => {
-        const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-        const map = plot?._dupOverlay?.byKey;
-        if (!map) return [];
-        const out: StackInfo[] = [];
-        for (const stack of map.values()) {
-          if (stack.points.length > 1) {
-            out.push({
-              key: stack.key,
-              count: stack.points.length,
-              x: stack.x,
-              y: stack.y,
-            });
-          }
-        }
-        return out;
+        const plot = document.querySelector('#myPlot') as PlotProbe | null;
+        return plot?.getDuplicateStacks() ?? [];
       });
 
     // Pick the most visually compelling stack: largest badge first, then
@@ -590,20 +532,15 @@ test.describe('Scatterplot Animation Captures', () => {
       return;
     }
 
-    // Convert the stack's data-space coords → screen pixels using the plot's
-    // current scales + zoom transform, exactly like select-single.gif does.
+    // Convert the stack's data-space centre to screen pixels under the plot's
+    // current zoom.
     const stackToScreen = async (stackKey: string) =>
       page.evaluate((key: string) => {
-        const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-        const stack = plot?._dupOverlay?.byKey?.get(key);
-        if (!stack || !plot?._scales) return null;
-        const transform = plot._transform ?? { x: 0, y: 0, k: 1 };
-        const rect = plot.getBoundingClientRect();
-        return {
-          screenX: rect.left + plot._scales.x(stack.x) * transform.k + transform.x,
-          screenY: rect.top + plot._scales.y(stack.y) * transform.k + transform.y,
-          count: stack.points.length,
-        };
+        const plot = document.querySelector('#myPlot') as PlotProbe | null;
+        const stack = plot?.getDuplicateStacks().find((s) => s.key === key);
+        const position = stack && plot?.dataToClient(stack.x, stack.y);
+        if (!stack || !position) return null;
+        return { screenX: position.x, screenY: position.y, count: stack.count };
       }, stackKey);
 
     // Smooth, mouse-anchored zoom helper. D3 zoom keys off cursor position,
@@ -618,28 +555,27 @@ test.describe('Scatterplot Animation Captures', () => {
     };
 
     // Re-wait for the anchor stack to be materialized in the current viewport.
-    // After a zoom/pan, the duplicate-stack controller rebuilds — poll until our
-    // anchor.key reappears with its multi-point membership.
+    // After a zoom/pan the duplicate stacks are rebuilt — poll until our
+    // anchor.key reappears.
     const waitForAnchorVisible = async () =>
       page.waitForFunction(
         (key: string) => {
-          const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-          const stack = plot?._dupOverlay?.byKey?.get(key);
-          return !!stack && stack.points.length > 1;
+          const plot = document.querySelector('#myPlot') as PlotProbe | null;
+          return !!plot?.getDuplicateStacks().some((s) => s.key === key);
         },
         anchor.key,
         { timeout: 8_000 },
       );
 
     // After clicking the underlying point, the spider should expand. Poll the
-    // controller's private expanded key to confirm the click landed and the
-    // spider actually opened — without this, a missed click would silently
-    // produce a blank GIF instead of failing the test.
+    // expanded key to confirm the click landed and the spider actually opened —
+    // without this, a missed click would silently produce a blank GIF instead
+    // of failing the test.
     const waitForSpiderOpen = async () =>
       page.waitForFunction(
         (key: string) => {
-          const plot = document.querySelector('#myPlot') as DuplicatePlotProbe | null;
-          return plot?._dupOverlay?.expandedKey === key;
+          const plot = document.querySelector('#myPlot') as PlotProbe | null;
+          return plot?.getExpandedDuplicateStackKey() === key;
         },
         anchor.key,
         { timeout: 2_000 },
