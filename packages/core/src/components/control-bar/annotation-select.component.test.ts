@@ -162,6 +162,51 @@ describe('protspace-annotation-select tooltip extras', () => {
   });
 });
 
+describe('protspace-annotation-select annotation names', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('searches only the labels it displays', async () => {
+    const el = await setup({
+      annotations: ['predicted_membrane', 'predicted_signal_peptide', 'ted_domains', 'gene_name'],
+      selectedAnnotation: 'gene_name',
+    });
+    await openDropdown(el);
+    const search = async (query: string) => {
+      const input = el.shadowRoot!.querySelector('.annotation-search-input') as HTMLInputElement;
+      input.value = query;
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      await el.updateComplete;
+      return Array.from(
+        el.shadowRoot!.querySelectorAll<HTMLElement>('.dropdown-item[data-annotation]'),
+      ).map((row) => row.querySelector('.dropdown-item-label')!.textContent!.trim());
+    };
+
+    // "Membrane" and "Signal peptide" do not say "predicted"
+    expect(await search('predicted')).toEqual([]);
+    expect(el.shadowRoot!.querySelector('.no-results')).not.toBeNull();
+    expect(await search('ted')).toEqual(['TED domains']);
+    expect(await search('membrane')).toEqual(['Membrane']);
+  });
+
+  it('names the selected annotation by label, with the predicted badge', async () => {
+    const el = await setup({
+      annotations: ['cc_subcellular_location', 'predicted_subcellular_location'],
+      selectedAnnotation: 'predicted_subcellular_location',
+    });
+    const trigger = el.shadowRoot!.querySelector('.dropdown-trigger')!;
+    expect(trigger.querySelector('.dropdown-trigger-text')!.textContent!.trim()).toBe(
+      'Subcellular location',
+    );
+    expect(trigger.querySelector('.predicted-badge')).not.toBeNull();
+
+    el.selectedAnnotation = 'cc_subcellular_location';
+    await el.updateComplete;
+    expect(trigger.querySelector('.predicted-badge')).toBeNull();
+  });
+});
+
 describe('protspace-annotation-select statistics badge', () => {
   const statRow = (over: Partial<ProjectionStatisticRow> = {}): ProjectionStatisticRow => ({
     space_kind: 'projection',

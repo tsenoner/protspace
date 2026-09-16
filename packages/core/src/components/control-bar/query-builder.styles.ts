@@ -323,6 +323,13 @@ export const queryBuilderStyles = [
       gap: var(--spacing-sm);
     }
 
+    /* Label then predicted badge, laid out like the annotation dropdown's rows. */
+    .annotation-picker-item {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
     /* Locked out while the "Any value" sentinel is selected (it subsumes them). */
     .value-picker-item.is-disabled,
     .value-picker-item.is-disabled:hover,
@@ -487,3 +494,11 @@ export const queryBuilderStyles = [
     }
   `,
 ];
+
+/** The builder's own host fills its modal; the rows and pickers sharing the sheet above do not. */
+export const queryBuilderHostStyles = css`
+  :host {
+    width: 100%;
+    height: 100%;
+  }
+`;

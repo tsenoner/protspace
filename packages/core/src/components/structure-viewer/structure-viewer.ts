@@ -1,11 +1,11 @@
 import { LitElement, html } from 'lit';
 import { property, state, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { StructureService } from '@protspace/utils';
+import { StructureService, getBaseAccession } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
-import { buildAlphaFoldUrl, buildUniProtUrl, buildInterProUrl } from './header-links';
+import { RESOURCE_LINKS } from './header-links';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
@@ -180,7 +180,7 @@ export class ProtspaceStructureViewer extends LitElement {
       this._dispatchStructureLoadEvent('loaded');
     } catch (error) {
       const originalError = error instanceof Error ? error : undefined;
-      const formattedId = this.proteinId?.split('.')[0] ?? this.proteinId ?? '';
+      const formattedId = this.proteinId ? getBaseAccession(this.proteinId) : '';
       const genericMessage = `No 3D structure was found for ${formattedId}.`;
       const fallbackMessage = 'Failed to load structure. Please try again.';
 
@@ -291,7 +291,8 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   render() {
-    if (!this.proteinId) {
+    const { proteinId } = this;
+    if (!proteinId) {
       return html`
         <div class="viewer-container">
           <div class="empty-container">
@@ -310,37 +311,28 @@ export class ProtspaceStructureViewer extends LitElement {
         ? html`
             <div class="header">
               <div class="header-info">
-                <a
-                  class="title"
-                  href=${buildAlphaFoldUrl(this.proteinId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open in AlphaFold DB"
-                >
-                  ${this.title}
-                </a>
-                <span class="protein-id">${this.proteinId}</span>
-                <span class="header-links">
-                  <a
-                    class="header-link"
-                    href=${buildUniProtUrl(this.proteinId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in UniProt"
-                  >
-                    UniProt
-                  </a>
-                  <span class="header-link-separator">&middot;</span>
-                  <a
-                    class="header-link"
-                    href=${buildInterProUrl(this.proteinId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in InterPro"
-                  >
-                    InterPro
-                  </a>
-                </span>
+                <div class="header-title-row">
+                  <span class="title">${this.title}</span>
+                  <span class="protein-id">${proteinId}</span>
+                </div>
+                <ul class="header-links" role="list" aria-label="External resources">
+                  ${RESOURCE_LINKS.map(
+                    (resource) => html`
+                      <li class="header-links-item">
+                        <a
+                          class="header-link"
+                          href=${resource.build(proteinId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open in ${resource.label} (opens in a new tab)"
+                        >
+                          <span class="header-link-label">${resource.label}</span
+                          ><span class="header-link-external" aria-hidden="true">↗</span>
+                        </a>
+                      </li>
+                    `,
+                  )}
+                </ul>
               </div>
               <div class="header-actions">
                 ${this.showCloseButton

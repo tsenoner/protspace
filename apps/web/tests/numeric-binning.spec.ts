@@ -456,10 +456,6 @@ async function clickLegendReverseButton(page: Page): Promise<void> {
 // (e.g. "num:quantile:10:20.5"); these helpers map friendly bin labels (as the
 // legend shows them) to those internal ids via numericMetadata.bins.
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 const FILTER_DIALOG = { name: 'Filter Query Builder' } as const;
 
 async function openQueryBuilder(page: Page): Promise<void> {
@@ -475,7 +471,11 @@ async function openQueryBuilder(page: Page): Promise<void> {
   await expect(dialog).toBeVisible();
 }
 
-/** Read the trimmed annotation-trigger text of every top-level condition row. */
+/**
+ * The annotation column of every top-level condition row, '' for a row with no
+ * annotation chosen yet. Read from the condition, not the trigger text: the
+ * trigger shows the annotation's label, not its column name.
+ */
 async function topRowAnnotations(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
@@ -486,9 +486,7 @@ async function topRowAnnotations(page: Page): Promise<string[]> {
     );
     return rows.map(
       (r) =>
-        (r as HTMLElement & { shadowRoot: ShadowRoot }).shadowRoot
-          ?.querySelector('.annotation-select-trigger')
-          ?.textContent?.trim() ?? '',
+        (r as HTMLElement & { condition?: { annotation: string } }).condition?.annotation ?? '',
     );
   });
 }
@@ -515,27 +513,25 @@ async function ensureCondition(page: Page, annotation: string): Promise<number> 
   }
 
   let annotations = await topRowAnnotations(page);
-  let emptyIndex = annotations.findIndex((t) => t === 'Select annotation...');
+  let emptyIndex = annotations.indexOf('');
   if (emptyIndex < 0) {
     await page
       .locator('protspace-query-builder')
       .getByRole('button', { name: '+ Add condition' })
       .click();
     await expect
-      .poll(
-        async () =>
-          (await topRowAnnotations(page)).filter((t) => t === 'Select annotation...').length,
-      )
+      .poll(async () => (await topRowAnnotations(page)).filter((t) => t === '').length)
       .toBeGreaterThan(0);
     annotations = await topRowAnnotations(page);
-    emptyIndex = annotations.findIndex((t) => t === 'Select annotation...');
+    emptyIndex = annotations.indexOf('');
   }
 
   const row = conditionRow(page, emptyIndex);
   await row.locator('.annotation-select-trigger').click();
   await page
-    .locator('protspace-query-condition-row .annotation-picker-item')
-    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(annotation)}\\s*$`) })
+    .locator(
+      `protspace-query-condition-row .annotation-picker-item[data-annotation="${annotation}"]`,
+    )
     .first()
     .click();
   await expect.poll(async () => rowIndexFor(page, annotation)).toBeGreaterThanOrEqual(0);

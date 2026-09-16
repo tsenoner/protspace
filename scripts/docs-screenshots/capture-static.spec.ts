@@ -1,7 +1,8 @@
 import { test, type Page } from '@playwright/test';
 import * as path from 'path';
+import { IMAGES_DIR } from './paths';
 import {
-  IMAGES_DIR,
+  awaitTwoFrames,
   createSharedCapturePage,
   dismissProductTour,
   waitForDataLoad,
@@ -70,16 +71,13 @@ async function resetStaticState(page: Page): Promise<void> {
  * Dispatches the same event the Export-menu's "Figure Editor" button fires —
  * skips dropdown timing and viewport clipping.
  */
-async function openFigureEditor(
-  page: import('@playwright/test').Page,
-  timeout = 10_000,
-): Promise<void> {
+async function openFigureEditor(page: Page, timeout = 10_000): Promise<void> {
   await page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
     cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
   });
 
-  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), {
+  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
     timeout,
   });
   await page.waitForFunction(
@@ -90,6 +88,7 @@ async function openFigureEditor(
       const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
       return !!c && c.width > 0 && c.height > 0;
     },
+    undefined,
     { timeout, polling: 250 },
   );
   // Settle: rAF redraw + font readiness.
@@ -100,10 +99,7 @@ async function openFigureEditor(
  * Wait for the control bar to be fully rendered with all elements styled.
  * This fixes the gray control-bar issue by waiting for shadow DOM elements.
  */
-async function waitForControlBar(
-  page: import('@playwright/test').Page,
-  timeout = 15000,
-): Promise<void> {
+async function waitForControlBar(page: Page, timeout = 15000): Promise<void> {
   await page.waitForSelector('#myControlBar', { timeout });
 
   // Wait for the control bar shadow DOM to be fully rendered
@@ -130,16 +126,12 @@ async function waitForControlBar(
       // Check that annotation select has annotations loaded
       return annotationSelect.annotations && annotationSelect.annotations.length > 0;
     },
+    undefined,
     { timeout, polling: 200 },
   );
 
   // Settle for two frames so any Lit transition is committed.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }),
-  );
+  await awaitTwoFrames(page);
 }
 
 test.describe('Interface Overview Screenshots', () => {
@@ -327,6 +319,7 @@ test.describe('Control Bar Screenshots', () => {
         if (!controlBar?.shadowRoot) return false;
         return !!controlBar.shadowRoot.querySelector('.dropdown-menu');
       },
+      undefined,
       { timeout: 5000, polling: 200 },
     );
 
@@ -415,6 +408,7 @@ test.describe('Control Bar Screenshots', () => {
 
         return !!annotationSelect.shadowRoot.querySelector('.dropdown-menu');
       },
+      undefined,
       { timeout: 5000, polling: 200 },
     );
 
@@ -689,6 +683,7 @@ test.describe('Control Bar Screenshots', () => {
           | null;
         return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
       },
+      undefined,
       { timeout: 5_000, polling: 200 },
     );
     // Let the query builder finish first paint and resolve match counts.

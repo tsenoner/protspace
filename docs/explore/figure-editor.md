@@ -2,7 +2,7 @@
 
 The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
 
-![Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom](./images/figure-editor-overview.png)
+<img src="./images/figure-editor-overview.png" alt="Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom" width="1536" height="864" loading="eager" fetchpriority="high" />
 
 ## Opening the Figure Editor
 
