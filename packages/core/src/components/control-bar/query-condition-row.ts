@@ -4,7 +4,8 @@ import { customElement } from '../../utils/safe-custom-element';
 import type { FilterCondition, LogicalOp, NumericCondition } from './query-types';
 import { ANY_VALUE, createCondition, createNumericCondition } from './query-types';
 import type { ProtspaceData } from './types';
-import { filterGroupedAnnotations } from './annotation-categories';
+import { filterGroupedAnnotations, flattenGroupedAnnotations } from './annotation-categories';
+import { renderAnnotationName } from './annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
@@ -107,7 +108,11 @@ class ProtspaceQueryConditionRow extends LitElement {
 
   /** Flattened filtered list — the sequence keyboard navigation walks. */
   private _flatFilteredAnnotations(): string[] {
-    return this._filteredAnnotationGroups().flatMap((g) => g.items.map(({ name }) => name));
+    // Same filter and the same flatten as the annotation dropdown, so the order
+    // matches the indices `_filteredAnnotationGroups` stamps for render.
+    return flattenGroupedAnnotations(
+      filterGroupedAnnotations(this.annotations, this._annotationSearch, this.data?.annotations),
+    );
   }
 
   // ─── Event handlers ───────────────────────────────────────────────────────
@@ -284,7 +289,11 @@ class ProtspaceQueryConditionRow extends LitElement {
                     aria-selected=${name === this.condition.annotation}
                     @click=${() => this._selectAnnotation(name)}
                   >
-                    ${name}
+                    ${renderAnnotationName(
+                      name,
+                      this.data?.annotations?.[name],
+                      'dropdown-item-label',
+                    )}
                   </div>
                 `;
               })}
@@ -383,7 +392,13 @@ class ProtspaceQueryConditionRow extends LitElement {
           aria-expanded=${this._showAnnotationPicker}
           aria-haspopup="listbox"
         >
-          ${this.condition.annotation || 'Select annotation...'}
+          ${this.condition.annotation
+            ? renderAnnotationName(
+                this.condition.annotation,
+                this.data?.annotations?.[this.condition.annotation],
+                'dropdown-trigger-text',
+              )
+            : html`<span class="dropdown-trigger-text">Select annotation...</span>`}
         </button>
 
         ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}

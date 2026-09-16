@@ -1,20 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   filterGroupedAnnotations,
+  flattenGroupedAnnotations,
   groupAnnotations,
   type GroupedAnnotation,
 } from './annotation-categories';
-
-/**
- * Flatten grouped annotations into a single array for keyboard navigation.
- */
-export function flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
-  const flat: string[] = [];
-  for (const group of grouped) {
-    flat.push(...group.annotations);
-  }
-  return flat;
-}
 
 describe('annotation-select', () => {
   describe('groupAnnotations', () => {
@@ -185,13 +175,13 @@ describe('annotation-select', () => {
     ];
     const grouped = groupAnnotations(columns);
     const filter = (query: string) => filterGroupedAnnotations(columns, query);
-    const names = (groups: GroupedAnnotation[]) => groups.flatMap((g) => g.annotations);
+    const names = flattenGroupedAnnotations;
 
     it('returns all annotations when query is empty', () => {
       expect(filter('')).toEqual(grouped);
     });
 
-    it('matches a column name by word, and a label by substring', () => {
+    it('matches the displayed label, not the column name', () => {
       // `cath` comes along because its label is "CATH-Gene3D" — visible text.
       expect(names(filter('gene'))).toEqual(['cath', 'gene_name']);
     });
@@ -227,17 +217,12 @@ describe('annotation-select', () => {
       expect(names(filter('fam')).sort()).toEqual(['pfam', 'protein_families']);
     });
 
-    it('does not match the middle of a column name', () => {
-      // the reported bug: `ted` inside `predicted_*`, which display no "ted"
-      expect(names(filterGroupedAnnotations(['predicted_membrane', 'ted_domains'], 'ted'))).toEqual(
-        ['ted_domains'],
-      );
-    });
-
-    it('still finds a column by its full name', () => {
-      expect(names(filterGroupedAnnotations(['predicted_membrane'], 'predicted_membrane'))).toEqual(
-        ['predicted_membrane'],
-      );
+    it('does not match a column name the picker does not display', () => {
+      // the reported case: `predicted` offered the Biocentral columns, which read
+      // "Membrane", "Transmembrane", … — the word is nowhere on screen
+      const biocentral = ['predicted_membrane', 'predicted_transmembrane', 'ted_domains'];
+      expect(names(filterGroupedAnnotations(biocentral, 'predicted'))).toEqual([]);
+      expect(names(filterGroupedAnnotations(biocentral, 'ted'))).toEqual(['ted_domains']);
     });
   });
 

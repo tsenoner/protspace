@@ -420,12 +420,13 @@ export function annotationLabel(column: string, annotation?: Pick<Annotation, 'r
 }
 
 /**
- * Whether an annotation should be offered for a search query.
+ * Whether an annotation should be offered for a search query: the query, trimmed and
+ * case-insensitive, is a substring of the label the picker displays.
  *
- * Matches a substring of the displayed label, or the query starting at a word
- * boundary of the column name (both split on `_`/`-`). The asymmetry keeps
- * `ted` out of every `predicted_*` column — none of which shows those letters —
- * while `predicted_membrane` still finds itself.
+ * Only that label is searched, never the column name behind it, so every match is on text the
+ * reader can see. `predicted` finds nothing among the Biocentral columns, which read "Membrane",
+ * "Signal peptide" and so on. A column with no registry entry is labelled by its prettified name,
+ * so it stays findable by the words of that name.
  */
 export function annotationMatchesQuery(
   column: string,
@@ -433,14 +434,7 @@ export function annotationMatchesQuery(
   annotation?: Pick<Annotation, 'runtime'>,
 ): boolean {
   const needle = query.trim().toLowerCase();
-  if (!needle) return true;
-
-  if (annotationLabel(column, annotation).toLowerCase().includes(needle)) return true;
-
-  // Compare word-wise so a separator in the query still lines up, and so a
-  // match can only begin where a word does.
-  const words = (value: string) => value.toLowerCase().replace(/[_-]+/g, ' ');
-  return ` ${words(column)}`.includes(` ${words(needle)}`);
+  return !needle || annotationLabel(column, annotation).toLowerCase().includes(needle);
 }
 
 /** Source/group for an annotation (registry source, else `Other`). */

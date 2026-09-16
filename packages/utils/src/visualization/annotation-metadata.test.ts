@@ -164,44 +164,35 @@ describe('prettifyAnnotationName', () => {
 });
 
 describe('annotationMatchesQuery', () => {
-  it('does not match the middle of a column name', () => {
-    // `ted` lives inside `predicted`, and these columns display "Membrane",
-    // "Signal peptide", "Subcellular location", "Transmembrane" — no "ted".
+  it('does not match a column name the picker does not display', () => {
+    // These columns read "Membrane", "Signal peptide", "Subcellular location"
+    // and "Transmembrane": neither `predicted` nor the `ted` inside it is on screen.
+    expect(BIOCENTRAL_COLUMNS.filter((c) => annotationMatchesQuery(c, 'predicted'))).toEqual([]);
     expect(BIOCENTRAL_COLUMNS.filter((c) => annotationMatchesQuery(c, 'ted'))).toEqual([]);
+    expect(annotationMatchesQuery('predicted_membrane', 'predicted_membrane')).toBe(false);
+    // labelled "Protein family": the column's own spelling is not on screen
+    expect(annotationMatchesQuery('protein_families', 'families')).toBe(false);
+  });
+
+  it('matches any substring of the displayed label', () => {
     expect(annotationMatchesQuery('ted_domains', 'ted')).toBe(true);
-  });
-
-  it('finds every column by its own full name, separators and all', () => {
-    // The word rule has to split the query too, or typing the name you know
-    // empties the list at the underscore.
-    for (const column of Object.keys(ANNOTATION_METADATA)) {
-      expect(annotationMatchesQuery(column, column)).toBe(true);
-    }
-  });
-
-  it('matches a column name by word', () => {
-    expect(BIOCENTRAL_COLUMNS.every((c) => annotationMatchesQuery(c, 'predicted'))).toBe(true);
-    expect(annotationMatchesQuery('predicted_subcellular_location', 'loc')).toBe(true);
-  });
-
-  it('matches a partial word of the displayed label', () => {
     // mid-word, but on screen: "Subcellular location", "Transmembrane"
     expect(annotationMatchesQuery('predicted_subcellular_location', 'cellular')).toBe(true);
     expect(annotationMatchesQuery('predicted_transmembrane', 'membrane')).toBe(true);
-    // a hyphenated label is matched as typed, not word-split: "CATH-Gene3D"
     expect(annotationMatchesQuery('cath', 'cath-gene3d')).toBe(true);
+    expect(annotationMatchesQuery('ec', 'ec number')).toBe(true);
   });
 
-  it('treats an empty query as matching everything, case-insensitively', () => {
+  it('trims the query and ignores case, and an empty query matches everything', () => {
     expect(annotationMatchesQuery('predicted_membrane', '   ')).toBe(true);
-    expect(annotationMatchesQuery('ted_domains', 'TED')).toBe(true);
+    expect(annotationMatchesQuery('ted_domains', '  TED ')).toBe(true);
   });
 
   it('reaches a column outside the registry through its derived label', () => {
-    // No registry entry, so the label is the prettified column name — which
-    // means a mid-word query does reach it. That is the rule working: the
-    // reader is looking at "My custom score".
+    // No registry entry, so the label is the prettified column name: the reader
+    // is looking at "My custom score".
     expect(annotationMatchesQuery('my_custom_score', 'core')).toBe(true);
+    expect(annotationMatchesQuery('my_custom_score', 'custom score')).toBe(true);
     expect(annotationMatchesQuery('my_custom_score', 'zzz')).toBe(false);
   });
 });

@@ -179,9 +179,12 @@ describe('query-condition-row annotation picker accessibility', () => {
     el.shadowRoot!.querySelector('.annotation-picker-input') as HTMLInputElement;
   const items = (el: ConditionRowEl) =>
     Array.from(el.shadowRoot!.querySelectorAll('.annotation-picker-item')) as HTMLElement[];
+  /** Column names, in list order — what keyboard navigation and selection work in. */
+  const keys = (el: ConditionRowEl) => items(el).map((i) => i.dataset.annotation!);
   const labels = (el: ConditionRowEl) => items(el).map((i) => i.textContent!.trim());
   const highlighted = (el: ConditionRowEl) =>
-    el.shadowRoot!.querySelector('.annotation-picker-item.highlighted')?.textContent?.trim();
+    (el.shadowRoot!.querySelector('.annotation-picker-item.highlighted') as HTMLElement | null)
+      ?.dataset.annotation;
 
   async function open(el: ConditionRowEl): Promise<void> {
     trigger(el).click();
@@ -250,7 +253,7 @@ describe('query-condition-row annotation picker accessibility', () => {
     expect(options.every((o) => o.getAttribute('role') === 'option')).toBe(true);
 
     const selected = options.filter((o) => o.getAttribute('aria-selected') === 'true');
-    expect(selected.map((o) => o.textContent!.trim())).toEqual(['organism']);
+    expect(selected.map((o) => o.dataset.annotation)).toEqual(['organism']);
 
     expect(searchInput(el).getAttribute('aria-label')).toBe('Search annotations');
   });
@@ -258,7 +261,7 @@ describe('query-condition-row annotation picker accessibility', () => {
   it('moves the highlight with ArrowDown and ArrowUp, clamped at both ends', async () => {
     const el = await mount();
     await open(el);
-    const order = labels(el);
+    const order = keys(el);
     expect(highlighted(el)).toBeUndefined();
 
     await press(el, 'ArrowDown');
@@ -304,7 +307,7 @@ describe('query-condition-row annotation picker accessibility', () => {
   it('selects the highlighted annotation with Enter and closes the picker', async () => {
     const el = await mount();
     await open(el);
-    const order = labels(el);
+    const order = keys(el);
     const captured = nextAnnotation(el);
 
     await press(el, 'ArrowDown');
@@ -329,7 +332,7 @@ describe('query-condition-row annotation picker accessibility', () => {
     const el = await mount();
     await open(el);
     await search(el, 'mas');
-    expect(labels(el)).toEqual(['mass']);
+    expect(labels(el)).toEqual(['Mass']);
 
     const captured = nextAnnotation(el);
     await press(el, 'ArrowDown');
@@ -374,5 +377,96 @@ describe('query-condition-row annotation picker accessibility', () => {
     expect(el.shadowRoot!.querySelector('.annotation-picker')).toBeNull();
     await open(el);
     expect(labels(el).length).toBe(3);
+  });
+});
+
+/**
+ * The picker and the condition button name an annotation the way the control
+ * bar's dropdown does (#293): by label, with the predicted badge — while the
+ * condition itself keeps the column name.
+ */
+describe('query-condition-row annotation names', () => {
+  const namedData: ProtspaceData = {
+    protein_ids: ['P1'],
+    annotations: {
+      cath: { kind: 'categorical', values: [] },
+      ec: { kind: 'categorical', values: [] },
+      cc_subcellular_location: { kind: 'categorical', values: [] },
+      predicted_subcellular_location: { kind: 'categorical', values: [] },
+    },
+    annotation_data: {},
+  };
+
+  async function mountNamed(annotation = ''): Promise<ConditionRowEl> {
+    document.body.innerHTML = '';
+    const el = document.createElement('protspace-query-condition-row') as ConditionRowEl;
+    el.condition = { id: 'c1', kind: 'categorical', annotation, values: [] };
+    el.annotations = Object.keys(namedData.annotations);
+    el.data = namedData;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  const trigger = (el: ConditionRowEl) =>
+    el.shadowRoot!.querySelector('.annotation-select-trigger') as HTMLButtonElement;
+
+  /** Each picker row as [column, label, has predicted badge]. */
+  async function rows(el: ConditionRowEl): Promise<[string, string, boolean][]> {
+    trigger(el).click();
+    await el.updateComplete;
+    return Array.from(el.shadowRoot!.querySelectorAll<HTMLElement>('.annotation-picker-item')).map(
+      (item) => [
+        item.dataset.annotation!,
+        item.querySelector('.dropdown-item-label')!.textContent!.trim(),
+        item.querySelector('.predicted-badge') !== null,
+      ],
+    );
+  }
+
+  it('lists annotations by label, badging the predicted one', async () => {
+    const el = await mountNamed();
+    expect((await rows(el)).sort()).toEqual(
+      [
+        ['cath', 'CATH-Gene3D', false],
+        ['ec', 'EC number', false],
+        ['cc_subcellular_location', 'Subcellular location', false],
+        ['predicted_subcellular_location', 'Subcellular location', true],
+      ].sort(),
+    );
+  });
+
+  it('names the chosen annotation by label on the button', async () => {
+    const el = await mountNamed('cath');
+    expect(trigger(el).textContent!.trim()).toBe('CATH-Gene3D');
+    expect(trigger(el).querySelector('.predicted-badge')).toBeNull();
+
+    el.condition = { ...el.condition, annotation: 'predicted_subcellular_location' };
+    await el.updateComplete;
+    expect(trigger(el).querySelector('.dropdown-trigger-text')!.textContent!.trim()).toBe(
+      'Subcellular location',
+    );
+    expect(trigger(el).querySelector('.predicted-badge')).not.toBeNull();
+  });
+
+  it('keeps the placeholder until an annotation is chosen', async () => {
+    const el = await mountNamed();
+    expect(trigger(el).textContent!.trim()).toBe('Select annotation...');
+  });
+
+  it('stores the column name when a label is picked', async () => {
+    const el = await mountNamed();
+    await rows(el);
+    let stored: string | undefined;
+    el.addEventListener('condition-changed', (e) => {
+      stored = (e as CustomEvent<{ condition: FilterCondition }>).detail.condition.annotation;
+    });
+
+    const cathRow = Array.from(
+      el.shadowRoot!.querySelectorAll<HTMLElement>('.annotation-picker-item'),
+    ).find((item) => item.textContent!.trim() === 'CATH-Gene3D')!;
+    cathRow.click();
+
+    expect(stored).toBe('cath');
   });
 });

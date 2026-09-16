@@ -3,14 +3,18 @@ import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
-import { filterGroupedAnnotations, type GroupedAnnotation } from './annotation-categories';
+import {
+  filterGroupedAnnotations,
+  flattenGroupedAnnotations,
+  type GroupedAnnotation,
+} from './annotation-categories';
+import { predictedBadge, renderAnnotationName } from './annotation-name';
 import {
   annotationLabel,
   annotationStatSummary,
   clusterAgreement,
   getAnnotationMeta,
   hasAnnotationStats,
-  isPredictedAnnotation,
   type Annotation,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
@@ -99,7 +103,7 @@ class ProtspaceAnnotationSelect extends LitElement {
 
     handleListboxKeydown(event, {
       // Lazy: only the arrow and Enter keys pay for re-filtering the list.
-      getValues: () => this.flattenGroupedAnnotations(this.getFilteredGroupedAnnotations()),
+      getValues: () => flattenGroupedAnnotations(this.getFilteredGroupedAnnotations()),
       highlightIndex: this.highlightIndex,
       setHighlightIndex: (index) => {
         this.highlightIndex = index;
@@ -162,23 +166,8 @@ class ProtspaceAnnotationSelect extends LitElement {
     );
   }
 
-  /**
-   * Group and filter annotations using the shared utility, so this picker and
-   * the query builder's cannot drift apart.
-   */
   private getFilteredGroupedAnnotations(): GroupedAnnotation[] {
     return filterGroupedAnnotations(this.annotations, this.query, this.annotationDefinitions);
-  }
-
-  /**
-   * Flatten grouped annotations into a single array for keyboard navigation
-   */
-  private flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
-    const flat: string[] = [];
-    for (const group of grouped) {
-      flat.push(...group.annotations);
-    }
-    return flat;
   }
 
   /**
@@ -220,12 +209,6 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   render() {
     const filtered = this.getFilteredGroupedAnnotations();
-    const displayText = this.selectedAnnotation
-      ? annotationLabel(
-          this.selectedAnnotation,
-          this.annotationDefinitions[this.selectedAnnotation],
-        )
-      : this.placeholder;
 
     return html`
       <div class="annotation-select-container">
@@ -236,7 +219,13 @@ class ProtspaceAnnotationSelect extends LitElement {
           aria-expanded=${this.open}
           aria-haspopup="listbox"
         >
-          <span class="dropdown-trigger-text">${displayText}</span>
+          ${this.selectedAnnotation
+            ? renderAnnotationName(
+                this.selectedAnnotation,
+                this.annotationDefinitions[this.selectedAnnotation],
+                'dropdown-trigger-text',
+              )
+            : html`<span class="dropdown-trigger-text">${this.placeholder}</span>`}
           <svg class="chevron-down" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
@@ -329,14 +318,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                           >STATS</span
                                         >`
                                       : ''}
-                                    ${isPredictedAnnotation(annotation)
-                                      ? html`<span
-                                          class="predicted-badge"
-                                          title="Predicted: computational, not experimentally curated"
-                                          aria-label="Predicted"
-                                          >⚡</span
-                                        >`
-                                      : ''}
+                                    ${predictedBadge(annotation)}
                                     <span class="tooltip-toggle-slot">
                                       ${isSelected
                                         ? ''

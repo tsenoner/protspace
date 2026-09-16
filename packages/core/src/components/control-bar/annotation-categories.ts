@@ -112,3 +112,8 @@ export function filterGroupedAnnotations(
     }))
     .filter((group) => group.annotations.length > 0);
 }
+
+/** Flatten grouped annotations into the order keyboard navigation walks. */
+export function flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
+  return grouped.flatMap((group) => group.annotations);
+}
