@@ -32,12 +32,20 @@ function createProgram(
   gl: WebGL2RenderingContext | WebGLRenderingContext,
   vertexShader: WebGLShader,
   fragmentShader: WebGLShader,
+  attribLocations?: Record<string, number>,
 ): WebGLProgram | null {
   const program = gl.createProgram();
   if (!program) return null;
 
   gl.attachShader(program, vertexShader);
   gl.attachShader(program, fragmentShader);
+  // Must precede linkProgram: this is how two programs come to agree on the
+  // attribute indices a shared VAO was wired for.
+  if (attribLocations) {
+    for (const [name, index] of Object.entries(attribLocations)) {
+      gl.bindAttribLocation(program, index, name);
+    }
+  }
   gl.linkProgram(program);
 
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
@@ -55,11 +63,16 @@ function createProgram(
 
 /**
  * Creates a WebGL program from shader source strings.
+ *
+ * `attribLocations` (name -> index) is bound before linking, for programs that
+ * must share a VAO with another program: the density accumulation pass draws
+ * the point VAO, so its attributes have to land on the point program's indices.
  */
 export function createProgramFromSources(
   gl: WebGL2RenderingContext | WebGLRenderingContext,
   vertexSource: string,
   fragmentSource: string,
+  attribLocations?: Record<string, number>,
 ): WebGLProgram | null {
   const vs = createShader(gl, gl.VERTEX_SHADER, vertexSource);
   const fs = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
@@ -70,5 +83,5 @@ export function createProgramFromSources(
     return null;
   }
 
-  return createProgram(gl, vs, fs);
+  return createProgram(gl, vs, fs, attribLocations);
 }

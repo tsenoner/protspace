@@ -82,7 +82,6 @@ export function createDatasetController({
 
   const persistedDatasetController = createPersistedDatasetController({
     dataLoader,
-    defaultDatasetName,
     registerFileLoad(file, kind) {
       loadQueue.registerFileLoad(file, kind);
     },

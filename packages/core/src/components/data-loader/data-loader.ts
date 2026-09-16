@@ -111,6 +111,10 @@ export class DataLoader extends LitElement {
   private handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
+    // Clear the selection: the input only fires `change` when the picked file
+    // differs from the one it holds, so re-picking the same file would be a
+    // silent no-op (and would leave the app on the previously loaded dataset).
+    input.value = '';
     if (file) {
       this.loadFromFile(file);
     }

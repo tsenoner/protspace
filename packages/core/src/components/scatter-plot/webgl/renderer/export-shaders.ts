@@ -263,8 +263,13 @@ out vec4 fragColor;
 void main() {
   vec4 linear = texture(u_linearTexture, v_texCoord);
 
+  // The FBO is premultiplied but the canvas was created with premultipliedAlpha:
+  // false, so hand the compositor straight colour or it applies alpha a second
+  // time: at a = 0.3 a pure colour on white renders as 9% colour and 70% white.
+  vec3 straight = linear.a > 0.0 ? linear.rgb / linear.a : vec3(0.0);
+
   // Apply gamma correction to RGB, preserve alpha
-  vec3 corrected = pow(max(linear.rgb, vec3(0.0)), vec3(1.0 / u_gamma));
+  vec3 corrected = pow(max(straight, vec3(0.0)), vec3(1.0 / u_gamma));
 
   fragColor = vec4(corrected, linear.a);
 }`;

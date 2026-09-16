@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
+import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
 
 function createMockElements() {
   const plotElement = {
     selectedProjectionIndex: 0,
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
+    config: { pointSize: 240 } as Record<string, unknown>,
     getCurrentData: () => ({
       annotations: { ec: {}, pfam: {}, go: {} },
       projections: [{ name: 'UMAP' }, { name: 'PCA' }, { name: 't-SNE' }],
@@ -19,6 +21,8 @@ function createMockElements() {
     selectedProjection: 'UMAP',
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
+    densityLayer: 'off' as DensityLayerMode,
+    densityStyle: 'heatmap' as DensityLayerStyle,
     applyProjectionSelection: vi.fn((projection: string) => {
       controlBar.selectedProjection = projection;
       // Simulate the real control-bar updating the plot
@@ -44,15 +48,18 @@ function makeRequest(
   annotation?: string,
   projection?: string,
   tooltip?: string[],
+  density?: DensityLayerMode,
+  densityStyle?: DensityLayerStyle,
 ): ExploreViewRequestState {
   return {
-    requested: { annotation, projection, tooltip },
+    requested: { annotation, projection, tooltip, density, densityStyle },
     present: {
       annotation: annotation !== undefined,
       projection: projection !== undefined,
       tooltip: tooltip !== undefined,
+      density: density !== undefined,
     },
-    normalize: { annotation: false, projection: false, tooltip: false },
+    normalize: { annotation: false, projection: false, tooltip: false, density: false },
   };
 }
 
@@ -70,7 +77,13 @@ describe('createViewController', () => {
     const { viewController } = setup();
     const view = viewController.getCurrentEffectiveView();
 
-    expect(view).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(view).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+      densityStyle: 'heatmap',
+    });
   });
 
   it('returns null when no data is available', () => {
@@ -92,7 +105,13 @@ describe('createViewController', () => {
     const request = makeRequest('pfam', 'PCA');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(result).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+      densityStyle: 'heatmap',
+    });
     expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
     expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
   });
@@ -102,7 +121,13 @@ describe('createViewController', () => {
     const request = makeRequest('NONEXISTENT', 'UNKNOWN');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(result).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+      densityStyle: 'heatmap',
+    });
   });
 
   it('returns null from applyViewSelection when dataset has no options', () => {
@@ -128,7 +153,13 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'user');
 
     expect(changes).toHaveLength(1);
-    expect(changes[0].effective).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(changes[0].effective).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+      densityStyle: 'heatmap',
+    });
     expect(changes[0].source).toBe('user');
   });
 
@@ -160,7 +191,13 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('pfam', 'PCA'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(resolved).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+      densityStyle: 'heatmap',
+    });
   });
 
   it('resolveLatestView falls back for invalid requests', () => {
@@ -168,7 +205,13 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('NONEXISTENT', 'UNKNOWN'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(resolved).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+      densityStyle: 'heatmap',
+    });
   });
 
   it('applyLatestViewForDatasetLoad uses dataset-load source', () => {
@@ -242,5 +285,57 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'url');
 
     expect(changes).toHaveLength(0);
+  });
+
+  it('applies a requested density mode to the plot config and the control bar', () => {
+    const { plotElement, controlBar, viewController } = setup();
+
+    const effective = viewController.applyViewSelection(
+      makeRequest('ec', 'UMAP', [], 'auto'),
+      'url',
+    );
+
+    expect(effective?.density).toBe('auto');
+    // The control bar has to be told too, or the select shows 'off' on a reload
+    // of a ?density=auto URL while the plot is already rendering the layer.
+    expect(controlBar.densityLayer).toBe('auto');
+    expect(plotElement.config).toEqual({
+      pointSize: 240,
+      densityLayer: 'auto',
+      densityStyle: 'heatmap',
+    });
+  });
+
+  it('applies a requested contour style alongside the mode', () => {
+    const { plotElement, controlBar, viewController } = setup();
+
+    const effective = viewController.applyViewSelection(
+      makeRequest('ec', 'UMAP', [], 'auto', 'contour'),
+      'url',
+    );
+
+    expect(effective?.densityStyle).toBe('contour');
+    expect(controlBar.densityStyle).toBe('contour');
+    expect(plotElement.config).toMatchObject({
+      densityLayer: 'auto',
+      densityStyle: 'contour',
+    });
+  });
+
+  // Only the style changes here: a mode-only comparison would swallow it and
+  // leave the plot on the heatmap while the URL says contour.
+  it('applies a style-only change', () => {
+    const { plotElement, viewController } = setup();
+    viewController.applyViewSelection(makeRequest('ec', 'UMAP', [], 'on', 'heatmap'), 'url');
+    viewController.applyViewSelection(makeRequest('ec', 'UMAP', [], 'on', 'contour'), 'url');
+
+    expect(plotElement.config).toMatchObject({ densityLayer: 'on', densityStyle: 'contour' });
+  });
+
+  it('reads the current density mode back off the plot config', () => {
+    const { plotElement, viewController } = setup();
+    plotElement.config = { densityLayer: 'on' };
+
+    expect(viewController.getCurrentEffectiveView()?.density).toBe('on');
   });
 });

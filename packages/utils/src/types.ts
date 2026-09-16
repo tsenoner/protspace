@@ -271,7 +271,39 @@ export interface ScatterplotConfig {
    * Default: false (kept off to avoid O(n) duplicate stack computation on large datasets).
    */
   enableDuplicateStackUI?: boolean;
+  /**
+   * GPU density heatmap composited over the base points and under the selected
+   * ones. `off` renders the points alone, `auto` cross-fades the layer in as the
+   * visible points overplot and out as the user zooms in, `on` pins it at full
+   * strength.
+   *
+   * Default: 'off'.
+   */
+  densityLayer?: DensityLayerMode;
+  /**
+   * How the blurred density is drawn once `densityLayer` decides it shows at
+   * all. `heatmap` is the smooth ramp; `contour` quantises it into bands and
+   * outlines them with iso-lines. The mode logic, including the `auto`
+   * cross-fade, is identical either way.
+   *
+   * Default: 'heatmap'.
+   */
+  densityStyle?: DensityLayerStyle;
 }
+
+export type DensityLayerMode = 'off' | 'auto' | 'on';
+
+export type DensityLayerStyle = 'heatmap' | 'contour';
+
+/**
+ * The one spelling of the density layer's default mode: `DEFAULT_CONFIG`, the
+ * control bar, the `?density=` URL round trip and the perf harness all read it,
+ * so flipping the default is a one-line change here.
+ */
+export const DENSITY_DEFAULT: DensityLayerMode = 'off';
+
+/** The one spelling of the density layer's default style. See DENSITY_DEFAULT. */
+export const DENSITY_STYLE_DEFAULT: DensityLayerStyle = 'heatmap';
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
 

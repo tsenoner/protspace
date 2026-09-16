@@ -1,0 +1,1856 @@
+{
+  "createdAt": "2026-09-07T15:41:28.834Z",
+  "iterations": 10,
+  "results": [
+    {
+      "createdAt": "2026-09-07T15:41:36.188Z",
+      "iterations": 10,
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36",
+        "platform": "MacIntel",
+        "languages": ["en-US"],
+        "language": "en-US",
+        "hardwareConcurrency": 10,
+        "deviceMemory": 16,
+        "maxTouchPoints": 0,
+        "devicePixelRatio": 1,
+        "screen": {
+          "width": 1920,
+          "height": 1080,
+          "availWidth": 1920,
+          "availHeight": 1080,
+          "colorDepth": 30,
+          "pixelDepth": 30
+        },
+        "timezone": "Europe/Berlin",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "152"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "24"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "152"
+            }
+          ],
+          "mobile": false,
+          "platform": "Windows",
+          "highEntropy": {
+            "architecture": "x86",
+            "bitness": "64",
+            "brands": [
+              {
+                "brand": "Chromium",
+                "version": "152"
+              },
+              {
+                "brand": "Not?A_Brand",
+                "version": "24"
+              },
+              {
+                "brand": "Google Chrome",
+                "version": "152"
+              }
+            ],
+            "fullVersionList": [
+              {
+                "brand": "Chromium",
+                "version": "152.0.7977.83"
+              },
+              {
+                "brand": "Not?A_Brand",
+                "version": "24.0.0.0"
+              },
+              {
+                "brand": "Google Chrome",
+                "version": "152.0.7977.83"
+              }
+            ],
+            "mobile": false,
+            "model": "",
+            "platform": "Windows",
+            "platformVersion": "10.0",
+            "uaFullVersion": "152.0.7977.83"
+          }
+        },
+        "connection": {},
+        "webgl": {
+          "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+          "shadingLanguageVersion": "WebGL GLSL ES 3.00 (OpenGL ES GLSL ES 3.0 Chromium)",
+          "vendor": "WebKit",
+          "renderer": "WebKit WebGL",
+          "maxTextureSize": 16384,
+          "unmaskedVendor": "Google Inc. (Apple)",
+          "unmaskedRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+        },
+        "performanceMemory": {}
+      },
+      "dataset": {
+        "id": "573K_swissprot_v3",
+        "url": "/data/573K_swissprot_v3.parquetbundle",
+        "proteinCount": 573649
+      },
+      "scenarios": [
+        {
+          "name": "annotationChange",
+          "iterations": 10,
+          "startTs": 8062,
+          "endTs": 13715.399999976158,
+          "passes": [
+            {
+              "seq": 0,
+              "trigger": "plot",
+              "startTs": 8093.399999976158,
+              "endTs": 8734.700000047684,
+              "durationMs": 641.3000000715256,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 43598828
+            },
+            {
+              "seq": 1,
+              "trigger": "plot",
+              "startTs": 8762,
+              "endTs": 8762.899999976158,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 2,
+              "trigger": "plot",
+              "startTs": 8816.399999976158,
+              "endTs": 9213.899999976158,
+              "durationMs": 397.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 3,
+              "trigger": "plot",
+              "startTs": 9238,
+              "endTs": 9238.899999976158,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 4,
+              "trigger": "plot",
+              "startTs": 9282.600000023842,
+              "endTs": 9877.200000047684,
+              "durationMs": 594.6000000238419,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 43598828
+            },
+            {
+              "seq": 5,
+              "trigger": "plot",
+              "startTs": 9903.200000047684,
+              "endTs": 9904.200000047684,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 6,
+              "trigger": "plot",
+              "startTs": 9966.200000047684,
+              "endTs": 10350.100000023842,
+              "durationMs": 383.89999997615814,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 7,
+              "trigger": "plot",
+              "startTs": 10374.700000047684,
+              "endTs": 10375.5,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 8,
+              "trigger": "plot",
+              "startTs": 10416.100000023842,
+              "endTs": 11004.700000047684,
+              "durationMs": 588.6000000238419,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 43598828
+            },
+            {
+              "seq": 9,
+              "trigger": "plot",
+              "startTs": 11030.899999976158,
+              "endTs": 11032.200000047684,
+              "durationMs": 1.3000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 10,
+              "trigger": "plot",
+              "startTs": 11083.5,
+              "endTs": 11457.100000023842,
+              "durationMs": 373.60000002384186,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 11,
+              "trigger": "plot",
+              "startTs": 11486,
+              "endTs": 11486.799999952316,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 12,
+              "trigger": "plot",
+              "startTs": 11531.700000047684,
+              "endTs": 12124.299999952316,
+              "durationMs": 592.5999999046326,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 43598828
+            },
+            {
+              "seq": 13,
+              "trigger": "plot",
+              "startTs": 12147.100000023842,
+              "endTs": 12148,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 14,
+              "trigger": "plot",
+              "startTs": 12201.799999952316,
+              "endTs": 12576.100000023842,
+              "durationMs": 374.3000000715256,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 15,
+              "trigger": "plot",
+              "startTs": 12600.299999952316,
+              "endTs": 12601.600000023842,
+              "durationMs": 1.3000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 16,
+              "trigger": "plot",
+              "startTs": 12642.399999976158,
+              "endTs": 13223.299999952316,
+              "durationMs": 580.8999999761581,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 43598828
+            },
+            {
+              "seq": 17,
+              "trigger": "plot",
+              "startTs": 13247.799999952316,
+              "endTs": 13248.600000023842,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 18,
+              "trigger": "plot",
+              "startTs": 13302.799999952316,
+              "endTs": 13674.100000023842,
+              "durationMs": 371.3000000715256,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 19,
+              "trigger": "plot",
+              "startTs": 13696.799999952316,
+              "endTs": 13697.600000023842,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            }
+          ]
+        },
+        {
+          "name": "zoomInOut",
+          "iterations": 10,
+          "startTs": 13715.5,
+          "endTs": 14405.899999976158,
+          "passes": [
+            {
+              "seq": 20,
+              "trigger": "zoom",
+              "startTs": 13715.799999952316,
+              "endTs": 13736.600000023842,
+              "durationMs": 20.800000071525574,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 21,
+              "trigger": "zoom",
+              "startTs": 13754.600000023842,
+              "endTs": 13755.200000047684,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 22,
+              "trigger": "zoom",
+              "startTs": 13789.100000023842,
+              "endTs": 13789.600000023842,
+              "durationMs": 0.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 23,
+              "trigger": "zoom",
+              "startTs": 13824.100000023842,
+              "endTs": 13824.5,
+              "durationMs": 0.3999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 24,
+              "trigger": "zoom",
+              "startTs": 13858.299999952316,
+              "endTs": 13858.899999976158,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 25,
+              "trigger": "zoom",
+              "startTs": 13892.700000047684,
+              "endTs": 13893.200000047684,
+              "durationMs": 0.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 26,
+              "trigger": "zoom",
+              "startTs": 13926.700000047684,
+              "endTs": 13927.399999976158,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 27,
+              "trigger": "zoom",
+              "startTs": 13961.299999952316,
+              "endTs": 13961.899999976158,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 28,
+              "trigger": "zoom",
+              "startTs": 13995.100000023842,
+              "endTs": 13995.799999952316,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 29,
+              "trigger": "zoom",
+              "startTs": 14029.200000047684,
+              "endTs": 14030.100000023842,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 30,
+              "trigger": "zoom",
+              "startTs": 14062,
+              "endTs": 14062.899999976158,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 31,
+              "trigger": "zoom",
+              "startTs": 14096.399999976158,
+              "endTs": 14097.700000047684,
+              "durationMs": 1.3000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 32,
+              "trigger": "zoom",
+              "startTs": 14130.299999952316,
+              "endTs": 14131.100000023842,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 33,
+              "trigger": "zoom",
+              "startTs": 14164.700000047684,
+              "endTs": 14165.5,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 34,
+              "trigger": "zoom",
+              "startTs": 14200.399999976158,
+              "endTs": 14201,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 35,
+              "trigger": "zoom",
+              "startTs": 14234.100000023842,
+              "endTs": 14235.100000023842,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 36,
+              "trigger": "zoom",
+              "startTs": 14268.899999976158,
+              "endTs": 14269.700000047684,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 37,
+              "trigger": "zoom",
+              "startTs": 14303.399999976158,
+              "endTs": 14304.200000047684,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 38,
+              "trigger": "zoom",
+              "startTs": 14338.100000023842,
+              "endTs": 14338.700000047684,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 39,
+              "trigger": "zoom",
+              "startTs": 14371.399999976158,
+              "endTs": 14372.100000023842,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            }
+          ]
+        },
+        {
+          "name": "dragCanvas",
+          "iterations": 10,
+          "startTs": 16407.899999976158,
+          "endTs": 20551.600000023842,
+          "passes": [
+            {
+              "seq": 40,
+              "trigger": "zoom",
+              "startTs": 16408.299999952316,
+              "endTs": 16410,
+              "durationMs": 1.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 41,
+              "trigger": "zoom",
+              "startTs": 16443.600000023842,
+              "endTs": 16449.799999952316,
+              "durationMs": 6.199999928474426,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 42,
+              "trigger": "zoom",
+              "startTs": 16479.100000023842,
+              "endTs": 16479.899999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 43,
+              "trigger": "zoom",
+              "startTs": 16513.399999976158,
+              "endTs": 16514.5,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 44,
+              "trigger": "zoom",
+              "startTs": 16547.700000047684,
+              "endTs": 16548.399999976158,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 45,
+              "trigger": "zoom",
+              "startTs": 16581.399999976158,
+              "endTs": 16582.899999976158,
+              "durationMs": 1.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 46,
+              "trigger": "zoom",
+              "startTs": 16616.299999952316,
+              "endTs": 16617.799999952316,
+              "durationMs": 1.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 47,
+              "trigger": "zoom",
+              "startTs": 16651.299999952316,
+              "endTs": 16653,
+              "durationMs": 1.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 48,
+              "trigger": "zoom",
+              "startTs": 16685.799999952316,
+              "endTs": 16686.600000023842,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 49,
+              "trigger": "zoom",
+              "startTs": 16720.200000047684,
+              "endTs": 16720.799999952316,
+              "durationMs": 0.5999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 50,
+              "trigger": "zoom",
+              "startTs": 16755.399999976158,
+              "endTs": 16756.200000047684,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 51,
+              "trigger": "zoom",
+              "startTs": 16789.899999976158,
+              "endTs": 16790.5,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 52,
+              "trigger": "zoom",
+              "startTs": 16825.200000047684,
+              "endTs": 16825.799999952316,
+              "durationMs": 0.5999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 53,
+              "trigger": "zoom",
+              "startTs": 16859.799999952316,
+              "endTs": 16860.5,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 54,
+              "trigger": "zoom",
+              "startTs": 16894,
+              "endTs": 16894.899999976158,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 55,
+              "trigger": "zoom",
+              "startTs": 16927.5,
+              "endTs": 16928.299999952316,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 56,
+              "trigger": "zoom",
+              "startTs": 16962.700000047684,
+              "endTs": 16963.700000047684,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 57,
+              "trigger": "zoom",
+              "startTs": 16996.799999952316,
+              "endTs": 16997.399999976158,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 58,
+              "trigger": "zoom",
+              "startTs": 17031.100000023842,
+              "endTs": 17032,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 59,
+              "trigger": "zoom",
+              "startTs": 17066.399999976158,
+              "endTs": 17067.5,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 60,
+              "trigger": "zoom",
+              "startTs": 17101.100000023842,
+              "endTs": 17102.799999952316,
+              "durationMs": 1.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 61,
+              "trigger": "zoom",
+              "startTs": 17135.799999952316,
+              "endTs": 17137.200000047684,
+              "durationMs": 1.4000000953674316,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 62,
+              "trigger": "zoom",
+              "startTs": 17169.200000047684,
+              "endTs": 17170.299999952316,
+              "durationMs": 1.0999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 63,
+              "trigger": "zoom",
+              "startTs": 17203,
+              "endTs": 17204.299999952316,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 64,
+              "trigger": "zoom",
+              "startTs": 17237.700000047684,
+              "endTs": 17238.799999952316,
+              "durationMs": 1.0999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 65,
+              "trigger": "zoom",
+              "startTs": 17271.600000023842,
+              "endTs": 17272.600000023842,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 66,
+              "trigger": "zoom",
+              "startTs": 17306.5,
+              "endTs": 17307.600000023842,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 67,
+              "trigger": "zoom",
+              "startTs": 17340.399999976158,
+              "endTs": 17341.399999976158,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 68,
+              "trigger": "zoom",
+              "startTs": 17375.200000047684,
+              "endTs": 17375.899999976158,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 69,
+              "trigger": "zoom",
+              "startTs": 17409.399999976158,
+              "endTs": 17410.5,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 70,
+              "trigger": "zoom",
+              "startTs": 17444.5,
+              "endTs": 17445.700000047684,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 71,
+              "trigger": "zoom",
+              "startTs": 17479,
+              "endTs": 17480,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 72,
+              "trigger": "zoom",
+              "startTs": 17513.799999952316,
+              "endTs": 17514.700000047684,
+              "durationMs": 0.9000000953674316,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 73,
+              "trigger": "zoom",
+              "startTs": 17549.100000023842,
+              "endTs": 17549.899999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 74,
+              "trigger": "zoom",
+              "startTs": 17583.100000023842,
+              "endTs": 17584.200000047684,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 75,
+              "trigger": "zoom",
+              "startTs": 17617.600000023842,
+              "endTs": 17618.899999976158,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 76,
+              "trigger": "zoom",
+              "startTs": 17651.399999976158,
+              "endTs": 17652.899999976158,
+              "durationMs": 1.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 77,
+              "trigger": "zoom",
+              "startTs": 17686.799999952316,
+              "endTs": 17688.399999976158,
+              "durationMs": 1.600000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 78,
+              "trigger": "zoom",
+              "startTs": 17720.299999952316,
+              "endTs": 17722,
+              "durationMs": 1.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 79,
+              "trigger": "zoom",
+              "startTs": 17753.600000023842,
+              "endTs": 17755.200000047684,
+              "durationMs": 1.600000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 80,
+              "trigger": "zoom",
+              "startTs": 17787.700000047684,
+              "endTs": 17789.399999976158,
+              "durationMs": 1.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 81,
+              "trigger": "zoom",
+              "startTs": 17821.600000023842,
+              "endTs": 17822.700000047684,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 82,
+              "trigger": "zoom",
+              "startTs": 17856.100000023842,
+              "endTs": 17856.899999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 83,
+              "trigger": "zoom",
+              "startTs": 17891.399999976158,
+              "endTs": 17892.100000023842,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 84,
+              "trigger": "zoom",
+              "startTs": 17926,
+              "endTs": 17926.799999952316,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 85,
+              "trigger": "zoom",
+              "startTs": 17961.899999976158,
+              "endTs": 17962.700000047684,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 86,
+              "trigger": "zoom",
+              "startTs": 17997.600000023842,
+              "endTs": 17998.399999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 87,
+              "trigger": "zoom",
+              "startTs": 18032.899999976158,
+              "endTs": 18033.799999952316,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 88,
+              "trigger": "zoom",
+              "startTs": 18067.5,
+              "endTs": 18068.200000047684,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 89,
+              "trigger": "zoom",
+              "startTs": 18101.700000047684,
+              "endTs": 18102.200000047684,
+              "durationMs": 0.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 90,
+              "trigger": "zoom",
+              "startTs": 18134.5,
+              "endTs": 18135,
+              "durationMs": 0.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 91,
+              "trigger": "zoom",
+              "startTs": 18167.899999976158,
+              "endTs": 18168.799999952316,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 92,
+              "trigger": "zoom",
+              "startTs": 18202,
+              "endTs": 18202.700000047684,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 93,
+              "trigger": "zoom",
+              "startTs": 18235.899999976158,
+              "endTs": 18236.600000023842,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 94,
+              "trigger": "zoom",
+              "startTs": 18270.100000023842,
+              "endTs": 18270.799999952316,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 95,
+              "trigger": "zoom",
+              "startTs": 18304.200000047684,
+              "endTs": 18304.799999952316,
+              "durationMs": 0.5999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 96,
+              "trigger": "zoom",
+              "startTs": 18339,
+              "endTs": 18339.600000023842,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 97,
+              "trigger": "zoom",
+              "startTs": 18373.100000023842,
+              "endTs": 18373.700000047684,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 98,
+              "trigger": "zoom",
+              "startTs": 18407.299999952316,
+              "endTs": 18408,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 99,
+              "trigger": "zoom",
+              "startTs": 18441.299999952316,
+              "endTs": 18441.799999952316,
+              "durationMs": 0.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 100,
+              "trigger": "zoom",
+              "startTs": 18476.100000023842,
+              "endTs": 18477,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 101,
+              "trigger": "zoom",
+              "startTs": 18509.600000023842,
+              "endTs": 18510.299999952316,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 102,
+              "trigger": "zoom",
+              "startTs": 18545.700000047684,
+              "endTs": 18546.799999952316,
+              "durationMs": 1.0999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 103,
+              "trigger": "zoom",
+              "startTs": 18579.299999952316,
+              "endTs": 18580.299999952316,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 104,
+              "trigger": "zoom",
+              "startTs": 18614.600000023842,
+              "endTs": 18615.5,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 105,
+              "trigger": "zoom",
+              "startTs": 18650,
+              "endTs": 18651.399999976158,
+              "durationMs": 1.399999976158142,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 106,
+              "trigger": "zoom",
+              "startTs": 18683.799999952316,
+              "endTs": 18684.799999952316,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 107,
+              "trigger": "zoom",
+              "startTs": 18719.5,
+              "endTs": 18720.700000047684,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 108,
+              "trigger": "zoom",
+              "startTs": 18754.200000047684,
+              "endTs": 18755.100000023842,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 109,
+              "trigger": "zoom",
+              "startTs": 18789.200000047684,
+              "endTs": 18790.200000047684,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 110,
+              "trigger": "zoom",
+              "startTs": 18823.100000023842,
+              "endTs": 18823.799999952316,
+              "durationMs": 0.6999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 111,
+              "trigger": "zoom",
+              "startTs": 18858,
+              "endTs": 18858.899999976158,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 112,
+              "trigger": "zoom",
+              "startTs": 18892.100000023842,
+              "endTs": 18893.399999976158,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 113,
+              "trigger": "zoom",
+              "startTs": 18927.399999976158,
+              "endTs": 18928.700000047684,
+              "durationMs": 1.3000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 114,
+              "trigger": "zoom",
+              "startTs": 18962.799999952316,
+              "endTs": 18963.899999976158,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 115,
+              "trigger": "zoom",
+              "startTs": 18998.200000047684,
+              "endTs": 18998.799999952316,
+              "durationMs": 0.5999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 116,
+              "trigger": "zoom",
+              "startTs": 19032,
+              "endTs": 19032.899999976158,
+              "durationMs": 0.8999999761581421,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 117,
+              "trigger": "zoom",
+              "startTs": 19066.600000023842,
+              "endTs": 19067.899999976158,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 118,
+              "trigger": "zoom",
+              "startTs": 19101.600000023842,
+              "endTs": 19102.399999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 119,
+              "trigger": "zoom",
+              "startTs": 19135.200000047684,
+              "endTs": 19136.200000047684,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 120,
+              "trigger": "zoom",
+              "startTs": 19169.200000047684,
+              "endTs": 19170.5,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 121,
+              "trigger": "zoom",
+              "startTs": 19203.5,
+              "endTs": 19204.5,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 122,
+              "trigger": "zoom",
+              "startTs": 19237.100000023842,
+              "endTs": 19238.200000047684,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 123,
+              "trigger": "zoom",
+              "startTs": 19270.399999976158,
+              "endTs": 19271.600000023842,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 124,
+              "trigger": "zoom",
+              "startTs": 19305.200000047684,
+              "endTs": 19306.299999952316,
+              "durationMs": 1.0999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 125,
+              "trigger": "zoom",
+              "startTs": 19341.5,
+              "endTs": 19343.100000023842,
+              "durationMs": 1.600000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 126,
+              "trigger": "zoom",
+              "startTs": 19377.100000023842,
+              "endTs": 19378.100000023842,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 127,
+              "trigger": "zoom",
+              "startTs": 19411.899999976158,
+              "endTs": 19412.899999976158,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 128,
+              "trigger": "zoom",
+              "startTs": 19447,
+              "endTs": 19447.700000047684,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 129,
+              "trigger": "zoom",
+              "startTs": 19483.200000047684,
+              "endTs": 19484.299999952316,
+              "durationMs": 1.0999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 130,
+              "trigger": "zoom",
+              "startTs": 19518.100000023842,
+              "endTs": 19518.899999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 131,
+              "trigger": "zoom",
+              "startTs": 19552.100000023842,
+              "endTs": 19553.100000023842,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 132,
+              "trigger": "zoom",
+              "startTs": 19586.100000023842,
+              "endTs": 19586.899999976158,
+              "durationMs": 0.7999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 133,
+              "trigger": "zoom",
+              "startTs": 19620.299999952316,
+              "endTs": 19621.100000023842,
+              "durationMs": 0.8000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 134,
+              "trigger": "zoom",
+              "startTs": 19654.799999952316,
+              "endTs": 19656,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 135,
+              "trigger": "zoom",
+              "startTs": 19688.5,
+              "endTs": 19689.700000047684,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 136,
+              "trigger": "zoom",
+              "startTs": 19723.899999976158,
+              "endTs": 19725.100000023842,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 137,
+              "trigger": "zoom",
+              "startTs": 19758.899999976158,
+              "endTs": 19760.200000047684,
+              "durationMs": 1.3000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 138,
+              "trigger": "zoom",
+              "startTs": 19792.700000047684,
+              "endTs": 19794.100000023842,
+              "durationMs": 1.399999976158142,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 139,
+              "trigger": "zoom",
+              "startTs": 19827.700000047684,
+              "endTs": 19828.899999976158,
+              "durationMs": 1.1999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 140,
+              "trigger": "zoom",
+              "startTs": 19862.299999952316,
+              "endTs": 19863.700000047684,
+              "durationMs": 1.4000000953674316,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 141,
+              "trigger": "zoom",
+              "startTs": 19897.100000023842,
+              "endTs": 19898.100000023842,
+              "durationMs": 1,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 142,
+              "trigger": "zoom",
+              "startTs": 19931.299999952316,
+              "endTs": 19932.399999976158,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 143,
+              "trigger": "zoom",
+              "startTs": 19965,
+              "endTs": 19966.200000047684,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 144,
+              "trigger": "zoom",
+              "startTs": 19999.700000047684,
+              "endTs": 20001.200000047684,
+              "durationMs": 1.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 145,
+              "trigger": "zoom",
+              "startTs": 20033.600000023842,
+              "endTs": 20035,
+              "durationMs": 1.399999976158142,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 146,
+              "trigger": "zoom",
+              "startTs": 20066.799999952316,
+              "endTs": 20068.100000023842,
+              "durationMs": 1.3000000715255737,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 147,
+              "trigger": "zoom",
+              "startTs": 20102.600000023842,
+              "endTs": 20103.899999976158,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 148,
+              "trigger": "zoom",
+              "startTs": 20136.299999952316,
+              "endTs": 20137.5,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 149,
+              "trigger": "zoom",
+              "startTs": 20170.799999952316,
+              "endTs": 20171.899999976158,
+              "durationMs": 1.100000023841858,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 150,
+              "trigger": "zoom",
+              "startTs": 20206.100000023842,
+              "endTs": 20207.299999952316,
+              "durationMs": 1.1999999284744263,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 151,
+              "trigger": "zoom",
+              "startTs": 20241.200000047684,
+              "endTs": 20243.5,
+              "durationMs": 2.299999952316284,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 152,
+              "trigger": "zoom",
+              "startTs": 20274.600000023842,
+              "endTs": 20275.899999976158,
+              "durationMs": 1.2999999523162842,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 153,
+              "trigger": "zoom",
+              "startTs": 20310.299999952316,
+              "endTs": 20311.5,
+              "durationMs": 1.2000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 154,
+              "trigger": "zoom",
+              "startTs": 20343.700000047684,
+              "endTs": 20344.799999952316,
+              "durationMs": 1.0999999046325684,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 155,
+              "trigger": "zoom",
+              "startTs": 20378.899999976158,
+              "endTs": 20379.600000023842,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 156,
+              "trigger": "zoom",
+              "startTs": 20414.299999952316,
+              "endTs": 20415,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 157,
+              "trigger": "zoom",
+              "startTs": 20448.799999952316,
+              "endTs": 20449.399999976158,
+              "durationMs": 0.6000000238418579,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 158,
+              "trigger": "zoom",
+              "startTs": 20483.5,
+              "endTs": 20484.200000047684,
+              "durationMs": 0.7000000476837158,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            },
+            {
+              "seq": 159,
+              "trigger": "zoom",
+              "startTs": 20517.600000023842,
+              "endTs": 20519,
+              "durationMs": 1.399999976158142,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 0
+            }
+          ]
+        },
+        {
+          "name": "clickPoint",
+          "iterations": 10,
+          "startTs": 22560.700000047684,
+          "endTs": 27554.200000047684,
+          "passes": [
+            {
+              "seq": 160,
+              "trigger": "plot",
+              "startTs": 22567.299999952316,
+              "endTs": 22993.100000023842,
+              "durationMs": 425.8000000715256,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 161,
+              "trigger": "plot",
+              "startTs": 23021,
+              "endTs": 23456.299999952316,
+              "durationMs": 435.2999999523163,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 162,
+              "trigger": "plot",
+              "startTs": 23476.899999976158,
+              "endTs": 23885.399999976158,
+              "durationMs": 408.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 163,
+              "trigger": "plot",
+              "startTs": 23904.799999952316,
+              "endTs": 24321.200000047684,
+              "durationMs": 416.40000009536743,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 164,
+              "trigger": "plot",
+              "startTs": 24340.600000023842,
+              "endTs": 24742.299999952316,
+              "durationMs": 401.6999999284744,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 165,
+              "trigger": "plot",
+              "startTs": 25088.5,
+              "endTs": 25517,
+              "durationMs": 428.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 166,
+              "trigger": "plot",
+              "startTs": 25678.100000023842,
+              "endTs": 26091.5,
+              "durationMs": 413.39999997615814,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 167,
+              "trigger": "plot",
+              "startTs": 26145.899999976158,
+              "endTs": 26556,
+              "durationMs": 410.10000002384186,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 168,
+              "trigger": "plot",
+              "startTs": 26628.299999952316,
+              "endTs": 27036.899999976158,
+              "durationMs": 408.60000002384186,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            },
+            {
+              "seq": 169,
+              "trigger": "plot",
+              "startTs": 27058.399999976158,
+              "endTs": 27481.899999976158,
+              "durationMs": 423.5,
+              "renderedPoints": 573649,
+              "drawnPoints": 573649,
+              "uploadedBytes": 25240556
+            }
+          ]
+        }
+      ],
+      "load": {
+        "datasetId": "573K_swissprot_v3",
+        "loadDurationMs": 6778.600000023842,
+        "heapBefore": {
+          "usedBytes": 63315200,
+          "totalBytes": 69635248,
+          "limitBytes": 4395630592
+        },
+        "heapAfterLoad": {
+          "usedBytes": 282618195,
+          "totalBytes": 332393111,
+          "limitBytes": 4395630592
+        },
+        "heapSteady": {
+          "usedBytes": 282618951,
+          "totalBytes": 332393111,
+          "limitBytes": 4395630592
+        },
+        "peakUsedDuringLoadBytes": 282606655
+      }
+    }
+  ],
+  "failures": [],
+  "skipped": []
+}

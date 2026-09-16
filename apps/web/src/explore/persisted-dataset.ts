@@ -22,7 +22,6 @@ export type PersistedLoadOutcome =
 
 interface PersistedDatasetOptions {
   dataLoader: ProtspaceDataLoader;
-  defaultDatasetName: string;
   registerFileLoad(file: File, kind: DatasetLoadKind): void;
   setCurrentDatasetIsDemo(isDemo: boolean): void;
   setCurrentDatasetName(name: string): void;
@@ -30,7 +29,6 @@ interface PersistedDatasetOptions {
 
 export function createPersistedDatasetController({
   dataLoader,
-  defaultDatasetName,
   registerFileLoad,
   setCurrentDatasetIsDemo,
   setCurrentDatasetName,
@@ -44,13 +42,18 @@ export function createPersistedDatasetController({
     notify.warning(getCorruptedPersistedDatasetNotification(context));
   };
 
+  // The dataset name and demo flag are set by handleDataLoaded once the bundle
+  // has actually loaded. Setting them here, before the fetch, left a failed demo
+  // load looking like a loaded one: old data on screen, "Demo dataset" in the
+  // header, the demo button disabled and the error only in the console.
   const loadDefaultDataset = async () => {
     try {
-      setCurrentDatasetName(defaultDatasetName);
-      setCurrentDatasetIsDemo(true);
       console.log('Loading data from data.parquetbundle...');
 
-      const response = await fetch('./data.parquetbundle');
+      // Rooted at the app base, not the current route: a relative URL under
+      // /explore/ (trailing slash) resolves to /explore/data.parquetbundle, which
+      // the SPA fallback answers with index.html and the demo never loads.
+      const response = await fetch(`${import.meta.env.BASE_URL}data.parquetbundle`);
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
@@ -65,17 +68,11 @@ export function createPersistedDatasetController({
       registerFileLoad(file, 'default');
       await dataLoader.loadFromFile(file, { source: 'auto' });
     } catch (error) {
-      console.error('Failed to load data from file:', error);
-      console.log('Make sure data.parquetbundle exists in the public directory');
-      console.log(
-        'Alternative: You can drag and drop the data.parquetbundle file onto the data loader component',
-      );
-
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.warn(`Auto-load failed: ${errorMessage}`);
-      console.log(
-        'The data loader is ready for drag-and-drop. Simply drag the data.parquetbundle file onto the component.',
-      );
+      console.error('Failed to load data.parquetbundle:', error);
+      notify.error({
+        title: 'Could not load the demo dataset',
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   };
 

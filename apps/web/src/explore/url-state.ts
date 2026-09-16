@@ -1,3 +1,9 @@
+import {
+  DENSITY_DEFAULT,
+  DENSITY_STYLE_DEFAULT,
+  type DensityLayerMode,
+  type DensityLayerStyle,
+} from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -67,12 +73,47 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
+/**
+ * One param, five tokens. Mode and style stay separate fields everywhere else;
+ * the `contour-` prefix exists only here and in the control bar's option values.
+ * `off` has no style variant: off is off.
+ */
+const DENSITY_TOKENS: Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }> = {
+  off: { mode: 'off', style: DENSITY_STYLE_DEFAULT },
+  auto: { mode: 'auto', style: 'heatmap' },
+  on: { mode: 'on', style: 'heatmap' },
+  'contour-auto': { mode: 'auto', style: 'contour' },
+  'contour-on': { mode: 'on', style: 'contour' },
+};
+
+function parseDensityParam(searchParams: URLSearchParams): {
+  mode: DensityLayerMode | undefined;
+  style: DensityLayerStyle | undefined;
+  present: boolean;
+  normalize: boolean;
+} {
+  if (!searchParams.has('density')) {
+    return { mode: undefined, style: undefined, present: false, normalize: false };
+  }
+  const all = searchParams.getAll('density');
+  const parsed = DENSITY_TOKENS[(all[0] ?? '').trim()];
+  return {
+    mode: parsed?.mode,
+    style: parsed?.style,
+    present: true,
+    normalize: !parsed || all.length > 1,
+  };
+}
+
 export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreViewRequestState {
   const tooltip = parseTooltipParam(searchParams);
+  const density = parseDensityParam(searchParams);
   const requested = {
     annotation: getRequestedValue(searchParams, 'annotation'),
     projection: getRequestedValue(searchParams, 'projection'),
     tooltip: tooltip.value,
+    density: density.mode,
+    densityStyle: density.style,
   };
 
   return {
@@ -81,6 +122,7 @@ export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreV
       annotation: searchParams.has('annotation'),
       projection: searchParams.has('projection'),
       tooltip: tooltip.present,
+      density: density.present,
     },
     normalize: {
       annotation:
@@ -90,6 +132,7 @@ export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreV
         (searchParams.has('projection') && requested.projection === undefined) ||
         searchParams.getAll('projection').length > 1,
       tooltip: tooltip.normalize,
+      density: density.normalize,
     },
   };
 }
@@ -101,11 +144,13 @@ export function createEmptyExploreViewRequest(): ExploreViewRequestState {
       annotation: false,
       projection: false,
       tooltip: false,
+      density: false,
     },
     normalize: {
       annotation: false,
       projection: false,
       tooltip: false,
+      density: false,
     },
   };
 }
@@ -120,16 +165,20 @@ export function cloneExploreViewRequest(
       tooltip: requestState.requested.tooltip
         ? [...requestState.requested.tooltip]
         : requestState.requested.tooltip,
+      density: requestState.requested.density,
+      densityStyle: requestState.requested.densityStyle,
     },
     present: {
       annotation: requestState.present.annotation,
       projection: requestState.present.projection,
       tooltip: requestState.present.tooltip,
+      density: requestState.present.density,
     },
     normalize: {
       annotation: requestState.normalize.annotation,
       projection: requestState.normalize.projection,
       tooltip: requestState.normalize.tooltip,
+      density: requestState.normalize.density,
     },
   };
 }
@@ -191,11 +240,14 @@ export function resolveExploreView(
       annotation: effectiveAnnotation,
       projection: projectionIsValid ? requestedProjection : availableProjections[0],
       tooltip: tooltip.value,
+      density: requested.density ?? DENSITY_DEFAULT,
+      densityStyle: requested.densityStyle ?? DENSITY_STYLE_DEFAULT,
     },
     matchesRequested: {
       annotation: annotationIsValid,
       projection: projectionIsValid,
       tooltip: tooltip.matches,
+      density: requested.density !== undefined,
     },
   };
 }
@@ -214,7 +266,28 @@ export function getResolvedExploreViewNormalization(
     tooltip:
       requestState.normalize.tooltip ||
       (requestState.present.tooltip && !resolved.matchesRequested.tooltip),
+    density:
+      requestState.normalize.density ||
+      (requestState.present.density && !resolved.matchesRequested.density),
   };
+}
+
+/** The default stays out of the URL; every other mode is written explicitly. */
+function setDensityParam(
+  searchParams: URLSearchParams,
+  density: DensityLayerMode,
+  style: DensityLayerStyle,
+) {
+  const token = Object.keys(DENSITY_TOKENS).find(
+    (key) => DENSITY_TOKENS[key].mode === density && DENSITY_TOKENS[key].style === style,
+  );
+  // No token means a pair the URL cannot express, which is only `off` with a
+  // style: off is off, and the style is dropped with it.
+  if (!token || (density === DENSITY_DEFAULT && style === DENSITY_STYLE_DEFAULT)) {
+    searchParams.delete('density');
+    return;
+  }
+  searchParams.set('density', token);
 }
 
 function setTooltipParam(searchParams: URLSearchParams, tooltip: readonly string[]) {
@@ -243,6 +316,7 @@ export function buildSearchParamsWithExploreView(
     next.set('annotation', effective.annotation);
     next.set('projection', effective.projection);
     setTooltipParam(next, effective.tooltip);
+    setDensityParam(next, effective.density, effective.densityStyle);
     return next;
   }
 
@@ -256,6 +330,10 @@ export function buildSearchParamsWithExploreView(
 
   if (options.normalize.tooltip) {
     setTooltipParam(next, effective.tooltip);
+  }
+
+  if (options.normalize.density) {
+    setDensityParam(next, effective.density, effective.densityStyle);
   }
 
   return next;
@@ -279,7 +357,12 @@ export function getExploreViewSearchParamsUpdate(
     return next.toString() === searchParams.toString() ? null : { next, replace: false };
   }
 
-  if (!change.normalize.annotation && !change.normalize.projection && !change.normalize.tooltip) {
+  if (
+    !change.normalize.annotation &&
+    !change.normalize.projection &&
+    !change.normalize.tooltip &&
+    !change.normalize.density
+  ) {
     return null;
   }
 

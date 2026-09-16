@@ -158,6 +158,14 @@ export default defineConfig({
       testMatch: /camera-no-restage\.spec\.ts/,
     },
     {
+      name: 'density-layer',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /density-layer\.spec\.ts/,
+    },
+    {
       name: 'label-atlas-limit',
       use: {
         ...devices['Desktop Chrome'],

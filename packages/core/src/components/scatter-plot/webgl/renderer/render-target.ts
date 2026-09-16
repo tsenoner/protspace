@@ -119,10 +119,18 @@ export function drawPoints(
   pointCount: number,
   selectionActive: boolean,
   selectedStartIndex: number,
+  /**
+   * Runs after the base run (unselected, or all points when nothing is selected)
+   * and before the selected run. It has to be here rather than before the point
+   * draw: the base run has blend OFF and would overwrite anything underneath it.
+   * Must leave the point program and VAO re-bound.
+   */
+  afterBasePass?: () => void,
 ): void {
   if (selectionActive && selectedStartIndex < pointCount) {
     gl.disable(gl.BLEND);
     if (selectedStartIndex > 0) gl.drawArrays(gl.POINTS, 0, selectedStartIndex);
+    afterBasePass?.();
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, selectedStartIndex, pointCount - selectedStartIndex);
@@ -130,5 +138,6 @@ export function drawPoints(
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, 0, pointCount);
+    afterBasePass?.();
   }
 }

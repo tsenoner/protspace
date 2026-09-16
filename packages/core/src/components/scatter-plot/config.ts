@@ -1,4 +1,4 @@
-import type { ScatterplotConfig } from '@protspace/utils';
+import { DENSITY_DEFAULT, DENSITY_STYLE_DEFAULT, type ScatterplotConfig } from '@protspace/utils';
 
 // Centralized default configuration for the scatterplot component
 export const DEFAULT_CONFIG: Required<ScatterplotConfig> = {
@@ -11,6 +11,8 @@ export const DEFAULT_CONFIG: Required<ScatterplotConfig> = {
   selectedOpacity: 1.0,
   fadedOpacity: 0.15,
   enableDuplicateStackUI: false,
+  densityLayer: DENSITY_DEFAULT,
+  densityStyle: DENSITY_STYLE_DEFAULT,
 };
 
 export const NEUTRAL_VALUE_COLOR = '#888888';

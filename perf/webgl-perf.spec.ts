@@ -1,7 +1,33 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 
-const EXPECTED_SCENARIOS = ['annotationChange', 'zoomInOut', 'dragCanvas', 'clickPoint'] as const;
+const EXPECTED_SCENARIOS = [
+  'annotationChange',
+  'zoomInOut',
+  'zoomFarOut',
+  'dragCanvas',
+  'dragContinuous',
+  'densityZoom',
+  'clickPoint',
+] as const;
+
+/**
+ * Scenarios that only move the camera. The camera is a shader uniform, so a pan
+ * or a zoom cannot require an upload: `uploadedBytes === 0` is the #456 gate, and
+ * unlike a wall-clock threshold it means the same thing on every machine.
+ *
+ * `densityZoom` is a camera scenario too: the density layer is driven by uniforms
+ * off the same buffers the point pass reads, so forcing it on must not upload a
+ * byte either. EXPECTED_SCENARIOS requires it, because the loop below silently
+ * skips a scenario that is absent.
+ */
+const CAMERA_SCENARIOS = [
+  'zoomInOut',
+  'zoomFarOut',
+  'dragCanvas',
+  'dragContinuous',
+  'densityZoom',
+] as const;
 const ITERATIONS = (() => {
   const raw = process.env.PERF_ITERATIONS;
   const n = raw ? Number(raw) : NaN;
@@ -173,7 +199,14 @@ test.describe('WebGL render perf benchmark (headed)', () => {
       iterations: number;
       results: Array<{
         dataset: { id: string };
-        scenarios: Array<{ name: string; passes: unknown[] }>;
+        scenarios: Array<{
+          name: string;
+          passes: Array<{
+            uploadedBytes?: number;
+            drawnPoints?: number;
+            renderedPoints?: number;
+          }>;
+        }>;
       }>;
       failures?: Array<{ datasetId: string; error: string }>;
       skipped?: Array<{ datasetId: string; reason: string }>;
@@ -227,6 +260,29 @@ test.describe('WebGL render perf benchmark (headed)', () => {
           scenario?.passes?.length ?? 0,
           `${r.dataset?.id} / ${expected} recorded no render passes`,
         ).toBeGreaterThan(0);
+      }
+
+      // The machine-independent half of the regression gate. A wall-clock budget
+      // would have to be tuned per machine and would reject on a noisy neighbour;
+      // these two numbers are exact and mean the same thing everywhere.
+      for (const name of CAMERA_SCENARIOS) {
+        const scenario = r.scenarios.find((s) => s?.name === name);
+        for (const pass of scenario?.passes ?? []) {
+          expect(
+            pass.uploadedBytes,
+            `${r.dataset?.id} / ${name} uploaded bytes on a camera move`,
+          ).toBe(0);
+          // Before the equality, or a pass carrying neither field satisfies
+          // `undefined === undefined` and the truncation half of the gate is
+          // asserting nothing at all.
+          expect(
+            pass.drawnPoints,
+            `${r.dataset?.id} / ${name} recorded no drawnPoints`,
+          ).toBeGreaterThan(0);
+          expect(pass.drawnPoints, `${r.dataset?.id} / ${name} truncated`).toBe(
+            pass.renderedPoints,
+          );
+        }
       }
     }
 

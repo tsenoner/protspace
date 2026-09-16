@@ -1376,11 +1376,17 @@ export class ProtspaceScatterplot extends LitElement {
     this._webglRenderer.render(pd);
 
     if (perfToken) {
+      // Read the clock, THEN block on the GPU: `durationMs` keeps meaning CPU
+      // submission time (comparable with every earlier baseline) while
+      // `gpuSyncedMs` extends the same window to GPU completion.
+      const cpuEndTs = performance.now();
+      this._webglRenderer.syncGpu();
       this._webglRenderPerf.stop(
         perfToken,
         pd.length,
         this._webglRenderer.drawnPointCount,
         this._webglRenderer.uploadedBytesTotal - bytesBefore,
+        cpuEndTs,
       );
     }
   }
