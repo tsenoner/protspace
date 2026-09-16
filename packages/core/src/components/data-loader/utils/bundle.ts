@@ -6,9 +6,12 @@ import {
   normalizeBundleSettings,
   type BundleSettings,
   type ProjectionStatisticRow,
+  type VisualizationData,
 } from '@protspace/utils';
 import type { Rows, GenericRow } from './types';
-import { assertValidParquetMagic, validateProjectionRows } from './validation';
+import { assertValidParquetMagic, validateProjectionRows, validateRowsBasic } from './validation';
+import { convertParquetToVisualizationDataOptimized } from './conversion';
+import { readV3Bundle } from './bundle-v3';
 import { sanitizePublishState } from '../../publish/publish-state-validator';
 
 /** Key-value metadata key the Python writer stamps with the bundle's annotation format version. */
@@ -108,59 +111,90 @@ function readNumericColumnTypes(metadata: FileMetaData): Record<string, 'int' | 
 }
 
 /**
- * Extract rows and optional settings from a parquetbundle.
+ * Split a parquetbundle into its parts, one entry per slot in writer order:
+ * annotations, projections metadata, projections, settings, statistics, and (format
+ * v3 only) payloads. A zero-byte slot — the sentinel the producer writes when a later
+ * optional part is present but this one is not — comes back as `null`.
  *
- * Supports every layout the Python producer can write (see `_parse_bundle` in
- * `apps/protspace/src/protspace/data/io/bundle.py`, which bounds itself to 3-5 parts):
- * - 2 delimiters (3 parts): Original format without settings
- * - 3 delimiters (4 parts): Extended format with settings
- * - 4 delimiters (5 parts): Settings plus a projection-statistics part (backend `--stats`).
- *   The part is returned verbatim so an export can re-emit it byte for byte, and
- *   separately parsed into rows for rendering — the parse is a derived view and never
- *   the source of the re-emitted bytes. The settings slot may be zero bytes when the
- *   producer wrote statistics without settings — it exists only to keep the statistics
- *   part at a fixed position.
+ * Every layout the Python producer can write is accepted (see `_parse_bundle` in
+ * `apps/protspace/src/protspace/data/io/bundle.py`):
+ * - 2 delimiters (3 parts): original format without settings
+ * - 3 delimiters (4 parts): extended format with settings
+ * - 4 delimiters (5 parts): settings plus a projection-statistics part (backend `--stats`)
+ * - 5 delimiters (6 parts): format v3, which appends the required payloads part
+ *
+ * Each part is copied out of the container so the (possibly very large) bundle buffer
+ * can be released as soon as the parts it still needs have been decoded.
  */
-export async function extractRowsFromParquetBundle(
-  arrayBuffer: ArrayBuffer,
-): Promise<BundleExtractionResult> {
+function splitBundleParts(arrayBuffer: ArrayBuffer): (ArrayBuffer | null)[] {
   const uint8Array = new Uint8Array(arrayBuffer);
   const delimiterPositions = findBundleDelimiterPositions(uint8Array);
 
-  // 2 delimiters (core only), 3 (with settings), or 4 (settings + statistics).
-  if (delimiterPositions.length < 2 || delimiterPositions.length > 4) {
+  if (delimiterPositions.length < 2 || delimiterPositions.length > 5) {
     throw new Error(
-      `Expected 2 to 4 delimiters in parquetbundle, found ${delimiterPositions.length}`,
+      `Expected 2 to 5 delimiters in parquetbundle, found ${delimiterPositions.length}`,
     );
   }
 
-  /**
-   * Copy out part `index` — part 0 starts at byte 0, every later part right after the
-   * preceding delimiter, and the final part runs to the end of the buffer. Order is
-   * fixed by the writer: annotations, projections metadata, projections, settings,
-   * statistics. Bounding each part by the *next* delimiter is what keeps a trailing part
-   * from being glued onto its predecessor's tail — without it, a 5-part bundle would hand
-   * the settings parser the statistics part too. Returns null for a zero-byte slot (an
-   * empty settings placeholder when a bundle carries statistics but no settings).
-   */
-  const partAt = (index: number): ArrayBuffer | null => {
-    // Out of range must be null, not a slice: `delimiterPositions[index - 1]` is undefined,
-    // `undefined + 8` is NaN, and `subarray(NaN, len)` coerces NaN to 0 — returning the whole
-    // bundle as if it were one part.
-    if (index < 0 || index > delimiterPositions.length) return null;
+  // Part 0 starts at byte 0, every later part right after the preceding delimiter, and
+  // the final part runs to the end of the buffer. Bounding each part by the *next*
+  // delimiter is what keeps a trailing part from being glued onto its predecessor's
+  // tail — without it, a 5-part bundle would hand the settings parser the statistics
+  // part too.
+  const parts: (ArrayBuffer | null)[] = [];
+  for (let index = 0; index <= delimiterPositions.length; index++) {
     const view = uint8Array.subarray(
       index === 0 ? 0 : delimiterPositions[index - 1] + BUNDLE_DELIMITER_BYTES.length,
       index < delimiterPositions.length ? delimiterPositions[index] : uint8Array.length,
     );
-    return view.byteLength > 0 ? view.slice().buffer : null;
-  };
+    parts.push(view.byteLength > 0 ? view.slice().buffer : null);
+  }
+  return parts;
+}
 
-  // The three required core parts.
-  let part1: ArrayBuffer | null = partAt(0);
-  let part2: ArrayBuffer | null = partAt(1);
-  let part3: ArrayBuffer | null = partAt(2);
-  const part4 = partAt(3);
-  const part5 = partAt(4);
+/**
+ * Parse the annotations part's footer, or null when it is not readable parquet.
+ *
+ * Callers reuse the result both to read the format version and as the `metadata`
+ * option of the subsequent read — hyparquet re-derives metadata from the buffer when
+ * `metadata` is omitted, so passing it explicitly avoids parsing the same footer twice.
+ * A parse failure is swallowed here so the legacy reader keeps behaving exactly as it
+ * did: `formatVersion = 1`, and `parquetReadObjects` re-attempts the parse itself and
+ * surfaces the real error.
+ */
+function readPart1Metadata(part1: ArrayBuffer | null): FileMetaData | null {
+  if (!part1) return null;
+  try {
+    return parquetMetadata(part1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract rows and optional settings from a parquetbundle (formats 1 and 2).
+ */
+export async function extractRowsFromParquetBundle(
+  arrayBuffer: ArrayBuffer,
+): Promise<BundleExtractionResult> {
+  const parts = splitBundleParts(arrayBuffer);
+  return extractRowsFromParts(parts, readPart1Metadata(parts[0]));
+}
+
+/**
+ * The row-object reader for bundle formats 1 and 2, over parts already split out of
+ * the container. Split from {@link extractRowsFromParquetBundle} so the version sniff
+ * in {@link decodeParquetBundle} does not have to scan a 200 MB buffer twice.
+ */
+async function extractRowsFromParts(
+  parts: readonly (ArrayBuffer | null)[],
+  part1Metadata: FileMetaData | null,
+): Promise<BundleExtractionResult> {
+  let part1: ArrayBuffer | null = parts[0] ?? null;
+  let part2: ArrayBuffer | null = parts[1] ?? null;
+  let part3: ArrayBuffer | null = parts[2] ?? null;
+  const part4 = parts[3] ?? null;
+  const part5 = parts[4] ?? null;
 
   if (!part1 || !part2 || !part3) {
     throw new Error('Parquetbundle is missing one of its three required core parts');
@@ -171,22 +205,19 @@ export async function extractRowsFromParquetBundle(
   assertValidParquetMagic(part2);
   assertValidParquetMagic(part3);
 
-  // Parse part1's footer once (the annotations part), before it's decoded, and reuse
-  // the result both to read the format_version and as the `metadata` option below —
-  // hyparquet re-derives metadata from the buffer when `metadata` is omitted, so
-  // passing it explicitly avoids parsing the same footer twice. On parse failure,
-  // fall back to `formatVersion = 1` and let `parquetReadObjects` (without `metadata`)
-  // re-attempt the parse itself, surfacing the same error it would have before.
-  let part1Metadata: FileMetaData | null = null;
-  let formatVersion = 1;
-  let numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = {};
-  try {
-    part1Metadata = parquetMetadata(part1);
-    formatVersion = readFormatVersion(part1Metadata);
-    numericColumnTypes = readNumericColumnTypes(part1Metadata);
-  } catch {
-    formatVersion = 1;
+  const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
+  // v3 stores its annotations as dictionary codes plus payloads, which this row-object
+  // reader cannot make sense of: it would get as far as part 3 and complain about
+  // missing 'projection_name'/'x'/'y' columns. Say what is actually wrong instead.
+  if (formatVersion >= 3) {
+    throw new Error(
+      `Parquetbundle declares annotation format v${formatVersion}, which only ` +
+        'decodeParquetBundle can read; extractRowsFromParquetBundle handles v1 and v2.',
+    );
   }
+  const numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = part1Metadata
+    ? readNumericColumnTypes(part1Metadata)
+    : {};
 
   // Decode sequentially and release each sliced buffer immediately after its decode completes.
   // hyparquet is CPU-bound on the single JS thread — Promise.all gives no real parallelism, only
@@ -272,7 +303,7 @@ export async function extractRowsFromParquetBundle(
  * nothing here — a failed parse, an unmodelled column, a coerced type — can reach a file the
  * user saves.
  */
-async function extractStatistics(
+export async function extractStatistics(
   statisticsBuffer: ArrayBuffer,
 ): Promise<readonly ProjectionStatisticRow[] | null> {
   try {
@@ -309,7 +340,7 @@ async function extractStatistics(
  * Extract and parse settings from the 4th part of the bundle.
  * Returns null if parsing fails (graceful degradation).
  */
-async function extractSettings(settingsBuffer: ArrayBuffer): Promise<BundleSettings | null> {
+export async function extractSettings(settingsBuffer: ArrayBuffer): Promise<BundleSettings | null> {
   try {
     // Validate parquet magic
     assertValidParquetMagic(settingsBuffer);
@@ -343,6 +374,32 @@ async function extractSettings(settingsBuffer: ArrayBuffer): Promise<BundleSetti
     console.warn('Failed to parse settings from bundle, using defaults:', error);
     return null;
   }
+}
+
+/**
+ * Read a parquetbundle into visualization data, whichever format version it carries.
+ *
+ * The one entry point every bundle load goes through — the decode worker and both of
+ * `data-loader.ts`'s bundle branches — so the version sniff lives in exactly one place.
+ * Format 3 and above take the columnar reader in `bundle-v3.ts`; anything older takes
+ * the row-object path unchanged.
+ */
+export async function decodeParquetBundle(
+  arrayBuffer: ArrayBuffer,
+): Promise<{ data: VisualizationData; settings: BundleSettings | null }> {
+  const parts = splitBundleParts(arrayBuffer);
+  const part1Metadata = readPart1Metadata(parts[0]);
+
+  if (part1Metadata && readFormatVersion(part1Metadata) >= 3) {
+    return readV3Bundle(parts, part1Metadata);
+  }
+
+  const extraction = await extractRowsFromParts(parts, part1Metadata);
+  validateRowsBasic(extraction.projections);
+  return {
+    data: await convertParquetToVisualizationDataOptimized(extraction),
+    settings: extraction.settings,
+  };
 }
 
 export function findColumn(columnNames: string[], candidates: string[]): string | null {

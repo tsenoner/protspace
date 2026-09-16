@@ -1,8 +1,11 @@
+import type { AnnotationData } from '@protspace/utils';
+import { isCsrAnnotationData, isSparseMultiValueAnnotationData } from '@protspace/utils';
 import type { LegendItem, OtherItem, LegendSortMode, PersistedCategoryData } from './types';
 import { getVisualEncoding, SlotTracker } from './visual-encoding';
 import {
   LEGEND_VALUES,
   NA_DEFAULT_COLOR,
+  NA_VALUE,
   toInternalValue,
   isNAValue,
   toDisplayValue,
@@ -73,16 +76,107 @@ export class LegendDataProcessor {
   }
 
   /**
+   * Count legend frequencies straight out of the annotation storage, keyed by
+   * PROTEIN index.
+   *
+   * Replaces "materialise a flat `string[]` of one interned label per hit, then
+   * reduce it to a Map". That array was a pure intermediate (at 573K proteins,
+   * 33 ms single-valued and 140 ms with two hits each, against 1 to 3 ms for
+   * this bincount) and it also broke isolation filtering: it
+   * compacted proteins with no annotation away and expanded multi-valued ones,
+   * so its indices no longer lined up with the protein indices that
+   * `filteredIndices` holds. Counting per protein removes both problems.
+   *
+   * `filteredIndices === null` means "no isolation filter". Per-code semantics
+   * match the accessor path exactly: a negative code on single-valued storage
+   * means "no annotation" and contributes nothing, while any code outside
+   * `[0, values.length)` inside a hit list resolves to `undefined` and lands in
+   * the `__NA__` bucket, exactly as `toInternalValue(values[code])` did.
+   */
+  static countFromStorage(
+    colData: AnnotationData,
+    values: (string | null)[],
+    proteinCount: number,
+    filteredIndices: ReadonlySet<number> | null,
+    knownValues: string[] = [],
+  ): Map<string, number> {
+    const valueCount = values.length;
+    // One extra slot for every code that does not address a real value.
+    const naBin = valueCount;
+    const bins = new Int32Array(valueCount + 1);
+
+    if (isSparseMultiValueAnnotationData(colData)) {
+      const { base, overrides } = colData;
+      for (let i = 0; i < proteinCount; i++) {
+        if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+        const override = overrides.get(i);
+        if (override) {
+          for (let j = 0; j < override.length; j++) {
+            const code = override[j];
+            bins[code >= 0 && code < valueCount ? code : naBin]++;
+          }
+          continue;
+        }
+        if (i >= base.length) continue;
+        const code = base[i];
+        if (code >= 0) bins[code < valueCount ? code : naBin]++;
+      }
+    } else if (isCsrAnnotationData(colData)) {
+      const { end, codes } = colData;
+      const limit = Math.min(proteinCount, colData.length);
+      for (let i = 0; i < limit; i++) {
+        if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+        const stop = end[i];
+        for (let j = i === 0 ? 0 : end[i - 1]; j < stop; j++) {
+          const code = codes[j];
+          bins[code >= 0 && code < valueCount ? code : naBin]++;
+        }
+      }
+    } else if (colData instanceof Int32Array) {
+      const limit = Math.min(proteinCount, colData.length);
+      for (let i = 0; i < limit; i++) {
+        if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+        const code = colData[i];
+        if (code >= 0) bins[code < valueCount ? code : naBin]++;
+      }
+    } else {
+      const limit = Math.min(proteinCount, colData.length);
+      for (let i = 0; i < limit; i++) {
+        if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+        const row = colData[i];
+        for (let j = 0; j < row.length; j++) {
+          const code = row[j];
+          bins[code >= 0 && code < valueCount ? code : naBin]++;
+        }
+      }
+    }
+
+    const freq = new Map<string, number>(knownValues.map((value) => [value, 0] as const));
+    for (let i = 0; i < valueCount; i++) {
+      if (bins[i] === 0) continue;
+      const key = toInternalValue(values[i]);
+      freq.set(key, (freq.get(key) ?? 0) + bins[i]);
+    }
+    if (bins[naBin] > 0) freq.set(NA_VALUE, (freq.get(NA_VALUE) ?? 0) + bins[naBin]);
+    return freq;
+  }
+
+  /**
    * Count frequencies of annotation values.
    * Raw null/empty values are converted to NA_VALUE.
+   *
+   * A frequency map (from {@link countFromStorage}) short-circuits: it is
+   * already the answer.
    */
   static countAnnotationFrequencies(
-    annotationValues: (string | null)[],
+    annotationValues: (string | null)[] | ReadonlyMap<string, number>,
     isolationMode: boolean,
     isolationHistory: string[][],
     filteredIndices: Set<number>,
     knownValues: string[] = [],
-  ): Map<string, number> {
+  ): ReadonlyMap<string, number> {
+    if (!Array.isArray(annotationValues)) return annotationValues;
+
     const freq = new Map<string, number>(knownValues.map((value) => [value, 0] as const));
 
     const countValue = (rawValue: string | null) => {
@@ -108,7 +202,7 @@ export class LegendDataProcessor {
    * All values are internal format (N/A is '__NA__').
    */
   static sortAndLimitItems(
-    frequencyMap: Map<string, number>,
+    frequencyMap: ReadonlyMap<string, number>,
     maxVisibleValues: number,
     isolationMode: boolean,
     sortMode: LegendSortMode,
@@ -396,7 +490,7 @@ export class LegendDataProcessor {
   static processLegendItems(
     ctx: LegendProcessorContext,
     annotationName: string,
-    annotationValues: (string | null)[],
+    annotationValues: (string | null)[] | ReadonlyMap<string, number>,
     proteinIds: string[],
     maxVisibleValues: number,
     isolationMode: boolean,
@@ -414,14 +508,17 @@ export class LegendDataProcessor {
   ): { legendItems: LegendItem[]; otherItems: OtherItem[] } {
     this.resetIfAnnotationChanged(ctx, annotationName);
 
-    const filteredIndices = this.getFilteredIndices(isolationMode, isolationHistory, proteinIds);
-    const frequencyMap = this.countAnnotationFrequencies(
-      annotationValues,
-      isolationMode,
-      isolationHistory,
-      filteredIndices,
-      knownValues,
-    );
+    // A pre-counted map already has isolation applied, so the O(N) protein-id
+    // scan behind getFilteredIndices is skipped with it.
+    const frequencyMap = Array.isArray(annotationValues)
+      ? this.countAnnotationFrequencies(
+          annotationValues,
+          isolationMode,
+          isolationHistory,
+          this.getFilteredIndices(isolationMode, isolationHistory, proteinIds),
+          knownValues,
+        )
+      : annotationValues;
 
     // Build existing zOrder map for manual sorting
     const existingZOrders = new Map<string, number>();

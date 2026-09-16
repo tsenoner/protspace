@@ -26,6 +26,21 @@ def _three_protein_inputs(extra_columns=None):
     return annotations, embeddings
 
 
+def _projection_tables(identifiers, name="PCA 2"):
+    """The long-format projection tables the pipeline writes, for ``identifiers``."""
+    return (
+        pa.table({"projection_name": [name], "dimensions": [2]}),
+        pa.table(
+            {
+                "projection_name": [name] * len(identifiers),
+                "identifier": list(identifiers),
+                "x": [float(i) for i in range(len(identifiers))],
+                "y": [0.0] * len(identifiers),
+            }
+        ),
+    )
+
+
 def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
     import h5py
 
@@ -35,10 +50,7 @@ def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
     if extra_columns:
         cols.update(extra_columns)
     annotations = pa.table(cols)
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table(
-        {"id": ["TRINITY_1", "P00001"], "x": [0.0, 9.0], "y": [0.0, 0.0]}
-    )
+    proj_meta, proj_data = _projection_tables(["TRINITY_1", "P00001"])
     bundle_path = tmp_path / "in.parquetbundle"
     write_bundle([annotations, proj_meta, proj_data], bundle_path)
 
@@ -365,10 +377,7 @@ def test_cli_end_to_end_protein_id_bundle(tmp_path):
     annotations = pa.table(
         {"protein_id": ["TRINITY_1", "P00001"], "protein_category": ["", "neurotoxin"]}
     )
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table(
-        {"id": ["TRINITY_1", "P00001"], "x": [0.0, 9.0], "y": [0.0, 0.0]}
-    )
+    proj_meta, proj_data = _projection_tables(["TRINITY_1", "P00001"])
     bundle_path = tmp_path / "in.parquetbundle"
     write_bundle([annotations, proj_meta, proj_data], bundle_path)
 
@@ -418,13 +427,12 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
-    from protspace.data.io.bundle import (
-        PARQUET_BUNDLE_DELIMITER,
-        read_bundle,
-        write_bundle,
-    )
+    from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER, read_bundle
 
     source_id = "P0|ref;literal%3B"
+    # A genuine v1 container, assembled here rather than via write_bundle: every
+    # write now emits v3, whose annotations part comes back stamped v2, so a
+    # bundle built that way could not stand in for a legacy one.
     annotations = pa.table(
         {
             "protein_id": ["TRINITY_1", source_id],
@@ -432,21 +440,18 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
             "literal_percent": ["name%3Bpart", "plain"],
         }
     )
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table(
-        {"id": ["TRINITY_1", source_id], "x": [0.0, 9.0], "y": [0.0, 0.0]}
-    )
-    stamped_path = tmp_path / "stamped.parquetbundle"
-    write_bundle([annotations, proj_meta, proj_data], stamped_path)
-    parts, _ = read_bundle(stamped_path)
-    legacy_annotations = pq.read_table(io.BytesIO(parts[0])).replace_schema_metadata(
-        None
-    )
-    first_part = io.BytesIO()
-    pq.write_table(legacy_annotations, first_part)
+    proj_meta, proj_data = _projection_tables(["TRINITY_1", source_id])
+
+    def _part(table):
+        buf = io.BytesIO()
+        pq.write_table(table, buf)
+        return buf.getvalue()
+
     bundle_path = tmp_path / "legacy.parquetbundle"
     bundle_path.write_bytes(
-        PARQUET_BUNDLE_DELIMITER.join([first_part.getvalue(), parts[1], parts[2]])
+        PARQUET_BUNDLE_DELIMITER.join(
+            [_part(annotations), _part(proj_meta), _part(proj_data)]
+        )
     )
 
     h5_path = tmp_path / "legacy.h5"
@@ -568,4 +573,11 @@ def test_cli_transfer_without_rules_fills_missing_values(tmp_path):
     parts, _ = read_bundle(out_path)
     rows = {r["protein_id"]: r for r in pq.read_table(io.BytesIO(parts[0])).to_pylist()}
     assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
-    assert rows["P00001"]["protein_category__pred_value"] is None
+    # A reference protein gets no prediction. The overlay writes null; a v3
+    # container stores "absent" as a -1 dictionary code and spells it back as ""
+    # (a documented decode_v3 non-identity). The browser cannot tell the two
+    # apart (readCategoricalStorageValue folds both into missing) but Dash can:
+    # ArrowReader hands the raw cell out, so an "" is a value where a null was
+    # not. get_unique_annotation_values skips "" for exactly that reason -- see
+    # test_unique_annotation_values_skip_empty_strings.
+    assert rows["P00001"]["protein_category__pred_value"] == ""

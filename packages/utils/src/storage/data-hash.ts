@@ -50,32 +50,61 @@ export function djb2Hash(str: string): number {
   return hash >>> 0; // Convert to unsigned 32-bit integer
 }
 
-function fnv1a64Hash(str: string): string {
-  let hash = 0xcbf29ce484222325n;
-  const fnvPrime = 0x100000001b3n;
-  const mask = 0xffffffffffffffffn;
-
-  for (let i = 0; i < str.length; i++) {
-    hash ^= BigInt(str.charCodeAt(i));
-    hash = (hash * fnvPrime) & mask;
-  }
-
-  return hash.toString(16).padStart(16, '0');
+/**
+ * FNV-1a 64 carried as two 32-bit lanes instead of a BigInt.
+ *
+ * The BigInt form allocated one BigInt per character, which at 573K proteins is
+ * millions of allocations on the main thread. The lane form is value-identical:
+ * with `hash = hi * 2^32 + lo` and the prime `2^40 + 0x1b3`,
+ *
+ *   hash * prime = hi*2^72 + hi*0x1b3*2^32 + lo*2^40 + lo*0x1b3   (mod 2^64)
+ *
+ * `hi*2^72` vanishes mod 2^64; `lo*2^40 mod 2^64` is `((lo << 8) >>> 0) * 2^32`;
+ * `lo*0x1b3` contributes its low word plus a carry into the high word. Every
+ * intermediate stays below 2^42, so it is exact in a double.
+ */
+interface Fnv1a64State {
+  hi: number;
+  lo: number;
 }
 
-function appendFNV1a64(hash: bigint, value: string): bigint {
-  const fnvPrime = 0x100000001b3n;
-  const mask = 0xffffffffffffffffn;
-  let nextHash = hash;
+function createFNV1a64(): Fnv1a64State {
+  return { hi: 0xcbf29ce4, lo: 0x84222325 };
+}
+
+function appendFNV1a64(state: Fnv1a64State, value: string): void {
+  let hi = state.hi;
+  let lo = state.lo;
 
   for (let i = 0; i < value.length; i++) {
-    nextHash ^= BigInt(value.charCodeAt(i));
-    nextHash = (nextHash * fnvPrime) & mask;
+    lo = (lo ^ value.charCodeAt(i)) >>> 0;
+    const product = lo * 0x1b3;
+    const nextLo = product >>> 0;
+    hi = (hi * 0x1b3 + (product - nextLo) / 4294967296 + ((lo << 8) >>> 0)) >>> 0;
+    lo = nextLo;
   }
 
-  return nextHash;
+  state.hi = hi;
+  state.lo = lo;
 }
 
+function formatFNV1a64(state: Fnv1a64State): string {
+  return state.hi.toString(16).padStart(8, '0') + state.lo.toString(16).padStart(8, '0');
+}
+
+function fnv1a64Hash(str: string): string {
+  const state = createFNV1a64();
+  appendFNV1a64(state, str);
+  return formatFNV1a64(state);
+}
+
+/**
+ * Do not "optimize" this into a hoisted `new Intl.Collator()`. It is value-identical
+ * (ECMA-402 defines bare `localeCompare` as `new Intl.Collator(undefined, undefined)
+ * .compare(...)`), but V8 already caches the default collator and takes a fast path
+ * for one-byte strings: measured on 573K SwissProt accessions the hoisted collator
+ * sorts in 26 ms against 10 ms for `localeCompare`.
+ */
 function buildProteinIndexOrder(proteinIds: readonly string[]): number[] {
   const order = Array.from({ length: proteinIds.length }, (_, index) => index);
   order.sort((left, right) => proteinIds[left].localeCompare(proteinIds[right]) || left - right);
@@ -90,7 +119,7 @@ function buildNumericFingerprint(
     return '';
   }
 
-  let hash = 0xcbf29ce484222325n;
+  const hash = createFNV1a64();
   let nonNullCount = 0;
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
@@ -98,8 +127,8 @@ function buildNumericFingerprint(
   for (let position = 0; position < values.length; position++) {
     const value = values[proteinIndexOrder?.[position] ?? position];
     const serialized = value == null ? 'null' : String(value);
-    hash = appendFNV1a64(hash, serialized);
-    hash = appendFNV1a64(hash, '\x1f');
+    appendFNV1a64(hash, serialized);
+    appendFNV1a64(hash, '\x1f');
 
     if (value == null || !Number.isFinite(value)) {
       continue;
@@ -115,7 +144,7 @@ function buildNumericFingerprint(
     nonNullCount,
     nonNullCount > 0 ? min : 'none',
     nonNullCount > 0 ? max : 'none',
-    hash.toString(16).padStart(16, '0'),
+    formatFNV1a64(hash),
   ].join('|');
 }
 
@@ -177,12 +206,12 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
   const predictionFingerprint = Object.entries(data.annotation_predicted ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([annotationName, cells]) => {
-      let hash = 0xcbf29ce484222325n;
+      const hash = createFNV1a64();
       let count = 0;
       const appendCell = (cell: PredictedCell | null, proteinId: string): void => {
         if (!cell) return;
         count += 1;
-        hash = appendFNV1a64(
+        appendFNV1a64(
           hash,
           [
             proteinId,
@@ -193,7 +222,7 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
             cell.source,
           ].join('\x1f'),
         );
-        hash = appendFNV1a64(hash, '\x1e');
+        appendFNV1a64(hash, '\x1e');
       };
       for (let index = proteinIds.length; index < cells.length; index++) {
         appendCell(cells[index], '');
@@ -201,21 +230,62 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
       for (const index of proteinIndexOrder) {
         appendCell(cells[index] ?? null, proteinIds[index]);
       }
-      return `${annotationName}::${count}::${hash.toString(16).padStart(16, '0')}`;
+      return `${annotationName}::${count}::${formatFNV1a64(hash)}`;
     })
     .join('\x01');
 
   return [sortedIds.join('\x00'), annotationFingerprint, predictionFingerprint].join('\x02');
 }
 
+/**
+ * Callers rebuild the wrapper object on every data change (`legend.ts`) while the
+ * inner arrays keep their identity, so keying on `protein_ids` identity plus the
+ * three payload references turns the repeat calls into a lookup. This is only
+ * sound because no producer mutates a live dataset in place: every transform
+ * (`materializeVisualizationData`, `cloneWithPredictions`, the conversion
+ * pipeline) hands back fresh containers, which miss the memo and recompute.
+ * The one in-place writer is `restoreDeclaredNumericAnnotations` (conversion.ts),
+ * which runs inside that pipeline before any hash is taken — keep it there.
+ */
+interface DatasetHashMemo {
+  annotations: DatasetHashInput['annotations'];
+  numericAnnotationData: DatasetHashInput['numeric_annotation_data'];
+  annotationPredicted: DatasetHashInput['annotation_predicted'];
+  hash: string;
+}
+
+const datasetHashMemo = new WeakMap<readonly string[], DatasetHashMemo>();
+
 export function generateDatasetHash(input: string[] | DatasetHashInput): string {
   if (!input || (Array.isArray(input) && input.length === 0)) {
     return '0000000000000000';
   }
 
-  const combined = Array.isArray(input)
-    ? [...input].sort().join('\x00')
-    : buildDatasetFingerprint(input);
+  if (Array.isArray(input)) {
+    return fnv1a64Hash([...input].sort().join('\x00'));
+  }
 
-  return fnv1a64Hash(combined);
+  const memoKey = Array.isArray(input.protein_ids) ? input.protein_ids : null;
+  const memo = memoKey ? datasetHashMemo.get(memoKey) : undefined;
+  if (
+    memo &&
+    memo.annotations === input.annotations &&
+    memo.numericAnnotationData === input.numeric_annotation_data &&
+    memo.annotationPredicted === input.annotation_predicted
+  ) {
+    return memo.hash;
+  }
+
+  const hash = fnv1a64Hash(buildDatasetFingerprint(input));
+
+  if (memoKey) {
+    datasetHashMemo.set(memoKey, {
+      annotations: input.annotations,
+      numericAnnotationData: input.numeric_annotation_data,
+      annotationPredicted: input.annotation_predicted,
+      hash,
+    });
+  }
+
+  return hash;
 }

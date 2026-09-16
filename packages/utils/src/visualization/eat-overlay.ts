@@ -1,7 +1,15 @@
-import type { AnnotationData, PredictedCell, VisualizationData } from '../types.js';
+import type {
+  AnnotationData,
+  CsrAnnotationData,
+  CsrEvidence,
+  CsrScores,
+  PredictedCell,
+  VisualizationData,
+} from '../types.js';
 import {
   getFirstAnnotationIndex,
   getProteinAnnotationIndices,
+  isCsrAnnotationData,
   isSparseMultiValueAnnotationData,
 } from './annotation-data-access.js';
 import { isNAValue } from './missing-values.js';
@@ -195,8 +203,106 @@ function predictedIndices(
     .filter((index) => index >= 0);
 }
 
+/** Which rows a prediction actually replaces, and with which value indices. */
+function predictedReplacements(
+  predictedCells: readonly (PredictedCell | null)[],
+  valueToIndex: ReadonlyMap<string, number>,
+  rowCount: number,
+): Map<number, readonly number[]> {
+  const replacements = new Map<number, readonly number[]>();
+  for (let i = 0; i < predictedCells.length && i < rowCount; i++) {
+    const cell = predictedCells[i];
+    if (!cell) continue;
+    const indices = predictedIndices(cell, valueToIndex);
+    if (indices.length > 0) replacements.set(i, indices);
+  }
+  return replacements;
+}
+
+/**
+ * CSR rebuild for the overlay — codes AND the flat per-hit payloads, in one lockstep pass.
+ *
+ * Rebuilt as CSR, never densified to `number[][]`: a 573K column would otherwise become one
+ * array per protein. Predicted rows replace the source row's hits wholesale; a prediction
+ * that resolves to nothing leaves the row alone, as the Int32Array and sparse-multi branches
+ * do (CSR has no way to store the `-1` the dense branch falls back to).
+ *
+ * `annotation_scores_csr` / `annotation_evidence_csr` are numbered by GLOBAL hit, so a
+ * predicted row whose hit count differs from the curated one renumbers every LATER hit.
+ * Rebuilding the codes alone left those payloads addressing other proteins' hits, and
+ * silently: the accessors read past the end of `hitEnd` / `codes` and return null instead of
+ * throwing. So they are rebuilt here alongside the codes — a preserved row copies its hit
+ * spans verbatim, a replaced row emits one empty score range and one `-1` evidence code per
+ * predicted value (an EAT transfer carries no curated score or evidence of its own).
+ */
+function cloneCsrWithPredictions(
+  source: CsrAnnotationData,
+  predictedCells: readonly (PredictedCell | null)[],
+  valueToIndex: ReadonlyMap<string, number>,
+  sourceScores: CsrScores | undefined,
+  sourceEvidence: CsrEvidence | undefined,
+): { rows: CsrAnnotationData; scores?: CsrScores; evidence?: CsrEvidence } {
+  const replacements = predictedReplacements(predictedCells, valueToIndex, source.length);
+
+  const end = new Int32Array(source.length);
+  let total = 0;
+  for (let i = 0; i < source.length; i++) {
+    const replacement = replacements.get(i);
+    total += replacement ? replacement.length : source.end[i] - (i === 0 ? 0 : source.end[i - 1]);
+    end[i] = total;
+  }
+
+  const codes = new Int32Array(total);
+  // The payloads can only shrink (a replaced row drops its own values), so the source
+  // length is a safe upper bound and the trailing slack is sliced off at the end.
+  const values = new Float64Array(sourceScores ? sourceScores.values.length : 0);
+  const hitEnd = new Int32Array(sourceScores ? total : 0);
+  const evidenceCodes = new Int32Array(sourceEvidence ? total : 0);
+
+  let dst = 0;
+  let written = 0;
+  for (let i = 0; i < source.length; i++) {
+    const start = i === 0 ? 0 : source.end[i - 1];
+    const stop = source.end[i];
+    const replacement = replacements.get(i);
+    if (replacement) {
+      for (const index of replacement) {
+        codes[dst] = index;
+        // Repeating the running cursor is the empty range that says "no score".
+        if (sourceScores) hitEnd[dst] = written;
+        if (sourceEvidence) evidenceCodes[dst] = -1;
+        dst++;
+      }
+      continue;
+    }
+    if (!sourceScores && !sourceEvidence) {
+      // No payload to walk, so a preserved row is one bulk copy.
+      if (stop > start) codes.set(source.codes.subarray(start, stop), dst);
+      dst += stop - start;
+      continue;
+    }
+    for (let hit = start; hit < stop; hit++) {
+      codes[dst] = source.codes[hit];
+      if (sourceScores) {
+        const from = hit === 0 ? 0 : sourceScores.hitEnd[hit - 1];
+        const to = sourceScores.hitEnd[hit];
+        for (let v = from; v < to; v++) values[written++] = sourceScores.values[v];
+        hitEnd[dst] = written;
+      }
+      if (sourceEvidence) evidenceCodes[dst] = sourceEvidence.codes[hit];
+      dst++;
+    }
+  }
+
+  return {
+    rows: { kind: 'csr', end, codes, length: source.length },
+    ...(sourceScores ? { scores: { hitEnd, values: values.slice(0, written) } } : {}),
+    ...(sourceEvidence ? { evidence: { codes: evidenceCodes, dict: sourceEvidence.dict } } : {}),
+  };
+}
+
 function cloneWithPredictions(
-  source: AnnotationData,
+  source: Exclude<AnnotationData, CsrAnnotationData>,
   predictedCells: readonly (PredictedCell | null)[],
   valueToIndex: ReadonlyMap<string, number>,
 ): AnnotationData {
@@ -276,6 +382,40 @@ export function materializeEatOverlay(
   annotation.values.forEach((value, index) => {
     if (value != null) valueToIndex.set(value, index);
   });
+
+  if (isCsrAnnotationData(source)) {
+    // The payloads come back from the same pass as the codes and are returned here rather
+    // than left to the `...data` spread: a stale `annotation_scores_csr` carried through by
+    // reference is numbered against the OLD hit layout, which shows one protein's score and
+    // evidence on the next protein's tooltip without any visible failure.
+    const rebuilt = cloneCsrWithPredictions(
+      source,
+      predictedCells,
+      valueToIndex,
+      data.annotation_scores_csr?.[annotationKey],
+      data.annotation_evidence_csr?.[annotationKey],
+    );
+    return {
+      ...data,
+      annotation_data: { ...data.annotation_data, [annotationKey]: rebuilt.rows },
+      ...(rebuilt.scores
+        ? {
+            annotation_scores_csr: {
+              ...data.annotation_scores_csr,
+              [annotationKey]: rebuilt.scores,
+            },
+          }
+        : {}),
+      ...(rebuilt.evidence
+        ? {
+            annotation_evidence_csr: {
+              ...data.annotation_evidence_csr,
+              [annotationKey]: rebuilt.evidence,
+            },
+          }
+        : {}),
+    };
+  }
 
   return {
     ...data,

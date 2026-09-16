@@ -189,6 +189,41 @@ describe('computeVisibilityModel', () => {
     });
   });
 
+  // ── CSR storage (bundle format v3) — same rule 3/4 semantics ──────────────
+  describe('CSR storage: hidden iff every code hidden', () => {
+    // p0 → [A, B], p1 → [C], p2 → [] (empty row), p3 → [A]
+    const csr = (): AnnotationData => ({
+      kind: 'csr',
+      end: Int32Array.of(2, 3, 3, 4),
+      codes: Int32Array.of(0, 1, 2, 0),
+      length: 4,
+    });
+
+    it('partially hidden CSR row stays visible', () => {
+      const data = makeData(['A', 'B', 'C'], csr());
+      const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: ['A'] }));
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
+    });
+
+    it('CSR row with every code hidden → opacity 0', () => {
+      // C stays visible so the all-hidden escape hatch cannot fire.
+      const data = makeData(['A', 'B', 'C'], csr());
+      const model = computeVisibilityModel(
+        baseInputs({ data, hiddenAnnotationValues: ['A', 'B'] }),
+      );
+      expect(model.opacityOf(point('p0', 0))).toBe(0);
+      expect(model.opacityOf(point('p3', 3))).toBe(0);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.base);
+    });
+
+    it('empty CSR row → hidden even with an empty hidden set', () => {
+      const data = makeData(['A', 'B', 'C'], csr());
+      const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: [] }));
+      expect(model.opacityOf(point('p2', 2))).toBe(0);
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
+    });
+  });
+
   // ── Rule 5 — all-hidden escape hatch ──────────────────────────────────────
   describe('rule 5: all-hidden escape hatch rescues opacity (not colors)', () => {
     it('every value hidden → opacity falls back to base tier, allHidden true', () => {

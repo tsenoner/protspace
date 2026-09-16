@@ -28,9 +28,14 @@ import { assertNoBundleDelimiter } from './delimiter-utils';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
 import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
+import { getProteinEvidence, getProteinScores } from '../visualization/plot-data-accessors.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
 import { encodeAnnotationField } from './annotation-codec.js';
+
+/** Stand-in for a column with no scores or evidence: every index reads `undefined`, exactly
+ * as the empty array the accessors would have allocated per protein. */
+const NO_HITS: readonly never[] = [];
 
 const ANNOTATION_FORMAT_VERSION = '2';
 const ANNOTATION_FORMAT_VERSION_KEY = 'protspace_format_version';
@@ -133,6 +138,16 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
     const annotationIndices = data.annotation_data[annotationName];
     if (!annotationIndices) continue;
 
+    // Hoisted out of the protein loop: both accessors allocate a fresh array on every
+    // call, including the v1/v2 case where the dataset carries no scores or evidence at
+    // all — 573K proteins x ~24 categorical columns of throwaway arrays per export.
+    const hasScores = Boolean(
+      data.annotation_scores?.[annotationName] ?? data.annotation_scores_csr?.[annotationName],
+    );
+    const hasEvidence = Boolean(
+      data.annotation_evidence?.[annotationName] ?? data.annotation_evidence_csr?.[annotationName],
+    );
+
     // Convert indices back to actual annotation values
     const values: (string | null)[] = new Array(data.protein_ids.length);
     for (let i = 0; i < data.protein_ids.length; i++) {
@@ -143,6 +158,13 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
 
       // Reconstruct the v2 wire cell positionally so decoded labels, evidence, and scores survive
       // export without structural semicolons/pipes being reinterpreted on reload.
+      //
+      // Read once per protein through the accessors rather than indexing the nested
+      // records: a v3 (CSR) dataset carries these flat per hit, and only the accessors
+      // know both layouts. Both return per-hit arrays in `getProteinAnnotationIndices`
+      // order, so `cellIndex` still lines up.
+      const proteinEvidence = hasEvidence ? getProteinEvidence(data, i, annotationName) : NO_HITS;
+      const proteinScores = hasScores ? getProteinScores(data, i, annotationName) : NO_HITS;
       const cellValues = getProteinAnnotationIndices(annotationIndices, i).flatMap(
         (valueIndex, cellIndex) => {
           const value = annotation.values[valueIndex];
@@ -152,8 +174,8 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
           // (it is not a MISSING_VALUE_TOKEN) and leak into downstream `protspace` tooling.
           // Mirrors the read side's readCategoricalStorageValues.
           if (value == null || isNAValue(value)) return [];
-          const evidence = data.annotation_evidence?.[annotationName]?.[i]?.[cellIndex];
-          const scores = data.annotation_scores?.[annotationName]?.[i]?.[cellIndex];
+          const evidence = proteinEvidence[cellIndex];
+          const scores = proteinScores[cellIndex];
           return [serializeCategoricalValue(value, evidence, scores)];
         },
       );

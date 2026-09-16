@@ -7,7 +7,7 @@ import { isParquetBundle, type VisualizationData, type BundleSettings } from '@p
 import { dataLoaderStyles } from './data-loader.styles';
 import { createDataErrorEventDetail, type DataErrorEventDetail } from './data-loader.events';
 import { readFileOptimized } from './utils/file-io';
-import { extractRowsFromParquetBundle } from './utils/bundle';
+import { decodeParquetBundle } from './utils/bundle';
 import { convertParquetToVisualizationDataOptimized } from './utils/conversion';
 import {
   assertValidFileExtension,
@@ -219,16 +219,10 @@ export class DataLoader extends LitElement {
           } catch (workerError) {
             // Fallback: main-thread decode (worker unsupported / runtime failure).
             console.warn('Worker decode failed, falling back to main thread:', workerError);
-            const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-            validateRowsBasic(extraction.projections);
-            visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
-            settings = extraction.settings;
+            ({ data: visualizationData, settings } = await decodeParquetBundle(arrayBuffer));
           }
         } else {
-          const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-          validateRowsBasic(extraction.projections);
-          visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
-          settings = extraction.settings;
+          ({ data: visualizationData, settings } = await decodeParquetBundle(arrayBuffer));
         }
         this.completeStep();
         this.dispatchDataLoaded(visualizationData, settings, source, file);

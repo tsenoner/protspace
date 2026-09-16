@@ -9,6 +9,9 @@ import {
   COLOR_SCHEMES,
   getEatConfidenceAnnotationKey,
   getProteinAnnotationIndices,
+  getProteinEvidence,
+  getProteinScores,
+  isCsrAnnotationData,
   isSparseMultiValueAnnotationData,
   isCuratedAnnotationMissing,
   isNAValue,
@@ -131,7 +134,7 @@ function* valuesForColumn(rows: Rows, column: string): Iterable<unknown> {
   }
 }
 
-function createNumericAnnotation(
+export function createNumericAnnotation(
   numericType: 'int' | 'float',
   runtime?: Annotation['runtime'],
 ): Annotation {
@@ -222,6 +225,34 @@ function remapCategoricalStorage(
     }
     return { kind: 'sparse-multi', base, overrides, length: base.length };
   }
+  if (isCsrAnnotationData(source)) {
+    // Both arrays are rebuilt from scratch, and `codes` is trimmed to what was written so
+    // the worst-case buffer is neither retained nor shared.
+    const end = new Int32Array(source.length);
+    const codes = new Int32Array(source.codes.length);
+    let written = 0;
+    for (let i = 0; i < source.length; i++) {
+      const stop = source.end[i];
+      for (let hit = i === 0 ? 0 : source.end[i - 1]; hit < stop; hit++) {
+        const index = remap(source.codes[hit]);
+        if (index >= 0) codes[written++] = index;
+      }
+      end[i] = written;
+    }
+    if (written !== source.codes.length) {
+      // Dropping a hit renumbers every later one, and `annotation_scores_csr` /
+      // `annotation_evidence_csr` are numbered by GLOBAL hit — so a silent drop would
+      // show one protein's score and evidence on another's tooltip. No shipping producer
+      // can reach this (`values` is always built as `string[]`), so failing loudly beats
+      // implementing a renumbering pass nothing exercises.
+      throw new Error(
+        `CSR remap dropped ${source.codes.length - written} of ${source.codes.length} hits ` +
+          '(a null or unmapped annotation value). Renumbering the parallel ' +
+          'annotation_scores_csr / annotation_evidence_csr payloads is not implemented.',
+      );
+    }
+    return { kind: 'csr', end, codes: codes.slice(0, written), length: source.length };
+  }
   return source.map((indices) => indices.map(remap).filter((index) => index >= 0));
 }
 
@@ -230,7 +261,7 @@ function remapCategoricalStorage(
  * This is intentionally the final conversion-boundary step so small, optimized, and separated
  * decoder paths all share exactly one validity rule.
  */
-function normalizeEatCompanionColumns(data: VisualizationData): VisualizationData {
+export function normalizeEatCompanionColumns(data: VisualizationData): VisualizationData {
   const groups = new Map<string, Partial<Record<keyof typeof EAT_COMPANION_SUFFIXES, string>>>();
   const reservedColumns = new Set<string>();
   for (const column of Object.keys(data.annotations)) {
@@ -248,6 +279,10 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
   const numeric_annotation_data = { ...data.numeric_annotation_data };
   const annotation_scores = { ...data.annotation_scores };
   const annotation_evidence = { ...data.annotation_evidence };
+  // v3 columns carry their scores/evidence flat instead of nested; a companion
+  // column must lose both forms or the dropped column's payload outlives it.
+  const annotation_scores_csr = { ...data.annotation_scores_csr };
+  const annotation_evidence_csr = { ...data.annotation_evidence_csr };
   const annotation_predicted = { ...data.annotation_predicted };
 
   for (const column of reservedColumns) {
@@ -256,6 +291,8 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
     delete numeric_annotation_data[column];
     delete annotation_scores[column];
     delete annotation_evidence[column];
+    delete annotation_scores_csr[column];
+    delete annotation_evidence_csr[column];
   }
 
   for (const [base, group] of groups) {
@@ -281,8 +318,9 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
       if (!isCuratedAnnotationMissing(data, base, i)) continue;
       const values = readCategoricalStorageValues(data, group.value, i);
       const value = values.length > 0 ? values.join(';') : null;
-      const scores = data.annotation_scores?.[group.value]?.[i] ?? [];
-      const evidence = data.annotation_evidence?.[group.value]?.[i] ?? [];
+      // Via the accessors so a CSR-stored companion column resolves too.
+      const scores = getProteinScores(data, i, group.value);
+      const evidence = getProteinEvidence(data, i, group.value);
       const source = readCategoricalStorageValue(data, group.source, i);
       const confidence = confidences[i];
       if (
@@ -374,6 +412,9 @@ function normalizeEatCompanionColumns(data: VisualizationData): VisualizationDat
     numeric_annotation_data,
     annotation_scores,
     annotation_evidence,
+    // Spread conditionally: a v1/v2 dataset never had these keys and must not grow them.
+    ...(data.annotation_scores_csr ? { annotation_scores_csr } : {}),
+    ...(data.annotation_evidence_csr ? { annotation_evidence_csr } : {}),
     annotation_predicted:
       Object.keys(annotation_predicted).length > 0 ? annotation_predicted : undefined,
   };
@@ -404,6 +445,30 @@ function appendSyntheticNACategory(
     if (annotationDataArray[p].length === 0) {
       annotationDataArray[p] = [naIndex];
     }
+  }
+}
+
+/**
+ * {@link appendSyntheticNACategory} for a dictionary-code column: missing slots are
+ * already `-1`, so the synthetic category is appended and every `-1` routed to it.
+ *
+ * Mutates the input arrays in place. Shared with the format v3 reader so both storage
+ * shapes gain the `__NA__` legend row under exactly one rule.
+ */
+export function appendSyntheticNACategoryToCodes(
+  uniqueValues: string[],
+  colors: string[],
+  shapes: string[],
+  codes: Int32Array,
+): void {
+  if (!codes.some((code) => code < 0)) return;
+
+  const naIndex = uniqueValues.length;
+  uniqueValues.push(NA_VALUE);
+  colors.push(NA_DEFAULT_COLOR);
+  shapes.push('circle');
+  for (let p = 0; p < codes.length; p++) {
+    if (codes[p] < 0) codes[p] = naIndex;
   }
 }
 
@@ -592,7 +657,7 @@ function parseInfoJson(value: unknown): Record<string, unknown> {
  * Builds a metadata map from projections metadata rows.
  * Parses info_json field and spreads its contents into metadata.
  */
-function buildProjectionsMetadataMap(
+export function buildProjectionsMetadataMap(
   projectionsMetadata?: Rows,
 ): Map<string, Record<string, unknown>> {
   const metadataMap = new Map<string, Record<string, unknown>>();
@@ -692,6 +757,8 @@ function restoreDeclaredNumericAnnotations(
     delete data.annotation_data[column];
     delete data.annotation_scores?.[column];
     delete data.annotation_evidence?.[column];
+    delete data.annotation_scores_csr?.[column];
+    delete data.annotation_evidence_csr?.[column];
   }
   return data;
 }
@@ -732,9 +799,9 @@ export function convertParquetToVisualizationData(
  * and the parsed rows so the UI can render them. Raw `Rows` input (plain .parquet / legacy
  * reads) never carries either, so it passes straight through.
  */
-function carryStatistics(
+export function carryStatistics(
   data: VisualizationData,
-  input: BundleExtractionResult | Rows,
+  input: Pick<BundleExtractionResult, 'statistics' | 'statisticsRows'> | Rows,
 ): VisualizationData {
   if (!Array.isArray(input) && input.statistics) {
     data.statistics = input.statistics;
@@ -1657,19 +1724,7 @@ async function extractAnnotationsByProtein(
     if (annotationDataArray) {
       appendSyntheticNACategory(uniqueValues, colors, shapes, annotationDataArray);
     } else if (annotationDataTyped) {
-      // Int32Array missing slots are already -1; append NA category and remap -1.
-      const hasAnyMissing = annotationDataTyped.some((v) => v < 0);
-      if (hasAnyMissing) {
-        const naIndex = uniqueValues.length;
-        uniqueValues.push(NA_VALUE);
-        colors.push(NA_DEFAULT_COLOR);
-        shapes.push('circle');
-        for (let p = 0; p < annotationDataTyped.length; p++) {
-          if (annotationDataTyped[p] < 0) {
-            annotationDataTyped[p] = naIndex;
-          }
-        }
-      }
+      appendSyntheticNACategoryToCodes(uniqueValues, colors, shapes, annotationDataTyped);
     }
 
     annotations[annotationCol] = createCategoricalAnnotation(uniqueValues, colors, shapes);

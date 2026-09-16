@@ -6,8 +6,15 @@ import {
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
-  saveLastImportedFile,
+  saveLastImportedFileData,
+  saveLastImportedFileMetadata,
 } from './opfs-dataset-store';
+
+/** Both halves back to back — what a completed import leaves on disk. */
+async function saveLastImportedFile(file: File): Promise<void> {
+  await saveLastImportedFileMetadata(file);
+  await saveLastImportedFileData(file);
+}
 
 class MockWritableFileStream {
   private chunks: BlobPart[] = [];
@@ -139,6 +146,35 @@ describe('opfs-dataset-store', () => {
     expect(loaded?.type).toBe('application/octet-stream');
     expect(loaded?.lastModified).toBe(123);
     expect(await loaded?.text()).toBe('protein-data');
+  });
+
+  it('records the pending import before any bytes are copied', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+
+    await saveLastImportedFileMetadata(new File(['x'], 'first.parquetbundle'));
+
+    // The crash-recovery window is open on the metadata alone: this is the state a tab
+    // that dies during the render leaves behind.
+    expect(await readLastLoadStatus()).toEqual({
+      status: 'pending',
+      lastError: undefined,
+      failedAttempts: 0,
+    });
+  });
+
+  it('drops the previous bytes with the previous metadata', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+
+    await saveLastImportedFile(new File(['first-data'], 'first.parquetbundle'));
+    await saveLastImportedFileMetadata(new File(['second-data'], 'second.parquetbundle'));
+
+    // Without the drop the first dataset's bytes would come back named `second`, which is
+    // a different dataset restored silently. (Reading in this state also clears the store,
+    // so a crash mid-copy costs the previous dataset — as it always did, since the copy
+    // overwrote it in place.)
+    expect(await loadLastImportedFile()).toBeNull();
   });
 
   it('returns null and clears the store when the payload file is missing', async () => {

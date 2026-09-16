@@ -3,12 +3,15 @@ import { readFileSync } from 'node:fs';
 import {
   createParquetBundle,
   getProteinAnnotationIndices,
+  isCsrAnnotationData,
   materializeEatOverlay,
   materializeVisualizationData,
 } from '@protspace/utils';
+import type { CsrAnnotationData, VisualizationData } from '@protspace/utils';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
+  normalizeEatCompanionColumns,
   parseAnnotationValue,
   splitCategoricalAnnotationValues,
 } from './conversion';
@@ -733,5 +736,137 @@ describe('splitCategoricalAnnotationValues v2', () => {
   it('plain-splits on ; (names carry no raw ;)', () => {
     const raw = 'A (n%3B1)|1;B (n%3B2)|2';
     expect(splitCategoricalAnnotationValues(raw, 2)).toEqual(['A (n%3B1)|1', 'B (n%3B2)|2']);
+  });
+});
+
+describe('normalizeEatCompanionColumns over CSR storage (bundle format v3)', () => {
+  /**
+   * Base column `ec` in CSR, values `['A', null, 'B']`. Nothing points at the `null`
+   * slot, so every hit survives the remap and only the value INDICES shift (B: 2 → 1):
+   *   p0 → []      (curated missing → the EAT companion applies)
+   *   p1 → [A]
+   *   p2 → [B]
+   *   p3 → [A, B]
+   * The companion `ec__pred_value` is CSR too, with its scores/evidence in the flat
+   * v3 payloads rather than the nested records.
+   */
+  function csrEatData(): VisualizationData {
+    return {
+      protein_ids: ['p0', 'p1', 'p2', 'p3'],
+      projections: [{ name: 'umap', dimension: 2, data: new Float32Array(8) }],
+      annotations: {
+        ec: {
+          kind: 'categorical',
+          values: ['A', null, 'B'],
+          colors: ['#f00', '#0f0', '#00f'],
+          shapes: ['circle', 'circle', 'circle'],
+        },
+        ec__pred_value: {
+          kind: 'categorical',
+          values: ['C'],
+          colors: ['#fff'],
+          shapes: ['circle'],
+        },
+        ec__pred_confidence: { kind: 'numeric', numericType: 'float', values: [] },
+        ec__pred_source: {
+          kind: 'categorical',
+          values: ['p1'],
+          colors: ['#fff'],
+          shapes: ['circle'],
+        },
+      },
+      annotation_data: {
+        ec: {
+          kind: 'csr',
+          end: Int32Array.of(0, 1, 2, 4),
+          codes: Int32Array.of(0, 2, 0, 2),
+          length: 4,
+        },
+        ec__pred_value: {
+          kind: 'csr',
+          end: Int32Array.of(1, 1, 1, 1),
+          codes: Int32Array.of(0),
+          length: 4,
+        },
+        ec__pred_source: {
+          kind: 'csr',
+          end: Int32Array.of(1, 1, 1, 1),
+          codes: Int32Array.of(0),
+          length: 4,
+        },
+      },
+      numeric_annotation_data: { ec__pred_confidence: [0.9, null, null, null] },
+      annotation_scores_csr: {
+        ec__pred_value: { hitEnd: Int32Array.of(2), values: Float32Array.of(0.5, 0.25) },
+      },
+      annotation_evidence_csr: {
+        ec__pred_value: { codes: Int32Array.of(0), dict: ['IDA'] },
+      },
+    };
+  }
+
+  it('remaps CSR storage into fresh buffers', () => {
+    const src = csrEatData();
+    const sourceRows = src.annotation_data.ec as CsrAnnotationData;
+    const out = normalizeEatCompanionColumns(src);
+    const rows = out.annotation_data.ec;
+    if (!isCsrAnnotationData(rows)) throw new Error('expected CSR storage');
+
+    // 'A','B' survive, the unreferenced null slot leaves the value list, 'C' is
+    // appended by the transfer — so 'B' moves from index 2 to index 1.
+    expect(out.annotations.ec.values).toEqual(['A', 'B', 'C']);
+    // The transfer itself stays in `annotation_predicted`; only the curated rows
+    // are remapped here (materializeEatOverlay applies the prediction later).
+    expect(getProteinAnnotationIndices(rows, 0)).toEqual([]);
+    expect(getProteinAnnotationIndices(rows, 1)).toEqual([0]); // 'A'
+    expect(getProteinAnnotationIndices(rows, 2)).toEqual([1]); // 'B', renumbered
+    expect(getProteinAnnotationIndices(rows, 3)).toEqual([0, 1]);
+    expect(Array.from(rows.end)).toEqual([0, 1, 2, 4]);
+
+    // Neither the worst-case buffer nor the source's is retained — `.slice(0, written)`
+    // hands back an exactly-sized fresh one.
+    expect(rows.codes.buffer.byteLength).toBe(4 * 4);
+    expect(rows.codes.buffer).not.toBe(sourceRows.codes.buffer);
+    expect(Array.from(sourceRows.codes)).toEqual([0, 2, 0, 2]);
+  });
+
+  it('throws rather than silently renumbering the flat payloads when a hit drops', () => {
+    const src = csrEatData();
+    // p1's hit now points at the null value slot, which the remap drops. Every later
+    // hit number would shift under the unchanged annotation_scores_csr / _evidence_csr.
+    src.annotation_data.ec = {
+      kind: 'csr',
+      end: Int32Array.of(0, 1, 2, 4),
+      codes: Int32Array.of(1, 2, 0, 2),
+      length: 4,
+    };
+    expect(() => normalizeEatCompanionColumns(src)).toThrow(/CSR remap dropped 1 of 4 hits/);
+  });
+
+  it('reads the companion column scores/evidence from the flat v3 payloads', () => {
+    const cell = normalizeEatCompanionColumns(csrEatData()).annotation_predicted?.ec?.[0];
+    expect(cell).toMatchObject({
+      value: 'C',
+      confidence: 0.9,
+      source: 'p1',
+      scores: [[0.5, 0.25]],
+      evidence: ['IDA'],
+    });
+  });
+
+  it('drops the companion columns from the flat payload records too', () => {
+    const out = normalizeEatCompanionColumns(csrEatData());
+    expect(out.annotation_scores_csr).toEqual({});
+    expect(out.annotation_evidence_csr).toEqual({});
+    expect(out.annotation_data.ec__pred_value).toBeUndefined();
+  });
+
+  it('does not grow the flat payload records on a dataset that has none', () => {
+    const src = csrEatData();
+    delete src.annotation_scores_csr;
+    delete src.annotation_evidence_csr;
+    const out = normalizeEatCompanionColumns(src);
+    expect('annotation_scores_csr' in out).toBe(false);
+    expect('annotation_evidence_csr' in out).toBe(false);
   });
 });

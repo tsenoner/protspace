@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { AnnotationData } from '@protspace/utils';
+import { getFirstAnnotationIndex, getProteinAnnotationIndices } from '@protspace/utils';
 import {
   LegendDataProcessor,
   createProcessorContext,
@@ -6,7 +8,42 @@ import {
 } from './legend-data-processor';
 import { getVisualEncoding } from './visual-encoding';
 import type { LegendItem } from './types';
-import { NA_VALUE, NA_DEFAULT_COLOR } from './config';
+import { NA_VALUE, NA_DEFAULT_COLOR, toInternalValue } from './config';
+
+/**
+ * The pre-bincount path, kept here as the equality reference: materialise a flat
+ * `string[]` of one interned label per hit, then reduce it to a frequency map.
+ */
+function legacyCounts(
+  colData: AnnotationData,
+  values: (string | null)[],
+  proteinCount: number,
+  filteredIndices: Set<number> | null,
+  knownValues: string[] = [],
+): ReadonlyMap<string, number> {
+  const list: string[] = [];
+  if (colData instanceof Int32Array) {
+    for (let i = 0; i < proteinCount; i++) {
+      const idx = getFirstAnnotationIndex(colData, i);
+      if (idx >= 0) list.push(toInternalValue(values[idx]));
+    }
+  } else {
+    for (let i = 0; i < proteinCount; i++) {
+      for (const idx of getProteinAnnotationIndices(colData, i)) {
+        list.push(toInternalValue(values[idx]));
+      }
+    }
+  }
+  return LegendDataProcessor.countAnnotationFrequencies(
+    list,
+    filteredIndices !== null,
+    filteredIndices !== null ? [['isolated']] : [],
+    filteredIndices ?? new Set<number>(),
+    knownValues,
+  );
+}
+
+const asObject = (counts: ReadonlyMap<string, number>) => Object.fromEntries(counts);
 
 describe('legend-data-processor', () => {
   let ctx: LegendProcessorContext;
@@ -63,6 +100,171 @@ describe('legend-data-processor', () => {
       expect(result.has(0)).toBe(true);
       expect(result.has(1)).toBe(true);
       expect(result.has(2)).toBe(false);
+    });
+  });
+
+  describe('countFromStorage', () => {
+    // 6 proteins, 3 declared values, one of which is itself missing ('__NA__').
+    // Every fixture below encodes the same shape in a different storage kind:
+    // p0 -> A, p1 -> B + a null value, p2 -> nothing, p3 -> an out-of-range code,
+    // p4 -> A + B, p5 -> a negative code inside a hit list.
+    const VALUES: (string | null)[] = ['A', 'B', null];
+    const PROTEINS = 6;
+
+    const dense: readonly (readonly number[])[] = [[0], [1, 2], [], [7], [0, 1], [-1]];
+    const int32 = new Int32Array([0, 1, -1, 2, 0, 7]);
+    const sparse = {
+      kind: 'sparse-multi' as const,
+      base: new Int32Array([0, -1, 2, 7, 0, -1]),
+      overrides: new Map<number, readonly number[]>([
+        [1, [1, 2]],
+        [2, []], // an empty override wins over the base code it shadows
+        [4, [0, 1]],
+        [5, [-1]],
+      ]),
+      length: PROTEINS,
+    };
+    const csr = {
+      kind: 'csr' as const,
+      end: new Int32Array([1, 3, 3, 4, 6, 7]),
+      codes: new Int32Array([0, 1, 2, 7, 0, 1, -1]),
+      length: PROTEINS,
+    };
+
+    // One hit per protein, so the legacy flat array is protein-aligned and its
+    // isolation filtering is meaningful (see the misalignment cases below).
+    const alignedInt32 = new Int32Array([0, 1, 2, 0, 1, 2]);
+    const alignedDense: readonly (readonly number[])[] = [[0], [1], [2], [0], [1], [2]];
+    const alignedSparse = {
+      kind: 'sparse-multi' as const,
+      base: new Int32Array([0, 1, -1, 0, 1, 2]),
+      overrides: new Map<number, readonly number[]>([[2, [2]]]),
+      length: PROTEINS,
+    };
+    const alignedCsr = {
+      kind: 'csr' as const,
+      end: new Int32Array([1, 2, 3, 4, 5, 6]),
+      codes: new Int32Array([0, 1, 2, 0, 1, 2]),
+      length: PROTEINS,
+    };
+
+    // Int32Array holds one code per protein, so it cannot express p1's and p4's
+    // second hit; the three multi-capable kinds all encode the same totals.
+    const MULTI_TOTALS = { A: 2, B: 2, Z: 0, [NA_VALUE]: 3 };
+    const kinds: Array<[string, AnnotationData, Record<string, number>]> = [
+      ['Int32Array', int32, { A: 2, B: 1, Z: 0, [NA_VALUE]: 2 }],
+      ['sparse-multi', sparse, MULTI_TOTALS],
+      ['dense number[][]', dense, MULTI_TOTALS],
+      ['csr', csr, MULTI_TOTALS],
+    ];
+    const alignedKinds: Array<[string, AnnotationData]> = [
+      ['Int32Array', alignedInt32],
+      ['sparse-multi', alignedSparse],
+      ['dense number[][]', alignedDense],
+      ['csr', alignedCsr],
+    ];
+
+    it.each(kinds)(
+      'matches the legacy path on %s storage (no isolation)',
+      (_name, colData, totals) => {
+        const counts = LegendDataProcessor.countFromStorage(colData, VALUES, PROTEINS, null, [
+          'A',
+          'B',
+          'Z',
+        ]);
+        expect(asObject(counts)).toEqual(
+          asObject(legacyCounts(colData, VALUES, PROTEINS, null, ['A', 'B', 'Z'])),
+        );
+        // Explicit shape so a change to BOTH paths cannot pass unnoticed.
+        expect(asObject(counts)).toEqual(totals);
+      },
+    );
+
+    it.each(alignedKinds)(
+      'matches the legacy path on %s storage under isolation',
+      (_name, colData) => {
+        const filtered = new Set([0, 1, 4]);
+        const counts = LegendDataProcessor.countFromStorage(colData, VALUES, PROTEINS, filtered, [
+          'A',
+          'B',
+          'Z',
+        ]);
+        expect(asObject(counts)).toEqual(
+          asObject(legacyCounts(colData, VALUES, PROTEINS, filtered, ['A', 'B', 'Z'])),
+        );
+        expect(asObject(counts)).toEqual({ A: 1, B: 2, Z: 0 });
+      },
+    );
+
+    it('seeds knownValues at zero and drops values nothing points at', () => {
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([0, 0]),
+        ['A', 'B'],
+        2,
+        null,
+        ['A', 'B'],
+      );
+      expect(asObject(counts)).toEqual({ A: 2, B: 0 });
+
+      const unseeded = LegendDataProcessor.countFromStorage(
+        new Int32Array([0, 0]),
+        ['A', 'B'],
+        2,
+        null,
+      );
+      expect(asObject(unseeded)).toEqual({ A: 2 });
+    });
+
+    it('merges distinct value slots that share an internal key', () => {
+      // Two bins both labelled null collapse onto the single '__NA__' key.
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([0, 1, 2]),
+        [null, null, 'A'],
+        3,
+        null,
+      );
+      expect(asObject(counts)).toEqual({ [NA_VALUE]: 2, A: 1 });
+    });
+
+    it('ignores proteins past the end of the storage', () => {
+      const counts = LegendDataProcessor.countFromStorage(new Int32Array([0]), ['A'], 5, null);
+      expect(asObject(counts)).toEqual({ A: 1 });
+    });
+
+    // ─── isolation misalignment the flat-array path had ─────────────────────
+    // The legacy list held one entry per HIT, not per protein, while
+    // filteredIndices holds PROTEIN indices. Any storage that compacts (a
+    // protein with no annotation) or expands (a multi-valued protein) shifted
+    // the two apart, so isolation counted the wrong proteins.
+
+    it('counts the isolated protein, not the shifted one, when codes compact', () => {
+      // The numeric-binning shape: -1 marks an unbinned protein
+      // (numeric-binning.ts materialises it that way) and the legacy build
+      // dropped it, shifting every later entry down by one.
+      const bins: (string | null)[] = ['low', 'high'];
+      const colData = new Int32Array([-1, 0, 1, 0]);
+      const isolated = new Set([0, 1]); // proteins p0 (unbinned) and p1 ('low')
+
+      expect(asObject(LegendDataProcessor.countFromStorage(colData, bins, 4, isolated))).toEqual({
+        low: 1,
+      });
+      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
+      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
+      expect(asObject(legacyCounts(colData, bins, 4, isolated))).toEqual({ low: 1, high: 1 });
+    });
+
+    it('counts every label of an isolated multi-valued protein', () => {
+      const labels: (string | null)[] = ['A', 'B'];
+      const colData: readonly (readonly number[])[] = [[0, 1], [0], [1]];
+      const isolated = new Set([0]); // protein p0, which carries both labels
+
+      expect(asObject(LegendDataProcessor.countFromStorage(colData, labels, 3, isolated))).toEqual({
+        A: 1,
+        B: 1,
+      });
+      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
+      // second label was attributed to a protein that was filtered out.
+      expect(asObject(legacyCounts(colData, labels, 3, isolated))).toEqual({ A: 1 });
     });
   });
 

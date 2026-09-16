@@ -18,8 +18,15 @@ from protspace.data.io.bundle import (
 def _core() -> list[pa.Table]:
     return [
         pa.table({"protein_id": ["a", "b"]}),
-        pa.table({"projection_name": ["PCA_2"]}),
-        pa.table({"projection_name": ["PCA_2", "PCA_2"], "identifier": ["a", "b"]}),
+        pa.table({"projection_name": ["PCA_2"], "dimensions": [2]}),
+        pa.table(
+            {
+                "projection_name": ["PCA_2", "PCA_2"],
+                "identifier": ["a", "b"],
+                "x": [0.0, 1.0],
+                "y": [0.0, 1.0],
+            }
+        ),
     ]
 
 
@@ -27,32 +34,39 @@ def _stats() -> pa.Table:
     return pa.table({"space_name": ["PCA_2"], "metric": ["silhouette"], "value": [0.5]})
 
 
-def _ndelims(path) -> int:
-    return path.read_bytes().count(PARQUET_BUNDLE_DELIMITER)
+def _parts(path) -> list[bytes]:
+    return path.read_bytes().split(PARQUET_BUNDLE_DELIMITER)
 
 
-def test_three_part_bundle_roundtrips(tmp_path):
+def test_bundle_without_settings_or_stats_roundtrips(tmp_path):
+    """Every write is v3, so the container always has six slots — the settings
+    and statistics ones are zero bytes here, which is what keeps the payloads
+    part at position six where the browser reads it."""
     p = tmp_path / "b.parquetbundle"
     write_bundle(_core(), p)
-    assert _ndelims(p) == 2
+    parts = _parts(p)
+    assert len(parts) == 6
+    assert parts[3] == b"" and parts[4] == b"" and parts[5]
     core, settings = read_bundle(p)
     assert len(core) == 3 and settings is None
     assert read_statistics_from_bundle(p) is None
 
 
-def test_four_part_settings_only(tmp_path):
+def test_settings_only(tmp_path):
     p = tmp_path / "b.parquetbundle"
     write_bundle(_core(), p, settings={"hello": "world"})
-    assert _ndelims(p) == 3
+    parts = _parts(p)
+    assert len(parts) == 6 and parts[3] and parts[4] == b""
     _, settings = read_bundle(p)
     assert settings == {"hello": "world"}
     assert read_statistics_from_bundle(p) is None
 
 
-def test_five_part_settings_and_stats(tmp_path):
+def test_settings_and_stats(tmp_path):
     p = tmp_path / "b.parquetbundle"
     write_bundle(_core(), p, settings={"k": 1}, statistics=_stats())
-    assert _ndelims(p) == 4
+    parts = _parts(p)
+    assert len(parts) == 6 and parts[3] and parts[4]
     _, settings = read_bundle(p)
     assert settings == {"k": 1}
     stats_bytes = read_statistics_from_bundle(p)
@@ -61,10 +75,12 @@ def test_five_part_settings_and_stats(tmp_path):
     assert table.column("metric")[0].as_py() == "silhouette"
 
 
-def test_five_part_stats_only_empty_settings(tmp_path):
+def test_stats_only_empty_settings(tmp_path):
     p = tmp_path / "b.parquetbundle"
     write_bundle(_core(), p, statistics=_stats())
-    assert _ndelims(p) == 4  # zero-byte settings slot keeps stats at position 5
+    parts = _parts(p)
+    # zero-byte settings slot keeps stats at position 5 and payloads at 6
+    assert len(parts) == 6 and parts[3] == b"" and parts[4]
     core, settings = read_bundle(p)
     assert len(core) == 3 and settings is None
     assert read_statistics_from_bundle(p) is not None

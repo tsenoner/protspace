@@ -1,9 +1,36 @@
-import type { AnnotationData, SparseMultiValueAnnotationData } from '../types.js';
+import type {
+  AnnotationData,
+  CsrAnnotationData,
+  SparseMultiValueAnnotationData,
+} from '../types.js';
 
 export function isSparseMultiValueAnnotationData(
   data: AnnotationData,
 ): data is SparseMultiValueAnnotationData {
   return 'kind' in data && data.kind === 'sparse-multi';
+}
+
+/**
+ * Tagged storage is checked before any `instanceof`: a CSR container is a plain
+ * object holding typed arrays, not a typed array itself.
+ */
+export function isCsrAnnotationData(data: AnnotationData): data is CsrAnnotationData {
+  return 'kind' in data && data.kind === 'csr';
+}
+
+/**
+ * Half-open `[start, stop)` range of hits owned by a protein in CSR storage.
+ * Out-of-range and negative protein indices yield an empty range.
+ *
+ * Also the hit numbering for the parallel `annotation_scores_csr` /
+ * `annotation_evidence_csr` payloads, which is why this is exported.
+ */
+export function getCsrHitRange(
+  data: CsrAnnotationData,
+  proteinIdx: number,
+): readonly [number, number] {
+  if (proteinIdx < 0 || proteinIdx >= data.length) return [0, 0];
+  return [proteinIdx === 0 ? 0 : data.end[proteinIdx - 1], data.end[proteinIdx]];
 }
 
 /**
@@ -43,6 +70,12 @@ export function isMultilabelAnnotationData(data: AnnotationData): boolean {
     }
     return false;
   }
+  if (isCsrAnnotationData(data)) {
+    for (let i = 0; i < data.length; i++) {
+      if (data.end[i] - (i === 0 ? 0 : data.end[i - 1]) > 1) return true;
+    }
+    return false;
+  }
   if (data instanceof Int32Array) return false;
   return data.some((values) => values.length > 1);
 }
@@ -66,6 +99,12 @@ export function getProteinAnnotationIndices(
     const value = data.base[proteinIdx];
     return value < 0 ? [] : [value];
   }
+  if (isCsrAnnotationData(data)) {
+    // A subarray view would be cheaper, but callers run `.map`/`.flatMap`/`.some`
+    // on the result, so the contract stays `readonly number[]`.
+    const [start, stop] = getCsrHitRange(data, proteinIdx);
+    return start === stop ? [] : Array.from(data.codes.subarray(start, stop));
+  }
   if (data instanceof Int32Array) {
     if (proteinIdx < 0 || proteinIdx >= data.length) return [];
     const value = data[proteinIdx];
@@ -81,6 +120,12 @@ export function getProteinAnnotationCount(data: AnnotationData, proteinIdx: numb
     if (override) return override.length;
     if (proteinIdx < 0 || proteinIdx >= data.base.length) return 0;
     return data.base[proteinIdx] < 0 ? 0 : 1;
+  }
+  if (isCsrAnnotationData(data)) {
+    // Range inlined rather than via getCsrHitRange: this and getFirstAnnotationIndex
+    // run per point per frame, and the tuple would be an allocation each.
+    if (proteinIdx < 0 || proteinIdx >= data.length) return 0;
+    return data.end[proteinIdx] - (proteinIdx === 0 ? 0 : data.end[proteinIdx - 1]);
   }
   if (data instanceof Int32Array) {
     if (proteinIdx < 0 || proteinIdx >= data.length) return 0;
@@ -100,6 +145,11 @@ export function getFirstAnnotationIndex(data: AnnotationData, proteinIdx: number
     if (override) return override[0] ?? -1;
     if (proteinIdx < 0 || proteinIdx >= data.base.length) return -1;
     return data.base[proteinIdx];
+  }
+  if (isCsrAnnotationData(data)) {
+    if (proteinIdx < 0 || proteinIdx >= data.length) return -1;
+    const start = proteinIdx === 0 ? 0 : data.end[proteinIdx - 1];
+    return start === data.end[proteinIdx] ? -1 : data.codes[start];
   }
   if (data instanceof Int32Array) {
     if (proteinIdx < 0 || proteinIdx >= data.length) return -1;
@@ -125,6 +175,24 @@ export function sliceAnnotationData(data: AnnotationData, indices: number[]): An
     return overrides.size > 0
       ? { kind: 'sparse-multi', base, overrides, length: base.length }
       : base;
+  }
+  if (isCsrAnnotationData(data)) {
+    const end = new Int32Array(indices.length);
+    let total = 0;
+    for (let i = 0; i < indices.length; i++) {
+      const [start, stop] = getCsrHitRange(data, indices[i]);
+      total += stop - start;
+      end[i] = total;
+    }
+    const codes = new Int32Array(total);
+    let cursor = 0;
+    for (let i = 0; i < indices.length; i++) {
+      const [start, stop] = getCsrHitRange(data, indices[i]);
+      if (start === stop) continue;
+      codes.set(data.codes.subarray(start, stop), cursor);
+      cursor += stop - start;
+    }
+    return { kind: 'csr', end, codes, length: indices.length };
   }
   if (data instanceof Int32Array) {
     const out = new Int32Array(indices.length);

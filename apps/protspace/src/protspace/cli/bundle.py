@@ -98,6 +98,10 @@ def bundle(
     # same-version annotate/prepare pipeline (i.e. already percent-encoded).
     # We don't inspect its contents, so it's unconditionally stamped as v2 --
     # there is currently no other producer of this parquet to distrust.
+    # The stamp declares the *cell grammar*, not the container: write_bundle
+    # emits a v3 container either way, and without the v2 stamp its encoder
+    # would take the table for v1 and migrate it, double-escaping every
+    # reserved character.
     annotations_table = stamp_format_version(annotations_table)
 
     statistics_table = (

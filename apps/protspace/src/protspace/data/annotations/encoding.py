@@ -135,7 +135,17 @@ def encode_legacy_cell(value: str) -> str:
 
 
 def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
-    """Re-emit every v1 string annotation using unambiguous v2 field encoding."""
+    """Re-emit every v1 string annotation using unambiguous v2 field encoding.
+
+    Idempotent, and it has to be: :func:`read_format_version` reads an unstamped
+    table as v1, so an unstamped output is exactly the table that looks like it
+    still needs migrating, and a second pass double-escapes every reserved
+    character (``%3B`` to ``%253B``, unrecoverable because :func:`decode_field`
+    is not its own inverse).  An already-migrated table is returned untouched and
+    the result is stamped, so neither the caller nor the next one can repeat it.
+    """
+    if read_format_version(table) >= BUNDLE_FORMAT_VERSION:
+        return table
     columns = []
     for name, column in zip(table.column_names, table.columns, strict=True):
         if name in {"identifier", "protein_id"} or not (
@@ -153,7 +163,7 @@ def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
             for value in column.to_pylist()
         ]
         columns.append(pa.array(migrated, type=column.type))
-    return pa.Table.from_arrays(columns, names=table.column_names)
+    return stamp_format_version(pa.Table.from_arrays(columns, names=table.column_names))
 
 
 def to_display_value(raw, *, decode: bool = True):

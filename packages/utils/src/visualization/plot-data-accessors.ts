@@ -1,5 +1,9 @@
 import type { VisualizationData, NumericAnnotationType, PredictedCell } from '../types.js';
-import { getProteinAnnotationIndices } from './annotation-data-access.js';
+import {
+  getCsrHitRange,
+  getProteinAnnotationIndices,
+  isCsrAnnotationData,
+} from './annotation-data-access.js';
 import { isAutoClusterColumnName } from './annotation-statistics.js';
 import { getPredictedCell, getPredictedCellValues } from './eat-overlay.js';
 import { getNumericBinLabelMap } from './numeric-binning.js';
@@ -59,13 +63,37 @@ export function getProteinNumericType(
   return annotation?.numericType ?? annotation?.numericMetadata?.numericType ?? 'float';
 }
 
+/**
+ * Hit range this protein owns, for the flat v3 score/evidence payloads. Empty
+ * unless the column's storage is CSR — the flat payloads are numbered by CSR hit,
+ * so there is nothing to index them by otherwise.
+ */
+function getCsrHitRangeFor(
+  data: VisualizationData,
+  proteinIdx: number,
+  annotationKey: string,
+): readonly [number, number] {
+  const rows = data.annotation_data?.[annotationKey];
+  return rows && isCsrAnnotationData(rows) ? getCsrHitRange(rows, proteinIdx) : [0, 0];
+}
+
 export function getProteinScores(
   data: VisualizationData,
   proteinIdx: number,
   annotationKey: string,
 ): (number[] | null)[] {
   const scores = data.annotation_scores?.[annotationKey]?.[proteinIdx];
-  return Array.isArray(scores) ? scores : [];
+  if (Array.isArray(scores)) return scores;
+  const csr = data.annotation_scores_csr?.[annotationKey];
+  if (!csr) return [];
+  const [start, stop] = getCsrHitRangeFor(data, proteinIdx, annotationKey);
+  const out: (number[] | null)[] = [];
+  for (let hit = start; hit < stop; hit++) {
+    const from = hit === 0 ? 0 : csr.hitEnd[hit - 1];
+    const to = csr.hitEnd[hit];
+    out.push(to > from ? Array.from(csr.values.subarray(from, to)) : null);
+  }
+  return out;
 }
 
 export function getProteinEvidence(
@@ -74,7 +102,16 @@ export function getProteinEvidence(
   annotationKey: string,
 ): (string | null)[] {
   const evidence = data.annotation_evidence?.[annotationKey]?.[proteinIdx];
-  return Array.isArray(evidence) ? evidence : [];
+  if (Array.isArray(evidence)) return evidence;
+  const csr = data.annotation_evidence_csr?.[annotationKey];
+  if (!csr) return [];
+  const [start, stop] = getCsrHitRangeFor(data, proteinIdx, annotationKey);
+  const out: (string | null)[] = [];
+  for (let hit = start; hit < stop; hit++) {
+    const code = csr.codes[hit];
+    out.push(code >= 0 ? (csr.dict[code] ?? null) : null);
+  }
+  return out;
 }
 
 /**

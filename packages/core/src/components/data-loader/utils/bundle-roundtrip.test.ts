@@ -9,6 +9,9 @@ import {
 import {
   createParquetBundle,
   countBundleDelimiters,
+  getProteinAnnotationValues,
+  getProteinEvidence,
+  getProteinScores,
   findBundleDelimiterPositions,
   isParquetBundle,
   type Annotation,
@@ -710,5 +713,69 @@ describe('numeric annotation type fidelity', () => {
     expect(reimported.annotations.length.kind).toBe('numeric');
     expect(reimported.annotations.length.numericType).toBe('int');
     expect(reimported.annotation_data.length).toBeUndefined();
+  });
+});
+
+describe('export from CSR storage (bundle format v3 in memory)', () => {
+  /**
+   * The writer only ever stamps format version 2, so a CSR-loaded dataset has to
+   * serialize to exactly the same v2 cells as the equivalent nested dataset.
+   * p0 → 'a|IDA', p1 → nothing, p2 → 'b|0.5,0.25;a'.
+   */
+  const annotations: Record<string, Annotation> = {
+    fam: {
+      kind: 'categorical',
+      values: ['a', 'b'],
+      colors: ['#000', '#fff'],
+      shapes: ['circle', 'square'],
+    },
+  };
+  const shared = {
+    protein_ids: ['p0', 'p1', 'p2'],
+    projections: [{ name: 'umap', dimension: 2 as const, data: new Float32Array(6) }],
+    annotations,
+  };
+
+  const nested: VisualizationData = {
+    ...shared,
+    annotation_data: { fam: [[0], [], [1, 0]] },
+    annotation_scores: { fam: [[null], [], [[0.5, 0.25], null]] },
+    annotation_evidence: { fam: [['IDA'], [], [null, null]] },
+  };
+  const csr: VisualizationData = {
+    ...shared,
+    annotation_data: {
+      fam: { kind: 'csr', end: Int32Array.of(1, 1, 3), codes: Int32Array.of(0, 1, 0), length: 3 },
+    },
+    annotation_scores_csr: {
+      fam: { hitEnd: Int32Array.of(0, 2, 2), values: Float32Array.of(0.5, 0.25) },
+    },
+    annotation_evidence_csr: {
+      fam: { codes: Int32Array.of(0, -1, -1), dict: ['IDA'] },
+    },
+  };
+
+  it('writes the same annotation cells as the equivalent nested dataset', async () => {
+    const readCells = async (data: VisualizationData) => {
+      const extraction = await extractRowsFromParquetBundle(createParquetBundle(data));
+      return convertParquetToVisualizationData(extraction);
+    };
+    const fromCsr = await readCells(csr);
+    const fromNested = await readCells(nested);
+
+    expect(fromCsr.protein_ids).toEqual(fromNested.protein_ids);
+    expect(fromCsr.annotations.fam.values).toEqual(fromNested.annotations.fam.values);
+    for (let i = 0; i < 3; i++) {
+      expect(getProteinAnnotationValues(fromCsr, i, 'fam')).toEqual(
+        getProteinAnnotationValues(fromNested, i, 'fam'),
+      );
+      expect(getProteinScores(fromCsr, i, 'fam')).toEqual(getProteinScores(fromNested, i, 'fam'));
+      expect(getProteinEvidence(fromCsr, i, 'fam')).toEqual(
+        getProteinEvidence(fromNested, i, 'fam'),
+      );
+    }
+    // Sanity: the fixture actually carries scores and evidence through the export.
+    expect(getProteinEvidence(fromCsr, 0, 'fam')).toEqual(['IDA']);
+    expect(getProteinScores(fromCsr, 2, 'fam')).toEqual([[0.5, 0.25], null]);
   });
 });

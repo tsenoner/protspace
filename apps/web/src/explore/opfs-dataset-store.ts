@@ -176,7 +176,7 @@ export function isSupported(): boolean {
   return typeof navigator !== 'undefined' && hasStorageDirectoryApi(navigator.storage);
 }
 
-export async function saveLastImportedFile(file: File): Promise<void> {
+async function requireStoreDirectory(): Promise<FileSystemDirectoryHandle> {
   if (!isSupported()) {
     throw buildSupportError();
   }
@@ -185,6 +185,22 @@ export async function saveLastImportedFile(file: File): Promise<void> {
   if (!directory) {
     throw new Error('Unable to access the Origin Private File System.');
   }
+  return directory;
+}
+
+/**
+ * Open the crash-recovery window for an import: the `pending` record only, no bytes.
+ *
+ * Split from the byte copy below so the import path can record the file BEFORE the render.
+ * A tab that dies mid-render is exactly what `pending` and the recovery banner exist for,
+ * and the copy is far too large (45-145 MB) to sit in front of first paint.
+ *
+ * The previous dataset's bytes go with the previous metadata. Left in place they would be
+ * handed back under THIS file's name if the copy never finished — a different dataset,
+ * silently, which is worse than restoring nothing.
+ */
+export async function saveLastImportedFileMetadata(file: File): Promise<void> {
+  const directory = await requireStoreDirectory();
 
   const metadata: StoredDatasetMetadata = {
     schemaVersion: SCHEMA_VERSION,
@@ -198,8 +214,24 @@ export async function saveLastImportedFile(file: File): Promise<void> {
   };
 
   try {
-    await writeBlobFile(directory, DATA_FILENAME, file);
     await writeMetadata(directory, metadata);
+    try {
+      await directory.removeEntry(DATA_FILENAME);
+    } catch {
+      // Nothing stored yet.
+    }
+  } catch (error) {
+    await clearStoreDirectory();
+    throw error instanceof Error ? error : new Error('Failed to save imported dataset.');
+  }
+}
+
+/** Byte-copy half of the import save. Runs after {@link saveLastImportedFileMetadata}. */
+export async function saveLastImportedFileData(file: File): Promise<void> {
+  const directory = await requireStoreDirectory();
+
+  try {
+    await writeBlobFile(directory, DATA_FILENAME, file);
   } catch (error) {
     await clearStoreDirectory();
     throw error instanceof Error ? error : new Error('Failed to save imported dataset.');

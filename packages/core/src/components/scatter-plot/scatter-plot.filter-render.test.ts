@@ -18,7 +18,7 @@
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
 import { plotDataId, materializePlotDataPoint, clonePlotData } from '@protspace/utils';
-import { buildAnnotationValueList } from '../legend/annotation-values';
+import { LegendDataProcessor } from '../legend/legend-data-processor';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -501,14 +501,15 @@ describe('scatter-plot data-change dispatch reflects the filtered view', () => {
     // Sliced to the 3 filtered ids — the legend reflects what is shown.
     expect(payload.protein_ids).toEqual(['p0', 'p1', 'p2']);
 
-    // The dispatched value list reflects the filtered view: only 'A' remains.
-    const values = buildAnnotationValueList(
+    // The dispatched counts reflect the filtered view: only 'A' remains.
+    const counts = LegendDataProcessor.countFromStorage(
       payload.annotation_data.fam,
       payload.annotations.fam.values,
       payload.protein_ids.length,
+      null,
     );
-    expect(values).toContain('A');
-    expect(values).not.toContain('B');
+    expect(counts.get('A')).toBe(3);
+    expect(counts.has('B')).toBe(false);
   });
 
   it('still slices the dispatched payload to the isolated survivors (isolation unaffected)', () => {

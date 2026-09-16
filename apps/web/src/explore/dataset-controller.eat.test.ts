@@ -24,7 +24,8 @@ vi.mock('./persisted-dataset', () => ({
 
 vi.mock('./opfs-dataset-store', () => ({
   markLastLoadStatus: mocks.markLastLoadStatus,
-  saveLastImportedFile: vi.fn(),
+  saveLastImportedFileMetadata: vi.fn(),
+  saveLastImportedFileData: vi.fn(),
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({

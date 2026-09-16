@@ -16,8 +16,15 @@ from protspace.data.io.bundle import (
 
 def _tables():
     annotations = pa.table({"identifier": ["A", "B"], "cat": ["x", "y"]})
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table({"id": ["A", "B"], "x": [0.0, 1.0], "y": [0.0, 1.0]})
+    proj_meta = pa.table({"projection_name": ["PCA 2"], "dimensions": [2]})
+    proj_data = pa.table(
+        {
+            "projection_name": ["PCA 2", "PCA 2"],
+            "identifier": ["A", "B"],
+            "x": [0.0, 1.0],
+            "y": [0.0, 1.0],
+        }
+    )
     return [annotations, proj_meta, proj_data]
 
 
@@ -37,12 +44,15 @@ def test_replaces_annotations_keeps_other_parts(tmp_path):
 
     parts, settings = read_bundle(out)
     assert "cat__pred_value" in _read_part(parts[0]).column_names
-    # Projections preserved byte-for-byte.
-    assert _read_part(parts[1]).column_names == ["name", "dims"]
+    # Projections preserved.
+    assert _read_part(parts[1]).column_names == ["projection_name", "dimensions"]
     assert _read_part(parts[2]).to_pydict()["x"] == [0.0, 1.0]
 
 
 def test_projection_parts_preserved_byte_for_byte(tmp_path):
+    """A v3 rewrite re-encodes the whole core (part 6 holds part 1's payloads),
+    so the projection parts are re-derived rather than copied — and still come
+    out byte-identical, which is what pins the encoder as deterministic."""
     src = tmp_path / "in.parquetbundle"
     out = tmp_path / "out.parquetbundle"
     write_bundle(_tables(), src, settings={"foo": 1})

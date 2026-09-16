@@ -40,7 +40,11 @@ import type {
   PlotDataPoint,
   VisualizationData,
 } from '@protspace/utils';
-import { isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
+import {
+  isCsrAnnotationData,
+  isSparseMultiValueAnnotationData,
+  toInternalValue,
+} from '@protspace/utils';
 
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
@@ -138,6 +142,26 @@ function buildHiddenMask(
       let everyHidden = 1;
       for (let k = 0; k < override.length; k++) {
         if (isBinHidden(override[k]) === 0) {
+          everyHidden = 0;
+          break;
+        }
+      }
+      mask[i] = everyHidden;
+    }
+  } else if (isCsrAnnotationData(annotationRows)) {
+    const { end, codes, length: len } = annotationRows;
+    for (let i = 0; i < n; i++) {
+      if (i >= len) {
+        mask[i] = 1;
+        continue;
+      }
+      // Hit range inlined rather than via `getCsrHitRange`: the tuple would be an
+      // allocation per point, and this pass runs on every legend hide.
+      const stop = end[i];
+      let everyHidden = 1;
+      // Empty row (start === stop) leaves this 1 — vacuously hidden, as `[].every()`.
+      for (let k = i === 0 ? 0 : end[i - 1]; k < stop; k++) {
+        if (isBinHidden(codes[k]) === 0) {
           everyHidden = 0;
           break;
         }

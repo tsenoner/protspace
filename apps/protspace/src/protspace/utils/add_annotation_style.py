@@ -350,7 +350,7 @@ def add_annotation_styles_bundle(
     """
     from protspace.data.io.bundle import (
         extract_bundle_to_dir,
-        read_bundle,
+        read_settings_from_bundle,
         replace_settings_in_bundle,
     )
     from protspace.data.io.settings_converter import visualization_state_to_settings
@@ -359,8 +359,10 @@ def add_annotation_styles_bundle(
     temp_dir = extract_bundle_to_dir(Path(bundle_file))
     reader = ArrowReader(Path(temp_dir))
 
-    # Read existing settings from the bundle (if any) to preserve extra fields
-    _, existing_settings = read_bundle(Path(bundle_file))
+    # Read existing settings from the bundle (if any) to preserve extra fields.
+    # Settings-only: extract_bundle_to_dir above already paid the one v3 decode
+    # this command needs.
+    existing_settings = read_settings_from_bundle(Path(bundle_file))
 
     # Collect settings-level overrides from the styles input
     style_overrides: dict[str, dict] = {}
@@ -435,11 +437,11 @@ def dump_settings(input_file: str) -> None:
     data_format = detect_data_format(input_file)
 
     if data_format == "parquetbundle":
-        from protspace.data.io.bundle import read_bundle
+        from protspace.data.io.bundle import read_settings_from_bundle
 
-        _, settings = read_bundle(Path(input_file))
+        settings = read_settings_from_bundle(Path(input_file))
         if settings is None:
-            print("No settings found in bundle (3-part bundle).")
+            print("No settings found in bundle.")
         else:
             print(json.dumps(settings, indent=2))
     elif data_format == "parquet":

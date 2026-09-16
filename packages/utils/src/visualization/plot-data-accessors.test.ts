@@ -8,7 +8,7 @@ import {
   getProteinEvidence,
   buildTooltipView,
 } from './plot-data-accessors';
-import type { VisualizationData } from '../types';
+import type { CsrAnnotationData, CsrEvidence, CsrScores, VisualizationData } from '../types';
 
 const baseData = (): VisualizationData => ({
   protein_ids: ['p0', 'p1', 'p2'],
@@ -413,5 +413,83 @@ describe('plot-data-accessors', () => {
       expect(block.scores).toEqual([[0.9], null]);
       expect(block.evidence).toEqual([null, 'EXP']);
     });
+  });
+});
+
+describe('CSR score and evidence payloads', () => {
+  // species rows: p0 -> hits 0,1 ; p1 -> no hits ; p2 -> hit 2
+  const csrRows: CsrAnnotationData = {
+    kind: 'csr',
+    end: Int32Array.from([2, 2, 3]),
+    codes: Int32Array.from([0, 1, 2]),
+    length: 3,
+  };
+  // hit 0 -> [1.5]; hit 1 -> no scores; hit 2 -> [0.25, 0.5]
+  const csrScores: CsrScores = {
+    hitEnd: Int32Array.from([1, 1, 3]),
+    values: Float64Array.from([1.5, 0.25, 0.5]),
+  };
+  const csrEvidence: CsrEvidence = {
+    codes: Int32Array.from([0, -1, 1]),
+    dict: ['IDA', 'ECO:1'],
+  };
+
+  const csrData = (): VisualizationData => {
+    const data = baseData();
+    data.annotation_data.species = csrRows;
+    data.annotation_scores_csr = { species: csrScores };
+    data.annotation_evidence_csr = { species: csrEvidence };
+    return data;
+  };
+
+  it('reads scores per hit, null for a hit with no score values', () => {
+    const data = csrData();
+    expect(getProteinScores(data, 0, 'species')).toEqual([[1.5], null]);
+    expect(getProteinScores(data, 1, 'species')).toEqual([]);
+    expect(getProteinScores(data, 2, 'species')).toEqual([[0.25, 0.5]]);
+  });
+
+  it('reads evidence per hit, null for code -1', () => {
+    const data = csrData();
+    expect(getProteinEvidence(data, 0, 'species')).toEqual(['IDA', null]);
+    expect(getProteinEvidence(data, 1, 'species')).toEqual([]);
+    expect(getProteinEvidence(data, 2, 'species')).toEqual(['ECO:1']);
+  });
+
+  it('returns empty for out-of-range and negative protein indices', () => {
+    const data = csrData();
+    for (const idx of [3, 99, -1]) {
+      expect(getProteinScores(data, idx, 'species')).toEqual([]);
+      expect(getProteinEvidence(data, idx, 'species')).toEqual([]);
+    }
+  });
+
+  it('prefers the nested records when both forms are present', () => {
+    const data = csrData();
+    data.annotation_scores = { species: [[[9]], [], []] };
+    data.annotation_evidence = { species: [['NESTED'], [], []] };
+    expect(getProteinScores(data, 0, 'species')).toEqual([[9]]);
+    expect(getProteinEvidence(data, 0, 'species')).toEqual(['NESTED']);
+  });
+
+  it('ignores CSR payloads when the column storage is not CSR', () => {
+    // The flat payloads are numbered by CSR hit, so without CSR storage there is
+    // no hit range to index them by.
+    const data = csrData();
+    data.annotation_data.species = Int32Array.of(0, 1, 2);
+    expect(getProteinScores(data, 0, 'species')).toEqual([]);
+    expect(getProteinEvidence(data, 0, 'species')).toEqual([]);
+  });
+
+  it('resolves annotation values through CSR storage', () => {
+    expect(getProteinAnnotationValues(csrData(), 0, 'species')).toEqual(['human', 'mouse']);
+    expect(getProteinAnnotationValues(csrData(), 1, 'species')).toEqual([]);
+  });
+
+  it('feeds the tooltip view without changing its shape', () => {
+    const view = buildTooltipView(csrData(), 0, 'species');
+    expect(view.blocks[0].scores).toEqual([[1.5], null]);
+    expect(view.blocks[0].evidence).toEqual(['IDA', null]);
+    expect(view.blocks[0].displayValues).toEqual(['human', 'mouse']);
   });
 });

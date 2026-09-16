@@ -94,8 +94,15 @@ def test_cli_bundle_command_stamps_format_version(tmp_path):
         pa.Table.from_pandas(metadata_df), proj_dir / "projections_metadata.parquet"
     )
 
+    # The long layout `protspace project` actually writes (one row per protein
+    # per projection); `bundle` hands this table straight to write_bundle.
     data_df = pd.DataFrame(
-        {"identifier": ["P1", "P2"], "PCA_2_1": [0.1, 0.2], "PCA_2_2": [0.3, 0.4]}
+        {
+            "projection_name": ["PCA_2", "PCA_2"],
+            "identifier": ["P1", "P2"],
+            "x": [0.1, 0.2],
+            "y": [0.3, 0.4],
+        }
     )
     pq.write_table(pa.Table.from_pandas(data_df), proj_dir / "projections_data.parquet")
 

@@ -234,16 +234,12 @@ def transfer(
     """
     setup_logging(verbose)
 
-    import io
-
-    import pyarrow.parquet as pq
-
     from protspace.analysis.classification import Rule
     from protspace.data.annotations.encoding import (
         migrate_legacy_annotation_table,
         read_format_version,
     )
-    from protspace.data.io.bundle import read_bundle, replace_annotations_in_bundle
+    from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
     from protspace.data.loaders import load_h5, split_h5_spec
 
     def _parse_where(items: list[str] | None) -> list[tuple[str, str]]:
@@ -275,9 +271,10 @@ def transfer(
     emb_set = load_h5([h5_path], name_override=name_override)
     emb_map = {header: emb_set.data[i] for i, header in enumerate(emb_set.headers)}
 
-    # Read the annotations part of the bundle.
-    parts, _settings = read_bundle(bundle)
-    annotations = pq.read_table(io.BytesIO(parts[0]))
+    # Read the annotations part of the bundle.  read_tables hands back the v2
+    # shape for a v3 container too, without the parquet round trip read_bundle
+    # would do on the way out of the decoder.
+    annotations, _metadata, _projections = read_tables(bundle)
     input_format_version = read_format_version(annotations)
 
     # Real bundles name the id column "protein_id"; run_transfer works on "identifier".

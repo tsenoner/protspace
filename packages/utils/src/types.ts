@@ -44,6 +44,7 @@ export interface Annotation {
  *   index, or `-1` when the protein has no value for this column.
  * - `SparseMultiValueAnnotationData`: compact single-value base plus overrides for the uncommon
  *   multi-valued rows.
+ * - `CsrAnnotationData`: flat compressed-sparse-row codes, as delivered by bundle format v3.
  * - `(readonly number[])[]`: densely multi-valued column. `data[proteinIdx]` is the
  *   list of indices; an empty array means missing.
  */
@@ -54,9 +55,48 @@ export interface SparseMultiValueAnnotationData {
   readonly length: number;
 }
 
+/**
+ * Compressed sparse row storage for a multi-valued column (bundle format v3).
+ *
+ * Row `i` owns `codes[end[i - 1] .. end[i])`, with `end[-1]` conceptually 0, so
+ * a row with no values is `end[i - 1] === end[i]`. `end` is non-decreasing and
+ * `end[length - 1] === codes.length`.
+ */
+export interface CsrAnnotationData {
+  readonly kind: 'csr';
+  readonly end: Int32Array;
+  readonly codes: Int32Array;
+  readonly length: number;
+}
+
+/**
+ * Per-hit scores for a CSR column, indexed by the same hit numbering as
+ * {@link CsrAnnotationData.codes}: hit `h` owns `values[hitEnd[h - 1] .. hitEnd[h])`
+ * (`hitEnd[-1]` conceptually 0). An empty range means the hit carries no score.
+ */
+export interface CsrScores {
+  readonly hitEnd: Int32Array;
+  /**
+   * float64, matching the `scores:<col>` payload the v3 encoder writes. float32
+   * cannot carry an E-value — the canonical Pfam / InterPro score — at all: 1e-200
+   * flushes to 0 and 1e40 saturates to Infinity.
+   */
+  readonly values: Float64Array;
+}
+
+/**
+ * Per-hit evidence for a CSR column, one code per hit: `-1` means none,
+ * otherwise the evidence string is `dict[code]`.
+ */
+export interface CsrEvidence {
+  readonly codes: Int32Array;
+  readonly dict: readonly string[];
+}
+
 export type AnnotationData =
   | Int32Array
   | SparseMultiValueAnnotationData
+  | CsrAnnotationData
   | readonly (readonly number[])[];
 
 /** A value transferred from a reference protein by Embedding Annotation Transfer (EAT). */
@@ -153,6 +193,14 @@ export interface VisualizationData {
   annotation_predicted?: AnnotationPredictedData;
   annotation_scores?: Record<string, (number[] | null)[][]>;
   annotation_evidence?: Record<string, (string | null)[][]>;
+  /**
+   * v3 counterparts of the two records above, flat per hit instead of nested per
+   * protein. Deliberately separate optional fields rather than a union with the
+   * nested form: the existing `annotation_scores?.[key]?.[i]` indexers stay valid,
+   * and a v1/v2 load never populates these. At most one form is present per column.
+   */
+  annotation_scores_csr?: Record<string, CsrScores>;
+  annotation_evidence_csr?: Record<string, CsrEvidence>;
   /**
    * Raw projection-statistics parquet part (bundle part 5) as read, carried
    * unparsed so an export re-emits it instead of dropping it. This is the

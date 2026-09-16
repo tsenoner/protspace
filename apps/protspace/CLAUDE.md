@@ -248,8 +248,13 @@ HDF5 file (float16 embeddings)
 3. `projections_data` — reduced coordinates per protein per projection
 4. `settings` (optional) — annotation styles, pinned values, display config
 5. `statistics` (optional) — tidy table of annotation-based validity (silhouette/DBI/CH per annotation, `space_kind ∈ {embedding, projection}`, `annotation` column) + auto-cluster ARI/NMI agreement (`stat_family=cluster_agreement`) (`protspace stats` / `prepare --stats`)
+6. `payloads` (format v3 only, required): label dictionaries and CSR code/score/evidence buffers for part 1 (`data/io/bundle_v3.py`)
 
-Positional layout is `core(3) + settings? + statistics?`. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Both bundled and separate-file (`--no-bundled`) output persist `settings.parquet` and `statistics.parquet` when present.
+Every write from here emits **six** parts (format v3): `core(3) + settings + statistics + payloads`, with zero bytes in the settings or statistics slot when absent, because the browser reads the payloads positionally from `parts[5]`. `replace_settings_in_bundle` (`protspace style`) is the exception: it preserves the layout it was given, so a legacy bundle stays legacy.
+
+Legacy (v1/v2) containers still read: positional layout `core(3) + settings? + statistics?`, 3 to 5 parts. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Both bundled and separate-file (`--no-bundled`) output persist `settings.parquet` and `statistics.parquet` when present.
+
+`read_tables()` / `read_bundle()` / `extract_bundle_to_dir()` decode v3 back to the v2-shaped tables (all-string cells, long projections, footer re-stamped `protspace_format_version=2`), so every consumer above `data/io/` is unchanged. `BUNDLE_FORMAT_VERSION = 2` versions the cell grammar, not the container. See `docs/guide/data-format.md`.
 
 ## Testing
 

@@ -24,7 +24,6 @@ import sys
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import requests
 
 logger = logging.getLogger(__name__)
@@ -301,15 +300,16 @@ def postprocess_bundle(
     """Patch the bundle: mature lengths, column drop+reorder, restyled
     top-9 categories, and the original ``protein_families`` settings.
     """
-    from protspace.data.io.bundle import read_bundle, write_bundle
+    from protspace.data.io.bundle import (
+        read_settings_from_bundle,
+        read_tables,
+        write_bundle,
+    )
 
     if not source_settings_bundle.exists():
         raise SystemExit(f"Source settings bundle not found: {source_settings_bundle}")
 
-    parts, _ = read_bundle(bundle_path)
-    annotations = pq.read_table(io.BytesIO(parts[0]))
-    metadata = pq.read_table(io.BytesIO(parts[1]))
-    data = pq.read_table(io.BytesIO(parts[2]))
+    annotations, metadata, data = read_tables(bundle_path)
 
     # Map by protein_id (not positional) — bundle row order is not guaranteed
     # to match FASTA order after EmbeddingSet merging and dedup in the prepare
@@ -331,7 +331,7 @@ def postprocess_bundle(
 
     annotations = _drop_and_reorder_columns(annotations)
 
-    _, source_settings = read_bundle(source_settings_bundle)
+    source_settings = read_settings_from_bundle(source_settings_bundle)
     if source_settings is None:
         raise SystemExit(
             f"Source settings bundle has no settings part: {source_settings_bundle}"
