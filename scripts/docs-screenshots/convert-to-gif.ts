@@ -15,9 +15,7 @@
 import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-
-const TEMP_VIDEOS_DIR = path.join(__dirname, '../../temp-videos');
-const IMAGES_DIR = path.join(__dirname, '../../docs/explore/images');
+import { IMAGES_DIR, TEMP_VIDEOS_DIR } from './paths';
 
 // GIF conversion settings
 const GIF_FPS = 30; // Increased for smoother animation

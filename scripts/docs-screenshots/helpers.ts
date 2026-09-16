@@ -1,12 +1,7 @@
 import { test, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
-
-// Output directory for screenshots
-export const IMAGES_DIR = path.join(__dirname, '../../docs/explore/images');
-
-// Output directory for temporary videos (before GIF conversion)
-const TEMP_VIDEOS_DIR = path.join(__dirname, '../../temp-videos');
+import { IMAGES_DIR, TEMP_VIDEOS_DIR } from './paths';
 
 /**
  * Viewport every capture runs at. Mirrors the `screenshots`/`animations`
@@ -40,7 +35,7 @@ export async function dismissProductTour(page: Page): Promise<void> {
  * have committed before we proceed. Cheaper and more deterministic than a
  * fixed `waitForTimeout` since it ties to the actual render loop.
  */
-async function awaitTwoFrames(page: Page): Promise<void> {
+export async function awaitTwoFrames(page: Page): Promise<void> {
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
@@ -176,16 +171,7 @@ export async function waitForStructureViewer(page: Page, timeout = 20000): Promi
         { timeout: 10000, polling: 500 },
       );
 
-      // Wait for a couple of frames to ensure rendering
-      await page.evaluate(() => {
-        return new Promise<void>((resolve) => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              resolve();
-            });
-          });
-        });
-      });
+      await awaitTwoFrames(page);
     } catch {
       console.log('Note: WebGL context check timed out, proceeding anyway');
     }
@@ -545,7 +531,6 @@ interface ActionLog {
   type: 'mouse' | 'keyboard';
   action: string;
   details: string;
-  timestamp: number;
 }
 
 // Global action log storage
@@ -629,13 +614,7 @@ export async function initVisualIndicators(page: Page): Promise<void> {
  * Visual indicators are shown separately via showClickIndicator and showKeyboardIndicator.
  */
 export function logAction(type: 'mouse' | 'keyboard', action: string, details: string): void {
-  const logEntry: ActionLog = {
-    type,
-    action,
-    details,
-    timestamp: Date.now(),
-  };
-  actionLogs.push(logEntry);
+  actionLogs.push({ type, action, details });
 
   // Log to console only
   const icon = type === 'mouse' ? '🖱️' : '⌨️';

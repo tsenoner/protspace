@@ -1,7 +1,8 @@
 import { test, type Page } from '@playwright/test';
 import * as path from 'path';
+import { IMAGES_DIR } from './paths';
 import {
-  IMAGES_DIR,
+  awaitTwoFrames,
   createSharedCapturePage,
   dismissProductTour,
   waitForDataLoad,
@@ -130,12 +131,7 @@ async function waitForControlBar(page: Page, timeout = 15000): Promise<void> {
   );
 
   // Settle for two frames so any Lit transition is committed.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }),
-  );
+  await awaitTwoFrames(page);
 }
 
 test.describe('Interface Overview Screenshots', () => {
