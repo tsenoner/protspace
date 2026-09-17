@@ -9,11 +9,10 @@ The scatterplot SHALL append the text `Zoomed in` to its existing visible point-
 - **WHEN** the user wheel-zooms the scatterplot to a scale greater than `1`
 - **THEN** the point-count indicator includes `Zoomed in`
 
-#### Scenario: User zooms out without crossing identity
+#### Scenario: Zoom changes while staying above identity
 
 - **WHEN** the user changes between two scales that are both greater than `1`
 - **THEN** the point-count indicator continues to include `Zoomed in`
-- **AND** the scatterplot does not schedule a new Lit update solely because the zoomed-in boolean remained true
 
 #### Scenario: User resets the zoom
 
@@ -48,7 +47,8 @@ The scatterplot MUST keep the full D3 transform non-reactive and SHALL derive a 
 #### Scenario: Reset transition reaches identity
 
 - **WHEN** a reset transition emits zoomed-in frames followed by its final identity frame
-- **THEN** the reactive zoom-indicator state changes once on the final identity frame
+- **THEN** the reactive zoom-indicator state changes once, no later than the final identity frame
+- **AND** it does not return to zoomed-in during the remainder of the transition
 
 #### Scenario: Zoom-indicator state crosses its boundary
 
