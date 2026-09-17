@@ -125,63 +125,36 @@ def test_embed_fasta_unknown_backend_raises(tmp_path):
         embed_fasta(fasta, "prot_t5", backend="nope", embedding_cache=tmp_path / "e.h5")
 
 
-def test_notebook_cache_switches_embedding_producer(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("second_backend", "expected"),
+    [("biocentral", 2.0), ("local", 1.0)],
+    ids=["switched-backend-embeds-again", "same-backend-resumes"],
+)
+def test_notebook_embedding_cache_is_owned_by_its_backend(
+    tmp_path, monkeypatch, second_backend, expected
+):
     from protspace.data.processors.pipeline import _embedding_cache_path
 
     fasta = tmp_path / "s.fasta"
     fasta.write_text(">P12345\nMKVLAAG\n")
-    local_capture = {}
-    biocentral_capture = {}
-    monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences",
-        _fake_embed(local_capture, fill_value=1.0),
-    )
-    monkeypatch.setattr(
-        "protspace.data.embedding.biocentral.embed_sequences",
-        _fake_embed(biocentral_capture, fill_value=2.0),
-    )
 
-    embed_fasta(
-        fasta,
-        "prot_t5",
-        backend="local",
-        embedding_cache=_embedding_cache_path(tmp_path, "prot_t5", "local"),
-    )
-    result = embed_fasta(
-        fasta,
-        "prot_t5",
-        backend="biocentral",
-        embedding_cache=_embedding_cache_path(tmp_path, "prot_t5", "biocentral"),
-    )
+    def embed(backend, fill_value):
+        monkeypatch.setattr(
+            f"protspace.data.embedding.{backend}.embed_sequences",
+            _fake_embed({}, fill_value=fill_value),
+        )
+        return embed_fasta(
+            fasta,
+            "prot_t5",
+            backend=backend,
+            embedding_cache=_embedding_cache_path(tmp_path, "prot_t5", backend),
+        )
 
-    assert biocentral_capture["ids"] == ["P12345"]
-    assert result.data.tolist() == [[2.0, 2.0, 2.0, 2.0]]
+    embed("local", 1.0)
+    # The second producer writes 2.0, so only reusing the first H5 returns 1.0.
+    result = embed(second_backend, 2.0)
 
-
-def test_notebook_cache_reuses_same_embedding_producer(tmp_path, monkeypatch):
-    from protspace.data.processors.pipeline import _embedding_cache_path
-
-    fasta = tmp_path / "s.fasta"
-    fasta.write_text(">P12345\nMKVLAAG\n")
-    cache = _embedding_cache_path(tmp_path, "prot_t5", "local")
-    monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences",
-        _fake_embed({}, fill_value=1.0),
-    )
-    embed_fasta(fasta, "prot_t5", backend="local", embedding_cache=cache)
-    monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences",
-        _fake_embed({}, fill_value=2.0),
-    )
-
-    result = embed_fasta(
-        fasta,
-        "prot_t5",
-        backend="local",
-        embedding_cache=_embedding_cache_path(tmp_path, "prot_t5", "local"),
-    )
-
-    assert result.data.tolist() == [[1.0, 1.0, 1.0, 1.0]]
+    assert result.data.tolist() == [[expected] * 4]
 
 
 # ---------------------------------------------------------------------------

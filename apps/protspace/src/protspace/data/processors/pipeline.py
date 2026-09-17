@@ -125,12 +125,12 @@ def _query_fasta_cache_path(cache_root: Path, query: str) -> Path:
 
 
 def _input_cache_dir(cache_root: Path, input_path: Path) -> Path:
-    """Return the retained intermediate directory owned by one input file."""
-    digest = hashlib.sha256()
+    """Create and return the intermediate directory owned by one input file."""
     with input_path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return cache_root / "inputs" / digest.hexdigest()[:12]
+        digest = hashlib.file_digest(source, "sha256").hexdigest()[:12]
+    cache_dir = cache_root / "inputs" / digest
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
 
 
 def _embedding_cache_path(cache_dir: Path, embedder: str, backend: str) -> Path:
@@ -476,33 +476,22 @@ class ReductionPipeline:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
             cache_path = intermediate_dir / "all_annotations.parquet"
 
-            def fetch_current_annotations() -> pd.DataFrame:
-                api_df = ProteinAnnotationManager(
-                    headers=headers,
-                    annotations=annotations_list,
-                    output_path=cache_path,
-                    sequences=sequences,
-                ).to_pd()
-                return self._merge_csv(api_df, csv_df)
-
+            cached_df = None
             if cache_path.exists():
                 cached_df = pd.read_parquet(cache_path)
-                cached_identifiers = (
-                    Counter(cached_df["identifier"].astype(str))
-                    if "identifier" in cached_df.columns
-                    else Counter()
+                missing_identifiers = Counter(map(str, headers)) - Counter(
+                    map(str, cached_df.get("identifier", ()))
                 )
-                requested_identifiers = Counter(map(str, headers))
-                missing_identifiers = requested_identifiers - cached_identifiers
-
                 if missing_identifiers:
+                    # Rows cached for another input: rebuild for this one instead.
                     logger.warning(
                         "Annotation cache is missing %d requested identifier(s); "
                         "fetching annotations for the current identifiers",
-                        sum(missing_identifiers.values()),
+                        missing_identifiers.total(),
                     )
-                    return fetch_current_annotations()
+                    cached_df = None
 
+            if cached_df is not None:
                 # Repair at the cache-read boundary, which dominates every path
                 # that reuses a stored column, then persist so it stays a
                 # one-time cost rather than a rewrite on every resumed run.
@@ -679,7 +668,13 @@ class ReductionPipeline:
                     api_df = self._restore_cached_columns(api_df, legacy_uniprot)
                 return self._merge_csv(api_df, csv_df)
             else:
-                return fetch_current_annotations()
+                api_df = ProteinAnnotationManager(
+                    headers=headers,
+                    annotations=annotations_list,
+                    output_path=cache_path,
+                    sequences=sequences,
+                ).to_pd()
+                return self._merge_csv(api_df, csv_df)
         else:
             api_df = ProteinAnnotationManager(
                 headers=headers,

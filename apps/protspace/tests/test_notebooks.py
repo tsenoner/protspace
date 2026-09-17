@@ -199,6 +199,31 @@ def test_notebook_fallback_sets_match_the_package(path: Path):
             )
 
 
+def test_preparation_generate_refreshes_only_projections():
+    """Generate must recompute projections while keeping the other caches.
+
+    The pipeline half of this contract (a `projections` refetch reduces the
+    current matrix) is pinned in test_pipeline_utils.py; this pins the notebook
+    actually asking for it, and for nothing broader.
+    """
+    transform = pytest.importorskip(
+        "IPython.core.inputtransformer2",
+        reason="IPython is a dev-group dependency (via jupyter)",
+    ).TransformerManager()
+
+    stages = [
+        _literal_set(keyword.value)
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
+        for node in ast.walk(ast.parse(transform.transform_cell(source)))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "PipelineConfig"
+        for keyword in node.keywords
+        if keyword.arg == "refetch_stages"
+    ]
+    assert stages == [frozenset({"projections"})]
+
+
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
 def test_cells_carry_ids_when_the_format_requires_them(path: Path):
     """nbformat >= 4.5 requires cell ids.

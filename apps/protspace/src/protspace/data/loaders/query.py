@@ -6,8 +6,8 @@ and _extract_identifiers_from_fasta*.
 
 import gzip
 import logging
-import os
 import tempfile
+import uuid
 from pathlib import Path
 
 import requests
@@ -35,9 +35,8 @@ def query_uniprot(
     base_url = "https://rest.uniprot.org/uniprotkb/stream"
     params = {"compressed": "true", "format": "fasta", "query": query}
     temp_gz_file: Path | None = None
-    staged_path: Path | None = None
-    extracted_path: Path | None = None
-    completed = False
+    # The extracted FASTA until it is handed back; cleaned up if anything fails.
+    partial: Path | None = None
 
     try:
         response = requests.get(base_url, params=params, stream=True)
@@ -63,43 +62,28 @@ def query_uniprot(
         # Extract identifiers from compressed FASTA
         identifiers = _extract_identifiers_gz(temp_gz_file)
 
-        # Extract FASTA to final location
-        if save_to is not None:
+        # Stage a cache file beside its destination so publishing it is one atomic
+        # rename; a plain open gives it the process umask, like a direct write.
+        if save_to is None:
+            partial = temp_gz_file.with_suffix("")
+        else:
             save_to = Path(save_to)
             save_to.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                prefix=f".{save_to.name}.",
-                suffix=".tmp",
-                dir=save_to.parent,
-                delete=False,
-            ) as staged_file:
-                staged_path = Path(staged_file.name)
-            extracted_path = staged_path
-        else:
-            extracted_path = temp_gz_file.with_suffix("")
+            partial = save_to.with_name(f".{save_to.name}.{uuid.uuid4().hex}.tmp")
 
         with gzip.open(temp_gz_file, "rt") as gz_file:
             content = gz_file.read()
-            with open(extracted_path, "w") as out:
+            with open(partial, "w") as out:
                 out.write(content)
 
-        extracted_identifiers = extract_identifiers_from_fasta(extracted_path)
-        if extracted_identifiers != identifiers:
+        if extract_identifiers_from_fasta(partial) != identifiers:
             raise ValueError("Extracted FASTA identifiers do not match the download")
 
-        if save_to is not None:
-            current_umask = os.umask(0)
-            os.umask(current_umask)
-            staged_path.chmod(0o666 & ~current_umask)
-            staged_path.replace(save_to)
-            staged_path = None
-            extracted_path = save_to
-
-        completed = True
+        fasta_path = partial if save_to is None else partial.replace(save_to)
+        partial = None
         logger.info(f"Downloaded and extracted {len(identifiers)} sequences")
 
-        return identifiers, extracted_path
+        return identifiers, fasta_path
 
     except requests.RequestException as e:
         logger.error(f"Error downloading FASTA: {e}")
@@ -108,12 +92,9 @@ def query_uniprot(
         logger.error(f"Error processing FASTA: {e}")
         raise
     finally:
-        if temp_gz_file is not None:
-            temp_gz_file.unlink(missing_ok=True)
-        if staged_path is not None:
-            staged_path.unlink(missing_ok=True)
-        if not completed and save_to is None and extracted_path is not None:
-            extracted_path.unlink(missing_ok=True)
+        for path in (temp_gz_file, partial):
+            if path is not None:
+                path.unlink(missing_ok=True)
 
 
 def extract_identifiers_from_fasta(fasta_path: Path) -> list[str]:

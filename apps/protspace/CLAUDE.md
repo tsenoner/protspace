@@ -274,7 +274,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing |
 | `test_settings_converter.py` | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution |
-| `test_pipeline_utils.py` | ReductionPipeline, notebook input/annotation/projection cache identity, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
+| `test_pipeline_utils.py` | ReductionPipeline, notebook query/input cache identity, annotation-cache identifier coverage, `projections` refetch on a changed same-name input, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
 | `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, auto-cluster self-validity (filed under the membership column, gated on it, and equal to driving `AnnotationValidityStatistic` directly so an out-of-band re-score cannot drift), faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
 | `test_stats_cli.py` | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
 | `test_stats_carriage.py` | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
@@ -311,7 +311,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
 | `test_cli_no_similarity.py` | `-s/--similarity` without the optional `similarity` extra: up-front CLI guard (before any load/embed), loader `ImportError` backstop, `EMBEDDER_MODELS` pinned to the embedder registry |
 | `test_docs_extras_sync.py` | `README.md` (PyPI) and `docs/guide/python-cli.md` (protspace.app) hold the same extras section; the guide's embedder shortcut list matches `EMBEDDER_MODELS` |
-| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
+| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, Preparation Generate requests a `projections`-only refetch, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
 | `test_encoding_e2e.py` | Backend end-to-end round-trip proof for v2 annotation encoding |
 | `test_scores_ted.py` | `--no-scores` strips TED domains |
 

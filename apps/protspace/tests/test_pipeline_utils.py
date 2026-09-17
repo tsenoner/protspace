@@ -1,10 +1,7 @@
 """Tests for pipeline utility functions."""
 
-import ast
-import json
 import logging
 from collections import Counter
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -17,66 +14,18 @@ from protspace.data.loaders.embedding_set import (
     format_projection_name,
     merge_same_name_sets,
 )
-from protspace.data.processors import pipeline as pipeline_module
 from protspace.data.processors.pipeline import (
     MethodSpec,
     PipelineConfig,
     ReductionPipeline,
+    _input_cache_dir,
     _migrate_legacy_ted_labels,
+    _query_fasta_cache_path,
     _run_with_overridden_config,
     disambiguation_suffix,
     parse_method_spec,
     parse_methods_arg,
 )
-
-
-def _preparation_notebook_projection_refetch_stages() -> frozenset[str]:
-    notebook_path = (
-        Path(__file__).parents[1] / "notebooks" / "ProtSpace_Preparation.ipynb"
-    )
-    notebook = json.loads(notebook_path.read_text())
-    code_sources = (
-        "".join(cell["source"])
-        for cell in notebook["cells"]
-        if cell["cell_type"] == "code"
-    )
-    generate_source = next(
-        (source for source in code_sources if "def _on_gen" in source), None
-    )
-    if generate_source is None:
-        pytest.fail("Generate callback not found in the Preparation notebook")
-    tree = ast.parse(generate_source)
-    config_call = next(
-        (
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "PipelineConfig"
-        ),
-        None,
-    )
-    if config_call is None:
-        pytest.fail("PipelineConfig(...) not found in the notebook Generate callback")
-    refetch_keyword = next(
-        (
-            keyword
-            for keyword in config_call.keywords
-            if keyword.arg == "refetch_stages"
-        ),
-        None,
-    )
-    if refetch_keyword is None:
-        pytest.fail(
-            "PipelineConfig(...) with refetch_stages not found in the notebook "
-            "Generate callback"
-        )
-    expression = ast.Expression(refetch_keyword.value)
-    return eval(
-        compile(expression, filename=str(notebook_path), mode="eval"),
-        {"__builtins__": {}, "frozenset": frozenset},
-    )
-
 
 # ---------------------------------------------------------------------------
 # parse_method_spec
@@ -1246,72 +1195,32 @@ class TestPrecomputedMDSConfigIsolation:
 # ---------------------------------------------------------------------------
 
 
-class TestPreparationNotebookCacheIdentity:
-    def test_query_cache_path_changes_with_query(self, tmp_path):
-        globin = pipeline_module._query_fasta_cache_path(
-            tmp_path, "(family:globin) AND (reviewed:true)"
-        )
-        phosphatase = pipeline_module._query_fasta_cache_path(
-            tmp_path, "(family:phosphatase) AND (reviewed:true)"
-        )
+def test_query_cache_path_is_owned_by_the_query_text(tmp_path):
+    globin = "(family:globin) AND (reviewed:true)"
+    phosphatase = "(family:phosphatase) AND (reviewed:true)"
 
-        assert globin != phosphatase
-        assert globin.parent == phosphatase.parent == tmp_path / "queries"
+    assert _query_fasta_cache_path(tmp_path, globin) == _query_fasta_cache_path(
+        tmp_path, globin
+    )
+    assert _query_fasta_cache_path(tmp_path, globin) != _query_fasta_cache_path(
+        tmp_path, phosphatase
+    )
+    assert _query_fasta_cache_path(tmp_path, globin).parent == tmp_path / "queries"
 
-    def test_query_cache_path_is_reused_for_same_query(self, tmp_path):
-        query = "(family:globin) AND (reviewed:true)"
 
-        assert pipeline_module._query_fasta_cache_path(
-            tmp_path, query
-        ) == pipeline_module._query_fasta_cache_path(tmp_path, query)
+def test_input_cache_dir_is_owned_by_file_content(tmp_path):
+    fasta = tmp_path / "input.fasta"
+    renamed = tmp_path / "renamed.fasta"
+    fasta.write_text(">P1\nAAAA\n")
+    renamed.write_text(">P1\nAAAA\n")
+    original = _input_cache_dir(tmp_path, fasta)
 
-    def test_input_cache_dir_changes_for_disjoint_fasta_inputs(self, tmp_path):
-        first = tmp_path / "first.fasta"
-        second = tmp_path / "second.fasta"
-        first.write_text(">P1\nAAAA\n")
-        second.write_text(">P2\nCCCC\n")
+    assert original.is_dir()
+    assert _input_cache_dir(tmp_path, renamed) == original
 
-        first_cache = pipeline_module._input_cache_dir(tmp_path, first)
-        second_cache = pipeline_module._input_cache_dir(tmp_path, second)
-
-        assert first_cache != second_cache
-
-    def test_input_cache_dir_changes_for_same_id_changed_sequence(self, tmp_path):
-        fasta = tmp_path / "input.fasta"
-        fasta.write_text(">P1\nAAAA\n")
-        original_cache = pipeline_module._input_cache_dir(tmp_path, fasta)
-
-        fasta.write_text(">P1\nCCCC\n")
-        changed_cache = pipeline_module._input_cache_dir(tmp_path, fasta)
-
-        assert changed_cache != original_cache
-
-    def test_input_cache_dir_is_reused_for_identical_content(self, tmp_path):
-        first = tmp_path / "first.fasta"
-        renamed = tmp_path / "renamed.fasta"
-        first.write_text(">P1\nAAAA\n")
-        renamed.write_text(">P1\nAAAA\n")
-
-        assert pipeline_module._input_cache_dir(
-            tmp_path, first
-        ) == pipeline_module._input_cache_dir(tmp_path, renamed)
-
-    def test_embedding_cache_path_changes_with_backend(self, tmp_path):
-        cache_dir = tmp_path / "inputs" / "content-key"
-
-        local = pipeline_module._embedding_cache_path(cache_dir, "prot_t5", "local")
-        biocentral = pipeline_module._embedding_cache_path(
-            cache_dir, "prot_t5", "biocentral"
-        )
-
-        assert local != biocentral
-
-    def test_embedding_cache_path_is_reused_for_same_backend(self, tmp_path):
-        cache_dir = tmp_path / "inputs" / "content-key"
-
-        assert pipeline_module._embedding_cache_path(
-            cache_dir, "prot_t5", "local"
-        ) == pipeline_module._embedding_cache_path(cache_dir, "prot_t5", "local")
+    # Same identifier, changed residues: must not share embeddings.
+    fasta.write_text(">P1\nCCCC\n")
+    assert _input_cache_dir(tmp_path, fasta) != original
 
 
 # ---------------------------------------------------------------------------
@@ -1319,29 +1228,23 @@ class TestPreparationNotebookCacheIdentity:
 # ---------------------------------------------------------------------------
 
 
+def _write_annotation_cache(cache_dir, identifiers, value):
+    cached = pd.DataFrame(
+        {
+            "identifier": identifiers,
+            "protein_name": [value] * len(identifiers),
+            "gene_name": [value] * len(identifiers),
+            "uniprot_kb_id": [value] * len(identifiers),
+        }
+    )
+    cached.to_parquet(cache_dir / "all_annotations.parquet")
+    return cached
+
+
 def test_annotation_cache_is_rebuilt_for_different_identifiers(tmp_path, monkeypatch):
     from protspace.data.annotations.manager import ProteinAnnotationManager
 
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
-    pd.DataFrame(
-        {
-            "identifier": ["OLD1", "OLD2"],
-            "protein_name": ["old", "old"],
-            "gene_name": ["old", "old"],
-            "uniprot_kb_id": ["old", "old"],
-        }
-    ).to_parquet(cache_dir / "all_annotations.parquet")
-
-    pipeline = ReductionPipeline(
-        PipelineConfig(
-            methods=[],
-            output_path=tmp_path / "output.parquetbundle",
-            keep_tmp=True,
-            intermediate_dir=cache_dir,
-            annotations=["protein_name"],
-        )
-    )
+    _write_annotation_cache(tmp_path, ["OLD1", "OLD2"], "old")
     captured = {}
 
     def fresh_annotations(manager):
@@ -1358,99 +1261,55 @@ def test_annotation_cache_is_rebuilt_for_different_identifiers(tmp_path, monkeyp
 
     monkeypatch.setattr(ProteinAnnotationManager, "to_pd", fresh_annotations)
 
-    result = pipeline._fetch_annotations(["NEW1", "NEW2"])
+    result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
+        ["NEW1", "NEW2"]
+    )
 
     assert captured["headers"] == ["NEW1", "NEW2"]
     assert captured["cached_data"] is None
     assert result["identifier"].tolist() == ["NEW1", "NEW2"]
 
 
-def test_annotation_cache_is_reused_for_matching_identifiers(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "cached_ids", [["P1", "P2"], ["P1", "P2", "P3"]], ids=["exact", "superset"]
+)
+def test_annotation_cache_covering_the_request_is_reused(
+    tmp_path, monkeypatch, cached_ids
+):
     from protspace.data.annotations.manager import ProteinAnnotationManager
 
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
-    pd.DataFrame(
-        {
-            "identifier": ["P1", "P2"],
-            "protein_name": ["one", "two"],
-            "gene_name": ["gene-one", "gene-two"],
-            "uniprot_kb_id": ["id-one", "id-two"],
-        }
-    ).to_parquet(cache_dir / "all_annotations.parquet")
-    pipeline = ReductionPipeline(
-        PipelineConfig(
-            methods=[],
-            output_path=tmp_path / "output.parquetbundle",
-            keep_tmp=True,
-            intermediate_dir=cache_dir,
-            annotations=["protein_name"],
-        )
-    )
-
-    def unexpected_fetch(_manager):
-        pytest.fail("matching annotation identifiers should reuse the cache")
-
-    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", unexpected_fetch)
-
-    result = pipeline._fetch_annotations(["P2", "P1"])
-
-    assert result["identifier"].tolist() == ["P1", "P2"]
-
-
-def test_annotation_cache_superset_is_reused_without_truncation(tmp_path, monkeypatch):
-    from protspace.data.annotations.manager import ProteinAnnotationManager
-
-    cache_path = tmp_path / "cache" / "all_annotations.parquet"
-    cache_path.parent.mkdir()
-    cached = pd.DataFrame(
-        {
-            "identifier": ["P1", "P2", "P3"],
-            "protein_name": ["one", "two", "three"],
-            "gene_name": ["gene-one", "gene-two", "gene-three"],
-            "uniprot_kb_id": ["id-one", "id-two", "id-three"],
-        }
-    )
-    cached.to_parquet(cache_path)
-    pipeline = ReductionPipeline(
-        PipelineConfig(
-            methods=[],
-            output_path=tmp_path / "output.parquetbundle",
-            keep_tmp=True,
-            intermediate_dir=cache_path.parent,
-            annotations=["protein_name"],
-        )
-    )
+    cached = _write_annotation_cache(tmp_path, cached_ids, "cached")
 
     def unexpected_fetch(_manager):
         pytest.fail("a cache covering every requested identifier should be reused")
 
     monkeypatch.setattr(ProteinAnnotationManager, "to_pd", unexpected_fetch)
 
-    result = pipeline._fetch_annotations(["P2", "P1"])
-
-    assert result["identifier"].tolist() == ["P1", "P2", "P3"]
-    pd.testing.assert_frame_equal(pd.read_parquet(cache_path), cached)
-
-
-# ---------------------------------------------------------------------------
-# Preparation notebook projection refresh
-# ---------------------------------------------------------------------------
-
-
-def test_notebook_refreshes_same_name_changed_input_through_pipeline(tmp_path):
-    refetch_stages = _preparation_notebook_projection_refetch_stages()
-    assert refetch_stages == frozenset({"projections"})
-    config = PipelineConfig(
-        methods=parse_methods_arg(["umap2"]),
-        output_path=tmp_path / "output" / "data.parquetbundle",
-        keep_tmp=True,
-        intermediate_dir=tmp_path / "output" / "tmp",
-        annotations=None,
-        refetch_stages=refetch_stages,
+    result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
+        ["P2", "P1"]
     )
-    config.intermediate_dir.mkdir(parents=True)
-    pipeline = ReductionPipeline(config)
+
+    assert result["identifier"].tolist() == cached_ids
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(tmp_path / "all_annotations.parquet"), cached
+    )
+
+
+# ---------------------------------------------------------------------------
+# Projection refresh (the notebook requests it; see test_notebooks.py)
+# ---------------------------------------------------------------------------
+
+
+def test_projection_refetch_reduces_a_changed_same_name_input(tmp_path):
+    pipeline = ReductionPipeline(
+        PipelineConfig(
+            methods=parse_methods_arg(["umap2"]),
+            output_path=None,
+            keep_tmp=True,
+            intermediate_dir=tmp_path,
+            refetch_stages=frozenset({"projections"}),
+        )
+    )
     inputs = []
 
     def record_input(data, method, dims):
@@ -1464,19 +1323,13 @@ def test_notebook_refreshes_same_name_changed_input_through_pipeline(tmp_path):
 
     pipeline.base.process_reduction = record_input
     headers = ["P1", "P2", "P3"]
-    first_input = EmbeddingSet(
-        name="prot_t5",
-        data=np.zeros((3, 3), dtype=np.float32),
-        headers=headers,
-    )
-    changed_input = EmbeddingSet(
-        name="prot_t5",
-        data=np.full((3, 3), 7.0, dtype=np.float32),
-        headers=headers,
-    )
 
-    pipeline._run_reductions([first_input])
-    changed = pipeline._run_reductions([changed_input])[0]
+    pipeline._run_reductions(
+        [_make_es("prot_t5", headers, data=np.zeros((3, 3), dtype=np.float32))]
+    )
+    changed = pipeline._run_reductions(
+        [_make_es("prot_t5", headers, data=np.full((3, 3), 7.0, dtype=np.float32))]
+    )[0]
 
     assert len(inputs) == 2
     np.testing.assert_array_equal(

@@ -350,13 +350,13 @@ python -c "import h5py; print(dict(h5py.File('file.h5','r').attrs))"
 With `--keep-tmp` (the default), intermediate results are cached in `{output}/tmp/` and reused on
 subsequent runs:
 
-| Cached item       | File                                    | Reuse behavior                                                           |
-| ----------------- | --------------------------------------- | ------------------------------------------------------------------------ |
-| FASTA sequences   | `sequences.fasta`                       | Skip the UniProt query download                                          |
-| Embeddings        | `{embedder}.h5`                         | Skip already-embedded proteins                                           |
-| Annotations       | `all_annotations.parquet`               | Fetch missing or stale columns; rebuild if a requested protein is absent |
-| Similarity matrix | `similarity_matrix.npy`                 | Skip MMseqs2 recomputation                                               |
-| DR projections    | `proj_{name}_{method}{dims}_{hash}.npz` | Skip dimensionality reduction                                            |
+| Cached item       | File                                    | Reuse behavior                  |
+| ----------------- | --------------------------------------- | ------------------------------- |
+| FASTA sequences   | `sequences.fasta`                       | Skip the UniProt query download |
+| Embeddings        | `{embedder}.h5`                         | Skip already-embedded proteins  |
+| Annotations       | `all_annotations.parquet`               | Fetch missing or stale columns  |
+| Similarity matrix | `similarity_matrix.npy`                 | Skip MMseqs2 recomputation      |
+| DR projections    | `proj_{name}_{method}{dims}_{hash}.npz` | Skip dimensionality reduction   |
 
 The annotation cache always stores scores; `--no-scores` strips them from the output afterwards.
 
