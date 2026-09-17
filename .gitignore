@@ -57,6 +57,7 @@ docs/superpowers/
 
 # playwright
 **/test-results
+**/tests/__screens__
 /temp-videos
 **/playwright-report
 .playwright-mcp
@@ -71,8 +72,24 @@ CLAUDE.md
 # Local-only large fixture for the load-reliability Playwright spec
 apps/web/tests/fixtures/sprot_50.parquetbundle
 
+# Notebook scratch: the Colab notebooks fetch/write these into the working
+# directory, which is the repo root when they are run locally.
+# No .h5 is tracked anywhere, so that one is repo-wide. Bundles are tracked
+# (fixtures, demo data) but only ever in subdirectories, so theirs is anchored
+# to the root — add a new root-level bundle with `git add -f`.
+# `*.part` is the download staging name: the fetch cells land there and rename
+# only once complete, so an interrupted fetch — the case that scheme exists for —
+# is exactly when one is left behind, under a name no rule above matches.
+*.h5
+*.part
+/*.parquetbundle
+/output/
+
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
 
 # graphify knowledge graph (generated locally; kept current with `graphify update .`, never committed)
 graphify-out/
+
+# Visual harness output (apps/web/tests/glyph-outline.spec.ts) — regenerated on demand
+apps/web/tests/__screens__/

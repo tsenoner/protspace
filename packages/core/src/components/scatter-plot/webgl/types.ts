@@ -15,6 +15,12 @@ export interface WebGLStyleGetters {
   getDepth: (point: PlotDataPoint) => number;
   getShape: (point: PlotDataPoint) => string;
   isPredicted: (point: PlotDataPoint) => boolean;
+  /**
+   * Whether the selected annotation stores more than one value for any protein.
+   * Gates allocation of the multi-label colour atlas, which is 32 B/point and is
+   * never sampled when this is false.
+   */
+  isMultilabel: () => boolean;
 }
 
 /**
@@ -49,14 +55,18 @@ export interface PointUniformLocations {
   labelColors: WebGLUniformLocation | null;
   labelTextureSize: WebGLUniformLocation | null;
   maxLabels: WebGLUniformLocation | null;
+  /** Points the label atlas covers; 0 disables the multi-label branch entirely. */
+  labelAtlasCapacity: WebGLUniformLocation | null;
 }
 
 // ============================================================================
-// Configuration Constants (tuned for performance)
+// Configuration Constants
 // ============================================================================
 
-/** Maximum points to render directly */
-export const MAX_POINTS_DIRECT_RENDER = 1_000_000;
+// Last-resort staging clamp: the renderer's name for the shared cap. See
+// `utils/limits.ts` for why it sits where it does and why nothing a user can
+// load reaches it.
+export { MAX_POINTS_PER_PROJECTION as MAX_RENDERABLE_POINTS } from '../../../utils/limits';
 
 /** Default gamma value (standard sRGB) */
 export const DEFAULT_GAMMA = 2.2;

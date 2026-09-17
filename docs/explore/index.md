@@ -2,7 +2,7 @@
 
 The ProtSpace Explore page provides an interactive environment for visualizing and analyzing protein embeddings.
 
-![Interface Overview - Full page layout showing scatterplot, legend, and control bar](./images/interface-overview.png)
+<img src="./images/interface-overview.png" alt="Interface Overview - Full page layout showing scatterplot, legend, and control bar" width="1536" height="864" loading="eager" fetchpriority="high" />
 
 ## Page Layout
 
@@ -21,13 +21,15 @@ The control bar contains:
 
 1. **Projection dropdown** - Switch between PCA, UMAP, t-SNE, PaCMAP, MDS, or LocalMAP
 2. **Annotation dropdown** - Color points by annotation
-3. **Search box** - Find proteins by ID
+3. **Search box** - Find proteins by ID, or deselect ones you already picked
 4. **Select button** - Rectangle or lasso selection mode
 5. **Clear button** - Clear selection
 6. **Isolate button** - Hide unselected proteins
 7. **Filter button** - Filter by annotation values
 8. **Export button** - Save images or data
-9. **Import button** - Load `.parquetbundle` file
+9. **Import button** - Load a `.parquetbundle` or a FASTA file
+
+See [Importing Data](/explore/importing-data) for both import paths and their limits.
 
 ## Scatterplot
 
@@ -45,6 +47,8 @@ The main visualization shows your proteins as points in 2D space. Points close t
 - **Escape** to clear selection / exit selection mode
 - **⌘/Ctrl + K** to focus search
 
+The bar-chart icon in the plot's top-left corner opens the [projection metadata panel](/explore/scatterplot#projection-metadata) with the current projection's quality scores and settings.
+
 ## Legend
 
 ![Legend panel - showing categories and controls](./images/legend-panel.png)
@@ -54,10 +58,12 @@ The legend shows the current coloring scheme:
 - Click labels to hide/show categories
 - Drag labels to reorder (changes drawing order in the scatterplot)
 - Use the settings cog for advanced options
+- Scored datasets add [separation score strips](/explore/separation-scores) above the category list
+- Annotations with [transferred values](/explore/eat) add a `Predicted (transferred)` section
 
 ## Structure Viewer
 
-When you select a protein, the 3D viewer appears and fetches its structure from AlphaFold (if available). The viewer includes direct links to the [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), and [InterPro](https://www.interpro.org/) entries for the selected protein.
+When you select a protein, the 3D viewer appears and fetches its structure from AlphaFold (if available). Beneath the title, a row of external links takes you to the selected protein's [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), [InterPro](https://www.interpro.org/), and [TED](https://ted.cathdb.info/) entries. Each opens in a new tab.
 
 <img src="./images/structure-viewer.png" alt="Structure Viewer - showing 3D protein structure" style="max-width: 50%; display: block; margin: 1em 0;" />
 
@@ -67,8 +73,8 @@ The first time you load a dataset, ProtSpace plays a short guided tour highlight
 
 To replay the tour later, click the **?** icon in the top-right of the scatterplot to open the Tips popover, then click **Take a Tour**.
 
-::: tip Keyboard Shortcuts
-The same Tips popover lists all keyboard shortcuts (search, selection, navigation). Worth a glance even if you skip the tour.
+::: tip Tips & Shortcuts
+The same Tips popover is a one-screen cheat sheet for the basics: pan, zoom, hover for details, toggle a legend category, and **⌘/Ctrl + K** to search. Worth a glance even if you skip the tour.
 :::
 
 ## Next Steps

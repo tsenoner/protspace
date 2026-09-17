@@ -6,6 +6,7 @@ Extracted from LocalProcessor._embed_fasta_to_h5.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,20 @@ if TYPE_CHECKING:
     from protspace.data.embedding.local import LocalEmbedConfig
 
 logger = logging.getLogger(__name__)
+
+
+def parse_fasta_normalized(fasta_path: Path) -> dict[str, str]:
+    """Parse *fasta_path* into ``{normalized identifier: sequence}``.
+
+    Header identifiers are remapped the same way H5 keys are
+    (``sp|P12345|NAME`` -> ``P12345``) so the two always agree.
+    """
+    from protspace.data.io.fasta import parse_fasta
+
+    return {
+        parse_identifier(header): sequence
+        for header, sequence in parse_fasta(fasta_path).items()
+    }
 
 
 def embed_fasta(
@@ -43,14 +58,11 @@ def embed_fasta(
         raise ValueError(f"Unknown backend {backend!r}; use 'local' or 'biocentral'.")
 
     from protspace.data.embedding.biocentral import derive_h5_cache_path
-    from protspace.data.io.fasta import parse_fasta
 
-    raw_sequences = parse_fasta(fasta_path)
-    if not raw_sequences:
+    # Keys are remapped: sp|P12345|NAME → P12345 (shared by both backends).
+    sequences = parse_fasta_normalized(fasta_path)
+    if not sequences:
         raise ValueError(f"No sequences found in {fasta_path}")
-
-    # Remap keys: sp|P12345|NAME → P12345 (shared by both backends).
-    sequences = {parse_identifier(header): seq for header, seq in raw_sequences.items()}
 
     if backend == "local":
         from protspace.data.embedding.local import embed_sequences
@@ -86,3 +98,51 @@ def embed_fasta(
         f.attrs["model_name"] = embedder
 
     return load_h5([h5_path], name_override=embedder)
+
+
+def check_fasta_coverage(
+    fasta_path: Path,
+    headers: Iterable[str],
+    *,
+    required: bool = False,
+) -> None:
+    """Report embedded proteins that *fasta_path* does not cover.
+
+    Directional on purpose. A FASTA covering MORE than the embeddings is routine
+    -- a resumed embedding cache legitimately holds fewer proteins than the FASTA
+    it was built from -- and the extra entries are simply unused downstream.
+
+    The other direction is damaging. ``compute_similarity`` zero-fills the row
+    for a protein it cannot find, leaving that protein's self-similarity at 0,
+    and the similarity-to-distance conversion only fires when the WHOLE diagonal
+    is 1. One uncovered protein therefore suppresses the conversion for every
+    pair and inverts the entire MDS projection -- so under ``--similarity`` this
+    is an error, not a warning.
+
+    Both sides go through ``parse_identifier``: ``load_h5`` keeps raw HDF5 keys
+    while FASTA-derived identifiers are always parsed, so comparing them raw
+    would report every protein uncovered for a ``sp|...``-keyed file.
+    """
+    from protspace.data.io.fasta import parse_fasta
+
+    fasta_ids = {parse_identifier(h) for h in parse_fasta(fasta_path)}
+    embedded = {parse_identifier(h) for h in headers}
+    uncovered = embedded - fasta_ids
+    if not uncovered:
+        return
+
+    ordered = sorted(uncovered)
+    preview = ", ".join(ordered[:5]) + (", ..." if len(ordered) > 5 else "")
+    detail = (
+        f"{len(uncovered):,} of {len(embedded):,} embedded protein(s) are absent "
+        f"from {fasta_path}: {preview}"
+    )
+    if required:
+        raise ValueError(
+            f"{detail}. Similarity needs every embedded protein present in the "
+            f"FASTA: an uncovered protein leaves its self-similarity at 0, which "
+            f"suppresses the similarity-to-distance conversion for the whole "
+            f"matrix and inverts the projection. Supply a FASTA that covers them, "
+            f"or drop -s/--similarity."
+        )
+    logger.warning("%s", detail)

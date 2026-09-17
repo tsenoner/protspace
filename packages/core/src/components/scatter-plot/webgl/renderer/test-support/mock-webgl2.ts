@@ -11,6 +11,23 @@ export interface MockGLOptions {
   missingFloatExtensions?: boolean;
   /** checkFramebufferStatus returns a non-COMPLETE value (F-09 framebuffer-incomplete fallback). */
   framebufferIncomplete?: boolean;
+  /** Value reported for getParameter(MAX_TEXTURE_SIZE). Defaults to 8192 — the tier ~97% of
+   *  WebGL2 devices report, so existing suites keep the geometry they always had. */
+  maxTextureSize?: number;
+  /** Texture size the simulated DRIVER actually accepts, independent of the limit
+   *  getParameter advertises. A real driver can refuse what it said would fit — a lying
+   *  limit, or plain OOM — and it does so by raising into the sticky error flag rather
+   *  than throwing. Exceeding this raises {@link MockGLOptions.driverError} from
+   *  texImage2D, which is the failure the atlas work exists to survive.
+   *
+   *  Deliberately expressed as a driver capability rather than as "the Nth getError()
+   *  call returns X": the renderer drains the flag before an allocation it is about to
+   *  check, so any fixture keyed on call position describes the mock, not the driver. */
+  driverTextureLimit?: number;
+  /** Byte size above which the simulated driver refuses a bufferData allocation. */
+  driverBufferByteLimit?: number;
+  /** Error code the two driver limits raise. Defaults to INVALID_VALUE. */
+  driverError?: number;
 }
 
 export function createMockCanvas(opts: MockGLOptions = {}): {
@@ -65,16 +82,48 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     RENDERBUFFER: 0x8d41,
     ONE: 1,
     ONE_MINUS_SRC_ALPHA: 0x0303,
+    MAX_TEXTURE_SIZE: 0x0d33,
+    NO_ERROR: 0,
+    INVALID_VALUE: 0x0501,
+    INVALID_OPERATION: 0x0502,
+    OUT_OF_MEMORY: 0x0505,
   };
   const noop = () => {};
+  const maxTextureSize = opts.maxTextureSize ?? 8192;
+
+  // The GL error flag: sticky, holds the FIRST error raised, cleared by getError().
+  // Modelling it faithfully is the point — code that checks it without draining first
+  // reads someone else's failure.
+  let errorFlag: number = C.NO_ERROR;
+  const driverError = opts.driverError ?? C.INVALID_VALUE;
+  const raise = () => {
+    if (errorFlag === C.NO_ERROR) errorFlag = driverError;
+  };
   const obj: Record<string, unknown> = {
     ...C,
     isContextLost: () => isLost(),
-    getExtension: (name: string) =>
-      opts.missingFloatExtensions &&
-      (name === 'EXT_color_buffer_float' || name === 'EXT_float_blend')
-        ? null
-        : {},
+    // Recording: "how often do we ask the driver for its limits" is itself part
+    // of the contract — the probe belongs at context creation, not per frame.
+    getParameter: vi.fn((pname: number) => (pname === C.MAX_TEXTURE_SIZE ? maxTextureSize : 0)),
+    // Returns and clears, like the real API.
+    getError: () => {
+      const raised = errorFlag;
+      errorFlag = C.NO_ERROR;
+      return raised;
+    },
+    getExtension: (name: string) => {
+      if (
+        opts.missingFloatExtensions &&
+        (name === 'EXT_color_buffer_float' || name === 'EXT_float_blend')
+      ) {
+        return null;
+      }
+      // Shaped, not `{}`: the export path's `finally` calls `loseContext()` on it,
+      // and a bare object makes that throw a TypeError that replaces whatever the
+      // test was actually asserting about.
+      if (name === 'WEBGL_lose_context') return { loseContext: noop, restoreContext: noop };
+      return {};
+    },
     createShader: () => ({}),
     shaderSource: noop,
     compileShader: noop,
@@ -93,7 +142,14 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     getUniformLocation: () => ({}),
     createBuffer: () => ({}),
     bindBuffer: noop,
-    bufferData: noop,
+    // Recording, and bufferSubData was absent entirely — nothing ever exercised
+    // the already-initialised upload path, which is where a capacity change is
+    // distinguished from a refresh.
+    bufferData: vi.fn((_target: number, data: ArrayBufferView | number) => {
+      const bytes = typeof data === 'number' ? data : (data?.byteLength ?? 0);
+      if (opts.driverBufferByteLimit !== undefined && bytes > opts.driverBufferByteLimit) raise();
+    }),
+    bufferSubData: vi.fn(),
     deleteBuffer: noop,
     createVertexArray: () => ({}),
     bindVertexArray: noop,
@@ -102,9 +158,17 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     vertexAttribPointer: noop,
     createTexture: () => ({}),
     bindTexture: noop,
-    texImage2D: noop,
+    // Recording, not noop: the atlas contract is "what geometry did we hand the driver",
+    // which is only observable through the arguments of these two calls.
+    texImage2D: vi.fn(
+      (_target: number, _level: number, _internal: number, width: number, height: number) => {
+        const limit = opts.driverTextureLimit;
+        if (limit !== undefined && (width > limit || height > limit)) raise();
+      },
+    ),
     texParameteri: noop,
-    texSubImage2D: noop,
+    texSubImage2D: vi.fn(),
+    // Left a plain noop: webgl-renderer.lifecycle.test.ts wraps it with vi.spyOn.
     deleteTexture: noop,
     activeTexture: noop,
     createFramebuffer: () => ({}),
@@ -132,7 +196,9 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     depthMask: noop,
     drawArrays: noop,
     uniform1f: noop,
-    uniform1i: noop,
+    // Recording: the atlas-capacity and stride uniforms are how the shader learns
+    // what was actually allocated, so tests assert on their values.
+    uniform1i: vi.fn(),
     uniform2f: noop,
     uniform3f: noop,
     uniformMatrix3fv: noop,

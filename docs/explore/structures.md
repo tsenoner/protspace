@@ -9,7 +9,7 @@ ProtSpace integrates with AlphaFold to display 3D protein structures alongside y
 When you select a protein with a UniProt accession:
 
 1. The structure viewer appears in the sidebar below the legend
-2. Links to [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), and [InterPro](https://www.interpro.org/) appear at the top - click them anytime
+2. A row of links to [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), [InterPro](https://www.interpro.org/), and [TED](https://ted.cathdb.info/) appears under the title - click them anytime, each opens in a new tab
 3. The AlphaFold structure file is fetched directly from the [AlphaFold Database API](https://alphafold.ebi.ac.uk/api-docs); the [3D-Beacons API](https://www.ebi.ac.uk/pdbe/pdbe-kb/3dbeacons/) is used only to look up the model page link
 
 ::: tip Supported Structures
@@ -18,7 +18,7 @@ Currently, ProtSpace supports **AlphaFold structures** only. PDB experimental st
 
 ## Confidence Coloring (pLDDT)
 
-Structures are colored by **predicted Local Distance Difference Test (pLDDT)** confidence scores—the same scheme used on the [AlphaFold Database](https://alphafold.ebi.ac.uk/). Regions in **blue** are high-confidence, **yellow** moderate, and **red** low-confidence. This helps you quickly spot which parts of the model are more reliable.
+Structures are colored by **predicted Local Distance Difference Test (pLDDT)** confidence scores, the same scheme used on the [AlphaFold Database](https://alphafold.ebi.ac.uk/). Regions in **blue** are high-confidence, **yellow** moderate, and **red** low-confidence. This helps you quickly spot which parts of the model are more reliable.
 
 ## Viewer Controls
 

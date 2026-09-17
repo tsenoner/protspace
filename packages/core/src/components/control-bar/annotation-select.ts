@@ -2,15 +2,19 @@ import { LitElement, html, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { annotationSelectStyles } from './annotation-select.styles';
-import { handleDropdownEscape } from '../../utils/dropdown-helpers';
-import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
+import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
+import {
+  filterGroupedAnnotations,
+  flattenGroupedAnnotations,
+  type GroupedAnnotation,
+} from './annotation-categories';
+import { predictedBadge, renderAnnotationName } from './annotation-name';
 import {
   annotationLabel,
   annotationStatSummary,
   clusterAgreement,
   getAnnotationMeta,
   hasAnnotationStats,
-  isPredictedAnnotation,
   type Annotation,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
@@ -41,13 +45,22 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // Listen for parent-initiated close
-    this.addEventListener('close-dropdown', () => {
-      this.open = false;
-      this.query = '';
-      this.highlightIndex = -1;
-    });
+    // Listen for parent-initiated close. Bound field, not an inline closure: an inline
+    // one cannot be removed, so every re-attach of this element would stack another
+    // handler and leak the detached element.
+    this.addEventListener('close-dropdown', this._handleCloseDropdown);
   }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener('close-dropdown', this._handleCloseDropdown);
+  }
+
+  private _handleCloseDropdown = () => {
+    this.open = false;
+    this.query = '';
+    this.highlightIndex = -1;
+  };
 
   private toggleDropdown(event?: Event) {
     event?.stopPropagation();
@@ -88,51 +101,30 @@ class ProtspaceAnnotationSelect extends LitElement {
       return;
     }
 
-    const filtered = this.getFilteredGroupedAnnotations();
-    const flatAnnotations = this.flattenGroupedAnnotations(filtered);
-
-    if (event.key === 'Escape') {
-      handleDropdownEscape(event, () => {
+    handleListboxKeydown(event, {
+      // Lazy: only the arrow and Enter keys pay for re-filtering the list.
+      getValues: () => flattenGroupedAnnotations(this.getFilteredGroupedAnnotations()),
+      highlightIndex: this.highlightIndex,
+      setHighlightIndex: (index) => {
+        this.highlightIndex = index;
+        this.scrollToHighlighted();
+      },
+      onEscape: () => {
         this.open = false;
         this.query = '';
         this.highlightIndex = -1;
-      });
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      if (flatAnnotations.length > 0) {
-        this.highlightIndex = Math.min(this.highlightIndex + 1, flatAnnotations.length - 1);
-        this.scrollToHighlighted();
-      }
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (flatAnnotations.length > 0) {
-        this.highlightIndex = Math.max(this.highlightIndex - 1, 0);
-        this.scrollToHighlighted();
-      }
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      // Hover no longer moves highlightIndex (that re-rendered every row the pointer crossed),
-      // so the row under the pointer and the keyboard highlight can differ, and both render
-      // with the same background. The browser's :hover is the source of truth for the pointer,
-      // and it must win, including when no arrow key was ever pressed (highlightIndex −1).
-      const hovered = this.shadowRoot
-        ?.querySelector('.dropdown-item:hover')
-        ?.getAttribute('data-annotation');
-      if (hovered) {
-        this.selectAnnotation(hovered, event);
-      } else if (this.highlightIndex >= 0 && this.highlightIndex < flatAnnotations.length) {
-        this.selectAnnotation(flatAnnotations[this.highlightIndex], event);
-      }
-    }
+      },
+      onSelect: (annotation) => this.selectAnnotation(annotation, event),
+      root: this.shadowRoot,
+      itemSelector: '.dropdown-item',
+      valueAttribute: 'data-annotation',
+    });
   }
 
   private scrollToHighlighted() {
-    this.updateComplete.then(() => {
-      const highlighted = this.shadowRoot?.querySelector('.dropdown-item.highlighted');
-      if (highlighted) {
-        highlighted.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
-    });
+    this.updateComplete.then(() =>
+      scrollHighlightedIntoView(this.shadowRoot, '.dropdown-item.highlighted'),
+    );
   }
 
   private selectAnnotation(annotation: string, event?: Event) {
@@ -174,48 +166,8 @@ class ProtspaceAnnotationSelect extends LitElement {
     );
   }
 
-  /**
-   * Categorize annotations using the shared utility.
-   */
-  private categorizeAnnotations(annotations: string[]): GroupedAnnotation[] {
-    return groupAnnotations(annotations, this.annotationDefinitions);
-  }
-
-  /**
-   * Filter annotations based on search query
-   */
   private getFilteredGroupedAnnotations(): GroupedAnnotation[] {
-    const grouped = this.categorizeAnnotations(this.annotations);
-    const queryLower = this.query.trim().toLowerCase();
-
-    if (!queryLower) {
-      return grouped;
-    }
-
-    // Filter each category's annotations by column name or friendly label
-    return grouped
-      .map((group) => ({
-        ...group,
-        annotations: group.annotations.filter(
-          (annotation) =>
-            annotation.toLowerCase().includes(queryLower) ||
-            annotationLabel(annotation, this.annotationDefinitions[annotation])
-              .toLowerCase()
-              .includes(queryLower),
-        ),
-      }))
-      .filter((group) => group.annotations.length > 0); // Remove empty categories
-  }
-
-  /**
-   * Flatten grouped annotations into a single array for keyboard navigation
-   */
-  private flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
-    const flat: string[] = [];
-    for (const group of grouped) {
-      flat.push(...group.annotations);
-    }
-    return flat;
+    return filterGroupedAnnotations(this.annotations, this.query, this.annotationDefinitions);
   }
 
   /**
@@ -257,12 +209,6 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   render() {
     const filtered = this.getFilteredGroupedAnnotations();
-    const displayText = this.selectedAnnotation
-      ? annotationLabel(
-          this.selectedAnnotation,
-          this.annotationDefinitions[this.selectedAnnotation],
-        )
-      : this.placeholder;
 
     return html`
       <div class="annotation-select-container">
@@ -273,7 +219,13 @@ class ProtspaceAnnotationSelect extends LitElement {
           aria-expanded=${this.open}
           aria-haspopup="listbox"
         >
-          <span class="dropdown-trigger-text">${displayText}</span>
+          ${this.selectedAnnotation
+            ? renderAnnotationName(
+                this.selectedAnnotation,
+                this.annotationDefinitions[this.selectedAnnotation],
+                'dropdown-trigger-text',
+              )
+            : html`<span class="dropdown-trigger-text">${this.placeholder}</span>`}
           <svg class="chevron-down" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
@@ -366,14 +318,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                           >STATS</span
                                         >`
                                       : ''}
-                                    ${isPredictedAnnotation(annotation)
-                                      ? html`<span
-                                          class="predicted-badge"
-                                          title="Predicted: computational, not experimentally curated"
-                                          aria-label="Predicted"
-                                          >⚡</span
-                                        >`
-                                      : ''}
+                                    ${predictedBadge(annotation)}
                                     <span class="tooltip-toggle-slot">
                                       ${isSelected
                                         ? ''

@@ -1,39 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { groupAnnotations, type GroupedAnnotation } from './annotation-categories';
-
-/**
- * Filter annotations based on search query (mirrors the component's filtering).
- */
-export function filterGroupedAnnotations(
-  grouped: GroupedAnnotation[],
-  query: string,
-): GroupedAnnotation[] {
-  const queryLower = query.trim().toLowerCase();
-
-  if (!queryLower) {
-    return grouped;
-  }
-
-  return grouped
-    .map((group) => ({
-      ...group,
-      annotations: group.annotations.filter((annotation) =>
-        annotation.toLowerCase().includes(queryLower),
-      ),
-    }))
-    .filter((group) => group.annotations.length > 0); // Remove empty categories
-}
-
-/**
- * Flatten grouped annotations into a single array for keyboard navigation.
- */
-export function flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
-  const flat: string[] = [];
-  for (const group of grouped) {
-    flat.push(...group.annotations);
-  }
-  return flat;
-}
+import {
+  filterGroupedAnnotations,
+  flattenGroupedAnnotations,
+  groupAnnotations,
+  type GroupedAnnotation,
+} from './annotation-categories';
 
 describe('annotation-select', () => {
   describe('groupAnnotations', () => {
@@ -192,63 +163,66 @@ describe('annotation-select', () => {
   });
 
   describe('filterGroupedAnnotations', () => {
-    const grouped: GroupedAnnotation[] = [
-      { category: 'UniProt', annotations: ['gene_name', 'reviewed', 'protein_families'] },
-      { category: 'InterPro', annotations: ['pfam', 'cath'] },
-      { category: 'Taxonomy', annotations: ['species', 'genus'] },
-      { category: 'Other', annotations: ['custom_field'] },
+    const columns = [
+      'gene_name',
+      'reviewed',
+      'protein_families',
+      'pfam',
+      'cath',
+      'species',
+      'genus',
+      'custom_field',
     ];
+    const grouped = groupAnnotations(columns);
+    const filter = (query: string) => filterGroupedAnnotations(columns, query);
+    const names = flattenGroupedAnnotations;
 
     it('returns all annotations when query is empty', () => {
-      const result = filterGroupedAnnotations(grouped, '');
-      expect(result).toEqual(grouped);
+      expect(filter('')).toEqual(grouped);
     });
 
-    it('filters annotations by substring match (case insensitive)', () => {
-      const result = filterGroupedAnnotations(grouped, 'gene');
-      expect(result.length).toBe(1);
-      expect(result[0].category).toBe('UniProt');
-      expect(result[0].annotations).toEqual(['gene_name']);
+    it('matches the displayed label, not the column name', () => {
+      // `cath` comes along because its label is "CATH-Gene3D" — visible text.
+      expect(names(filter('gene'))).toEqual(['cath', 'gene_name']);
     });
 
     it('filters across multiple categories', () => {
-      const result = filterGroupedAnnotations(grouped, 'e');
-      const allAnnotations = result.flatMap((g) => g.annotations);
-      expect(allAnnotations).toContain('gene_name');
-      expect(allAnnotations).toContain('reviewed');
-      expect(allAnnotations).toContain('species');
-      expect(allAnnotations).toContain('genus');
+      const all = names(filter('e'));
+      expect(all).toContain('gene_name');
+      expect(all).toContain('reviewed');
+      expect(all).toContain('species');
+      expect(all).toContain('genus');
     });
 
     it('removes categories with no matching annotations', () => {
-      const result = filterGroupedAnnotations(grouped, 'pfam');
+      const result = filter('pfam');
       expect(result.length).toBe(1);
       expect(result[0].category).toBe('InterPro');
     });
 
     it('handles case insensitive search', () => {
-      const result = filterGroupedAnnotations(grouped, 'GENE');
-      expect(result.length).toBe(1);
-      expect(result[0].annotations).toEqual(['gene_name']);
+      expect(names(filter('GENE'))).toEqual(names(filter('gene')));
     });
 
     it('trims whitespace from query', () => {
-      const result = filterGroupedAnnotations(grouped, '  gene  ');
-      expect(result.length).toBe(1);
-      expect(result[0].annotations).toEqual(['gene_name']);
+      expect(names(filter('  gene  '))).toEqual(names(filter('gene')));
     });
 
     it('returns empty array when no matches found', () => {
-      const result = filterGroupedAnnotations(grouped, 'xyz123');
-      expect(result).toEqual([]);
+      expect(filter('xyz123')).toEqual([]);
     });
 
     it('handles partial matches', () => {
-      const result = filterGroupedAnnotations(grouped, 'fam');
-      expect(result.length).toBe(2); // pfam and protein_families
-      const allAnnotations = result.flatMap((g) => g.annotations);
-      expect(allAnnotations).toContain('pfam');
-      expect(allAnnotations).toContain('protein_families');
+      // both via their labels, "Pfam" and "Protein family"
+      expect(names(filter('fam')).sort()).toEqual(['pfam', 'protein_families']);
+    });
+
+    it('does not match a column name the picker does not display', () => {
+      // the reported case: `predicted` offered the Biocentral columns, which read
+      // "Membrane", "Transmembrane", … — the word is nowhere on screen
+      const biocentral = ['predicted_membrane', 'predicted_transmembrane', 'ted_domains'];
+      expect(names(filterGroupedAnnotations(biocentral, 'predicted'))).toEqual([]);
+      expect(names(filterGroupedAnnotations(biocentral, 'ted'))).toEqual(['ted_domains']);
     });
   });
 

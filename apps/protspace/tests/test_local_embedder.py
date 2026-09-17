@@ -6,10 +6,11 @@ pooling, header validation) are torch-free and always run. The end-to-end
 transformers) and downloads a small ESM2 model, so it is marked ``slow``.
 """
 
+import h5py
 import numpy as np
 import pytest
 
-from protspace.data.embedding import local
+from protspace.data.embedding import biocentral, local
 from protspace.data.embedding.biocentral import ALL_SHORT_KEYS
 
 # ---------------------------------------------------------------------------
@@ -40,6 +41,25 @@ def test_resolve_covers_every_cli_short_key():
 def test_resolve_unknown_raises_with_suggestion():
     with pytest.raises(ValueError, match="esm2_8m"):
         local.resolve_local_checkpoint("esm2_8")
+
+
+def test_blocked_sets_name_real_short_keys():
+    """A typo in either set would silently stop gating rather than fail.
+
+    The Colab notebook imports both to disable those checkboxes, so a name that
+    matches no shortcut disables nothing — and the run then fails the way the
+    set exists to prevent, mid-embed, after the input has been paid for.
+
+    Each set is pinned to the registry it constrains, not to whichever one is
+    handy: COLAB_OVERSIZED is a fact about local checkpoints, so a local-only
+    model added later must not have to be a Biocentral shortcut to be gated.
+    """
+    for blocked, registry in (
+        (local.COLAB_OVERSIZED, local.LOCAL_CHECKPOINTS),
+        (biocentral.BIOCENTRAL_INVALID, ALL_SHORT_KEYS),
+    ):
+        assert blocked
+        assert blocked <= set(registry)
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +160,7 @@ def test_embed_sequences_raises_when_all_sequences_dropped(tmp_path):
     """All sequences over max_length → no embeddings → a clear error, not a
     silently-empty/absent .h5 that later crashes load_h5."""
     out = tmp_path / "emb.h5"
-    with pytest.raises(ValueError, match="No embeddings"):
+    with pytest.raises(ValueError, match="No new embeddings"):
         local.embed_sequences(
             {"p1": "MKVLAAGILT"},
             "esm2_8m",
@@ -192,3 +212,91 @@ def test_embed_sequences_resumes_and_skips_existing(tmp_path):
     with h5py.File(out, "r") as f:
         assert set(f.keys()) == {"prot1", "prot2"}
         np.testing.assert_array_equal(f["prot1"][:], first)
+
+
+# ---------------------------------------------------------------------------
+# Completeness contract: a capability limit is skipped, anything else fails
+# ---------------------------------------------------------------------------
+
+
+def _stub_model(monkeypatch, *, oom_ids=()):
+    """Replace model loading and inference so the contract can be tested without
+    downloading a checkpoint."""
+    import torch
+
+    monkeypatch.setattr(local, "setup_model", lambda ckpt, mt: (None, None, "cpu"))
+
+    def fake_embed_batch(processed, mod_type, model, tokenizer, device, max_length):
+        if len(processed) == 1 and processed[0] in oom_ids:
+            raise torch.cuda.OutOfMemoryError("stub OOM")
+        return [np.zeros(4, dtype=np.float32) for _ in processed]
+
+    monkeypatch.setattr(local, "_embed_batch", fake_embed_batch)
+
+
+def test_over_length_sequences_are_skipped_not_failed(tmp_path, monkeypatch):
+    """A documented capability limit must not fail the run -- but must be named."""
+    _stub_model(monkeypatch)
+    out = tmp_path / "emb.h5"
+
+    result = local.embed_sequences(
+        {"short": "MKVL", "long": "M" * 50},
+        "esm2_8m",
+        out,
+        local.LocalEmbedConfig(max_length=10),
+    )
+
+    assert result == out
+    with h5py.File(out, "r") as f:
+        assert set(f.keys()) == {"short"}
+
+
+def test_raising_max_length_embeds_a_previously_skipped_sequence(tmp_path, monkeypatch):
+    _stub_model(monkeypatch)
+    out = tmp_path / "emb.h5"
+    seqs = {"short": "MKVL", "long": "M" * 50}
+
+    local.embed_sequences(seqs, "esm2_8m", out, local.LocalEmbedConfig(max_length=10))
+    local.embed_sequences(seqs, "esm2_8m", out, local.LocalEmbedConfig(max_length=100))
+
+    with h5py.File(out, "r") as f:
+        assert set(f.keys()) == {"short", "long"}
+
+
+def test_oom_at_batch_size_one_is_skipped(tmp_path, monkeypatch):
+    """Same class as the length cap: this machine cannot do this sequence."""
+    _stub_model(monkeypatch)
+    out = tmp_path / "emb.h5"
+    # preprocess_sequence is identity-ish for esm; key the stub off the processed text
+    _stub_model(monkeypatch, oom_ids={"M" * 20})
+
+    result = local.embed_sequences(
+        {"ok": "MKVL", "hungry": "M" * 20},
+        "esm2_8m",
+        out,
+        local.LocalEmbedConfig(batch_size=1),
+    )
+
+    assert result == out
+    with h5py.File(out, "r") as f:
+        assert set(f.keys()) == {"ok"}
+
+
+def test_shortfall_that_is_not_a_skip_still_fails(tmp_path, monkeypatch):
+    """Everything absent from the .h5 that was NOT deliberately skipped is a
+    failure -- this is what the local backend used to miss entirely."""
+    _stub_model(monkeypatch)
+    real_save = local.save_embeddings
+    monkeypatch.setattr(
+        local,
+        "save_embeddings",
+        lambda p, e: real_save(p, {k: v for k, v in e.items() if k != "dropped"}),
+    )
+
+    with pytest.raises(ValueError, match="Embedding incomplete"):
+        local.embed_sequences(
+            {"kept": "MKVL", "dropped": "MKVA"},
+            "esm2_8m",
+            tmp_path / "emb.h5",
+            local.LocalEmbedConfig(batch_size=8),
+        )

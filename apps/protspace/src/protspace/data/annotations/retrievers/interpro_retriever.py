@@ -121,6 +121,10 @@ class InterProRetriever(BaseAnnotationRetriever):
             self.annotations if self.annotations else INTERPRO_ANNOTATIONS
         )
         self.sequences = sequences if sequences else {}
+        # Batches whose matches never arrived. Their proteins fall through as
+        # "no InterPro match", indistinguishable from a real absence, so the
+        # caller needs to know the difference before caching them.
+        self.failed_batch_count = 0
 
         # Validate annotations
         invalid_annotations = [
@@ -224,11 +228,13 @@ class InterProRetriever(BaseAnnotationRetriever):
                         batch_results = response.json().get("results", [])
                         all_results.extend(batch_results)
                     else:
+                        self.failed_batch_count += 1
                         logger.error(
                             f"Error processing batch {i}: {response.status_code} - {response.text}"
                         )
 
                 except requests.exceptions.RequestException as e:
+                    self.failed_batch_count += 1
                     logger.error(f"Request error for batch {i}: {e}")
 
                 pbar.update(len(chunk))

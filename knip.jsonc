@@ -14,7 +14,9 @@
       // has to be rooted here or knip cannot see what it imports — and reports
       // the reader/conversion internals it pins as unused exports.
       "entry": [
-        "scripts/**/*.ts",
+        // Roots only. Globbing every file under scripts/ made each one its own
+        // entry, so knip could never report anything there as unused.
+        "scripts/docs-screenshots/*.spec.ts",
         "docs/.vitepress/config.mts",
         "perf/**/*.spec.ts",
         "tests/contract/**/*.test.ts",

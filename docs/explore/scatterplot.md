@@ -11,6 +11,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 | Reset view          | Double-click on background               |
 | Select one          | Click a point                            |
 | Add to selection    | **⌘/Ctrl** + click another point         |
+| Deselect one        | Click it again, or use the search box    |
 | Box select          | Click **Select**, then drag a rectangle  |
 | Lasso select        | Switch to lasso tool, then draw freeform |
 | Clear selection     | Press **Escape** or click **Clear**      |
@@ -34,6 +35,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 - **Click** a point to select it
 - **⌘ + click** (Mac) or **Ctrl + click** (Windows) to add to selection
 - Click the same point again to deselect it
+- Click a `✓`-marked suggestion in the [search box](/explore/control-bar#_3-search) to deselect it
 
 ### Box Selection
 
@@ -88,3 +90,77 @@ Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in t
 When multiple proteins share the exact same coordinates, a **count badge** appears on the point (when enabled in the legend settings). Click a stacked point to expand it into a spider layout showing each individual protein.
 
 ![Duplicate-count badges persist across projections](./images/duplicate-badges.gif)
+
+### Projection Metadata
+
+A small bar-chart icon sits in the **top-left corner** of the scatterplot. Hover it (or focus it with
+the keyboard) to open a **Projection Metadata** panel describing the current projection. Click the
+icon to pin the panel open, so you can scroll it and read the ⓘ popovers inside without keeping the
+pointer on the card. **Escape** or a click outside closes it; switching projections updates it.
+
+::: tip
+The icon only appears when the loaded bundle has something to show: reduction parameters,
+faithfulness metrics, or statistics for the annotation you are colouring by, either its separation
+in this projection or, for a clustering, its Recovers table. Any one is enough, so a bundle prepared
+with `--stats` but no projection metadata still gets a panel, and a clustering found in another
+projection gets one on Recovers alone. A bundle carrying none of them shows no icon at all.
+:::
+
+The card's header is the projection's own name. Below it, in order:
+
+- **Separation, scored on `<annotation>`**, how cleanly the current annotation's categories separate
+  in this projection, with the source embedding's own scores beside them as a ceiling. Documented on
+  [Separation Scores](/explore/separation-scores).
+- **Recovers**, only when the current annotation is a `cluster_elbow_*` / `cluster_silhouette_*`
+  clustering: how closely that clustering reproduces each real annotation. Documented under
+  [Cluster Annotations](/explore/separation-scores#cluster-annotations).
+- **Faithfulness to the embedding**, described below.
+- **How it was made**, described below.
+
+#### Faithfulness to the embedding
+
+How well the 2D or 3D layout preserves the structure of the original high-dimensional embedding, as
+one labelled row per metric under two group headings. Every row carries its value and its own ⓘ
+popover.
+
+**Local — are the same proteins still neighbours?**
+
+- **kNN Overlap**, fraction of each point's k nearest neighbors preserved in the projection
+- **Trustworthiness**, penalizes points pulled together in the projection that were far apart
+- **Continuity**, penalizes points pushed apart in the projection that were close together
+
+**Global — is the overall layout preserved?**
+
+- **Random Triplet**, fraction of random point triplets whose relative ordering survives
+- **Spearman Distance**, rank correlation between high-dimensional and projected pairwise distances
+
+The neighborhood size `k`, the high-dimensional distance metric, and the source embedding are the
+same for every metric, so no row repeats them: one scope line covers all of them, such as
+`811 proteins compared`, gaining `· subsampled` when the comparison ran on a subsample. These
+metrics travel in the projection metadata (`info_json.quality`), not in the statistics part, so they
+appear whether or not the bundle was built with `--stats`.
+
+#### How it was made
+
+The parameters the dimensionality-reduction method was run with, read from the bundle's projection
+metadata table. **Source** names the embedding the projection was computed from, which is useful
+when a bundle contains projections from several embeddings. The rest depend on the method:
+
+- **PCA**, `N Components`, plus `Explained Variance Ratio` (one value per component)
+- **UMAP**, `N Neighbors`, `Min Dist`, `Metric`, `Random State`, and the rest of the UMAP
+  parameter set
+
+Two things are deliberately absent from the list: the dimension count, which you already pick in the
+[Projection selector](/explore/control-bar), and the projection's name, which is the card header
+rather than a row.
+
+#### Across the whole card
+
+Values anywhere on the card are formatted for readability: whole numbers print as-is, other numbers
+are rounded to three decimals (two for explained-variance values), booleans show as **Yes**/**No**,
+lists are comma-separated, and a value that is missing or could not be computed shows as `N/A`.
+
+Whenever the card carries any scores at all, separation or faithfulness, it ends with a footer
+reading `All scores are for the full dataset.`, becoming
+`All scores are for the full dataset, not this view.` while a filter or isolation narrows the plot,
+for the reason on [Separation Scores](/explore/separation-scores#scores-cover-the-whole-dataset).

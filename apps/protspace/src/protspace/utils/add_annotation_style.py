@@ -33,7 +33,7 @@ _SETTINGS_KEYS = {
 # Built-in palette IDs, mirrored from the web frontend — the source of truth:
 # packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
 # numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
-# categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
+# categorical id; numeric gradients are chosen in the UI (see https://protspace.app/docs/guide/styling).
 # Keep this list in sync with those files.
 _CATEGORICAL_PALETTE_IDS = frozenset(
     {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
@@ -79,15 +79,18 @@ def detect_data_format(input_path: str) -> str:
         )
 
 
-_NA_LABELS = {"", "<NA>", "NaN"}
+_NA_LABELS = {"", "<NA>", "NaN", "__NA__", "None"}
 
 
 def _resolve_na(value: str, all_values: set[str]) -> str | None:
     """If *value* is an NA-like label, return the matching label in *all_values*.
 
-    Different data sources represent missing values as ``""``, ``"<NA>"``, or
-    ``"NaN"``.  This helper maps between them so styles using one form still
-    work when the data uses another.  Returns *None* when no match is found.
+    Different data sources represent missing values as ``""``, ``"<NA>"``,
+    ``"NaN"``, or the frontend's ``"__NA__"`` sentinel.  ``"None"`` is what
+    ``str()`` yields for a parquet NULL, which is how the frontend writer stores
+    a missing categorical cell.  This helper maps between them so styles using
+    one form still work when the data uses another.  Returns *None* when no
+    match is found.
     """
     if value not in _NA_LABELS:
         return None
@@ -95,6 +98,46 @@ def _resolve_na(value: str, all_values: set[str]) -> str | None:
         if candidate in all_values:
             return candidate
     return None
+
+
+def _resolve_numeric(value: str, all_values: set[str]) -> str | None:
+    """Match *value* against *all_values* numerically (``'100.0'`` → ``'100'``).
+
+    A numeric column's physical parquet type decides the spelling its values read
+    back as. The frontend writer stores an integral column as INT32, where it used
+    to widen every numeric column to DOUBLE, so a styles file written against an
+    older export is keyed ``'100.0'`` while the same column now reads ``'100'``.
+    Returns *None* when neither side is numeric or nothing matches.
+    """
+    try:
+        target = float(value)
+    except ValueError:
+        return None
+    for candidate in all_values:
+        try:
+            if float(candidate) == target:
+                return candidate
+        except ValueError:
+            continue
+    return None
+
+
+def _resolve_style_value(value: str, all_values: set[str], annotation: str) -> str:
+    """Return the key in *all_values* that a styles file's *value* refers to.
+
+    Raises:
+        ValueError: when *value* names no value of *annotation*.
+    """
+    if value in all_values:
+        return value
+    for resolver in (_resolve_na, _resolve_numeric):
+        resolved = resolver(value, all_values)
+        if resolved is not None:
+            return resolved
+    raise ValueError(
+        f"Value '{value}' does not exist for annotation '{annotation}'. "
+        f"Available values: {sorted(all_values)}"
+    )
 
 
 def _to_display_value(raw: str, *, decode: bool = True) -> list[str]:
@@ -158,8 +201,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
     The CLI styling model is categorical-only, but the web frontend bins numeric
     columns into gradient ranges — so per-value colors/shapes/pins set via the
     CLI silently do not apply. Naming the column + its distinct-value count makes
-    that visible instead of a surprise. See ``docs/styling.md`` (Numeric
-    annotations).
+    that visible instead of a surprise. See https://protspace.app/docs/guide/styling#numeric-annotations.
     """
     from protspace.stats.annotation_select import _is_missing, _is_numeric
 
@@ -172,7 +214,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
         "--generate-template lists every number as its own category. Pre-bin it into "
         "categorical range labels (e.g. '100-200') or color it as a continuous "
         "gradient in the web app (https://protspace.app/explore). "
-        "See docs/styling.md#numeric-annotations.",
+        "See https://protspace.app/docs/guide/styling#numeric-annotations.",
         annotation,
         len(cleaned),
     )
@@ -183,8 +225,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
     """Warn when a categorical column's ``selectedPaletteId`` is not a categorical id.
 
     For a categorical column ``selectedPaletteId`` picks the palette, and the frontend
-    silently resets a gradient or unknown id to ``kellys`` (see ``docs/styling.md`` —
-    Color palettes). Naming the offending id makes that reset visible instead of a
+    silently resets a gradient or unknown id to ``kellys`` (see https://protspace.app/docs/guide/styling#color-palettes). Naming the offending id makes that reset visible instead of a
     surprise. A numeric column instead reads ``selectedPaletteId`` as its gradient, so
     callers skip this check for numeric columns.
     """
@@ -199,7 +240,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
         reason = f"'{palette}' is not a known palette"
     logger.warning(
         "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
-        "'kellys'. Categorical palettes: %s. See docs/styling.md#color-palettes.",
+        "'kellys'. Categorical palettes: %s. See https://protspace.app/docs/guide/styling#color-palettes.",
         annotation,
         reason,
         ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
@@ -278,29 +319,13 @@ def add_annotation_styles_parquet(
         # Add colors
         if "colors" in styles:
             for value, color in styles["colors"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation '{annotation}'. Available values: {sorted(all_values)}"
-                        )
+                resolved = _resolve_style_value(str(value), all_values, annotation)
                 reader.update_annotation_color(annotation, resolved, color)
 
         # Add shapes
         if "shapes" in styles:
             for value, shape in styles["shapes"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation '{annotation}'. Available values: {sorted(all_values)}"
-                        )
+                resolved = _resolve_style_value(str(value), all_values, annotation)
                 reader.update_marker_shape(annotation, resolved, shape)
 
     # Save the updated data
@@ -358,7 +383,7 @@ def add_annotation_styles_bundle(
 
         all_values = set(value_frequencies.get(annotation, {}))
         # selectedPaletteId is the categorical palette; a numeric column reads it as
-        # its gradient instead (a gradient id applies — see docs/styling.md), so the
+        # its gradient instead (a gradient id applies — see https://protspace.app/docs/guide/styling), so the
         # categorical-palette check only runs when the column is not numeric.
         if not _warn_if_numeric(annotation, all_values):
             _warn_if_bad_palette(annotation, styles)
@@ -370,30 +395,12 @@ def add_annotation_styles_bundle(
 
         if "colors" in styles:
             for value, color in styles["colors"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation "
-                            f"'{annotation}'. Available values: {sorted(all_values)}"
-                        )
+                resolved = _resolve_style_value(str(value), all_values, annotation)
                 reader.update_annotation_color(annotation, resolved, color)
 
         if "shapes" in styles:
             for value, shape in styles["shapes"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation "
-                            f"'{annotation}'. Available values: {sorted(all_values)}"
-                        )
+                resolved = _resolve_style_value(str(value), all_values, annotation)
                 reader.update_marker_shape(annotation, resolved, shape)
 
     # Convert updated visualization_state back to settings_json

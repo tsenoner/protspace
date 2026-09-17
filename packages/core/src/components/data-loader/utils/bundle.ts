@@ -14,6 +14,10 @@ import { sanitizePublishState } from '../../publish/publish-state-validator';
 /** Key-value metadata key the Python writer stamps with the bundle's annotation format version. */
 const FORMAT_VERSION_KEY = 'protspace_format_version';
 
+/** Parquet physical types that identify a stored annotation column as numeric. */
+const INTEGER_PARQUET_TYPES = new Set(['INT32', 'INT64']);
+const FLOAT_PARQUET_TYPES = new Set(['FLOAT', 'DOUBLE']);
+
 /**
  * Result of extracting data from a parquetbundle.
  */
@@ -49,6 +53,12 @@ export interface BundleExtractionResult {
    * legacy v1 behavior — plain-string labels, raw `;`-delimited multi-hit cells).
    */
   formatVersion: number;
+  /**
+   * Stored numeric columns with their int/float identity, read from the
+   * annotations part's parquet schema. Empty for bundles that store their
+   * annotations as text, where the type is inferred from the values instead.
+   */
+  numericColumnTypes?: Readonly<Record<string, 'int' | 'float'>>;
 }
 
 /**
@@ -66,6 +76,35 @@ function readFormatVersion(metadata: FileMetaData): number {
   const entry = kv.find((k) => k.key === FORMAT_VERSION_KEY);
   const v = entry?.value ? Number(entry.value) : 1;
   return Number.isFinite(v) ? v : 1;
+}
+
+/**
+ * Derives each stored numeric column's int/float identity from the annotations
+ * part's own parquet schema.
+ *
+ * The physical type is the wire record of what the writer meant, and it is the
+ * only one that survives everywhere: it holds for a column whose rows are all
+ * null (nothing left to infer from), and it rides through the Python rewrite
+ * paths, which rebuild the table with pyarrow and drop key-value metadata.
+ * Columns stored as text (the `protspace` CLI stringifies its annotation frame)
+ * are absent here, so those keep falling back to value inference.
+ *
+ * Only an *unannotated* physical type counts. A logical/converted type means the
+ * physical type is a carrier, not the identity: pyarrow stores an all-null
+ * (arrow `null`) column as INT32 + logical NULL, and DECIMAL rides on INT32/INT64
+ * as well — reading either as an integer annotation would turn a text column into
+ * a numeric one. Annotated fields fall back to value inference, exactly as they
+ * did before this reader existed.
+ */
+function readNumericColumnTypes(metadata: FileMetaData): Record<string, 'int' | 'float'> {
+  const numericColumns: Record<string, 'int' | 'float'> = {};
+  for (const field of metadata.schema) {
+    if (!field.name || !field.type) continue;
+    if (field.logical_type != null || field.converted_type != null) continue;
+    if (INTEGER_PARQUET_TYPES.has(field.type)) numericColumns[field.name] = 'int';
+    else if (FLOAT_PARQUET_TYPES.has(field.type)) numericColumns[field.name] = 'float';
+  }
+  return numericColumns;
 }
 
 /**
@@ -140,9 +179,11 @@ export async function extractRowsFromParquetBundle(
   // re-attempt the parse itself, surfacing the same error it would have before.
   let part1Metadata: FileMetaData | null = null;
   let formatVersion = 1;
+  let numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = {};
   try {
     part1Metadata = parquetMetadata(part1);
     formatVersion = readFormatVersion(part1Metadata);
+    numericColumnTypes = readNumericColumnTypes(part1Metadata);
   } catch {
     formatVersion = 1;
   }
@@ -216,6 +257,7 @@ export async function extractRowsFromParquetBundle(
     statistics: part5,
     statisticsRows,
     formatVersion,
+    numericColumnTypes,
   };
 }
 

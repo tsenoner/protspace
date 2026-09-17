@@ -302,7 +302,7 @@ export interface BundleSettings {
   eatOverlayEnabled?: boolean;
   /**
    * Saved reliability-slider position (0…1, default 0). On load it seeds the
-   * slider, which derives a `NOT(EAT_confidence < x)` query filter only when
+   * slider, which derives an `EAT_confidence >= x or N/A` query filter only when
    * above 0 — so an absent or `0` value means no reliability filter (#6b).
    */
   eatConfidenceThreshold?: number;

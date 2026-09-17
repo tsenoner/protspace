@@ -14,7 +14,6 @@ import { EatProvenanceResolver } from './eat-provenance';
 interface InteractionControllerOptions {
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
-  selectedProteinElement: HTMLElement | null;
   structureViewer: ProtspaceStructureViewer;
 }
 
@@ -27,7 +26,6 @@ interface ActiveProvenanceClick {
 
 export interface InteractionController {
   updateLegend(): void;
-  updateSelectedProteinDisplay(proteinId: string | null): void;
   getSelectedProteins(): string[];
   handleSelectionChange(event: Event): void;
   handleProteinClick(event: Event): void;
@@ -42,7 +40,6 @@ export interface InteractionController {
 export function createInteractionController({
   legendElement,
   plotElement,
-  selectedProteinElement,
   structureViewer,
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
@@ -63,21 +60,6 @@ export function createInteractionController({
   const clearProvenance = () => {
     activeProvenanceClick = null;
     plotElement.clearProvenanceConnectors();
-  };
-
-  const updateSelectedProteinDisplay = (proteinId: string | null) => {
-    if (!selectedProteinElement) {
-      return;
-    }
-
-    if (proteinId) {
-      selectedProteinElement.textContent = `Selected: ${proteinId}`;
-      selectedProteinElement.style.color = '#3b82f6';
-      return;
-    }
-
-    selectedProteinElement.textContent = 'No protein selected';
-    selectedProteinElement.style.color = '#6b7280';
   };
 
   const updateLegend = () => {
@@ -112,7 +94,6 @@ export function createInteractionController({
 
   return {
     updateLegend,
-    updateSelectedProteinDisplay,
     getSelectedProteins() {
       return selectedProteins;
     },
@@ -123,13 +104,8 @@ export function createInteractionController({
         : [];
 
       if (selectedProteins.length > 0) {
-        const lastSelected = selectedProteins[selectedProteins.length - 1];
-        structureViewer.loadProtein(lastSelected);
-        updateSelectedProteinDisplay(`${selectedProteins.length} proteins selected`);
-        return;
+        structureViewer.loadProtein(selectedProteins[selectedProteins.length - 1]);
       }
-
-      updateSelectedProteinDisplay(null);
     },
     handleProteinClick(event) {
       const detail = (
@@ -207,7 +183,6 @@ export function createInteractionController({
         `🔒 Structure viewer closed for protein: ${customEvent.detail.proteinId || 'none'}`,
       );
       console.log('Structure viewer should now be hidden');
-      updateSelectedProteinDisplay(null);
     },
     handleAnnotationChange() {
       clearProvenance();

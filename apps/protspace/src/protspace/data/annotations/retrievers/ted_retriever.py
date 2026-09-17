@@ -8,13 +8,20 @@ from tqdm import tqdm
 from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
+from protspace.data.annotations.retrievers.http_utils import get_with_retry
 
 logger = logging.getLogger(__name__)
 
 ALPHAFOLD_DOMAINS_URL = "https://alphafold.ebi.ac.uk/api/domains"
 _API_TIMEOUT = 10
+# TED is fetched one request per accession, so a full outage would otherwise
+# pay the default backoff hundreds of thousands of times.
+_MAX_ATTEMPTS = 2
 
 TED_ANNOTATIONS = ["ted_domains"]
+
+# TED's own label for a domain with no CATH assignment.
+_UNLABELED_CATH = "-"
 
 
 class TedRetriever(BaseAnnotationRetriever):
@@ -25,6 +32,8 @@ class TedRetriever(BaseAnnotationRetriever):
         self.headers = headers or []
         self.annotations = annotations
         self._cath_names = None
+        # Accessions whose lookup failed, as opposed to having no domains.
+        self.failed_lookup_count = 0
 
     def fetch_annotations(self) -> list[tuple]:
         """Fetch TED domain annotations for all proteins."""
@@ -44,6 +53,7 @@ class TedRetriever(BaseAnnotationRetriever):
                     domains = self._fetch_domains(accession)
                     ted_value = self._format_domains(domains)
                 except Exception as e:
+                    self.failed_lookup_count += 1
                     logger.debug(f"Failed to fetch TED domains for {accession}: {e}")
                     ted_value = ""
 
@@ -60,7 +70,20 @@ class TedRetriever(BaseAnnotationRetriever):
     def _fetch_domains(self, accession: str) -> list[dict]:
         """Fetch TED domains for a single protein from AlphaFold DB API."""
         url = f"{ALPHAFOLD_DOMAINS_URL}/{accession}"
-        resp = requests.get(url, timeout=_API_TIMEOUT)
+        # One request per protein, so the retry budget is deliberately small:
+        # on a full AlphaFold outage the backoff is paid once per accession.
+        try:
+            resp = get_with_retry(url, timeout=_API_TIMEOUT, attempts=_MAX_ATTEMPTS)
+        except requests.HTTPError as exc:
+            resp = exc.response
+            if resp is None or resp.status_code != 404:
+                raise
+        if resp.status_code == 404:
+            # AlphaFold has no entry for this accession -- a real absence, the
+            # normal answer for a non-UniProt identifier or an unmodelled
+            # protein. Raising here would count it as a lost lookup and keep
+            # the whole TED column out of the cache on every ordinary run.
+            return []
         resp.raise_for_status()
         data = resp.json()
 
@@ -72,25 +95,29 @@ class TedRetriever(BaseAnnotationRetriever):
     def _format_domains(self, domains: list[dict]) -> str:
         """Format TED domains as semicolon-separated string.
 
-        Format: "{cath_label} ({cath_name})|{plddt}"
-        Example: "2.60.40.720 (Immunoglobulin-like)|95.1;3.40.50.300 (P-loop NTPases)|88.3"
+        Format: "{cath_label} ({cath_name})|{plddt}", falling back to
+        "{cath_label}|{plddt}" when no CATH name resolves, and to "-|{plddt}"
+        for a domain with no CATH assignment.
+        Example: "2.60.40.720 (Immunoglobulin-like)|95.1;-|88.3"
         """
         if not domains:
             return ""
 
         parts = []
         for domain in domains:
-            cath_label = domain.get("cath_label", "-")
-            plddt = domain.get("plddt", 0)
+            cath_label = domain.get("cath_label") or _UNLABELED_CATH
+            # `or 0` (not a `.get` default): the key can be present and null,
+            # and formatting None would raise inside the caller's blanket
+            # `except`, silently dropping every domain of this accession.
+            plddt = domain.get("plddt") or 0
 
-            if cath_label and cath_label != "-":
-                name = self._resolve_cath_name(cath_label)
-                if name:
-                    parts.append(f"{cath_label} ({encode_field(name)})|{plddt:.1f}")
-                else:
-                    parts.append(f"{cath_label}|{plddt:.1f}")
-            else:
-                parts.append(f"unclassified|{plddt:.1f}")
+            name = (
+                self._resolve_cath_name(cath_label)
+                if cath_label != _UNLABELED_CATH
+                else ""
+            )
+            label = f"{cath_label} ({encode_field(name)})" if name else cath_label
+            parts.append(f"{label}|{plddt:.1f}")
 
         return ";".join(parts)
 

@@ -1,8 +1,10 @@
-import { test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import * as path from 'path';
-import * as fs from 'fs';
+import type { CategoricalCondition } from '../../packages/core/src/components/control-bar/query-types';
+import { IMAGES_DIR } from './paths';
 import {
-  IMAGES_DIR,
+  awaitTwoFrames,
+  createSharedCapturePage,
   dismissProductTour,
   waitForDataLoad,
   waitForLegend,
@@ -13,42 +15,12 @@ import {
 // Static screenshots share one page across the whole spec — the dataset is
 // large to load and parse, so we pay that cost once in beforeAll and reset
 // only the per-test mutations in beforeEach.
-let sharedContext: BrowserContext | null = null;
-let sharedPage: Page | null = null;
-
-function getPage(): Page {
-  if (!sharedPage) {
-    throw new Error('sharedPage not initialized — beforeAll did not run');
-  }
-  return sharedPage;
-}
-
-test.beforeAll(async ({ browser }) => {
-  if (!fs.existsSync(IMAGES_DIR)) {
-    fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  }
-
-  sharedContext = await browser.newContext({
-    viewport: { width: 1536, height: 864 },
-  });
-  sharedPage = await sharedContext.newPage();
-
-  await sharedPage.goto('/explore');
-  await dismissProductTour(sharedPage);
-  await waitForDataLoad(sharedPage);
-  await waitForLegend(sharedPage);
-  await waitForControlBar(sharedPage);
-});
-
-test.afterAll(async () => {
-  if (sharedPage) {
-    await sharedPage.close();
-    sharedPage = null;
-  }
-  if (sharedContext) {
-    await sharedContext.close();
-    sharedContext = null;
-  }
+const getPage = createSharedCapturePage(async (page) => {
+  await page.goto('/explore');
+  await dismissProductTour(page);
+  await waitForDataLoad(page);
+  await waitForLegend(page);
+  await waitForControlBar(page);
 });
 
 /**
@@ -100,16 +72,13 @@ async function resetStaticState(page: Page): Promise<void> {
  * Dispatches the same event the Export-menu's "Figure Editor" button fires —
  * skips dropdown timing and viewport clipping.
  */
-async function openFigureEditor(
-  page: import('@playwright/test').Page,
-  timeout = 10_000,
-): Promise<void> {
+async function openFigureEditor(page: Page, timeout = 10_000): Promise<void> {
   await page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
     cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
   });
 
-  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), {
+  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
     timeout,
   });
   await page.waitForFunction(
@@ -120,6 +89,7 @@ async function openFigureEditor(
       const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
       return !!c && c.width > 0 && c.height > 0;
     },
+    undefined,
     { timeout, polling: 250 },
   );
   // Settle: rAF redraw + font readiness.
@@ -130,10 +100,7 @@ async function openFigureEditor(
  * Wait for the control bar to be fully rendered with all elements styled.
  * This fixes the gray control-bar issue by waiting for shadow DOM elements.
  */
-async function waitForControlBar(
-  page: import('@playwright/test').Page,
-  timeout = 15000,
-): Promise<void> {
+async function waitForControlBar(page: Page, timeout = 15000): Promise<void> {
   await page.waitForSelector('#myControlBar', { timeout });
 
   // Wait for the control bar shadow DOM to be fully rendered
@@ -160,16 +127,12 @@ async function waitForControlBar(
       // Check that annotation select has annotations loaded
       return annotationSelect.annotations && annotationSelect.annotations.length > 0;
     },
+    undefined,
     { timeout, polling: 200 },
   );
 
   // Settle for two frames so any Lit transition is committed.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }),
-  );
+  await awaitTwoFrames(page);
 }
 
 test.describe('Interface Overview Screenshots', () => {
@@ -357,6 +320,7 @@ test.describe('Control Bar Screenshots', () => {
         if (!controlBar?.shadowRoot) return false;
         return !!controlBar.shadowRoot.querySelector('.dropdown-menu');
       },
+      undefined,
       { timeout: 5000, polling: 200 },
     );
 
@@ -445,6 +409,7 @@ test.describe('Control Bar Screenshots', () => {
 
         return !!annotationSelect.shadowRoot.querySelector('.dropdown-menu');
       },
+      undefined,
       { timeout: 5000, polling: 200 },
     );
 
@@ -669,20 +634,20 @@ test.describe('Control Bar Screenshots', () => {
     // Pre-populate the filter query so the modal opens with a meaningful state.
     // Pick the first annotation and its first two unique non-null values from
     // the currently loaded data — keeps the test independent of the dataset.
-    await page.evaluate(() => {
+    const exampleValueCount = await page.evaluate(() => {
       const cb = document.querySelector('#myControlBar') as
         | (HTMLElement & {
             annotations: string[];
             _currentData?: {
               annotations?: Record<string, { values: (string | null)[] }>;
             };
-            filterQuery: unknown[];
+            filterQuery: CategoricalCondition[];
             requestUpdate: () => void;
           })
         | null;
-      if (!cb) return;
+      if (!cb) throw new Error('filter capture needs #myControlBar');
       const ann = cb.annotations?.[0];
-      if (!ann) return;
+      if (!ann) throw new Error('filter capture needs at least one annotation');
       const raw = cb._currentData?.annotations?.[ann]?.values ?? [];
       const seen = new Set<string>();
       const unique: string[] = [];
@@ -693,8 +658,10 @@ test.describe('Control Bar Screenshots', () => {
         unique.push(v);
         if (unique.length === 2) break;
       }
-      cb.filterQuery = [{ id: 'q-demo-1', annotation: ann, values: unique }];
+      if (unique.length === 0) throw new Error(`filter capture found no values for ${ann}`);
+      cb.filterQuery = [{ id: 'q-demo-1', kind: 'categorical', annotation: ann, values: unique }];
       cb.requestUpdate();
+      return unique.length;
     });
 
     // Open the filter modal via the same path the user clicks.
@@ -710,19 +677,18 @@ test.describe('Control Bar Screenshots', () => {
       trigger?.click();
     });
 
-    await page.waitForFunction(
-      () => {
-        const cb = document.querySelector('#myControlBar') as
-          | (HTMLElement & {
-              shadowRoot: ShadowRoot | null;
-            })
-          | null;
-        return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
-      },
-      { timeout: 5_000, polling: 200 },
+    // The query builder only renders inside the open modal. The example condition
+    // must show its values as chips; a condition the row cannot render still
+    // filters, so the match counter alone proves nothing.
+    await expect(
+      page.locator('#myControlBar protspace-query-condition-row .value-chip'),
+    ).toHaveCount(exampleValueCount, { timeout: 5_000 });
+    // Match counts resolve on a debounce; until then the counter reads "0 of 0".
+    await expect(page.locator('#myControlBar protspace-query-builder .match-count')).toHaveText(
+      /of [1-9]\d* proteins matched/,
+      { timeout: 5_000 },
     );
-    // Let the query builder finish first paint and resolve match counts.
-    await page.waitForTimeout(800);
+    await awaitTwoFrames(page);
 
     const clip = await page.evaluate(() => {
       const cb = document.querySelector('#myControlBar') as

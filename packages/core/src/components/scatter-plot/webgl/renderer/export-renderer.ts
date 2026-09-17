@@ -29,7 +29,7 @@ import {
   type ScalePair,
   type FramebufferResources,
   type PointUniformLocations,
-  MAX_POINTS_DIRECT_RENDER,
+  MAX_RENDERABLE_POINTS,
 } from '../types';
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
@@ -48,7 +48,14 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
-import { stagePoint, type StagePointArrays, MAX_LABELS } from './stage-point';
+import { stagePoint, type StagePointArrays } from './stage-point';
+import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
+import {
+  readMaxTextureSize,
+  drainGlErrors,
+  allocateLabelAtlas,
+  uploadPlaceholderAtlas,
+} from './label-atlas-texture';
 import { buildPaintOrder, composePaintDepth } from './point-staging';
 import {
   POINT_VERTEX_SHADER,
@@ -59,7 +66,6 @@ import {
 
 // Constants (moved verbatim from webgl-renderer.ts).
 const MIN_CAPACITY = 1024;
-const LABEL_TEXTURE_WIDTH = 2048;
 
 // Stable reference dimensions for margin scaling at export time. Tying margin
 // scaling to the live display canvas (via `config.width/height`, which track
@@ -96,6 +102,20 @@ interface ExportRenderOptions {
   gamma: number;
   /** Plot-surface/interior marker color in sRGB. */
   knockoutColor?: readonly [number, number, number];
+  /**
+   * Label slices the LIVE view is rendering with, or null when it has no atlas.
+   * The export never exceeds it, so an exported figure carries the same marker
+   * segmentation the user saw on screen — the two contexts plan independently
+   * and their capacities differ (export is not row-snapped), so without this
+   * they diverge.
+   */
+  labelStride?: number | null;
+  /**
+   * `gl.MAX_TEXTURE_SIZE` as measured by the live context. Used to validate the
+   * requested output dimensions before a canvas that large is allocated; the
+   * export context is probed separately once it exists.
+   */
+  deviceMaxTextureSize?: number;
 }
 
 export class ExportRenderer {
@@ -228,9 +248,22 @@ export class ExportRenderer {
     const physicalWidth = Math.floor(width * dpr);
     const physicalHeight = Math.floor(height * dpr);
 
-    if (physicalWidth > MAX_DIMENSION || physicalHeight > MAX_DIMENSION) {
+    // MAX_DIMENSION alone was described as "the browser limit" but is a constant,
+    // so on any device reporting less than 8192 the message named a limit that was
+    // not the one being enforced — and the export failed later, in the driver.
+    // Deliberately NOT `sanitizeMaxTextureSize`: its fallback is the 2048 spec
+    // floor, which is right for planning an atlas but wrong here — an unknown
+    // device limit must leave the bound where it was, not tighten it to 2048 and
+    // start rejecting exports that work.
+    const deviceLimit = options.deviceMaxTextureSize;
+    const effectiveMaxDimension =
+      typeof deviceLimit === 'number' && Number.isFinite(deviceLimit) && deviceLimit >= 1
+        ? Math.min(MAX_DIMENSION, deviceLimit)
+        : MAX_DIMENSION;
+
+    if (physicalWidth > effectiveMaxDimension || physicalHeight > effectiveMaxDimension) {
       throw new Error(
-        `Export dimensions ${physicalWidth}×${physicalHeight} exceed browser limit of ${MAX_DIMENSION}px`,
+        `Export dimensions ${physicalWidth}×${physicalHeight} exceed this device's limit of ${effectiveMaxDimension}px`,
       );
     }
     if (physicalWidth * physicalHeight > MAX_AREA) {
@@ -372,8 +405,16 @@ export class ExportRenderer {
     // Get attribute and uniform locations
     const { attribs, uniforms } = resolvePointLocations(gl, pointProgram);
 
-    // Prepare point data using existing CPU arrays (reuse from main renderer)
-    const maxPoints = Math.min(pd.length, MAX_POINTS_DIRECT_RENDER);
+    const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
+
+    // This context is not the live one, so it must be asked its own limit — but
+    // the stride is inherited, so the exported figure segments its markers exactly
+    // the way the screen did. A null stride is the live view saying it has no atlas.
+    const labelAtlas = planLabelAtlas(
+      Math.max(MIN_CAPACITY, maxPoints),
+      readMaxTextureSize(gl),
+      options.labelStride === undefined ? MAX_LABELS : options.labelStride,
+    );
 
     // Populate buffers for off-screen rendering
     const {
@@ -395,9 +436,14 @@ export class ExportRenderer {
       style,
       options.selectionActive,
       sizeScaleFactor,
+      labelAtlas,
     );
 
-    // Create and upload buffers
+    // Create and upload buffers. The flag has to start clean for the check after
+    // them to mean "these uploads failed": this context is fresh, but program
+    // compilation and linking above share it.
+    drainGlErrors(gl);
+
     const dataPositionBuffer = gl.createBuffer();
     const sizeBuffer = gl.createBuffer();
     const colorBuffer = gl.createBuffer();
@@ -428,22 +474,38 @@ export class ExportRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, predictedBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, predicted.subarray(0, pointCount), gl.STATIC_DRAW);
 
-    // Setup label color texture
+    // An out-of-memory bufferData raises into the error flag rather than throwing,
+    // so without this the export would draw from storage that was never allocated
+    // and hand back a blank or half-populated PNG — written to disk, published,
+    // with nothing logged anywhere. Throwing matches how this method already
+    // rejects an over-size request: an export is a discrete user action with an
+    // error path, and a figure that is quietly wrong is worse than one that failed.
+    if (gl.getError() !== gl.NO_ERROR) {
+      throw new Error(
+        `The graphics driver could not allocate memory for ${pointCount.toLocaleString()} points ` +
+          `at ${width}×${height}. Export at smaller dimensions, or with fewer points visible.`,
+      );
+    }
+
+    // Setup label color texture. When no atlas was planned — the live view has
+    // none, or nothing fits — or when the driver refuses the allocation (which
+    // raises a GL error rather than throwing, so the export would otherwise
+    // sample a texture that does not exist), a 1x1 placeholder keeps the sampler
+    // complete and `effectiveAtlas` goes null, zeroing the capacity uniform so
+    // the shader never reads it. The image is still produced, with flat marks.
     gl.bindTexture(gl.TEXTURE_2D, labelColorTexture);
-    const texHeight = labelColorData.length / 4 / LABEL_TEXTURE_WIDTH;
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA8,
-      LABEL_TEXTURE_WIDTH,
-      texHeight,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      labelColorData,
-    );
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    let effectiveAtlas = labelAtlas;
+    if (effectiveAtlas && labelColorData) {
+      // The buffer uploads above already had their own check, and
+      // allocateLabelAtlas drains again before allocating, so this verdict is
+      // about the atlas and nothing else.
+      if (allocateLabelAtlas(gl, effectiveAtlas, labelColorData) !== gl.NO_ERROR) {
+        effectiveAtlas = null;
+      }
+    } else {
+      effectiveAtlas = null;
+    }
+    if (!effectiveAtlas) uploadPlaceholderAtlas(gl);
 
     // Create VAO
     const pointVao = gl.createVertexArray();
@@ -502,7 +564,7 @@ export class ExportRenderer {
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
         labelColorTexture,
-        labelColorData.length,
+        effectiveAtlas,
         pointCount,
         options.selectionActive,
         selectedStartIndex,
@@ -538,7 +600,7 @@ export class ExportRenderer {
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
         labelColorTexture,
-        labelColorData.length,
+        effectiveAtlas,
         pointCount,
         options.selectionActive,
         selectedStartIndex,
@@ -573,6 +635,7 @@ export class ExportRenderer {
     style: WebGLStyleGetters,
     selectionActive: boolean,
     sizeScaleFactor: number = 1,
+    labelAtlas: LabelAtlasPlan | null = null,
   ): {
     dataPositions: Float32Array;
     sizes: Float32Array;
@@ -581,7 +644,7 @@ export class ExportRenderer {
     labelCounts: Float32Array;
     shapes: Float32Array;
     predicted: Float32Array;
-    labelColorData: Uint8Array;
+    labelColorData: Uint8Array | null;
     pointCount: number;
     selectedStartIndex: number;
   } {
@@ -593,9 +656,10 @@ export class ExportRenderer {
     const labelCounts = new Float32Array(capacity);
     const shapes = new Float32Array(capacity);
     const predicted = new Float32Array(capacity);
-    const requiredPixels = capacity * MAX_LABELS;
-    const texHeight = Math.ceil(requiredPixels / LABEL_TEXTURE_WIDTH);
-    const labelColorData = new Uint8Array(LABEL_TEXTURE_WIDTH * texHeight * 4);
+    // Sized from the plan, which already accounts for the device limit and the
+    // stride inherited from the live view. Null when no atlas is in play — the
+    // export then costs nothing for a feature it is not using.
+    const labelColorData = labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null;
 
     // Stage slots by depth using the SAME canonical painter-order plan as the
     // live path (buildPaintOrder): the live path is canonical, so the export
@@ -615,6 +679,7 @@ export class ExportRenderer {
       shapes,
       predicted,
       labelColorData,
+      maxLabels: labelAtlas?.stride ?? MAX_LABELS,
     };
 
     // Per-slot depth scratch indexed by ORIGINAL slot index, then the index order
@@ -696,7 +761,8 @@ export class ExportRenderer {
     knockoutColor: readonly [number, number, number],
     transform: d3.ZoomTransform,
     labelColorTexture: WebGLTexture | null,
-    labelColorDataLength: number,
+    /** The atlas actually resident on the GPU — null once a fallback took over. */
+    labelAtlas: LabelAtlasPlan | null,
     pointCount: number,
     selectionActive: boolean,
     selectedStartIndex: number,
@@ -708,9 +774,7 @@ export class ExportRenderer {
       dpr,
       gamma,
       knockoutColor,
-      maxLabels: MAX_LABELS,
-      labelTextureWidth: LABEL_TEXTURE_WIDTH,
-      labelColorDataLength,
+      labelAtlas,
     });
 
     drawPoints(gl, pointCount, selectionActive, selectedStartIndex);

@@ -2,8 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { extractRowsFromParquetBundle } from './bundle';
-import { convertParquetToVisualizationData } from './conversion';
-import { createParquetBundle, countBundleDelimiters, isParquetBundle } from '@protspace/utils';
+import {
+  convertParquetToVisualizationData,
+  convertParquetToVisualizationDataOptimized,
+} from './conversion';
+import {
+  createParquetBundle,
+  countBundleDelimiters,
+  findBundleDelimiterPositions,
+  isParquetBundle,
+  type Annotation,
+  type VisualizationData,
+} from '@protspace/utils';
+import { parquetMetadata } from 'hyparquet';
 
 function loadArrayBuffer(filePath: string): ArrayBuffer {
   const buffer = readFileSync(filePath);
@@ -428,5 +439,276 @@ describe('numeric annotation round-trip', () => {
     expect(reimported.annotation_data.length).toBeUndefined();
     expect(reimported.annotations.family.kind).toBe('categorical');
     expect(reimported.annotation_data.family).toEqual([[0], [1], [0]]);
+  });
+});
+
+/**
+ * tsenoner/protspace#303 follow-ups: the numeric half of the export contract.
+ *
+ * Parquet stores values, not intent. Two things the writer previously threw
+ * away — the physical integer type, and the numeric kind of a column with no
+ * surviving values — are re-asserted here.
+ */
+describe('numeric annotation type fidelity', () => {
+  const numeric = (numericType: 'int' | 'float'): Annotation => ({
+    kind: 'numeric',
+    numericType,
+    values: [],
+    colors: [],
+    shapes: [],
+  });
+
+  const baseData = (
+    annotations: VisualizationData['annotations'],
+    numericData: Record<string, (number | null)[]>,
+  ): VisualizationData => ({
+    protein_ids: ['P1', 'P2', 'P3'],
+    projections: [{ name: 'UMAP', data: Float32Array.of(0, 0, 1, 1, 2, 2), dimension: 2 as const }],
+    annotations,
+    annotation_data: {},
+    numeric_annotation_data: numericData,
+    annotation_scores: {},
+    annotation_evidence: {},
+  });
+
+  function physicalType(buffer: ArrayBuffer, column: string): string | undefined {
+    // Part 1 ends at the first delimiter; parquetMetadata needs exactly that slice.
+    const bytes = new Uint8Array(buffer);
+    const end = findBundleDelimiterPositions(bytes)[0];
+    const part1 = bytes.subarray(0, end).slice().buffer;
+    return parquetMetadata(part1).schema.find((field) => field.name === column)?.type;
+  }
+
+  it('writes an integer annotation as INT32, not a widened DOUBLE', async () => {
+    // Python keys legends/styles off str(value), so a DOUBLE round trip turns the
+    // style key '100' into '100.0' and breaks a previously valid style template.
+    // INT32 covers every realistic protein annotation and passes values through
+    // untouched — no per-protein bigint array.
+    const original = baseData({ residues: numeric('int') }, { residues: [100, 250, null] });
+
+    const exported = createParquetBundle(original);
+    expect(physicalType(exported, 'residues')).toBe('INT32');
+
+    const reimported = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(exported),
+    );
+    expect(reimported.annotations.residues.kind).toBe('numeric');
+    expect(reimported.annotations.residues.numericType).toBe('int');
+    expect(reimported.numeric_annotation_data?.residues).toEqual([100, 250, null]);
+  });
+
+  it('widens to INT64 for an integer beyond the int32 range', async () => {
+    const original = baseData({ big: numeric('int') }, { big: [2 ** 40, 1, null] });
+
+    const exported = createParquetBundle(original);
+    expect(physicalType(exported, 'big')).toBe('INT64');
+
+    const reimported = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(exported),
+    );
+    expect(reimported.annotations.big.numericType).toBe('int');
+    expect(reimported.numeric_annotation_data?.big).toEqual([2 ** 40, 1, null]);
+  });
+
+  it('keeps a fractional annotation on DOUBLE', async () => {
+    const original = baseData({ score: numeric('float') }, { score: [0.5, 1.25, null] });
+
+    const exported = createParquetBundle(original);
+    expect(physicalType(exported, 'score')).toBe('DOUBLE');
+    const reimported = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(exported),
+    );
+    expect(reimported.numeric_annotation_data?.score).toEqual([0.5, 1.25, null]);
+  });
+
+  it('falls back to DOUBLE for an integral value too large to encode as INT64', async () => {
+    const original = baseData(
+      { huge: numeric('int') },
+      { huge: [Number.MAX_SAFE_INTEGER * 4, 1, null] },
+    );
+    const exported = createParquetBundle(original);
+    expect(physicalType(exported, 'huge')).toBe('DOUBLE');
+  });
+
+  it('keeps an all-missing numeric column numeric instead of flipping it categorical', async () => {
+    // Reachable from a real export: isolation mode / an active query filter can
+    // leave a numeric column with no surviving values (sliceVisualizationDataByIndices).
+    const original = baseData({ length: numeric('int') }, { length: [null, null, null] });
+
+    const reimported = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(createParquetBundle(original)),
+    );
+
+    expect(reimported.annotations.length.kind).toBe('numeric');
+    expect(reimported.annotations.length.numericType).toBe('int');
+    expect(reimported.numeric_annotation_data?.length).toEqual([null, null, null]);
+    expect(reimported.annotation_data.length).toBeUndefined();
+  });
+
+  it('lets inference decide int/float for a DOUBLE column, rather than re-labelling it', async () => {
+    // Bundles exported before this writer stored EVERY numeric column as DOUBLE,
+    // so DOUBLE carries no int/float information. Treating it as a declaration
+    // would re-label their integer annotations as float and change bin labels.
+    const original = baseData({ ratio: numeric('float') }, { ratio: [1, 2, null] });
+    const exported = createParquetBundle(original);
+    expect(physicalType(exported, 'ratio')).toBe('DOUBLE');
+
+    const reimported = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(exported),
+    );
+    // Integral values in a DOUBLE column ⇒ inference wins, exactly as before this PR.
+    expect(reimported.annotations.ratio.numericType).toBe('int');
+  });
+
+  it('treats an integer physical type as authoritative over inference', async () => {
+    // The inverse: only this writer emits INT32/INT64, and only for a declared
+    // integer column, so it may override a fractional inference.
+    const original = baseData({ residues: numeric('int') }, { residues: [7, 8, null] });
+    const exported = createParquetBundle(original);
+    expect(physicalType(exported, 'residues')).toBe('INT32');
+
+    const reimported = convertParquetToVisualizationData(
+      await extractRowsFromParquetBundle(exported),
+    );
+    expect(reimported.annotations.residues.numericType).toBe('int');
+  });
+
+  it('leaves a column carrying real categories alone even when a numeric type is declared', async () => {
+    // Guard against the restore pass hijacking a column that carries real values:
+    // a STRING column is never in numericColumnTypes, so it must stay categorical.
+    const original: VisualizationData = {
+      ...baseData({}, {}),
+      annotations: {
+        family: {
+          kind: 'categorical',
+          values: ['A', 'B'],
+          colors: ['#1F77B4', '#FF7F0E'],
+          shapes: ['circle', 'circle'],
+        },
+      },
+      annotation_data: { family: [[0], [1], [0]] },
+    };
+
+    const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
+    expect(extraction.numericColumnTypes).not.toHaveProperty('family');
+
+    const reimported = convertParquetToVisualizationData(extraction);
+    expect(reimported.annotations.family.kind).toBe('categorical');
+    expect(reimported.annotation_data.family).toEqual([[0], [1], [0]]);
+  });
+
+  it('derives the declared types from the parquet schema, with no bespoke metadata key', async () => {
+    const original = baseData(
+      { residues: numeric('int'), score: numeric('float') },
+      {
+        residues: [1, 2, 3],
+        score: [0.5, 1.5, 2.5],
+      },
+    );
+
+    const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
+    expect(extraction.numericColumnTypes).toMatchObject({ residues: 'int', score: 'float' });
+  });
+
+  it('does not re-label a real DOUBLE-stored integer fixture as float', async () => {
+    // raw_numeric_test.parquetbundle stores `length`/`weight` as DOUBLE with
+    // wholly integral values — the shape every pre-INT32 frontend export has, and
+    // what `protspace bundle -a` produces once pandas promotes an int column with
+    // a missing value. Honouring DOUBLE as a 'float' declaration would turn the
+    // legend labels from "10 - 25" into "10.0 - 25.0".
+    const extraction = await extractRowsFromParquetBundle(
+      loadArrayBuffer(
+        resolve(
+          __dirname,
+          '../../../../../../apps/web/tests/fixtures/raw_numeric_test.parquetbundle',
+        ),
+      ),
+    );
+    expect(extraction.numericColumnTypes).toMatchObject({ length: 'float', weight: 'float' });
+
+    const data = convertParquetToVisualizationData(extraction);
+    expect(data.annotations.length.kind).toBe('numeric');
+    expect(data.annotations.length.numericType).toBe('int');
+    expect(data.annotations.weight.numericType).toBe('int');
+  });
+
+  it('does not read a pyarrow all-null column as an integer declaration', async () => {
+    // pyarrow stores a wholly-missing pandas column as arrow `null`, which lands in
+    // parquet as `optional int32 ec_number (Null)` — physical INT32 carrying a NULL
+    // logical type. Taking the physical type at face value would hand the restore
+    // pass an 'int' declaration for a *categorical* column that happens to have no
+    // values, rewriting it as a numeric annotation with a gradient legend.
+    //
+    // Fixture (a 3-part bundle written by pyarrow):
+    //   annotations = pa.table({"identifier": pa.array(["P1","P2","P3"]),
+    //                           "ec_number": pa.nulls(3),
+    //                           "family": pa.array(["A","B","A"])})
+    //   parts joined by ---PARQUET_DELIMITER---, part 1 stamped format_version=2
+    const extraction = await extractRowsFromParquetBundle(
+      loadArrayBuffer(
+        resolve(
+          __dirname,
+          '../../../../../../apps/web/tests/fixtures/all_null_column.parquetbundle',
+        ),
+      ),
+    );
+    expect(extraction.numericColumnTypes).not.toHaveProperty('ec_number');
+
+    const data = convertParquetToVisualizationData(extraction);
+    expect(data.annotations.ec_number.kind).toBe('categorical');
+    expect(data.annotations.family.kind).toBe('categorical');
+  });
+
+  it('keeps EAT confidence companions out of the user-visible annotations', async () => {
+    // The companion column is written FLOAT, so it legitimately appears in
+    // numericColumnTypes. What keeps it out of the legend is that
+    // normalizeEatCompanionColumns strips it BEFORE the restore pass runs — an
+    // ordering this test pins, since reversing it would resurrect the column as a
+    // bogus numeric annotation.
+    const extraction = await extractRowsFromParquetBundle(
+      loadArrayBuffer(
+        resolve(
+          __dirname,
+          '../../../../../../apps/web/tests/fixtures/phosphatase_eat.parquetbundle',
+        ),
+      ),
+    );
+    expect(extraction.numericColumnTypes).toMatchObject({ ec__pred_confidence: 'float' });
+
+    const data = convertParquetToVisualizationData(extraction);
+    expect(Object.keys(data.annotations).filter((key) => key.includes('__pred_'))).toEqual([]);
+    expect(data.numeric_annotation_data?.ec__pred_confidence).toBeUndefined();
+  });
+
+  it('restores the numeric kind on the >=10k optimized path production uses at scale', async () => {
+    // convertParquetToVisualizationDataOptimized branches on projection-row count:
+    // below 10k it delegates to the small-dataset converter (covered above), at or
+    // above it takes convertLargeDatasetOptimized. Swiss-Prot-scale bundles only
+    // ever take the second branch, so the restore pass must be wired into both.
+    const count = 10_001;
+    const proteinIds = Array.from({ length: count }, (_, i) => `P${i}`);
+    const coords = new Float32Array(count * 2);
+    for (let i = 0; i < count; i++) {
+      coords[i * 2] = i;
+      coords[i * 2 + 1] = i;
+    }
+
+    const original: VisualizationData = {
+      protein_ids: proteinIds,
+      projections: [{ name: 'UMAP', data: coords, dimension: 2 }],
+      annotations: { length: numeric('int') },
+      annotation_data: {},
+      numeric_annotation_data: { length: new Array<number | null>(count).fill(null) },
+      annotation_scores: {},
+      annotation_evidence: {},
+    };
+
+    const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
+    expect(extraction.projections.length).toBeGreaterThanOrEqual(10_000);
+
+    const reimported = await convertParquetToVisualizationDataOptimized(extraction);
+    expect(reimported.annotations.length.kind).toBe('numeric');
+    expect(reimported.annotations.length.numericType).toBe('int');
+    expect(reimported.annotation_data.length).toBeUndefined();
   });
 });

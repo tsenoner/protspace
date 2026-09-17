@@ -3,6 +3,7 @@
 Import these in any CLI command to avoid duplicating option definitions.
 """
 
+import importlib.util
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -29,6 +30,31 @@ class Backend(StrEnum):
 
     biocentral = "biocentral"  # remote Biocentral API (default)
     local = "local"  # on-device GPU/CPU via transformers ([local] extra)
+
+
+# ---------------------------------------------------------------------------
+# Embedder help text, shared by `prepare -e` and `embed -e`
+# ---------------------------------------------------------------------------
+
+# Mirrors ALL_SHORT_KEYS in data.embedding.biocentral, which is not imported
+# here because it pulls h5py/numpy/biocentral_api (~400 ms) into every CLI
+# startup, including `--help`. test_cli_no_similarity.py fails if they drift.
+EMBEDDER_MODELS: tuple[str, ...] = (
+    "prot_t5",
+    "prost_t5",
+    "esm2_8m",
+    "esm2_35m",
+    "esm2_150m",
+    "esm2_650m",
+    "esm2_3b",
+    "ankh_base",
+    "ankh_large",
+    "ankh3_large",
+    "esmc_300m",
+    "esmc_600m",
+)
+EMBEDDER_HELP_MODELS = f"Models: {', '.join(EMBEDDER_MODELS)}."
+EMBEDDER_HELP_LICENSE = "Note: ankh_* and ankh3_* are non-commercial (CC-BY-NC-SA-4.0)."
 
 
 # ---------------------------------------------------------------------------
@@ -64,10 +90,28 @@ Opt_Similarity = Annotated[
     typer.Option(
         "-s",
         "--similarity",
-        help="Compute sequence similarity DR via MMseqs2.",
+        # `\[` escapes the bracket for Rich, which otherwise eats it as markup.
+        help="Compute sequence similarity DR via MMseqs2 (\\[similarity] extra).",
         rich_help_panel="Projection",
     ),
 ]
+
+
+def require_similarity_extra() -> None:
+    """Fail fast when `-s/--similarity` is used without the `similarity` extra.
+
+    Checked in the CLI layer rather than at the `pymmseqs` import site so the
+    user hears about it before any embedding work runs, and as a clean
+    `Error:` line rather than a traceback.
+    """
+    if importlib.util.find_spec("pymmseqs") is None:
+        # Imported here, not at module scope: this is the error path (we exit
+        # right after), so the loader's numpy import costs nothing on startup.
+        from protspace.data.loaders.similarity import MMSEQS_INSTALL_HINT
+
+        raise typer.BadParameter(MMSEQS_INSTALL_HINT, param_hint="-s/--similarity")
+
+
 Opt_Metric = Annotated[
     Metric,
     typer.Option(help="Distance metric for UMAP/t-SNE.", rich_help_panel="Projection"),
@@ -140,7 +184,7 @@ Opt_Backend = Annotated[
         "--backend",
         help=(
             "Embedding engine: 'biocentral' (remote API, default) or 'local' "
-            "(on-device GPU/CPU; needs `pip install protspace[local]`)."
+            "(on-device GPU/CPU; needs `pip install protspace\\[local]`)."
         ),
         rich_help_panel="Embedding",
     ),
@@ -158,6 +202,18 @@ Opt_BatchSize = Annotated[
     ),
 ]
 
+Opt_MaxLength = Annotated[
+    int | None,
+    typer.Option(
+        min=1,
+        help=(
+            "Skip sequences longer than this (local backend only; default 2000). "
+            "Skipped sequences are named in the run summary."
+        ),
+        rich_help_panel="Embedding",
+    ),
+]
+
 # Input options (shared by prepare and project)
 Opt_Fasta = Annotated[
     Path | None,
@@ -165,6 +221,38 @@ Opt_Fasta = Annotated[
         "-f",
         "--fasta",
         help="FASTA for -s/--similarity when input is HDF5.",
+        exists=True,
+        dir_okay=False,
         rich_help_panel="Input",
     ),
 ]
+
+
+def build_embed_config(
+    backend: "Backend",
+    batch_size: int | None = None,
+    max_length: int | None = None,
+):
+    """Build the embedding config matching *backend*, applying only what was given.
+
+    Both ``embed`` and ``prepare`` need this, and each needs it per backend, so
+    without it the same four-line conditional appears four times.
+    """
+    if backend == Backend.local:
+        from protspace.data.embedding.local import LocalEmbedConfig
+
+        opts = {}
+        if batch_size is not None:
+            opts["batch_size"] = batch_size
+        if max_length is not None:
+            opts["max_length"] = max_length
+        return LocalEmbedConfig(**opts)
+
+    from protspace.data.embedding.biocentral import EmbedConfig
+
+    if max_length is not None:
+        raise typer.BadParameter(
+            "--max-length applies to --backend local; the Biocentral backend "
+            "has no length cap."
+        )
+    return EmbedConfig(**({"batch_size": batch_size} if batch_size is not None else {}))

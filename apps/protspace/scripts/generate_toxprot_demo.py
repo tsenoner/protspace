@@ -8,8 +8,6 @@ the original demo's column set, replaces `length` with mature length,
 and patches the settings JSON: top-9 categories for pfam/ec/superfamily/
 cath are recomputed from the new data; protein_families styling is
 preserved from the existing web demo.
-
-See docs/superpowers/specs/2026-04-30-toxprot-demo-regeneration-design.md
 """
 
 from __future__ import annotations

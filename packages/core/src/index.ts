@@ -16,6 +16,11 @@ export type {
 } from './components/data-loader/data-loader.events';
 export type { LegendErrorEventDetail, LegendErrorSource } from './components/legend/legend.events';
 export type {
+  RendererDegradedContext,
+  RendererDegradedDetail,
+  RendererDegradedReason,
+} from './components/scatter-plot/scatter-plot.events';
+export type {
   StructureErrorContext,
   StructureErrorEvent,
   StructureErrorEventDetail,

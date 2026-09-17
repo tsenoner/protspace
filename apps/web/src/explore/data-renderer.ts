@@ -233,8 +233,6 @@ export function createDataRenderer({
         structureViewer.style.display = 'none';
       }
 
-      interactionController.updateSelectedProteinDisplay(null);
-
       updateOverlayForStep(
         overlayController,
         isLargeDataset,

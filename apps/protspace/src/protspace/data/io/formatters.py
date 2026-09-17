@@ -16,6 +16,30 @@ class DataFormatter:
     """Format data for different outputs."""
 
     @staticmethod
+    def build_headers(proteins: list[ProteinAnnotations]) -> list[str]:
+        """Return the column names for a set of records.
+
+        Headers are the union across all records, in first-seen order: merging
+        only inserts keys when a source lookup hits, so proteins with no
+        taxonomy/InterPro/TED match carry shorter annotation dicts. Deriving the
+        schema from the first record alone would silently drop every column that
+        only later records carry.
+        """
+        return [
+            "identifier",
+            *dict.fromkeys(
+                header for protein in proteins for header in protein.annotations
+            ),
+        ]
+
+    @staticmethod
+    def build_row(protein: ProteinAnnotations, headers: list[str]) -> list:
+        """Return one row for *protein*, filling absent keys with empty strings."""
+        return [protein.identifier] + [
+            protein.annotations.get(header, "") for header in headers[1:]
+        ]
+
+    @staticmethod
     def to_dataframe(proteins: list[ProteinAnnotations]) -> pd.DataFrame:
         """
         Convert ProteinAnnotations to DataFrame.
@@ -29,16 +53,8 @@ class DataFormatter:
         if not proteins:
             return pd.DataFrame(columns=["identifier"])
 
-        # Extract headers
-        headers = ["identifier"] + list(proteins[0].annotations.keys())
-
-        # Convert to rows
-        data_rows = []
-        for protein in proteins:
-            row = [protein.identifier] + [
-                protein.annotations.get(header, "") for header in headers[1:]
-            ]
-            data_rows.append(row)
+        headers = DataFormatter.build_headers(proteins)
+        data_rows = [DataFormatter.build_row(protein, headers) for protein in proteins]
 
         return pd.DataFrame(data_rows, columns=headers)
 

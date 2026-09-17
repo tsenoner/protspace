@@ -66,10 +66,6 @@ export interface ScatterplotElementLike extends Element {
   numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
   annotationSortModes?: Record<string, LegendSortMode>;
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
-  runWebGLRenderPerfMeasurements?: (
-    iterations?: number,
-    options?: { download?: boolean; dataset?: { id: string; url?: string; proteinCount?: number } },
-  ) => Promise<unknown>;
 
   // Data access
   getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => ProtspaceData | undefined;

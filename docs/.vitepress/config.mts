@@ -9,7 +9,8 @@ const navItems = getNavigation(mode);
 
 export default defineConfig({
   title: 'ProtSpace',
-  description: 'Explore protein language model (pLM) embeddings and reveal relationships that sequence similarity misses.',
+  description:
+    'Explore protein language model (pLM) embeddings and reveal relationships that sequence similarity misses.',
 
   base: urls.docs,
 
@@ -23,8 +24,18 @@ export default defineConfig({
     },
   },
 
-  // Internal planning/spec notes — not part of the user-facing docs site.
-  srcExclude: ['superpowers/**'],
+  // The Explore pages carry several multi-megabyte GIFs — scatterplot.md alone
+  // references four totalling ~22 MB. Without this they all fetch on page load,
+  // including the ones below the fold that most readers never scroll to.
+  markdown: {
+    image: {
+      lazyLoading: true,
+    },
+  },
+
+  // Internal planning/spec notes and per-folder contributor READMEs: not part
+  // of the user-facing docs site.
+  srcExclude: ['superpowers/**', '**/README.md'],
 
   head: [['link', { rel: 'icon', href: '/docs/favicon.svg' }]],
 
@@ -77,6 +88,8 @@ export default defineConfig({
           { text: 'Using Python CLI', link: '/guide/python-cli' },
           { text: 'Data Format Reference', link: '/guide/data-format' },
           { text: 'Annotation Reference', link: '/guide/annotations' },
+          { text: 'Fetching & Caching', link: '/guide/fetching-and-caching' },
+          { text: 'Annotation Styling', link: '/guide/styling' },
         ],
       },
       {
@@ -87,6 +100,7 @@ export default defineConfig({
           { text: 'Navigating the Scatterplot', link: '/explore/scatterplot' },
           { text: 'Using the Legend', link: '/explore/legend' },
           { text: 'Separation Scores', link: '/explore/separation-scores' },
+          { text: 'Transferred Annotations (EAT)', link: '/explore/eat' },
           { text: 'Control Bar Features', link: '/explore/control-bar' },
           { text: 'Viewing 3D Structures', link: '/explore/structures' },
           { text: 'Exporting Results', link: '/explore/exporting' },

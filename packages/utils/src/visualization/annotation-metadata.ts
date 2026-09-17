@@ -4,15 +4,15 @@
  * docs link). It drives the annotation dropdown grouping, the legend "Predicted" badge, and the
  * documentation popover, and it is the input for the generated `docs/guide/annotations.md` page.
  *
- * CONTRACT with the backend: column names mirror the `protspace` Python package's
- * `docs/annotations.md`, which splits annotations purely by API source. The `isPredicted` flag,
+ * CONTRACT with the backend: a key is spelled exactly as `protspace` emits that column, per
+ * `data/annotations/configuration.py`; `source` mirrors the fetch API. The `isPredicted` flag,
  * by contrast, marks *computational predictions* — de-novo machine-learning, topology, and
  * structure-based predictors (the Biocentral `predicted_*` models, the Phobius `signal_peptide`,
  * and TED `ted_domains`) — so the app can caveat them with a ⚡ Predicted badge. This is
  * intentionally broader than the backend's `predicted_` naming: reference signature-database
  * matches (Pfam, CATH-Gene3D, SUPERFAMILY, …) and curated/factual data (UniProt, Taxonomy) are
  * NOT flagged. Any unknown column starting with `predicted_` is still treated as a prediction.
- * Keep this registry in sync with the backend reference when the annotation set changes.
+ * Keep this registry in sync with `configuration.py` when the annotation set changes.
  */
 
 import type { Annotation } from '../types.js';
@@ -75,8 +75,7 @@ export function compareTaxonomyRank(a: string, b: string): number {
 const docs = (anchor: string): string => `/docs/guide/annotations#${anchor}`;
 
 /**
- * Registry keyed by exact annotation column name. Seeded from the backend
- * `protspace/docs/annotations.md` reference.
+ * Registry keyed by exact annotation column name, as emitted by the `protspace` Python package.
  */
 export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
   // --- UniProt (experimental / curated) ---
@@ -147,7 +146,7 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Sequence length',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Length of the protein sequence in amino acids.',
+    description: 'UniProt sequence length, or a matching local FASTA length when missing.',
     docsUrl: docs('length'),
   },
   protein_existence: {
@@ -175,7 +174,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Has PDB structure',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Whether an experimental 3D structure exists in the PDB for this protein.',
+    description:
+      'Whether a resolved UniProt entry has an experimental PDB structure; unavailable mappings are N/A.',
     docsUrl: docs('xref_pdb'),
   },
 
@@ -417,6 +417,24 @@ export function isPredictedAnnotation(column: string): boolean {
 /** Friendly display label for an annotation (registry label, else prettified column name). */
 export function annotationLabel(column: string, annotation?: Pick<Annotation, 'runtime'>): string {
   return getAnnotationMeta(column, annotation).label;
+}
+
+/**
+ * Whether an annotation should be offered for a search query: the query, trimmed and
+ * case-insensitive, is a substring of the label the picker displays.
+ *
+ * Only that label is searched, never the column name behind it, so every match is on text the
+ * reader can see. `predicted` finds nothing among the Biocentral columns, which read "Membrane",
+ * "Signal peptide" and so on. A column with no registry entry is labelled by its prettified name,
+ * so it stays findable by the words of that name.
+ */
+export function annotationMatchesQuery(
+  column: string,
+  query: string,
+  annotation?: Pick<Annotation, 'runtime'>,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  return !needle || annotationLabel(column, annotation).toLowerCase().includes(needle);
 }
 
 /** Source/group for an annotation (registry source, else `Other`). */

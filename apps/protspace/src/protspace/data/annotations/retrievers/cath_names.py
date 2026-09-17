@@ -2,7 +2,8 @@
 
 Downloads and caches ``cath-names-v4_4_0.txt`` which provides human-readable
 names at all 4 CATH levels (Class, Architecture, Topology, Superfamily).
-Unnamed superfamilies are omitted so callers fall back to the bare CATH code (issue #57).
+Unnamed superfamilies are omitted so callers fall back to the bare CATH code
+(tsenoner/protspace-legacy#57).
 """
 
 import json
@@ -26,7 +27,7 @@ def get_cath_names() -> dict[str, str]:
     """Return ``{cath_code: name}`` mapping at all hierarchy levels.
 
     Downloads and caches the CATH names file. Unnamed superfamilies are omitted
-    so callers fall back to the bare CATH code (issue #57).
+    so callers fall back to the bare CATH code (tsenoner/protspace-legacy#57).
     """
     cache_dir = CATH_CACHE_DIR
     cache_file = cache_dir / "cath_names.json"
@@ -77,8 +78,8 @@ def _parse_cath_names(path: Path) -> dict[str, str]:
     Each line: ``cath_code  representative_domain  :Name``. Superfamilies with an
     empty name (``:`` followed by nothing) are left OUT of the mapping so callers
     fall back to the bare CATH code — matching CATH's own "waiting to be named"
-    convention (issue #57). The parent topology name is never propagated onto an
-    unnamed superfamily.
+    convention (tsenoner/protspace-legacy#57). The parent topology name is never
+    propagated onto an unnamed superfamily.
     """
     names: dict[str, str] = {}
 

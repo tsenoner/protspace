@@ -29,6 +29,7 @@ import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
 import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
+import { isNAValue } from '../visualization/missing-values.js';
 import { encodeAnnotationField } from './annotation-codec.js';
 
 const ANNOTATION_FORMAT_VERSION = '2';
@@ -37,8 +38,59 @@ const ANNOTATION_FORMAT_VERSION_KEY = 'protspace_format_version';
 /** Column data format for parquetWriteBuffer */
 interface ColumnData {
   name: string;
-  data: (string | number | boolean | null)[];
+  data: (string | number | boolean | bigint | null)[];
   type?: 'STRING' | 'INT32' | 'INT64' | 'DOUBLE' | 'FLOAT' | 'BOOLEAN';
+}
+
+const INT32_MIN = -2147483648;
+const INT32_MAX = 2147483647;
+
+/**
+ * Physical parquet encoding for one numeric annotation.
+ *
+ * The physical type is the wire record of the column's int/float identity — the
+ * reader derives `numericType` straight back from it — so it is chosen from the
+ * declared type, not from whether the visible rows happen to be integral.
+ *
+ * An integral column must not be widened to DOUBLE: Python keys legends, styles
+ * and value-frequency tables off `str(value)`, so a round trip through DOUBLE
+ * turns the style key `'100'` into `'100.0'` and makes a previously valid
+ * `protspace style` template fail validation.
+ *
+ * INT32 is the common case and passes `values` through untouched. INT64 is only
+ * reached for genuinely large integers and is the one path that must materialize
+ * a parallel bigint array (hyparquet-writer rejects plain numbers for INT64),
+ * which is worth avoiding at 570K+ proteins.
+ */
+function encodeNumericColumn(
+  name: string,
+  values: (number | null)[],
+  numericType: 'int' | 'float',
+): ColumnData {
+  if (numericType === 'int') {
+    // Single pass: an out-of-range or non-integral value only demotes the encoding.
+    let min = 0;
+    let max = 0;
+    let integral = true;
+    for (const value of values) {
+      if (value == null) continue;
+      if (!Number.isSafeInteger(value)) {
+        integral = false;
+        break;
+      }
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    if (integral) {
+      if (min >= INT32_MIN && max <= INT32_MAX) return { name, data: values, type: 'INT32' };
+      return {
+        name,
+        data: values.map((value) => (value == null ? null : BigInt(value))),
+        type: 'INT64',
+      };
+    }
+  }
+  return { name, data: values, type: 'DOUBLE' };
 }
 
 function serializeCategoricalValue(
@@ -72,11 +124,9 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
 
     if (isNumericAnnotation(annotation)) {
       const values = data.numeric_annotation_data?.[annotationName] ?? [];
-      columnData.push({
-        name: annotationName,
-        data: values,
-        type: 'DOUBLE',
-      });
+      columnData.push(
+        encodeNumericColumn(annotationName, values, annotation.numericType ?? 'float'),
+      );
       continue;
     }
 
@@ -96,7 +146,12 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       const cellValues = getProteinAnnotationIndices(annotationIndices, i).flatMap(
         (valueIndex, cellIndex) => {
           const value = annotation.values[valueIndex];
-          if (value == null) return [];
+          // `__NA__` is the in-memory sentinel appendSyntheticNACategory materialises for a
+          // missing cell, never a value any bundle holds. Drop it so the cell round-trips as
+          // NULL — writing it verbatim would re-import as a real, frequency-sorted category
+          // (it is not a MISSING_VALUE_TOKEN) and leak into downstream `protspace` tooling.
+          // Mirrors the read side's readCategoricalStorageValues.
+          if (value == null || isNAValue(value)) return [];
           const evidence = data.annotation_evidence?.[annotationName]?.[i]?.[cellIndex];
           const scores = data.annotation_scores?.[annotationName]?.[i]?.[cellIndex];
           return [serializeCategoricalValue(value, evidence, scores)];

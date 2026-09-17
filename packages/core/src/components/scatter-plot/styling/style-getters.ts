@@ -2,6 +2,7 @@ import { NEUTRAL_VALUE_COLOR } from '../config';
 import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
 import {
   getProteinAnnotationValues,
+  isMultilabelAnnotationDataCached,
   isNumericAnnotation,
   normalizeShapeName,
   toInternalValue,
@@ -75,6 +76,21 @@ export function createStyleGetters(
       ? data.annotations[styleConfig.selectedAnnotation]
       : undefined;
   const isNumeric = isNumericAnnotation(annotation);
+
+  // Whether the SELECTED annotation stores more than one value for any protein.
+  //
+  // Deliberately storage-shaped, not colour-shaped. A colour-shaped test would
+  // read false whenever hiding collapses every point to one colour, and the atlas
+  // would then be released exactly one un-hide before it is needed again.
+  //
+  // Computed here, over the same `data` binding the colour getters close over, so
+  // the answer is exactly as fresh as the colours it gates — it can go stale only
+  // if the getters themselves have, and it can only ever over-report.
+  const annotationData =
+    data && styleConfig.selectedAnnotation
+      ? data.annotation_data?.[styleConfig.selectedAnnotation]
+      : undefined;
+  const multilabel = annotationData ? isMultilabelAnnotationDataCached(annotationData) : false;
   const valueToColor = new Map<string, string>();
   const valueToShape = new Map<string, string>();
 
@@ -255,5 +271,6 @@ export function createStyleGetters(
     getOpacity,
     getDepth,
     isPredicted,
+    isMultilabel: () => multilabel,
   };
 }

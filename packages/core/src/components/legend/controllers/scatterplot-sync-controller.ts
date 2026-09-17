@@ -1,7 +1,7 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import type { ScatterplotData, OtherItem } from '../types';
 import {
-  isMultilabelAnnotationData,
+  isMultilabelAnnotationDataCached,
   type NumericAnnotationDisplaySettingsMap,
   type ScatterplotConfig,
 } from '@protspace/utils';
@@ -117,7 +117,11 @@ export class ScatterplotSyncController implements ReactiveController {
     const currentData = this._scatterplotElement?.getCurrentData?.();
     const annotationData = currentData?.annotation_data?.[selectedAnnotation];
 
-    return annotationData ? isMultilabelAnnotationData(annotationData) : false;
+    // Cached: this runs from `_renderColorPicker`, i.e. on every legend re-render
+    // while the picker is open, and dense storage makes the uncached form an O(N)
+    // sweep over 573K proteins for an answer that cannot change without the
+    // storage object changing.
+    return annotationData ? isMultilabelAnnotationDataCached(annotationData) : false;
   }
 
   /**
