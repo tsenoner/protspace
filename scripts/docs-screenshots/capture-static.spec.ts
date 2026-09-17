@@ -633,20 +633,27 @@ test.describe('Control Bar Screenshots', () => {
     // Pre-populate the filter query so the modal opens with a meaningful state.
     // Pick the first annotation and its first two unique non-null values from
     // the currently loaded data — keeps the test independent of the dataset.
-    await page.evaluate(() => {
+    const exampleValueCount = await page.evaluate(() => {
       const cb = document.querySelector('#myControlBar') as
         | (HTMLElement & {
             annotations: string[];
             _currentData?: {
               annotations?: Record<string, { values: (string | null)[] }>;
             };
-            filterQuery: unknown[];
+            // `kind` decides how a condition row renders: without it the row
+            // draws no value chips, though the query still filters by them.
+            filterQuery: {
+              id: string;
+              kind: 'categorical';
+              annotation: string;
+              values: string[];
+            }[];
             requestUpdate: () => void;
           })
         | null;
-      if (!cb) return;
+      if (!cb) throw new Error('filter capture needs #myControlBar');
       const ann = cb.annotations?.[0];
-      if (!ann) return;
+      if (!ann) throw new Error('filter capture needs at least one annotation');
       const raw = cb._currentData?.annotations?.[ann]?.values ?? [];
       const seen = new Set<string>();
       const unique: string[] = [];
@@ -657,8 +664,10 @@ test.describe('Control Bar Screenshots', () => {
         unique.push(v);
         if (unique.length === 2) break;
       }
-      cb.filterQuery = [{ id: 'q-demo-1', annotation: ann, values: unique }];
+      if (unique.length === 0) throw new Error(`filter capture found no values for ${ann}`);
+      cb.filterQuery = [{ id: 'q-demo-1', kind: 'categorical', annotation: ann, values: unique }];
       cb.requestUpdate();
+      return unique.length;
     });
 
     // Open the filter modal via the same path the user clicks.
@@ -684,6 +693,18 @@ test.describe('Control Bar Screenshots', () => {
         return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
       },
       undefined,
+      { timeout: 5_000, polling: 200 },
+    );
+    // The example condition must show its values as chips; a condition the row
+    // cannot render still filters, so the match counter alone proves nothing.
+    await page.waitForFunction(
+      (expected) => {
+        const cb = document.querySelector('#myControlBar');
+        const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
+        const row = qb?.shadowRoot?.querySelector('protspace-query-condition-row');
+        return (row?.shadowRoot?.querySelectorAll('.value-chip').length ?? 0) === expected;
+      },
+      exampleValueCount,
       { timeout: 5_000, polling: 200 },
     );
     // Let the query builder finish first paint and resolve match counts.
