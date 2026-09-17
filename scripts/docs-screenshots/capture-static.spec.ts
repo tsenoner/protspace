@@ -1,5 +1,6 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import * as path from 'path';
+import type { CategoricalCondition } from '../../packages/core/src/components/control-bar/query-types';
 import { IMAGES_DIR } from './paths';
 import {
   awaitTwoFrames,
@@ -633,20 +634,20 @@ test.describe('Control Bar Screenshots', () => {
     // Pre-populate the filter query so the modal opens with a meaningful state.
     // Pick the first annotation and its first two unique non-null values from
     // the currently loaded data — keeps the test independent of the dataset.
-    await page.evaluate(() => {
+    const exampleValueCount = await page.evaluate(() => {
       const cb = document.querySelector('#myControlBar') as
         | (HTMLElement & {
             annotations: string[];
             _currentData?: {
               annotations?: Record<string, { values: (string | null)[] }>;
             };
-            filterQuery: unknown[];
+            filterQuery: CategoricalCondition[];
             requestUpdate: () => void;
           })
         | null;
-      if (!cb) return;
+      if (!cb) throw new Error('filter capture needs #myControlBar');
       const ann = cb.annotations?.[0];
-      if (!ann) return;
+      if (!ann) throw new Error('filter capture needs at least one annotation');
       const raw = cb._currentData?.annotations?.[ann]?.values ?? [];
       const seen = new Set<string>();
       const unique: string[] = [];
@@ -657,8 +658,10 @@ test.describe('Control Bar Screenshots', () => {
         unique.push(v);
         if (unique.length === 2) break;
       }
-      cb.filterQuery = [{ id: 'q-demo-1', annotation: ann, values: unique }];
+      if (unique.length === 0) throw new Error(`filter capture found no values for ${ann}`);
+      cb.filterQuery = [{ id: 'q-demo-1', kind: 'categorical', annotation: ann, values: unique }];
       cb.requestUpdate();
+      return unique.length;
     });
 
     // Open the filter modal via the same path the user clicks.
@@ -674,20 +677,18 @@ test.describe('Control Bar Screenshots', () => {
       trigger?.click();
     });
 
-    await page.waitForFunction(
-      () => {
-        const cb = document.querySelector('#myControlBar') as
-          | (HTMLElement & {
-              shadowRoot: ShadowRoot | null;
-            })
-          | null;
-        return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
-      },
-      undefined,
-      { timeout: 5_000, polling: 200 },
+    // The query builder only renders inside the open modal. The example condition
+    // must show its values as chips; a condition the row cannot render still
+    // filters, so the match counter alone proves nothing.
+    await expect(
+      page.locator('#myControlBar protspace-query-condition-row .value-chip'),
+    ).toHaveCount(exampleValueCount, { timeout: 5_000 });
+    // Match counts resolve on a debounce; until then the counter reads "0 of 0".
+    await expect(page.locator('#myControlBar protspace-query-builder .match-count')).toHaveText(
+      /of [1-9]\d* proteins matched/,
+      { timeout: 5_000 },
     );
-    // Let the query builder finish first paint and resolve match counts.
-    await page.waitForTimeout(800);
+    await awaitTwoFrames(page);
 
     const clip = await page.evaluate(() => {
       const cb = document.querySelector('#myControlBar') as
