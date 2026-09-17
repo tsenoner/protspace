@@ -76,6 +76,19 @@ export type {
 const HIT_TEST_SEARCH_RADIUS_PX = 15;
 const POINT_RADIUS_SIZE_DIVISOR = 3;
 
+// D3 wheel zoom accumulates scale multiplicatively, so a symmetric round trip
+// can finish a few ULPs above identity even though the view is visually reset.
+const ZOOM_IDENTITY_EPSILON = 1e-6;
+
+// Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
+// affect only the template or are rendered by the selection block. Zoom
+// transforms already redraw through the interaction controller's RAF.
+const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
+  'selectedProteinIds',
+  'highlightedProteinIds',
+  '_isZoomedIn',
+]);
+
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
 const DEFAULT_NUMERIC_BIN_COUNT = 10;
@@ -154,6 +167,7 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _canvasKey = 0;
   @state() private _numericRecomputeRunning = false;
   @state() private _connectorStatus: ProvenanceConnectorStatus | null = null;
+  @state() private _isZoomedIn = false;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -860,12 +874,10 @@ export class ProtspaceScatterplot extends LitElement {
       this._webglRenderer?.invalidateStyleCache();
       this._renderPlot();
     }
-    // Render for other changes
-    const selectionKeys = ['selectedProteinIds', 'highlightedProteinIds'];
-    const changedKeys = Array.from(changedProperties.keys()).map(String);
-    const onlySelectionChanged =
-      changedKeys.length > 0 && changedKeys.every((k) => selectionKeys.includes(k));
-    if (!onlySelectionChanged) {
+    const changedKeys = Array.from(changedProperties.keys(), String);
+    const canSkipRender =
+      changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
+    if (!canSkipRender) {
       this._renderPlot();
       this._updateSelectionOverlays();
     }
@@ -1209,6 +1221,7 @@ export class ProtspaceScatterplot extends LitElement {
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
+        this._isZoomedIn = t.k > 1 + ZOOM_IDENTITY_EPSILON;
         this._connectorOverlay.updateZoomScale(t.k);
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
@@ -1952,7 +1965,11 @@ export class ProtspaceScatterplot extends LitElement {
             `
           : ''}
         ${this.data
-          ? html` <div class="plot-indicator">${this._getVisiblePointCount()} points</div> `
+          ? html`
+              <div class="plot-indicator" role="status" aria-live="polite">
+                ${`${this._getVisiblePointCount()} points${this._isZoomedIn ? ' · Zoomed in' : ''}`}
+              </div>
+            `
           : ''}
         ${this._numericRecomputeRunning
           ? html`
