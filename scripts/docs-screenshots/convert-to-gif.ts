@@ -337,7 +337,7 @@ async function main() {
     console.log(`   ❌ Failed: ${errorCount}`);
   }
 
-  if (keepVideos || errorCount > 0) {
+  if (fs.readdirSync(TEMP_VIDEOS_DIR).some((f) => f.endsWith('.webm'))) {
     console.log(`\n📁 Remaining videos are in: ${TEMP_VIDEOS_DIR}`);
   }
 }

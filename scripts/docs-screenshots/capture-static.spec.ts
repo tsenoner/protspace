@@ -1,5 +1,6 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import * as path from 'path';
+import type { CategoricalCondition } from '../../packages/core/src/components/control-bar/query-types';
 import { IMAGES_DIR } from './paths';
 import {
   awaitTwoFrames,
@@ -640,14 +641,7 @@ test.describe('Control Bar Screenshots', () => {
             _currentData?: {
               annotations?: Record<string, { values: (string | null)[] }>;
             };
-            // `kind` decides how a condition row renders: without it the row
-            // draws no value chips, though the query still filters by them.
-            filterQuery: {
-              id: string;
-              kind: 'categorical';
-              annotation: string;
-              values: string[];
-            }[];
+            filterQuery: CategoricalCondition[];
             requestUpdate: () => void;
           })
         | null;
@@ -683,32 +677,18 @@ test.describe('Control Bar Screenshots', () => {
       trigger?.click();
     });
 
-    await page.waitForFunction(
-      () => {
-        const cb = document.querySelector('#myControlBar') as
-          | (HTMLElement & {
-              shadowRoot: ShadowRoot | null;
-            })
-          | null;
-        return !!cb?.shadowRoot?.querySelector('.query-builder-modal');
-      },
-      undefined,
-      { timeout: 5_000, polling: 200 },
+    // The query builder only renders inside the open modal. The example condition
+    // must show its values as chips; a condition the row cannot render still
+    // filters, so the match counter alone proves nothing.
+    await expect(
+      page.locator('#myControlBar protspace-query-condition-row .value-chip'),
+    ).toHaveCount(exampleValueCount, { timeout: 5_000 });
+    // Match counts resolve on a debounce; until then the counter reads "0 of 0".
+    await expect(page.locator('#myControlBar protspace-query-builder .match-count')).toHaveText(
+      /of [1-9]\d* proteins matched/,
+      { timeout: 5_000 },
     );
-    // The example condition must show its values as chips; a condition the row
-    // cannot render still filters, so the match counter alone proves nothing.
-    await page.waitForFunction(
-      (expected) => {
-        const cb = document.querySelector('#myControlBar');
-        const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-        const row = qb?.shadowRoot?.querySelector('protspace-query-condition-row');
-        return (row?.shadowRoot?.querySelectorAll('.value-chip').length ?? 0) === expected;
-      },
-      exampleValueCount,
-      { timeout: 5_000, polling: 200 },
-    );
-    // Let the query builder finish first paint and resolve match counts.
-    await page.waitForTimeout(800);
+    await awaitTwoFrames(page);
 
     const clip = await page.evaluate(() => {
       const cb = document.querySelector('#myControlBar') as
