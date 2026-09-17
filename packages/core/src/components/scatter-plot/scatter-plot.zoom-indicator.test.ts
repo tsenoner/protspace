@@ -62,6 +62,10 @@ async function makePlot(): Promise<ZoomIndicatorInternals> {
   return plot;
 }
 
+function statusChip(plot: ZoomIndicatorInternals): Element | null | undefined {
+  return plot.shadowRoot?.querySelector('[role="status"]');
+}
+
 describe('scatterplot zoom indicator (#343)', () => {
   beforeEach(() => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null);
@@ -78,7 +82,8 @@ describe('scatterplot zoom indicator (#343)', () => {
     host.onTransform(d3.zoomIdentity.scale(2));
     await plot.updateComplete;
 
-    const chip = plot.shadowRoot?.querySelector('[role="status"][aria-live="polite"]');
+    const chip = statusChip(plot);
+    expect(chip?.getAttribute('aria-live')).toBe('polite');
     expect(chip?.textContent?.trim()).toBe('1 points · Zoomed in');
   });
 
@@ -96,7 +101,7 @@ describe('scatterplot zoom indicator (#343)', () => {
     host.onTransform(d3.zoomIdentity.translate(30, 20));
     expect(plot.isUpdatePending).toBe(true);
     await plot.updateComplete;
-    expect(plot.shadowRoot?.querySelector('[role="status"]')?.textContent?.trim()).toBe('1 points');
+    expect(statusChip(plot)?.textContent?.trim()).toBe('1 points');
 
     host.onTransform(d3.zoomIdentity.scale(0.5));
     expect(plot.isUpdatePending).toBe(false);
@@ -120,6 +125,6 @@ describe('scatterplot zoom indicator (#343)', () => {
     plot._interactionHost().onTransform(d3.zoomIdentity.scale(1.0000000000000002));
     await plot.updateComplete;
 
-    expect(plot.shadowRoot?.querySelector('[role="status"]')?.textContent?.trim()).toBe('1 points');
+    expect(statusChip(plot)?.textContent?.trim()).toBe('1 points');
   });
 });

@@ -87,6 +87,15 @@ const POINT_RADIUS_SIZE_DIVISOR = 3;
 // can finish a few ULPs above identity even though the view is visually reset.
 const ZOOM_IDENTITY_EPSILON = 1e-6;
 
+// Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
+// affect only the template or are rendered by the selection block. Zoom
+// transforms already redraw through the interaction controller's RAF.
+const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
+  'selectedProteinIds',
+  'highlightedProteinIds',
+  '_isZoomedIn',
+]);
+
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
 const DEFAULT_NUMERIC_BIN_COUNT = 10;
@@ -870,13 +879,10 @@ export class ProtspaceScatterplot extends LitElement {
       this._webglRenderer?.invalidateStyleCache();
       this._renderPlot();
     }
-    // These keys affect only the template or are rendered by the selection block
-    // above. Zoom transforms already redraw through the interaction controller's RAF.
-    const noAdditionalRenderKeys = ['selectedProteinIds', 'highlightedProteinIds', '_isZoomedIn'];
-    const changedKeys = Array.from(changedProperties.keys()).map(String);
-    const onlyNoAdditionalRenderKeysChanged =
-      changedKeys.length > 0 && changedKeys.every((k) => noAdditionalRenderKeys.includes(k));
-    if (!onlyNoAdditionalRenderKeysChanged) {
+    const changedKeys = Array.from(changedProperties.keys(), String);
+    const canSkipRender =
+      changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
+    if (!canSkipRender) {
       this._renderPlot();
       this._updateSelectionOverlays();
     }

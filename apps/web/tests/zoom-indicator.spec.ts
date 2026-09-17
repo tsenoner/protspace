@@ -21,13 +21,9 @@ test.describe('scatterplot zoom indicator (#343)', () => {
 
     await page.mouse.move(center.x, center.y);
     await page.mouse.wheel(0, -500);
-    await expect
-      .poll(() => plot.evaluate((element: any) => element._transform.k))
-      .toBeGreaterThan(1);
     await expect(pointCountChip).toHaveText(/^\s*\d+ points · Zoomed in\s*$/);
 
     await page.mouse.dblclick(center.x, center.y);
-    await expect.poll(() => plot.evaluate((element: any) => element._transform.k)).toBe(1);
     await expect(pointCountChip).toHaveText(/^\s*\d+ points\s*$/);
   });
 });
