@@ -385,7 +385,12 @@ function getVideoOutputPath(testName: string): string {
 }
 
 /**
- * Persist the recording Playwright made for the current test.
+ * Persist the recording Playwright made for the current test, if it passed.
+ *
+ * `docs:gifs` converts every video in TEMP_VIDEOS_DIR, so a failed test must
+ * leave nothing there: its recording is not saved, and an older recording
+ * under the same name is removed rather than converted as if it were current.
+ * Playwright keeps its own copy of the failed run's video under test-results.
  *
  * Closes the page first: `saveAs()` only resolves once the recording has been
  * finalized, which happens on close. Safe to call when video is disabled.
@@ -398,6 +403,11 @@ export async function saveTestVideo(page: Page, testInfo: TestInfo): Promise<voi
   const destPath = getVideoOutputPath(testInfo.title);
 
   await page.close();
+  if (testInfo.status !== testInfo.expectedStatus) {
+    fs.rmSync(destPath, { force: true });
+    console.log(`🎬 Video not saved (test ${testInfo.status}): ${destPath}`);
+    return;
+  }
   await video.saveAs(destPath);
   console.log(`🎬 Video saved: ${destPath}`);
 }

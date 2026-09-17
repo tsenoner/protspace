@@ -6,7 +6,9 @@
  * 1. Reads all .webm files from temp-videos/
  * 2. Converts each to an optimized GIF with good quality and small file size
  * 3. Outputs GIFs to docs/explore/images/
- * 4. Cleans up the temp video files
+ * 4. Deletes each video once its GIF is written, so the next run cannot
+ *    re-convert a stale recording; a video whose conversion failed is kept.
+ *    Pass --keep to keep them all (e.g. to re-tune GIF settings).
  *
  * Prerequisites:
  * - ffmpeg must be installed: `brew install ffmpeg`
@@ -242,6 +244,7 @@ function getWidth(videoFilename: string): number {
  * Main function to convert all videos
  */
 async function main() {
+  const keepVideos = process.argv.includes('--keep');
   console.log('🎬 Converting videos to GIFs...\n');
 
   // Check ffmpeg
@@ -318,6 +321,7 @@ async function main() {
       const inputSize = stats.size;
       const outputSize = fs.statSync(outputPath).size;
       console.log(`   ✅ Done (${formatSize(inputSize)} → ${formatSize(outputSize)})\n`);
+      if (!keepVideos) fs.rmSync(inputPath);
 
       successCount++;
     } catch (error) {
@@ -333,10 +337,8 @@ async function main() {
     console.log(`   ❌ Failed: ${errorCount}`);
   }
 
-  // Ask about cleanup
-  if (successCount > 0) {
-    console.log(`\n📁 Temp videos are in: ${TEMP_VIDEOS_DIR}`);
-    console.log(`   To clean up, run: rm -rf temp-videos/`);
+  if (keepVideos || errorCount > 0) {
+    console.log(`\n📁 Remaining videos are in: ${TEMP_VIDEOS_DIR}`);
   }
 }
 
