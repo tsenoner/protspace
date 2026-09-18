@@ -39,32 +39,45 @@ With `--keep-tmp` (**the default**), everything expensive lands in `{output}/tmp
 
 | Cached item       | File                                    | Saves you                      |
 | ----------------- | --------------------------------------- | ------------------------------ |
-| FASTA sequences   | `sequences.fasta`                       | re-downloading a UniProt query |
+| FASTA sequences   | `queries/{query hash}.fasta`            | re-downloading a UniProt query |
 | Embeddings        | `{embedder}.h5`                         | re-embedding proteins          |
 | Annotations       | `all_annotations.parquet`               | re-querying the APIs           |
 | Similarity matrix | `similarity_matrix.npy`                 | re-running MMseqs2             |
 | DR projections    | `proj_{name}_{method}{dims}_{hash}.npz` | recomputing UMAP/PaCMAP/…      |
 
-Embeddings are cached per protein, so adding sequences to an existing run only embeds the new ones.
-Projections are keyed by a hash of their parameters, so changing a slider computes one new file and
-leaves the others alone.
+Every entry is owned by what produced it, so reuse can only ever be reuse of your own work:
+
+- **Query FASTA** by the exact query text, so a second query in the same `-o` downloads its own
+  sequences.
+- **Embeddings** per protein _and_ per residue: a protein whose sequence changed under an unchanged
+  identifier is embedded again, and the file records which backend and model wrote it (see
+  [below](#embeddings-belong-to-one-backend-and-model)). Adding sequences to an existing run still
+  only embeds the new ones.
+- **Projections** by the embedding matrix, the identifier order, the method, the dimensions and
+  every reducer parameter. Changing a slider computes one new file and leaves the others alone;
+  re-running an input that changed under the same name recomputes rather than returning the earlier
+  coordinates.
+- **Annotations** per identifier and per column — the next section.
 
 ## How the annotation cache decides
 
 This is the part worth understanding, because it explains most "why didn't it refetch?" questions.
 
-First, the cache must **cover your proteins**. If any requested identifier has no row in
-`all_annotations.parquet`, annotations are rebuilt for the current input and the cache is replaced. A
-cache covering _more_ proteins than the run is fine — the extra rows are filtered out later.
+The cache is judged **by column and by row**. ProtSpace compares what you asked for against what
+`all_annotations.parquet` holds:
 
-Beyond that, the cache is judged **by column, not by row**. ProtSpace compares the columns you asked
-for against the columns already cached:
-
-- **Every column present** → the cache is used as-is, and no API is called.
+- **Every column present, every protein present** → the cache is used as-is, and no API is called.
 - **Some column missing** → only the sources owning the missing columns are queried; cached columns
   from other sources are reused.
+- **Some protein missing** → each source is queried for exactly those proteins, and cached values
+  serve the rest. Taxonomy is looked up only for organisms the cache has not resolved before.
 
-So asking for a new annotation is cheap, and asking for the same ones again is free.
+So asking for a new annotation is cheap, asking for the same ones again is free, and adding a
+handful of proteins to a large run costs a handful of lookups rather than a full refetch.
+
+A cache holding _more_ proteins than the current run is fine: the extra rows are filtered out of the
+bundle, and a run for part of a dataset keeps them rather than replacing the cache with its own
+subset.
 
 The consequence of column-level granularity is that an **empty value is not a signal**. A protein
 with an empty `ec` may have no EC number, may not be in UniProt at all, or may be a custom
@@ -98,6 +111,16 @@ This matters at scale: UniProt is queried 100 accessions at a time, so a Swiss-P
 thousands of sequential requests, and without retries a single blip would be near-certain. Sources
 fetched one request per protein (TED) use a smaller retry budget, so a full outage does not multiply
 the backoff by the number of proteins.
+
+## Embeddings belong to one backend and model
+
+An HDF5 records the backend and model that produced it. Both backends resume by identifier, so
+without that record a run with `--backend local` would resume from vectors the Biocentral API wrote
+and silently mix two embedding spaces in one dataset. A run that points at another producer's file
+stops and names your options: select that backend, choose another output, or `--refetch embed`.
+
+Files written before this existed carry no record; they are adopted, stamped and reported the first
+time a run resumes from them.
 
 ## Forcing a refresh
 
