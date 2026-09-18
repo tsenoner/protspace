@@ -18,9 +18,7 @@ from protspace.data.processors.pipeline import (
     MethodSpec,
     PipelineConfig,
     ReductionPipeline,
-    _input_cache_dir,
     _migrate_legacy_ted_labels,
-    _query_fasta_cache_path,
     _run_with_overridden_config,
     disambiguation_suffix,
     parse_method_spec,
@@ -1188,39 +1186,6 @@ class TestPrecomputedMDSConfigIsolation:
         assert id(pipeline.base.config) == original_config_id, (
             "base.config reference should be the original dict, not a replacement"
         )
-
-
-# ---------------------------------------------------------------------------
-# Preparation notebook cache identity
-# ---------------------------------------------------------------------------
-
-
-def test_query_cache_path_is_owned_by_the_query_text(tmp_path):
-    globin = "(family:globin) AND (reviewed:true)"
-    phosphatase = "(family:phosphatase) AND (reviewed:true)"
-
-    assert _query_fasta_cache_path(tmp_path, globin) == _query_fasta_cache_path(
-        tmp_path, globin
-    )
-    assert _query_fasta_cache_path(tmp_path, globin) != _query_fasta_cache_path(
-        tmp_path, phosphatase
-    )
-    assert _query_fasta_cache_path(tmp_path, globin).parent == tmp_path / "queries"
-
-
-def test_input_cache_dir_is_owned_by_file_content(tmp_path):
-    fasta = tmp_path / "input.fasta"
-    renamed = tmp_path / "renamed.fasta"
-    fasta.write_text(">P1\nAAAA\n")
-    renamed.write_text(">P1\nAAAA\n")
-    original = _input_cache_dir(tmp_path, fasta)
-
-    assert original.is_dir()
-    assert _input_cache_dir(tmp_path, renamed) == original
-
-    # Same identifier, changed residues: must not share embeddings.
-    fasta.write_text(">P1\nCCCC\n")
-    assert _input_cache_dir(tmp_path, fasta) != original
 
 
 # ---------------------------------------------------------------------------

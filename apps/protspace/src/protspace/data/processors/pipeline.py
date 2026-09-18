@@ -118,21 +118,6 @@ class PipelineConfig:
     reducer_params: ReducerParams = field(default_factory=ReducerParams)
 
 
-def _query_fasta_cache_path(cache_root: Path, query: str) -> Path:
-    """Return the retained FASTA path owned by one exact UniProt query."""
-    digest = hashlib.sha256(query.encode()).hexdigest()[:12]
-    return cache_root / "queries" / f"{digest}.fasta"
-
-
-def _input_cache_dir(cache_root: Path, input_path: Path) -> Path:
-    """Create and return the intermediate directory owned by one input file."""
-    with input_path.open("rb") as source:
-        digest = hashlib.file_digest(source, "sha256").hexdigest()[:12]
-    cache_dir = cache_root / "inputs" / digest
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
-
-
 def _embedding_fingerprint(emb_set: EmbeddingSet) -> str:
     """Digest exactly what the reducer will be handed: identifiers and matrix.
 
@@ -149,11 +134,6 @@ def _embedding_fingerprint(emb_set: EmbeddingSet) -> str:
     digest.update(f"{data.dtype}{data.shape}".encode())
     digest.update(memoryview(data).cast("B"))
     return digest.hexdigest()[:16]
-
-
-def _embedding_cache_path(cache_dir: Path, embedder: str, backend: str) -> Path:
-    """Return the H5 path owned by one input, model, and producing backend."""
-    return cache_dir / f"{backend}-{embedder}.h5"
 
 
 # Valid override parameter names (from ReducerParams fields)

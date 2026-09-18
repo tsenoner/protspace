@@ -133,8 +133,6 @@ def test_embed_fasta_unknown_backend_raises(tmp_path):
 def test_notebook_embedding_cache_is_owned_by_its_backend(
     tmp_path, monkeypatch, second_backend, expected
 ):
-    from protspace.data.processors.pipeline import _embedding_cache_path
-
     fasta = tmp_path / "s.fasta"
     fasta.write_text(">P12345\nMKVLAAG\n")
 
@@ -147,7 +145,7 @@ def test_notebook_embedding_cache_is_owned_by_its_backend(
             fasta,
             "prot_t5",
             backend=backend,
-            embedding_cache=_embedding_cache_path(tmp_path, "prot_t5", backend),
+            embedding_cache=tmp_path / f"{backend}-prot_t5.h5",
         )
 
     embed("local", 1.0)

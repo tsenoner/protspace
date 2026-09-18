@@ -199,90 +199,65 @@ def test_notebook_fallback_sets_match_the_package(path: Path):
             )
 
 
-_CACHE_HELPERS = frozenset(
-    {"_embedding_cache_path", "_input_cache_dir", "_query_fasta_cache_path"}
-)
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
+def test_no_notebook_imports_a_private_protspace_name(path: Path):
+    """Cell 1 installs the *released* protspace while this notebook is main's.
 
-
-def test_preparation_cache_helper_fallbacks_match_the_package(tmp_path: Path):
-    """The cache-path helpers' `except ImportError` copies behave like the package.
-
-    Cell 1 installs the *released* protspace while the notebook is served from
-    `main`, so a helper added alongside a notebook change is missing on first
-    run. Imported unguarded, that takes the whole setup cell down with a
-    "restart the session" message that cannot help. The guarded copies are what
-    runs during that lag, so they are executed here and compared, not trusted.
-    """
-    from protspace.data.processors import pipeline
-
-    transform = pytest.importorskip(
-        "IPython.core.inputtransformer2",
-        reason="IPython is a dev-group dependency (via jupyter)",
-    ).TransformerManager()
-
-    handlers = [
-        handler
-        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
-        for node in ast.walk(ast.parse(transform.transform_cell(source)))
-        if isinstance(node, ast.Try)
-        and _CACHE_HELPERS
-        <= {
-            alias.asname or alias.name
-            for stmt in node.body
-            for sub in ast.walk(stmt)
-            if isinstance(sub, ast.ImportFrom)
-            for alias in sub.names
-        }
-        for handler in node.handlers
-    ]
-    assert len(handlers) == 1, (
-        "expected exactly one `except ImportError` guarding the cache-path helpers"
-    )
-    fallback: dict = {}
-    exec(  # noqa: S102 - the notebook's own source, to test what it runs
-        compile(ast.Module(body=handlers[0].body, type_ignores=[]), "cell1", "exec"),
-        fallback,
-    )
-    assert _CACHE_HELPERS <= set(fallback), "a helper has no fallback definition"
-
-    fasta = tmp_path / "input.fasta"
-    fasta.write_text(">P1\nAAAA\n")
-    query = "(family:globin) AND (reviewed:true)"
-
-    assert fallback["_query_fasta_cache_path"](
-        tmp_path, query
-    ) == pipeline._query_fasta_cache_path(tmp_path, query)
-    assert fallback["_input_cache_dir"](tmp_path, fasta) == pipeline._input_cache_dir(
-        tmp_path, fasta
-    )
-    assert fallback["_embedding_cache_path"](
-        tmp_path, "prot_t5", "local"
-    ) == pipeline._embedding_cache_path(tmp_path, "prot_t5", "local")
-
-
-def test_preparation_generate_refreshes_only_projections():
-    """Generate must recompute projections while keeping the other caches.
-
-    The pipeline half of this contract (a `projections` refetch reduces the
-    current matrix) is pinned in test_pipeline_utils.py; this pins the notebook
-    actually asking for it, and for nothing broader.
+    A name added this release does not exist in the release the cell installs,
+    so importing one breaks setup for every reader until the next release — and
+    the failure surfaces as "restart the session", which cannot fix it. Public
+    names are the contract that survives the lag; private ones are not, and a
+    duplicated fallback copy is a second source of truth that drifts.
     """
     transform = pytest.importorskip(
         "IPython.core.inputtransformer2",
         reason="IPython is a dev-group dependency (via jupyter)",
     ).TransformerManager()
 
-    stages = [
-        _literal_set(keyword.value)
+    private = []
+    for index, source in _code_cells(path):
+        for node in ast.walk(ast.parse(transform.transform_cell(source))):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            if not node.module.startswith("protspace"):
+                continue
+            private += [
+                f"cell {index}: {node.module}.{alias.name}"
+                for alias in node.names
+                if alias.name.startswith("_")
+            ]
+    assert not private, (
+        f"{path.name} imports private protspace names: {', '.join(private)}. "
+        "Use a public name, or inline the few lines the notebook needs."
+    )
+
+
+def test_preparation_names_each_bundle_distinctly():
+    """A fixed download name is what issue #338 reads as a stale projection.
+
+    Two Generate actions land as `data.parquetbundle` and `data (1).parquetbundle`,
+    and opening the first shows the first run's coordinates. Structural rather
+    than a substring match: the point is that the name carries something from
+    this run, not that it is spelled any particular way.
+    """
+    transform = pytest.importorskip(
+        "IPython.core.inputtransformer2",
+        reason="IPython is a dev-group dependency (via jupyter)",
+    ).TransformerManager()
+
+    values = [
+        value
         for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
         for node in ast.walk(ast.parse(transform.transform_cell(source)))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "PipelineConfig"
-        for keyword in node.keywords
-        if keyword.arg == "refetch_stages"
+        for name, value in _assignments(node)
+        if name == "output_path"
     ]
-    assert stages == [frozenset({"projections"})]
+
+    assert values, "the Generate callback assigns no output_path"
+    assert all(
+        any(isinstance(part, ast.FormattedValue) for part in ast.walk(value))
+        for value in values
+    ), "every bundle name is a constant, so two runs download the same file name"
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
