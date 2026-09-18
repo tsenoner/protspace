@@ -1,6 +1,44 @@
 # CHANGELOG
 
 
+## v4.13.0 (2026-09-18)
+
+### Bug Fixes
+
+- **notebook**: Let the shared layer own the caches, and name each bundle
+  ([`4fc7df7`](https://github.com/tsenoner/protspace/commit/4fc7df7219f2c8cf45966bdd96f06bdbf50e2f86))
+
+- **protspace**: Apply the code review findings
+  ([`7eef362`](https://github.com/tsenoner/protspace/commit/7eef362904a3313240188652cf05fe009102b042))
+
+- **protspace**: Own cached projections, query FASTA and annotation rows by their data
+  ([`c72f0fb`](https://github.com/tsenoner/protspace/commit/c72f0fba3e338c0488bf4b3a5e21acc6eeb89b91))
+
+- **protspace**: Repair the cache-ownership work's own gaps
+  ([`d6a16f3`](https://github.com/tsenoner/protspace/commit/d6a16f324a1ead8c759e3e443cc258378b7dad1e))
+
+### Documentation
+
+- Describe cache ownership as the code now decides it
+  ([`07cedb8`](https://github.com/tsenoner/protspace/commit/07cedb80f662dc3dd5b1023c36a8e753102dac33))
+
+- Record the embedding-identity tests and tick the change tasks
+  ([`840a896`](https://github.com/tsenoner/protspace/commit/840a896b6c1b23a6e049e33cb3c2409b0e37fd83))
+
+### Features
+
+- **embed**: Stamp embedding identity into the HDF5
+  ([`825e3a1`](https://github.com/tsenoner/protspace/commit/825e3a1b02ae04ec790c2f6ac6c424b060668fb4))
+
+### Refactoring
+
+- **io**: Publish every staged file through one helper
+  ([`8985eff`](https://github.com/tsenoner/protspace/commit/8985eff22d79a64069ab0c96640a46b49355e454))
+
+- **protspace**: Simplify the notebook cache-ownership changes
+  ([`3eda58f`](https://github.com/tsenoner/protspace/commit/3eda58f3892b1603b4d0d8591e801d79ceed811f))
+
+
 ## v4.12.2 (2026-09-15)
 
 ### Bug Fixes
@@ -303,25 +341,6 @@
 
 ### Bug Fixes
 
-- **bundle**: Close the review gaps in numeric typing and N/A handling
-  ([`abe27bc`](https://github.com/tsenoner/protspace/commit/abe27bcdc8bad9ff59ba6174497f2ab639b3152c))
-
-- **settings**: Read and preserve the frontend settings envelope in Python
-  ([`1c33e62`](https://github.com/tsenoner/protspace/commit/1c33e62ee897f4df261069f98ddf068262ffdebc))
-
-### Refactoring
-
-- **bundle**: Derive numeric column types from the parquet schema
-  ([`614cb42`](https://github.com/tsenoner/protspace/commit/614cb420c7612e997d2d80f78d4900793cb87c41))
-
-
-## v4.10.0 (2026-08-06)
-
-### Bug Fixes
-
-- Correct four defects the review agents found in the statistics feature
-  ([`87cac68`](https://github.com/tsenoner/protspace/commit/87cac682a4fe353201c488e7ac77a8281713a939))
-
 - **annotate**: Pass fasta sequences to annotation manager
   ([`5cab319`](https://github.com/tsenoner/protspace/commit/5cab3198d6ee059a65502879437b5d1bbc546c91))
 
@@ -352,6 +371,9 @@
 - **annotations**: Preserve safe cache migration
   ([`b03b8f3`](https://github.com/tsenoner/protspace/commit/b03b8f3137a52586c8f345565d2942e63c2107ae))
 
+- **bundle**: Close the review gaps in numeric typing and N/A handling
+  ([`abe27bc`](https://github.com/tsenoner/protspace/commit/abe27bcdc8bad9ff59ba6174497f2ab639b3152c))
+
 - **protspace**: Address legacy TED cache output
   ([`31c5a93`](https://github.com/tsenoner/protspace/commit/31c5a93496f8e9f53c60b5e42cf03050891da2b6))
 
@@ -360,6 +382,50 @@
 
 - **protspace**: Preserve unlabeled TED domain names
   ([`b724fba`](https://github.com/tsenoner/protspace/commit/b724fba0b7ac550a53aa18e521153258877c2268))
+
+- **settings**: Read and preserve the frontend settings envelope in Python
+  ([`1c33e62`](https://github.com/tsenoner/protspace/commit/1c33e62ee897f4df261069f98ddf068262ffdebc))
+
+### Documentation
+
+- **protspace**: Document TED cache refresh
+  ([`c98f66f`](https://github.com/tsenoner/protspace/commit/c98f66f3eeb10137add1c382e232d629c07e7b03))
+
+### Refactoring
+
+- **annotations**: Dedupe imports and use taxonomy constant
+  ([`b885e6f`](https://github.com/tsenoner/protspace/commit/b885e6f1473975322a2b89ea90b3cf6de9502cef))
+
+- **bundle**: Derive numeric column types from the parquet schema
+  ([`614cb42`](https://github.com/tsenoner/protspace/commit/614cb420c7612e997d2d80f78d4900793cb87c41))
+
+- **protspace**: Collapse TED domain formatting to one emit site
+  ([`a66b347`](https://github.com/tsenoner/protspace/commit/a66b3474fad58dd4a32dfa28122135d8048be4a2))
+
+### Testing
+
+- **annotate**: Hoist UniProtRetriever import to module level
+  ([`b584582`](https://github.com/tsenoner/protspace/commit/b5845824d737ad627a0d3cf87e93be16feb7df7e))
+
+
+## v4.10.0 (2026-08-06)
+
+### Bug Fixes
+
+- Correct four defects the review agents found in the statistics feature
+  ([`87cac68`](https://github.com/tsenoner/protspace/commit/87cac682a4fe353201c488e7ac77a8281713a939))
+
+- **notebook**: Isolate backends and publish fasta atomically
+  ([`82b6dbb`](https://github.com/tsenoner/protspace/commit/82b6dbb25c93cf3eff1ed1234491ff4331985c92))
+
+- **notebook**: Isolate retained caches by input
+  ([`3c4b9f4`](https://github.com/tsenoner/protspace/commit/3c4b9f4cdc325c651fc6917f9e666653f7c75f5d))
+
+- **notebook**: Recompute projections on every generate
+  ([`7d80a0d`](https://github.com/tsenoner/protspace/commit/7d80a0d2a654ceea4e6c6b4b2a39ed18352b664b))
+
+- **protspace**: Preserve cache compatibility
+  ([`5583733`](https://github.com/tsenoner/protspace/commit/55837338ca191db09bd497c3c69f8eff193503dd))
 
 - **stats**: Compute per-category parts before emitting aggregates
   ([`571ecae`](https://github.com/tsenoner/protspace/commit/571ecae71e02fa5d3b514455cd9d5bc8ed1fbdf3))
@@ -371,9 +437,6 @@
   ([`5135697`](https://github.com/tsenoner/protspace/commit/51356978c402d20f61a7eff46ed53c58fe8b4255))
 
 ### Documentation
-
-- **protspace**: Document TED cache refresh
-  ([`c98f66f`](https://github.com/tsenoner/protspace/commit/c98f66f3eeb10137add1c382e232d629c07e7b03))
 
 - **stats**: Correct the retracted invariant on the silhouette helper
   ([`86b78e6`](https://github.com/tsenoner/protspace/commit/86b78e6e107d390e81430addd7caa81f4a16fb7b))
@@ -391,16 +454,10 @@
 - State the metric registry, ceiling rule and cluster caveat once
   ([`510335c`](https://github.com/tsenoner/protspace/commit/510335c1e86619109a3895845204bf257a2b333a))
 
-- **annotations**: Dedupe imports and use taxonomy constant
-  ([`b885e6f`](https://github.com/tsenoner/protspace/commit/b885e6f1473975322a2b89ea90b3cf6de9502cef))
-
-- **protspace**: Collapse TED domain formatting to one emit site
-  ([`a66b347`](https://github.com/tsenoner/protspace/commit/a66b3474fad58dd4a32dfa28122135d8048be4a2))
+- **query**: Drop dead short-write guard, narrow test patch
+  ([`af4ffca`](https://github.com/tsenoner/protspace/commit/af4ffcaf8d807a2877228364c0dfceec0378602a))
 
 ### Testing
-
-- **annotate**: Hoist UniProtRetriever import to module level
-  ([`b584582`](https://github.com/tsenoner/protspace/commit/b5845824d737ad627a0d3cf87e93be16feb7df7e))
 
 - **stats**: Pin per-category decomposition invariants against aggregate-repeat bugs
   ([`45d20e9`](https://github.com/tsenoner/protspace/commit/45d20e90a6e5b68cdf12ffc8f6a5df350f2ac059))
