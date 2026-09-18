@@ -274,7 +274,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing |
 | `test_settings_converter.py` | Settings table ↔ visualization state conversion |
 | `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution |
-| `test_pipeline_utils.py` | ReductionPipeline, notebook query/input cache identity, annotation-cache identifier coverage, `projections` refetch on a changed same-name input, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
+| `test_pipeline_utils.py` | ReductionPipeline, notebook query/input cache identity, annotation-cache identifier coverage (a partial rebuild replaces a cache for other proteins), `projections` refetch on a changed same-name input, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
 | `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, auto-cluster self-validity (filed under the membership column, gated on it, and equal to driving `AnnotationValidityStatistic` directly so an out-of-band re-score cannot drift), faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
 | `test_stats_cli.py` | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
 | `test_stats_carriage.py` | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
@@ -286,7 +286,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_backend_switch.py` | Embedding backend switch: notebook cache ownership/reuse, `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
 | `test_local_embedder.py` | Local embedding backend: checkpoint resolution (12 short keys, Synthyra ESM-C), the notebook-gating sets pinned to the registry each constrains (`COLAB_OVERSIZED`→`LOCAL_CHECKPOINTS`, `BIOCENTRAL_INVALID`→`ALL_SHORT_KEYS`), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, over-length + OOM skips reported not failed, non-skip shortfall fails, esm2_8m end-to-end + resume (slow) |
 | `test_fasta.py` | FASTA parsing, edge cases, CSV annotation loading |
-| `test_query.py` | UniProt query FASTA download validation and atomic cache publication |
+| `test_query.py` | UniProt query FASTA download: a truncated download is never published, atomic cache publication, umask-derived permissions |
 | `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence) |
 | `test_taxonomy_annotation_retriever.py` | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
@@ -311,7 +311,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
 | `test_cli_no_similarity.py` | `-s/--similarity` without the optional `similarity` extra: up-front CLI guard (before any load/embed), loader `ImportError` backstop, `EMBEDDER_MODELS` pinned to the embedder registry |
 | `test_docs_extras_sync.py` | `README.md` (PyPI) and `docs/guide/python-cli.md` (protspace.app) hold the same extras section; the guide's embedder shortcut list matches `EMBEDDER_MODELS` |
-| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, Preparation Generate requests a `projections`-only refetch, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
+| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, Preparation Generate requests a `projections`-only refetch, the Preparation cache-path helper fallbacks executed and compared against the package, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
 | `test_encoding_e2e.py` | Backend end-to-end round-trip proof for v2 annotation encoding |
 | `test_scores_ted.py` | `--no-scores` strips TED domains |
 

@@ -369,7 +369,7 @@ column is indistinguishable from one where those proteins genuinely have no entr
 would make every later run reuse the gaps instead of refetching. Sources that did complete are
 still cached, so one flaky API does not cost an expensive UniProt fetch — unless leaving the failed
 source out would overwrite an existing cache with fewer columns, in which case the cache is kept
-untouched. Either way the run still returns everything it did retrieve, and the next run fetches
+untouched (a cache rebuilt because it lacked requested proteins is replaced regardless). Either way the run still returns everything it did retrieve, and the next run fetches
 the rest. Transient HTTP failures are retried with backoff first, so this is reserved for a source
 that is genuinely unavailable. Use `--refetch annotations` to rewrite the cache regardless — that
 is the repair path for a cache already holding empty values. See

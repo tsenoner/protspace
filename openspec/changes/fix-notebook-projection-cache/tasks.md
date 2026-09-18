@@ -30,3 +30,11 @@
 - [x] 4.1 Run affected Python tests and Ruff checks.
 - [x] 4.2 Run `openspec validate fix-notebook-projection-cache --strict`.
 - [x] 4.3 Run `pnpm precommit` before commit and push.
+
+## 5. Review follow-ups
+
+- [x] 5.1 Guard the notebook's cache-helper import with fallbacks for the released-package lag, pinned against the package by a test.
+- [x] 5.2 Align multi-embedder sets to their shared identifiers before annotating and bundling in the notebook.
+- [x] 5.3 Let a rebuild for missing identifiers replace the rejected annotation cache when a source is incomplete.
+- [x] 5.4 Stream query FASTA extraction once instead of decompressing and parsing it three times.
+- [x] 5.5 Parse each shared FASTA once when extracting sequences for several embedding sets.

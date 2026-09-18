@@ -6,6 +6,7 @@ and _extract_identifiers_from_fasta*.
 
 import gzip
 import logging
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -59,9 +60,6 @@ def query_uniprot(
                         temp_file.write(chunk)
                         pbar.update(len(chunk))
 
-        # Extract identifiers from compressed FASTA
-        identifiers = _extract_identifiers_gz(temp_gz_file)
-
         # Stage a cache file beside its destination so publishing it is one atomic
         # rename; a plain open gives it the process umask, like a direct write.
         if save_to is None:
@@ -71,14 +69,12 @@ def query_uniprot(
             save_to.parent.mkdir(parents=True, exist_ok=True)
             partial = save_to.with_name(f".{save_to.name}.{uuid.uuid4().hex}.tmp")
 
-        with gzip.open(temp_gz_file, "rt") as gz_file:
-            content = gz_file.read()
-            with open(partial, "w") as out:
-                out.write(content)
+        # Streamed rather than read whole: a large query decompresses to gigabytes.
+        # A truncated or corrupt download raises here, before anything is published.
+        with gzip.open(temp_gz_file, "rt") as gz_file, open(partial, "w") as out:
+            shutil.copyfileobj(gz_file, out)
 
-        if extract_identifiers_from_fasta(partial) != identifiers:
-            raise ValueError("Extracted FASTA identifiers do not match the download")
-
+        identifiers = extract_identifiers_from_fasta(partial)
         fasta_path = partial if save_to is None else partial.replace(save_to)
         partial = None
         logger.info(f"Downloaded and extracted {len(identifiers)} sequences")
@@ -103,19 +99,6 @@ def extract_identifiers_from_fasta(fasta_path: Path) -> list[str]:
 
     identifiers = []
     with open(fasta_path) as f:
-        for line in f:
-            if line.startswith(">"):
-                raw = line[1:].strip().split()[0]
-                identifiers.append(parse_identifier(raw))
-    return identifiers
-
-
-def _extract_identifiers_gz(fasta_gz_path: Path) -> list[str]:
-    """Extract protein identifiers from a gzipped FASTA file."""
-    from protspace.data.loaders.h5 import parse_identifier
-
-    identifiers = []
-    with gzip.open(fasta_gz_path, "rt") as f:
         for line in f:
             if line.startswith(">"):
                 raw = line[1:].strip().split()[0]

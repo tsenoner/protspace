@@ -1270,6 +1270,55 @@ def test_annotation_cache_is_rebuilt_for_different_identifiers(tmp_path, monkeyp
     assert result["identifier"].tolist() == ["NEW1", "NEW2"]
 
 
+def test_partial_rebuild_replaces_a_cache_for_different_identifiers(
+    tmp_path, monkeypatch
+):
+    """A failed source must not let the other input's cache shadow this rebuild.
+
+    The incomplete-source guard keeps an existing cache that already holds the
+    failed source's columns. Applied to a cache rejected for describing other
+    proteins, it would discard the UniProt fetch that did succeed and refetch
+    everything on every run until all sources succeed at once.
+    """
+    from protspace.data.annotations.retrievers.interpro_retriever import (
+        InterProRetriever,
+    )
+    from protspace.data.annotations.retrievers.uniprot_retriever import (
+        ProteinAnnotations,
+        UniProtRetriever,
+    )
+
+    cache_path = tmp_path / "all_annotations.parquet"
+    pd.DataFrame(
+        {"identifier": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001"]}
+    ).to_parquet(cache_path, index=False)
+
+    monkeypatch.setattr(
+        UniProtRetriever,
+        "fetch_annotations",
+        lambda _self: [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={"gene_name": "INS", "organism_id": "9606"},
+            )
+        ],
+    )
+
+    def interpro_down(_self):
+        raise RuntimeError("InterPro unavailable")
+
+    monkeypatch.setattr(InterProRetriever, "fetch_annotations", interpro_down)
+
+    _cache_pipeline(tmp_path, annotations=["gene_name", "pfam"])._fetch_annotations(
+        ["P01308"]
+    )
+
+    cached = pd.read_parquet(cache_path)
+    assert cached["identifier"].tolist() == ["P01308"]
+    assert cached["gene_name"].tolist() == ["INS"]
+    assert "pfam" not in cached.columns
+
+
 @pytest.mark.parametrize(
     "cached_ids", [["P1", "P2"], ["P1", "P2", "P3"]], ids=["exact", "superset"]
 )

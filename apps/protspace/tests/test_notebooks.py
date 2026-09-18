@@ -199,6 +199,67 @@ def test_notebook_fallback_sets_match_the_package(path: Path):
             )
 
 
+_CACHE_HELPERS = frozenset(
+    {"_embedding_cache_path", "_input_cache_dir", "_query_fasta_cache_path"}
+)
+
+
+def test_preparation_cache_helper_fallbacks_match_the_package(tmp_path: Path):
+    """The cache-path helpers' `except ImportError` copies behave like the package.
+
+    Cell 1 installs the *released* protspace while the notebook is served from
+    `main`, so a helper added alongside a notebook change is missing on first
+    run. Imported unguarded, that takes the whole setup cell down with a
+    "restart the session" message that cannot help. The guarded copies are what
+    runs during that lag, so they are executed here and compared, not trusted.
+    """
+    from protspace.data.processors import pipeline
+
+    transform = pytest.importorskip(
+        "IPython.core.inputtransformer2",
+        reason="IPython is a dev-group dependency (via jupyter)",
+    ).TransformerManager()
+
+    handlers = [
+        handler
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
+        for node in ast.walk(ast.parse(transform.transform_cell(source)))
+        if isinstance(node, ast.Try)
+        and _CACHE_HELPERS
+        <= {
+            alias.asname or alias.name
+            for stmt in node.body
+            for sub in ast.walk(stmt)
+            if isinstance(sub, ast.ImportFrom)
+            for alias in sub.names
+        }
+        for handler in node.handlers
+    ]
+    assert len(handlers) == 1, (
+        "expected exactly one `except ImportError` guarding the cache-path helpers"
+    )
+    fallback: dict = {}
+    exec(  # noqa: S102 - the notebook's own source, to test what it runs
+        compile(ast.Module(body=handlers[0].body, type_ignores=[]), "cell1", "exec"),
+        fallback,
+    )
+    assert _CACHE_HELPERS <= set(fallback), "a helper has no fallback definition"
+
+    fasta = tmp_path / "input.fasta"
+    fasta.write_text(">P1\nAAAA\n")
+    query = "(family:globin) AND (reviewed:true)"
+
+    assert fallback["_query_fasta_cache_path"](
+        tmp_path, query
+    ) == pipeline._query_fasta_cache_path(tmp_path, query)
+    assert fallback["_input_cache_dir"](tmp_path, fasta) == pipeline._input_cache_dir(
+        tmp_path, fasta
+    )
+    assert fallback["_embedding_cache_path"](
+        tmp_path, "prot_t5", "local"
+    ) == pipeline._embedding_cache_path(tmp_path, "prot_t5", "local")
+
+
 def test_preparation_generate_refreshes_only_projections():
     """Generate must recompute projections while keeping the other caches.
 

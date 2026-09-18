@@ -63,14 +63,14 @@ The Preparation notebook SHALL partition retained query FASTA files by query tex
 
 #### Scenario: Query FASTA extraction completes
 
-- **WHEN** the extracted FASTA identifiers match the downloaded query result
+- **WHEN** the downloaded query result is completely extracted
 - **THEN** the complete FASTA SHALL be atomically published at the query-addressed cache path
 - **AND** the published file SHALL use normal new-file permissions under the process umask
 - **AND** a later Generate action for that query MAY reuse it
 
 ### Requirement: Annotation cache reuse validates identifiers
 
-The reduction pipeline SHALL reuse a retained annotation cache only when its identifier multiset contains every identifier requested by the current run. The cache MAY contain identifiers outside the current request.
+The reduction pipeline SHALL reuse a retained annotation cache only when its identifiers include every identifier requested by the current run. The cache MAY contain identifiers outside the current request.
 
 #### Scenario: Requested identifiers are missing from the cache
 
@@ -79,9 +79,16 @@ The reduction pipeline SHALL reuse a retained annotation cache only when its ide
 - **THEN** annotations SHALL be fetched for the current identifiers
 - **AND** incompatible cached rows SHALL NOT be returned as the current metadata
 
+#### Scenario: A source fails while rebuilding for missing identifiers
+
+- **WHEN** a retained annotation cache is rebuilt because requested identifiers are missing from it
+- **AND** one annotation source does not complete
+- **THEN** the sources that did complete SHALL replace the retained cache
+- **AND** the incomplete source's columns SHALL NOT be cached
+
 #### Scenario: Cache contains a superset of requested identifiers
 
 - **WHEN** a retained annotation cache contains every identifier requested by the current run
 - **AND** it also contains identifiers outside the current request
 - **THEN** the retained cache SHALL remain eligible for reuse
-- **AND** the larger retained cache SHALL NOT be replaced by a subset-only fetch
+- **AND** a run that reuses it without fetching SHALL leave the larger retained cache unchanged

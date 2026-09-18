@@ -82,7 +82,8 @@ ProtSpace therefore **caches only the sources that completed**:
 - Sources that succeeded are still cached, so one flaky API does not throw away an expensive UniProt
   fetch.
 - If leaving it out would mean overwriting an existing cache with _fewer_ columns, the existing
-  cache is kept untouched instead.
+  cache is kept untouched instead — unless that cache covers other proteins, in which case the
+  sources that completed replace it.
 
 Either way the run still returns everything it did retrieve — your bundle is built, and the message
 says which source was short.

@@ -354,10 +354,14 @@ class ReductionPipeline:
         """Extract protein sequences from FASTA files referenced by embedding sets."""
         from protspace.data.loaders.fasta import parse_fasta_normalized
 
+        # One FASTA typically backs every embedder's set, so parse each file once.
+        fasta_paths = dict.fromkeys(
+            Path(emb_set.fasta_path) for emb_set in embedding_sets if emb_set.fasta_path
+        )
         sequences = {}
-        for emb_set in embedding_sets:
-            if emb_set.fasta_path and Path(emb_set.fasta_path).exists():
-                sequences.update(parse_fasta_normalized(Path(emb_set.fasta_path)))
+        for fasta_path in fasta_paths:
+            if fasta_path.exists():
+                sequences.update(parse_fasta_normalized(fasta_path))
         return sequences
 
     def _validate_headers(self, embedding_sets: list[EmbeddingSet]) -> list[str]:
@@ -477,9 +481,10 @@ class ReductionPipeline:
             cache_path = intermediate_dir / "all_annotations.parquet"
 
             cached_df = None
+            foreign_cache = False
             if cache_path.exists():
                 cached_df = pd.read_parquet(cache_path)
-                missing_identifiers = Counter(map(str, headers)) - Counter(
+                missing_identifiers = set(map(str, headers)).difference(
                     map(str, cached_df.get("identifier", ()))
                 )
                 if missing_identifiers:
@@ -487,9 +492,10 @@ class ReductionPipeline:
                     logger.warning(
                         "Annotation cache is missing %d requested identifier(s); "
                         "fetching annotations for the current identifiers",
-                        missing_identifiers.total(),
+                        len(missing_identifiers),
                     )
                     cached_df = None
+                    foreign_cache = True
 
             if cached_df is not None:
                 # Repair at the cache-read boundary, which dominates every path
@@ -673,6 +679,11 @@ class ReductionPipeline:
                     annotations=annotations_list,
                     output_path=cache_path,
                     sequences=sequences,
+                    # A cache rejected above describes other proteins, so its
+                    # columns are nothing to protect: without this, one source
+                    # failing here would keep that foreign file and discard
+                    # every source this rebuild did retrieve.
+                    protect_cached_columns=not foreign_cache,
                 ).to_pd()
                 return self._merge_csv(api_df, csv_df)
         else:

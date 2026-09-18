@@ -51,7 +51,7 @@ The notebook constructs fixed default backend configurations. Their batch sizes 
 
 ### Publish query FASTA caches atomically
 
-`query_uniprot` extracts a downloaded gzip into a temporary sibling of the requested cache file. It parses that staged FASTA and requires its ordered identifiers to match those read from the compressed download. Only then does it replace the final path atomically. A `finally` cleanup removes the compressed download and any incomplete staged output, so interruption cannot leave a nonempty final-path artifact for the next Generate action to accept.
+`query_uniprot` streams a downloaded gzip into a temporary sibling of the requested cache file, so a truncated or corrupt download raises during extraction, and reads the identifiers from that staged FASTA. Only after extraction completes does it replace the final path atomically. The download is decompressed once and never held in memory whole; a second parse of the same bytes to cross-check identifiers could not disagree, so none is made. A `finally` cleanup removes the compressed download and any incomplete staged output, so interruption cannot leave a nonempty final-path artifact for the next Generate action to accept.
 
 Before publication, the staged file receives the permissions that a normal new file would receive under the process umask. Atomic replacement therefore does not make the retained FASTA less accessible than the direct-write behavior it replaces.
 
@@ -59,7 +59,7 @@ Before publication, the staged file receives the permissions that a normal new f
 
 ### Validate annotation identifiers before reuse
 
-`ReductionPipeline._fetch_annotations` verifies that the cached identifier multiset covers every requested identifier before considering cached columns. Missing requested identifiers rebuild the annotation cache for the current headers instead of passing incompatible rows into the bundle merge. A cached superset remains reusable because the pipeline's later identifier merge drops rows outside the current input; this preserves the existing subset-run behavior and avoids replacing a larger cache with a smaller one.
+`ReductionPipeline._fetch_annotations` verifies that the cached identifiers cover every requested identifier before considering cached columns. Missing requested identifiers rebuild the annotation cache for the current headers instead of passing incompatible rows into the bundle merge. That rebuild does not protect the rejected cache's columns: otherwise one source failing during it would keep the other input's file and discard every source that did complete. A cached superset remains reusable because the pipeline's later identifier merge drops rows outside the current input; this preserves the existing subset-run behavior and leaves a larger cache untouched whenever it is reused without a fetch.
 
 ### Exercise actual cache behavior in the regression
 
