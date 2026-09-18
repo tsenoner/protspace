@@ -98,7 +98,9 @@ def _recording_download(monkeypatch, fasta=">P1\nAAAA\n"):
 def test_a_second_query_does_not_reuse_the_first_query_fasta(tmp_path, monkeypatch):
     prepare_module, downloaded = _recording_download(monkeypatch)
 
-    _, first = prepare_module._resolve_query_fasta("family:globin", tmp_path, frozenset())
+    _, first = prepare_module._resolve_query_fasta(
+        "family:globin", tmp_path, frozenset()
+    )
     _, second = prepare_module._resolve_query_fasta(
         "family:phosphatase", tmp_path, frozenset()
     )

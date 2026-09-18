@@ -9,11 +9,12 @@ import hashlib
 import logging
 import shutil
 import tempfile
-import uuid
 from pathlib import Path
 
 import requests
 from tqdm import tqdm
+
+from protspace.data.io.atomic import staged_write
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,6 @@ def query_uniprot(
     base_url = "https://rest.uniprot.org/uniprotkb/stream"
     params = {"compressed": "true", "format": "fasta", "query": query}
     temp_gz_file: Path | None = None
-    # The extracted FASTA until it is handed back; cleaned up if anything fails.
-    partial: Path | None = None
 
     try:
         response = requests.get(base_url, params=params, stream=True)
@@ -72,26 +71,23 @@ def query_uniprot(
                         temp_file.write(chunk)
                         pbar.update(len(chunk))
 
-        # Stage a cache file beside its destination so publishing it is one atomic
-        # rename; a plain open gives it the process umask, like a direct write.
         if save_to is None:
-            partial = temp_gz_file.with_suffix("")
+            # Nothing is retained, so the extraction is the caller's own file.
+            extracted = temp_gz_file.with_suffix("")
+            try:
+                identifiers = _extract_fasta(temp_gz_file, extracted)
+            except BaseException:
+                extracted.unlink(missing_ok=True)
+                raise
         else:
-            save_to = Path(save_to)
-            save_to.parent.mkdir(parents=True, exist_ok=True)
-            partial = save_to.with_name(f".{save_to.name}.{uuid.uuid4().hex}.tmp")
+            # A retained FASTA's existence is the next run's cache hit, so it may
+            # not appear until the whole stream has been decompressed.
+            extracted = Path(save_to)
+            with staged_write(extracted) as staged:
+                identifiers = _extract_fasta(temp_gz_file, staged)
 
-        # Streamed rather than read whole: a large query decompresses to gigabytes.
-        # A truncated or corrupt download raises here, before anything is published.
-        with gzip.open(temp_gz_file, "rt") as gz_file, open(partial, "w") as out:
-            shutil.copyfileobj(gz_file, out)
-
-        identifiers = extract_identifiers_from_fasta(partial)
-        fasta_path = partial if save_to is None else partial.replace(save_to)
-        partial = None
         logger.info(f"Downloaded and extracted {len(identifiers)} sequences")
-
-        return identifiers, fasta_path
+        return identifiers, extracted
 
     except requests.RequestException as e:
         logger.error(f"Error downloading FASTA: {e}")
@@ -100,9 +96,19 @@ def query_uniprot(
         logger.error(f"Error processing FASTA: {e}")
         raise
     finally:
-        for path in (temp_gz_file, partial):
-            if path is not None:
-                path.unlink(missing_ok=True)
+        if temp_gz_file is not None:
+            temp_gz_file.unlink(missing_ok=True)
+
+
+def _extract_fasta(gz_path: Path, target: Path) -> list[str]:
+    """Decompress *gz_path* into *target* and return its identifiers.
+
+    Streamed rather than read whole: a broad query decompresses to gigabytes. A
+    truncated or corrupt download raises here, before anything is published.
+    """
+    with gzip.open(gz_path, "rt") as gz_file, open(target, "w") as out:
+        shutil.copyfileobj(gz_file, out)
+    return extract_identifiers_from_fasta(target)
 
 
 def extract_identifiers_from_fasta(fasta_path: Path) -> list[str]:

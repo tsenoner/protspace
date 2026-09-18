@@ -14,7 +14,6 @@ the fourth part's emptiness, not on the raw part count.
 import io
 import json
 import logging
-import os
 import tempfile
 from pathlib import Path
 
@@ -22,6 +21,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import stamp_format_version
+from protspace.data.io.atomic import atomic_write_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -60,28 +60,6 @@ def _table_to_parquet_bytes(table: pa.Table) -> bytes:
     buf = io.BytesIO()
     pq.write_table(table, buf)
     return buf.getvalue()
-
-
-def _atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path`` atomically (temp file + ``os.replace``).
-
-    The destination is never left truncated or partial on interrupt — it keeps
-    the old bytes until the rename completes, then atomically becomes the full
-    new bytes.  Critical for the in-place overwrite workflow that ``transfer``
-    documents (``-b results.parquetbundle -o results.parquetbundle``): a Ctrl+C
-    or crash mid-write can no longer destroy the user's bundle.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 def _check_no_delimiter(part_bytes: bytes) -> None:
@@ -195,7 +173,7 @@ def write_bundle(
         _check_no_delimiter(stats_bytes)
         buf.write(stats_bytes)
 
-    _atomic_write_bytes(bundle_path, buf.getvalue())
+    atomic_write_bytes(bundle_path, buf.getvalue())
     logger.info(f"Saved bundled output to: {bundle_path}")
 
 
@@ -219,7 +197,7 @@ def replace_settings_in_bundle(
         new_parts.append(statistics)
     new_content = PARQUET_BUNDLE_DELIMITER.join(new_parts)
 
-    _atomic_write_bytes(output_path, new_content)
+    atomic_write_bytes(output_path, new_content)
 
 
 def replace_annotations_in_bundle(
@@ -255,7 +233,7 @@ def replace_annotations_in_bundle(
     if statistics is not None:
         new_parts.append(statistics)
 
-    _atomic_write_bytes(output_path, PARQUET_BUNDLE_DELIMITER.join(new_parts))
+    atomic_write_bytes(output_path, PARQUET_BUNDLE_DELIMITER.join(new_parts))
 
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
 

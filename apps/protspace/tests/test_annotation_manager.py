@@ -1615,7 +1615,9 @@ class TestPerIdentifierReuse:
 
     @patch("src.protspace.data.annotations.manager.UniProtRetriever")
     def test_a_failed_fill_in_does_not_cache_empty_values(self, mock_uniprot, tmp_path):
-        mock_uniprot.return_value.fetch_annotations.side_effect = RuntimeError("offline")
+        mock_uniprot.return_value.fetch_annotations.side_effect = RuntimeError(
+            "offline"
+        )
         cache_path = tmp_path / "all_annotations.parquet"
         cached = self._cached(["P1", "P2"])
         cached.to_parquet(cache_path, index=False)
