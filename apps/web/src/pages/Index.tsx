@@ -1,8 +1,12 @@
 import Header from '@/components/Header';
 import Hero from '@/components/Hero';
-import Features from '@/components/Features';
 import Citation from '@/components/Citation';
 import Footer from '@/components/Footer';
+import { AnnotationExplorerPreview } from '@/landing/AnnotationExplorerPreview';
+import { WorkflowOverview } from '@/landing/WorkflowOverview';
+import { EatPreview } from '@/landing/EatPreview';
+import { ProjectionEvaluationPreview } from '@/landing/ProjectionEvaluationPreview';
+import { ClosingCta } from '@/landing/ClosingCta';
 
 const Index = () => {
   return (
@@ -10,7 +14,11 @@ const Index = () => {
       <Header />
       <main>
         <Hero />
-        <Features />
+        <AnnotationExplorerPreview />
+        <WorkflowOverview />
+        <EatPreview />
+        <ProjectionEvaluationPreview />
+        <ClosingCta />
         <Citation />
       </main>
       <Footer />

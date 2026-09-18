@@ -10,15 +10,10 @@ import { getNavigation } from '../../../../config/navigation';
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
 // Ghost-style Feedback CTA: transparent, on-brand blue text/icon with a faint blue
-// hover — de-emphasized vs. the app-shell primary (#3c83f6). The hue is variant-aware
-// so the label clears WCAG AA on both header backgrounds: the canonical ProtSpace blue
-// (#00a3e0, ~5.6:1) on the dark header, and a darker shade (#006d96, ~5.3:1) on the
-// light Explore header, where #00a3e0 would only reach ~2.6:1.
-// Both literals are spelled out so Tailwind's source scan can generate the arbitrary
-// color utilities (it cannot see classes built from interpolated strings).
-const FEEDBACK_BUTTON_CLASS_DEFAULT =
-  'text-[#00a3e0] hover:bg-[#00a3e0]/10 hover:text-[#00a3e0] focus-visible:ring-[#00a3e0]';
-const FEEDBACK_BUTTON_CLASS_LIGHT =
+// hover — de-emphasized vs. the app-shell primary (#3c83f6). Both headers are light, so
+// the canonical ProtSpace blue (#00a3e0, ~2.6:1 on white) is darkened to #006d96
+// (~5.3:1) to clear WCAG AA.
+const FEEDBACK_BUTTON_CLASS =
   'text-[#006d96] hover:bg-[#006d96]/10 hover:text-[#006d96] focus-visible:ring-[#006d96]';
 
 const mode = import.meta.env.MODE === 'production' ? 'production' : 'development';
@@ -29,8 +24,8 @@ export const HEADER_HEIGHT_CLASS = 'h-12';
 type HeaderProps = {
   /**
    * Visual style variant for different page backgrounds.
-   * - default: uses the site theme background
-   * - light: forces a lighter header (useful on Explore's light canvas)
+   * - default: uses the site theme background (white)
+   * - light: matches Explore's #f4f4f4 canvas
    */
   variant?: 'default' | 'light';
   className?: string;
@@ -43,12 +38,11 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
   const textClass = variant === 'light' ? 'text-slate-900' : 'text-foreground';
   const hoverTextClass = variant === 'light' ? 'hover:text-slate-700' : 'hover:text-primary';
   const mutedTextClass = variant === 'light' ? 'text-slate-700' : 'text-foreground/80';
-  const feedbackButtonClass =
-    variant === 'light' ? FEEDBACK_BUTTON_CLASS_LIGHT : FEEDBACK_BUTTON_CLASS_DEFAULT;
+  const feedbackButtonClass = FEEDBACK_BUTTON_CLASS;
 
   const headerClasses = cn(
     'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg',
-    variant === 'light' ? 'bg-[#f4f4f4]/95 border-black/5' : 'bg-background/80 border-border/40',
+    variant === 'light' ? 'bg-[#f4f4f4]/95 border-black/5' : 'bg-background/85 border-border',
     className,
   );
 
@@ -63,11 +57,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
         <div className={`flex ${HEADER_HEIGHT_CLASS} items-center justify-between`}>
           {/* Logo */}
           <Link to="/" className="flex items-center">
-            <img
-              src={variant === 'light' ? '/wordmark.svg' : '/wordmark-black.svg'}
-              alt="ProtSpace"
-              className="h-10"
-            />
+            <img src="/wordmark.svg" alt="ProtSpace" className="h-8 sm:h-10" />
           </Link>
 
           {/* Desktop Navigation */}
@@ -154,6 +144,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className={cn('md:hidden transition-colors', textClass, hoverTextClass)}
             aria-label="Toggle menu"
+            aria-expanded={isMenuOpen}
           >
             {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
