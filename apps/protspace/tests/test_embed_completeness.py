@@ -97,6 +97,164 @@ class TestFinishRun:
         assert not [p for p in patterns if p in str(exc.value).lower()]
 
 
+class TestProducerOwnership:
+    """A cache belongs to the backend and model that wrote it.
+
+    Both backends resume by identifier alone, so without a recorded producer a
+    Local-written vector satisfies a Biocentral run's resume check and the two
+    models end up mixed in one dataset.
+    """
+
+    @staticmethod
+    def _owned(h5_path, *, backend="local", model="prot_t5", ids=("a",)):
+        store.save_embeddings(
+            h5_path,
+            {pid: np.zeros(4, dtype=np.float32) for pid in ids},
+            sequences=dict.fromkeys(ids, "MKV"),
+            backend=backend,
+            model=model,
+        )
+        return h5_path
+
+    def test_another_backend_is_refused_and_named_with_the_remedies(self, tmp_path):
+        h5 = self._owned(tmp_path / "local-prot_t5.h5")
+        with pytest.raises(ValueError) as exc:
+            store.begin_run(
+                h5,
+                {"a": "MKV"},
+                backend="biocentral",
+                model="Rostlab/prot_t5_xl_uniref50",
+            )
+        msg = str(exc.value)
+        assert str(h5) in msg
+        assert "local" in msg and "prot_t5" in msg
+        # The three ways forward, or the message is a dead end.
+        assert "--refetch embed" in msg
+        assert "backend" in msg and "path" in msg
+
+    def test_another_model_on_the_same_backend_is_refused(self, tmp_path):
+        """Two models' vectors are as unmixable as two backends'."""
+        h5 = self._owned(tmp_path / "c.h5")
+        with pytest.raises(ValueError, match="prot_t5"):
+            store.begin_run(h5, {"a": "MKV"}, backend="local", model="esm2_8m")
+
+    def test_a_refused_file_is_left_untouched(self, tmp_path):
+        h5 = self._owned(tmp_path / "c.h5")
+        before = h5.read_bytes()
+        with pytest.raises(ValueError):
+            store.begin_run(h5, {"b": "MKW"}, backend="biocentral", model="m")
+        assert h5.exists(), "a refused cache must not be deleted"
+        assert h5.read_bytes() == before, "a refused cache must not be extended"
+
+    def test_the_same_producer_resumes(self, tmp_path):
+        h5 = self._owned(tmp_path / "c.h5", ids=("a",))
+        outstanding = store.begin_run(
+            h5, {"a": "MKV", "b": "MKW"}, backend="local", model="prot_t5"
+        )
+        assert outstanding == {"b": "MKW"}
+
+    def test_a_file_predating_producers_is_adopted_and_reported(self, tmp_path, caplog):
+        """Refusing legacy files would force a full re-embed of every existing
+        cache on upgrade, so they are adopted -- audibly."""
+        h5 = tmp_path / "legacy.h5"
+        _write(h5, ["a"])
+        with caplog.at_level("INFO"):
+            outstanding = store.begin_run(
+                h5, {"a": "MKV"}, backend="local", model="prot_t5"
+            )
+        assert outstanding == {}
+        assert "local" in caplog.text and "prot_t5" in caplog.text
+        with h5py.File(h5, "r") as f:
+            assert f.attrs["protspace_backend"] == "local"
+            assert f.attrs["protspace_model"] == "prot_t5"
+
+    def test_an_adopted_file_is_owned_from_then_on(self, tmp_path):
+        h5 = tmp_path / "legacy.h5"
+        _write(h5, ["a"])
+        store.begin_run(h5, {"a": "MKV"}, backend="local", model="prot_t5")
+        with pytest.raises(ValueError, match="--refetch embed"):
+            store.begin_run(h5, {"a": "MKV"}, backend="biocentral", model="prot_t5")
+
+
+class TestSequenceIdentity:
+    """A vector belongs to the residues it was computed from."""
+
+    @staticmethod
+    def _save(h5_path, sequences, fill=1.0):
+        store.save_embeddings(
+            h5_path,
+            {pid: np.full(4, fill, dtype=np.float32) for pid in sequences},
+            sequences=sequences,
+            backend="local",
+            model="prot_t5",
+        )
+
+    def test_a_changed_sequence_is_outstanding_again(self, tmp_path):
+        h5 = tmp_path / "c.h5"
+        self._save(h5, {"a": "MKV", "b": "MKW"})
+        outstanding = store.begin_run(
+            h5, {"a": "MKV", "b": "EDITED"}, backend="local", model="prot_t5"
+        )
+        assert outstanding == {"b": "EDITED"}
+
+    def test_re_embedding_replaces_the_vector_and_the_digest(self, tmp_path):
+        """save_embeddings skips identifiers already present, so without this the
+        re-embed is computed and then thrown away."""
+        h5 = tmp_path / "c.h5"
+        self._save(h5, {"a": "MKV"}, fill=1.0)
+        self._save(h5, {"a": "EDITED"}, fill=2.0)
+        with h5py.File(h5, "r") as f:
+            assert f["a"][:].tolist() == [2.0] * 4
+            assert f["a"].attrs["protspace_sequence_sha256"] == store.sequence_digest(
+                "EDITED"
+            )
+
+    def test_an_unchanged_sequence_keeps_its_vector(self, tmp_path):
+        h5 = tmp_path / "c.h5"
+        self._save(h5, {"a": "MKV"}, fill=1.0)
+        self._save(h5, {"a": "MKV"}, fill=2.0)
+        with h5py.File(h5, "r") as f:
+            assert f["a"][:].tolist() == [1.0] * 4
+
+    def test_a_protein_without_a_digest_is_trusted(self, tmp_path):
+        h5 = tmp_path / "legacy.h5"
+        _write(h5, ["a"])
+        assert (
+            store.begin_run(h5, {"a": "ANYTHING"}, backend="local", model="prot_t5")
+            == {}
+        )
+
+    def test_finish_run_fails_when_a_stale_protein_was_not_re_embedded(self, tmp_path):
+        """Its old vector is still on disk under its old residues, so a presence
+        check alone reports the run complete."""
+        h5 = tmp_path / "c.h5"
+        self._save(h5, {"a": "MKV", "b": "MKW"})
+        with pytest.raises(ValueError, match="Embedding incomplete"):
+            store.finish_run(h5, ["a", "b"], sequences={"a": "EDITED", "b": "MKW"})
+
+    def test_finish_run_accepts_a_stale_protein_that_was_re_embedded(self, tmp_path):
+        h5 = tmp_path / "c.h5"
+        self._save(h5, {"a": "MKV"}, fill=1.0)
+        self._save(h5, {"a": "EDITED"}, fill=2.0)
+        assert store.finish_run(h5, ["a"], sequences={"a": "EDITED"}) == h5
+
+    def test_resume_reads_the_digests_in_one_pass(self, tmp_path, monkeypatch):
+        """The digest is per protein at up to 570K of them: one open for the file,
+        not one per protein."""
+        h5 = tmp_path / "c.h5"
+        sequences = {f"p{i}": "MKV" for i in range(50)}
+        self._save(h5, sequences)
+
+        opens = []
+        real_file = h5py.File
+        monkeypatch.setattr(
+            h5py, "File", lambda *a, **kw: opens.append(1) or real_file(*a, **kw)
+        )
+        store.begin_run(h5, sequences, backend="local", model="prot_t5")
+
+        assert len(opens) == 1, f"{len(opens)} opens for {len(sequences)} proteins"
+
+
 class TestValidateHeaders:
     def test_rejects_slash(self):
         with pytest.raises(ValueError, match="invalid for HDF5 dataset names"):

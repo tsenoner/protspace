@@ -6,7 +6,7 @@ Extracted from LocalProcessor._embed_fasta_to_h5.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -97,7 +97,38 @@ def embed_fasta(
     with h5py.File(h5_path, "a") as f:
         f.attrs["model_name"] = embedder
 
-    return load_h5([h5_path], name_override=embedder)
+    return _restrict_to(load_h5([h5_path], name_override=embedder), sequences)
+
+
+def _restrict_to(embedding_set: EmbeddingSet, wanted: Collection[str]) -> EmbeddingSet:
+    """Drop rows for proteins outside *wanted*, keeping the loaded row order.
+
+    The embedding cache legitimately accumulates proteins across inputs — that is
+    what makes resume work — so what a run is about is decided by the FASTA in
+    hand rather than by everything the cache has ever held. Returning the
+    accumulation unions unrelated datasets into one bundle.
+
+    Identifiers go through ``parse_identifier`` because a cache written elsewhere
+    may be keyed ``sp|P12345|NAME`` while the FASTA-derived keys are parsed.
+    """
+    requested = set(wanted)
+    keep = [
+        i
+        for i, header in enumerate(embedding_set.headers)
+        if parse_identifier(header) in requested
+    ]
+    if len(keep) == len(embedding_set.headers):
+        return embedding_set
+
+    logger.info(
+        "Returning %d of %d cached protein(s): the rest belong to other inputs "
+        "sharing this embedding cache.",
+        len(keep),
+        len(embedding_set.headers),
+    )
+    embedding_set.data = embedding_set.data[keep]
+    embedding_set.headers = [embedding_set.headers[i] for i in keep]
+    return embedding_set
 
 
 def check_fasta_coverage(
