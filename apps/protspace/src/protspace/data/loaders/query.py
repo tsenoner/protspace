@@ -5,6 +5,7 @@ and _extract_identifiers_from_fasta*.
 """
 
 import gzip
+import hashlib
 import logging
 import shutil
 import tempfile
@@ -15,6 +16,17 @@ import requests
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def query_cache_path(cache_dir: Path, query: str) -> Path:
+    """Return the retained FASTA path owned by one exact query text.
+
+    One shared file name per output directory hands a later run the previous
+    query's sequences: the file exists and parses, so nothing downstream can
+    tell it apart from the one this query would have produced.
+    """
+    digest = hashlib.sha256(query.encode()).hexdigest()[:12]
+    return cache_dir / "queries" / f"{digest}.fasta"
 
 
 def query_uniprot(

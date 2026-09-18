@@ -1241,44 +1241,44 @@ def _write_annotation_cache(cache_dir, identifiers, value):
     return cached
 
 
-def test_annotation_cache_is_rebuilt_for_different_identifiers(tmp_path, monkeypatch):
+def test_a_cache_missing_identifiers_is_filled_in_not_discarded(tmp_path, monkeypatch):
+    """The cache still reaches the manager, which fetches only what it lacks.
+
+    Discarding it instead refetches every source for every identifier, which is
+    hours at Swiss-Prot scale for one added protein.
+    """
     from protspace.data.annotations.manager import ProteinAnnotationManager
 
-    _write_annotation_cache(tmp_path, ["OLD1", "OLD2"], "old")
+    _write_annotation_cache(tmp_path, ["P1", "P2"], "cached")
     captured = {}
 
-    def fresh_annotations(manager):
+    def fill_in(manager):
         captured["headers"] = manager.headers
         captured["cached_data"] = manager.cached_data
         return pd.DataFrame(
             {
-                "identifier": ["NEW1", "NEW2"],
-                "protein_name": ["new", "new"],
-                "gene_name": ["new", "new"],
-                "uniprot_kb_id": ["new", "new"],
+                "identifier": ["P1", "P2", "P3"],
+                "protein_name": ["cached", "cached", "new"],
             }
         )
 
-    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", fresh_annotations)
+    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", fill_in)
 
     result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
-        ["NEW1", "NEW2"]
+        ["P1", "P2", "P3"]
     )
 
-    assert captured["headers"] == ["NEW1", "NEW2"]
-    assert captured["cached_data"] is None
-    assert result["identifier"].tolist() == ["NEW1", "NEW2"]
+    assert captured["headers"] == ["P1", "P2", "P3"]
+    assert captured["cached_data"]["identifier"].tolist() == ["P1", "P2"]
+    assert result["identifier"].tolist() == ["P1", "P2", "P3"]
 
 
-def test_partial_rebuild_replaces_a_cache_for_different_identifiers(
-    tmp_path, monkeypatch
-):
-    """A failed source must not let the other input's cache shadow this rebuild.
+def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monkeypatch):
+    """A source that failed for the new identifiers must not reach the cache.
 
-    The incomplete-source guard keeps an existing cache that already holds the
-    failed source's columns. Applied to a cache rejected for describing other
-    proteins, it would discard the UniProt fetch that did succeed and refetch
-    everything on every run until all sources succeed at once.
+    Its columns would be empty for them and indistinguishable from a real
+    absence. Leaving the cache untouched is cheap now that the next run fills in
+    only the identifiers it lacks rather than rebuilding everything.
     """
     from protspace.data.annotations.retrievers.interpro_retriever import (
         InterProRetriever,
@@ -1309,14 +1309,12 @@ def test_partial_rebuild_replaces_a_cache_for_different_identifiers(
 
     monkeypatch.setattr(InterProRetriever, "fetch_annotations", interpro_down)
 
-    _cache_pipeline(tmp_path, annotations=["gene_name", "pfam"])._fetch_annotations(
-        ["P01308"]
-    )
+    result = _cache_pipeline(
+        tmp_path, annotations=["gene_name", "pfam"]
+    )._fetch_annotations(["P01308"])
 
-    cached = pd.read_parquet(cache_path)
-    assert cached["identifier"].tolist() == ["P01308"]
-    assert cached["gene_name"].tolist() == ["INS"]
-    assert "pfam" not in cached.columns
+    assert result.set_index("identifier").loc["P01308", "gene_name"] == "INS"
+    assert pd.read_parquet(cache_path)["identifier"].tolist() == ["OLD1"]
 
 
 @pytest.mark.parametrize(
@@ -1345,24 +1343,25 @@ def test_annotation_cache_covering_the_request_is_reused(
 
 
 # ---------------------------------------------------------------------------
-# Projection refresh (the notebook requests it; see test_notebooks.py)
+# Projection cache identity
 # ---------------------------------------------------------------------------
 
 
-def test_projection_refetch_reduces_a_changed_same_name_input(tmp_path):
+def _recording_pipeline(tmp_path, **overrides):
+    """A pipeline whose reducer records what it was handed and slices it."""
     pipeline = ReductionPipeline(
         PipelineConfig(
             methods=parse_methods_arg(["umap2"]),
             output_path=None,
             keep_tmp=True,
             intermediate_dir=tmp_path,
-            refetch_stages=frozenset({"projections"}),
+            **overrides,
         )
     )
-    inputs = []
+    reduced = []
 
     def record_input(data, method, dims):
-        inputs.append(data.copy())
+        reduced.append(data.copy())
         return {
             "name": f"{method}{dims}",
             "dimensions": dims,
@@ -1371,6 +1370,11 @@ def test_projection_refetch_reduces_a_changed_same_name_input(tmp_path):
         }
 
     pipeline.base.process_reduction = record_input
+    return pipeline, reduced
+
+
+def test_projection_cache_misses_a_changed_matrix_under_one_name(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
     headers = ["P1", "P2", "P3"]
 
     pipeline._run_reductions(
@@ -1380,7 +1384,103 @@ def test_projection_refetch_reduces_a_changed_same_name_input(tmp_path):
         [_make_es("prot_t5", headers, data=np.full((3, 3), 7.0, dtype=np.float32))]
     )[0]
 
-    assert len(inputs) == 2
+    assert len(reduced) == 2
     np.testing.assert_array_equal(
         changed["data"], np.full((3, 2), 7.0, dtype=np.float32)
+    )
+
+
+def test_projection_cache_misses_reordered_identifiers(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+    data = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float32)
+
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+    reordered = pipeline._run_reductions(
+        [_make_es("prot_t5", headers[::-1], data=data[::-1])]
+    )[0]
+
+    assert len(reduced) == 2
+    # Coordinates are paired positionally with the current identifiers, so a
+    # cache hit here would put P3's row on P1.
+    np.testing.assert_array_equal(reordered["data"], data[::-1][:, :2])
+
+
+def test_projection_cache_misses_a_grown_input(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    rng = np.random.default_rng(0)
+
+    pipeline._run_reductions(
+        [
+            _make_es(
+                "prot_t5",
+                [f"P{i}" for i in range(3)],
+                data=rng.normal(size=(3, 4)).astype(np.float32),
+            )
+        ]
+    )
+    grown = pipeline._run_reductions(
+        [
+            _make_es(
+                "prot_t5",
+                [f"P{i}" for i in range(5)],
+                data=rng.normal(size=(5, 4)).astype(np.float32),
+            )
+        ]
+    )[0]
+
+    assert len(reduced) == 2
+    assert grown["data"].shape[0] == 5
+
+
+def test_projection_cache_hits_an_unchanged_rerun(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+    data = np.full((3, 3), 4.0, dtype=np.float32)
+
+    first = pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])[0]
+    second = pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])[0]
+
+    assert len(reduced) == 1
+    np.testing.assert_array_equal(second["data"], first["data"])
+
+
+def test_projection_refetch_recomputes_an_unchanged_rerun(tmp_path):
+    pipeline, reduced = _recording_pipeline(
+        tmp_path, refetch_stages=frozenset({"projections"})
+    )
+    headers = ["P1", "P2", "P3"]
+    data = np.full((3, 3), 4.0, dtype=np.float32)
+
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+
+    assert len(reduced) == 2
+
+
+def test_precomputed_projection_cache_misses_a_changed_matrix(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+
+    pipeline._run_reductions(
+        [
+            _make_es(
+                "MMseqs2", headers, data=np.zeros((3, 3), np.float32), precomputed=True
+            )
+        ]
+    )
+    changed = pipeline._run_reductions(
+        [
+            _make_es(
+                "MMseqs2",
+                headers,
+                data=np.full((3, 3), 9.0, np.float32),
+                precomputed=True,
+            )
+        ]
+    )[0]
+
+    assert len(reduced) == 2
+    np.testing.assert_array_equal(
+        changed["data"], np.full((3, 2), 9.0, dtype=np.float32)
     )

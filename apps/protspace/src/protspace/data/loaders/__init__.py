@@ -14,6 +14,7 @@ from protspace.data.loaders.h5 import (
 )
 from protspace.data.loaders.query import (
     extract_identifiers_from_fasta,
+    query_cache_path,
     query_uniprot,
 )
 from protspace.data.loaders.similarity import compute_similarity
@@ -28,6 +29,7 @@ __all__ = [
     "extract_identifiers_from_fasta",
     "load_h5",
     "parse_identifier",
+    "query_cache_path",
     "query_uniprot",
     "split_h5_spec",
 ]

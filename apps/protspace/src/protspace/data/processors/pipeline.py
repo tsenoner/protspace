@@ -133,6 +133,24 @@ def _input_cache_dir(cache_root: Path, input_path: Path) -> Path:
     return cache_dir
 
 
+def _embedding_fingerprint(emb_set: EmbeddingSet) -> str:
+    """Digest exactly what the reducer will be handed: identifiers and matrix.
+
+    The embedding name says where numbers came from, not which numbers they are:
+    a resumed embedding cache, a re-embedded input, a narrower intersection and a
+    reordered input all keep the name. Coordinates are stored as bare rows and
+    paired positionally with the current identifiers on load, so the identifier
+    order belongs in the digest too -- reusing a projection across a reorder
+    relabels every point.
+    """
+    data = np.ascontiguousarray(emb_set.data)
+    digest = hashlib.sha256()
+    digest.update("\0".join(emb_set.headers).encode())
+    digest.update(f"{data.dtype}{data.shape}".encode())
+    digest.update(memoryview(data).cast("B"))
+    return digest.hexdigest()[:16]
+
+
 def _embedding_cache_path(cache_dir: Path, embedder: str, backend: str) -> Path:
     """Return the H5 path owned by one input, model, and producing backend."""
     return cache_dir / f"{backend}-{embedder}.h5"
@@ -481,21 +499,21 @@ class ReductionPipeline:
             cache_path = intermediate_dir / "all_annotations.parquet"
 
             cached_df = None
-            foreign_cache = False
+            missing_identifiers: set[str] = set()
             if cache_path.exists():
                 cached_df = pd.read_parquet(cache_path)
                 missing_identifiers = set(map(str, headers)).difference(
                     map(str, cached_df.get("identifier", ()))
                 )
                 if missing_identifiers:
-                    # Rows cached for another input: rebuild for this one instead.
+                    # Rows the cache has no entry for. The manager fetches each
+                    # source for exactly these and reuses cached values for the
+                    # rest, so the cache is filled in rather than rebuilt.
                     logger.warning(
-                        "Annotation cache is missing %d requested identifier(s); "
-                        "fetching annotations for the current identifiers",
+                        "Annotation cache covers none of %d requested "
+                        "identifier(s); fetching annotations for them",
                         len(missing_identifiers),
                     )
-                    cached_df = None
-                    foreign_cache = True
 
             if cached_df is not None:
                 # Repair at the cache-read boundary, which dominates every path
@@ -542,7 +560,12 @@ class ReductionPipeline:
 
                 missing = required - cached_annotations
 
-                if not missing and not refetching_annotations and not refresh_columns:
+                if (
+                    not missing
+                    and not missing_identifiers
+                    and not refetching_annotations
+                    and not refresh_columns
+                ):
                     logger.warning("Using cached annotations")
                     if annotations_list:
                         cols = ["identifier"] + [
@@ -679,11 +702,6 @@ class ReductionPipeline:
                     annotations=annotations_list,
                     output_path=cache_path,
                     sequences=sequences,
-                    # A cache rejected above describes other proteins, so its
-                    # columns are nothing to protect: without this, one source
-                    # failing here would keep that foreign file and discard
-                    # every source this rebuild did retrieve.
-                    protect_cached_columns=not foreign_cache,
                 ).to_pd()
                 return self._merge_csv(api_df, csv_df)
         else:
@@ -749,6 +767,7 @@ class ReductionPipeline:
         method: str,
         dims: int,
         effective_params: dict[str, Any] | None = None,
+        fingerprint: str = "",
     ) -> Path | None:
         cache_dir = self.config.intermediate_dir
         if not cache_dir or not self.config.keep_tmp:
@@ -758,6 +777,7 @@ class ReductionPipeline:
             "method": method,
             "dims": dims,
             "params": effective_params or asdict(self.config.reducer_params),
+            "fingerprint": fingerprint,
         }
         key_json = json.dumps(key_dict, sort_keys=True, default=str)
         h = hashlib.sha256(key_json.encode()).hexdigest()[:12]
@@ -770,9 +790,10 @@ class ReductionPipeline:
         dims: int,
         effective_params: dict[str, Any] | None = None,
         param_suffix: str = "",
+        fingerprint: str = "",
     ) -> dict[str, Any] | None:
         path = self._projection_cache_path(
-            embedding_name, method, dims, effective_params
+            embedding_name, method, dims, effective_params, fingerprint
         )
         if (
             path is None
@@ -802,9 +823,10 @@ class ReductionPipeline:
         dims: int,
         reduction: dict,
         effective_params: dict[str, Any] | None = None,
+        fingerprint: str = "",
     ) -> None:
         path = self._projection_cache_path(
-            embedding_name, method, dims, effective_params
+            embedding_name, method, dims, effective_params, fingerprint
         )
         if path is None:
             return
@@ -838,9 +860,13 @@ class ReductionPipeline:
             all_reductions.append(reduction)
 
         for emb_set in embedding_sets:
+            # Once per set, not per method: the digest is a full pass over the
+            # matrix (~0.9 s for Swiss-Prot) and every method sees the same one.
+            fingerprint = _embedding_fingerprint(emb_set)
+
             if emb_set.precomputed:
                 cached = self._load_cached_projection(
-                    emb_set.name, MDS_NAME, 2, global_params
+                    emb_set.name, MDS_NAME, 2, global_params, fingerprint=fingerprint
                 )
                 if cached:
                     add(cached)
@@ -854,7 +880,7 @@ class ReductionPipeline:
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 add(reduction)
                 self._save_projection_cache(
-                    emb_set.name, MDS_NAME, 2, reduction, global_params
+                    emb_set.name, MDS_NAME, 2, reduction, global_params, fingerprint
                 )
                 computed_count += 1
                 continue
@@ -873,7 +899,12 @@ class ReductionPipeline:
                 param_suffix = disambiguation_suffix(spec, method_counts)
 
                 cached = self._load_cached_projection(
-                    emb_set.name, method, dims, effective_params, param_suffix
+                    emb_set.name,
+                    method,
+                    dims,
+                    effective_params,
+                    param_suffix,
+                    fingerprint,
                 )
                 if cached:
                     add(cached)
@@ -892,7 +923,7 @@ class ReductionPipeline:
                 )
                 add(reduction)
                 self._save_projection_cache(
-                    emb_set.name, method, dims, reduction, effective_params
+                    emb_set.name, method, dims, reduction, effective_params, fingerprint
                 )
                 computed_count += 1
 

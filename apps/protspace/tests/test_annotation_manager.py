@@ -1488,3 +1488,151 @@ class TestUniProtFailureCacheWrite:
         ).to_pd()
 
         assert pd.read_parquet(cache_path)["length"].tolist() == ["110"]
+
+
+class TestPerIdentifierReuse:
+    """A cache covering part of a run must be filled in, not thrown away.
+
+    Adding sequences to an existing run is the routine case, and re-fetching
+    every source for every identifier costs hours at Swiss-Prot scale. Reuse is
+    therefore decided per identifier as well as per column.
+    """
+
+    NO_FETCHING = {
+        "uniprot": False,
+        "taxonomy": False,
+        "interpro": False,
+        "ted": False,
+        "biocentral": False,
+    }
+
+    @staticmethod
+    def _cached(identifiers, organism="9606"):
+        return pd.DataFrame(
+            {
+                "identifier": identifiers,
+                "organism_id": [organism] * len(identifiers),
+                "length": [f"{10 * (i + 1)}" for i in range(len(identifiers))],
+            }
+        )
+
+    @staticmethod
+    def _fetched(mock_retriever, annotations):
+        mock_retriever.return_value.failed_batch_count = 0
+        mock_retriever.return_value.fetch_annotations.return_value = annotations
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_only_the_missing_identifiers_are_fetched(self, mock_uniprot):
+        self._fetched(
+            mock_uniprot,
+            [ProteinAnnotations(identifier="P3", annotations={"length": "30"})],
+        )
+
+        result = ProteinAnnotationExtractor(
+            headers=["P1", "P2", "P3"],
+            annotations=["length"],
+            cached_data=self._cached(["P1", "P2"]),
+            sources_to_fetch=dict(self.NO_FETCHING),
+        ).to_pd()
+
+        assert mock_uniprot.call_args.kwargs["headers"] == ["P3"]
+        assert dict(zip(result["identifier"], result["length"], strict=True)) == {
+            "P1": "10",
+            "P2": "20",
+            "P3": "30",
+        }
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_a_cache_covering_the_run_fetches_nothing(self, mock_uniprot):
+        result = ProteinAnnotationExtractor(
+            headers=["P1", "P2"],
+            annotations=["length"],
+            cached_data=self._cached(["P1", "P2", "P3"]),
+            sources_to_fetch=dict(self.NO_FETCHING),
+        ).to_pd()
+
+        mock_uniprot.assert_not_called()
+        assert set(result["identifier"]) >= {"P1", "P2"}
+
+    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_taxonomy_is_looked_up_only_for_organisms_the_cache_lacks(
+        self, mock_uniprot, mock_taxonomy
+    ):
+        cached = self._cached(["P1"])
+        cached["genus"] = ["Homo"]
+        self._fetched(
+            mock_uniprot,
+            [
+                ProteinAnnotations(
+                    identifier="P2", annotations={"organism_id": "9606", "length": "30"}
+                ),
+                ProteinAnnotations(
+                    identifier="P3",
+                    annotations={"organism_id": "10090", "length": "40"},
+                ),
+            ],
+        )
+        mock_taxonomy.return_value.fetch_annotations.return_value = {
+            10090: {"annotations": {"genus": "Mus"}}
+        }
+
+        result = ProteinAnnotationExtractor(
+            headers=["P1", "P2", "P3"],
+            annotations=["length", "genus"],
+            cached_data=cached,
+            sources_to_fetch=dict(self.NO_FETCHING),
+        ).to_pd()
+
+        # 9606 is already in the cache; only the unseen organism is looked up.
+        assert mock_taxonomy.call_args.kwargs["taxon_ids"] == [10090]
+        assert dict(zip(result["identifier"], result["genus"], strict=True)) == {
+            "P1": "Homo",
+            "P2": "Homo",
+            "P3": "Mus",
+        }
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_rows_outside_the_run_survive_a_fetch(self, mock_uniprot, tmp_path):
+        self._fetched(
+            mock_uniprot,
+            [
+                ProteinAnnotations(
+                    identifier="P1", annotations={"organism_id": "9606", "length": "10"}
+                )
+            ],
+        )
+        cache_path = tmp_path / "all_annotations.parquet"
+
+        ProteinAnnotationExtractor(
+            headers=["P1"],
+            annotations=["length"],
+            output_path=cache_path,
+            cached_data=self._cached(["P1", "P2", "P3"]),
+        ).to_pd()
+
+        assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2", "P3"}
+
+    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    def test_a_failed_fill_in_does_not_cache_empty_values(self, mock_uniprot, tmp_path):
+        mock_uniprot.return_value.fetch_annotations.side_effect = RuntimeError("offline")
+        cache_path = tmp_path / "all_annotations.parquet"
+        cached = self._cached(["P1", "P2"])
+        cached.to_parquet(cache_path, index=False)
+
+        result = ProteinAnnotationExtractor(
+            headers=["P1", "P2", "P3"],
+            annotations=["length"],
+            output_path=cache_path,
+            cached_data=cached,
+            sources_to_fetch=dict(self.NO_FETCHING),
+        ).to_pd()
+
+        # The run still returns what it had, but P3's empty length must not be
+        # cached: the next run would read it as "this protein has no length".
+        assert dict(zip(result["identifier"], result["length"], strict=True)) == {
+            "P1": "10",
+            "P2": "20",
+            "P3": "",
+        }
+        assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2"}
