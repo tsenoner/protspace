@@ -60,7 +60,13 @@ def _current_ids(f: h5py.File, sequences: Mapping[str, str]) -> set[str]:
 
 
 def load_existing_ids(h5_path: Path) -> set[str]:
-    """Return the set of dataset keys already present in *h5_path*."""
+    """Every dataset key in *h5_path*, without checking residue identity.
+
+    Superseded by :func:`covered_ids`, which it delegates to, and kept as the
+    name out-of-repo callers already import. Resume goes through
+    :func:`begin_run` instead: a key on its own is no evidence the vector under
+    it was computed from the residues this run holds.
+    """
     return covered_ids(h5_path)
 
 
@@ -137,7 +143,19 @@ def begin_run(
             f.attrs[_BACKEND_ATTR] = backend
             f.attrs[_MODEL_ATTR] = model
 
-    return {k: v for k, v in sequences.items() if k not in current}
+    remaining = {k: v for k, v in sequences.items() if k not in current}
+    resumed = len(sequences) - len(remaining)
+    if resumed:
+        # Logged here rather than in each backend: both resume through this one
+        # call, so the count and its wording stay the same whoever is embedding.
+        logger.info(
+            "Resuming %s: %d of %d already embedded, %d to go.",
+            h5_path,
+            resumed,
+            len(sequences),
+            len(remaining),
+        )
+    return remaining
 
 
 def save_embeddings(

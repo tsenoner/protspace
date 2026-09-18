@@ -22,6 +22,20 @@ def _write(h5_path: Path, ids) -> None:
             f.create_dataset(pid, data=np.zeros(4, dtype=np.float32))
 
 
+def _save(
+    h5_path: Path, sequences, *, backend="local", model="prot_t5", fill=1.0
+) -> Path:
+    """Write one vector per identifier in *sequences*, stamped with its producer."""
+    store.save_embeddings(
+        h5_path,
+        {pid: np.full(4, fill, dtype=np.float32) for pid in sequences},
+        sequences=sequences,
+        backend=backend,
+        model=model,
+    )
+    return h5_path
+
+
 class TestFinishRun:
     def test_complete_run_succeeds(self, tmp_path):
         h5 = tmp_path / "o.h5"
@@ -105,19 +119,8 @@ class TestProducerOwnership:
     models end up mixed in one dataset.
     """
 
-    @staticmethod
-    def _owned(h5_path, *, backend="local", model="prot_t5", ids=("a",)):
-        store.save_embeddings(
-            h5_path,
-            {pid: np.zeros(4, dtype=np.float32) for pid in ids},
-            sequences=dict.fromkeys(ids, "MKV"),
-            backend=backend,
-            model=model,
-        )
-        return h5_path
-
     def test_another_backend_is_refused_and_named_with_the_remedies(self, tmp_path):
-        h5 = self._owned(tmp_path / "local-prot_t5.h5")
+        h5 = _save(tmp_path / "local-prot_t5.h5", {"a": "MKV"})
         with pytest.raises(ValueError) as exc:
             store.begin_run(
                 h5,
@@ -134,12 +137,12 @@ class TestProducerOwnership:
 
     def test_another_model_on_the_same_backend_is_refused(self, tmp_path):
         """Two models' vectors are as unmixable as two backends'."""
-        h5 = self._owned(tmp_path / "c.h5")
+        h5 = _save(tmp_path / "c.h5", {"a": "MKV"})
         with pytest.raises(ValueError, match="prot_t5"):
             store.begin_run(h5, {"a": "MKV"}, backend="local", model="esm2_8m")
 
     def test_a_refused_file_is_left_untouched(self, tmp_path):
-        h5 = self._owned(tmp_path / "c.h5")
+        h5 = _save(tmp_path / "c.h5", {"a": "MKV"})
         before = h5.read_bytes()
         with pytest.raises(ValueError):
             store.begin_run(h5, {"b": "MKW"}, backend="biocentral", model="m")
@@ -147,7 +150,7 @@ class TestProducerOwnership:
         assert h5.read_bytes() == before, "a refused cache must not be extended"
 
     def test_the_same_producer_resumes(self, tmp_path):
-        h5 = self._owned(tmp_path / "c.h5", ids=("a",))
+        h5 = _save(tmp_path / "c.h5", {"a": "MKV"})
         outstanding = store.begin_run(
             h5, {"a": "MKV", "b": "MKW"}, backend="local", model="prot_t5"
         )
@@ -179,19 +182,9 @@ class TestProducerOwnership:
 class TestSequenceIdentity:
     """A vector belongs to the residues it was computed from."""
 
-    @staticmethod
-    def _save(h5_path, sequences, fill=1.0):
-        store.save_embeddings(
-            h5_path,
-            {pid: np.full(4, fill, dtype=np.float32) for pid in sequences},
-            sequences=sequences,
-            backend="local",
-            model="prot_t5",
-        )
-
     def test_a_changed_sequence_is_outstanding_again(self, tmp_path):
         h5 = tmp_path / "c.h5"
-        self._save(h5, {"a": "MKV", "b": "MKW"})
+        _save(h5, {"a": "MKV", "b": "MKW"})
         outstanding = store.begin_run(
             h5, {"a": "MKV", "b": "EDITED"}, backend="local", model="prot_t5"
         )
@@ -201,8 +194,8 @@ class TestSequenceIdentity:
         """save_embeddings skips identifiers already present, so without this the
         re-embed is computed and then thrown away."""
         h5 = tmp_path / "c.h5"
-        self._save(h5, {"a": "MKV"}, fill=1.0)
-        self._save(h5, {"a": "EDITED"}, fill=2.0)
+        _save(h5, {"a": "MKV"}, fill=1.0)
+        _save(h5, {"a": "EDITED"}, fill=2.0)
         with h5py.File(h5, "r") as f:
             assert f["a"][:].tolist() == [2.0] * 4
             assert f["a"].attrs["protspace_sequence_sha256"] == store.sequence_digest(
@@ -211,8 +204,8 @@ class TestSequenceIdentity:
 
     def test_an_unchanged_sequence_keeps_its_vector(self, tmp_path):
         h5 = tmp_path / "c.h5"
-        self._save(h5, {"a": "MKV"}, fill=1.0)
-        self._save(h5, {"a": "MKV"}, fill=2.0)
+        _save(h5, {"a": "MKV"}, fill=1.0)
+        _save(h5, {"a": "MKV"}, fill=2.0)
         with h5py.File(h5, "r") as f:
             assert f["a"][:].tolist() == [1.0] * 4
 
@@ -228,14 +221,14 @@ class TestSequenceIdentity:
         """Its old vector is still on disk under its old residues, so a presence
         check alone reports the run complete."""
         h5 = tmp_path / "c.h5"
-        self._save(h5, {"a": "MKV", "b": "MKW"})
+        _save(h5, {"a": "MKV", "b": "MKW"})
         with pytest.raises(ValueError, match="Embedding incomplete"):
             store.finish_run(h5, ["a", "b"], sequences={"a": "EDITED", "b": "MKW"})
 
     def test_finish_run_accepts_a_stale_protein_that_was_re_embedded(self, tmp_path):
         h5 = tmp_path / "c.h5"
-        self._save(h5, {"a": "MKV"}, fill=1.0)
-        self._save(h5, {"a": "EDITED"}, fill=2.0)
+        _save(h5, {"a": "MKV"}, fill=1.0)
+        _save(h5, {"a": "EDITED"}, fill=2.0)
         assert store.finish_run(h5, ["a"], sequences={"a": "EDITED"}) == h5
 
     def test_resume_reads_the_digests_in_one_pass(self, tmp_path, monkeypatch):
@@ -243,7 +236,7 @@ class TestSequenceIdentity:
         not one per protein."""
         h5 = tmp_path / "c.h5"
         sequences = {f"p{i}": "MKV" for i in range(50)}
-        self._save(h5, sequences)
+        _save(h5, sequences)
 
         opens = []
         real_file = h5py.File

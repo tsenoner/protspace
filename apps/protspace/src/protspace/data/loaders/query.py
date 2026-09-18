@@ -30,6 +30,29 @@ def query_cache_path(cache_dir: Path, query: str) -> Path:
     return cache_dir / "queries" / f"{digest}.fasta"
 
 
+def resolve_query_fasta(
+    query: str, cache_dir: Path | None, refetch_stages: frozenset[str]
+) -> tuple[list[str], Path]:
+    """Return ``(headers, fasta_path)`` for *query*, reusing only its own FASTA.
+
+    Path, reuse rule and download live together because they are one decision:
+    whether the retained FASTA on disk is the one *query* would produce. A caller
+    that owned the rule separately would have to be changed in step with the
+    path, and the two would drift.
+    """
+    fasta_save = query_cache_path(cache_dir, query) if cache_dir else None
+    if (
+        fasta_save
+        and fasta_save.exists()
+        and fasta_save.stat().st_size > 0
+        and "query" not in refetch_stages
+    ):
+        headers = extract_identifiers_from_fasta(fasta_save)
+        logger.warning("Using cached FASTA (%s sequences)", f"{len(headers):,}")
+        return headers, fasta_save
+    return query_uniprot(query, save_to=fasta_save)
+
+
 def query_uniprot(
     query: str,
     *,
@@ -71,20 +94,12 @@ def query_uniprot(
                         temp_file.write(chunk)
                         pbar.update(len(chunk))
 
-        if save_to is None:
-            # Nothing is retained, so the extraction is the caller's own file.
-            extracted = temp_gz_file.with_suffix("")
-            try:
-                identifiers = _extract_fasta(temp_gz_file, extracted)
-            except BaseException:
-                extracted.unlink(missing_ok=True)
-                raise
-        else:
-            # A retained FASTA's existence is the next run's cache hit, so it may
-            # not appear until the whole stream has been decompressed.
-            extracted = Path(save_to)
-            with staged_write(extracted) as staged:
-                identifiers = _extract_fasta(temp_gz_file, staged)
+        # Published by rename either way: a retained FASTA's existence is the next
+        # run's cache hit, so it may not appear until the whole stream has been
+        # decompressed. Without *save_to* the extraction is the caller's own file.
+        extracted = Path(save_to) if save_to else temp_gz_file.with_suffix("")
+        with staged_write(extracted) as staged:
+            identifiers = _extract_fasta(temp_gz_file, staged)
 
         logger.info(f"Downloaded and extracted {len(identifiers)} sequences")
         return identifiers, extracted

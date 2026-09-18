@@ -75,14 +75,12 @@ def test_query_uniprot_publishes_fasta_with_process_umask(tmp_path, monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# Retained query FASTA ownership (CLI)
+# Retained query FASTA ownership
 # ---------------------------------------------------------------------------
 
 
 def _recording_download(monkeypatch, fasta=">P1\nAAAA\n"):
     """Record every query that reaches query_uniprot, and write its FASTA."""
-    from protspace.cli import prepare as prepare_module
-
     downloaded = []
 
     def fake_query_uniprot(query, *, save_to=None):
@@ -92,16 +90,14 @@ def _recording_download(monkeypatch, fasta=">P1\nAAAA\n"):
         return ["P1"], save_to
 
     monkeypatch.setattr(query_module, "query_uniprot", fake_query_uniprot)
-    return prepare_module, downloaded
+    return downloaded
 
 
 def test_a_second_query_does_not_reuse_the_first_query_fasta(tmp_path, monkeypatch):
-    prepare_module, downloaded = _recording_download(monkeypatch)
+    downloaded = _recording_download(monkeypatch)
 
-    _, first = prepare_module._resolve_query_fasta(
-        "family:globin", tmp_path, frozenset()
-    )
-    _, second = prepare_module._resolve_query_fasta(
+    _, first = query_module.resolve_query_fasta("family:globin", tmp_path, frozenset())
+    _, second = query_module.resolve_query_fasta(
         "family:phosphatase", tmp_path, frozenset()
     )
 
@@ -110,11 +106,11 @@ def test_a_second_query_does_not_reuse_the_first_query_fasta(tmp_path, monkeypat
 
 
 def test_the_same_query_reuses_its_retained_fasta(tmp_path, monkeypatch):
-    prepare_module, downloaded = _recording_download(monkeypatch)
+    downloaded = _recording_download(monkeypatch)
     query = "family:globin"
 
-    _, first = prepare_module._resolve_query_fasta(query, tmp_path, frozenset())
-    headers, again = prepare_module._resolve_query_fasta(query, tmp_path, frozenset())
+    _, first = query_module.resolve_query_fasta(query, tmp_path, frozenset())
+    headers, again = query_module.resolve_query_fasta(query, tmp_path, frozenset())
 
     assert downloaded == [query]
     assert again == first
@@ -122,10 +118,10 @@ def test_the_same_query_reuses_its_retained_fasta(tmp_path, monkeypatch):
 
 
 def test_refetch_query_downloads_again(tmp_path, monkeypatch):
-    prepare_module, downloaded = _recording_download(monkeypatch)
+    downloaded = _recording_download(monkeypatch)
     query = "family:globin"
 
-    prepare_module._resolve_query_fasta(query, tmp_path, frozenset())
-    prepare_module._resolve_query_fasta(query, tmp_path, frozenset({"query"}))
+    query_module.resolve_query_fasta(query, tmp_path, frozenset())
+    query_module.resolve_query_fasta(query, tmp_path, frozenset({"query"}))
 
     assert downloaded == [query, query]

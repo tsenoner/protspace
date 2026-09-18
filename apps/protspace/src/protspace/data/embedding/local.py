@@ -286,9 +286,6 @@ def embed_sequences(
     # Claims the file for this backend and model, and drops the proteins it
     # already holds a current vector for (see store.begin_run).
     remaining = begin_run(h5_path, sequences, backend="local", model=embedder)
-    resumed = len(sequences) - len(remaining)
-    if resumed:
-        logger.info("Resuming: %d already embedded in %s", resumed, h5_path)
 
     # Sequences a capability limit puts out of reach: recorded as skipped rather
     # than failed, so they are reported and named but do not fail the run.

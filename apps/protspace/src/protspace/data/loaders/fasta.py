@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection, Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -126,9 +127,14 @@ def _restrict_to(embedding_set: EmbeddingSet, wanted: Collection[str]) -> Embedd
         len(keep),
         len(embedding_set.headers),
     )
-    embedding_set.data = embedding_set.data[keep]
-    embedding_set.headers = [embedding_set.headers[i] for i in keep]
-    return embedding_set
+    # A new set rather than an edit in place: "restrict to" reads as a query,
+    # and a caller still holding the loaded set would otherwise find its rows
+    # silently gone.
+    return replace(
+        embedding_set,
+        data=embedding_set.data[keep],
+        headers=[embedding_set.headers[i] for i in keep],
+    )
 
 
 def check_fasta_coverage(

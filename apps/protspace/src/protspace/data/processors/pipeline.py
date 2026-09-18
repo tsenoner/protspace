@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from protspace.data.io.atomic import staged_write
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import (
     format_param_suffix,
@@ -438,6 +439,7 @@ class ReductionPipeline:
         from protspace.data.annotations.manager import (
             ProteinAnnotationManager,
             resolve_fasta_sequence_length,
+            uncached_headers,
         )
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
@@ -478,24 +480,20 @@ class ReductionPipeline:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
             cache_path = intermediate_dir / "all_annotations.parquet"
 
-            cached_df = None
-            missing_identifiers: set[str] = set()
             if cache_path.exists():
                 cached_df = pd.read_parquet(cache_path)
-                missing_identifiers = set(map(str, headers)).difference(
-                    map(str, cached_df.get("identifier", ()))
-                )
+                missing_identifiers = uncached_headers(headers, cached_df)
                 if missing_identifiers:
                     # Rows the cache has no entry for. The manager fetches each
                     # source for exactly these and reuses cached values for the
                     # rest, so the cache is filled in rather than rebuilt.
                     logger.warning(
-                        "Annotation cache covers none of %d requested "
-                        "identifier(s); fetching annotations for them",
+                        "Annotation cache lacks %d of %d requested identifier(s); "
+                        "fetching annotations for them",
                         len(missing_identifiers),
+                        len(headers),
                     )
 
-            if cached_df is not None:
                 # Repair at the cache-read boundary, which dominates every path
                 # that reuses a stored column, then persist so it stays a
                 # one-time cost rather than a rewrite on every resumed run.
@@ -504,7 +502,8 @@ class ReductionPipeline:
                         "Rewrote legacy 'unclassified' TED domain labels in the "
                         "cached annotations to TED's '-'."
                     )
-                    cached_df.to_parquet(cache_path, index=False)
+                    with staged_write(cache_path) as staged:
+                        cached_df.to_parquet(staged, index=False)
                 cached_annotations = set(cached_df.columns) - {"identifier"}
 
                 if annotations_list is None:
@@ -747,7 +746,8 @@ class ReductionPipeline:
         method: str,
         dims: int,
         effective_params: dict[str, Any] | None = None,
-        fingerprint: str = "",
+        *,
+        fingerprint: str,
     ) -> Path | None:
         cache_dir = self.config.intermediate_dir
         if not cache_dir or not self.config.keep_tmp:
@@ -770,10 +770,11 @@ class ReductionPipeline:
         dims: int,
         effective_params: dict[str, Any] | None = None,
         param_suffix: str = "",
-        fingerprint: str = "",
+        *,
+        fingerprint: str,
     ) -> dict[str, Any] | None:
         path = self._projection_cache_path(
-            embedding_name, method, dims, effective_params, fingerprint
+            embedding_name, method, dims, effective_params, fingerprint=fingerprint
         )
         if (
             path is None
@@ -803,16 +804,21 @@ class ReductionPipeline:
         dims: int,
         reduction: dict,
         effective_params: dict[str, Any] | None = None,
-        fingerprint: str = "",
+        *,
+        fingerprint: str,
     ) -> None:
         path = self._projection_cache_path(
-            embedding_name, method, dims, effective_params, fingerprint
+            embedding_name, method, dims, effective_params, fingerprint=fingerprint
         )
         if path is None:
             return
-        np.savez(
-            path, data=reduction["data"], info=np.array(json.dumps(reduction["info"]))
-        )
+        # Staged: `_load_cached_projection` trusts this entry on `exists()` alone,
+        # so a half-written zip would make every later run fail to load it.
+        # Written through a handle because `np.savez` appends `.npz` to a path.
+        with staged_write(path) as staged, open(staged, "wb") as fh:
+            np.savez(
+                fh, data=reduction["data"], info=np.array(json.dumps(reduction["info"]))
+            )
 
     # --- Dimensionality reduction ---
 
@@ -842,7 +848,14 @@ class ReductionPipeline:
         for emb_set in embedding_sets:
             # Once per set, not per method: the digest is a full pass over the
             # matrix (~0.9 s for Swiss-Prot) and every method sees the same one.
-            fingerprint = _embedding_fingerprint(emb_set)
+            # Not at all when nothing will be cached -- `_projection_cache_path`
+            # returns None then, so the digest would be a full scan of a 2 GB
+            # matrix computed for a key nobody looks up.
+            fingerprint = (
+                _embedding_fingerprint(emb_set)
+                if self.config.keep_tmp and self.config.intermediate_dir
+                else ""
+            )
 
             if emb_set.precomputed:
                 cached = self._load_cached_projection(
@@ -860,7 +873,12 @@ class ReductionPipeline:
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 add(reduction)
                 self._save_projection_cache(
-                    emb_set.name, MDS_NAME, 2, reduction, global_params, fingerprint
+                    emb_set.name,
+                    MDS_NAME,
+                    2,
+                    reduction,
+                    global_params,
+                    fingerprint=fingerprint,
                 )
                 computed_count += 1
                 continue
@@ -884,7 +902,7 @@ class ReductionPipeline:
                     dims,
                     effective_params,
                     param_suffix,
-                    fingerprint,
+                    fingerprint=fingerprint,
                 )
                 if cached:
                     add(cached)
@@ -903,7 +921,12 @@ class ReductionPipeline:
                 )
                 add(reduction)
                 self._save_projection_cache(
-                    emb_set.name, method, dims, reduction, effective_params, fingerprint
+                    emb_set.name,
+                    method,
+                    dims,
+                    reduction,
+                    effective_params,
+                    fingerprint=fingerprint,
                 )
                 computed_count += 1
 

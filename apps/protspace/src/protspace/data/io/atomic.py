@@ -31,7 +31,11 @@ def staged_write(path: Path) -> Iterator[Path]:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    staged = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    # Short random part: the staging name is the destination's plus this, and a
+    # full uuid4 hex adds 38 characters to a name the user chose -- enough to
+    # push a long bundle name past the filesystem's 255-byte limit on a write
+    # that used to work.
+    staged = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
     try:
         yield staged
         os.replace(staged, path)

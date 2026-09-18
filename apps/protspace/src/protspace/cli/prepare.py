@@ -237,29 +237,6 @@ def _parse_refetch(raw: str | None) -> frozenset[str]:
     return frozenset(stages)
 
 
-def _resolve_query_fasta(
-    query: str, cache_dir: Path | None, refetch_stages: frozenset[str]
-) -> tuple[list[str], Path]:
-    """Return ``(headers, fasta_path)`` for *query*, reusing only its own FASTA."""
-    from protspace.data.loaders.query import (
-        extract_identifiers_from_fasta,
-        query_cache_path,
-        query_uniprot,
-    )
-
-    fasta_save = query_cache_path(cache_dir, query) if cache_dir else None
-    if (
-        fasta_save
-        and fasta_save.exists()
-        and fasta_save.stat().st_size > 0
-        and "query" not in refetch_stages
-    ):
-        headers = extract_identifiers_from_fasta(fasta_save)
-        logger.warning("Using cached FASTA (%s sequences)", f"{len(headers):,}")
-        return headers, fasta_save
-    return query_uniprot(query, save_to=fasta_save)
-
-
 def _embed_all(
     embedders: list[str],
     fasta_path: Path,
@@ -450,7 +427,9 @@ def prepare(
 
     try:
         if query:
-            headers, fasta_path = _resolve_query_fasta(query, cache_dir, refetch_stages)
+            from protspace.data.loaders.query import resolve_query_fasta
+
+            headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
 

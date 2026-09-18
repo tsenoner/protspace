@@ -41,6 +41,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.annotations.transformers.transformer import AnnotationTransformer
+from protspace.data.io.atomic import staged_write
 from protspace.data.io.fasta import count_residues
 from protspace.data.io.formatters import DataFormatter
 from protspace.data.io.writers import AnnotationWriter
@@ -64,6 +65,26 @@ def resolve_fasta_sequence_length(
         return length
     residues = count_residues(sequence)
     return str(residues) if residues > 0 else length
+
+
+def uncached_headers(headers: list[str], cached_data: pd.DataFrame | None) -> list[str]:
+    """Requested identifiers *cached_data* holds no row for, in request order.
+
+    One rule, one implementation: the pipeline decides from it whether a cache
+    may serve a run at all, and this manager decides from it which identifiers
+    each source is fetched for. Two copies would let the pipeline serve a frame
+    the manager knows is short.
+
+    The identifier column is the frame's first, which is how the cache is
+    written.
+    """
+    if cached_data is None or cached_data.empty:
+        # No cache holds no rows, so every requested identifier is uncached.
+        # Answering "none missing" here would let a caller serve an empty frame
+        # as a complete one.
+        return list(headers)
+    cached_ids = set(cached_data[cached_data.columns[0]].astype(str))
+    return [h for h in headers if str(h) not in cached_ids]
 
 
 class ProteinAnnotationManager:
@@ -146,7 +167,7 @@ class ProteinAnnotationManager:
         # Identifiers this run wants that the cache has no row for. Every source
         # served from that cache is fetched for exactly these, so "added a few
         # sequences" costs a few lookups rather than a full refetch.
-        fill_in = self._uncached_headers()
+        fill_in = uncached_headers(self.headers, self.cached_data)
 
         def filled_in(cached_source, fetch):
             """Cached annotations plus a fetch for the identifiers they lack."""
@@ -192,13 +213,13 @@ class ProteinAnnotationManager:
             )
         )
         uniprot_annotations = self._fill_missing_fasta_lengths(uniprot_annotations)
+        # One call either way: `cached_taxonomy` is None whenever taxonomy is
+        # being fetched outright, and the helper treats that as "nothing cached".
         taxonomy_annotations = (
-            self._fetch_taxonomy(uniprot_annotations, failed_sources)
-            if self.sources_to_fetch["taxonomy"]
-            else self._fetch_taxonomy(
+            self._fetch_taxonomy(
                 uniprot_annotations, failed_sources, cached=cached_taxonomy
             )
-            if cached_taxonomy and fill_in
+            if self.sources_to_fetch["taxonomy"] or (cached_taxonomy and fill_in)
             else cached_taxonomy
         )
         interpro_annotations = (
@@ -271,13 +292,6 @@ class ProteinAnnotationManager:
             return df[columns_to_keep]
 
         return df
-
-    def _uncached_headers(self) -> list[str]:
-        """Requested identifiers the cache holds no row for, in request order."""
-        if self.cached_data is None or self.cached_data.empty:
-            return []
-        cached_ids = set(self.cached_data[self.cached_data.columns[0]].astype(str))
-        return [h for h in self.headers if str(h) not in cached_ids]
 
     def _with_retained_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         """Append cached rows for identifiers outside this run, when they fit.
@@ -392,7 +406,11 @@ class ProteinAnnotationManager:
         """Persist *df* as the annotation cache, stamped with the current semantics."""
         df = df.copy()
         df.attrs.update(annotation_cache_version_attrs())
-        df.to_parquet(self.output_path, index=False)
+        # Staged: with retained rows folded in, this frame is a superset holding
+        # rows for identifiers no other file has, so a half-written cache loses
+        # data rather than costing one refetch.
+        with staged_write(self.output_path) as staged:
+            df.to_parquet(staged, index=False)
 
     def _fill_missing_fasta_lengths(
         self, proteins: list[ProteinAnnotations]
@@ -506,7 +524,11 @@ class ProteinAnnotationManager:
             self.incomplete_sources.add("taxonomy")
             failed_sources.append(f"Taxonomy ({str(e)})")
             logger.warning(f"Failed to retrieve Taxonomy annotations: {e}")
-            return {}
+            # What was already resolved survives the failure. A fill-in run
+            # reaches here to look up one unseen organism, and discarding
+            # *cached* would blank the taxonomy columns of every protein in the
+            # run over a lookup that only concerned the new ones.
+            return dict(cached)
 
     def _build_sequence_map(
         self, uniprot_annotations: list[ProteinAnnotations]
@@ -639,22 +661,21 @@ class ProteinAnnotationManager:
         if not available:
             return []
 
-        # Convert DataFrame to ProteinAnnotations format
-        result = []
+        # Column-wise rather than `iterrows`: the cache retains rows for
+        # identifiers outside the run, so this walks the whole frame on every
+        # fill-in run, and `iterrows` builds a Series per row (and upcasts a
+        # mixed-dtype row to one common dtype on the way).
         identifier_col = self.cached_data.columns[0]  # First column is identifier
+        identifiers = self.cached_data[identifier_col].tolist()
+        columns = {a: self.cached_data[a].tolist() for a in available}
 
-        for _, row in self.cached_data.iterrows():
-            annotations_dict = {}
-            for annotation in available:
-                annotations_dict[annotation] = row[annotation]
-
-            result.append(
-                ProteinAnnotations(
-                    identifier=row[identifier_col], annotations=annotations_dict
-                )
+        return [
+            ProteinAnnotations(
+                identifier=identifier,
+                annotations={a: values[i] for a, values in columns.items()},
             )
-
-        return result
+            for i, identifier in enumerate(identifiers)
+        ]
 
     def _extract_cached_taxonomy(self, taxonomy_annotations: list[str]) -> dict:
         """
@@ -680,19 +701,22 @@ class ProteinAnnotationManager:
         # Convert to taxonomy format: {organism_id: {"annotations": {annotation: value}}}
         taxonomy_dict = {}
 
+        # Column-wise for the same reason as `_extract_cached_source`: the cache
+        # is a superset of the run and `iterrows` costs a Series per row.
+        organism_ids = self.cached_data[TAXONOMY_LOOKUP_ANNOTATION].tolist()
+        columns = {a: self.cached_data[a].tolist() for a in available}
+
         # Group by organism_id
-        for _, row in self.cached_data.iterrows():
-            organism_id = row[TAXONOMY_LOOKUP_ANNOTATION]
+        for i, organism_id in enumerate(organism_ids):
             if pd.isna(organism_id) or organism_id == "":
                 continue
 
             try:
                 org_id = int(organism_id)
                 if org_id not in taxonomy_dict:
-                    annotations_dict = {}
-                    for annotation in available:
-                        annotations_dict[annotation] = row[annotation]
-                    taxonomy_dict[org_id] = {"annotations": annotations_dict}
+                    taxonomy_dict[org_id] = {
+                        "annotations": {a: values[i] for a, values in columns.items()}
+                    }
             except (ValueError, TypeError):
                 pass
 

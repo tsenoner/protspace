@@ -12,8 +12,10 @@ import numpy as np
 from biocentral_api import BiocentralAPI, CommonEmbedder, batched
 from tqdm import tqdm
 
-# Re-exported: the HDF5 layer moved to `store` so neither backend owns it, but
-# local.py, cli/annotate.py and existing importers still reach it from here.
+# Re-exported: the HDF5 layer moved to `store` so neither backend owns it. All
+# but `load_existing_ids` are used below; they stay importable from here for
+# out-of-repo callers that predate the move, which is the only reason
+# `load_existing_ids` outlived its last in-repo caller (`begin_run` replaced it).
 from protspace.data.embedding.store import (  # noqa: F401
     begin_run,
     finish_run,
@@ -152,14 +154,6 @@ def embed_sequences(
     # Resume: claim the file for this backend and model, and drop the sequences
     # it already holds a current vector for (see store.begin_run).
     remaining = begin_run(h5_path, sequences, backend="biocentral", model=embedder)
-    resumed = len(sequences) - len(remaining)
-    if resumed:
-        logger.info("Found %d existing embeddings in %s", resumed, h5_path)
-    logger.info(
-        "Remaining sequences to embed: %d (skipped %d)",
-        len(remaining),
-        resumed,
-    )
 
     if not remaining:
         logger.info(
