@@ -420,10 +420,6 @@ def prepare(
     # --- Build embedding sets ---
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
-    from protspace.data.loaders.query import (
-        extract_identifiers_from_fasta,
-        query_uniprot,
-    )
 
     embed_config = build_embed_config(backend, batch_size, max_length)
     embedding_sets: list[EmbeddingSet] = []
@@ -431,21 +427,9 @@ def prepare(
 
     try:
         if query:
-            fasta_save = cache_dir / "sequences.fasta" if cache_dir else None
-            if (
-                fasta_save
-                and fasta_save.exists()
-                and fasta_save.stat().st_size > 0
-                and "query" not in refetch_stages
-            ):
-                headers = extract_identifiers_from_fasta(fasta_save)
-                logger.warning(
-                    "Using cached FASTA (%s sequences)",
-                    f"{len(headers):,}",
-                )
-                fasta_path = fasta_save
-            else:
-                headers, fasta_path = query_uniprot(query, save_to=fasta_save)
+            from protspace.data.loaders.query import resolve_query_fasta
+
+            headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
 

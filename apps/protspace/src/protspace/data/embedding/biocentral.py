@@ -12,9 +12,12 @@ import numpy as np
 from biocentral_api import BiocentralAPI, CommonEmbedder, batched
 from tqdm import tqdm
 
-# Re-exported: the HDF5 layer moved to `store` so neither backend owns it, but
-# local.py, cli/annotate.py and existing importers still reach it from here.
+# Re-exported: the HDF5 layer moved to `store` so neither backend owns it. All
+# but `load_existing_ids` are used below; they stay importable from here for
+# out-of-repo callers that predate the move, which is the only reason
+# `load_existing_ids` outlived its last in-repo caller (`begin_run` replaced it).
 from protspace.data.embedding.store import (  # noqa: F401
+    begin_run,
     finish_run,
     load_existing_ids,
     save_embeddings,
@@ -148,16 +151,9 @@ def embed_sequences(
     # Reject HDF5-hostile identifiers before spending a single API call on them.
     validate_headers(sequences)
 
-    # Resume: skip already-embedded sequences
-    existing_ids = load_existing_ids(h5_path)
-    if existing_ids:
-        logger.info("Found %d existing embeddings in %s", len(existing_ids), h5_path)
-    remaining = {k: v for k, v in sequences.items() if k not in existing_ids}
-    logger.info(
-        "Remaining sequences to embed: %d (skipped %d)",
-        len(remaining),
-        len(sequences) - len(remaining),
-    )
+    # Resume: claim the file for this backend and model, and drop the sequences
+    # it already holds a current vector for (see store.begin_run).
+    remaining = begin_run(h5_path, sequences, backend="biocentral", model=embedder)
 
     if not remaining:
         logger.info(
@@ -239,7 +235,13 @@ def embed_sequences(
                     seq = unique_seqs[rep_id]
                     for pid in seq_to_ids[seq]:
                         expanded[pid] = emb
-                save_embeddings(h5_path, expanded)
+                save_embeddings(
+                    h5_path,
+                    expanded,
+                    sequences=remaining,
+                    backend="biocentral",
+                    model=embedder,
+                )
 
                 missing_reps = batch_seqs.keys() - emb_dict.keys()
                 if missing_reps:
@@ -279,6 +281,9 @@ def embed_sequences(
     return finish_run(
         h5_path,
         remaining,
+        # Scoped to this run's own work: begin_run already proved the rest
+        # current, and re-reading their digests doubles the scan at 570K.
+        sequences=remaining,
         context=f"{failed_batches} of {len(api_batches)} batch(es) failed",
         retry_hint="Check the Biocentral server status and rerun.",
     )

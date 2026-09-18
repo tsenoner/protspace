@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from protspace.data.io.atomic import staged_write
 from protspace.data.loaders import EmbeddingSet
 from protspace.data.loaders.embedding_set import (
     format_param_suffix,
@@ -116,6 +117,24 @@ class PipelineConfig:
     annotations: list[str] | None = None
     intermediate_dir: Path | None = None
     reducer_params: ReducerParams = field(default_factory=ReducerParams)
+
+
+def _embedding_fingerprint(emb_set: EmbeddingSet) -> str:
+    """Digest exactly what the reducer will be handed: identifiers and matrix.
+
+    The embedding name says where numbers came from, not which numbers they are:
+    a resumed embedding cache, a re-embedded input, a narrower intersection and a
+    reordered input all keep the name. Coordinates are stored as bare rows and
+    paired positionally with the current identifiers on load, so the identifier
+    order belongs in the digest too -- reusing a projection across a reorder
+    relabels every point.
+    """
+    data = np.ascontiguousarray(emb_set.data)
+    digest = hashlib.sha256()
+    digest.update("\0".join(emb_set.headers).encode())
+    digest.update(f"{data.dtype}{data.shape}".encode())
+    digest.update(memoryview(data).cast("B"))
+    return digest.hexdigest()[:16]
 
 
 # Valid override parameter names (from ReducerParams fields)
@@ -334,10 +353,14 @@ class ReductionPipeline:
         """Extract protein sequences from FASTA files referenced by embedding sets."""
         from protspace.data.loaders.fasta import parse_fasta_normalized
 
+        # One FASTA typically backs every embedder's set, so parse each file once.
+        fasta_paths = dict.fromkeys(
+            Path(emb_set.fasta_path) for emb_set in embedding_sets if emb_set.fasta_path
+        )
         sequences = {}
-        for emb_set in embedding_sets:
-            if emb_set.fasta_path and Path(emb_set.fasta_path).exists():
-                sequences.update(parse_fasta_normalized(Path(emb_set.fasta_path)))
+        for fasta_path in fasta_paths:
+            if fasta_path.exists():
+                sequences.update(parse_fasta_normalized(fasta_path))
         return sequences
 
     def _validate_headers(self, embedding_sets: list[EmbeddingSet]) -> list[str]:
@@ -416,6 +439,7 @@ class ReductionPipeline:
         from protspace.data.annotations.manager import (
             ProteinAnnotationManager,
             resolve_fasta_sequence_length,
+            uncached_headers,
         )
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
@@ -458,6 +482,18 @@ class ReductionPipeline:
 
             if cache_path.exists():
                 cached_df = pd.read_parquet(cache_path)
+                missing_identifiers = uncached_headers(headers, cached_df)
+                if missing_identifiers:
+                    # Rows the cache has no entry for. The manager fetches each
+                    # source for exactly these and reuses cached values for the
+                    # rest, so the cache is filled in rather than rebuilt.
+                    logger.warning(
+                        "Annotation cache lacks %d of %d requested identifier(s); "
+                        "fetching annotations for them",
+                        len(missing_identifiers),
+                        len(headers),
+                    )
+
                 # Repair at the cache-read boundary, which dominates every path
                 # that reuses a stored column, then persist so it stays a
                 # one-time cost rather than a rewrite on every resumed run.
@@ -466,7 +502,8 @@ class ReductionPipeline:
                         "Rewrote legacy 'unclassified' TED domain labels in the "
                         "cached annotations to TED's '-'."
                     )
-                    cached_df.to_parquet(cache_path, index=False)
+                    with staged_write(cache_path) as staged:
+                        cached_df.to_parquet(staged, index=False)
                 cached_annotations = set(cached_df.columns) - {"identifier"}
 
                 if annotations_list is None:
@@ -502,7 +539,12 @@ class ReductionPipeline:
 
                 missing = required - cached_annotations
 
-                if not missing and not refetching_annotations and not refresh_columns:
+                if (
+                    not missing
+                    and not missing_identifiers
+                    and not refetching_annotations
+                    and not refresh_columns
+                ):
                     logger.warning("Using cached annotations")
                     if annotations_list:
                         cols = ["identifier"] + [
@@ -704,6 +746,8 @@ class ReductionPipeline:
         method: str,
         dims: int,
         effective_params: dict[str, Any] | None = None,
+        *,
+        fingerprint: str,
     ) -> Path | None:
         cache_dir = self.config.intermediate_dir
         if not cache_dir or not self.config.keep_tmp:
@@ -713,6 +757,7 @@ class ReductionPipeline:
             "method": method,
             "dims": dims,
             "params": effective_params or asdict(self.config.reducer_params),
+            "fingerprint": fingerprint,
         }
         key_json = json.dumps(key_dict, sort_keys=True, default=str)
         h = hashlib.sha256(key_json.encode()).hexdigest()[:12]
@@ -725,9 +770,11 @@ class ReductionPipeline:
         dims: int,
         effective_params: dict[str, Any] | None = None,
         param_suffix: str = "",
+        *,
+        fingerprint: str,
     ) -> dict[str, Any] | None:
         path = self._projection_cache_path(
-            embedding_name, method, dims, effective_params
+            embedding_name, method, dims, effective_params, fingerprint=fingerprint
         )
         if (
             path is None
@@ -757,15 +804,21 @@ class ReductionPipeline:
         dims: int,
         reduction: dict,
         effective_params: dict[str, Any] | None = None,
+        *,
+        fingerprint: str,
     ) -> None:
         path = self._projection_cache_path(
-            embedding_name, method, dims, effective_params
+            embedding_name, method, dims, effective_params, fingerprint=fingerprint
         )
         if path is None:
             return
-        np.savez(
-            path, data=reduction["data"], info=np.array(json.dumps(reduction["info"]))
-        )
+        # Staged: `_load_cached_projection` trusts this entry on `exists()` alone,
+        # so a half-written zip would make every later run fail to load it.
+        # Written through a handle because `np.savez` appends `.npz` to a path.
+        with staged_write(path) as staged, open(staged, "wb") as fh:
+            np.savez(
+                fh, data=reduction["data"], info=np.array(json.dumps(reduction["info"]))
+            )
 
     # --- Dimensionality reduction ---
 
@@ -793,9 +846,20 @@ class ReductionPipeline:
             all_reductions.append(reduction)
 
         for emb_set in embedding_sets:
+            # Once per set, not per method: the digest is a full pass over the
+            # matrix (~0.9 s for Swiss-Prot) and every method sees the same one.
+            # Not at all when nothing will be cached -- `_projection_cache_path`
+            # returns None then, so the digest would be a full scan of a 2 GB
+            # matrix computed for a key nobody looks up.
+            fingerprint = (
+                _embedding_fingerprint(emb_set)
+                if self.config.keep_tmp and self.config.intermediate_dir
+                else ""
+            )
+
             if emb_set.precomputed:
                 cached = self._load_cached_projection(
-                    emb_set.name, MDS_NAME, 2, global_params
+                    emb_set.name, MDS_NAME, 2, global_params, fingerprint=fingerprint
                 )
                 if cached:
                     add(cached)
@@ -809,7 +873,12 @@ class ReductionPipeline:
                 reduction["name"] = format_projection_name(emb_set.name, MDS_NAME, 2)
                 add(reduction)
                 self._save_projection_cache(
-                    emb_set.name, MDS_NAME, 2, reduction, global_params
+                    emb_set.name,
+                    MDS_NAME,
+                    2,
+                    reduction,
+                    global_params,
+                    fingerprint=fingerprint,
                 )
                 computed_count += 1
                 continue
@@ -828,7 +897,12 @@ class ReductionPipeline:
                 param_suffix = disambiguation_suffix(spec, method_counts)
 
                 cached = self._load_cached_projection(
-                    emb_set.name, method, dims, effective_params, param_suffix
+                    emb_set.name,
+                    method,
+                    dims,
+                    effective_params,
+                    param_suffix,
+                    fingerprint=fingerprint,
                 )
                 if cached:
                     add(cached)
@@ -847,7 +921,12 @@ class ReductionPipeline:
                 )
                 add(reduction)
                 self._save_projection_cache(
-                    emb_set.name, method, dims, reduction, effective_params
+                    emb_set.name,
+                    method,
+                    dims,
+                    reduction,
+                    effective_params,
+                    fingerprint=fingerprint,
                 )
                 computed_count += 1
 

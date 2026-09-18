@@ -43,9 +43,10 @@ def _atomic_write_table(table, path: Path) -> None:
     """
     import pyarrow.parquet as pq
 
-    tmp = path.with_name(path.name + ".tmp")
-    pq.write_table(table, str(tmp))
-    tmp.replace(path)
+    from protspace.data.io.atomic import staged_write
+
+    with staged_write(path) as staged:
+        pq.write_table(table, str(staged))
 
 
 def _load_reductions(

@@ -17,20 +17,28 @@ import typer
 from typer.testing import CliRunner
 
 from protspace.cli.app import app
-from protspace.data.embedding import local
+from protspace.data.embedding import local, store
 from protspace.data.embedding.biocentral import resolve_embedder
 from protspace.data.loaders.fasta import embed_fasta
 
 
-def _fake_embed(captured):
+def _fake_embed(captured, fill_value=1.0, backend="biocentral"):
     """A stand-in for ``embed_sequences`` that records its args and writes a
-    minimal valid HDF5 so the surrounding load_h5 machinery still works."""
+    minimal valid HDF5.
+
+    It writes through the shared store, so the file carries the producer stamps
+    and residue digests a real run would leave -- a fake that wrote datasets
+    directly would make every cache look like a legacy one.
+    """
 
     def fake(sequences, embedder, h5_path, embed_config=None):
-        with h5py.File(h5_path, "a") as f:
-            for pid in sequences:
-                if pid not in f:
-                    f.create_dataset(pid, data=np.ones(4, dtype=np.float32))
+        store.save_embeddings(
+            Path(h5_path),
+            {pid: np.full(4, fill_value, dtype=np.float32) for pid in sequences},
+            sequences=sequences,
+            backend=backend,
+            model=embedder,
+        )
         captured["embedder"] = embedder
         captured["ids"] = list(sequences)
         captured["config"] = embed_config
@@ -75,7 +83,8 @@ def test_embed_fasta_local_passes_short_key_and_remapped_ids(tmp_path, monkeypat
     fasta.write_text(">sp|P12345|SOME_NAME\nMKVLAAG\n")
     captured = {}
     monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences", _fake_embed(captured)
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed(captured, backend="local"),
     )
 
     result = embed_fasta(
@@ -122,6 +131,67 @@ def test_embed_fasta_unknown_backend_raises(tmp_path):
         embed_fasta(fasta, "prot_t5", backend="nope", embedding_cache=tmp_path / "e.h5")
 
 
+def test_embed_fasta_refuses_a_cache_the_other_backend_wrote(tmp_path, monkeypatch):
+    """Both backends resume by identifier, so without ownership the second run
+    reuses the first backend's vectors and the two models land in one dataset."""
+    fasta = tmp_path / "s.fasta"
+    fasta.write_text(">P12345\nMKVLAAG\n")
+    cache = tmp_path / "prot_t5.h5"
+    monkeypatch.setattr(
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed({}, backend="local"),
+    )
+    embed_fasta(fasta, "prot_t5", backend="local", embedding_cache=cache)
+
+    # The real Biocentral backend: the refusal lands before any API call, so this
+    # needs no stub to stay off the network.
+    with pytest.raises(ValueError, match="--refetch embed"):
+        embed_fasta(fasta, "prot_t5", backend="biocentral", embedding_cache=cache)
+
+
+def test_embed_fasta_resumes_its_own_backends_cache(tmp_path, monkeypatch):
+    """The other half of ownership: the same producer must still resume."""
+    fasta = tmp_path / "s.fasta"
+    fasta.write_text(">P12345\nMKVLAAG\n")
+    cache = tmp_path / "prot_t5.h5"
+
+    for fill in (1.0, 2.0):
+        monkeypatch.setattr(
+            "protspace.data.embedding.local.embed_sequences",
+            _fake_embed({}, fill_value=fill, backend="local"),
+        )
+        result = embed_fasta(fasta, "prot_t5", backend="local", embedding_cache=cache)
+
+    # The second run writes 2.0, so 1.0 is proof the first run's vector was kept.
+    assert result.data.tolist() == [[1.0] * 4]
+
+
+def test_embed_fasta_returns_only_the_fastas_proteins(tmp_path, monkeypatch):
+    """A cache shared by successive inputs accumulates every protein it has ever
+    embedded; returning the accumulation unions unrelated datasets into one
+    bundle."""
+    cache = tmp_path / "prot_t5.h5"
+    store.save_embeddings(
+        cache,
+        {"P99999": np.zeros(4, dtype=np.float32)},
+        sequences={"P99999": "MMMM"},
+        backend="local",
+        model="prot_t5",
+    )
+    fasta = tmp_path / "s.fasta"
+    fasta.write_text(">P12345\nMKVLAAG\n")
+    monkeypatch.setattr(
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed({}, backend="local"),
+    )
+
+    result = embed_fasta(fasta, "prot_t5", backend="local", embedding_cache=cache)
+
+    assert result.headers == ["P12345"]
+    # ...and the cache keeps what it already had, so the next run still resumes.
+    assert store.load_existing_ids(cache) == {"P12345", "P99999"}
+
+
 # ---------------------------------------------------------------------------
 # CLI wiring
 # ---------------------------------------------------------------------------
@@ -132,7 +202,8 @@ def test_embed_cli_backend_local_dispatches_to_local(tmp_path, monkeypatch):
     fasta.write_text(">P12345\nMKVLAAG\n")
     captured = {}
     monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences", _fake_embed(captured)
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed(captured, backend="local"),
     )
 
     result = CliRunner().invoke(
@@ -164,7 +235,8 @@ def test_embed_cli_rejects_nonpositive_batch_size(tmp_path, monkeypatch):
     # Guard against regressions: even if validation were skipped, don't let a
     # real model load / hang.
     monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences", _fake_embed({})
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed({}, backend="local"),
     )
 
     result = CliRunner().invoke(
@@ -319,7 +391,8 @@ def test_embed_cli_wires_max_length_to_local_config(tmp_path, monkeypatch):
     fasta.write_text(">P12345\nMKVLAAG\n")
     captured = {}
     monkeypatch.setattr(
-        "protspace.data.embedding.local.embed_sequences", _fake_embed(captured)
+        "protspace.data.embedding.local.embed_sequences",
+        _fake_embed(captured, backend="local"),
     )
 
     result = CliRunner().invoke(

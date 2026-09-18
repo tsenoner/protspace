@@ -350,15 +350,20 @@ python -c "import h5py; print(dict(h5py.File('file.h5','r').attrs))"
 With `--keep-tmp` (the default), intermediate results are cached in `{output}/tmp/` and reused on
 subsequent runs:
 
-| Cached item       | File                                    | Reuse behavior                  |
-| ----------------- | --------------------------------------- | ------------------------------- |
-| FASTA sequences   | `sequences.fasta`                       | Skip the UniProt query download |
-| Embeddings        | `{embedder}.h5`                         | Skip already-embedded proteins  |
-| Annotations       | `all_annotations.parquet`               | Fetch missing or stale columns  |
-| Similarity matrix | `similarity_matrix.npy`                 | Skip MMseqs2 recomputation      |
-| DR projections    | `proj_{name}_{method}{dims}_{hash}.npz` | Skip dimensionality reduction   |
+| Cached item       | File                                    | Reuse behavior                                        |
+| ----------------- | --------------------------------------- | ----------------------------------------------------- |
+| FASTA sequences   | `queries/{query hash}.fasta`            | Skip the download for that query                      |
+| Embeddings        | `{embedder}.h5`                         | Skip proteins already embedded from the same residues |
+| Annotations       | `all_annotations.parquet`               | Fetch missing or stale columns, and missing proteins  |
+| Similarity matrix | `similarity_matrix.npy`                 | Skip MMseqs2 recomputation                            |
+| DR projections    | `proj_{name}_{method}{dims}_{hash}.npz` | Skip dimensionality reduction                         |
 
 The annotation cache always stores scores; `--no-scores` strips them from the output afterwards.
+
+The annotation cache is read per column and per protein: a source is queried only for the proteins
+whose values the cache cannot supply, and a cache covering more proteins than the current run keeps
+those extra rows. An embedding HDF5 records the backend and model that wrote it, and a run that
+points at another producer's file stops rather than mixing two embedding spaces.
 
 If a source could not be fully retrieved, its columns are **left out of the cache**: a partly empty
 column is indistinguishable from one where those proteins genuinely have no entry, so caching it
