@@ -48,5 +48,5 @@
 - [x] 8.1 Update `docs/guide/fetching-and-caching.md` and `docs/guide/python-cli.md` for per-identifier annotation reuse, projection identity, producer ownership, and the query-addressed FASTA.
 - [x] 8.2 Update the test table and the caching notes in `apps/protspace/CLAUDE.md`.
 - [x] 8.3 Open the follow-up issue for anything deliberately left out, and link it from the PR.
-- [ ] 8.4 Run the non-slow Python suite, Ruff, `openspec validate fix-cache-ownership --strict`, and `pnpm precommit`.
+- [x] 8.4 Run the non-slow Python suite, Ruff, `openspec validate fix-cache-ownership --strict`, and `pnpm precommit`.
 - [x] 8.5 Re-run the seven reproductions from the proposal and record the result.
