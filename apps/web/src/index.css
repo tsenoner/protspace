@@ -14,7 +14,7 @@
 }
 
 /*
-  These tokens map Tailwind utilities (bg-primary, bg-gradient-*, rounded-lg, …)
+  These tokens map Tailwind utilities (bg-primary, rounded-lg, …)
   onto the runtime design-system CSS variables defined in `:root` below.
 
   `@theme inline` is required because every value references another CSS
@@ -54,10 +54,6 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
-  --background-image-gradient-primary: var(--gradient-primary);
-  --background-image-gradient-hero: var(--gradient-hero);
-  --background-image-gradient-card: var(--gradient-card);
-
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -67,12 +63,11 @@
   Shadow elevations are literal `@theme` values rather than `:root`
   indirections: the Tailwind `--shadow-*` namespace collides with same-named
   design tokens, which would re-introduce a self-referential
-  `--shadow-glow: var(--shadow-glow)` emission. They have no runtime override,
+  `--shadow-card: var(--shadow-card)` emission. They have no runtime override,
   so a plain literal is both simpler and fully resolved.
 */
 @theme {
-  --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
-  --shadow-card: 0 8px 32px hsl(229 84% 5% / 0.4);
+  --shadow-card: 0 8px 24px hsl(222 47% 11% / 0.08);
 }
 
 /*
@@ -99,26 +94,27 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 229 84% 8%;
-    --foreground: 210 40% 98%;
+    /* Light, quiet surfaces: the protein-space visualizations provide the color. */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
 
-    --card: 229 70% 12%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
 
-    --popover: 229 70% 12%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
 
     --primary: 217 91% 60%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 262 83% 58%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 229 40% 20%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 40%;
 
-    --accent: 142 76% 36%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
@@ -128,16 +124,12 @@ All colors MUST be HSL.
     --warning: 38 92% 50%;
     --warning-foreground: 48 96% 89%;
 
-    --border: 229 40% 20%;
-    --input: 229 40% 20%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
     --ring: 217 91% 60%;
 
     --radius: 0.75rem;
 
-    /* Custom ProtSpace tokens */
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(262 83% 58%));
-    --gradient-hero: linear-gradient(180deg, hsl(229 84% 8%), hsl(229 70% 12%));
-    --gradient-card: linear-gradient(135deg, hsl(229 70% 12% / 0.4), hsl(229 60% 15% / 0.2));
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
@@ -151,13 +143,29 @@ All colors MUST be HSL.
     scroll-behavior: smooth;
   }
 
+  /* The explorer scales its dense UI with the viewport; text pages keep the browser default. */
   @media (min-width: 1380px) {
-    html {
+    html:has(.explore-wrapper) {
       font-size: clamp(0.75rem, 0.87vw, 1.125rem);
     }
   }
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Nothing in the React shell should move for visitors who asked for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
