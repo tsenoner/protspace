@@ -60,8 +60,44 @@ class ArrowReader:
             self._load_data()
             self._build_data_structure()
 
+    _CORE_FILENAMES = (
+        "selected_annotations.parquet",
+        "projections_metadata.parquet",
+        "projections_data.parquet",
+    )
+
+    def _validate_data_path(self) -> None:
+        """Fail loudly when data_path cannot yield any ProtSpace table.
+
+        Every probe in _load_data is an ``.exists()`` test with an empty-frame fallback, so a
+        .parquetbundle FILE, a missing directory, or an unrelated directory all produced a
+        reader reporting 0 proteins / 0 projections / format_version 1 and raised nothing.
+
+        The check is "at least one core file", not "all three": extracted directories carrying
+        only selected_annotations.parquet are legitimate (see test_bundle_version.py).
+        """
+        path = self.data_path
+        if path.is_file():
+            if path.suffix.lower() == ".parquetbundle":
+                raise ValueError(
+                    f"'{path}' is a .parquetbundle file; ArrowReader reads a directory of "
+                    "parquet files. Extract it first with "
+                    "protspace.data.io.bundle.extract_bundle_to_dir()."
+                )
+            raise ValueError(
+                f"'{path}' is a file; ArrowReader expects a directory of .parquet files."
+            )
+        if not path.is_dir():
+            raise FileNotFoundError(f"No such directory: '{path}'")
+        if not any((path / name).exists() for name in self._CORE_FILENAMES):
+            raise ValueError(
+                f"Directory '{path}' contains none of {', '.join(self._CORE_FILENAMES)}."
+            )
+
     def _load_data(self):
         """Load data from Parquet files."""
+        # Before the try: this ValueError must not be re-wrapped by the handler below.
+        self._validate_data_path()
         try:
             protein_annotations_path = self.data_path / "selected_annotations.parquet"
             projections_metadata_path = self.data_path / "projections_metadata.parquet"
