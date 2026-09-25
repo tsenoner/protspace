@@ -174,6 +174,7 @@ export function createColorTarget(
     return null;
   }
 
+  const prevFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, type, null);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
@@ -184,7 +185,7 @@ export function createColorTarget(
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
   const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, prevFramebuffer);
   gl.bindTexture(gl.TEXTURE_2D, null);
 
   if (status !== gl.FRAMEBUFFER_COMPLETE) {
