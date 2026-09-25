@@ -193,6 +193,10 @@ export const exportStyles = css`
     width: 240px;
     padding: var(--spacing-md);
     box-sizing: border-box;
+    max-height: 50vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
   }
 
   .import-current-dataset {
@@ -228,5 +232,21 @@ export const exportStyles = css`
 
   .import-actions button {
     width: 100%;
+  }
+
+  .import-examples {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: var(--border-width) solid var(--border);
+  }
+
+  .import-examples-label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 `;

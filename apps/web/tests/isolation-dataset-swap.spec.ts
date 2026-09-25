@@ -21,12 +21,12 @@ const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetb
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.
  *
- * Both menu buttons just delegate: "Load your dataset" clicks the hidden file input
- * inside <protspace-data-loader>, and "Load demo dataset" dispatches the
- * `load-demo-dataset` event upward from the control-bar. Driving those entry points
- * directly avoids click-on-shadow-DOM flakiness in headless mode while still hitting
- * exactly the same production code path (data-renderer.applyPlotState → scatterplot
- * .clearIsolationState()), which is what this regression test cares about.
+ * Both menu actions just delegate: "Load your dataset" clicks the hidden file input
+ * inside <protspace-data-loader>, and choosing an example dispatches the
+ * `load-example-dataset` event upward from the control-bar. Driving those entry
+ * points directly avoids click-on-shadow-DOM flakiness in headless mode while still
+ * hitting exactly the same production code path (data-renderer.applyPlotState →
+ * scatterplot.clearIsolationState()), which is what this regression test cares about.
  */
 async function loadCustomDataset(page: Page, datasetPath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
@@ -40,7 +40,13 @@ async function loadDemoDataset(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
-    cb?.dispatchEvent(new CustomEvent('load-demo-dataset', { bubbles: true, composed: true }));
+    cb?.dispatchEvent(
+      new CustomEvent('load-example-dataset', {
+        detail: { id: 'demo' },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   });
 }
 

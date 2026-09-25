@@ -15,17 +15,20 @@ import {
 } from './notifications';
 import { markLastLoadStatus, saveLastImportedFile } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
+import { EXAMPLE_DATASETS, findExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
+import type { DatasetChangeSource } from './types';
 import type { ViewController } from './view-controller';
+
+const DEFAULT_EXAMPLE_ID = EXAMPLE_DATASETS[0].id;
 
 interface DatasetControllerOptions {
   controlBar: ProtspaceControlBar;
   dataLoader: ProtspaceDataLoader;
-  defaultDatasetName: string;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
@@ -34,7 +37,7 @@ interface DatasetControllerOptions {
     update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
   };
   plotElement: ProtspaceScatterplot;
-  setCurrentDatasetIsDemo(isDemo: boolean): void;
+  setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
   structureViewer: ProtspaceStructureViewer;
   viewController: ViewController;
@@ -42,8 +45,17 @@ interface DatasetControllerOptions {
 
 export interface DatasetController {
   loadDefaultDatasetAndClearPersistedFile(): Promise<void>;
+  loadExampleDatasetAndClearPersistedFile(
+    id: string,
+    source?: DatasetChangeSource,
+  ): Promise<boolean>;
+  /** Loads a known example without touching OPFS (a `?dataset=` deep link or Back/Forward). */
+  loadExampleDataset(id: string): Promise<boolean>;
   loadPersistedOrDefaultDataset(): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
+  subscribeToDatasetChanges(
+    callback: (exampleId: string | null, source: DatasetChangeSource) => void,
+  ): () => void;
   handleLoadingStart(): void;
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
@@ -53,14 +65,13 @@ export interface DatasetController {
 export function createDatasetController({
   controlBar,
   dataLoader,
-  defaultDatasetName,
   getIsDisposed,
   interactionController,
   legendElement,
   loadQueue,
   overlayController,
   plotElement,
-  setCurrentDatasetIsDemo,
+  setCurrentExampleId,
   setCurrentDatasetName,
   structureViewer,
   viewController,
@@ -78,13 +89,65 @@ export function createDatasetController({
 
   const persistedDatasetController = createPersistedDatasetController({
     dataLoader,
-    defaultDatasetName,
+    overlayController,
     registerFileLoad(file, kind) {
       loadQueue.registerFileLoad(file, kind);
     },
-    setCurrentDatasetIsDemo,
+    setCurrentExampleId,
     setCurrentDatasetName,
   });
+
+  // Reports which example (or no example) is now showing and why, so the URL
+  // sync hook can decide whether/how to write `?dataset=`. Only successful
+  // loads are reported.
+  const datasetChangeSubscribers = new Set<
+    (exampleId: string | null, source: DatasetChangeSource) => void
+  >();
+  const emitDatasetChange = (exampleId: string | null, source: DatasetChangeSource) => {
+    datasetChangeSubscribers.forEach((callback) => callback(exampleId, source));
+  };
+
+  const loadExampleDatasetAndClearPersistedFile = async (
+    id: string,
+    source: DatasetChangeSource = 'menu',
+  ): Promise<boolean> => {
+    const success = await persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id);
+    if (success) {
+      emitDatasetChange(id, source);
+    }
+    return success;
+  };
+
+  const loadExampleDataset = async (id: string): Promise<boolean> => {
+    const entry = findExampleDataset(id);
+    if (!entry) {
+      return false;
+    }
+    const success = await persistedDatasetController.loadExampleDataset(entry);
+    if (success) {
+      emitDatasetChange(id, 'url');
+    }
+    return success;
+  };
+
+  const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
+    await loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE_ID, 'startup');
+  };
+
+  const loadPersistedOrDefaultDataset = async (): Promise<PersistedLoadOutcome> => {
+    const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset();
+    if (outcome.kind === 'auto-loaded') {
+      emitDatasetChange(null, 'startup');
+    } else if (outcome.kind === 'default-loaded') {
+      emitDatasetChange(DEFAULT_EXAMPLE_ID, 'startup');
+    }
+    return outcome;
+  };
+
+  const tryLoadPersistedAgain = async (file: File): Promise<void> => {
+    await persistedDatasetController.tryLoadPersistedAgain(file);
+    emitDatasetChange(null, 'startup');
+  };
 
   let currentDatasetHash: string | null = null;
   viewController.subscribeToViewChanges((change) => {
@@ -156,12 +219,14 @@ export function createDatasetController({
           settings.eatOverlayEnabled !== undefined ||
           settings.eatConfidenceThreshold !== undefined);
 
+      // A 'default' (example) load already set the name/id in persisted-dataset.ts
+      // once its fetch succeeded, before dataLoader.loadFromFile was even called.
       if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);
-        setCurrentDatasetIsDemo(false);
-      } else if (loadMeta.kind === 'default') {
-        setCurrentDatasetName(defaultDatasetName);
-        setCurrentDatasetIsDemo(true);
+        setCurrentExampleId(null);
+        if (loadMeta.kind === 'user') {
+          emitDatasetChange(null, 'user');
+        }
       }
 
       // Must be set before the restore block so that any view-change emitted by
@@ -298,10 +363,17 @@ export function createDatasetController({
   };
 
   return {
-    loadDefaultDatasetAndClearPersistedFile:
-      persistedDatasetController.loadDefaultDatasetAndClearPersistedFile,
-    loadPersistedOrDefaultDataset: persistedDatasetController.loadPersistedOrDefaultDataset,
-    tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
+    loadDefaultDatasetAndClearPersistedFile,
+    loadExampleDatasetAndClearPersistedFile,
+    loadExampleDataset,
+    loadPersistedOrDefaultDataset,
+    tryLoadPersistedAgain,
+    subscribeToDatasetChanges(callback) {
+      datasetChangeSubscribers.add(callback);
+      return () => {
+        datasetChangeSubscribers.delete(callback);
+      };
+    },
     handleLoadingStart() {
       console.log('Data loading started');
       overlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');

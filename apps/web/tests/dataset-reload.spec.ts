@@ -234,7 +234,7 @@ async function getCurrentDatasetName(page: Page): Promise<string | null> {
 
 async function loadDemoDatasetFromImportMenu(page: Page): Promise<void> {
   await openImportMenu(page);
-  await page.locator('protspace-control-bar [data-driver-id="import-demo-dataset"]').click();
+  await page.locator('protspace-control-bar [data-example-id="demo"]').click();
 }
 
 async function isImportChevronVisible(page: Page): Promise<boolean> {

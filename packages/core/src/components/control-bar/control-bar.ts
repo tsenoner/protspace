@@ -4,6 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { controlBarStyles } from './control-bar.styles';
 import type {
   DataChangeDetail,
+  ExampleDatasetSummary,
   ProtspaceData,
   ScatterplotElementLike,
   DataLoaderElement,
@@ -80,8 +81,10 @@ export class ProtspaceControlBar extends LitElement {
   hasFileSettings: boolean = false;
   @property({ type: String, attribute: 'current-dataset-name' })
   currentDatasetName: string = '';
-  @property({ type: Boolean, attribute: 'current-dataset-is-demo' })
-  currentDatasetIsDemo: boolean = false;
+  @property({ type: String, attribute: 'current-example-id' })
+  currentExampleId: string | null = null;
+  /** The host app's example-dataset catalog, listed in the Import menu's "Examples" section. */
+  @property({ attribute: false }) exampleDatasets: readonly ExampleDatasetSummary[] = [];
   @state() private _eatAnnotationKeys: string[] = [];
   /** Full annotation key list (includes synthesized `__eat_confidence` keys) for the query-filter column picker. */
   @state() private _filterableAnnotations: string[] = [];
@@ -566,10 +569,11 @@ export class ProtspaceControlBar extends LitElement {
     fileInput?.click();
   }
 
-  private handleLoadDemoDataset() {
+  private handleLoadExampleDataset(id: string) {
     this.showImportMenu = false;
     this.dispatchEvent(
-      new CustomEvent('load-demo-dataset', {
+      new CustomEvent('load-example-dataset', {
+        detail: { id },
         bubbles: true,
         composed: true,
       }),
@@ -1031,14 +1035,25 @@ export class ProtspaceControlBar extends LitElement {
                         >
                           Load your dataset
                         </button>
-                        <button
-                          class="btn-secondary"
-                          @click=${this.handleLoadDemoDataset}
-                          data-driver-id="import-demo-dataset"
-                          ?disabled=${this.currentDatasetIsDemo}
-                        >
-                          Load demo dataset
-                        </button>
+                      </div>
+                      <div class="import-examples">
+                        <span class="import-examples-label">Examples</span>
+                        <div class="import-actions">
+                          ${this.exampleDatasets.map(
+                            (example) => html`
+                              <button
+                                class="btn-secondary"
+                                @click=${() => this.handleLoadExampleDataset(example.id)}
+                                data-driver-id="import-example-dataset"
+                                data-example-id=${example.id}
+                                title=${example.description}
+                                ?disabled=${example.id === this.currentExampleId}
+                              >
+                                ${example.label}
+                              </button>
+                            `,
+                          )}
+                        </div>
                       </div>
                     </div>
                   `

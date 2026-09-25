@@ -1,5 +1,6 @@
 import type { DataLoader as ProtspaceDataLoader } from '@protspace/core';
 import { notify } from '../lib/notify';
+import { EXAMPLE_DATASETS, findExampleDataset, type ExampleDataset } from './example-datasets';
 import {
   StoredDatasetCorruptError,
   clearLastImportedFile,
@@ -7,8 +8,13 @@ import {
   markLastLoadStatus,
   readLastLoadStatus,
 } from './opfs-dataset-store';
-import { getCorruptedPersistedDatasetNotification } from './notifications';
+import {
+  getCorruptedPersistedDatasetNotification,
+  getExampleLoadFailureNotification,
+} from './notifications';
 import type { DatasetLoadKind } from './types';
+
+const DEFAULT_EXAMPLE = EXAMPLE_DATASETS[0];
 
 export type PersistedLoadOutcome =
   | { kind: 'auto-loaded' }
@@ -22,17 +28,19 @@ export type PersistedLoadOutcome =
 
 interface PersistedDatasetOptions {
   dataLoader: ProtspaceDataLoader;
-  defaultDatasetName: string;
+  overlayController: {
+    update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
+  };
   registerFileLoad(file: File, kind: DatasetLoadKind): void;
-  setCurrentDatasetIsDemo(isDemo: boolean): void;
+  setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
 }
 
 export function createPersistedDatasetController({
   dataLoader,
-  defaultDatasetName,
+  overlayController,
   registerFileLoad,
-  setCurrentDatasetIsDemo,
+  setCurrentExampleId,
   setCurrentDatasetName,
 }: PersistedDatasetOptions) {
   const clearCorruptedPersistedDataset = async (context: string) => {
@@ -44,51 +52,45 @@ export function createPersistedDatasetController({
     notify.warning(getCorruptedPersistedDatasetNotification(context));
   };
 
-  const loadDefaultDataset = async () => {
+  const loadExampleDataset = async (entry: ExampleDataset): Promise<boolean> => {
     try {
-      setCurrentDatasetName(defaultDatasetName);
-      setCurrentDatasetIsDemo(true);
-      console.log('Loading data from data.parquetbundle...');
-
-      const response = await fetch('./data.parquetbundle');
+      const response = await fetch(entry.url);
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
-      const file = new File([arrayBuffer], 'data.parquetbundle', {
+      const fileName = entry.url.split('/').pop() ?? entry.id;
+      const file = new File([arrayBuffer], fileName, {
         type: 'application/octet-stream',
       });
 
-      console.log(`File loaded: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-
       registerFileLoad(file, 'default');
+      // Set the name/id only once the fetch has actually succeeded, so a failed
+      // load below never overwrites what's currently shown.
+      setCurrentDatasetName(entry.label);
+      setCurrentExampleId(entry.id);
       await dataLoader.loadFromFile(file, { source: 'auto' });
+      return true;
     } catch (error) {
-      console.error('Failed to load data from file:', error);
-      console.log('Make sure data.parquetbundle exists in the public directory');
-      console.log(
-        'Alternative: You can drag and drop the data.parquetbundle file onto the data loader component',
-      );
-
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.warn(`Auto-load failed: ${errorMessage}`);
-      console.log(
-        'The data loader is ready for drag-and-drop. Simply drag the data.parquetbundle file onto the component.',
-      );
+      console.error(`Failed to load example dataset "${entry.id}":`, error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      notify.error(getExampleLoadFailureNotification(entry, message));
+      overlayController.update(false);
+      return false;
     }
   };
 
   const recoverFromCorruptedPersistedDataset = async (context: string) => {
     await clearCorruptedPersistedDataset(context);
-    await loadDefaultDataset();
+    await loadExampleDataset(DEFAULT_EXAMPLE);
   };
 
   const loadPersistedFile = async (persistedFile: File): Promise<void> => {
     await markLastLoadStatus('pending');
     registerFileLoad(persistedFile, 'opfs');
     setCurrentDatasetName(persistedFile.name);
-    setCurrentDatasetIsDemo(false);
+    setCurrentExampleId(null);
     await dataLoader.loadFromFile(persistedFile, { source: 'auto' });
   };
 
@@ -105,7 +107,7 @@ export function createPersistedDatasetController({
     }
 
     if (!persistedFile) {
-      await loadDefaultDataset();
+      await loadExampleDataset(DEFAULT_EXAMPLE);
       return { kind: 'default-loaded' };
     }
 
@@ -116,7 +118,7 @@ export function createPersistedDatasetController({
           'Showing recovery banner instead of auto-loading.',
       );
       setCurrentDatasetName(persistedFile.name);
-      setCurrentDatasetIsDemo(false);
+      setCurrentExampleId(null);
       return {
         kind: 'recovery-required',
         file: persistedFile,
@@ -133,19 +135,29 @@ export function createPersistedDatasetController({
     await loadPersistedFile(file);
   };
 
-  const loadDefaultDatasetAndClearPersistedFile = async () => {
+  const loadExampleDatasetAndClearPersistedFile = async (id: string): Promise<boolean> => {
+    const entry = findExampleDataset(id);
+    if (!entry) {
+      console.warn(`Unknown example dataset id: ${id}`);
+      return false;
+    }
+
     try {
       await clearLastImportedFile();
     } catch (error) {
-      console.warn('Failed to clear persisted dataset before loading the default dataset:', error);
+      console.warn('Failed to clear persisted dataset before loading example dataset:', error);
     }
-    await loadDefaultDataset();
+    return loadExampleDataset(entry);
   };
+
+  const loadDefaultDatasetAndClearPersistedFile = (): Promise<boolean> =>
+    loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE.id);
 
   return {
     clearCorruptedPersistedDataset,
-    loadDefaultDataset,
+    loadExampleDataset,
     loadPersistedOrDefaultDataset,
+    loadExampleDatasetAndClearPersistedFile,
     loadDefaultDatasetAndClearPersistedFile,
     recoverFromCorruptedPersistedDataset,
     tryLoadPersistedAgain,

@@ -6,6 +6,7 @@ import type {
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
 import { buildBugContext, buildMailto, clientContext } from '../lib/support';
+import type { ExampleDataset } from './example-datasets';
 import { FastaPrepError } from './fasta-prep-client';
 import { COLAB_NOTEBOOK_URL, MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
 
@@ -133,6 +134,28 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
       code === 'BIOCENTRAL_UNAVAILABLE'
         ? { label: 'Open in Colab ↗', href: COLAB_NOTEBOOK_URL }
         : buildReportAction('Dataset import', prepError ?? detail.message, jobId),
+  };
+}
+
+export function getExampleLoadFailureNotification(
+  entry: ExampleDataset,
+  message: string,
+): NotifyOptions {
+  return {
+    title: `Couldn't load "${entry.label}".`,
+    description: message,
+    durationMs: 10_000,
+    dedupeKey: `example-load-error:${entry.id}`,
+    action: buildReportAction(`Example dataset "${entry.id}"`, message),
+  };
+}
+
+export function getUnknownExampleDatasetNotification(id: string): NotifyOptions {
+  return {
+    title: `Unknown example dataset "${id}".`,
+    description: "That link doesn't match any example dataset. Showing your usual dataset instead.",
+    durationMs: 8_000,
+    dedupeKey: `unknown-example-dataset:${id}`,
   };
 }
 

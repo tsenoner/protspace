@@ -15,6 +15,7 @@ vi.mock('./data-renderer', () => ({
 vi.mock('./persisted-dataset', () => ({
   createPersistedDatasetController: () => ({
     loadDefaultDatasetAndClearPersistedFile: vi.fn(),
+    loadExampleDatasetAndClearPersistedFile: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
     clearCorruptedPersistedDataset: vi.fn(),
@@ -79,7 +80,6 @@ describe('dataset controller EAT settings restore', () => {
     const options = {
       controlBar,
       dataLoader: {},
-      defaultDatasetName: 'default.parquetbundle',
       getIsDisposed: () => false,
       interactionController: {},
       legendElement,
@@ -92,7 +92,7 @@ describe('dataset controller EAT settings restore', () => {
       },
       overlayController: { update: vi.fn() },
       plotElement,
-      setCurrentDatasetIsDemo: vi.fn(),
+      setCurrentExampleId: vi.fn(),
       setCurrentDatasetName: vi.fn(),
       structureViewer: {},
       viewController,
