@@ -98,7 +98,7 @@ export interface DensityFrame {
 export function computeDensityGrid(
   canvasWidth: number,
   canvasHeight: number,
-  style: DensityLayerStyle = 'heatmap',
+  style: DensityLayerStyle,
 ): { width: number; height: number } {
   const w = canvasWidth / DENSITY_PIXEL_RATIO;
   const h = canvasHeight / DENSITY_PIXEL_RATIO;
