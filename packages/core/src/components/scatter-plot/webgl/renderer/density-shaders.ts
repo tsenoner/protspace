@@ -4,6 +4,7 @@
  * and paint_density_map.ts at ccd4eee^.
  */
 
+import { CAMERA_TO_CLIP_GLSL } from './export-shaders';
 import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
 
 export const DENSITY_SIGMA_GRID_PX = 2;
@@ -38,9 +39,7 @@ void main() {
     return;
   }
 
-  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
-  vec2 physicalPos = cssTransformed * u_dpr;
-  vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;
+${CAMERA_TO_CLIP_GLSL}
 
   gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
   gl_PointSize = 1.0;
@@ -160,9 +159,7 @@ void main() {
     return;
   }
 
-  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
-  vec2 physicalPos = cssTransformed * u_dpr;
-  vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;
+${CAMERA_TO_CLIP_GLSL}
 
   gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
   gl_PointSize = 1.0;

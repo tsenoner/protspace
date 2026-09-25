@@ -9,6 +9,10 @@
  * truth for the shader text.
  */
 
+export const CAMERA_TO_CLIP_GLSL = `  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
+  vec2 physicalPos = cssTransformed * u_dpr;
+  vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;`;
+
 export const POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -33,9 +37,7 @@ flat out float v_predicted;
 flat out int v_pointIndex;
 
 void main() {
-  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
-  vec2 physicalPos = cssTransformed * u_dpr;
-  vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;
+${CAMERA_TO_CLIP_GLSL}
 
   // Depth is computed per-point on the CPU (opacity + legend z-order tie-break)
   gl_Position = vec4(clipSpace.x, -clipSpace.y, a_depth, 1.0);
