@@ -4,6 +4,8 @@
  * and paint_density_map.ts at ccd4eee^.
  */
 
+import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
+
 export const DENSITY_SIGMA_GRID_PX = 2;
 export const DENSITY_BLUR_RADIUS = Math.ceil(3 * DENSITY_SIGMA_GRID_PX);
 
@@ -93,7 +95,10 @@ ${taps}
 export const DENSITY_BLUR_FRAGMENT_SHADER = blurSource(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
 
 export const DENSITY_CATEGORY_CAP = 16;
-export const DENSITY_FIELD_UNITS = [0, 2, 3, 4] as const;
+// Skips the label-atlas unit so the composite never unbinds the point draw's atlas.
+export const DENSITY_FIELD_UNITS = Array.from({ length: DENSITY_CATEGORY_CAP / 4 }, (_, g) =>
+  g < LABEL_ATLAS_TEXTURE_UNIT ? g : g + 1,
+);
 
 export const DENSITY_CONTOUR_GRID_DIVISOR = 2;
 
