@@ -125,20 +125,32 @@ describe('density layer, on', () => {
     on.renderer.destroy();
   });
 
-  it('restores the point program and VAO after compositing mid-draw', () => {
-    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
+  it('re-binds the point program, VAO and atlas after compositing, before the selected run', () => {
+    const { pd, style } = categories(FIVE);
+    const index = (sp: { id: string }) => Number(sp.id.slice(1));
+    const on = setup({ width: 800, height: 600, densityLayer: 'on' }, {}, undefined, {
+      ...style,
+      getOpacity: (sp) => (index(sp) >= 40 ? 1 : 0.5),
+      getDepth: (sp) => (index(sp) >= 40 ? 0 : 1),
+    });
+    on.renderer.setSelectionActive(true);
     const calls = recordCalls(on.glRecord);
-    on.renderer.render(plotData(50));
+    on.renderer.render(pd);
 
-    const pointDraw = calls.lastIndexOf('drawArrays(0,0,50)');
-    expect(pointDraw).toBeGreaterThan(-1);
-    const composite = calls.findIndex((c, i) => i > pointDraw && /^drawArrays\(\d+,0,6\)$/.test(c));
-    expect(composite).toBeGreaterThan(pointDraw);
-    expect(calls.slice(composite + 1, composite + 5)).toEqual([
+    const base = calls.indexOf('drawArrays(0,0,40)');
+    const composite = calls.findIndex((c, i) => i > base && /^drawArrays\(\d+,0,6\)$/.test(c));
+    const top = calls.indexOf('drawArrays(0,40,10)');
+    expect(base).toBeGreaterThan(-1);
+    expect(composite).toBeGreaterThan(base);
+    expect(calls.slice(composite + 1, top)).toEqual([
       'bindVertexArray(null)',
       'bindTexture(3553,null)',
       'useProgram(obj)',
       'bindVertexArray(obj)',
+      'activeTexture(33985)',
+      'bindTexture(3553,obj)',
+      'enable(3042)',
+      'blendFunc(1,771)',
     ]);
     on.renderer.destroy();
   });
@@ -292,7 +304,7 @@ describe('density layer, contour', () => {
     on.renderer.destroy();
   });
 
-  it('composites between the unselected and the selected run, off the atlas unit', () => {
+  it('composites between the runs off the atlas unit, then re-binds the atlas', () => {
     const { pd, style } = categories(FIVE);
     const index = (sp: { id: string }) => Number(sp.id.slice(1));
     const selected: WebGLStyleGetters = {
@@ -319,6 +331,7 @@ describe('density layer, contour', () => {
       'activeTexture(33987)',
       'activeTexture(33986)',
       'activeTexture(33984)',
+      'activeTexture(33985)',
     ]);
     on.renderer.destroy();
   });

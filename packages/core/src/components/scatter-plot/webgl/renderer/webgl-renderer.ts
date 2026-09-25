@@ -607,7 +607,7 @@ export class WebGLRenderer {
       gl.viewport(0, 0, framebuffer.width, framebuffer.height);
     }
 
-    this.renderPoints(transform, density ? () => this.compositeDensity(density) : undefined);
+    this.renderPoints(transform, density ? () => compositeDensity(gl, density) : undefined);
 
     // Pass 2: Gamma correction to canvas
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
@@ -665,14 +665,6 @@ export class WebGLRenderer {
       params,
       plan,
     };
-  }
-
-  private compositeDensity(density: DensityFrame) {
-    const gl = this.gl;
-    if (!gl) return;
-    compositeDensity(gl, density);
-    gl.useProgram(this.resources.pointProgram);
-    gl.bindVertexArray(this.resources.pointVao);
   }
 
   private renderGammaCorrection() {
@@ -1076,7 +1068,12 @@ export class WebGLRenderer {
       this.currentPointCount,
       this.selectionActive,
       this.selectedStartIndex,
-      afterBasePass,
+      afterBasePass && {
+        run: afterBasePass,
+        program: this.resources.pointProgram,
+        vao: this.resources.pointVao,
+        labelTexture: this.resources.labelColorTexture,
+      },
     );
 
     gl.bindVertexArray(null);

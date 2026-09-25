@@ -18,6 +18,13 @@ function mockGL() {
     ONE_MINUS_SRC_ALPHA: 771,
     DEPTH_TEST: 2929,
     POINTS: 0,
+    TEXTURE0: 0x84c0,
+    TEXTURE_2D: 0x0de1,
+    useProgram: (p: unknown) => calls.push(`useProgram:${p === null ? 'null' : 'prog'}`),
+    bindVertexArray: (v: unknown) => calls.push(`bindVAO:${v === null ? 'null' : 'vao'}`),
+    activeTexture: (u: number) => calls.push(`activeTexture:${u}`),
+    bindTexture: (_t: number, tex: unknown) =>
+      calls.push(`bindTex:${tex === null ? 'null' : 'tex'}`),
     bindFramebuffer: (_t: number, fb: unknown) =>
       calls.push(`bindFB:${fb === null ? 'null' : 'fb'}`),
     viewport: (...a: number[]) => calls.push(`viewport:${a.join(',')}`),
@@ -85,13 +92,24 @@ describe('drawPoints', () => {
     expect(calls).toEqual(['enable:1', 'blendFunc:1,771', 'drawArrays:0,0,100']);
   });
 
-  it('two-pass: runs afterBasePass between the unselected and selected runs', () => {
+  const hook = (calls: string[]) => ({
+    run: () => calls.push('hook'),
+    program: {} as WebGLProgram,
+    vao: {} as WebGLVertexArrayObject,
+    labelTexture: {} as WebGLTexture,
+  });
+
+  it('two-pass: runs afterBasePass, then re-binds the point state for the selected run', () => {
     const { gl, calls } = mockGL();
-    drawPoints(gl, 10, true, 3, () => calls.push('hook'));
+    drawPoints(gl, 10, true, 3, hook(calls));
     expect(calls).toEqual([
       'disable:1',
       'drawArrays:0,0,3',
       'hook',
+      'useProgram:prog',
+      'bindVAO:vao',
+      `activeTexture:${0x84c1}`,
+      'bindTex:tex',
       'enable:1',
       'blendFunc:1,771',
       'drawArrays:0,3,7',
@@ -100,7 +118,7 @@ describe('drawPoints', () => {
 
   it('single-pass: runs afterBasePass after the one draw', () => {
     const { gl, calls } = mockGL();
-    drawPoints(gl, 10, false, 0, () => calls.push('hook'));
+    drawPoints(gl, 10, false, 0, hook(calls));
     expect(calls).toEqual(['enable:1', 'blendFunc:1,771', 'drawArrays:0,0,10', 'hook']);
   });
 
