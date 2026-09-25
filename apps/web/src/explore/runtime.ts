@@ -400,7 +400,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   let hasStartedInitialDatasetLoad = false;
 
   console.log('ProtSpace components loaded and connected!');
-  console.log('Data will be loaded from OPFS when available, otherwise from data.parquetbundle');
   console.log('Use the control bar to change annotations and toggle selection modes!');
 
   return {

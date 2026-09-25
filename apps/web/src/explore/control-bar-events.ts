@@ -2,7 +2,6 @@ import type { SelectionDisabledNotificationDetail } from '@protspace/core';
 import { notify } from '../lib/notify';
 import { getSelectionDisabledNotification } from './notifications';
 import type { DatasetController } from './dataset-controller';
-import { findExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { ViewController } from './view-controller';
 
@@ -42,12 +41,10 @@ export function bindControlBarEvents({
   });
 
   // This event name is part of the control-bar custom element contract in @protspace/core.
+  // An unknown id is handled once, inside loadExampleDatasetAndClearPersistedFile
+  // (persisted-dataset.ts), which warns and returns false without side effects.
   addControlBarListener('load-example-dataset', (event: Event) => {
     const { id } = (event as CustomEvent<{ id: string }>).detail;
-    if (!findExampleDataset(id)) {
-      console.warn(`Unknown example dataset id: ${id}`);
-      return;
-    }
     void datasetController.loadExampleDatasetAndClearPersistedFile(id);
   });
 
