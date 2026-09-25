@@ -201,8 +201,8 @@ export class WebglRenderPerfRunner {
       await this._waitForHostFullyLoaded(options.readyTimeoutMs ?? PERF_READY_TIMEOUT_MS);
 
       await this._runAnnotationChangeScenario(iterations);
-      await this._runZoomInOutScenario(iterations);
-      await this._runZoomFarOutScenario(iterations);
+      await this._runZoomCycleScenario('zoomInOut', PERF_MEASURE_ZOOM_FACTOR, iterations);
+      await this._runZoomCycleScenario('zoomFarOut', PERF_MEASURE_ZOOM_FAR_OUT_FACTOR, iterations);
       await this._runDragCanvasScenario(iterations);
       await this._runDragContinuousScenario(iterations);
       await this._runDensityZoomScenario(iterations);
@@ -587,10 +587,6 @@ export class WebglRenderPerfRunner {
     }
   }
 
-  private async _runZoomInOutScenario(iterations: number) {
-    await this._runZoomCycleScenario('zoomInOut', PERF_MEASURE_ZOOM_FACTOR, iterations);
-  }
-
   private async _runDensityZoomScenario(iterations: number) {
     const host = this._hostAny();
     const prevConfig = host.config as ScatterplotConfig | undefined;
@@ -632,10 +628,6 @@ export class WebglRenderPerfRunner {
     host.config = config;
     await host.updateComplete;
     if (await this._waitForNextRender(prevSeq, 2000)) await this._waitForRenderIdle(10, 2000);
-  }
-
-  private async _runZoomFarOutScenario(iterations: number) {
-    await this._runZoomCycleScenario('zoomFarOut', PERF_MEASURE_ZOOM_FAR_OUT_FACTOR, iterations);
   }
 
   private async _runDragContinuousScenario(
