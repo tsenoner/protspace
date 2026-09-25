@@ -1,5 +1,6 @@
 import {
   DENSITY_DEFAULT,
+  DENSITY_OPTIONS,
   DENSITY_STYLE_DEFAULT,
   type DensityLayerMode,
   type DensityLayerStyle,
@@ -73,13 +74,8 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
-const DENSITY_TOKENS: Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }> = {
-  off: { mode: 'off', style: DENSITY_STYLE_DEFAULT },
-  auto: { mode: 'auto', style: 'heatmap' },
-  on: { mode: 'on', style: 'heatmap' },
-  'contour-auto': { mode: 'auto', style: 'contour' },
-  'contour-on': { mode: 'on', style: 'contour' },
-};
+const DENSITY_TOKENS: Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }> =
+  DENSITY_OPTIONS;
 
 function parseDensityParam(searchParams: URLSearchParams): {
   mode: DensityLayerMode | undefined;
