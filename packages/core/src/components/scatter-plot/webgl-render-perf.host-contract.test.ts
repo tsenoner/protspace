@@ -63,12 +63,13 @@ type PerfRunnerInternals = {
   _endScenario(): void;
   _runDragContinuousScenario(iterations: number): Promise<void>;
   _runDensityZoomScenario(iterations: number): Promise<void>;
+  _runContourDragScenario(iterations: number): Promise<void>;
 };
 
 type PerfHostInternals = ProtspaceScatterplot & {
   _webglRenderPerf: PerfRunnerInternals;
   /** What the renderer's `getConfig()` bridge returns (`scatter-plot.ts:481`). */
-  _mergedConfig: { densityLayer?: string; pointSize?: number };
+  _mergedConfig: { densityLayer?: string; densityStyle?: string; pointSize?: number };
   _interaction: PlotInteractionController | null;
   /** Only `syncGpu` is needed here, and only to spy on it. */
   _webglRenderer: { syncGpu: () => void } | null;
@@ -376,5 +377,28 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     }
 
     expect(sp._mergedConfig.densityLayer).toBe('off');
+  }, 20_000);
+
+  it('contourDrag records its own passes and restores mode and style', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    runner._recorder = {
+      runId: 'host-contract',
+      iterations: 1,
+      passSeq: 0,
+      lastRenderEndTs: 0,
+      activeScenario: null,
+      scenarios: [],
+    };
+    try {
+      await runner._runContourDragScenario(1);
+      const scenario = runner._recorder?.scenarios.find((s) => s.name === 'contourDrag');
+      expect(scenario?.passes.filter((p) => p.trigger === 'zoom').length).toBe(60);
+    } finally {
+      runner._recorder = null;
+    }
+
+    expect(sp._mergedConfig.densityLayer).toBe('off');
+    expect(sp._mergedConfig.densityStyle).toBe('heatmap');
   }, 20_000);
 });

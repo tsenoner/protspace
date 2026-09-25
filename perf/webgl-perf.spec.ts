@@ -8,6 +8,7 @@ const EXPECTED_SCENARIOS = [
   'dragCanvas',
   'dragContinuous',
   'densityZoom',
+  'contourDrag',
   'clickPoint',
 ] as const;
 
@@ -27,6 +28,7 @@ const CAMERA_SCENARIOS = [
   'dragCanvas',
   'dragContinuous',
   'densityZoom',
+  'contourDrag',
 ] as const;
 const ITERATIONS = (() => {
   const raw = process.env.PERF_ITERATIONS;

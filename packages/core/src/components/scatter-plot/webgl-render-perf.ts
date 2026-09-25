@@ -5,7 +5,7 @@ import type {
   ScatterplotConfig,
   VisualizationData,
 } from '@protspace/utils';
-import { DENSITY_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
+import { DENSITY_DEFAULT, DENSITY_STYLE_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
 // Type-only: nothing here needs the class at runtime. The reverse edge
 // (plot-interaction-controller.ts -> RenderWebGLTrigger) is `import type` as well,
 // so neither module pulls the other into the runtime graph.
@@ -49,6 +49,7 @@ export type PerfScenarioName =
   | 'dragCanvas'
   | 'dragContinuous'
   | 'densityZoom'
+  | 'contourDrag'
   | 'clickPoint';
 
 export type PerfRenderPass = {
@@ -238,6 +239,7 @@ export class WebglRenderPerfRunner {
       await this._runDragCanvasScenario(iterations);
       await this._runDragContinuousScenario(iterations);
       await this._runDensityZoomScenario(iterations);
+      await this._runContourDragScenario(iterations);
       await this._runClickPointScenario(iterations);
 
       const scenarios = this._recorder?.scenarios ?? [];
@@ -660,6 +662,29 @@ export class WebglRenderPerfRunner {
     }
   }
 
+  /**
+   * `dragContinuous` with the contour style forced on: the one warm series, so a
+   * sub-millisecond change in the contour passes is measurable.
+   */
+  private async _runContourDragScenario(iterations: number) {
+    const host = this._hostAny();
+    const prevConfig = host.config as ScatterplotConfig | undefined;
+    await this._setConfigAndWait(host, {
+      ...(prevConfig ?? {}),
+      densityLayer: 'on',
+      densityStyle: 'contour',
+    });
+    try {
+      await this._runDragContinuousScenario(iterations, 'contourDrag');
+    } finally {
+      await this._setConfigAndWait(host, {
+        ...(prevConfig ?? {}),
+        densityLayer: prevConfig?.densityLayer ?? DENSITY_DEFAULT,
+        densityStyle: prevConfig?.densityStyle ?? DENSITY_STYLE_DEFAULT,
+      });
+    }
+  }
+
   /** Assign `host.config` and wait for the repaint it triggers to land and settle. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _setConfigAndWait(host: any, config: unknown) {
@@ -688,10 +713,13 @@ export class WebglRenderPerfRunner {
    * interval is the gap between consecutive `startTs` values in the pass list, so
    * a frame the GPU cannot keep up with is visible without a new pass field.
    */
-  private async _runDragContinuousScenario(iterations: number) {
+  private async _runDragContinuousScenario(
+    iterations: number,
+    name: PerfScenarioName = 'dragContinuous',
+  ) {
     const host = this._hostAny();
     if (!this._interaction()?.isZoomReady)
-      throw new Error('WebGL perf runner: missing zoom support for dragContinuous scenario');
+      throw new Error(`WebGL perf runner: missing zoom support for ${name} scenario`);
 
     const prevSelectionMode = !!host.selectionMode;
     if (prevSelectionMode) {
@@ -701,7 +729,7 @@ export class WebglRenderPerfRunner {
 
     const originalTransform = host._transform ?? d3.zoomIdentity;
 
-    this._beginScenario('dragContinuous', iterations);
+    this._beginScenario(name, iterations);
     // panBy is transform space: d3 applies tx1 = tx0 + k*dx, so the pixel step has
     // to be divided by k for the on-screen distance to match dragCanvas.
     const k = (host._transform as { k: number } | undefined)?.k || 1;

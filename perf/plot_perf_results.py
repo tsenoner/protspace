@@ -152,6 +152,7 @@ SCENARIO_LABELS: dict[str, str] = {
     "dragCanvas": "Dragging",
     "dragContinuous": "Dragging (sustained)",
     "densityZoom": "Density zoom",
+    "contourDrag": "Contour drag",
     "clickPoint": "Point selection",
 }
 
@@ -345,6 +346,7 @@ def main() -> int:
         "dragCanvas",
         "dragContinuous",
         "densityZoom",
+        "contourDrag",
         "clickPoint",
     ]
     scenarios_sorted = [s for s in scenario_order if s in scenarios] + sorted(
