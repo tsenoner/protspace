@@ -72,6 +72,7 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     VERTEX_SHADER: 0x8b31,
     FRAMEBUFFER: 0x8d40,
     FRAMEBUFFER_COMPLETE: 0x8cd5,
+    FRAMEBUFFER_BINDING: 0x8ca6,
     COLOR_BUFFER_BIT: 0x4000,
     DEPTH_BUFFER_BIT: 0x100,
     BLEND: 0x0be2,
@@ -108,6 +109,7 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
   };
   const noop = () => {};
   const maxTextureSize = opts.maxTextureSize ?? 8192;
+  let boundFramebuffer: unknown = null;
 
   // The GL error flag: sticky, holds the FIRST error raised, cleared by getError().
   // Modelling it faithfully is the point — code that checks it without draining first
@@ -122,7 +124,10 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     isContextLost: () => isLost(),
     // Recording: "how often do we ask the driver for its limits" is itself part
     // of the contract — the probe belongs at context creation, not per frame.
-    getParameter: vi.fn((pname: number) => (pname === C.MAX_TEXTURE_SIZE ? maxTextureSize : 0)),
+    getParameter: vi.fn((pname: number) => {
+      if (pname === C.FRAMEBUFFER_BINDING) return boundFramebuffer;
+      return pname === C.MAX_TEXTURE_SIZE ? maxTextureSize : 0;
+    }),
     // Returns and clears, like the real API.
     getError: () => {
       const raised = errorFlag;
@@ -191,7 +196,9 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     deleteTexture: noop,
     activeTexture: vi.fn(),
     createFramebuffer: () => ({}),
-    bindFramebuffer: noop,
+    bindFramebuffer: (_target: number, fb: unknown) => {
+      boundFramebuffer = fb;
+    },
     framebufferTexture2D: noop,
     framebufferRenderbuffer: noop,
     deleteFramebuffer: noop,

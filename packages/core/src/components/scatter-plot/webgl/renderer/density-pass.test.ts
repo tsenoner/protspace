@@ -16,6 +16,7 @@ import {
 function mockGL(opts: { framebufferComplete?: boolean } = {}) {
   const calls: string[] = [];
   const uploads3fv: unknown[] = [];
+  let boundFramebuffer: { k?: string } | null = null;
   const gl = {
     FRAMEBUFFER: 0x8d40,
     FRAMEBUFFER_COMPLETE: 0x8cd5,
@@ -49,8 +50,12 @@ function mockGL(opts: { framebufferComplete?: boolean } = {}) {
     deleteFramebuffer: vi.fn(),
     deleteTexture: vi.fn(),
     deleteRenderbuffer: vi.fn(),
-    bindFramebuffer: (_t: number, fb: { k?: string } | null) =>
-      calls.push(`bindFB:${fb ? (fb.k ?? 'fb') : 'null'}`),
+    FRAMEBUFFER_BINDING: 0x8ca6,
+    getParameter: (pname: number) => (pname === 0x8ca6 ? boundFramebuffer : 0),
+    bindFramebuffer: (_t: number, fb: { k?: string } | null) => {
+      boundFramebuffer = fb;
+      calls.push(`bindFB:${fb ? (fb.k ?? 'fb') : 'null'}`);
+    },
     framebufferTexture2D: () => calls.push('fbTex2D'),
     checkFramebufferStatus: () => {
       calls.push('checkFramebufferStatus');
@@ -265,6 +270,14 @@ describe('createColorTarget', () => {
     expect(t).not.toBeNull();
     expect(t!.width).toBe(64);
     expect(spies.createRenderbuffer).not.toHaveBeenCalled();
+  });
+
+  it('restores the framebuffer that was bound before it', () => {
+    const { gl, calls } = mockGL();
+    const outer = { k: 'outer' } as WebGLFramebuffer;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outer);
+    createColorTarget(gl, 64, 32, gl.RGBA32F, gl.FLOAT, gl.NEAREST);
+    expect(calls.filter((c) => c.startsWith('bindFB:')).at(-1)).toBe('bindFB:outer');
   });
 
   it('returns null and frees both handles when the framebuffer is incomplete', () => {
