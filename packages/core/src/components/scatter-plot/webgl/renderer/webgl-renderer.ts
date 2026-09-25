@@ -11,7 +11,6 @@
 import * as d3 from 'd3';
 import {
   DENSITY_STYLE_DEFAULT,
-  type DensityLayerStyle,
   type PlotData,
   type PlotDataPoint,
   type ScatterplotConfig,
@@ -45,22 +44,13 @@ import {
   destroyDensityResources,
   accumulateAndBlurDensity,
   compositeDensity,
-  type DensityCamera,
+  buildSlotPalette,
+  type DensityFrame,
+  type DensityPlan,
   type DensityResources,
+  type SlotPalette,
 } from './density-pass';
-import {
-  densityFrameParams,
-  DENSITY_CONTOUR_MIN_DENSITY,
-  type DensityFrameParams,
-} from './density-crossfade';
-
-/** Everything the three density passes need for one frame. */
-interface DensityFrame {
-  res: DensityResources;
-  camera: DensityCamera;
-  params: DensityFrameParams;
-  style: DensityLayerStyle;
-}
+import { densityFrameParams, DENSITY_CONTOUR_MIN_DENSITY } from './density-crossfade';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
@@ -167,6 +157,12 @@ export class WebGLRenderer {
    * in linear light, and switching it to sRGB would be the larger visible change.
    */
   private densityDisabled = false;
+  /**
+   * The contour style's slot palette for the staged colours. Nulled wherever the
+   * colour buffer uploads and rebuilt on the next contour frame, so a camera
+   * frame never rescans or re-uploads it.
+   */
+  private contourPalette: SlotPalette | null = null;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -450,33 +446,37 @@ export class WebGLRenderer {
    * the default, so a user who never turns it on never pays for it.
    */
   private ensureDensityResources(): DensityResources | null {
-    if (this.resources.density) return this.resources.density;
     const gl = this.gl;
     if (!gl || this.densityDisabled) return null;
-    // The density quad VAO is wired over the quad buffer setupQuad allocates, and
-    // the accumulation pass draws the POINT vao, so its program has to be linked
-    // against the point program's attribute indices.
-    if (!this.resources.quadBuffer || !this.pointAttribLocations) return null;
-
-    this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
-      dataPosition: this.pointAttribLocations.dataPosition,
-      color: this.pointAttribLocations.color,
-    });
     if (!this.resources.density) {
-      this.disableDensity('density shaders failed to compile');
-      return null;
+      // The density quad VAO is wired over the quad buffer setupQuad allocates, and
+      // the accumulation passes draw the POINT vao, so their programs have to be
+      // linked against the point program's attribute indices.
+      if (!this.resources.quadBuffer || !this.pointAttribLocations) return null;
+
+      this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
+        dataPosition: this.pointAttribLocations.dataPosition,
+        color: this.pointAttribLocations.color,
+      });
+      if (!this.resources.density) {
+        this.disableDensity('density shaders failed to compile');
+        return null;
+      }
     }
-    // Nulls `resources.density` again if the grid comes back incomplete.
+    // Every frame, not only on creation: the two styles allocate different grids,
+    // so a style switch reallocates here. Nulls `resources.density` again if the
+    // grid comes back incomplete.
     this.syncDensityTargets();
     return this.resources.density;
   }
 
-  /** Re-allocate the density grid for the current canvas size, if it exists. */
+  /** Re-allocate the density grid for the current canvas size and style, if it exists. */
   private syncDensityTargets() {
     const gl = this.gl;
     const res = this.resources.density;
     if (!gl || !res || this.densityDisabled) return;
-    if (!resizeDensityTargets(gl, res, this.canvas.width, this.canvas.height)) {
+    const style = this.getConfig().densityStyle ?? DENSITY_STYLE_DEFAULT;
+    if (!resizeDensityTargets(gl, res, this.canvas.width, this.canvas.height, style)) {
       this.disableDensity('density target incomplete');
     }
   }
@@ -654,14 +654,7 @@ export class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     if (density) {
-      accumulateAndBlurDensity(
-        gl,
-        density.res,
-        this.resources.pointVao,
-        this.currentPointCount,
-        density.camera,
-        density.style,
-      );
+      accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
       gl.viewport(0, 0, framebuffer.width, framebuffer.height);
     }
@@ -696,13 +689,13 @@ export class WebGLRenderer {
       config.width ?? DEFAULT_VIEWPORT_WIDTH,
       config.height ?? DEFAULT_VIEWPORT_HEIGHT,
     );
+    const style = config.densityStyle ?? DENSITY_STYLE_DEFAULT;
     // One grid cell, in CSS px^2. Read from the grid PLAN, not from an allocated
     // target, so a frame that contributes nothing allocates nothing.
-    const grid = computeDensityGrid(this.canvas.width, this.canvas.height);
+    const grid = computeDensityGrid(this.canvas.width, this.canvas.height, style);
     const cellAreaCss =
       ((this.canvas.width / grid.width) * (this.canvas.height / grid.height)) /
       (this.dpr * this.dpr);
-    const style = config.densityStyle ?? DENSITY_STYLE_DEFAULT;
     const params = densityFrameParams(
       this.visibleCount,
       transform.k,
@@ -712,6 +705,13 @@ export class WebGLRenderer {
       style === 'contour' ? DENSITY_CONTOUR_MIN_DENSITY : undefined,
     );
     if (params.alpha <= 0) return null;
+
+    let plan: DensityPlan = { style: 'heatmap' };
+    if (style === 'contour') {
+      this.contourPalette ??= buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
+      if (this.contourPalette.count === 0) return null;
+      plan = { style, palette: this.contourPalette };
+    }
 
     const res = this.ensureDensityResources();
     if (!res || !res.accum) return null;
@@ -726,7 +726,7 @@ export class WebGLRenderer {
         gamma: this.getEffectiveGamma(),
       },
       params,
-      style,
+      plan,
     };
   }
 
@@ -737,7 +737,7 @@ export class WebGLRenderer {
   private compositeDensity(density: DensityFrame) {
     const gl = this.gl;
     if (!gl) return;
-    compositeDensity(gl, density.res, density.params, density.style);
+    compositeDensity(gl, density);
     // Uniforms are per-program and survive the detour, so re-binding is enough.
     gl.useProgram(this.resources.pointProgram);
     gl.bindVertexArray(this.resources.pointVao);
@@ -1431,6 +1431,7 @@ export class WebGLRenderer {
     if (updateStyles || needsReorder) {
       this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
       this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
+      this.contourPalette = null;
       this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
       this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
       this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);

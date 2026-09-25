@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
 import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
-import type { ScalePair } from '../types';
+import type { ScalePair, WebGLStyleGetters } from '../types';
 import type { GLResources } from './gl-resources';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
@@ -25,6 +25,7 @@ function setup(
   config: Config,
   opts: MockGLOptions = {},
   getTransform: () => d3.ZoomTransform = () => d3.zoomIdentity,
+  style: WebGLStyleGetters = styleGetters(),
 ) {
   const { canvas, gl } = createMockCanvas(opts);
   const degraded: RendererDegradedDetail[] = [];
@@ -33,7 +34,7 @@ function setup(
     scales,
     getTransform,
     () => config as never,
-    styleGetters(),
+    style,
     undefined,
     () => [1, 1, 1],
     (detail) => degraded.push(detail),
@@ -65,6 +66,12 @@ function recordCalls(gl: Record<string, (...a: unknown[]) => unknown>): string[]
 }
 
 const countOf = (calls: string[], needle: string) => calls.filter((c) => c === needle).length;
+
+// jsdom has no 2D canvas to parse colours with, so every colour would stage as
+// the same white and the contour palette would always hold one slot.
+vi.mock('../color-utils', () => ({
+  resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
+}));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -107,8 +114,8 @@ describe('density layer, off', () => {
 
     expect(accumAllocations(on.gl)).toBe(1);
     expect(on.resources.density).not.toBeNull();
-    // Accumulate, the two blur kernels, composite.
-    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 4);
+    // Both accumulates, both blur kernels, both composites.
+    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 6);
 
     absent.renderer.destroy();
     on.renderer.destroy();
@@ -125,35 +132,6 @@ describe('density layer, on', () => {
     // Two blur passes, the composite, and the gamma quad. The mock's TRIANGLES
     // constant is not asserted; the 6-vertex count is what identifies a quad.
     expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(4);
-    on.renderer.destroy();
-  });
-
-  // The contour style is a branch inside the composite shader, not a fourth
-  // pass: if it ever grows its own draw, this count moves off 4 and the seam
-  // (base points, composite, selected points) has silently changed shape.
-  it('sets the contour style uniform without adding a pass', () => {
-    const on = setup({ width: 800, height: 600, densityLayer: 'on', densityStyle: 'contour' });
-    vi.spyOn(on.gl, 'getUniformLocation').mockImplementation(((_p: unknown, name: unknown) => ({
-      name,
-    })) as never);
-    const uniform1i = vi.spyOn(on.gl, 'uniform1i');
-    const calls = recordCalls(on.glRecord);
-    on.renderer.render(plotData(50));
-
-    expect(uniform1i.mock.calls).toContainEqual([{ name: 'u_style' }, 1]);
-    expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(4);
-    on.renderer.destroy();
-  });
-
-  it('leaves the style uniform at 0 for the heatmap', () => {
-    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
-    vi.spyOn(on.gl, 'getUniformLocation').mockImplementation(((_p: unknown, name: unknown) => ({
-      name,
-    })) as never);
-    const uniform1i = vi.spyOn(on.gl, 'uniform1i');
-    on.renderer.render(plotData(50));
-
-    expect(uniform1i.mock.calls).toContainEqual([{ name: 'u_style' }, 0]);
     on.renderer.destroy();
   });
 
@@ -216,8 +194,8 @@ describe('density layer, on', () => {
       (on.renderer as unknown as { gammaPipelineAvailable: boolean }).gammaPipelineAvailable,
     ).toBe(false);
     expect(on.resources.density).toBeNull();
-    // The gamma program plus the four density programs.
-    expect(deleteProgram).toHaveBeenCalledTimes(5);
+    // The gamma program plus the six density programs.
+    expect(deleteProgram).toHaveBeenCalledTimes(7);
     // The density quad's VAO goes with them; the point VAO stays.
     expect(deleteVao).toHaveBeenCalledTimes(1);
     // Exactly one reason, and it is the gamma one: density adds no new reason.
@@ -237,6 +215,140 @@ describe('density layer, on', () => {
     config.width = 1024;
     on.renderer.render(plotData(50));
     expect(accumAllocations(on.gl)).toBe(2);
+    on.renderer.destroy();
+  });
+});
+
+/** 50 points, point i coloured `palette[i % palette.length]`, hidden where `hidden(i)`. */
+function categories(palette: string[], hidden: (i: number) => boolean = () => false) {
+  const pd = plotData(50);
+  pd.proteinIds = Array.from({ length: 50 }, (_, i) => `p${i}`);
+  const index = (sp: { id: string }) => Number(sp.id.slice(1));
+  const style: WebGLStyleGetters = {
+    ...styleGetters(),
+    getColors: (sp) => [palette[index(sp) % palette.length]],
+    getOpacity: (sp) => (hidden(index(sp)) ? 0 : 1),
+  };
+  return { pd, style };
+}
+
+const quadDraws = (calls: string[]) => calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c));
+const FIVE = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231'];
+
+describe('density layer, contour', () => {
+  const contour: Config = { width: 800, height: 600, densityLayer: 'on', densityStyle: 'contour' };
+
+  it('draws one colour in the same four quads as the heatmap', () => {
+    const { pd, style } = categories(['#e6194b']);
+    const on = setup(contour, {}, undefined, style);
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(pd);
+
+    // Two blur passes, the composite, and the gamma quad.
+    expect(quadDraws(calls)).toHaveLength(4);
+    expect(countOf(calls, 'drawArrays(0,0,50)')).toBe(2);
+    on.renderer.destroy();
+  });
+
+  it('accumulates and blurs once per group of four colours', () => {
+    const { pd, style } = categories(FIVE);
+    const on = setup(contour, {}, undefined, style);
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(pd);
+
+    // Two groups: 2 x 2 blur passes, the composite, the gamma quad.
+    expect(quadDraws(calls)).toHaveLength(6);
+    // Two accumulate draws, then the point draw.
+    expect(countOf(calls, 'drawArrays(0,0,50)')).toBe(3);
+    on.renderer.destroy();
+  });
+
+  it('neither rebuilds nor re-uploads the palette on a camera move', () => {
+    const { pd, style } = categories(FIVE);
+    let transform = d3.zoomIdentity;
+    const on = setup(contour, {}, () => transform, style);
+    on.renderer.render(pd);
+    const bytes = on.renderer.uploadedBytesTotal;
+    const firstFrame = on.gl.uniform3fv.mock.calls.map((c) => c[1]);
+    on.gl.bufferData.mockClear();
+    on.gl.bufferSubData.mockClear();
+    on.gl.uniform3fv.mockClear();
+
+    transform = d3.zoomIdentity.translate(40, 20).scale(2);
+    on.renderer.render(pd);
+
+    expect(on.gl.bufferData).toHaveBeenCalledTimes(0);
+    expect(on.gl.bufferSubData).toHaveBeenCalledTimes(0);
+    expect(on.renderer.uploadedBytesTotal).toBe(bytes);
+    // Keys for the accumulate, colours for the composite: the very same arrays.
+    const secondFrame = on.gl.uniform3fv.mock.calls.map((c) => c[1]);
+    expect(firstFrame).toHaveLength(2);
+    expect(secondFrame).toHaveLength(2);
+    expect(secondFrame[0]).toBe(firstFrame[0]);
+    expect(secondFrame[1]).toBe(firstFrame[1]);
+    on.renderer.destroy();
+  });
+
+  it('drops a hidden colour from the palette on the next restage', () => {
+    let hideRed = false;
+    const { pd, style } = categories(['#e6194b', '#3cb44b'], (i) => hideRed && i % 2 === 0);
+    const on = setup(contour, {}, undefined, style);
+    vi.spyOn(on.gl, 'getUniformLocation').mockImplementation(((_p: unknown, name: unknown) => ({
+      name,
+    })) as never);
+    const slotCounts = () =>
+      on.gl.uniform1i.mock.calls.filter((c) => c[0]?.name === 'u_slotCount').map((c) => c[1]);
+
+    on.renderer.render(pd);
+    expect(slotCounts().at(-1)).toBe(2);
+
+    hideRed = true;
+    on.renderer.invalidateStyleCache();
+    on.renderer.render(pd);
+    expect(slotCounts().at(-1)).toBe(1);
+    on.renderer.destroy();
+  });
+
+  it('skips the whole chain when every point is hidden', () => {
+    const { pd, style } = categories(FIVE, () => true);
+    const on = setup(contour, {}, undefined, style);
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(pd);
+
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+    expect(quadDraws(calls)).toHaveLength(1);
+    on.renderer.destroy();
+  });
+
+  it('composites between the unselected and the selected run, off the atlas unit', () => {
+    const { pd, style } = categories(FIVE);
+    const index = (sp: { id: string }) => Number(sp.id.slice(1));
+    const selected: WebGLStyleGetters = {
+      ...style,
+      getOpacity: (sp) => (index(sp) >= 40 ? 1 : 0.5),
+      getDepth: (sp) => (index(sp) >= 40 ? 0 : 1),
+    };
+    const on = setup(contour, {}, undefined, selected);
+    on.renderer.setSelectionActive(true);
+    const calls = recordCalls(on.glRecord);
+    on.renderer.render(pd);
+
+    const base = calls.indexOf('drawArrays(0,0,40)');
+    const top = calls.indexOf('drawArrays(0,40,10)');
+    expect(base).toBeGreaterThan(-1);
+    expect(top).toBeGreaterThan(base);
+    const seam = calls.slice(base + 1, top);
+    expect(quadDraws(seam)).toHaveLength(1);
+    // TEXTURE1 is the label atlas the selected run samples.
+    expect(seam.filter((c) => c.startsWith('activeTexture('))).toEqual([
+      'activeTexture(33984)',
+      'activeTexture(33986)',
+      'activeTexture(33987)',
+      'activeTexture(33988)',
+      'activeTexture(33987)',
+      'activeTexture(33986)',
+      'activeTexture(33984)',
+    ]);
     on.renderer.destroy();
   });
 });
