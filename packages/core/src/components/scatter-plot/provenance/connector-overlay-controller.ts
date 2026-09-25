@@ -38,7 +38,6 @@ interface ConnectorOverlayDeps {
   getOverlayGroup: () => Selection<SVGGElement, unknown, null, undefined> | null;
   getPlotData: () => PlotData;
   getScales: () => ScalePair | null;
-  /** Drawn dot radius on screen in CSS px, at the current zoom. */
   getPointRadiusPx: () => number;
   onStatusChange: (status: ProvenanceConnectorStatus | null) => void;
 }
@@ -117,7 +116,6 @@ export class ConnectorOverlayController {
       });
   }
 
-  // The halo sits just outside the drawn dot.
   private endpointBaseRadiusPx(): number {
     return Math.max(4, this.deps.getPointRadiusPx() + 2);
   }

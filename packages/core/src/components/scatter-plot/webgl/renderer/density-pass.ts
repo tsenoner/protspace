@@ -1,17 +1,3 @@
-/**
- * Density layer GPU resources and pass sequence.
- *
- * Three passes on a reduced grid: accumulate every visible point additively
- * into an exact-integer RGBA32F target, blur it separably into RGBA16F targets,
- * then composite the blurred result over the scene. The heatmap accumulates
- * colour sums into one field; the contour style accumulates per-category
- * counts, four categories per field, and draws one ring set per category.
- *
- * Deliberately does NOT reuse createLinearFramebuffer: that helper always
- * allocates a DEPTH_COMPONENT16 renderbuffer, which no density target ever
- * reads (about 1 MB at 1080p, 4 MB at retina).
- */
-
 import type { DensityLayerStyle } from '@protspace/utils';
 import { createProgramFromSources } from '../shader-utils';
 import type { DensityFrameParams } from './density-crossfade';
@@ -31,15 +17,11 @@ import {
   DENSITY_FIELD_UNITS,
 } from './density-shaders';
 
-/** Grid side = device pixels / this. */
 const DENSITY_PIXEL_RATIO = 2;
-/** Longest grid side, so a retina canvas degrades toward quarter resolution. */
 const DENSITY_MAX_GRID_SIDE = 1024;
 
-/** Attribute index the density quad VAO is wired for; both quad programs bind it. */
 const QUAD_ATTRIB_INDEX = 0;
 
-/** NEUTRAL_VALUE_COLOR (scatter-plot/config.ts), what Other and unmapped values stage as. */
 const NEUTRAL_KEY = 0x888888;
 
 export interface ColorTarget {
@@ -60,23 +42,13 @@ interface CameraLocations {
   dpr: WebGLUniformLocation | null;
 }
 
-/**
- * Which staged colour owns which contour channel. Built from the staged colour
- * array, never from the legend, so the layer and the points cannot disagree.
- * Slot i lives in field i >> 2, channel i & 3; slots at or past `count` are 0.
- */
 export interface SlotPalette {
-  /** sRGB as staged, 3 per slot: what the accumulate matches a_color against. */
   readonly keys: Float32Array;
-  /** Linear, lightened toward white, 3 per slot: the ring and fill colour. */
   readonly colors: Float32Array;
-  /** 0 when no staged point is visible. */
   readonly count: number;
-  /** Slot of every colour past the cap, or -1 when every colour has its own. */
   readonly tailSlot: number;
 }
 
-/** A contour frame always carries a palette with at least one slot. */
 export type DensityPlan =
   | { readonly style: 'heatmap' }
   | { readonly style: 'contour'; readonly palette: SlotPalette };
@@ -84,7 +56,6 @@ export type DensityPlan =
 export interface DensityResources {
   accumProgram: WebGLProgram;
   blurProgram: WebGLProgram;
-  /** Same shape, the contour kernel. */
   contourBlurProgram: WebGLProgram;
   compositeProgram: WebGLProgram;
   categoryAccumProgram: WebGLProgram;
@@ -104,24 +75,18 @@ export interface DensityResources {
     group: WebGLUniformLocation | null;
   };
   categoryCompositeLoc: {
-    /** u_field0..3, bound to DENSITY_FIELD_UNITS in order. */
     fields: (WebGLUniformLocation | null)[];
     slotColors: WebGLUniformLocation | null;
     slotCount: WebGLUniformLocation | null;
     alpha: WebGLUniformLocation | null;
     contourFloor: WebGLUniformLocation | null;
   };
-  /** a_position over the renderer's existing quad buffer, so the composite never
-   *  touches attribute state while the point VAO is bound mid-draw. */
   quadVao: WebGLVertexArrayObject;
-  /** Null until the first resize. On the grid of the style it was allocated for. */
   accum: ColorTarget | null;
   ping: ColorTarget | null;
-  /** Blurred outputs: one for the heatmap, DENSITY_CATEGORY_CAP / 4 for the contour. */
   fields: ColorTarget[];
 }
 
-/** Everything the three density passes need for one frame. */
 export interface DensityFrame {
   res: DensityResources;
   camera: DensityCamera;
@@ -129,10 +94,6 @@ export interface DensityFrame {
   plan: DensityPlan;
 }
 
-/**
- * Pure. Half the device canvas, long side clamped, then for the contour style
- * DENSITY_CONTOUR_GRID_DIVISOR coarser again per side; never below 1x1.
- */
 export function computeDensityGrid(
   canvasWidth: number,
   canvasHeight: number,
@@ -149,16 +110,6 @@ export function computeDensityGrid(
 const fieldCount = (style: DensityLayerStyle) =>
   style === 'contour' ? DENSITY_CATEGORY_CAP / 4 : 1;
 
-/**
- * Pure. Every distinct colour among the first `count` staged points with alpha
- * > 0 gets a slot, in order of first appearance. `colors` is the renderer's
- * staged RGBA array in painter order, which runs from the legend's bottom item
- * to its top one, so later slots composite on top as their points do.
- *
- * Past DENSITY_CATEGORY_CAP colours, the CAP - 1 most populous keep a slot and
- * the rest pool into a NEUTRAL_KEY slot 0, which reads as the legend's Other
- * (and merges with it when Other is present).
- */
 export function buildSlotPalette(colors: Float32Array, count: number, gamma: number): SlotPalette {
   const entries = new Map<number, { n: number; first: number }>();
   let prevKey = -1;
@@ -170,8 +121,6 @@ export function buildSlotPalette(colors: Float32Array, count: number, gamma: num
       (Math.round(colors[o] * 255) << 16) |
       (Math.round(colors[o + 1] * 255) << 8) |
       Math.round(colors[o + 2] * 255);
-    // Same-colour points are mostly adjacent in painter order, so this skips the
-    // Map lookup for all but the first point of each run.
     if (key !== prevKey) {
       prev = entries.get(key);
       if (!prev) entries.set(key, (prev = { n: 0, first: i }));
@@ -208,11 +157,6 @@ export function buildSlotPalette(colors: Float32Array, count: number, gamma: num
   return { keys, colors: linear, count: slots.length, tailSlot };
 }
 
-/**
- * Depth-free colour target. Returns null (after deleting both handles) when the
- * framebuffer is incomplete. Completeness is checked HERE and nowhere else: the
- * per-frame passes never ask the driver anything.
- */
 export function createColorTarget(
   gl: WebGL2RenderingContext,
   width: number,
@@ -255,14 +199,6 @@ function destroyColorTarget(gl: WebGL2RenderingContext, t: ColorTarget): void {
   gl.deleteTexture(t.texture);
 }
 
-/**
- * Compile the six programs, resolve every uniform location, build the quad VAO.
- * Returns null (after cleanup) if any program fails to compile or link.
- *
- * `pointAttribs` are the point program's attribute indices: both accumulation
- * passes draw the point VAO, so their two attributes must be bound to the same
- * indices before they are linked.
- */
 export function createDensityResources(
   gl: WebGL2RenderingContext,
   quadBuffer: WebGLBuffer,
@@ -381,10 +317,6 @@ export function createDensityResources(
   };
 }
 
-/**
- * Compare-then-reallocate on the grid and field count of `style`, so a style
- * switch frees the other style's targets. False leaves no targets behind.
- */
 export function resizeDensityTargets(
   gl: WebGL2RenderingContext,
   res: DensityResources,
@@ -408,7 +340,6 @@ export function resizeDensityTargets(
   // RGBA32F because the accumulation is exact to 2^24, well past the 2M point cap;
   // RGBA16F would stall on dense cells and drift the colour of the core.
   const accum = createColorTarget(gl, width, height, gl.RGBA32F, gl.FLOAT, gl.NEAREST);
-  // Write-not-accumulate, so 16F is safe; LINEAR is what the composite upsamples with.
   const blurred = () => createColorTarget(gl, width, height, gl.RGBA16F, gl.HALF_FLOAT, gl.LINEAR);
   const ping = blurred();
   const fields = Array.from({ length: want }, blurred);
@@ -442,7 +373,6 @@ export function destroyDensityResources(gl: WebGL2RenderingContext, res: Density
 }
 
 export interface DensityCamera {
-  /** Device pixels of the CANVAS, not of the grid. */
   width: number;
   height: number;
   transform: { x: number; y: number; k: number };
@@ -450,15 +380,12 @@ export interface DensityCamera {
   gamma: number;
 }
 
-/** The CANVAS resolution: clip space is normalised, so the grid is selected by
- *  the viewport alone and the camera stays identical to the point pass. */
 function setCamera(gl: WebGL2RenderingContext, loc: CameraLocations, camera: DensityCamera) {
   gl.uniform2f(loc.resolution, camera.width, camera.height);
   gl.uniform3f(loc.transform, camera.transform.x, camera.transform.y, camera.transform.k);
   gl.uniform1f(loc.dpr, camera.dpr);
 }
 
-/** One additive fragment per point the bound program keeps, on the grid. */
 function accumulate(
   gl: WebGL2RenderingContext,
   accum: ColorTarget,
@@ -482,7 +409,6 @@ function accumulate(
   gl.bindVertexArray(null);
 }
 
-/** Separable gaussian, accum -> ping (x) -> out (y). */
 function blur(
   gl: WebGL2RenderingContext,
   res: DensityResources,
@@ -514,14 +440,6 @@ function blur(
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
 
-/**
- * Passes 1 and 2. Leaves the caller's framebuffer UNBOUND: the caller re-binds
- * its own target and viewport before drawing points.
- *
- * The contour style runs both once per group of four slots in use, through the
- * one accumulate and ping target; fields past the last group are left stale,
- * and the composite never reads their slots.
- */
 export function accumulateAndBlurDensity(
   gl: WebGL2RenderingContext,
   frame: DensityFrame,
@@ -547,7 +465,6 @@ export function accumulateAndBlurDensity(
   const groups = Math.ceil(palette.count / 4);
   for (let g = 0; g < groups && fields[g]; g++) {
     accumulate(gl, accum, res.categoryAccumProgram, pointVao, pointCount, () => {
-      // Uniforms persist per program, so the palette and camera go up once.
       if (g === 0) {
         setCamera(gl, loc, camera);
         gl.uniform3fv(loc.slotKeys, palette.keys);
@@ -560,11 +477,6 @@ export function accumulateAndBlurDensity(
   }
 }
 
-/**
- * Pass 3. Draws into whatever framebuffer and viewport are bound (the linear
- * FBO), between the unselected and the selected point runs. The caller re-binds
- * the point program and VAO afterwards. Never touches texture unit 1.
- */
 export function compositeDensity(gl: WebGL2RenderingContext, frame: DensityFrame): void {
   const { res, params, plan } = frame;
   const units = plan.style === 'contour' ? DENSITY_FIELD_UNITS : DENSITY_FIELD_UNITS.slice(0, 1);
@@ -582,9 +494,6 @@ export function compositeDensity(gl: WebGL2RenderingContext, frame: DensityFrame
     gl.uniform3fv(loc.slotColors, plan.palette.colors);
     gl.uniform1i(loc.slotCount, plan.palette.count);
     gl.uniform1f(loc.alpha, params.alpha);
-    // Absolute, in blurred points per grid cell, so it does not move with the
-    // frame's scaler: below it nothing is drawn, which keeps a ring off an
-    // isolated point and dissolves the lines on zoom-in.
     gl.uniform1f(loc.contourFloor, DENSITY_CONTOUR_FLOOR);
   }
   units.forEach((unit, g) => {
@@ -596,7 +505,6 @@ export function compositeDensity(gl: WebGL2RenderingContext, frame: DensityFrame
   gl.bindVertexArray(res.quadVao);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.bindVertexArray(null);
-  // In reverse, so the unit bound last needs no switch and unit 0 ends active.
   for (let g = units.length - 1; g >= 0; g--) {
     if (g < units.length - 1) gl.activeTexture(gl.TEXTURE0 + units[g]);
     gl.bindTexture(gl.TEXTURE_2D, null);

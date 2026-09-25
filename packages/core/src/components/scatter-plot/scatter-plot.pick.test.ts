@@ -5,8 +5,6 @@
  * We stub the quadtree + scales + a single rendered point and assert:
  *   (a) pickInteractivePointAt returns the interactive in-radius point;
  *   (b) it returns null for a non-interactive (hidden) point;
- *   (c) it returns null when the resolved point is outside the drawn radius,
- *       which is the renderer's pointScale times sqrt(pointSize)/3, floored at 4 px.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import * as d3 from 'd3';
@@ -61,9 +59,9 @@ function makePickScatter(): PickInternals {
     originalIndices: null,
     proteinIds: sp.data.protein_ids,
   } as unknown as PlotData;
-  sp._transform = d3.zoomIdentity; // identity: dataX===mouseX
+  sp._transform = d3.zoomIdentity;
   sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 1 };
-  sp._mergedConfig.pointSize = 225; // nominal radius 5 CSS px
+  sp._mergedConfig.pointSize = 225;
   // Inject identity scales so scales.x(0)===0 / scales.y(0)===0 (the fixture's
   // documented "dataX===mouseX" assumption). _scales is a cached getter keyed on
   // _scalesCacheDeps; priming both backing fields with matching deps makes the
@@ -96,7 +94,6 @@ describe('F-28 pickInteractivePointAt (shared hover/click hit-test)', () => {
   });
 
   it('hits the grown dot when zoomed in, in screen px', () => {
-    // k = 4 with pointScale 2: the dot is drawn at radius 10 screen px.
     const sp = makePickScatter();
     sp._transform = d3.zoomIdentity.scale(4);
     sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 2 };
@@ -109,7 +106,7 @@ describe('F-28 pickInteractivePointAt (shared hover/click hit-test)', () => {
 
   it('keeps a 4 px hit radius for dots drawn smaller', () => {
     const sp = makePickScatter();
-    sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 0.5 }; // drawn r 2.5
+    sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 0.5 };
     sp._quadtreeIndex.findNearest = () => 0;
     expect(sp.pickInteractivePointAt(3.9, 0)?.id).toBe('p0');
     expect(sp.pickInteractivePointAt(4.1, 0)).toBeNull();
@@ -125,7 +122,6 @@ describe('F-28 pickInteractivePointAt (shared hover/click hit-test)', () => {
   it('returns null when the resolved point is outside pointRadius', () => {
     const sp = makePickScatter();
     sp._quadtreeIndex.findNearest = () => 0; // nearest is p0 at (0,0)...
-    // ...but query far from it; identity scales => distance >> the drawn radius
     expect(sp.pickInteractivePointAt(40, 40)).toBeNull();
   });
 });

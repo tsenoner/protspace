@@ -85,8 +85,6 @@ describe('drawPoints', () => {
     expect(calls).toEqual(['enable:1', 'blendFunc:1,771', 'drawArrays:0,0,100']);
   });
 
-  // The density composite runs here: after the base run has painted the whole
-  // scene (blend off, so it overwrites), before the selected run goes on top.
   it('two-pass: runs afterBasePass between the unselected and selected runs', () => {
     const { gl, calls } = mockGL();
     drawPoints(gl, 10, true, 3, () => calls.push('hook'));

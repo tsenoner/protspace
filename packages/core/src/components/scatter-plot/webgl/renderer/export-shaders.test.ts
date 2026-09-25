@@ -7,9 +7,6 @@ import {
 
 describe('gamma correction shader', () => {
   it('un-premultiplies before handing the frame to the compositor', () => {
-    // The linear FBO holds premultiplied colour, but the canvas is created with
-    // premultipliedAlpha: false, so straight colour is what the page expects. Left
-    // premultiplied, alpha is applied twice and every low-alpha fringe greys out.
     expect(GAMMA_FRAGMENT_SHADER).toContain('linear.rgb / linear.a');
   });
 });

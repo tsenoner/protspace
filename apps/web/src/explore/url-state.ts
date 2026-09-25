@@ -73,11 +73,6 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
-/**
- * One param, five tokens. Mode and style stay separate fields everywhere else;
- * the `contour-` prefix exists only here and in the control bar's option values.
- * `off` has no style variant: off is off.
- */
 const DENSITY_TOKENS: Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }> = {
   off: { mode: 'off', style: DENSITY_STYLE_DEFAULT },
   auto: { mode: 'auto', style: 'heatmap' },
@@ -272,7 +267,6 @@ export function getResolvedExploreViewNormalization(
   };
 }
 
-/** The default stays out of the URL; every other mode is written explicitly. */
 function setDensityParam(
   searchParams: URLSearchParams,
   density: DensityLayerMode,
@@ -281,8 +275,6 @@ function setDensityParam(
   const token = Object.keys(DENSITY_TOKENS).find(
     (key) => DENSITY_TOKENS[key].mode === density && DENSITY_TOKENS[key].style === style,
   );
-  // No token means a pair the URL cannot express, which is only `off` with a
-  // style: off is off, and the style is dropped with it.
   if (!token || (density === DENSITY_DEFAULT && style === DENSITY_STYLE_DEFAULT)) {
     searchParams.delete('density');
     return;

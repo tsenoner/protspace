@@ -23,8 +23,6 @@ describe('control-bar density layer select', () => {
     controlBar.autoSync = true;
     document.body.appendChild(controlBar);
     await controlBar.updateComplete;
-    // A real element: the control bar adds and removes listeners on whatever
-    // `_scatterplotElement` holds, so a bare object blows up on teardown.
     plot = document.createElement('div') as HTMLElement & { config: Partial<ScatterplotConfig> };
     plot.config = { pointSize: 42 };
     controlBar._scatterplotElement = plot;
@@ -39,8 +37,6 @@ describe('control-bar density layer select', () => {
 
     const el = select();
     expect(el).not.toBeNull();
-    // A native select with an aria-label is the accessibility floor: labelled,
-    // keyboard operable, announced with its current value.
     expect(el?.getAttribute('aria-label')).toBe('Density layer');
 
     el!.value = 'auto';
@@ -53,8 +49,6 @@ describe('control-bar density layer select', () => {
       densityStyle: 'heatmap',
     });
     expect(controlBar.densityLayer).toBe('auto');
-    // The rest of the config has to survive the write: assigning a bare
-    // `{ densityLayer }` would drop every other key the host had set.
     expect(plot.config).toEqual({
       pointSize: 42,
       densityLayer: 'auto',
@@ -69,8 +63,6 @@ describe('control-bar density layer select', () => {
     expect(select()?.value).toBe('on');
   });
 
-  // One select, five options: the style is not a second control, so a user who
-  // never wants contours never sees an extra widget, and the URL stays one param.
   it.each([
     ['off', 'off', 'heatmap'],
     ['auto', 'auto', 'heatmap'],

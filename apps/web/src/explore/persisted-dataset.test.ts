@@ -19,12 +19,6 @@ vi.mock('./opfs-dataset-store', () => ({
 
 import { createPersistedDatasetController } from './persisted-dataset';
 
-// The demo fetch is the one load in the app that can fail without any file
-// being involved (404, offline, a trailing-slash route resolving
-// ./data.parquetbundle to the SPA fallback). Flagging the current dataset as the
-// demo BEFORE that fetch succeeds is what disabled "Load demo dataset" with
-// nothing else visibly happening: the plot kept the old data, the header said
-// "Demo dataset", the button greyed out, and the failure went to the console.
 describe('loadDefaultDataset when the demo bundle cannot be fetched', () => {
   const setCurrentDatasetIsDemo = vi.fn();
   const setCurrentDatasetName = vi.fn();
@@ -55,12 +49,9 @@ describe('loadDefaultDataset when the demo bundle cannot be fetched', () => {
 
     await controller.loadDefaultDataset();
 
-    // On success handleDataLoaded sets both from the load's own metadata, so
-    // this path must not touch them at all.
     expect(setCurrentDatasetIsDemo).not.toHaveBeenCalled();
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(loadFromFile).not.toHaveBeenCalled();
-    // Rooted at the app base so /explore/ (trailing slash) still finds it.
     expect(fetch).toHaveBeenCalledWith('/data.parquetbundle');
     expect(registerFileLoad).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledTimes(1);

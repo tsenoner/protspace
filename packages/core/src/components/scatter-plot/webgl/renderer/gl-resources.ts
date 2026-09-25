@@ -29,7 +29,6 @@ export class GLResources {
 
   labelColorTexture: WebGLTexture | null = null;
   linearFramebuffer: FramebufferResources | null = null;
-  /** Density layer programs, quad VAO and grid targets; null when unavailable. */
   density: DensityResources | null = null;
 
   /** The 6 attribute buffers + quad buffer, in VAO-binding order. */

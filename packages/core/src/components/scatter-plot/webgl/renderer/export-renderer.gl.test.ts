@@ -110,7 +110,6 @@ describe('ExportRenderer dot size', () => {
   }
 
   it('draws the live 800x600 dot size scaled to a 400x300 output', () => {
-    // live scale 0.90999 at k = 1, times the output ratio 0.5
     expect(exportedPointScale({ x: 0, y: 0, k: 1 })).toBeCloseTo(0.455, 3);
   });
 

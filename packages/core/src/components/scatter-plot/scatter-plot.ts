@@ -75,8 +75,6 @@ export type {
   ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
 
-// Hover/click tolerance for dots drawn smaller than this, in CSS px. The one
-// deliberate divergence from the drawn radius: a 2 px dot is too small to hit.
 const HIT_RADIUS_MIN_PX = 4;
 
 /** Default number of bins for numeric→categorical materialization. Mirrors
@@ -1379,9 +1377,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._webglRenderer.render(pd);
 
     if (perfToken) {
-      // Read the clock, THEN block on the GPU: `durationMs` keeps meaning CPU
-      // submission time (comparable with every earlier baseline) while
-      // `gpuSyncedMs` extends the same window to GPU completion.
       const cpuEndTs = performance.now();
       this._webglRenderer.syncGpu();
       this._webglRenderPerf.stop(
@@ -1756,7 +1751,6 @@ export class ProtspaceScatterplot extends LitElement {
     const dataX = (mouseX - this._transform.x) / k;
     const dataY = (mouseY - this._transform.y) / k;
 
-    // The quadtree holds pre-zoom positions, so the screen-px radius is divided by k.
     const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
     const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
@@ -1778,7 +1772,6 @@ export class ProtspaceScatterplot extends LitElement {
     return screenDistance <= hitRadius ? nearestPoint : null;
   }
 
-  /** The radius dots are drawn with right now, in screen CSS px. */
   private _drawnPointRadiusCss(): number {
     return pointRadiusCss(this._mergedConfig.pointSize) * (this._webglRenderer?.pointScale() ?? 1);
   }

@@ -12,16 +12,6 @@ const EXPECTED_SCENARIOS = [
   'clickPoint',
 ] as const;
 
-/**
- * Scenarios that only move the camera. The camera is a shader uniform, so a pan
- * or a zoom cannot require an upload: `uploadedBytes === 0` is the #456 gate, and
- * unlike a wall-clock threshold it means the same thing on every machine.
- *
- * `densityZoom` is a camera scenario too: the density layer is driven by uniforms
- * off the same buffers the point pass reads, so forcing it on must not upload a
- * byte either. EXPECTED_SCENARIOS requires it, because the loop below silently
- * skips a scenario that is absent.
- */
 const CAMERA_SCENARIOS = [
   'zoomInOut',
   'zoomFarOut',
@@ -264,9 +254,6 @@ test.describe('WebGL render perf benchmark (headed)', () => {
         ).toBeGreaterThan(0);
       }
 
-      // The machine-independent half of the regression gate. A wall-clock budget
-      // would have to be tuned per machine and would reject on a noisy neighbour;
-      // these two numbers are exact and mean the same thing everywhere.
       for (const name of CAMERA_SCENARIOS) {
         const scenario = r.scenarios.find((s) => s?.name === name);
         for (const pass of scenario?.passes ?? []) {
@@ -274,9 +261,6 @@ test.describe('WebGL render perf benchmark (headed)', () => {
             pass.uploadedBytes,
             `${r.dataset?.id} / ${name} uploaded bytes on a camera move`,
           ).toBe(0);
-          // Before the equality, or a pass carrying neither field satisfies
-          // `undefined === undefined` and the truncation half of the gate is
-          // asserting nothing at all.
           expect(
             pass.drawnPoints,
             `${r.dataset?.id} / ${name} recorded no drawnPoints`,

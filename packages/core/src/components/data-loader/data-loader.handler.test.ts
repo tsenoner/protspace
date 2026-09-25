@@ -54,8 +54,6 @@ describe('data-loader file input reset', () => {
 
     const input = dataLoader.shadowRoot?.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['x'], 'same.parquetbundle');
-    // jsdom has no real file picker, so model the browser contract: the input keeps
-    // the previous selection, and `change` only fires again once it is cleared.
     let value = 'C:\\fakepath\\same.parquetbundle';
     Object.defineProperty(input, 'value', {
       get: () => value,

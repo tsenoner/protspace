@@ -49,7 +49,6 @@ function setup(
   };
 }
 
-/** Every GL call this frame makes, in order, with its scalar arguments. */
 function recordCalls(gl: Record<string, (...a: unknown[]) => unknown>): string[] {
   const calls: string[] = [];
   for (const name of Object.keys(gl)) {
@@ -67,8 +66,6 @@ function recordCalls(gl: Record<string, (...a: unknown[]) => unknown>): string[]
 
 const countOf = (calls: string[], needle: string) => calls.filter((c) => c === needle).length;
 
-// jsdom has no 2D canvas to parse colours with, so every colour would stage as
-// the same white and the contour palette would always hold one slot.
 vi.mock('../color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
 }));
@@ -86,21 +83,17 @@ describe('density layer, off', () => {
     absent.renderer.render(plotData(50));
 
     expect(offCalls).toEqual(absentCalls);
-    // The accumulate pass is the one additive blend in the renderer.
     expect(countOf(offCalls, 'blendFunc(1,1)')).toBe(0);
     off.renderer.destroy();
     absent.renderer.destroy();
   });
 });
 
-/** RGBA32F texImage2D calls: the accumulation target, and nothing else. */
 const accumAllocations = (gl: Record<string, ReturnType<typeof vi.fn>>) =>
   gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length;
 
 describe('density layer, off', () => {
   it('compiles no density programs and allocates no targets', () => {
-    // ~17 MB of RGBA32F + RGBA16F and three shader compiles, on the default path
-    // for every user, is the whole cost of a feature they have not switched on.
     const absent = setup({ width: 800, height: 600 });
     const absentPrograms = vi.spyOn(absent.gl, 'createProgram');
     absent.renderer.render(plotData(50));
@@ -114,7 +107,6 @@ describe('density layer, off', () => {
 
     expect(accumAllocations(on.gl)).toBe(1);
     expect(on.resources.density).not.toBeNull();
-    // Both accumulates, both blur kernels, both composites.
     expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 6);
 
     absent.renderer.destroy();
@@ -129,8 +121,6 @@ describe('density layer, on', () => {
     on.renderer.render(plotData(50));
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
-    // Two blur passes, the composite, and the gamma quad. The mock's TRIANGLES
-    // constant is not asserted; the 6-vertex count is what identifies a quad.
     expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(4);
     on.renderer.destroy();
   });
@@ -140,10 +130,6 @@ describe('density layer, on', () => {
     const calls = recordCalls(on.glRecord);
     on.renderer.render(plotData(50));
 
-    // The composite is the first quad draw AFTER the point draw (the two blur
-    // passes run before it, the gamma quad after). A selection frame draws points
-    // again straight after it, so it has to find its own program and VAO bound.
-    // lastIndexOf: the accumulate pass draws the same POINTS call earlier.
     const pointDraw = calls.lastIndexOf('drawArrays(0,0,50)');
     expect(pointDraw).toBeGreaterThan(-1);
     const composite = calls.findIndex((c, i) => i > pointDraw && /^drawArrays\(\d+,0,6\)$/.test(c));
@@ -168,17 +154,11 @@ describe('density layer, on', () => {
     on.renderer.render(plotData(50));
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-    // Nothing at all: ensureGL clears gammaPipelineAvailable BEFORE calling
-    // handleGammaFallback, whose first line returns once the flag is false, so
-    // this path has always been silent. Density must not change that.
     expect(on.degraded).toEqual([]);
     on.renderer.destroy();
   });
 
   it('drops the density resources when the gamma pipeline falls back', () => {
-    // Fail the gamma framebuffer on a RESIZE, after a good first frame: that is
-    // the one fallback path where the density grid is live and nothing else
-    // would tear it down, so it isolates the destroy in handleGammaFallback.
     const config: Config = { width: 800, height: 600, densityLayer: 'on' };
     const on = setup(config);
     on.renderer.render(plotData(50));
@@ -194,11 +174,8 @@ describe('density layer, on', () => {
       (on.renderer as unknown as { gammaPipelineAvailable: boolean }).gammaPipelineAvailable,
     ).toBe(false);
     expect(on.resources.density).toBeNull();
-    // The gamma program plus the six density programs.
     expect(deleteProgram).toHaveBeenCalledTimes(7);
-    // The density quad's VAO goes with them; the point VAO stays.
     expect(deleteVao).toHaveBeenCalledTimes(1);
-    // Exactly one reason, and it is the gamma one: density adds no new reason.
     expect(on.degraded.map((d) => d.context.reason)).toEqual(['gamma-pipeline-unavailable']);
     on.renderer.destroy();
   });
@@ -219,7 +196,6 @@ describe('density layer, on', () => {
   });
 });
 
-/** 50 points, point i coloured `palette[i % palette.length]`, hidden where `hidden(i)`. */
 function categories(palette: string[], hidden: (i: number) => boolean = () => false) {
   const pd = plotData(50);
   pd.proteinIds = Array.from({ length: 50 }, (_, i) => `p${i}`);
@@ -244,7 +220,6 @@ describe('density layer, contour', () => {
     const calls = recordCalls(on.glRecord);
     on.renderer.render(pd);
 
-    // Two blur passes, the composite, and the gamma quad.
     expect(quadDraws(calls)).toHaveLength(4);
     expect(countOf(calls, 'drawArrays(0,0,50)')).toBe(2);
     on.renderer.destroy();
@@ -256,9 +231,7 @@ describe('density layer, contour', () => {
     const calls = recordCalls(on.glRecord);
     on.renderer.render(pd);
 
-    // Two groups: 2 x 2 blur passes, the composite, the gamma quad.
     expect(quadDraws(calls)).toHaveLength(6);
-    // Two accumulate draws, then the point draw.
     expect(countOf(calls, 'drawArrays(0,0,50)')).toBe(3);
     on.renderer.destroy();
   });
@@ -280,7 +253,6 @@ describe('density layer, contour', () => {
     expect(on.gl.bufferData).toHaveBeenCalledTimes(0);
     expect(on.gl.bufferSubData).toHaveBeenCalledTimes(0);
     expect(on.renderer.uploadedBytesTotal).toBe(bytes);
-    // Keys for the accumulate, colours for the composite: the very same arrays.
     const secondFrame = on.gl.uniform3fv.mock.calls.map((c) => c[1]);
     expect(firstFrame).toHaveLength(2);
     expect(secondFrame).toHaveLength(2);
@@ -339,7 +311,6 @@ describe('density layer, contour', () => {
     expect(top).toBeGreaterThan(base);
     const seam = calls.slice(base + 1, top);
     expect(quadDraws(seam)).toHaveLength(1);
-    // TEXTURE1 is the label atlas the selected run samples.
     expect(seam.filter((c) => c.startsWith('activeTexture('))).toEqual([
       'activeTexture(33984)',
       'activeTexture(33986)',
@@ -354,9 +325,6 @@ describe('density layer, contour', () => {
 });
 
 describe('density layer, auto', () => {
-  // 573,649 visible points in an 800 px view: the cross-fade's threshold sits at
-  // k = 5.36, so identity is deep in the "overplotted" half and k = 100 is past
-  // the far end of the fade.
   const swissprot = () => plotData(573649);
 
   it('skips the whole chain when the view is zoomed past the fade', () => {
@@ -368,7 +336,6 @@ describe('density layer, auto', () => {
 
     expect(on.renderer.visiblePointCount).toBe(573649);
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-    // Not one texel of the grid is allocated for a frame that shows nothing.
     expect(on.resources.density).toBeNull();
     on.renderer.destroy();
   });
@@ -386,7 +353,6 @@ describe('density layer, auto', () => {
 describe('N_visible', () => {
   it('counts the points staged with opacity > 0, not the staged slots', () => {
     const pd = plotData(10);
-    // plotData fills every id with 'p'; the getter below keys off the index.
     pd.proteinIds = Array.from({ length: 10 }, (_, i) => `p${i}`);
     let hideOdd = true;
     const { renderer } = makeRendererWithStyle({
@@ -395,8 +361,6 @@ describe('N_visible', () => {
     });
 
     renderer.render(pd);
-    // The staged count includes the opacity-0 slots, which is why the density
-    // cross-fade cannot use it: half of these points contribute nothing.
     expect(renderer.drawnPointCount).toBe(10);
     expect(renderer.visiblePointCount).toBe(5);
 
@@ -411,11 +375,6 @@ describe('N_visible', () => {
 describe('density layer failure is not a gamma failure', () => {
   it('keeps rendering through the gamma pipeline when the grid cannot be allocated', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    // Drive the failure through the driver, not a module mock: once an RGBA32F
-    // texture has been allocated (the density accum target, the linear gamma
-    // target is RGBA16F), every framebuffer reads incomplete. That runs the real
-    // createColorTarget, whose last act is `bindFramebuffer(FRAMEBUFFER, null)`,
-    // which is exactly the side effect a mocked resizeDensityTargets hides.
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
     let sawFloatTarget = false;
     const texImage2D = on.gl.texImage2D;
@@ -428,17 +387,12 @@ describe('density layer failure is not a gamma failure', () => {
     const calls = recordCalls(on.glRecord);
     on.renderer.render(plotData(50));
 
-    // The points must land in the LINEAR framebuffer, not in the default one
-    // createColorTarget left bound on its way out. Otherwise pass 2 clears the
-    // canvas and gamma-samples an empty target: one wholly blank frame.
     const pointDraw = calls.findIndex((c) => /^drawArrays\(\d+,0,50\)$/.test(c));
     expect(pointDraw).toBeGreaterThan(-1);
     const binds = calls.slice(0, pointDraw).filter((c) => c.startsWith('bindFramebuffer('));
     expect(binds.at(-1)).toBe('bindFramebuffer(36160,obj)');
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-    // The gamma quad still runs: a density allocation failure must not switch the
-    // whole app to sRGB blending.
     expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(1);
     expect(on.degraded).toEqual([]);
     expect(warn.mock.calls.flat().join(' ')).toContain('density layer disabled');
@@ -449,8 +403,6 @@ describe('density layer failure is not a gamma failure', () => {
 
 describe('context loss', () => {
   it('clears the density latch so the next context can try again', () => {
-    // Without the reset a single failed allocation disables density for the
-    // lifetime of the element, including on the fresh context after a restore.
     const { canvas, gl, setContextLost } = createMockCanvas();
     const renderer = new WebGLRenderer(
       canvas,
@@ -465,7 +417,7 @@ describe('context loss', () => {
 
     setContextLost(true);
     vi.spyOn(gl as WebGL2RenderingContext, 'isContextLost').mockReturnValue(true);
-    renderer.render(plotData(50)); // ensureGL -> markContextLost -> resetRendererState
+    renderer.render(plotData(50));
 
     expect(priv.densityDisabled).toBe(false);
     renderer.destroy();

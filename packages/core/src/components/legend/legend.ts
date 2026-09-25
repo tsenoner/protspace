@@ -2574,7 +2574,6 @@ export class ProtspaceLegend extends LitElement {
     // Reset all settings to defaults
     this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
     this.shapeSize = LEGEND_DEFAULTS.symbolSize;
-    // Written, not removed: other annotations' records may hold the old pick.
     this._persistenceController.saveShapeSize(LEGEND_DEFAULTS.symbolSize);
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 

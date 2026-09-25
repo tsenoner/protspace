@@ -13,7 +13,6 @@ import {
   type SlotPalette,
 } from './density-pass';
 
-/** Recording mock in the style of render-target.test.ts. */
 function mockGL(opts: { framebufferComplete?: boolean } = {}) {
   const calls: string[] = [];
   const uploads3fv: unknown[] = [];
@@ -154,7 +153,6 @@ const camera = {
   gamma: 2.2,
 };
 
-/** A palette of `count` distinct staged colours. */
 function paletteOf(count: number): SlotPalette {
   const colors = new Float32Array(count * 4);
   for (let i = 0; i < count; i++) colors.set([(i + 1) / 255, 0, 0, 1], i * 4);
@@ -170,7 +168,6 @@ function contourFrame(palette: SlotPalette, res = resources(4)): DensityFrame {
   };
 }
 
-/** Staged RGBA for each entry of `[red byte, how many points]`, in order. */
 function stagedReds(runs: Array<[number, number]>): Float32Array {
   const out: number[] = [];
   for (const [red, n] of runs) for (let j = 0; j < n; j++) out.push(red / 255, 0, 0, 1);
@@ -201,10 +198,8 @@ describe('buildSlotPalette', () => {
     const p = buildSlotPalette(staged, 5, 2.2);
     expect(p.count).toBe(2);
     expect(p.tailSlot).toBe(-1);
-    // The hidden green (alpha 0) is absent; the faded blue still counts.
     expect(Array.from(p.keys.slice(0, 6))).toEqual([1, 0, 0, 0, 0, 1]);
     expect(p.keys.slice(6).every((v) => v === 0)).toBe(true);
-    // Linear, then 15 % toward white.
     expect(Array.from(p.colors.slice(0, 6))).toEqual([
       1, 0.15000000596046448, 0.15000000596046448, 0.15000000596046448, 0.15000000596046448, 1,
     ]);
@@ -216,7 +211,6 @@ describe('buildSlotPalette', () => {
   });
 
   it('pools the least populous colours past the cap into a grey slot 0', () => {
-    // Red bytes 1..17, byte i staged 18 - i times: 16 and 17 are the two smallest.
     const runs = Array.from({ length: 17 }, (_, i) => [i + 1, 17 - i] as [number, number]);
     const p = buildSlotPalette(stagedReds(runs), 153, 2.2);
     expect(p.count).toBe(16);
@@ -250,7 +244,6 @@ describe('buildSlotPalette', () => {
   });
 
   it('breaks a population tie for the last own slot by first appearance', () => {
-    // 14 colours of 10 points, then bytes 20 and 21 with 2 each, then 22 with 1.
     const runs: Array<[number, number]> = Array.from({ length: 14 }, (_, i) => [i + 1, 10]);
     runs.push([20, 2], [21, 2], [22, 1]);
     const p = buildSlotPalette(stagedReds(runs), 145, 2.2);
@@ -348,24 +341,19 @@ describe('accumulateAndBlurDensity', () => {
     };
     accumulateAndBlurDensity(gl, frame, pointVao, 1000);
 
-    // Additive blend is established before any point is drawn.
     const firstPointDraw = calls.indexOf('drawArrays:0,0,1000');
     expect(firstPointDraw).toBeGreaterThan(-1);
     expect(calls.indexOf('blendFunc:1,1')).toBeGreaterThan(-1);
     expect(calls.indexOf('blendFunc:1,1')).toBeLessThan(firstPointDraw);
 
-    // The grid is selected by the viewport alone: u_resolution stays the canvas,
-    // or the accumulation shears against the point pass.
     expect(calls).toContain('viewport:0,0,400,300');
     expect(calls).toContain('u2f:resolution:800,600');
 
-    // Two full-screen blur passes, one per axis, ending in the one field.
     expect(calls.filter((c) => c === 'drawArrays:4,0,6')).toHaveLength(2);
     expect(calls).toContain('u2f:direction:0.0025,0');
     expect(calls).toContain('u2f:direction:0,0.0033333333333333335');
     expect(calls).toContain('bindFB:field0Fb');
 
-    // No blocking driver round-trip in a per-frame pass.
     expect(calls).not.toContain('getError');
     expect(calls).not.toContain('checkFramebufferStatus');
   });
@@ -411,9 +399,6 @@ describe('compositeDensity', () => {
     expect(calls).toContain('u1f:scaler:4');
   });
 
-  // The floor is absolute and written every composite, so a frame that forgets
-  // it inherits whatever the last program left there: on a fresh context that is
-  // 0, and log2(n / 0) draws lines over the whole canvas.
   it('draws every slot from the four fields, off the label atlas unit', () => {
     const { gl, calls, uploads3fv } = mockGL();
     const palette = paletteOf(5);
@@ -437,9 +422,7 @@ describe('compositeDensity', () => {
       'activeTexture:33988',
       'bindTexture:field3Tex',
     ]);
-    // Unit 1 holds the label atlas the selected run samples next.
     expect(calls).not.toContain('activeTexture:33985');
-    // Unit 0 ends active, as the heatmap leaves it.
     expect(calls.filter((c) => c.startsWith('activeTexture')).at(-1)).toBe('activeTexture:33984');
   });
 });

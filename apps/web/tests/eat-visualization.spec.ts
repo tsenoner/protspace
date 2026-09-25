@@ -285,9 +285,6 @@ async function sampleEncodedExportMarkers(
         const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
         return Array.from(rgba);
       };
-      // The export draws the live k = 1 dot scaled by the output/plot size ratio. At 0.75 of
-      // that radius the offset lands well inside the ring band for both the pre-Task-3
-      // ringWidth clamp(aa*1.75, 0.22, 0.42) and the thicker clamp(aa*1.75, 0.30, 0.55).
       const live = plot._mergedConfig!;
       const exportRadius =
         (Math.sqrt(pointSize) / 3) *
@@ -640,7 +637,6 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('.connector-status')).not.toBeVisible();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const endpoint = plot.locator('circle.eat-provenance-endpoint').first();
-  // The halo hugs the drawn dot: radius max(4, drawn radius + 2) screen px.
   const haloRadius = () =>
     plot.evaluate((el) => {
       const p = el as unknown as {

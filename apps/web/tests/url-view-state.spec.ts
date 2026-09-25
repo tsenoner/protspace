@@ -697,8 +697,6 @@ test.describe('URL-backed explore view state', () => {
     const densitySelect = page.locator('protspace-control-bar').locator('#density-layer-select');
     await expect.poll(() => densitySelect.inputValue()).toBe('on');
 
-    // Picking a mode in the select has to reach the URL on its own: the param is
-    // only carried along by later writes if a user change serialized it first.
     await densitySelect.selectOption('auto');
     await expectUrlParam(page, 'density', 'auto');
 

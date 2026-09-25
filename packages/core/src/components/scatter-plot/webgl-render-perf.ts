@@ -22,21 +22,7 @@ const PERF_READY_TIMEOUT_MS = 10 * 60_000;
 const PERF_MEASURE_ZOOM_FACTOR = 3;
 const PERF_MEASURE_PAN_DISTANCE_PX = 160;
 const PERF_MEASURE_PAN_STEPS = 6;
-/**
- * Frames in one `dragContinuous` iteration: half out, half back. One `panBy` per
- * animation frame with no idle wait between them, which is what a real drag does
- * and what `dragCanvas` (which settles after every step) cannot show.
- */
 const PERF_MEASURE_DRAG_CONTINUOUS_FRAMES = 60;
-/**
- * The low end of the zoom extent (`zoomExtent: [0.1, 1000]`, scatter-plot config).
- * From k = 1 a single `zoomBy(0.1)` lands exactly on it, which is the MOST
- * expensive frame the point pass ever draws, not the cheapest: `gl_PointSize` is
- * a per-vertex attribute and does not scale with k, so zooming out packs the same
- * sprite count into a fraction of the screen and same-pixel overdraw serialises
- * the blending. Measured on an M4 at 573K: 37 ms at k = 0.1 against 10.7 ms at
- * k = 1 (`gpuSyncedMs`, `perf/baselines/README.md`).
- */
 const PERF_MEASURE_ZOOM_FAR_OUT_FACTOR = 0.1;
 const PERF_GLOBAL_RESULTS_KEY = '__protspaceWebGLRenderPerfMeasurements';
 
@@ -58,15 +44,6 @@ export type PerfRenderPass = {
   startTs: number;
   endTs: number;
   durationMs: number;
-  /**
-   * The same window as `durationMs`, extended past the last GL call until the GPU
-   * has actually finished the frame (the host syncs before calling `stop`).
-   *
-   * `durationMs` is CPU submission time and nothing more: a shader that costs the
-   * GPU 40 ms is invisible in it, because submitting the draw is all the CPU does.
-   * Kept as a second field rather than folded into `durationMs` so the recorded
-   * numbers stay comparable with the baselines taken before this existed.
-   */
   gpuSyncedMs: number;
   /**
    * Points handed to the renderer. NOT the count drawn — see `drawnPoints`.
@@ -149,17 +126,6 @@ export class WebglRenderPerfRunner {
     return { trigger, startTs: performance.now() };
   }
 
-  /**
-   * `cpuEndTs` is the clock reading taken by the host *before* it blocks on the
-   * GPU. Passing it keeps `durationMs` meaning CPU submission time, so this run
-   * stays comparable with baselines recorded before the sync existed, while
-   * `gpuSyncedMs` measures through to GPU completion.
-   *
-   * Note `endTs`, and therefore `lastRenderEndTs`, are post-sync: a scenario's
-   * idle window starts counting after the GPU stall, not after submission. That
-   * only delays the next step of a scenario, it does not enter any recorded
-   * number.
-   */
   public stop(
     token: PerfPassToken | null,
     renderedPoints: number,
@@ -475,9 +441,6 @@ export class WebglRenderPerfRunner {
           // corpus becomes evidence about the real distribution of this limit,
           // which we currently have none of.
           maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
-          // The two extensions the float render targets need. Recorded per run so
-          // a browser that renders the plot but cannot do float blending is named
-          // by the results file rather than guessed at from a screenshot.
           extensions: {
             colorBufferFloat: !!gl.getExtension('EXT_color_buffer_float'),
             floatBlend: !!gl.getExtension('EXT_float_blend'),
@@ -585,11 +548,6 @@ export class WebglRenderPerfRunner {
     this._requireInteraction().panBy(dx, dy);
   }
 
-  /**
-   * Zoom out by `factor` and back, `iterations` times, waiting for each frame to
-   * land. The body every zoom scenario shares: they differ only in the name they
-   * record under, the factor, and (for densityZoom) the config they force first.
-   */
   private async _runZoomCycleScenario(name: PerfScenarioName, factor: number, iterations: number) {
     const host = this._hostAny();
     if (!this._interaction()?.isZoomReady)
@@ -632,29 +590,13 @@ export class WebglRenderPerfRunner {
     await this._runZoomCycleScenario('zoomInOut', PERF_MEASURE_ZOOM_FACTOR, iterations);
   }
 
-  /**
-   * The same camera moves as `zoomInOut`, with the density layer forced on, so a
-   * run reports what the layer costs on top of a frame it already measures.
-   *
-   * `on`, not `auto`: every dataset in `datasets.json` is small enough that the
-   * cross-fade self-disables, so `auto` would measure nothing and still pass.
-   */
   private async _runDensityZoomScenario(iterations: number) {
     const host = this._hostAny();
     const prevConfig = host.config as ScatterplotConfig | undefined;
-    // The config change itself repaints, and that first density frame is the one
-    // that compiles the programs and allocates the grid. Wait for THAT frame, not
-    // just for an idle window: `updateComplete` resolves before the repaint's rAF,
-    // so an idle-only wait can pass on the previous scenario's last render and let
-    // the allocating frame land inside the scenario window.
     await this._setConfigAndWait(host, { ...(prevConfig ?? {}), densityLayer: 'on' });
     try {
       await this._runZoomCycleScenario('densityZoom', PERF_MEASURE_ZOOM_FACTOR, iterations);
     } finally {
-      // The host merges `{ ...DEFAULT_CONFIG, ...prev, ...this.config }` with `prev`
-      // being the already-forced MERGED config, so restoring an object that merely
-      // omits `densityLayer` leaves the layer on for every later scenario. Write the
-      // previous mode back explicitly.
       await this._setConfigAndWait(host, {
         ...(prevConfig ?? {}),
         densityLayer: prevConfig?.densityLayer ?? DENSITY_DEFAULT,
@@ -662,10 +604,6 @@ export class WebglRenderPerfRunner {
     }
   }
 
-  /**
-   * `dragContinuous` with the contour style forced on: the one warm series, so a
-   * sub-millisecond change in the contour passes is measurable.
-   */
   private async _runContourDragScenario(iterations: number) {
     const host = this._hostAny();
     const prevConfig = host.config as ScatterplotConfig | undefined;
@@ -685,34 +623,20 @@ export class WebglRenderPerfRunner {
     }
   }
 
-  /** Assign `host.config` and wait for the repaint it triggers to land and settle. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async _setConfigAndWait(host: any, config: unknown) {
+  private async _setConfigAndWait(
+    host: { config: unknown; updateComplete: Promise<unknown> },
+    config: unknown,
+  ) {
     const prevSeq = this._recorder?.passSeq ?? 0;
     host.config = config;
     await host.updateComplete;
     if (await this._waitForNextRender(prevSeq, 2000)) await this._waitForRenderIdle(10, 2000);
   }
 
-  /**
-   * Zoom all the way out to the low end of the zoom extent and back. Both extremes
-   * of the frame live here: the k = 0.1 pass is the most expensive point frame
-   * there is (overdraw, see PERF_MEASURE_ZOOM_FAR_OUT_FACTOR) and it is also where
-   * a density accumulate saturates, so it is the first place a regression in
-   * either shows. Read the two phases separately: passes alternate out, back, out,
-   * back, and their medians differ by 3x.
-   */
   private async _runZoomFarOutScenario(iterations: number) {
     await this._runZoomCycleScenario('zoomFarOut', PERF_MEASURE_ZOOM_FAR_OUT_FACTOR, iterations);
   }
 
-  /**
-   * A sustained drag: one pan per animation frame, never waiting for the previous
-   * frame to settle. `dragCanvas` waits out an idle window after every step, so it
-   * measures isolated frames; this one measures a queue. The achieved inter-frame
-   * interval is the gap between consecutive `startTs` values in the pass list, so
-   * a frame the GPU cannot keep up with is visible without a new pass field.
-   */
   private async _runDragContinuousScenario(
     iterations: number,
     name: PerfScenarioName = 'dragContinuous',

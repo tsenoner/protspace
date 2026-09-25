@@ -443,8 +443,6 @@ describe('explore url state', () => {
       expect(auto.get('density')).toBe('auto');
     });
 
-    // One param, five tokens. Mode and style stay separate fields internally;
-    // the `contour-` prefix exists only in the URL and in the select's options.
     it.each([
       ['off', 'off', 'heatmap'],
       ['auto', 'auto', 'heatmap'],
@@ -489,7 +487,6 @@ describe('explore url state', () => {
       );
       expect(contourOn.get('density')).toBe('contour-on');
 
-      // Style without a mode is not a state the URL can express: off is off.
       const contourOff = buildSearchParamsWithExploreView(
         new URLSearchParams('density=contour-on'),
         { ...base, tooltip: [], density: 'off', densityStyle: 'contour' },

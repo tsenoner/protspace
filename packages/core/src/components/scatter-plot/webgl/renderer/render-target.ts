@@ -43,7 +43,6 @@ interface PointDrawStateParams {
   transform: { x: number; y: number; k: number };
   /** Device pixel ratio (u_dpr). */
   dpr: number;
-  /** CSS-px multiplier on the staged nominal diameters (u_pointScale). */
   pointScale: number;
   /** Effective gamma (u_gamma); 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
@@ -122,12 +121,6 @@ export function drawPoints(
   pointCount: number,
   selectionActive: boolean,
   selectedStartIndex: number,
-  /**
-   * Runs after the base run (unselected, or all points when nothing is selected)
-   * and before the selected run. It has to be here rather than before the point
-   * draw: the base run has blend OFF and would overwrite anything underneath it.
-   * Must leave the point program and VAO re-bound.
-   */
   afterBasePass?: () => void,
 ): void {
   if (selectionActive && selectedStartIndex < pointCount) {

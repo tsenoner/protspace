@@ -295,14 +295,8 @@ export type DensityLayerMode = 'off' | 'auto' | 'on';
 
 export type DensityLayerStyle = 'heatmap' | 'contour';
 
-/**
- * The one spelling of the density layer's default mode: `DEFAULT_CONFIG`, the
- * control bar, the `?density=` URL round trip and the perf harness all read it,
- * so flipping the default is a one-line change here.
- */
 export const DENSITY_DEFAULT: DensityLayerMode = 'off';
 
-/** The one spelling of the density layer's default style. See DENSITY_DEFAULT. */
 export const DENSITY_STYLE_DEFAULT: DensityLayerStyle = 'heatmap';
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';

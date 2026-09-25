@@ -58,11 +58,6 @@ const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
-/**
- * The density select is one control, not two: mode and style live as separate
- * config fields, but the user picks a single option. The option values are the
- * same five tokens `?density=` carries.
- */
 const DENSITY_OPTIONS = {
   off: { mode: 'off', style: DENSITY_STYLE_DEFAULT, label: 'Density: off' },
   auto: { mode: 'auto', style: 'heatmap', label: 'Density: auto' },
@@ -448,9 +443,6 @@ export class ProtspaceControlBar extends LitElement {
     this.densityStyle = style;
     if (this.autoSync && this._scatterplotElement) {
       const scatterplot = this._scatterplotElement as ScatterplotElementLike;
-      // Spread, never replace: `config` is a shallow-merged bag the host owns, and
-      // the scatter-plot never resets a key once set, so dropping one here would
-      // pin it at whatever it last was.
       scatterplot.config = {
         ...(scatterplot.config ?? {}),
         densityLayer: mode,
