@@ -81,3 +81,40 @@ describe('ExportRenderer offscreen buffer allocation', () => {
     expect(() => exportAt(5_000)).not.toThrow(/could not allocate memory for .* points/);
   });
 });
+
+describe('ExportRenderer dot size', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function exportedPointScale(transform: { x: number; y: number; k: number }) {
+    const { gl } = createMockCanvas({});
+    const pushed: Record<string, number> = {};
+    Object.assign(gl!, {
+      getUniformLocation: (_p: unknown, name: string) => ({ name }),
+      uniform1f: (loc: { name: string }, v: number) => {
+        pushed[loc.name] = v;
+      },
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) =>
+      id === 'webgl2' ? gl : null) as HTMLCanvasElement['getContext']);
+    try {
+      new ExportRenderer().renderToCanvas(plotData(10), config, style, {
+        width: 400,
+        height: 300,
+        ...(baseOptions as object),
+        transform,
+      } as never);
+    } catch {
+      // jsdom has no 2D context for the final copy; the draw has already happened.
+    }
+    return pushed.u_pointScale;
+  }
+
+  it('draws the live 800x600 dot size scaled to a 400x300 output', () => {
+    // live scale 0.90999 at k = 1, times the output ratio 0.5
+    expect(exportedPointScale({ x: 0, y: 0, k: 1 })).toBeCloseTo(0.455, 3);
+  });
+
+  it('keeps the zoom-in growth of the live view', () => {
+    expect(exportedPointScale({ x: 0, y: 0, k: 4 })).toBeCloseTo(0.64346, 4);
+  });
+});

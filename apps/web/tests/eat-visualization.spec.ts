@@ -206,6 +206,8 @@ async function sampleEncodedExportMarkers(
             } | null;
             config?: Record<string, unknown>;
             updateComplete?: Promise<unknown>;
+            _webglRenderer?: { pointScale(): number };
+            _mergedConfig?: { width: number; height: number };
           })
         | null;
       const plotData = plot?._plotData;
@@ -283,11 +285,15 @@ async function sampleEncodedExportMarkers(
         const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
         return Array.from(rgba);
       };
-      // At 0.75 * radius (sqrt(pointSize)/4 vs. the sqrt(pointSize)/3 sprite radius, see
-      // stage-point.ts POINT_SIZE_DIVISOR) this offset lands well inside the ring band for both
-      // the pre-Task-3 ringWidth clamp(aa*1.75, 0.22, 0.42) and the thicker
-      // clamp(aa*1.75, 0.30, 0.55) — the wider ring only grows margin, it never shrinks it.
-      const ringOffset = Math.max(1, Math.round(Math.sqrt(pointSize) / 4));
+      // The export draws the live k = 1 dot scaled by the output/plot size ratio. At 0.75 of
+      // that radius the offset lands well inside the ring band for both the pre-Task-3
+      // ringWidth clamp(aa*1.75, 0.22, 0.42) and the thicker clamp(aa*1.75, 0.30, 0.55).
+      const live = plot._mergedConfig!;
+      const exportRadius =
+        (Math.sqrt(pointSize) / 3) *
+        plot._webglRenderer!.pointScale() *
+        Math.sqrt((width * height) / (live.width * live.height));
+      const ringOffset = Math.max(1, Math.round(0.75 * exportRadius));
       const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
       const predictedRingOffsets = [
         [-ringOffset, 0],
