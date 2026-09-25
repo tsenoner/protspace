@@ -55,12 +55,12 @@ Click the cog icon in the top-right corner of the legend for advanced options.
 
 ### Shared Settings
 
-| Setting                     | What it does                                                                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins. |
-| **Shape size / Point size** | Adjusts marker size in the scatterplot. Numeric annotations use the label `Point size` because numeric legends always render circles.       |
-| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                           |
-| **Color palette**           | Picks the active palette for the selected annotation.                                                                                       |
+| Setting                     | What it does                                                                                                                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins.                                                                    |
+| **Shape size / Point size** | Adjusts marker size in the scatterplot (default 5). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
+| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                              |
+| **Color palette**           | Picks the active palette for the selected annotation.                                                                                                                                                          |
 
 ### Sorting
 
