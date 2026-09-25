@@ -83,7 +83,7 @@ Point size, opacity and zoom limits live inside the `config` object, not as attr
 
 ```javascript
 plot.config = {
-  pointSize: 240,
+  pointSize: 40,
   baseOpacity: 0.9,
   selectedOpacity: 1.0,
   fadedOpacity: 0.15,
