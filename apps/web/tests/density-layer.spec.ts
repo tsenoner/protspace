@@ -424,7 +424,7 @@ test.describe('density layer pixels', () => {
         copy.height = canvas.height;
         const ctx = copy.getContext('2d')!;
         ctx.drawImage(canvas, 0, 0);
-        return Array.from(ctx.getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data);
+        return Array.from(ctx.getImageData(Math.floor(x * dpr), Math.floor(y * dpr), 1, 1).data);
       }, target);
     const maxDelta = (p: number[], q: number[]) => Math.max(...p.map((v, c) => Math.abs(v - q[c])));
 
