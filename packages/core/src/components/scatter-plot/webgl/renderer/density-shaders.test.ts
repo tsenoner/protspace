@@ -14,13 +14,7 @@ import {
   DENSITY_CONTOUR_BLUR_RADIUS,
   DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
 } from './density-shaders';
-import { POINT_VERTEX_SHADER } from './export-shaders';
-
-function cameraLines(src: string): string[] {
-  return src
-    .split('\n')
-    .filter((line) => /vec2 (cssTransformed|physicalPos|clipSpace) =/.test(line));
-}
+import { CAMERA_TO_CLIP_GLSL, POINT_VERTEX_SHADER } from './export-shaders';
 
 function cameraUniforms(src: string): string[] {
   return src
@@ -52,10 +46,14 @@ describe('DENSITY_BLUR_FRAGMENT_SHADER', () => {
 });
 
 describe('DENSITY_ACCUM_VERTEX_SHADER', () => {
-  it('carries the point shader camera lines byte-identically', () => {
-    const point = cameraLines(POINT_VERTEX_SHADER);
-    expect(point).toHaveLength(3);
-    expect(cameraLines(DENSITY_ACCUM_VERTEX_SHADER)).toEqual(point);
+  it('shares the camera snippet with the point shader', () => {
+    for (const src of [
+      POINT_VERTEX_SHADER,
+      DENSITY_ACCUM_VERTEX_SHADER,
+      DENSITY_CATEGORY_ACCUM_VERTEX_SHADER,
+    ]) {
+      expect(src).toContain(CAMERA_TO_CLIP_GLSL);
+    }
   });
 
   it('declares the camera uniforms with the point shader types', () => {
@@ -87,10 +85,7 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
 });
 
 describe('DENSITY_CATEGORY_ACCUM_VERTEX_SHADER', () => {
-  it('carries the point shader camera lines byte-identically, and flips y', () => {
-    expect(cameraLines(DENSITY_CATEGORY_ACCUM_VERTEX_SHADER)).toEqual(
-      cameraLines(POINT_VERTEX_SHADER),
-    );
+  it('flips y into clip space', () => {
     expect(DENSITY_CATEGORY_ACCUM_VERTEX_SHADER).toContain(
       'gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);',
     );
