@@ -1,12 +1,17 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EXAMPLE_DATASETS, findExampleDataset } from './example-datasets';
 
-const PUBLIC_DATA_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../public/data',
+// Every catalog `url` must resolve to a bundle that actually ships under
+// apps/web/public/. Found by glob rather than fs/path/url (which would leak
+// Node types into the browser tsconfig — see packages/core/src/styles/styles-integrity.test.ts
+// for the same pattern) so a typo'd id or filename fails here instead of at
+// runtime. The demo bundle lives directly under public/, the rest under
+// public/data/.
+const SHIPPED_BUNDLE_PATHS = new Set(
+  Object.keys({
+    ...import.meta.glob('../../public/data.parquetbundle'),
+    ...import.meta.glob('../../public/data/*.parquetbundle'),
+  }),
 );
 
 describe('example datasets catalog', () => {
@@ -28,13 +33,8 @@ describe('example datasets catalog', () => {
     expect(findExampleDataset('not-a-real-dataset')).toBeUndefined();
   });
 
-  // Guards against a typo'd id or filename: every non-demo entry must resolve
-  // to a bundle that actually ships under apps/web/public/data/.
-  it.each(EXAMPLE_DATASETS.filter((entry) => entry.id !== 'demo'))(
-    'ships a bundle file for "$id"',
-    (entry) => {
-      const fileName = entry.url.replace(/^\.\/data\//, '');
-      expect(existsSync(path.join(PUBLIC_DATA_DIR, fileName))).toBe(true);
-    },
-  );
+  it.each(EXAMPLE_DATASETS)('ships a bundle file for "$id"', (entry) => {
+    const publicPath = entry.url.replace(/^\.\//, '../../public/');
+    expect(SHIPPED_BUNDLE_PATHS.has(publicPath)).toBe(true);
+  });
 });
