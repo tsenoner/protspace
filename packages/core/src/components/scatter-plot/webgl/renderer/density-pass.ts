@@ -1,4 +1,5 @@
 import type { DensityLayerStyle } from '@protspace/utils';
+import { NEUTRAL_VALUE_COLOR } from '../../config';
 import { createProgramFromSources } from '../shader-utils';
 import type { DensityFrameParams } from './density-crossfade';
 import {
@@ -22,7 +23,7 @@ const DENSITY_MAX_GRID_SIDE = 1024;
 
 const QUAD_ATTRIB_INDEX = 0;
 
-const NEUTRAL_KEY = 0x888888;
+const NEUTRAL_KEY = parseInt(NEUTRAL_VALUE_COLOR.slice(1), 16);
 
 export interface ColorTarget {
   framebuffer: WebGLFramebuffer;
