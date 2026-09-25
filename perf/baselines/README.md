@@ -150,3 +150,21 @@ before-and-after number for the same harness.
 
 Camera scenarios (`zoomInOut`, `zoomFarOut`, `dragCanvas`, `dragContinuous`) upload 0 bytes in every
 one of their 760 passes, and `drawnPoints === renderedPoints` in every pass of every scenario.
+
+## Per-category contours (2026-09-25)
+
+`2026-09-25-573K_swissprot_v3-chrome.contour-merged.json` is the v3 command on the merged contour
+(`5fa6b82b`, the `contourDrag` scenario already in place); `...contour-per-category.json` is the same
+command after the per-category contours landed. Same machine and session, minutes apart. Median
+`gpuSyncedMs`, the first 20 frames of the two sustained drags dropped (n = 580):
+
+| Scenario                | merged | per-category |
+| ----------------------- | -----: | -----------: |
+| `dragContinuous`        |  12.30 |        12.40 |
+| `contourDrag`           |  15.10 |        15.10 |
+| `densityZoom` (heatmap) |  13.45 |        12.65 |
+
+`contourDrag` moves by 0.00 ms against a +1.0 ms gate. A third run with
+`DENSITY_CONTOUR_GRID_DIVISOR = 1` (per-category fields at the old sampling, not kept) measured
+`contourDrag` 15.30. `densityZoom` is an isolated-frame scenario (n = 20), so its -0.8 ms is spread,
+not a change: the heatmap passes are the same shaders. Every camera pass uploaded 0 bytes.
