@@ -726,7 +726,7 @@ export class ProtspaceControlBar extends LitElement {
             <select
               id="density-layer-select"
               aria-label="Density layer"
-              title="Density layer. Off: points only. Auto: fades in when points overplot, out as you zoom in. On: always shown. Contour draws the same density as banded iso-lines instead of a smooth heatmap. Mixed regions show the average colour."
+              title="Density layer. Off: points only. Auto: fades in when points overplot, out as you zoom in. On: always shown. Contour draws one set of iso-lines per legend category, in its colour. In the heatmap, mixed regions show the average colour."
               @change=${(e: Event) =>
                 this.handleDensityLayerChange(
                   (e.target as HTMLSelectElement).value as DensityOption,
