@@ -33,4 +33,29 @@
 
 ## 7. Verify
 
-- [ ] 7.1 `pnpm test`, `pnpm test:e2e`, `pnpm precommit`, `pnpm format:check`
+- [x] 7.1 `pnpm test`, `pnpm test:e2e`, `pnpm precommit`, `pnpm format:check`
+
+## 8. Review fixes
+
+- [x] 8.1 Fix the wrong-history-entry bug: a menu choice, or Back/Forward changing `dataset=` and a
+      view param together, could resolve/normalize the view against the dataset still on screen and
+      replace-write that onto the wrong history entry. Merge `use-url-state-sync.ts`'s
+      `[requestState]`/`[datasetParam]` effects into one and add `ViewController.recordRequestedView`
+      (record without resolving/applying) for the case where a dataset switch is pending.
+- [x] 8.2 `startup.ts`'s `runPersistedOrDefaultFlow`: replace-delete a stale `?dataset=` on the
+      `recovery-required` outcome too, via a new `DatasetController.reportDatasetChange`. Add a unit
+      test.
+- [x] 8.3 Dismiss the loading overlay on a parse-failure `data-error` in `handleDataError`'s generic
+      branch (dataset-controller.ts) — neither the success path nor the fetch-catch path ran for it,
+      so the UI stayed behind the overlay. Add a unit assertion.
+- [x] 8.4 `docs/explore/control-bar.md` §9: document the Back-doesn't-restore-a-cleared-import caveat,
+      drop "today" wording, and shrink the 11-row example table to id+name; add
+      `example-datasets-docs.test.ts` pinning it against `EXAMPLE_DATASETS` (`import.meta.glob`, no
+      `node:fs`).
+- [x] 8.5 New Playwright cases in `example-datasets.spec.ts`: an annotation surviving a menu choice +
+      Back, the Back/Forward repro with a dataset switch and a view pick landing on the same step, and
+      a corrupt (200, garbage body) bundle leaving the URL/name/menu/plot unchanged with a retryable
+      menu item.
+- [x] 8.6 Reread `proposal.md`/`design.md` against the final diff and update them (this file's own
+      entries above, plus `design.md`'s "One loader for all examples", the startup/`runtime.ts` note,
+      the new decision on effect ordering, and the Risks section).
