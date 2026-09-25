@@ -67,6 +67,15 @@ async function getDatasetParam(page: Page): Promise<string | null> {
   return page.evaluate(() => new URL(window.location.href).searchParams.get('dataset'));
 }
 
+async function getDatasetName(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & { currentDatasetName?: string })
+      | null;
+    return controlBar?.currentDatasetName ?? null;
+  });
+}
+
 async function expectDatasetParam(page: Page, expected: string | null): Promise<void> {
   await expect.poll(() => getDatasetParam(page)).toBe(expected);
 }
@@ -284,5 +293,31 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // The failed load never reported a change, so the demo item is still the
     // one shown as loaded.
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
+  });
+
+  test('a corrupt bundle changes nothing and leaves the item retryable', async ({ page }) => {
+    // Distinct from the 500 case above: the fetch itself succeeds (200), so
+    // this exercises the parse-failure ('data-error') path in
+    // dataset-controller.ts's handleDataError, not the fetch-catch path in
+    // persisted-dataset.ts's loadExampleDataset.
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+
+    await page.route('**/data/phosphatase.parquetbundle', (route) =>
+      route.fulfill({ status: 200, body: 'not-a-valid-bundle' }),
+    );
+
+    const datasetNameBefore = await getDatasetName(page);
+
+    await chooseExampleFromMenu(page, 'phosphatase');
+
+    await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    await expectDatasetParam(page, null);
+    expect(await getProteinCount(page)).toBe(DEMO_COUNT);
+    expect(await getDatasetName(page)).toBe(datasetNameBefore);
+    expect(await isExampleDisabled(page, 'demo')).toBe(true);
+    expect(await isExampleDisabled(page, 'phosphatase')).toBe(false);
   });
 });

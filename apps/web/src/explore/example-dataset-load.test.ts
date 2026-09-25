@@ -99,6 +99,7 @@ function createRealController(
   };
   const setCurrentExampleId = vi.fn();
   const setCurrentDatasetName = vi.fn();
+  const overlayController = { update: vi.fn() };
 
   controller = createDatasetController({
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false } as never,
@@ -111,7 +112,7 @@ function createRealController(
       applyEatSettings: vi.fn(),
     } as never,
     loadQueue,
-    overlayController: { update: vi.fn() },
+    overlayController,
     plotElement: {} as never,
     setCurrentExampleId,
     setCurrentDatasetName,
@@ -119,7 +120,7 @@ function createRealController(
     viewController: viewController as never,
   });
 
-  return { controller, dataLoader, setCurrentExampleId, setCurrentDatasetName };
+  return { controller, dataLoader, setCurrentExampleId, setCurrentDatasetName, overlayController };
 }
 
 describe('example load: real fetch + load-queue + handleDataLoaded/handleDataError', () => {
@@ -158,16 +159,15 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
   });
 
   it('a parse failure (data-error after a successful fetch) leaves name/id/emit untouched and resolves false', async () => {
-    const { controller, setCurrentExampleId, setCurrentDatasetName } = createRealController(
-      async (_file, ctrl) => {
+    const { controller, setCurrentExampleId, setCurrentDatasetName, overlayController } =
+      createRealController(async (_file, ctrl) => {
         await ctrl.handleDataError({
           detail: {
             message: 'Corrupt bundle',
             originalError: new Error('Corrupt bundle'),
           },
         } as unknown as Event);
-      },
-    );
+      });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -189,6 +189,10 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
     // persisted-dataset.ts's own catch block is never reached because
     // dataLoader.loadFromFile resolved (it never throws on a parse error).
     expect(notifyMock.error).toHaveBeenCalledTimes(1);
+    // Neither loadData (success only) nor persisted-dataset.ts's fetch-catch
+    // (network failure only) runs for this path, so handleDataError itself
+    // must dismiss the overlay or the UI stays behind it.
+    expect(overlayController.update).toHaveBeenCalledWith(false);
 
     vi.unstubAllGlobals();
   });

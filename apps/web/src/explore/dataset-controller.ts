@@ -376,6 +376,13 @@ export function createDatasetController({
       return;
     }
 
+    // 'user' and 'default' (which now includes examples, loaded via
+    // loadExampleDataset) both reach here on a load that fetched fine but
+    // failed to parse. Neither loadData (data-renderer.ts, success only) nor
+    // the fetch-catch branch in persisted-dataset.ts (network failure only)
+    // runs for this path, so nothing else dismisses the loading overlay —
+    // without this, the UI stays behind it, unusable, until reload.
+    overlayController.update(false);
     notify.error(getDataLoadFailureNotification(customEvent.detail));
 
     if (loadSequence !== null) {
