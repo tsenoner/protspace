@@ -50,6 +50,7 @@ export interface PointUniformLocations {
   resolution: WebGLUniformLocation | null;
   transform: WebGLUniformLocation | null;
   dpr: WebGLUniformLocation | null;
+  pointScale: WebGLUniformLocation | null;
   gamma: WebGLUniformLocation | null;
   knockoutColor: WebGLUniformLocation | null;
   labelColors: WebGLUniformLocation | null;

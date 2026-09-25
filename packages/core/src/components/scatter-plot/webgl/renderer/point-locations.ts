@@ -24,6 +24,7 @@ export function resolvePointLocations(
       resolution: gl.getUniformLocation(program, 'u_resolution'),
       transform: gl.getUniformLocation(program, 'u_transform'),
       dpr: gl.getUniformLocation(program, 'u_dpr'),
+      pointScale: gl.getUniformLocation(program, 'u_pointScale'),
       gamma: gl.getUniformLocation(program, 'u_gamma'),
       knockoutColor: gl.getUniformLocation(program, 'u_knockoutColor'),
       labelColors: gl.getUniformLocation(program, 'u_labelColors'),

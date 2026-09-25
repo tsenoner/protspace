@@ -43,6 +43,7 @@ describe('resolvePointLocations', () => {
     expect(Object.keys(uniforms).sort()).toEqual(
       [
         'dpr',
+        'pointScale',
         'gamma',
         'labelColors',
         'labelTextureSize',
@@ -56,5 +57,6 @@ describe('resolvePointLocations', () => {
     expect((uniforms.resolution as unknown as { name: string }).name).toBe('u_resolution');
     expect((uniforms.maxLabels as unknown as { name: string }).name).toBe('u_maxLabels');
     expect((uniforms.knockoutColor as unknown as { name: string }).name).toBe('u_knockoutColor');
+    expect((uniforms.pointScale as unknown as { name: string }).name).toBe('u_pointScale');
   });
 });

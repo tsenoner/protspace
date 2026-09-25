@@ -63,6 +63,7 @@ interface DensityFrame {
 }
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
+import { computePointScale } from './point-scale';
 import {
   planLabelAtlas,
   MAX_LABELS,
@@ -376,6 +377,19 @@ export class WebGLRenderer {
   releaseDataReferences() {
     this.lastRenderedData = null;
     this.sortedDataRef = null;
+  }
+
+  /**
+   * The CSS-px multiplier the live view draws dots with right now. Hit-testing
+   * and the EAT halo read this same value, so they match the drawn radius.
+   */
+  pointScale(): number {
+    const config = this.getConfig();
+    return computePointScale(
+      this.getTransform().k,
+      config.width ?? DEFAULT_VIEWPORT_WIDTH,
+      config.height ?? DEFAULT_VIEWPORT_HEIGHT,
+    );
   }
 
   resize(width: number, height: number) {
@@ -1116,6 +1130,7 @@ export class WebGLRenderer {
         height: this.canvas.height,
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
+        pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
         // Null when no atlas is allocated, which makes the shader's pie branch
@@ -1306,7 +1321,7 @@ export class WebGLRenderer {
 
           // updatePositions is always true here (see above). Positions are
           // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
-          // original slot), NOT depthScratch[k]. sizeScaleFactor=1 for the live path.
+          // original slot), NOT depthScratch[k].
           stagePoint(
             this.stageArrays,
             k,
@@ -1316,8 +1331,6 @@ export class WebGLRenderer {
             opacity,
             depthScratch[srcSlot],
             this.style,
-            this.dpr,
-            1,
           );
 
           return opacity;
@@ -1356,7 +1369,7 @@ export class WebGLRenderer {
           // positions and depths are unchanged from the last rebuild. Shares the
           // exact packing the full-rebuild path uses via stagePoint (stageArrays
           // aliases this.colors/this.sizes/... so this writes the same buffers).
-          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style, this.dpr);
+          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style);
 
           idx++;
         }

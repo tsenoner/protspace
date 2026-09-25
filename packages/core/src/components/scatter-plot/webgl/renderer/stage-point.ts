@@ -3,15 +3,8 @@ import { getShapeIndex } from '@protspace/utils';
 import type { WebGLStyleGetters } from '../types';
 import { resolveColor } from '../color-utils';
 import { fillLabelColorTexels } from './label-texture-utils';
+import { pointRadiusCss } from './point-scale';
 
-// ============================================================================
-// Per-point staging constants (owned here; the rest are internal to the
-// staging helpers). MAX_LABELS is NOT one of them — it lives in
-// `label-atlas-plan.ts` with the geometry it describes.
-// ============================================================================
-
-const POINT_SIZE_DIVISOR = 3;
-const MIN_POINT_SIZE = 1;
 const DIAMOND_SIZE_SCALE = 1.25;
 
 /**
@@ -72,12 +65,9 @@ export function stagePointStyle(
   sp: PlotDataPoint,
   opacity: number,
   style: StagePointStyle,
-  dpr: number,
-  sizeScaleFactor = 1,
 ): void {
   const pointColors = style.getColors(sp);
   const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-  const size = Math.sqrt(style.getPointSize(sp)) / POINT_SIZE_DIVISOR;
   const shapeIndex = getShapeIndex(style.getShape(sp));
 
   target.colors[idx * 4] = r;
@@ -85,8 +75,10 @@ export function stagePointStyle(
   target.colors[idx * 4 + 2] = b;
   target.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
 
-  const basePointSize = Math.max(MIN_POINT_SIZE, size * 2 * dpr * sizeScaleFactor);
-  target.sizes[idx] = shapeIndex === 2 ? basePointSize * DIAMOND_SIZE_SCALE : basePointSize;
+  // Nominal CSS diameter. The target's scale, dpr and the 1-device-px floor are
+  // applied in the shader, so a camera or DPR change restages nothing.
+  const diameter = 2 * pointRadiusCss(style.getPointSize(sp));
+  target.sizes[idx] = shapeIndex === 2 ? diameter * DIAMOND_SIZE_SCALE : diameter;
   // Clamped to what the atlas actually reserves for this point. Unclamped, a point
   // with more colours than `maxLabels` told the shader to draw slices that were
   // never written — so it sampled the NEXT point's texels and painted an unrelated
@@ -110,8 +102,7 @@ export function stagePointStyle(
  *
  * `screenX`/`screenY` are already in device-independent screen space (the caller
  * applied `scales.x`/`scales.y`). `opacity`/`depth` were computed by the caller's
- * painter's-algorithm sort. `sizeScaleFactor` defaults to 1 for the live path;
- * the offscreen export passes the export/display area ratio.
+ * painter's-algorithm sort.
  *
  * Pure helper: no GL, no WebGLRenderer import.
  */
@@ -124,11 +115,9 @@ export function stagePoint(
   opacity: number,
   depth: number,
   style: StagePointStyle,
-  dpr: number,
-  sizeScaleFactor = 1,
 ): void {
   target.dataPositions[idx * 2] = screenX;
   target.dataPositions[idx * 2 + 1] = screenY;
-  stagePointStyle(target, idx, sp, opacity, style, dpr, sizeScaleFactor);
+  stagePointStyle(target, idx, sp, opacity, style);
   target.depths[idx] = depth;
 }

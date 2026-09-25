@@ -73,6 +73,7 @@ test('glyph outline appearance across point sizes', async ({ page }) => {
       gl.uniform2f(loc('u_resolution'), 900, 960);
       gl.uniform3f(loc('u_transform'), 0, 0, 1);
       gl.uniform1f(loc('u_dpr'), 1);
+      gl.uniform1f(loc('u_pointScale'), 1);
       gl.uniform1f(loc('u_gamma'), 2.2);
       gl.uniform3f(loc('u_knockoutColor'), 1, 1, 1);
       gl.uniform1i(loc('u_maxLabels'), 1);

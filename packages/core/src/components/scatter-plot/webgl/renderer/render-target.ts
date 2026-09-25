@@ -43,6 +43,8 @@ interface PointDrawStateParams {
   transform: { x: number; y: number; k: number };
   /** Device pixel ratio (u_dpr). */
   dpr: number;
+  /** CSS-px multiplier on the staged nominal diameters (u_pointScale). */
+  pointScale: number;
   /** Effective gamma (u_gamma); 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
   /** Resolved plot-surface color in sRGB, used to mask overlapping marker interiors. */
@@ -66,7 +68,7 @@ interface PointDrawStateParams {
  *     ({@link setPointBlendState} — idempotent, so calling it per-draw is
  *     behavior-preserving and removes the live path's dependence on a single
  *     once-at-init call),
- *  3. push the point uniforms (resolution, transform, dpr, gamma, maxLabels,
+ *  3. push the point uniforms (resolution, transform, dpr, pointScale, gamma, maxLabels,
  *     labelTextureSize) in the exact order both paths used,
  *  4. bind the label-color texture to TEXTURE1 and point the sampler at unit 1,
  *  5. bind the point VAO.
@@ -90,6 +92,7 @@ export function bindPointDrawState(
   gl.uniform2f(uniforms.resolution, params.width, params.height);
   gl.uniform3f(uniforms.transform, params.transform.x, params.transform.y, params.transform.k);
   gl.uniform1f(uniforms.dpr, params.dpr);
+  gl.uniform1f(uniforms.pointScale, params.pointScale);
   gl.uniform1f(uniforms.gamma, params.gamma);
   gl.uniform3f(uniforms.knockoutColor, ...params.knockoutColor);
   // No atlas: capacity 0 makes the shader's pie branch unreachable, so the
