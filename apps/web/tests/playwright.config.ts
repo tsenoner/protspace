@@ -190,6 +190,14 @@ export default defineConfig({
       testMatch: /isolation-dataset-swap\.spec\.ts/,
     },
     {
+      name: 'example-datasets',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /example-datasets\.spec\.ts/,
+    },
+    {
       name: 'multi-annotation-tooltip',
       use: {
         ...devices['Desktop Chrome'],
