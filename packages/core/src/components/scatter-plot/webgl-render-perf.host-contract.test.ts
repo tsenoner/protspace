@@ -223,7 +223,7 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     const runner = sp._webglRenderPerf;
     const scenario = beginRecordingScenario(runner, 'zoomInOut');
     try {
-      // `_runZoomInOutScenario` drives every zoom through this helper; when the
+      // `_runZoomCycleScenario` drives every zoom through this helper; when the
       // d3 zoom handle is unreachable it returns at its guard and the scenario
       // silently measures nothing. The `resetZoom()` that the first `data`
       // assignment triggers is a 750ms transition from identity to identity, so
