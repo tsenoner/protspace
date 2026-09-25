@@ -410,6 +410,13 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
       viewController.setRequestedView(requested);
     },
+    recordRequestedView(requested) {
+      if (lifecycle.isDisposed()) {
+        return;
+      }
+
+      viewController.recordRequestedView(requested);
+    },
     subscribeToViewChanges(callback) {
       return viewController.subscribeToViewChanges(callback);
     },

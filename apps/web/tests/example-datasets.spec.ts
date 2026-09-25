@@ -153,6 +153,66 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await waitForProteinCount(page, DEMO_COUNT);
   });
 
+  test('an annotation set before a menu choice survives Back (1a repro)', async ({ page }) => {
+    // Demo has an 'ec' annotation; 5K's default annotation is 'phylum' (see
+    // the deep-link-with-view-param test below), so switching demo -> 5K
+    // forces a normalization write. That write must land on the NEW history
+    // entry (dataset=5K), not the one still holding demo+ec.
+    await page.goto('/explore?annotation=ec');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
+
+    await chooseExampleFromMenu(page, '5K');
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+
+    await page.goBack();
+    await expectDatasetParam(page, null);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
+  });
+
+  test('Back/Forward through a menu choice and a view pick keeps the target entry intact (1b repro)', async ({
+    page,
+  }) => {
+    // Repro from the review: ?dataset=5K -> choose demo from the menu ->
+    // pick annotation 'ec' (push) -> Back x2 -> history.go(2) should land
+    // back on the demo+ec entry unchanged; 5K's data must never be used to
+    // normalize it.
+    await page.goto('/explore?dataset=5K');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, FIVE_K_COUNT);
+
+    await chooseExampleFromMenu(page, 'demo');
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expectDatasetParam(page, 'demo');
+
+    const controlBar = page.locator('protspace-control-bar');
+    await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
+    await controlBar.locator('.dropdown-item[data-annotation="ec"]').click();
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
+    await expect
+      .poll(() => page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')))
+      .toBe('ec');
+
+    await page.goBack();
+    await expectDatasetParam(page, 'demo');
+    await page.goBack();
+    await expectDatasetParam(page, '5K');
+    await waitForProteinCount(page, FIVE_K_COUNT);
+
+    await page.evaluate(() => history.go(2));
+    await expectDatasetParam(page, 'demo');
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
+    await expect
+      .poll(() => page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')))
+      .toBe('ec');
+  });
+
   test('importing a user file removes dataset= without a new history entry', async ({ page }) => {
     await page.goto('/explore?dataset=5K');
     await waitForExploreDataLoad(page);

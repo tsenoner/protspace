@@ -92,28 +92,36 @@ export function useExploreUrlStateSync(
     [handleDatasetChange, handleViewChange],
   );
 
+  // One effect, not two, and in this order: when Back/Forward (or a
+  // hand-edited URL) changes `dataset` and a view param together, resolving
+  // the view param first would run it against whichever dataset is still on
+  // screen — the OLD one — normalize it against that dataset's annotations/
+  // projections, and write the normalization over the URL entry the switch
+  // is headed to (see the "1(b)" scenario in the example-datasets review).
+  // So when a dataset switch is pending, only record the requested view
+  // (`recordRequestedView`, no resolve/apply/URL write) and let the dataset
+  // load apply it once the new data is in, via
+  // `applyLatestViewForDatasetLoad` (dataset-controller.ts).
   useEffect(() => {
     if (!controllerRef.current) {
+      return;
+    }
+
+    // A change this hook itself wrote already updated currentDatasetIdRef to
+    // match, so `datasetChanged` is only true for Back/Forward or a
+    // hand-edited URL.
+    const datasetChanged = datasetParam !== currentDatasetIdRef.current;
+
+    if (datasetChanged) {
+      controllerRef.current.recordRequestedView(requestState);
+      currentDatasetIdRef.current = datasetParam;
+      controllerRef.current.setRequestedDataset(datasetParam);
       return;
     }
 
     pendingUrlRequestRef.current = true;
     controllerRef.current.setRequestedView(requestState);
-  }, [requestState]);
-
-  useEffect(() => {
-    if (!controllerRef.current) {
-      return;
-    }
-    // A change this hook itself wrote already updated currentDatasetIdRef to
-    // match, so this only fires for Back/Forward or a hand-edited URL.
-    if (datasetParam === currentDatasetIdRef.current) {
-      return;
-    }
-
-    currentDatasetIdRef.current = datasetParam;
-    controllerRef.current.setRequestedDataset(datasetParam);
-  }, [datasetParam]);
+  }, [datasetParam, requestState]);
 
   return { attachController };
 }

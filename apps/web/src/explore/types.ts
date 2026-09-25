@@ -53,6 +53,8 @@ export interface ExploreViewChange {
 
 export interface ExploreController {
   setRequestedView(requested: ExploreViewRequestState): void;
+  /** See `ViewController.recordRequestedView` (view-controller.ts). */
+  recordRequestedView(requested: ExploreViewRequestState): void;
   subscribeToViewChanges(callback: (change: ExploreViewChange) => void): () => void;
   setRequestedDataset(exampleId: string | null): void;
   subscribeToDatasetChanges(
@@ -63,6 +65,7 @@ export interface ExploreController {
 
 export const NOOP_CONTROLLER: ExploreController = {
   setRequestedView() {},
+  recordRequestedView() {},
   subscribeToViewChanges() {
     return () => {};
   },
