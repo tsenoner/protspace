@@ -25,12 +25,11 @@ export function drawGammaQuad(
   gl.uniform1f(uniforms.gamma, gamma);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-  const posLoc = uniforms.position;
-  gl.enableVertexAttribArray(posLoc);
-  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(uniforms.position);
+  gl.vertexAttribPointer(uniforms.position, 2, gl.FLOAT, false, 0, 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-  gl.disableVertexAttribArray(posLoc);
+  gl.disableVertexAttribArray(uniforms.position);
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
