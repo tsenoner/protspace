@@ -17,6 +17,7 @@ import {
 import {
   DEFAULT_EAT_RELIABILITY,
   DENSITY_DEFAULT,
+  DENSITY_OPTIONS,
   DENSITY_STYLE_DEFAULT,
   isEatConfidenceAnnotation,
   isSameReliability,
@@ -58,18 +59,15 @@ const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
-const DENSITY_OPTIONS = {
-  off: { mode: 'off', style: DENSITY_STYLE_DEFAULT, label: 'Density: off' },
-  auto: { mode: 'auto', style: 'heatmap', label: 'Density: auto' },
-  on: { mode: 'on', style: 'heatmap', label: 'Density: on' },
-  'contour-auto': { mode: 'auto', style: 'contour', label: 'Contour: auto' },
-  'contour-on': { mode: 'on', style: 'contour', label: 'Contour: on' },
-} as const satisfies Record<
-  string,
-  { mode: DensityLayerMode; style: DensityLayerStyle; label: string }
->;
-
 type DensityOption = keyof typeof DENSITY_OPTIONS;
+
+const DENSITY_LABELS: Record<DensityOption, string> = {
+  off: 'Density: off',
+  auto: 'Density: auto',
+  on: 'Density: on',
+  'contour-auto': 'Contour: auto',
+  'contour-on': 'Contour: on',
+};
 
 const DENSITY_OPTION_ORDER = Object.keys(DENSITY_OPTIONS) as DensityOption[];
 
@@ -732,7 +730,7 @@ export class ProtspaceControlBar extends LitElement {
                     (DENSITY_OPTIONS[option].mode === 'off' ||
                       this.densityStyle === DENSITY_OPTIONS[option].style)}
                   >
-                    ${DENSITY_OPTIONS[option].label}
+                    ${DENSITY_LABELS[option]}
                   </option>`,
               )}
             </select>
