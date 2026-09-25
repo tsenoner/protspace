@@ -160,7 +160,7 @@ def test_build_cluster_legend_settings_produces_valid_envelope():
     # just types) so a regression like maxVisibleValues=0 — which would hide every
     # legend entry — is caught rather than passing an isinstance-only check.
     assert env["maxVisibleValues"] == 10  # max(10, len(labels)); 2 labels → 10
-    assert env["shapeSize"] == 30
+    assert env["shapeSize"] == 5
     assert env["sortMode"] == "size-desc"
     assert env["enableDuplicateStackUI"] is False
     assert env["hiddenValues"] == []

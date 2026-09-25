@@ -285,7 +285,7 @@ def generate_template(input_file: str) -> dict:
         template[annotation] = {
             "sortMode": "size-desc",
             "maxVisibleValues": 10,
-            "shapeSize": 30,
+            "shapeSize": 5,
             "selectedPaletteId": "kellys",
             "hiddenValues": [],
             "colors": colors,

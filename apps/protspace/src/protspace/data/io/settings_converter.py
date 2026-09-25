@@ -287,7 +287,7 @@ def visualization_state_to_settings(
         else:
             ann_settings = {
                 "includeShapes": bool(shapes),
-                "shapeSize": 30,
+                "shapeSize": 5,
                 "sortMode": "size-desc",
                 "hiddenValues": [],
                 "enableDuplicateStackUI": False,

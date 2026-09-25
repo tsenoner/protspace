@@ -153,7 +153,7 @@ def build_cluster_legend_settings(report: StatsReport, columns=None) -> dict:
         }
         settings[col.name] = {
             "maxVisibleValues": max(10, len(labels)),
-            "shapeSize": 30,
+            "shapeSize": 5,
             "sortMode": "size-desc",
             "hiddenValues": [],
             "enableDuplicateStackUI": False,

@@ -200,6 +200,7 @@ class TestVisualizationStateToSettings:
         result = visualization_state_to_settings(viz)
         assert result["ann"]["sortMode"] == "size-desc"
         assert result["ann"]["hiddenValues"] == []
+        assert result["ann"]["shapeSize"] == 5
 
     def test_preserves_existing_settings(self):
         existing = {
