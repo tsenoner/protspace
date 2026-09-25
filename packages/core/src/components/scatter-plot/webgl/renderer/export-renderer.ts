@@ -49,6 +49,7 @@ import {
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
 import { stagePoint, type StagePointArrays } from './stage-point';
+import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
   readMaxTextureSize,
@@ -379,6 +380,9 @@ export class ExportRenderer {
       config.width,
       config.height,
     );
+    // The live view's scale at the export's zoom, so the figure matches the screen.
+    const pointScale =
+      sizeScaleFactor * computePointScale(options.transform.k, displayWidth, displayHeight);
     // Enable extensions for float textures (needed for gamma pipeline)
     const colorBufferFloatExt = gl.getExtension('EXT_color_buffer_float');
     const floatBlendExt = gl.getExtension('EXT_float_blend');
@@ -557,7 +561,7 @@ export class ExportRenderer {
         width,
         height,
         dpr,
-        sizeScaleFactor,
+        pointScale,
         gamma,
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
@@ -595,7 +599,7 @@ export class ExportRenderer {
         width,
         height,
         dpr,
-        sizeScaleFactor,
+        pointScale,
         gamma,
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
