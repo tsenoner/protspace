@@ -68,6 +68,7 @@ import { LegendRenderer } from './legend-renderer';
 import {
   valueToKey,
   calculatePointSize,
+  seedShapeSize,
   getDefaultSortMode,
   getItemClasses,
   isItemSelected,
@@ -1979,7 +1980,7 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this.shapeSize = settings.shapeSize;
+      this.shapeSize = seedShapeSize(settings.shapeSize);
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
       if (isNumericAnnotation) {

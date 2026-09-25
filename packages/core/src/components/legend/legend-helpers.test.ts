@@ -8,6 +8,7 @@ import {
   buildZOrderMapping,
   buildColorShapeMappings,
   calculatePointSize,
+  seedShapeSize,
   createDefaultSettings,
   getDefaultSortMode,
   getItemClasses,
@@ -142,6 +143,18 @@ describe('legend-helpers', () => {
     it('enforces minimum of 10', () => {
       expect(calculatePointSize(1)).toBe(10);
       expect(calculatePointSize(0)).toBe(10);
+    });
+
+    it('maps the default shape size 5 to point size 40', () => {
+      expect(calculatePointSize(createDefaultSettings('a').shapeSize)).toBe(40);
+    });
+  });
+
+  describe('seedShapeSize', () => {
+    it('reads the legacy default 30 as the new default and keeps chosen sizes', () => {
+      expect(seedShapeSize(30)).toBe(5);
+      expect(seedShapeSize(12)).toBe(12);
+      expect(seedShapeSize(5)).toBe(5);
     });
   });
 
