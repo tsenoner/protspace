@@ -10,6 +10,8 @@
 import type { PointUniformLocations } from '../types';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 
+export const LABEL_ATLAS_TEXTURE_UNIT = 1;
+
 /**
  * Binds the given framebuffer (or the default framebuffer when `null`), sets the
  * viewport to the full target, and clears it to transparent black + depth.
@@ -101,9 +103,9 @@ export function bindPointDrawState(
   gl.uniform1i(uniforms.labelAtlasCapacity, atlas?.pointCapacity ?? 0);
   gl.uniform2f(uniforms.labelTextureSize, atlas?.width ?? 1, atlas?.height ?? 1);
 
-  gl.activeTexture(gl.TEXTURE1);
+  gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
   gl.bindTexture(gl.TEXTURE_2D, labelTexture);
-  gl.uniform1i(uniforms.labelColors, 1);
+  gl.uniform1i(uniforms.labelColors, LABEL_ATLAS_TEXTURE_UNIT);
 
   gl.bindVertexArray(vao);
 }
