@@ -1230,6 +1230,16 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
+   * Apply a bundle's dataset-level shape size. `datasetHash` is for when the
+   * component's own hash is not computed from the new data yet.
+   */
+  public applyShapeSize(shapeSize: number, datasetHash?: string): void {
+    this._persistenceController.saveShapeSize(shapeSize, datasetHash);
+    this.shapeSize = shapeSize;
+    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(shapeSize) });
+  }
+
+  /**
    * Bundle restore: the saved overlay switch plus the saved reliability position.
    *
    * A bundle stores the LOWER bound only, so restoring it means "hide below x" — the
@@ -1980,7 +1990,8 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this.shapeSize = seedShapeSize(settings.shapeSize);
+      this.shapeSize =
+        this._persistenceController.loadShapeSize() ?? seedShapeSize(settings.shapeSize);
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
       if (isNumericAnnotation) {
@@ -2418,6 +2429,9 @@ export class ProtspaceLegend extends LitElement {
     };
 
     this.maxVisibleValues = this._dialogSettings.maxVisibleValues;
+    if (this._dialogSettings.shapeSize !== this.shapeSize) {
+      this._persistenceController.saveShapeSize(this._dialogSettings.shapeSize);
+    }
     this.shapeSize = this._dialogSettings.shapeSize;
     this._annotationSortModes = nextAnnotationSortModes;
     if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
@@ -2560,6 +2574,8 @@ export class ProtspaceLegend extends LitElement {
     // Reset all settings to defaults
     this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
     this.shapeSize = LEGEND_DEFAULTS.symbolSize;
+    // Written, not removed: other annotations' records may hold the old pick.
+    this._persistenceController.saveShapeSize(LEGEND_DEFAULTS.symbolSize);
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
     this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';

@@ -386,6 +386,8 @@ export interface BundleSettings {
    * above 0 — so an absent or `0` value means no reliability filter (#6b).
    */
   eatConfidenceThreshold?: number;
+  /** The dataset-level legend shape size; per-annotation `shapeSize` is kept for old readers. */
+  shapeSize?: number;
 }
 
 /**

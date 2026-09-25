@@ -136,4 +136,55 @@ describe('dataset controller EAT settings restore', () => {
       DEFAULT_EAT_CONFIDENCE_THRESHOLD,
     );
   });
+
+  it('applies a bundle shape size after the legend settings of a user import', async () => {
+    const controlBar = { clearForNewDataset: vi.fn(), hasFileSettings: false };
+    const calls: string[] = [];
+    const legendElement = {
+      clearForNewDataset: vi.fn(),
+      setFileSettings: vi.fn(() => calls.push('setFileSettings')),
+      applyShapeSize: vi.fn((size: number, hash: string) =>
+        calls.push(`applyShapeSize:${size}:${typeof hash}`),
+      ),
+      applyEatSettings: vi.fn(),
+    };
+    const controller = createDatasetController({
+      controlBar,
+      dataLoader: {},
+      defaultDatasetName: 'default.parquetbundle',
+      getIsDisposed: () => false,
+      interactionController: {},
+      legendElement,
+      loadQueue: {
+        registerFileLoad: vi.fn(),
+        getLoadMetaForFile: vi.fn(),
+        getRunningLoadMeta: () => ({ sequence: 3, kind: 'user' as const }),
+        getLatestSequence: () => 3,
+        resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
+      },
+      overlayController: { update: vi.fn() },
+      plotElement: { eatOverlayEnabled: true },
+      setCurrentDatasetIsDemo: vi.fn(),
+      setCurrentDatasetName: vi.fn(),
+      structureViewer: {},
+      viewController: {
+        subscribeToViewChanges: vi.fn(() => () => {}),
+        resolveLatestView: vi.fn(),
+        getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
+        applyLatestViewForDatasetLoad: vi.fn(),
+        setRequestedView: vi.fn(),
+      },
+    } as unknown as Parameters<typeof createDatasetController>[0]);
+
+    await controller.handleDataLoaded({
+      detail: {
+        data,
+        settings: { legendSettings: {}, exportOptions: {}, shapeSize: 12 },
+        source: 'user',
+      },
+    } as unknown as Event);
+
+    expect(calls).toEqual(['setFileSettings', 'applyShapeSize:12:string']);
+    expect(controlBar.hasFileSettings).toBe(true);
+  });
 });

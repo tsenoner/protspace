@@ -150,6 +150,9 @@ export function createDatasetController({
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
+        if (settings.shapeSize !== undefined) {
+          legendElement.applyShapeSize(settings.shapeSize, datasetHash);
+        }
       }
       if (settings) {
         const eatOverlayEnabled = settings.eatOverlayEnabled ?? true;
@@ -162,7 +165,8 @@ export function createDatasetController({
         settings != null &&
         (Object.keys(settings.legendSettings).length > 0 ||
           settings.eatOverlayEnabled !== undefined ||
-          settings.eatConfidenceThreshold !== undefined);
+          settings.eatConfidenceThreshold !== undefined ||
+          settings.shapeSize !== undefined);
 
       if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);

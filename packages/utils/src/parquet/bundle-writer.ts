@@ -316,7 +316,8 @@ function hasBundleSettings(settings: BundleSettings | undefined): settings is Bu
     Object.keys(settings.exportOptions).length > 0 ||
     settings.publishState !== undefined ||
     settings.eatOverlayEnabled !== undefined ||
-    settings.eatConfidenceThreshold !== undefined
+    settings.eatConfidenceThreshold !== undefined ||
+    settings.shapeSize !== undefined
   );
 }
 
