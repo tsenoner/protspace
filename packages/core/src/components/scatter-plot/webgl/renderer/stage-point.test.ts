@@ -39,7 +39,7 @@ const style = {
 } as unknown as StagePointStyle;
 
 describe('stagePoint', () => {
-  it('writes scaled position, clamped color, basePointSize and depth for one slot', () => {
+  it('writes scaled position, clamped color, CSS diameter and depth for one slot', () => {
     const a = arrays(4);
     const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
     // screenX/screenY already scaled by the caller (scales.x/scales.y)
@@ -52,15 +52,13 @@ describe('stagePoint', () => {
       /*opacity*/ 0.5,
       /*depth*/ 0.7,
       style,
-      /*dpr*/ 2,
-      /*sizeScaleFactor*/ 1,
     );
     expect(a.dataPositions[2]).toBe(12);
     expect(a.dataPositions[3]).toBe(34);
     expect(a.colors[4]).toBeCloseTo(1); // r
     expect(a.colors[7]).toBeCloseTo(0.5); // clamped opacity
-    // size=2, basePointSize=max(1, 2*2*2*1)=8, circle → 8
-    expect(a.sizes[1]).toBeCloseTo(8);
+    // radius 2 → diameter 4, whatever the target's dpr
+    expect(a.sizes[1]).toBeCloseTo(4);
     expect(a.depths[1]).toBeCloseTo(0.7);
     expect(a.labelCounts[1]).toBe(1);
     expect(a.shapes[1]).toBe(0);
@@ -76,18 +74,10 @@ describe('stagePoint', () => {
       isPredicted: () => true,
     } as never;
     const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    stagePoint(a, 0, sp, 0, 0, 1, 0, diamond, 1, 1);
-    // size=2, base=max(1,2*2*1*1)=4, diamond → 4*1.25=5
+    stagePoint(a, 0, sp, 0, 0, 1, 0, diamond);
+    // diameter 4, diamond → 4*1.25=5
     expect(a.sizes[0]).toBeCloseTo(5);
     expect(a.predicted[0]).toBe(1);
-  });
-
-  it('sizeScaleFactor scales basePointSize (export parity)', () => {
-    const a = arrays(2);
-    const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    stagePoint(a, 0, sp, 0, 0, 1, 0, style, 1, 2);
-    // size=2, base=max(1, 2*2*1*2)=8
-    expect(a.sizes[0]).toBeCloseTo(8);
   });
 });
 
@@ -113,13 +103,13 @@ describe('stagePointStyle label capacity', () => {
     // so slices 8..11 sampled the NEXT point's storage — an unrelated protein's
     // colours, presented as this one's data.
     const a = arrays(4);
-    stagePointStyle(a, 1, sp, 1, styleWithColors(twelveColors), 1);
+    stagePointStyle(a, 1, sp, 1, styleWithColors(twelveColors));
     expect(a.labelCounts[1]).toBe(MAX_LABELS);
   });
 
   it('honours a reduced stride in both the count and the texels written', () => {
     const a = arrays(4, 4);
-    stagePointStyle(a, 1, sp, 1, styleWithColors(twelveColors), 1);
+    stagePointStyle(a, 1, sp, 1, styleWithColors(twelveColors));
     expect(a.labelCounts[1]).toBe(4);
     // Slot 1 owns texels [4, 8) at stride 4; slot 2's first texel must stay clear.
     const slotTwoFirstTexel = 2 * 4 * 4;
@@ -130,14 +120,14 @@ describe('stagePointStyle label capacity', () => {
     const a = arrays(4);
     a.labelColorData = null;
     expect(() =>
-      stagePointStyle(a, 1, sp, 1, styleWithColors(['#ff0000', '#00ff00']), 1),
+      stagePointStyle(a, 1, sp, 1, styleWithColors(['#ff0000', '#00ff00'])),
     ).not.toThrow();
     expect(a.labelCounts[1]).toBe(2);
   });
 
   it('leaves a single-label point at one slice', () => {
     const a = arrays(4);
-    stagePointStyle(a, 1, sp, 1, styleWithColors(['#ff0000']), 1);
+    stagePointStyle(a, 1, sp, 1, styleWithColors(['#ff0000']));
     expect(a.labelCounts[1]).toBe(1);
   });
 });

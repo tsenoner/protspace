@@ -23,6 +23,7 @@ in float a_predicted;
 uniform vec2 u_resolution;
 uniform vec3 u_transform;
 uniform float u_dpr;
+uniform float u_pointScale;
 uniform float u_gamma;
 
 out vec4 v_color;
@@ -38,7 +39,7 @@ void main() {
 
   // Depth is computed per-point on the CPU (opacity + legend z-order tie-break)
   gl_Position = vec4(clipSpace.x, -clipSpace.y, a_depth, 1.0);
-  gl_PointSize = max(1.0, a_pointSize);
+  gl_PointSize = max(1.0, a_pointSize * u_pointScale * u_dpr);
 
   // Convert sRGB input to linear RGB for proper blending
   vec3 linearColor = pow(max(a_color.rgb, vec3(0.0)), vec3(u_gamma));

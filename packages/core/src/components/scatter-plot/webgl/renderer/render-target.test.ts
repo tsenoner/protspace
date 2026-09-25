@@ -144,6 +144,7 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       resolution: { n: 'resolution' },
       transform: { n: 'transform' },
       dpr: { n: 'dpr' },
+      pointScale: { n: 'pointScale' },
       gamma: { n: 'gamma' },
       knockoutColor: { n: 'knockoutColor' },
       labelColors: { n: 'labelColors' },
@@ -159,6 +160,7 @@ describe('bindPointDrawState label-atlas uniforms', () => {
     height: 600,
     transform: { x: 0, y: 0, k: 1 },
     dpr: 1,
+    pointScale: 1,
     gamma: 2.2,
     knockoutColor: [1, 1, 1] as const,
   };
@@ -189,5 +191,39 @@ describe('bindPointDrawState label-atlas uniforms', () => {
     expect(pushed.labelAtlasCapacity).toBe(0);
     // The remaining three describe the 1x1 placeholder that stands in for the atlas.
     expect(pushed.labelTextureSize).toEqual([1, 1]);
+  });
+});
+
+describe('bindPointDrawState point scale', () => {
+  it('pushes the draw target size multiplier as u_pointScale', () => {
+    const pushed: Record<string, number> = {};
+    const gl = {
+      useProgram: () => {},
+      activeTexture: () => {},
+      bindTexture: () => {},
+      bindVertexArray: () => {},
+      enable: () => {},
+      disable: () => {},
+      blendFunc: () => {},
+      depthMask: () => {},
+      uniform1f: (loc: { n: string }, v: number) => {
+        pushed[loc.n] = v;
+      },
+      uniform1i: () => {},
+      uniform2f: () => {},
+      uniform3f: () => {},
+    } as unknown as WebGL2RenderingContext;
+    const uniforms = new Proxy({}, { get: (_t, key) => ({ n: String(key) }) }) as never;
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      width: 800,
+      height: 600,
+      transform: { x: 0, y: 0, k: 4 },
+      dpr: 2,
+      pointScale: 2.5,
+      gamma: 2.2,
+      knockoutColor: [1, 1, 1],
+      labelAtlas: null,
+    });
+    expect(pushed).toMatchObject({ dpr: 2, pointScale: 2.5 });
   });
 });

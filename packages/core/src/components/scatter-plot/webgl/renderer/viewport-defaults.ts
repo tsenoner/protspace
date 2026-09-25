@@ -12,7 +12,7 @@ export const DEFAULT_VIEWPORT_HEIGHT = 600;
  * drift apart (#302). Callers must pass the same inputs the dot path uses:
  * refWidth/refHeight = pointSizeReference ?? logical output dims (physical ÷
  * dpr — NOT the physical pixel dims, or the dpr double-counts against the
- * explicit `* dpr` in stagePoint, sizing points by dpr²);
+ * u_dpr in the point shader, sizing points by dpr²);
  * displayWidth/displayHeight = config.width/height (undefined falls back to
  * the default viewport).
  */

@@ -369,9 +369,8 @@ export class ExportRenderer {
     // `width`/`height` here are PHYSICAL (logical × dpr), whereas
     // pointSizeReference and the display dims are LOGICAL (CSS px). Feed
     // sizeScaleFactor logical reference dims: the physical dims carry a factor
-    // of dpr that would otherwise double-count against the explicit `* dpr` in
-    // stagePoint, scaling point size by dpr² at dpr ≠ 1. At dpr = 1 logical ===
-    // physical, so this leaves current (dpr = 1) exports byte-identical.
+    // of dpr that would otherwise double-count against u_dpr in the shader,
+    // scaling point size by dpr² at dpr ≠ 1.
     const logicalWidth = width / dpr;
     const logicalHeight = height / dpr;
     const sizeScaleFactor = computeSizeScaleFactor(
@@ -432,10 +431,8 @@ export class ExportRenderer {
       pd,
       scales,
       maxPoints,
-      dpr,
       style,
       options.selectionActive,
-      sizeScaleFactor,
       labelAtlas,
     );
 
@@ -560,6 +557,7 @@ export class ExportRenderer {
         width,
         height,
         dpr,
+        sizeScaleFactor,
         gamma,
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
@@ -597,6 +595,7 @@ export class ExportRenderer {
         width,
         height,
         dpr,
+        sizeScaleFactor,
         gamma,
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
@@ -632,10 +631,8 @@ export class ExportRenderer {
     pd: PlotData,
     scales: ScalePair,
     maxPoints: number,
-    dpr: number,
     style: WebGLStyleGetters,
     selectionActive: boolean,
-    sizeScaleFactor: number = 1,
     labelAtlas: LabelAtlasPlan | null = null,
   ): {
     dataPositions: Float32Array;
@@ -725,8 +722,6 @@ export class ExportRenderer {
           opacity,
           depthScratch[srcSlot],
           style,
-          dpr,
-          sizeScaleFactor,
         );
 
         return opacity;
@@ -758,6 +753,7 @@ export class ExportRenderer {
     width: number,
     height: number,
     dpr: number,
+    pointScale: number,
     gamma: number,
     knockoutColor: readonly [number, number, number],
     transform: d3.ZoomTransform,
@@ -773,6 +769,7 @@ export class ExportRenderer {
       height,
       transform: { x: transform.x, y: transform.y, k: transform.k },
       dpr,
+      pointScale,
       gamma,
       knockoutColor,
       labelAtlas,
