@@ -350,8 +350,8 @@ export class ExportRenderer {
    */
   private initializeOffscreenContext(
     gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
+    physicalWidth: number,
+    physicalHeight: number,
     pd: PlotData,
     scales: ScalePair,
     dpr: number,
@@ -367,8 +367,8 @@ export class ExportRenderer {
     // Shared with the badge capture path (#302): see computeSizeScaleFactor.
     const displayWidth = config.width ?? DEFAULT_VIEWPORT_WIDTH;
     const displayHeight = config.height ?? DEFAULT_VIEWPORT_HEIGHT;
-    const logicalWidth = width / dpr;
-    const logicalHeight = height / dpr;
+    const logicalWidth = physicalWidth / dpr;
+    const logicalHeight = physicalHeight / dpr;
     const sizeScaleFactor = computeSizeScaleFactor(
       pointSizeReference?.width ?? logicalWidth,
       pointSizeReference?.height ?? logicalHeight,
@@ -478,7 +478,7 @@ export class ExportRenderer {
     if (gl.getError() !== gl.NO_ERROR) {
       throw new Error(
         `The graphics driver could not allocate memory for ${pointCount.toLocaleString()} points ` +
-          `at ${width}×${height}. Export at smaller dimensions, or with fewer points visible.`,
+          `at ${physicalWidth}×${physicalHeight}. Export at smaller dimensions, or with fewer points visible.`,
       );
     }
 
@@ -525,8 +525,8 @@ export class ExportRenderer {
     // Get current transform and scale it for export dimensions
     const displayTransform = options.transform;
     // Scale transform's translation to export dimensions
-    const scaleFactorX = width / displayWidth;
-    const scaleFactorY = height / displayHeight;
+    const scaleFactorX = physicalWidth / displayWidth;
+    const scaleFactorY = physicalHeight / displayHeight;
     // Create a scaled transform that preserves the current view at export resolution
     const exportTransform = {
       x: displayTransform.x * scaleFactorX,
@@ -538,13 +538,13 @@ export class ExportRenderer {
     // Setup linear framebuffer if using gamma pipeline
     let linearFramebuffer: FramebufferResources | null = null;
     if (useGammaPipeline && gammaCorrectionProgram) {
-      linearFramebuffer = createLinearFramebuffer(gl, width, height);
+      linearFramebuffer = createLinearFramebuffer(gl, physicalWidth, physicalHeight);
     }
 
     // Render
     if (linearFramebuffer && gammaCorrectionProgram) {
       // Gamma-correct pipeline
-      bindAndClearTarget(gl, linearFramebuffer.framebuffer, width, height);
+      bindAndClearTarget(gl, linearFramebuffer.framebuffer, physicalWidth, physicalHeight);
       setPointBlendState(gl);
 
       this.renderOffscreenPoints(
@@ -552,8 +552,8 @@ export class ExportRenderer {
         pointProgram,
         pointVao,
         uniforms,
-        width,
-        height,
+        physicalWidth,
+        physicalHeight,
         dpr,
         pointScale,
         gamma,
@@ -567,7 +567,7 @@ export class ExportRenderer {
       );
 
       // Apply gamma correction
-      bindAndClearTarget(gl, null, width, height);
+      bindAndClearTarget(gl, null, physicalWidth, physicalHeight);
       gl.disable(gl.BLEND);
 
       const quadBuffer = gl.createBuffer()!;
@@ -581,7 +581,7 @@ export class ExportRenderer {
       gl.deleteBuffer(quadBuffer);
     } else {
       // Direct rendering
-      bindAndClearTarget(gl, null, width, height);
+      bindAndClearTarget(gl, null, physicalWidth, physicalHeight);
       setPointBlendState(gl);
 
       this.renderOffscreenPoints(
@@ -589,8 +589,8 @@ export class ExportRenderer {
         pointProgram,
         pointVao,
         uniforms,
-        width,
-        height,
+        physicalWidth,
+        physicalHeight,
         dpr,
         pointScale,
         gamma,
