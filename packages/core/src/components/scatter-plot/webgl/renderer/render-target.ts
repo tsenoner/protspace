@@ -123,12 +123,23 @@ export function drawPoints(
   pointCount: number,
   selectionActive: boolean,
   selectedStartIndex: number,
-  afterBasePass?: () => void,
+  afterBasePass?: {
+    run: () => void;
+    program: WebGLProgram;
+    vao: WebGLVertexArrayObject | null;
+    labelTexture: WebGLTexture | null;
+  },
 ): void {
   if (selectionActive && selectedStartIndex < pointCount) {
     gl.disable(gl.BLEND);
     if (selectedStartIndex > 0) gl.drawArrays(gl.POINTS, 0, selectedStartIndex);
-    afterBasePass?.();
+    if (afterBasePass) {
+      afterBasePass.run();
+      gl.useProgram(afterBasePass.program);
+      gl.bindVertexArray(afterBasePass.vao);
+      gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, afterBasePass.labelTexture);
+    }
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, selectedStartIndex, pointCount - selectedStartIndex);
@@ -136,6 +147,6 @@ export function drawPoints(
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, 0, pointCount);
-    afterBasePass?.();
+    afterBasePass?.run();
   }
 }
