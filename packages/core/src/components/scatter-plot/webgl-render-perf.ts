@@ -6,6 +6,7 @@ import type {
   VisualizationData,
 } from '@protspace/utils';
 import { DENSITY_DEFAULT, DENSITY_STYLE_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
+import { DEFAULT_CONFIG } from './config';
 // Type-only: nothing here needs the class at runtime. The reverse edge
 // (plot-interaction-controller.ts -> RenderWebGLTrigger) is `import type` as well,
 // so neither module pulls the other into the runtime graph.
@@ -23,7 +24,7 @@ const PERF_MEASURE_ZOOM_FACTOR = 3;
 const PERF_MEASURE_PAN_DISTANCE_PX = 160;
 const PERF_MEASURE_PAN_STEPS = 6;
 const PERF_MEASURE_DRAG_CONTINUOUS_FRAMES = 60;
-const PERF_MEASURE_ZOOM_FAR_OUT_FACTOR = 0.1;
+const PERF_MEASURE_ZOOM_FAR_OUT_FACTOR = DEFAULT_CONFIG.zoomExtent[0];
 const PERF_GLOBAL_RESULTS_KEY = '__protspaceWebGLRenderPerfMeasurements';
 
 export type RenderWebGLTrigger = 'zoom' | 'plot' | 'unknown';
