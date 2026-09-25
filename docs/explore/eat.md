@@ -131,9 +131,10 @@ Exporting a bundle with settings included stores the **Show** state and the lowe
 
 ## Trying It
 
-A prepared demo bundle ships with the repository: `venom_eat_stats.parquetbundle`, 811 venom proteins with two transferred columns, `ec` (384 transferred values) and `protein_families` (14), across the `ProtT5 — PCA 2` and `ProtT5 — UMAP 2` projections.
+A prepared example ships with the app: **Venom EAT** (`venom_eat_stats`), 811 venom proteins with two transferred columns, `ec` (384 transferred values) and `protein_families` (14), across the `ProtT5 — PCA 2` and `ProtT5 — UMAP 2` projections.
 
-There is no dataset picker in the app, so download it from the [GitHub data folder](https://github.com/tsenoner/protspace/tree/main/apps/web/public/data) and drag it into the viewer as you would any other bundle. See [Importing Data](/explore/importing-data).
+Open the **Import** menu's **Examples** section and choose **Venom EAT**, or visit
+`/explore?dataset=venom_eat_stats` directly. See [Control Bar Features](/explore/control-bar#_9-import) for the full example list and the `?dataset=` link format.
 
 Colour by `ec` to see the effect at its strongest: nearly half the dataset is a ring, and the shape of the ringed region tells you which parts of the embedding EAT was confident enough to reach into.
 

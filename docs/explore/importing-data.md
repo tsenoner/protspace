@@ -125,7 +125,7 @@ Small datasets (< 10K proteins) load instantly. Larger datasets may take a few s
 All persistence is local to your browser, **stored datasets and settings are never sent to a
 server**. (The one time data leaves your machine is a FASTA upload, described above.)
 
-- **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Switching to the demo dataset clears the stored file.
+- **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Choosing an example from the Import menu (see [Control Bar Features](/explore/control-bar#_9-import)) replaces it and clears the stored file. Opening an example through a `?dataset=` link does not touch the stored file — the app returns to it once you drop the parameter.
 - **Settings persist per dataset**: Legend customizations (colors, shapes, hidden categories, sort order) and export options are saved in browser storage for each dataset. When you reload or revisit the same dataset, your settings are restored.
 - **Annotation and projection persist in the URL**: ProtSpace keeps the currently selected annotation and projection in the page URL as query parameters (`annotation=...` and `projection=...`). Refreshing the page, using the browser's back/forward buttons, or sharing the link will restore the same view when those options exist in the active dataset. A bare `/explore` URL stays unchanged on first load; ProtSpace only writes view params after you change the selection or when it needs to normalize an invalid URL value.
 - **File-embedded settings take priority**: If a `.parquetbundle` includes saved settings (via the export dialog's "Include legend/export settings" options), those are applied on import, replacing any previously stored settings for that dataset.
@@ -165,8 +165,8 @@ If you only have sequences, drop the FASTA straight onto the scatterplot, see
 - **[Using Google Colab](/guide/data-preparation)** - No installation required (recommended)
 - **[Using Python CLI](/guide/python-cli)** - For local processing or automation
 
-Or download example datasets from the [GitHub data folder](https://github.com/tsenoner/protspace/tree/main/apps/web/public/data),
-then import the downloaded file the same way you would import your own. To try
-[transferred annotations](/explore/eat) and [separation scores](/explore/separation-scores), take
-`venom_eat_stats.parquetbundle` — the only example that carries both features. See
-[Trying It](/explore/eat#trying-it) for what is in it.
+Or open the **Import** menu's **Examples** section and choose one of the eleven bundles that ship
+with the app — no download needed. See [Control Bar Features](/explore/control-bar#_9-import) for
+the full list and what each one contains. To try [transferred annotations](/explore/eat) and
+[separation scores](/explore/separation-scores), choose **Venom EAT** — the only example that
+carries both features. See [Trying It](/explore/eat#trying-it) for what is in it.
