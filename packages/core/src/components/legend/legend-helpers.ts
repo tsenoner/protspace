@@ -87,6 +87,18 @@ export function calculatePointSize(shapeSize: number): number {
   return Math.max(10, Math.round(shapeSize * LEGEND_DEFAULTS.symbolSizeMultiplier));
 }
 
+// Every writer before the default became 5 (old web defaults, Python filler)
+// stored 30 to mean "default".
+const LEGACY_DEFAULT_SHAPE_SIZE = 30;
+
+/**
+ * The size a persisted per-annotation record stands for: a legacy default 30
+ * reads as today's default, anything else was chosen and is kept.
+ */
+export function seedShapeSize(persisted: number): number {
+  return persisted === LEGACY_DEFAULT_SHAPE_SIZE ? LEGEND_DEFAULTS.symbolSize : persisted;
+}
+
 /**
  * Creates default persisted settings for an annotation.
  */

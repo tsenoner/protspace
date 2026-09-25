@@ -49,6 +49,10 @@ export interface SettingsDialogCallbacks {
   onOverlayMouseUp: () => void;
 }
 
+// The zoom and screen gains multiply this by up to 6x, so the bound keeps sprites
+// well under driver point-size limits.
+const MAX_SHAPE_SIZE = 64;
+
 /**
  * Parses an input value as a positive integer
  */
@@ -135,7 +139,7 @@ function renderShapeSizeInput(
 ): TemplateResult {
   const onInput = (e: Event) => {
     const value = parsePositiveInt((e.target as HTMLInputElement).value);
-    if (value !== null) callbacks.onShapeSizeChange(value);
+    if (value !== null) callbacks.onShapeSizeChange(Math.min(value, MAX_SHAPE_SIZE));
   };
 
   return renderFieldCard(
@@ -145,8 +149,8 @@ function renderShapeSizeInput(
         class="legend-form-control"
         id="shape-size-input"
         type="number"
-        min="6"
-        max="64"
+        min="1"
+        max=${MAX_SHAPE_SIZE}
         .value=${String(state.shapeSize)}
         placeholder=${String(LEGEND_DEFAULTS.symbolSize)}
         @input=${onInput}
