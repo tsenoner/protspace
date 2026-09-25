@@ -62,6 +62,13 @@ export interface DatasetController {
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
+  /**
+   * Reports a dataset change without loading anything, for a caller (e.g.
+   * `startup.ts`'s recovery-banner path) that needs the URL sync hook to
+   * react — here, to replace-delete a stale `?dataset=` — without a load
+   * happening through this controller.
+   */
+  reportDatasetChange(exampleId: string | null, source: DatasetChangeSource): void;
   handleLoadingStart(): void;
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
@@ -390,6 +397,9 @@ export function createDatasetController({
       return () => {
         datasetChangeSubscribers.delete(callback);
       };
+    },
+    reportDatasetChange(exampleId, source) {
+      emitDatasetChange(exampleId, source);
     },
     handleLoadingStart() {
       console.log('Data loading started');

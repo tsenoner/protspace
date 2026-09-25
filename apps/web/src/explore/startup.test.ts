@@ -41,6 +41,7 @@ function createDatasetController() {
     loadPersistedOrDefaultDataset: vi.fn().mockResolvedValue({ kind: 'default-loaded' }),
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),
     subscribeToDatasetChanges: vi.fn(() => () => {}),
+    reportDatasetChange: vi.fn(),
     handleLoadingStart: vi.fn(),
     handleLoadingProgress: vi.fn(),
     handleDataLoaded: vi.fn(),
@@ -112,6 +113,24 @@ describe('loadRequestedDatasetOrFallback', () => {
     await loadRequestedDatasetOrFallback(datasetController as never, null);
 
     expect(showRecoveryBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it('replace-deletes a stale ?dataset= when the recovery banner is shown', async () => {
+    const datasetController = createDatasetController();
+    const file = new File(['x'], 'mine.parquetbundle');
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({
+      kind: 'recovery-required',
+      file,
+      failedAttempts: 2,
+    });
+
+    // A failed/unknown `?dataset=` id falls through to this flow; no example
+    // is showing while the banner is up, so the URL sync hook must be told
+    // to drop the param, the same way the 'auto-loaded'/'default-loaded'
+    // outcomes already report through DatasetController.
+    await loadRequestedDatasetOrFallback(datasetController as never, 'unknown-id');
+
+    expect(datasetController.reportDatasetChange).toHaveBeenCalledWith(null, 'startup');
   });
 });
 
