@@ -131,7 +131,7 @@ export class WebglRenderPerfRunner {
     renderedPoints: number,
     drawnPoints: number,
     uploadedBytes: number,
-    cpuEndTs?: number,
+    cpuEndTs: number,
   ) {
     if (!token) return;
     const recorder = this._recorder;
@@ -145,7 +145,7 @@ export class WebglRenderPerfRunner {
       trigger: token.trigger,
       startTs: token.startTs,
       endTs,
-      durationMs: (cpuEndTs ?? endTs) - token.startTs,
+      durationMs: cpuEndTs - token.startTs,
       gpuSyncedMs: endTs - token.startTs,
       renderedPoints,
       drawnPoints,
