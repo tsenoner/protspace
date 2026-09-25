@@ -12,7 +12,7 @@ import {
   getCorruptedPersistedDatasetNotification,
   getExampleLoadFailureNotification,
 } from './notifications';
-import type { DatasetLoadKind } from './types';
+import type { DatasetChangeSource, DatasetLoadKind, ExampleLoadContext, LoadMeta } from './types';
 
 const DEFAULT_EXAMPLE = EXAMPLE_DATASETS[0];
 
@@ -31,7 +31,9 @@ interface PersistedDatasetOptions {
   overlayController: {
     update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
   };
-  registerFileLoad(file: File, kind: DatasetLoadKind): void;
+  registerFileLoad(file: File, kind: DatasetLoadKind, example?: ExampleLoadContext): LoadMeta;
+  /** Resolves once the registered load reaches `data-loaded` (true) or `data-error` (false). */
+  awaitLoadOutcome(sequence: number): Promise<boolean>;
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
 }
@@ -40,9 +42,25 @@ export function createPersistedDatasetController({
   dataLoader,
   overlayController,
   registerFileLoad,
+  awaitLoadOutcome,
   setCurrentExampleId,
   setCurrentDatasetName,
 }: PersistedDatasetOptions) {
+  // Guards against overlapping example fetches (two menu/url requests, or a
+  // user import/OPFS restore starting while one is in flight): each call to
+  // `loadExampleDataset` — and each `supersedePendingExampleFetch` — bumps
+  // this, and a request bails out as soon as it sees it's no longer current.
+  let exampleRequestSequence = 0;
+  const beginExampleRequest = (): number => {
+    exampleRequestSequence += 1;
+    return exampleRequestSequence;
+  };
+  const isCurrentExampleRequest = (requestId: number): boolean =>
+    requestId === exampleRequestSequence;
+  const supersedePendingExampleFetch = (): void => {
+    beginExampleRequest();
+  };
+
   const clearCorruptedPersistedDataset = async (context: string) => {
     try {
       await clearLastImportedFile();
@@ -52,27 +70,44 @@ export function createPersistedDatasetController({
     notify.warning(getCorruptedPersistedDatasetNotification(context));
   };
 
-  const loadExampleDataset = async (entry: ExampleDataset): Promise<boolean> => {
+  const loadExampleDataset = async (
+    entry: ExampleDataset,
+    source: DatasetChangeSource,
+  ): Promise<boolean> => {
+    const requestId = beginExampleRequest();
+    overlayController.update(true, 0, `Downloading ${entry.label}…`);
+
     try {
       const response = await fetch(entry.url);
+      if (!isCurrentExampleRequest(requestId)) {
+        return false;
+      }
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
+      if (!isCurrentExampleRequest(requestId)) {
+        return false;
+      }
+
       const fileName = entry.url.split('/').pop() ?? entry.id;
       const file = new File([arrayBuffer], fileName, {
         type: 'application/octet-stream',
       });
 
-      registerFileLoad(file, 'default');
-      // Set the name/id only once the fetch has actually succeeded, so a failed
-      // load below never overwrites what's currently shown.
-      setCurrentDatasetName(entry.label);
-      setCurrentExampleId(entry.id);
+      // Name/id/emit are set by `handleDataLoaded`, once the load has actually
+      // finished decoding — never here, so a fetch that resolves after this
+      // request was superseded (or whose bundle fails to parse) can never
+      // overwrite what's currently shown.
+      const loadMeta = registerFileLoad(file, 'default', { entry, source });
+      const outcome = awaitLoadOutcome(loadMeta.sequence);
       await dataLoader.loadFromFile(file, { source: 'auto' });
-      return true;
+      return await outcome;
     } catch (error) {
+      if (!isCurrentExampleRequest(requestId)) {
+        return false;
+      }
       console.error(`Failed to load example dataset "${entry.id}":`, error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       notify.error(getExampleLoadFailureNotification(entry, message));
@@ -83,10 +118,11 @@ export function createPersistedDatasetController({
 
   const recoverFromCorruptedPersistedDataset = async (context: string) => {
     await clearCorruptedPersistedDataset(context);
-    await loadExampleDataset(DEFAULT_EXAMPLE);
+    await loadExampleDataset(DEFAULT_EXAMPLE, 'startup');
   };
 
   const loadPersistedFile = async (persistedFile: File): Promise<void> => {
+    supersedePendingExampleFetch();
     await markLastLoadStatus('pending');
     registerFileLoad(persistedFile, 'opfs');
     setCurrentDatasetName(persistedFile.name);
@@ -107,7 +143,7 @@ export function createPersistedDatasetController({
     }
 
     if (!persistedFile) {
-      await loadExampleDataset(DEFAULT_EXAMPLE);
+      await loadExampleDataset(DEFAULT_EXAMPLE, 'startup');
       return { kind: 'default-loaded' };
     }
 
@@ -135,7 +171,10 @@ export function createPersistedDatasetController({
     await loadPersistedFile(file);
   };
 
-  const loadExampleDatasetAndClearPersistedFile = async (id: string): Promise<boolean> => {
+  const loadExampleDatasetAndClearPersistedFile = async (
+    id: string,
+    source: DatasetChangeSource,
+  ): Promise<boolean> => {
     const entry = findExampleDataset(id);
     if (!entry) {
       console.warn(`Unknown example dataset id: ${id}`);
@@ -147,19 +186,16 @@ export function createPersistedDatasetController({
     } catch (error) {
       console.warn('Failed to clear persisted dataset before loading example dataset:', error);
     }
-    return loadExampleDataset(entry);
+    return loadExampleDataset(entry, source);
   };
-
-  const loadDefaultDatasetAndClearPersistedFile = (): Promise<boolean> =>
-    loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE.id);
 
   return {
     clearCorruptedPersistedDataset,
     loadExampleDataset,
     loadPersistedOrDefaultDataset,
     loadExampleDatasetAndClearPersistedFile,
-    loadDefaultDatasetAndClearPersistedFile,
     recoverFromCorruptedPersistedDataset,
+    supersedePendingExampleFetch,
     tryLoadPersistedAgain,
   };
 }

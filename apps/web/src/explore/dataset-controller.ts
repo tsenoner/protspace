@@ -53,6 +53,12 @@ export interface DatasetController {
   loadExampleDataset(id: string): Promise<boolean>;
   loadPersistedOrDefaultDataset(): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
+  /**
+   * Invalidates any example fetch still in flight, without starting a new
+   * load. Called before a user file import or OPFS restore begins, so a
+   * slower, now-stale example fetch can never overwrite it once it resolves.
+   */
+  supersedePendingExampleFetch(): void;
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
@@ -90,8 +96,11 @@ export function createDatasetController({
   const persistedDatasetController = createPersistedDatasetController({
     dataLoader,
     overlayController,
-    registerFileLoad(file, kind) {
-      loadQueue.registerFileLoad(file, kind);
+    registerFileLoad(file, kind, example) {
+      return loadQueue.registerFileLoad(file, kind, example);
+    },
+    awaitLoadOutcome(sequence) {
+      return loadQueue.awaitLoadOutcome(sequence);
     },
     setCurrentExampleId,
     setCurrentDatasetName,
@@ -107,27 +116,24 @@ export function createDatasetController({
     datasetChangeSubscribers.forEach((callback) => callback(exampleId, source));
   };
 
+  // Name, id and the dataset-change emit for a successful example load all
+  // happen inside `handleDataLoaded` below, keyed on the example carried in
+  // that load's metadata — never here — so a load that fails after this
+  // resolves (a parse error) can never have already announced success. These
+  // wrappers just forward the outcome, which is now the load's real result
+  // (see persisted-dataset.ts `loadExampleDataset`), not a guess.
   const loadExampleDatasetAndClearPersistedFile = async (
     id: string,
     source: DatasetChangeSource = 'menu',
-  ): Promise<boolean> => {
-    const success = await persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id);
-    if (success) {
-      emitDatasetChange(id, source);
-    }
-    return success;
-  };
+  ): Promise<boolean> =>
+    persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id, source);
 
   const loadExampleDataset = async (id: string): Promise<boolean> => {
     const entry = findExampleDataset(id);
     if (!entry) {
       return false;
     }
-    const success = await persistedDatasetController.loadExampleDataset(entry);
-    if (success) {
-      emitDatasetChange(id, 'url');
-    }
-    return success;
+    return persistedDatasetController.loadExampleDataset(entry, 'url');
   };
 
   const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
@@ -137,10 +143,12 @@ export function createDatasetController({
   const loadPersistedOrDefaultDataset = async (): Promise<PersistedLoadOutcome> => {
     const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset();
     if (outcome.kind === 'auto-loaded') {
+      // The OPFS restore path (kind 'opfs') has no example metadata for
+      // `handleDataLoaded` to key on, so it's reported here instead.
       emitDatasetChange(null, 'startup');
-    } else if (outcome.kind === 'default-loaded') {
-      emitDatasetChange(DEFAULT_EXAMPLE_ID, 'startup');
     }
+    // 'default-loaded' means loadExampleDataset(DEFAULT_EXAMPLE, 'startup') ran
+    // internally, which already emits through handleDataLoaded on success.
     return outcome;
   };
 
@@ -219,9 +227,15 @@ export function createDatasetController({
           settings.eatOverlayEnabled !== undefined ||
           settings.eatConfidenceThreshold !== undefined);
 
-      // A 'default' (example) load already set the name/id in persisted-dataset.ts
-      // once its fetch succeeded, before dataLoader.loadFromFile was even called.
-      if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
+      // An example load carries its entry in load meta (set by
+      // persisted-dataset.ts's `loadExampleDataset`), so it's identified by
+      // that, not by `kind === 'default'` — the perf suite also issues
+      // 'default'-kind loads and must never be labelled as an example.
+      if (loadMeta.example) {
+        setCurrentDatasetName(loadMeta.example.entry.label);
+        setCurrentExampleId(loadMeta.example.entry.id);
+        emitDatasetChange(loadMeta.example.entry.id, loadMeta.example.source);
+      } else if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);
         setCurrentExampleId(null);
         if (loadMeta.kind === 'user') {
@@ -325,7 +339,7 @@ export function createDatasetController({
     if (customEvent.detail.originalError?.name === 'AbortError') {
       console.log('Data load cancelled by user');
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
       }
       return;
     }
@@ -343,7 +357,7 @@ export function createDatasetController({
 
     if (runningLoadMeta?.kind === 'opfs') {
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
       }
 
       if (loadSequence !== null && loadQueue.getLatestSequence() > loadSequence) {
@@ -358,7 +372,7 @@ export function createDatasetController({
     notify.error(getDataLoadFailureNotification(customEvent.detail));
 
     if (loadSequence !== null) {
-      loadQueue.resolvePendingLoadFinalization(loadSequence);
+      loadQueue.resolvePendingLoadFinalization(loadSequence, false);
     }
   };
 
@@ -368,6 +382,9 @@ export function createDatasetController({
     loadExampleDataset,
     loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain,
+    supersedePendingExampleFetch() {
+      persistedDatasetController.supersedePendingExampleFetch();
+    },
     subscribeToDatasetChanges(callback) {
       datasetChangeSubscribers.add(callback);
       return () => {

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     tryLoadPersistedAgain: vi.fn(),
     clearCorruptedPersistedDataset: vi.fn(),
     recoverFromCorruptedPersistedDataset: vi.fn(),
+    supersedePendingExampleFetch: vi.fn(),
   },
 }));
 
@@ -56,7 +57,7 @@ const data: VisualizationData = {
   annotation_data: { ec: new Int32Array([0]) },
 };
 
-function createController() {
+function createController(loadQueueOverrides: Record<string, unknown> = {}) {
   const viewController = {
     subscribeToViewChanges: vi.fn(() => () => {}),
     resolveLatestView: vi.fn(),
@@ -76,10 +77,12 @@ function createController() {
     },
     loadQueue: {
       registerFileLoad: vi.fn(),
+      awaitLoadOutcome: vi.fn(),
       getLoadMetaForFile: vi.fn(),
       getRunningLoadMeta: () => ({ sequence: 1, kind: 'user' as const }),
       getLatestSequence: () => 1,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
+      ...loadQueueOverrides,
     },
     overlayController: { update: vi.fn() },
     plotElement: {},
@@ -89,52 +92,56 @@ function createController() {
     viewController,
   } as unknown as Parameters<typeof createDatasetController>[0];
 
-  return { controller: createDatasetController(options), viewController };
+  return {
+    controller: createDatasetController(options),
+    viewController,
+    setCurrentExampleId: options.setCurrentExampleId,
+    setCurrentDatasetName: options.setCurrentDatasetName,
+  };
 }
 
-describe('dataset change notifications', () => {
+describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadData.mockResolvedValue(undefined);
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
   });
 
-  it('emits "menu" on a successful menu-triggered load, tagged with the chosen id', async () => {
+  // The emit for a successful example load now happens inside handleDataLoaded
+  // (see the "handleDataLoaded" describe block below), keyed on the example
+  // carried in load meta — not here. These wrappers just forward the id/source
+  // to persisted-dataset.ts and return its real outcome.
+  it('loadExampleDatasetAndClearPersistedFile forwards id and source, defaulting source to "menu"', async () => {
     mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue(true);
     const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
     const success = await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id);
 
     expect(success).toBe(true);
-    expect(changes).toEqual([[OTHER.id, 'menu']]);
+    expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).toHaveBeenCalledWith(
+      OTHER.id,
+      'menu',
+    );
   });
 
-  it('does not emit when a menu-triggered load fails', async () => {
+  it('forwards the real outcome (false) when the persisted controller reports failure', async () => {
     mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue(false);
     const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
     const success = await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id);
 
     expect(success).toBe(false);
-    expect(changes).toEqual([]);
   });
 
-  it('loadExampleDataset never clears OPFS and emits "url" on success', async () => {
+  it('loadExampleDataset never clears OPFS and forwards with source "url"', async () => {
     mocks.persisted.loadExampleDataset.mockResolvedValue(true);
     const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
     const success = await controller.loadExampleDataset(DEMO.id);
 
     expect(success).toBe(true);
-    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO);
+    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url');
     expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
-    expect(changes).toEqual([[DEMO.id, 'url']]);
   });
 
   it('loadExampleDataset returns false for an unknown id without calling the loader', async () => {
@@ -146,18 +153,7 @@ describe('dataset change notifications', () => {
     expect(mocks.persisted.loadExampleDataset).not.toHaveBeenCalled();
   });
 
-  it('emits "startup" with the demo id when the persisted-or-default flow loads the default', async () => {
-    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'default-loaded' });
-    const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
-
-    await controller.loadPersistedOrDefaultDataset();
-
-    expect(changes).toEqual([[DEMO.id, 'startup']]);
-  });
-
-  it('emits "startup" with a null id when the persisted-or-default flow restores a stored file', async () => {
+  it('emits "startup" with a null id when the persisted-or-default flow restores a stored file (OPFS)', async () => {
     mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'auto-loaded' });
     const { controller } = createController();
     const changes: Array<[string | null, string]> = [];
@@ -166,6 +162,17 @@ describe('dataset change notifications', () => {
     await controller.loadPersistedOrDefaultDataset();
 
     expect(changes).toEqual([[null, 'startup']]);
+  });
+
+  it('does not emit for "default-loaded": that example load reports through handleDataLoaded internally', async () => {
+    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'default-loaded' });
+    const { controller } = createController();
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.loadPersistedOrDefaultDataset();
+
+    expect(changes).toEqual([]);
   });
 
   it('does not emit when the persisted-or-default flow requires recovery', async () => {
@@ -181,6 +188,16 @@ describe('dataset change notifications', () => {
     await controller.loadPersistedOrDefaultDataset();
 
     expect(changes).toEqual([]);
+  });
+
+  it('tryLoadPersistedAgain emits "startup" with a null id', async () => {
+    const { controller } = createController();
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.tryLoadPersistedAgain(new File(['x'], 'mine.parquetbundle'));
+
+    expect(changes).toEqual([[null, 'startup']]);
   });
 
   it('emits "user" with a null id when a user file import finishes loading', async () => {
@@ -199,6 +216,14 @@ describe('dataset change notifications', () => {
     expect(changes).toEqual([[null, 'user']]);
   });
 
+  it('supersedePendingExampleFetch delegates to the persisted controller', () => {
+    const { controller } = createController();
+
+    controller.supersedePendingExampleFetch();
+
+    expect(mocks.persisted.supersedePendingExampleFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('unsubscribe stops further notifications', async () => {
     mocks.persisted.loadExampleDataset.mockResolvedValue(true);
     const { controller } = createController();
@@ -209,5 +234,60 @@ describe('dataset change notifications', () => {
     await controller.loadExampleDataset(DEMO.id);
 
     expect(callback).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleDataLoaded: example labeling keyed on load meta, not kind', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadData.mockResolvedValue(undefined);
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+  });
+
+  it('sets name/id and emits with the source carried in load meta, for an example load', async () => {
+    const file = new File(['x'], 'demo.parquetbundle');
+    const loadMeta = {
+      sequence: 1,
+      kind: 'default' as const,
+      example: { entry: DEMO, source: 'menu' as const },
+    };
+    const { controller, setCurrentExampleId, setCurrentDatasetName } = createController({
+      getRunningLoadMeta: () => loadMeta,
+      getLoadMetaForFile: () => loadMeta,
+    });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.handleDataLoaded({
+      detail: { data, file, source: 'auto' },
+    } as unknown as Event);
+
+    expect(setCurrentDatasetName).toHaveBeenCalledWith(DEMO.label);
+    expect(setCurrentExampleId).toHaveBeenCalledWith(DEMO.id);
+    expect(changes).toEqual([[DEMO.id, 'menu']]);
+  });
+
+  // Guards the exact regression the review flagged: the perf suite also
+  // issues 'default'-kind loads (webgl-perf-suite.ts calls
+  // dataLoader.loadFromFile(file, { source: 'auto' }) directly, without going
+  // through persisted-dataset.ts), so `kind === 'default'` alone must never be
+  // enough to label a load as an example.
+  it('does not label a plain "default"-kind load (no example in meta) as an example', async () => {
+    const file = new File(['x'], '573K_swissprot.parquetbundle');
+    const loadMeta = { sequence: 1, kind: 'default' as const };
+    const { controller, setCurrentExampleId, setCurrentDatasetName } = createController({
+      getRunningLoadMeta: () => loadMeta,
+      getLoadMetaForFile: () => loadMeta,
+    });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.handleDataLoaded({
+      detail: { data, file, source: 'auto' },
+    } as unknown as Event);
+
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+    expect(setCurrentExampleId).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
   });
 });

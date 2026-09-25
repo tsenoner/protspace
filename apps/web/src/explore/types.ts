@@ -4,6 +4,7 @@ import type {
   ExploreViewNormalization,
   ExploreViewRequestState,
 } from './view-state';
+import type { ExampleDataset } from './example-datasets';
 
 export type {
   EffectiveExploreView,
@@ -22,9 +23,22 @@ export type DatasetLoadKind = 'default' | 'opfs' | 'user';
  */
 export type DatasetChangeSource = 'menu' | 'url' | 'user' | 'startup';
 
+/**
+ * Which example a 'default'-kind load is for, and why it was requested. Only
+ * present when the load was started by `loadExampleDataset`/
+ * `loadExampleDatasetAndClearPersistedFile` (persisted-dataset.ts); a
+ * perf-suite load is also 'default' kind but never carries this, so
+ * `handleDataLoaded` must key on its presence rather than on `kind`.
+ */
+export interface ExampleLoadContext {
+  entry: ExampleDataset;
+  source: DatasetChangeSource;
+}
+
 export interface LoadMeta {
   sequence: number;
   kind: DatasetLoadKind;
+  example?: ExampleLoadContext;
 }
 
 export interface DataLoaderLoadOptions {
