@@ -254,32 +254,35 @@ Click **Import** to open the menu:
 - **Examples** lists the startup demo plus every bundle that ships with the app. Each item's label
   gives the protein count and download size; hover it for a one-line description of what's in the
   bundle. The example currently loaded is disabled. Choosing an example loads it and replaces the
-  dataset stored in your browser, the same way loading the demo does today — see
+  dataset stored in your browser — see
   [Data & Settings Persistence](/explore/importing-data#data-settings-persistence).
 
-| id                                        | Example           | Description                                                                                            |
-| ----------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `demo`                                    | Demo              | Mixed UniProt sample with ESM2 and ProtT5 projections, taxonomy, Pfam/CATH and EC.                     |
-| `venom_eat_stats`                         | Venom EAT         | Venom proteins with EAT-transferred EC and protein-family predictions, GO terms and cluster labels.    |
-| `phosphatase`                             | Phosphatases      | Phosphatases with rich domain annotations (Pfam, SMART, CDD, PANTHER, TED) and predicted localisation. |
-| `5K`                                      | Swiss-Prot 5K     | Small Swiss-Prot subset with a 3D PCA projection and length bins.                                      |
-| `7K_toxprot`                              | ToxProt           | Animal toxins from UniProt ToxProt with taxonomy, domains and signal peptides.                         |
-| `35K_ec_brenda`                           | EC (BRENDA)       | Enzymes with BRENDA EC numbers.                                                                        |
-| `beta_lactamase_ec`                       | β-lactamases (EC) | β-lactamases selected by EC number.                                                                    |
-| `40K`                                     | Swiss-Prot 40K    | Swiss-Prot subset with a 3D PCA projection.                                                            |
-| `105K_homoSapiens_drosophilaMelanogaster` | Human + fly       | Human and _Drosophila melanogaster_ proteomes.                                                         |
-| `127K_beta_lactamase`                     | β-lactamases      | β-lactamase family, broad selection.                                                                   |
-| `beta_lactamase_pn`                       | β-lactamases (PN) | Large β-lactamase set for stress-testing at 248K points.                                               |
+Each example also has an id, for the `?dataset=<id>` link below:
+
+| id                                        | Example           |
+| ----------------------------------------- | ----------------- |
+| `demo`                                    | Demo              |
+| `venom_eat_stats`                         | Venom EAT         |
+| `phosphatase`                             | Phosphatases      |
+| `5K`                                      | Swiss-Prot 5K     |
+| `7K_toxprot`                              | ToxProt           |
+| `35K_ec_brenda`                           | EC (BRENDA)       |
+| `beta_lactamase_ec`                       | β-lactamases (EC) |
+| `40K`                                     | Swiss-Prot 40K    |
+| `105K_homoSapiens_drosophilaMelanogaster` | Human + fly       |
+| `127K_beta_lactamase`                     | β-lactamases      |
+| `beta_lactamase_pn`                       | β-lactamases (PN) |
 
 Each example is also reachable directly with `?dataset=<id>` on the Explore URL, for example
 `/explore?dataset=venom_eat_stats`. Opening a deep link loads that example without touching the
 dataset stored in your browser — visiting the app again without the parameter brings the stored
 dataset back. Choosing an example from the menu, on the other hand, does replace the stored
 dataset, and puts `dataset=<id>` in the URL so the link is shareable and the browser's **Back**
-button returns to whatever was shown before. `annotation`, `projection` and `tooltip` parameters
-in the same URL apply to the loaded example. An unknown id shows a warning and the app starts up
-normally. If an example fails to download, ProtSpace shows an error and leaves the current plot
-as it was.
+button returns to whatever was shown before — except when your own import was showing: the menu
+choice clears it, so **Back** lands on the example instead of restoring it. `annotation`,
+`projection` and `tooltip` parameters in the same URL apply to the loaded example. An unknown id
+shows a warning and the app starts up normally. If an example fails to download, ProtSpace shows
+an error and leaves the current plot as it was.
 
 ## Tips
 
