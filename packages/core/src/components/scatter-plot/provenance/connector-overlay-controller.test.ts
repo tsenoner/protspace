@@ -17,13 +17,9 @@ const plotData: PlotData = {
   proteinIds: ['target', 'outside', 'source'],
 };
 
-// Mirrors ConnectorOverlayController#endpointBaseRadiusPx for pointSize 240 (the
-// default), so expectations track the formula instead of a hand-computed constant.
-const EXPECTED_BASE_RADIUS_PX = Math.max(4, Math.sqrt(240) / 3 + 2);
-
-// Mirrors ConnectorOverlayController#connectorStrokeWidthPx for pointSize 240 (the
-// default), so expectations track the formula instead of a hand-computed constant.
-const EXPECTED_STROKE_WIDTH_PX = Math.max(1, Math.sqrt(240) / 10);
+// The halo and stroke for a dot drawn at radius 6 CSS px (the fixture's getPointRadiusPx).
+const EXPECTED_BASE_RADIUS_PX = 8;
+const EXPECTED_STROKE_WIDTH_PX = 1.8;
 
 // Mirrors ConnectorOverlayController#trimmedLine: pulls each endpoint back toward the other by
 // `marginPx / zoomScale`, collapsing to the midpoint when the two margins would overlap. Lets
@@ -75,7 +71,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => plotData,
       getScales: () => scales,
-      getPointSize: () => 240,
+      getPointRadiusPx: () => 6,
       onStatusChange: (next) => {
         status = next;
       },
@@ -89,7 +85,7 @@ describe('ConnectorOverlayController', () => {
     });
 
     // Raw resolved centers are (10,60) source -> (20,50) target; at the default margin
-    // (~7.16px) that's inside twice the margin, so the rendered line's endpoints collapse to
+    // (8px) that's inside twice the margin, so the rendered line's endpoints collapse to
     // their midpoint (line-to-halo-boundary trimming, see 'trims the connector line' below) —
     // the halo circles below still sit at the untrimmed centers, which is what id resolution
     // actually resolves to.
@@ -139,6 +135,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => currentPlotData,
       getScales: () => scales,
+      getPointRadiusPx: () => 6,
       onStatusChange: (next) => {
         status = next;
       },
@@ -221,7 +218,7 @@ describe('ConnectorOverlayController', () => {
     ]);
   });
 
-  it('scales the connector line stroke-width with point size, defaulting to ~1.5px', () => {
+  it('scales the connector line stroke-width with the drawn radius', () => {
     controller.set({
       pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
       totalCandidates: 1,
@@ -231,7 +228,6 @@ describe('ConnectorOverlayController', () => {
       EXPECTED_STROKE_WIDTH_PX,
       10,
     );
-    expect(EXPECTED_STROKE_WIDTH_PX).toBeCloseTo(1.5, 1);
 
     // biggerController intentionally reuses the same `overlay`/SVG DOM as `controller` above:
     // both join keyed on the same source/target pair, so `.set()` updates the existing
@@ -241,7 +237,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => plotData,
       getScales: () => scales,
-      getPointSize: () => 960,
+      getPointRadiusPx: () => 10,
       onStatusChange: (next) => {
         status = next;
       },
@@ -252,9 +248,26 @@ describe('ConnectorOverlayController', () => {
     });
 
     const biggerLine = svg.querySelector('line.eat-provenance-connector');
-    const expectedWidthAt960 = Math.max(1, Math.sqrt(960) / 10);
-    expect(Number(biggerLine?.getAttribute('stroke-width'))).toBeCloseTo(expectedWidthAt960, 10);
-    expect(expectedWidthAt960).toBeGreaterThan(EXPECTED_STROKE_WIDTH_PX);
+    expect(Number(biggerLine?.getAttribute('stroke-width'))).toBeCloseTo(3, 10);
+  });
+
+  it('keeps a 4 px halo around dots drawn smaller than 2 px', () => {
+    const tinyController = new ConnectorOverlayController({
+      getOverlayGroup: () => overlay,
+      getPlotData: () => plotData,
+      getScales: () => scales,
+      getPointRadiusPx: () => 1,
+      onStatusChange: () => {},
+    });
+    tinyController.set({
+      pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
+      totalCandidates: 1,
+    });
+    tinyController.updateZoomScale(4);
+    const radii = [...svg.querySelectorAll('circle.eat-provenance-endpoint')].map((c) =>
+      Number(c.getAttribute('r')),
+    );
+    expect(radii).toEqual([1, 1]);
   });
 
   it('inverse-scales the connector line stroke-width without rebuilding connector geometry', () => {
@@ -307,7 +320,7 @@ describe('ConnectorOverlayController', () => {
     });
 
     // Raw resolved centers: source (1,4) -> (100,600); target (2,5) -> (200,500). Well past
-    // twice the default halo margin (~7.16px), so this exercises the non-collapsed trim branch.
+    // twice the default halo margin (8px), so this exercises the non-collapsed trim branch.
     const line = svg.querySelector('line.eat-provenance-connector');
     const trimmed = expectedTrimmedLine(100, 600, 200, 500, EXPECTED_BASE_RADIUS_PX);
     expect(Number(line?.getAttribute('x1'))).toBeCloseTo(trimmed.x1, 10);
@@ -338,8 +351,8 @@ describe('ConnectorOverlayController', () => {
       pairs: [{ sourceProteinId: 'source', targetProteinId: 'target', confidence: 0.8 }],
       totalCandidates: 1,
     });
-    // The shared beforeEach scale puts source/target ~14.14px apart — inside twice the default
-    // ~7.16px margin — so the line collapses to a point rather than crossing past its own halos.
+    // The shared beforeEach scale puts source/target ~14.14px apart — inside twice the
+    // 8px margin — so the line collapses to a point rather than crossing past its own halos.
     const line = svg.querySelector('line.eat-provenance-connector');
     expect(line?.getAttribute('x1')).toBe(line?.getAttribute('x2'));
     expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'));
@@ -387,6 +400,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => currentPlotData,
       getScales: () => scales,
+      getPointRadiusPx: () => 6,
       onStatusChange: (next) => {
         status = next;
       },
@@ -439,6 +453,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => currentPlotData,
       getScales: () => scales,
+      getPointRadiusPx: () => 6,
       onStatusChange: (next) => {
         status = next;
       },
@@ -485,6 +500,7 @@ describe('ConnectorOverlayController', () => {
       getOverlayGroup: () => overlay,
       getPlotData: () => plotData,
       getScales: () => scales,
+      getPointRadiusPx: () => 6,
       onStatusChange: statusSpy,
     });
     controller.set({
