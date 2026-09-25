@@ -49,8 +49,6 @@ export interface SettingsDialogCallbacks {
   onOverlayMouseUp: () => void;
 }
 
-// The zoom and screen gains multiply this by up to 6x, so the bound keeps sprites
-// well under driver point-size limits.
 const MAX_SHAPE_SIZE = 64;
 
 /**

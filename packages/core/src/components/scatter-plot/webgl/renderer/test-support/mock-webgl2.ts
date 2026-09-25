@@ -86,8 +86,6 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     FUNC_ADD: 0x8006,
     RGBA: 0x1908,
     UNSIGNED_BYTE: 0x1401,
-    // Real enum values, so a test can tell the density grid's 32F accumulation
-    // target apart from the 16F blur targets by the internalFormat argument.
     RGBA32F: 0x8814,
     RGBA16F: 0x881a,
     FLOAT: 0x1406,
@@ -191,7 +189,6 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     texSubImage2D: vi.fn(),
     // Left a plain noop: webgl-renderer.lifecycle.test.ts wraps it with vi.spyOn.
     deleteTexture: noop,
-    // Recording: the contour composite must keep off unit 1, the label atlas.
     activeTexture: vi.fn(),
     createFramebuffer: () => ({}),
     bindFramebuffer: noop,
@@ -224,14 +221,10 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     uniform1i: vi.fn(),
     uniform2f: noop,
     uniform3f: noop,
-    // Recording: the contour palette is uploaded here, and must not be rebuilt
-    // on a camera frame.
     uniform3fv: vi.fn(),
     uniformMatrix3fv: noop,
     uniform4fv: noop,
     pixelStorei: noop,
-    // Recording: WebGLRenderer.syncGpu() is defined by the fact that it makes this
-    // call, and by the fact that production frames never do.
     readPixels: vi.fn(),
     disableVertexAttribArray: noop,
   };

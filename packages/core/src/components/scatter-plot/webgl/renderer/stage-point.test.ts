@@ -57,7 +57,6 @@ describe('stagePoint', () => {
     expect(a.dataPositions[3]).toBe(34);
     expect(a.colors[4]).toBeCloseTo(1); // r
     expect(a.colors[7]).toBeCloseTo(0.5); // clamped opacity
-    // radius 2 → diameter 4, whatever the target's dpr
     expect(a.sizes[1]).toBeCloseTo(4);
     expect(a.depths[1]).toBeCloseTo(0.7);
     expect(a.labelCounts[1]).toBe(1);
@@ -75,7 +74,6 @@ describe('stagePoint', () => {
     } as never;
     const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
     stagePoint(a, 0, sp, 0, 0, 1, 0, diamond);
-    // diameter 4, diamond → 4*1.25=5
     expect(a.sizes[0]).toBeCloseTo(5);
     expect(a.predicted[0]).toBe(1);
   });

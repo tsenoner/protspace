@@ -296,8 +296,6 @@ describe('createViewController', () => {
     );
 
     expect(effective?.density).toBe('auto');
-    // The control bar has to be told too, or the select shows 'off' on a reload
-    // of a ?density=auto URL while the plot is already rendering the layer.
     expect(controlBar.densityLayer).toBe('auto');
     expect(plotElement.config).toEqual({
       pointSize: 240,
@@ -322,8 +320,6 @@ describe('createViewController', () => {
     });
   });
 
-  // Only the style changes here: a mode-only comparison would swallow it and
-  // leave the plot on the heatmap while the URL says contour.
   it('applies a style-only change', () => {
     const { plotElement, viewController } = setup();
     viewController.applyViewSelection(makeRequest('ec', 'UMAP', [], 'on', 'heatmap'), 'url');

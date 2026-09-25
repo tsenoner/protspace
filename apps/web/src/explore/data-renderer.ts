@@ -263,8 +263,6 @@ export function createDataRenderer({
         annotation: resolvedInitialView.annotation,
         projection: resolvedInitialView.projectionName,
         tooltip: [...resolvedInitialView.tooltip],
-        // `applyPlotState` never resets `config`, so the density mode in effect
-        // after a dataset load is whatever the plot already carries.
         density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
         densityStyle: plotElement.config?.densityStyle ?? DENSITY_STYLE_DEFAULT,
       };

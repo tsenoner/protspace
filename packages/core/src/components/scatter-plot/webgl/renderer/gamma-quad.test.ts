@@ -10,8 +10,6 @@ describe('QUAD_VERTICES', () => {
 describe('drawGammaQuad', () => {
   it('binds the source texture + uniforms and draws 6 verts from the quad buffer', () => {
     const calls: string[] = [];
-    // getAttribLocation is a blocking round-trip to the driver. It belongs at
-    // program link time, not in a pass that runs on every frame.
     const attribLookups: string[] = [];
     const program = {} as WebGLProgram;
     const quadBuffer = { name: 'quad' } as unknown as WebGLBuffer;
@@ -41,9 +39,6 @@ describe('drawGammaQuad', () => {
       disableVertexAttribArray: (l: number) => calls.push(`disable:${l}`),
     } as unknown as WebGL2RenderingContext;
 
-    // 5, while the mock's getAttribLocation would answer 7: the attribute location
-    // comes from the caller, which is the whole point of hoisting the lookup out
-    // of the per-frame path.
     drawGammaQuad(gl, program, sourceTexture, 2.2, quadBuffer, {
       linearTexture: { n: 'u_linearTexture' } as unknown as WebGLUniformLocation,
       gamma: { n: 'u_gamma' } as unknown as WebGLUniformLocation,

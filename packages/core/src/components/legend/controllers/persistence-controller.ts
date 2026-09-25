@@ -76,7 +76,6 @@ export class PersistenceController
   override getAllSettingsForExport(annotationNames: string[]): LegendSettingsMap {
     const settings = super.getAllSettingsForExport(annotationNames);
     const sanitized: LegendSettingsMap = {};
-    // Old readers only know the per-annotation size, so they get the picked one everywhere.
     const picked = this.loadShapeSize();
 
     for (const [annotation, annotationSettings] of Object.entries(settings)) {
@@ -88,11 +87,6 @@ export class PersistenceController
     return sanitized;
   }
 
-  /**
-   * The shape size picked for the whole dataset, or null before the first pick
-   * (each annotation's own record then decides). It shares the dataset hash, so
-   * clearing a dataset's storage clears it too.
-   */
   loadShapeSize(): number | null {
     if (!this._datasetHash) return null;
     const size = getStorageItem<unknown>(buildStorageKey('point-size', this._datasetHash), null);

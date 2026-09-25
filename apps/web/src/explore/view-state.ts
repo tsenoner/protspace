@@ -9,9 +9,7 @@ export interface RequestedExploreView {
    * requested an explicitly empty set.
    */
   tooltip?: string[];
-  /** Density layer mode. `undefined` means the URL did not request one. */
   density?: DensityLayerMode;
-  /** Density layer style. Carried by the same `?density=` token as the mode. */
   densityStyle?: DensityLayerStyle;
 }
 

@@ -111,7 +111,6 @@ export class WebGLRenderer {
   private gammaCorrectionUniformLocations: {
     linearTexture: WebGLUniformLocation | null;
     gamma: WebGLUniformLocation | null;
-    /** `a_position`, resolved with the uniforms so the gamma pass costs no lookup. */
     position: number;
   } | null = null;
 
@@ -151,17 +150,7 @@ export class WebGLRenderer {
   private atlas: { plan: LabelAtlasPlan; texels: Uint8Array } | null = null;
   /** Latched after an allocation failure, so we do not retry it every populate. */
   private labelAtlasDisabled = false;
-  /**
-   * Latched after a density allocation or compile failure. Never triggers the
-   * gamma fallback: a device that cannot spare the density grid can still blend
-   * in linear light, and switching it to sRGB would be the larger visible change.
-   */
   private densityDisabled = false;
-  /**
-   * The contour style's slot palette for the staged colours. Nulled wherever the
-   * colour buffer uploads and rebuilt on the next contour frame, so a camera
-   * frame never rescans or re-uploads it.
-   */
   private contourPalette: SlotPalette | null = null;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
@@ -178,11 +167,6 @@ export class WebGLRenderer {
   private readonly degradeReported = new Set<RendererDegradedReason>();
 
   private currentPointCount = 0;
-  /**
-   * Points staged with opacity > 0 by the last visibility-changing stage. This
-   * is N_visible for the density cross-fade: `currentPointCount` counts the
-   * opacity-0 slots too, which are staged but contribute nothing on screen.
-   */
   private visibleCount = 0;
   private positionsDirty = true;
   private stylesDirty = true;
@@ -309,7 +293,6 @@ export class WebGLRenderer {
     return this.currentPointCount;
   }
 
-  /** See {@link visibleCount}. Drives the density layer's cross-fade. */
   get visiblePointCount(): number {
     return this.visibleCount;
   }
@@ -328,13 +311,8 @@ export class WebGLRenderer {
   }
 
   /**
-   * Perf harness only: block until the GPU has finished the frame just submitted.
-   *
-   * `readPixels` on the default framebuffer (which both render paths leave bound)
-   * is the portable way to do this: it cannot return until the commands ahead of
-   * it have executed. Production frames never call it: the harness's `start()`
-   * returns null outside a recording scenario, so the sync sits behind that token
-   * and a stall this deliberate can never reach a user's frame.
+   * `readPixels` cannot return until the commands ahead of it have executed,
+   * which makes it the portable WebGL way to wait for the GPU.
    */
   syncGpu(): void {
     const gl = this.gl;
@@ -342,7 +320,6 @@ export class WebGLRenderer {
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.syncScratch);
   }
 
-  /** One pixel of destination for {@link syncGpu}; allocated once, never read. */
   private readonly syncScratch = new Uint8Array(4);
 
   invalidatePositionCache() {
@@ -375,10 +352,6 @@ export class WebGLRenderer {
     this.sortedDataRef = null;
   }
 
-  /**
-   * The CSS-px multiplier the live view draws dots with right now. Hit-testing
-   * and the EAT halo read this same value, so they match the drawn radius.
-   */
   pointScale(): number {
     const config = this.getConfig();
     return computePointScale(
@@ -440,18 +413,10 @@ export class WebGLRenderer {
     return true;
   }
 
-  /**
-   * The density programs and their ~17 MB of float targets, created on the first
-   * frame that asks for them. Nothing here runs while the layer is off, which is
-   * the default, so a user who never turns it on never pays for it.
-   */
   private ensureDensityResources(): DensityResources | null {
     const gl = this.gl;
     if (!gl || this.densityDisabled) return null;
     if (!this.resources.density) {
-      // The density quad VAO is wired over the quad buffer setupQuad allocates, and
-      // the accumulation passes draw the POINT vao, so their programs have to be
-      // linked against the point program's attribute indices.
       if (!this.resources.quadBuffer || !this.pointAttribLocations) return null;
 
       this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
@@ -463,14 +428,10 @@ export class WebGLRenderer {
         return null;
       }
     }
-    // Every frame, not only on creation: the two styles allocate different grids,
-    // so a style switch reallocates here. Nulls `resources.density` again if the
-    // grid comes back incomplete.
     this.syncDensityTargets();
     return this.resources.density;
   }
 
-  /** Re-allocate the density grid for the current canvas size and style, if it exists. */
   private syncDensityTargets() {
     const gl = this.gl;
     const res = this.resources.density;
@@ -521,9 +482,6 @@ export class WebGLRenderer {
       this.resources.linearFramebuffer = null;
     }
 
-    // The grid is 16 to 21 MB, and this is the device that just failed an
-    // allocation. Without the gamma pipeline there is no linear target to
-    // composite into, so it has nothing left to do either.
     if (this.resources.density) {
       destroyDensityResources(gl, this.resources.density);
       this.resources.density = null;
@@ -635,19 +593,9 @@ export class WebGLRenderer {
 
     const gl = this.gl;
 
-    // Before anything is bound: the first frame that wants the layer ALLOCATES the
-    // grid here, and createColorTarget ends by binding the default framebuffer
-    // (and on failure nothing rebinds afterwards). Allocating after the linear
-    // target was bound would send this frame's points to the default framebuffer,
-    // and pass 2 would then gamma-sample an empty linear target: a blank frame.
     const density = this.densityFrame(transform);
 
     // Pass 1: Render to linear RGB framebuffer.
-    // No per-frame checkFramebufferStatus: it is a blocking round-trip to the
-    // driver, and completeness is already validated where the target is allocated
-    // (createLinearFramebuffer returns null on an incomplete one, and ensureGL
-    // falls back to direct rendering on that). Between allocations the status
-    // cannot change without a context loss, which isContextLost already catches.
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
     gl.viewport(0, 0, framebuffer.width, framebuffer.height);
     gl.clearColor(0, 0, 0, 0);
@@ -667,15 +615,6 @@ export class WebGLRenderer {
     this.renderGammaCorrection();
   }
 
-  /**
-   * Per-frame density inputs, or null when the layer contributes nothing this
-   * frame (so the whole chain, and its cost, is skipped).
-   *
-   * `off` is a byte-identical frame to a build without the layer. `auto` runs
-   * the Embedding Atlas cross-fade over N_visible, so it fades out as the user
-   * zooms in and self-disables on datasets too small to overplot. `on` pins the
-   * alpha to 1 at every zoom, keeping only the scaler from the closed form.
-   */
   private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
     const config = this.getConfig();
     const mode = config.densityLayer;
@@ -690,8 +629,6 @@ export class WebGLRenderer {
       config.height ?? DEFAULT_VIEWPORT_HEIGHT,
     );
     const style = config.densityStyle ?? DENSITY_STYLE_DEFAULT;
-    // One grid cell, in CSS px^2. Read from the grid PLAN, not from an allocated
-    // target, so a frame that contributes nothing allocates nothing.
     const grid = computeDensityGrid(this.canvas.width, this.canvas.height, style);
     const cellAreaCss =
       ((this.canvas.width / grid.width) * (this.canvas.height / grid.height)) /
@@ -730,15 +667,10 @@ export class WebGLRenderer {
     };
   }
 
-  /**
-   * The `drawPoints` seam: composite the blurred grid over the base run, then
-   * hand the point program and VAO back to the draw that follows.
-   */
   private compositeDensity(density: DensityFrame) {
     const gl = this.gl;
     if (!gl) return;
     compositeDensity(gl, density);
-    // Uniforms are per-program and survive the detour, so re-binding is enough.
     gl.useProgram(this.resources.pointProgram);
     gl.bindVertexArray(this.resources.pointVao);
   }

@@ -122,8 +122,6 @@ export function createViewController({
   };
 
   const selectDensityLayer = (density: DensityLayerMode, densityStyle: DensityLayerStyle) => {
-    // The control bar owns the select, the plot owns the renderer input; both
-    // need it, and `config` is a shallow-merged bag, so spread rather than replace.
     controlBar.densityLayer = density;
     controlBar.densityStyle = densityStyle;
     plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density, densityStyle };

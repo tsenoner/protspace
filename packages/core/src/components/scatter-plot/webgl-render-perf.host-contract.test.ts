@@ -68,10 +68,8 @@ type PerfRunnerInternals = {
 
 type PerfHostInternals = ProtspaceScatterplot & {
   _webglRenderPerf: PerfRunnerInternals;
-  /** What the renderer's `getConfig()` bridge returns (`scatter-plot.ts:481`). */
   _mergedConfig: { densityLayer?: string; densityStyle?: string; pointSize?: number };
   _interaction: PlotInteractionController | null;
-  /** Only `syncGpu` is needed here, and only to spy on it. */
   _webglRenderer: { syncGpu: () => void } | null;
 };
 
@@ -271,23 +269,15 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
     const scenario = beginRecordingScenario(runner, 'zoomInOut');
-    // jsdom has no GL context, so syncGpu is a no-op here and the >= below would
-    // hold on clock ordering alone even with the sync deleted from _renderWebGL.
-    // Spying is what actually pins the call to the measured window.
     const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
     try {
       runner._applyZoomScale(3);
       await nextFrame();
 
-      // One sync per RECORDED pass, which is the invariant `_renderWebGL` owes the
-      // harness. Not "once", because an unrelated 'plot' render can land in this
-      // window in jsdom and it is measured too.
       expect(scenario.passes.length).toBeGreaterThan(0);
       expect(sync).toHaveBeenCalledTimes(scenario.passes.length);
       const pass = scenario.passes.find((p) => p.trigger === 'zoom');
       expect(pass).toBeTruthy();
-      // Asserted first, so the >= below cannot pass on two zeroes: durationMs
-      // stays the CPU submission window and has to be a real measurement.
       expect(Number.isFinite(pass?.durationMs)).toBe(true);
       expect(pass?.durationMs).toBeGreaterThan(0);
       expect(Number.isFinite(pass?.gpuSyncedMs)).toBe(true);
@@ -301,8 +291,6 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     const sp = await mountScatter(makeFamilyData());
     const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
 
-    // No recorder, so `start()` returns null and the whole perf block is skipped.
-    // A sync that escaped that guard would stall every production frame.
     sp._webglRenderPerf._recorder = null;
     sp._webglRenderPerf._applyZoomScale(3);
     await nextFrame();
@@ -310,13 +298,6 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     expect(sync).not.toHaveBeenCalled();
   });
 
-  /**
-   * The union member alone is not falsifiable here: `packages/core/tsconfig.json`
-   * excludes `**​/*.test.ts`, so a misspelt `PerfScenarioName` never reaches
-   * `pnpm type-check`. Driving the scenario itself is, and it also locks the two
-   * things a pass-through name assertion would miss: that the sustained drag
-   * records passes, and that it leaves the camera where it found it.
-   */
   it('dragContinuous records passes and restores the transform', async () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
@@ -333,16 +314,6 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
 
       const scenario = runner._recorder?.scenarios.find((s) => s.name === 'dragContinuous');
       expect(scenario).toBeTruthy();
-      // Exactly one render per pan, and one pan per animation frame:
-      // PERF_MEASURE_DRAG_CONTINUOUS_FRAMES (60) for one iteration. Anything
-      // looser stays green with the rAF pacing removed, because applyZoom cancels
-      // a pending render, so an unpaced loop collapses all 60 pans into one pass.
-      // Exactly one render per pan, and one pan per animation frame:
-      // PERF_MEASURE_DRAG_CONTINUOUS_FRAMES (60) for one iteration. Anything
-      // looser stays green with the rAF pacing removed, because applyZoom cancels
-      // a pending render, so an unpaced loop collapses all 60 pans into one pass.
-      // Counted by trigger, like the zoom and pan cases above: an unrelated 'plot'
-      // pass from the mount lands in this window in jsdom.
       const zoomPasses = scenario?.passes.filter((p) => p.trigger === 'zoom') ?? [];
       expect(zoomPasses.length).toBe(60);
       expect(mainGroupTransform(sp)).toMatch(/translate\(0\s*,\s*0\)/);
@@ -351,14 +322,6 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     }
   }, 20_000);
 
-  /**
-   * `densityZoom` forces `densityLayer: 'on'` through `host.config`. Restoring the
-   * previous `config` object is not enough to undo it: `_reconcileConfigMerge`
-   * computes `{ ...DEFAULT_CONFIG, ...prev, ...this.config }` where `prev` is the
-   * already-forced MERGED config, so a key that is merely absent from the restored
-   * object survives and every later scenario (clickPoint runs straight after)
-   * measures the whole density chain.
-   */
   it('densityZoom restores the previous density mode after the scenario', async () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;

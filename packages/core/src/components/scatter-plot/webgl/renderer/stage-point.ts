@@ -75,8 +75,6 @@ export function stagePointStyle(
   target.colors[idx * 4 + 2] = b;
   target.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
 
-  // Nominal CSS diameter. The target's scale, dpr and the 1-device-px floor are
-  // applied in the shader, so a camera or DPR change restages nothing.
   const diameter = 2 * pointRadiusCss(style.getPointSize(sp));
   target.sizes[idx] = shapeIndex === 2 ? diameter * DIAMOND_SIZE_SCALE : diameter;
   // Clamped to what the atlas actually reserves for this point. Unclamped, a point

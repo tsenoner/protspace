@@ -63,10 +63,6 @@ function createProgram(
 
 /**
  * Creates a WebGL program from shader source strings.
- *
- * `attribLocations` (name -> index) is bound before linking, for programs that
- * must share a VAO with another program: the density accumulation pass draws
- * the point VAO, so its attributes have to land on the point program's indices.
  */
 export function createProgramFromSources(
   gl: WebGL2RenderingContext | WebGLRenderingContext,

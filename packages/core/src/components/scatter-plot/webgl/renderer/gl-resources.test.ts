@@ -33,7 +33,6 @@ function makeFramebuffer(): FramebufferResources {
   };
 }
 
-/** Enough of a DensityResources to be destroyed: six programs, a VAO, one target. */
 function makeDensity(): DensityResources {
   return {
     accumProgram: { k: 'accumProg' },
@@ -102,7 +101,6 @@ describe('GLResources', () => {
     const res = new GLResources();
     res.density = makeDensity();
     res.deleteAll(gl);
-    // Both accumulates, both blur kernels, both composites, the quad VAO, and the one live target.
     expect(gl.deleteProgram).toHaveBeenCalledTimes(6);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteFramebuffer).toHaveBeenCalledTimes(1);

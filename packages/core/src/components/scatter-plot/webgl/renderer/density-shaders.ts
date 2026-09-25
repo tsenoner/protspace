@@ -1,56 +1,12 @@
 /**
- * Shader sources for the density layer: accumulate, separable blur, composite.
- *
  * Blur and composite adapted from Embedding Atlas (Copyright (c) 2025 Apple Inc.
  * Licensed under MIT License), packages/component/src/lib/webgl2_renderer/gaussian_blur.ts
  * and paint_density_map.ts at ccd4eee^.
- *
- * All three are static strings: the kernel is baked at module load, so no frame
- * ever recompiles a program or generates GLSL.
  */
 
-/*
- * Colour policy: what a heatmap pixel means, and what it does not.
- *
- * Per cell the colour is the kernel-weighted MEAN of the linearised category
- * colours of the visible points in it, sum(c * w) / sum(w). The blur runs over
- * numerator and denominator alike, so the ratio after blurring is still a
- * weighted mean and the fringe has no dark rim. A pure cell matches its legend
- * swatch exactly; a mixed cell shows a colour that is NOT in the legend. The
- * control-bar tooltip says so: "mixed regions show the average colour".
- *
- * NA (NEUTRAL_VALUE_COLOR, '#888888', scatter-plot/config.ts) is just another
- * colour in the mean, and greys out the regions it mixes into. Accepted as
- * honest: the layer does not pretend NA is absent.
- *
- * Selection and highlight change only ALPHA, never colour (visibility-model.ts),
- * and the accumulation weight is binary, so clicking a point changes neither the
- * colour nor the brightness of the heatmap. Selected and hovered points are
- * lifted into the second drawPoints run and drawn on top of it instead.
- *
- * Hidden legend categories reach the GPU as a_color.a = 0 through the colour-only
- * re-stage, and that is the same buffer the point pass reads, so the layer and
- * the legend cannot disagree. Query filters cull rows before PlotData exists, so
- * filtered points are absent from both.
- *
- * A multi-label point contributes pointColors[0] only (stage-point.ts): pie
- * slices live in the label atlas, which this pass never samples. Numeric
- * annotations colour by bin, and the mean of two neighbouring bin colours along
- * a gradient is a plausible in-between colour, the one case where the mean is
- * also legible.
- *
- * If a real dataset averages to mud, the upgrade is not a category cap but
- * order-independent coverage per category, sum(log(1 - alpha)) on a second
- * attachment via gl.drawBuffers: one more target and one more draw per category,
- * with no change to the shapes here.
- */
-
-/** Blur sigma, in density grid cells. */
 export const DENSITY_SIGMA_GRID_PX = 2;
-/** Kernel half-width: ceil(3 * sigma) = 6, so 2 * 6 + 1 = 13 taps per pass. */
 export const DENSITY_BLUR_RADIUS = Math.ceil(3 * DENSITY_SIGMA_GRID_PX);
 
-/** Normalised 1-D gaussian, 2 * radius + 1 taps. */
 export function gaussianWeights(sigma: number, radius: number): number[] {
   const w: number[] = [];
   for (let i = -radius; i <= radius; i++) w.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
@@ -58,15 +14,6 @@ export function gaussianWeights(sigma: number, radius: number): number[] {
   return w.map((x) => x / sum);
 }
 
-/**
- * One vertex per staged point, rasterised as a single grid cell.
- *
- * The three camera lines are byte-identical to POINT_VERTEX_SHADER's and are
- * fed the same u_resolution (the canvas, not the grid), because clip space is
- * normalised: the grid is selected purely by gl.viewport. A point staged with
- * alpha 0 is hidden, so it is moved off-clip and contributes nothing; every
- * other point weighs exactly 1, so the map does not flinch on selection.
- */
 export const DENSITY_ACCUM_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -96,7 +43,6 @@ void main() {
   gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
   gl_PointSize = 1.0;
 
-  // Linear-light colour, summed; alpha carries the count.
   v_accum = vec4(pow(max(a_color.rgb, vec3(0.0)), vec3(u_gamma)) * w, w);
 }`;
 
@@ -110,7 +56,6 @@ void main() {
   fragColor = v_accum;
 }`;
 
-/** Full-screen quad, uv in [0,1]. Shared by the blur and composite passes. */
 export const DENSITY_QUAD_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -122,10 +67,6 @@ void main() {
   v_texCoord = (a_position + 1.0) * 0.5;
 }`;
 
-/**
- * One separable-blur program source at the given sigma. The kernel is baked at
- * module load, so no frame ever recompiles a program or generates GLSL.
- */
 function blurSource(sigma: number, radius: number): string {
   const taps = gaussianWeights(sigma, radius)
     .map(
@@ -137,7 +78,7 @@ function blurSource(sigma: number, radius: number): string {
 precision highp float;
 
 uniform sampler2D u_source;
-uniform vec2 u_direction; // one texel: (1/gridW, 0) or (0, 1/gridH)
+uniform vec2 u_direction;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
@@ -151,144 +92,35 @@ ${taps}
 
 export const DENSITY_BLUR_FRAGMENT_SHADER = blurSource(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
 
-/**
- * Legend colours that get their own contour field and ring set: four slots per
- * RGBA field, so 16 = 4 fields. The default legend is at most 12 items (10
- * values + Other + N/A), so 16 leaves room for a raised maxVisibleValues.
- * Past it, the 15 most populous colours keep a slot and the rest pool into a
- * grey one. A multiple of 4.
- */
 export const DENSITY_CATEGORY_CAP = 16;
-/**
- * Texture units of the contour fields. Unit 1 is skipped: it holds the label
- * atlas (bindPointDrawState), and the composite runs between the two point
- * runs, so the selected run that follows still samples it.
- */
 export const DENSITY_FIELD_UNITS = [0, 2, 3, 4] as const;
 
-/**
- * The contour fields sit on a grid this many times coarser per side than the
- * heatmap's: 4 device px per cell instead of 2. The blur shrinks by the same
- * factor, so it still spans 12 device px, and the floor below still means 5
- * coincident points (it moves by -0.0016 levels). At 1 four fields would blur
- * 4 x 38.4M taps per frame at 1080p; at 2 they blur 19.7M, about half of what
- * the one merged field cost. 1 restores the old sampling exactly.
- */
 export const DENSITY_CONTOUR_GRID_DIVISOR = 2;
 
-/**
- * The contour style blurs three times wider than the heatmap (in density-grid
- * cells: 6), and needs its own kernel to do it. At sigma 2 the level field
- * still carries every 5-point clump in a cluster, so the iso-lines came out as
- * a knot of micro-loops around each of them instead of the few nested rings the
- * reference picture shows. The heatmap wants the opposite: it REPLACES the
- * points, so it has to stay sharp enough to show where they actually are.
- *
- * 6, not 4 or 8: at 4 the loops were still there on the demo dataset, at 8 the
- * outermost ring floated a cluster-radius clear of its own points. Expressed in
- * cells of the coarser contour grid.
- */
 export const DENSITY_CONTOUR_SIGMA_GRID_PX = 6 / DENSITY_CONTOUR_GRID_DIVISOR;
-/** ceil(3 * sigma) = 9, so 19 taps per pass. Contour style only. */
 export const DENSITY_CONTOUR_BLUR_RADIUS = Math.ceil(3 * DENSITY_CONTOUR_SIGMA_GRID_PX);
 export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
   DENSITY_CONTOUR_SIGMA_GRID_PX,
   DENSITY_CONTOUR_BLUR_RADIUS,
 );
 
-/*
- * Contour style: one ring set per legend colour, over a fill in the locally
- * dominant colour.
- *
- * Points draw underneath and the selection above; the layer contributes thin
- * lines and, inside them, one pale coat per enclosing ring, so the picture stays
- * the scatter plot with its density annotated, the way Embedding Atlas draws it.
- * Each colour's level field is continuous, one step per doubling of its density
- * above the support floor, and a line is drawn where it crosses an integer.
- * fwidth turns that into a fixed screen-space width at any zoom and grid size.
- */
-
-/**
- * Coincident points whose blurred peak the outermost line sits at. Absolute, in
- * points, NOT relative to the frame's scaler: that is what makes an isolated
- * point ringless at every zoom, and what makes the lines dissolve as zooming in
- * spreads a cluster below 5 points per grid cell. 5, not 2 or 3: at 3 the 105K
- * fringe still grew rings around pairs of points.
- */
 export const DENSITY_CONTOUR_MIN_POINTS = 5;
-/**
- * Blurred peak of ONE point, in the same units as the composite's `n`. The
- * accumulation writes 1.0 into a single grid cell and the separable normalised
- * gaussian runs over it, so the peak survives as centreWeight^2; k coincident
- * points therefore peak at k * this.
- */
 const DENSITY_ONE_POINT_PEAK =
   gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS)[
     DENSITY_CONTOUR_BLUR_RADIUS
   ] ** 2;
-/** The `u_contourFloor` uniform: no line below this blurred density. */
 export const DENSITY_CONTOUR_FLOOR = DENSITY_CONTOUR_MIN_POINTS * DENSITY_ONE_POINT_PEAK;
 
-/**
- * Lines above the floor, so at most LEVELS + 1 rings on a cluster of any depth.
- * Without a ceiling log2 keeps adding a ring per doubling and the 573K core
- * silts up with wormy micro-loops; with it the core simply goes clean.
- * 4 gives the 5 rings the reference picture shows on a typical cluster.
- */
 const DENSITY_CONTOUR_LEVELS = 4;
-/**
- * Levels per doubling of density. 1: the rings then span floor x 1.4 to
- * floor x 22.6, about the dynamic range of a real cluster's profile. Below 1
- * the rings spread past the cluster; above 1 they crowd back into worms.
- *
- * Try 0.75 if all rings sit on the rim at 573K: it spreads the same 5 rings over
- * 6.7 octaves instead of 4.5, so they reach into a deep core, at the cost of the
- * demo dataset's outermost ring floating further from its own points. That
- * trade-off needs the eye, not the argument, so re-shoot the demo before keeping
- * it.
- */
 const DENSITY_CONTOUR_SPACING = 1.0;
-/**
- * Half-width, in device px, of the smoothstep ramp on either side of a level
- * crossing, so a line is about 2 x this wide. 0.6 read as a hairline at dpr 2 and
- * 0.9 still read thin; 2 (about 4 device px) gives the contour rings real weight.
- */
 const DENSITY_CONTOUR_LINE_PX = 2;
-/**
- * Lines and fill are the category colour mixed this far toward white. The user
- * wants the ring to read as "the points' colour, a bit lighter", like Embedding
- * Atlas (which lightens on black); darkening (the earlier 0.35 multiplier)
- * turned every ring near-black on white and lost the category hue. 0.35 washed
- * the hue out toward grey, so 0.15 keeps the rings close to the points' colour.
- */
 export const DENSITY_CONTOUR_LIGHTEN = 0.15;
-/**
- * Fill opacity of the core inside the last ring; the band just inside the
- * outermost ring gets a quarter of it and the bands between step linearly, so
- * the fill deepens ring by ring. The user asked for 20 % to 80 %. 0 draws lines
- * only.
- */
 const DENSITY_CONTOUR_FILL_CORE = 0.8;
 const DENSITY_CONTOUR_FILL_OUTER = DENSITY_CONTOUR_FILL_CORE / 4;
-/**
- * Levels per device pixel past which a line cannot be resolved. Above it the
- * ramp would smear into a solid band, which is exactly what the log of a field
- * decaying to zero does on the rim of a single point.
- */
 const DENSITY_CONTOUR_MAX_SLOPE = 1.0;
 
-/** Half an 8-bit step: staged colours are k / 255, and so are the slot keys. */
 const SLOT_MATCH_TOLERANCE = '0.5 / 255.0';
 
-/**
- * Pass 1 of the contour style, run once per group of four slots. A point is
- * written, as a one-hot in its slot's channel, only by the draw of the group
- * that holds its slot; every other draw moves it off-clip like a hidden point,
- * so across the groups each visible point still lands exactly once.
- *
- * The slot is looked up by colour in the buffer the point pass draws, so hiding
- * or recolouring a category reaches the layer on the same restage as the points.
- */
 export const DENSITY_CATEGORY_ACCUM_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -298,10 +130,10 @@ in vec4 a_color;
 uniform vec2 u_resolution;
 uniform vec3 u_transform;
 uniform float u_dpr;
-uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}]; // sRGB, as staged
+uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}];
 uniform int u_slotCount;
-uniform int u_tailSlot;                            // -1: every visible colour has a slot
-uniform int u_group;                               // this draw writes slots 4g .. 4g+3
+uniform int u_tailSlot;
+uniform int u_group;
 
 out vec4 v_accum;
 
@@ -330,16 +162,10 @@ void main() {
   gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
   gl_PointSize = 1.0;
 
-  // Binary weight, like the heatmap: a faded (selection) point still counts 1.
   v_accum = vec4(equal(ivec4(local), ivec4(0, 1, 2, 3)));
 }`;
 
 /**
- * Pass 3 of the contour style. The fill takes the slot with the largest density
- * and that slot's own coats, so colours never mix and coverage never passes the
- * fill core; every slot's lines then go on top, "over" in slot order (legend
- * bottom to top, as the points are painted).
- *
  * Unrolled at module load, and every slot block is guarded by a UNIFORM
  * condition, so control flow stays uniform and fwidth stays defined.
  */
@@ -364,23 +190,18 @@ function categoryCompositeSource(cap: number): string {
 precision highp float;
 
 ${samplers.join('\n')}
-uniform vec3 u_slotColors[${cap}]; // linear, lightened: the ring and fill colours
+uniform vec3 u_slotColors[${cap}];
 uniform int u_slotCount;
 uniform float u_densityAlpha;
-uniform float u_contourFloor;      // blurred density of DENSITY_CONTOUR_MIN_POINTS coincident points
+uniform float u_contourFloor;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
 
-// The -0.5 puts the outermost ring half a level inside the floor, so the floor
-// cut trims nothing visible. No scaler: levels are absolute.
 float level(float n) {
   return log2(max(n, 1e-8) / u_contourFloor) * ${DENSITY_CONTOUR_SPACING.toFixed(1)} - 0.5;
 }
 
-// Three cuts: below the support floor, past the top level (half a level past the
-// last ring, so that ring keeps its full width), and where the field is too
-// steep for a line to mean anything.
 float ring(float n) {
   float o = level(n);
   float f = fract(o);
@@ -399,15 +220,12 @@ ${fetches.join('\n')}
   float best = 0.0;
   vec3 bestColor = vec3(0.0);
 ${dominant.join('\n')}
-  // Enclosing rings (0 outside the outermost, LEVELS + 1 in the core) pick the
-  // fill: OUTER for one, CORE for LEVELS + 1, a straight ramp between.
   float coats = clamp(floor(level(best)) + 1.0, 0.0, ${(DENSITY_CONTOUR_LEVELS + 1).toFixed(1)});
   float fill = step(0.5, coats)
     * mix(${DENSITY_CONTOUR_FILL_OUTER.toFixed(2)}, ${DENSITY_CONTOUR_FILL_CORE.toFixed(2)},
           (coats - 1.0) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)});
   vec4 acc = vec4(bestColor * fill, fill);
 ${lines.join('\n')}
-  // Premultiplied linear, the same convention POINT_FRAGMENT_SHADER writes.
   fragColor = acc * u_densityAlpha;
 }`;
 }
@@ -415,11 +233,10 @@ ${lines.join('\n')}
 export const DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER =
   categoryCompositeSource(DENSITY_CATEGORY_CAP);
 
-/** Heatmap pass 3: the kernel-weighted mean colour, faded in by the smoothed count. */
 export const DENSITY_COMPOSITE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
-uniform sampler2D u_density;   // blurred: rgb = sum(linear colour), a = smoothed count
+uniform sampler2D u_density;
 uniform float u_densityAlpha;
 uniform float u_densityScaler;
 
@@ -427,10 +244,9 @@ in vec2 v_texCoord;
 out vec4 fragColor;
 
 void main() {
-  vec4 d = texture(u_density, v_texCoord);       // LINEAR upsample from the grid
+  vec4 d = texture(u_density, v_texCoord);
   float n = d.a;
-  vec3 mean = n > 0.0 ? d.rgb / n : vec3(0.0);   // kernel-weighted mean colour, 0/0 guarded
+  vec3 mean = n > 0.0 ? d.rgb / n : vec3(0.0);
   float alpha = clamp(n * u_densityScaler, 0.0, 1.0) * u_densityAlpha;
-  // Premultiplied linear, the same convention POINT_FRAGMENT_SHADER writes.
   fragColor = vec4(mean * alpha, alpha);
 }`;

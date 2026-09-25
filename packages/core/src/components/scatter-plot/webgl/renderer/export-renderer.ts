@@ -367,11 +367,6 @@ export class ExportRenderer {
     // Shared with the badge capture path (#302): see computeSizeScaleFactor.
     const displayWidth = config.width ?? DEFAULT_VIEWPORT_WIDTH;
     const displayHeight = config.height ?? DEFAULT_VIEWPORT_HEIGHT;
-    // `width`/`height` here are PHYSICAL (logical × dpr), whereas
-    // pointSizeReference and the display dims are LOGICAL (CSS px). Feed
-    // sizeScaleFactor logical reference dims: the physical dims carry a factor
-    // of dpr that would otherwise double-count against u_dpr in the shader,
-    // scaling point size by dpr² at dpr ≠ 1.
     const logicalWidth = width / dpr;
     const logicalHeight = height / dpr;
     const sizeScaleFactor = computeSizeScaleFactor(
@@ -380,7 +375,6 @@ export class ExportRenderer {
       config.width,
       config.height,
     );
-    // The live view's scale at the export's zoom, so the figure matches the screen.
     const pointScale =
       sizeScaleFactor * computePointScale(options.transform.k, displayWidth, displayHeight);
     // Enable extensions for float textures (needed for gamma pipeline)
@@ -579,7 +573,6 @@ export class ExportRenderer {
       const quadBuffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, QUAD_VERTICES, gl.STATIC_DRAW);
-      // One-shot export pass: resolve the gamma locations inline (no per-frame cost here).
       drawGammaQuad(gl, gammaCorrectionProgram, linearFramebuffer.texture, gamma, quadBuffer, {
         linearTexture: gl.getUniformLocation(gammaCorrectionProgram, 'u_linearTexture'),
         gamma: gl.getUniformLocation(gammaCorrectionProgram, 'u_gamma'),

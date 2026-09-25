@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { densityFrameParams, DENSITY_CONTOUR_MIN_DENSITY } from './density-crossfade';
 
-// N and viewport of the 573K SwissProt reference run: threshold k is 2.231.
 const N = 573_649;
 const VIEW = 1920;
 const CELL = 4;
@@ -16,7 +15,6 @@ describe('densityFrameParams', () => {
     expect(at(0.1)).toBe(1);
     expect(at(1)).toBe(1);
     expect(at(1.3)).toBe(1);
-    // The clamp lands at k = 3.6789, so 3.678 is just short of exactly 0.
     expect(at(3.678)).toBeLessThan(1e-3);
     expect(at(4)).toBe(0);
     expect(at(10)).toBe(0);
@@ -56,20 +54,14 @@ describe('densityFrameParams', () => {
     }
   });
 
-  // Contour lines annotate the points instead of replacing them, so they are
-  // wanted long before a view is overplotted. The demo dataset is the case that
-  // forced this: ~7.8K points at k = 1 give alpha 0 on the heatmap's 1/32.
   it('engages the contour style on the ~7.8K demo view where the heatmap does not', () => {
     const demo = (k: number, minDensity?: number) =>
       densityFrameParams(7_800, k, 1280, CELL, false, minDensity).alpha;
     expect(demo(1)).toBe(0);
     expect(demo(1, DENSITY_CONTOUR_MIN_DENSITY)).toBe(1);
-    // And still fades on zoom-in, so `contour-auto` is not `contour-on`.
     expect(demo(8, DENSITY_CONTOUR_MIN_DENSITY)).toBe(0);
   });
 
-  // The heatmap must not move: minDensity defaults to the heatmap constant, so
-  // every five-argument call in this file and in the renderer is unchanged.
   it('defaults minDensity to the heatmap value', () => {
     expect(densityFrameParams(N, 2.231, VIEW, CELL, false, 1 / 32).alpha).toBeCloseTo(
       densityFrameParams(N, 2.231, VIEW, CELL, false).alpha,

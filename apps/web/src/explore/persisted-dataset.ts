@@ -42,17 +42,10 @@ export function createPersistedDatasetController({
     notify.warning(getCorruptedPersistedDatasetNotification(context));
   };
 
-  // The dataset name and demo flag are set by handleDataLoaded once the bundle
-  // has actually loaded. Setting them here, before the fetch, left a failed demo
-  // load looking like a loaded one: old data on screen, "Demo dataset" in the
-  // header, the demo button disabled and the error only in the console.
   const loadDefaultDataset = async () => {
     try {
       console.log('Loading data from data.parquetbundle...');
 
-      // Rooted at the app base, not the current route: a relative URL under
-      // /explore/ (trailing slash) resolves to /explore/data.parquetbundle, which
-      // the SPA fallback answers with index.html and the demo never loads.
       const response = await fetch(`${import.meta.env.BASE_URL}data.parquetbundle`);
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);

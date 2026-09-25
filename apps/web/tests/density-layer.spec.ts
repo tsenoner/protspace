@@ -1,27 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
 
-/**
- * The density layer, checked where it actually shows: on the pixels.
- *
- * Two invariants, both machine-independent and both fine on SwiftShader:
- *   1. turning the layer on adds coverage over the points that were already
- *      drawn, so the alpha at a busy pixel rises;
- *   2. hidden categories contribute nothing to it, so hiding all but one
- *      category collapses the painted area. That is the colour policy in one
- *      assertion: the accumulate pass weights each point by `a_color.a`, not by
- *      a constant, and hidden points stay in the GPU arrays at alpha 0.
- *
- * Not "hide everything and expect a blank canvas": `computeVisibilityModel` has
- * an all-hidden hatch (`visibility-model.ts`, hiddenMode 'none') that shows every
- * point in neutral grey when every value of the annotation is hidden, so that
- * state proves nothing about the layer.
- *
- * `on`, never `auto`: the demo dataset is ~7.8K points, far below the count at
- * which the cross-fade turns itself on, so `auto` would measure an empty layer
- * and pass for the wrong reason.
- */
-
 interface PlotInternals extends Element {
   config?: Record<string, unknown>;
   data?: { protein_ids?: string[] };
@@ -32,7 +11,6 @@ interface PlotInternals extends Element {
   };
 }
 
-/** The layer needs the float render targets; without them there is nothing to test. */
 async function gammaPipelineUnavailable(page: Page): Promise<boolean> {
   return page.evaluate(() => {
     const win = window as Window & { __densityDegraded__?: string[] };
@@ -56,12 +34,6 @@ async function watchForDegraded(page: Page): Promise<void> {
   });
 }
 
-/**
- * Mean alpha over a small block at the canvas centre. The WebGL canvas is created
- * with `preserveDrawingBuffer: true`, so it can be drawn into a 2D canvas and read
- * back after the frame. A block, not a pixel: a single texel can sit between two
- * sparse points and report 0 in both states.
- */
 async function centreAlpha(page: Page, half = 24): Promise<number> {
   return page.evaluate((h) => {
     const plot = document.querySelector('#myPlot');
@@ -82,7 +54,6 @@ async function centreAlpha(page: Page, half = 24): Promise<number> {
   }, half);
 }
 
-/** How many pixels the frame painted at all: points plus whatever the layer added. */
 async function paintedPixels(page: Page): Promise<number> {
   return page.evaluate(() => {
     const plot = document.querySelector('#myPlot');
@@ -101,7 +72,6 @@ async function paintedPixels(page: Page): Promise<number> {
   });
 }
 
-/** Two frames: one for the property to land, one for the render it schedules. */
 async function settle(page: Page): Promise<void> {
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
@@ -116,7 +86,6 @@ async function setDensity(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void
   await settle(page);
 }
 
-/** RGBA of a centre block, so two styles can be compared without a reference image. */
 async function centreBlock(page: Page, half = 64): Promise<number[]> {
   return page.evaluate((h) => {
     const plot = document.querySelector('#myPlot');
@@ -134,7 +103,6 @@ async function centreBlock(page: Page, half = 64): Promise<number[]> {
   }, half);
 }
 
-/** Pixels differing by more than a JPEG-ish tolerance on any channel. */
 function differingPixels(a: readonly number[], b: readonly number[]): number {
   let differing = 0;
   for (let i = 0; i < a.length; i += 4) {
@@ -163,7 +131,6 @@ async function setContour(page: Page, mode: ContourMode): Promise<void> {
   await settle(page);
 }
 
-/** Show only `shown` of the selected annotation's values (N/A counts as `__NA__`). */
 async function showOnly(page: Page, shown: readonly string[]): Promise<void> {
   await page.evaluate((keep) => {
     const plot = document.querySelector('#myPlot') as PlotInternals | null;
@@ -175,7 +142,6 @@ async function showOnly(page: Page, shown: readonly string[]): Promise<void> {
   await settle(page);
 }
 
-/** Store the whole canvas under `key` in the page, so masks never cross the wire. */
 async function captureFrame(page: Page, key: string): Promise<void> {
   await page.evaluate((k) => {
     const plot = document.querySelector('#myPlot');
@@ -191,10 +157,6 @@ async function captureFrame(page: Page, key: string): Promise<void> {
   }, key);
 }
 
-/**
- * |mask(A)|, |mask(B)|, |mask(AB)| and |mask(AB) xor (mask(A) or mask(B))|, where
- * mask(S) is the pixels the contour layer changed by more than 8 on any channel.
- */
 async function unionMasks(page: Page) {
   return page.evaluate(() => {
     const f = (window as Window & { __frames__?: Record<string, Uint8ClampedArray> }).__frames__!;
@@ -246,9 +208,6 @@ test.describe('density layer pixels', () => {
     const paintedWithAll = await paintedPixels(page);
     expect(paintedWithAll, 'nothing was painted with the layer on').toBeGreaterThan(0);
 
-    // Hide every category but one. The legend writes exactly this property, one
-    // click at a time; writing it in one go is the same code path and does not
-    // depend on how many categories the demo happens to ship.
     const survivor = await page.evaluate(() => {
       const plot = document.querySelector('#myPlot') as PlotInternals | null;
       const annotation = plot?.selectedAnnotation ?? '';
@@ -260,10 +219,6 @@ test.describe('density layer pixels', () => {
     expect(survivor, 'no categorical values to hide').toBeTruthy();
     await settle(page);
 
-    // The remaining category still draws, so this is not the trivial blank frame.
-    // If the accumulate pass weighted every staged point by 1.0 instead of by its
-    // colour alpha, the layer would keep smearing over all 7.8K and the painted
-    // area would barely move.
     await expect
       .poll(() => paintedPixels(page), {
         message: 'hidden categories still contribute to the density layer',
@@ -273,10 +228,6 @@ test.describe('density layer pixels', () => {
     expect(await paintedPixels(page), 'the surviving category vanished too').toBeGreaterThan(0);
   });
 
-  // The contour style through the URL, end to end: ?density=contour-on has to
-  // reach the shader, not just the select. Quantised bands paint a different
-  // picture from the smooth ramp, so a frame identical to ?density=on means the
-  // style never left the URL parser.
   test('?density=contour-on paints a different layer from ?density=on', async ({ page }) => {
     await watchForDegraded(page);
     await page.goto('/explore?density=on');
@@ -299,11 +250,6 @@ test.describe('density layer pixels', () => {
     await waitForExploreDataLoad(page);
     await settle(page);
 
-    // The frame comparison first, and against a count rather than an inequality:
-    // a `not.toBe` on the whole frame passes on one stray pixel, and a select
-    // assertion placed above it would fail first and never exercise this at all.
-    // A heatmap frame compared with itself scores 0 here, so the threshold is
-    // what makes this test red when the style stops reaching the shader.
     const contourBlock = await centreBlock(page);
     const changed = differingPixels(heatmapBlock, contourBlock);
     expect(changed, 'contour renders the same pixels as the heatmap').toBeGreaterThan(
@@ -319,11 +265,6 @@ test.describe('density layer pixels', () => {
       }),
     ).toBe('contour-on');
   });
-  // Per-category rings: each visible category draws its own rings from its own
-  // density, so the layer over {A, B} is the layer over {A} plus the layer over
-  // {B}. The merged contour fails this wherever A and B overlap: their summed
-  // density crosses the floor where neither does alone. Contour against off on
-  // the same set cancels the points themselves out of each mask.
   test("contour rings are the union of each category's own rings", async ({ page }) => {
     await watchForDegraded(page);
     await page.goto('/explore');
@@ -336,8 +277,6 @@ test.describe('density layer pixels', () => {
       'renderer reported gamma-pipeline-unavailable: no float render targets here',
     );
 
-    // The demo pair that overlaps most: the merged contour scores xor 1879 of
-    // 16229 (11.6 %) on it, the first two legend items only 2.6 %.
     const first = 'long (4 C-C) scorpion toxin superfamily';
     const second = 'short scorpion toxin superfamily';
     const legendValues = await page.evaluate(() => {
@@ -367,8 +306,6 @@ test.describe('density layer pixels', () => {
     );
   });
 
-  // The selected run is drawn after the layer, so contour-on must leave the
-  // selected point's centre pixel as off does, even in the densest block.
   test('a selected point in the densest block stays above the contour layer', async ({ page }) => {
     await watchForDegraded(page);
     await page.goto('/explore');
@@ -381,7 +318,6 @@ test.describe('density layer pixels', () => {
       'renderer reported gamma-pipeline-unavailable: no float render targets here',
     );
 
-    // The point nearest the centre of the most populated 16 CSS px cell.
     const target = await page.evaluate(() => {
       const plot = document.querySelector('#myPlot') as Element & {
         _plotData: { length: number; xs: Float32Array; ys: Float32Array; proteinIds: string[] };
@@ -428,7 +364,6 @@ test.describe('density layer pixels', () => {
       }, target);
     const maxDelta = (p: number[], q: number[]) => Math.max(...p.map((v, c) => Math.abs(v - q[c])));
 
-    // Unselected, the layer does paint over this pixel, so the check below can fail.
     await setContour(page, 'off');
     const offUnselected = await pixel();
     await setContour(page, 'contour-on');
