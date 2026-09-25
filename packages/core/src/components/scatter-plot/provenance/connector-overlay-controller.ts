@@ -38,8 +38,8 @@ interface ConnectorOverlayDeps {
   getOverlayGroup: () => Selection<SVGGElement, unknown, null, undefined> | null;
   getPlotData: () => PlotData;
   getScales: () => ScalePair | null;
-  /** Current "Shape size" point-size config; defaults to 240 (the config default). */
-  getPointSize?: () => number;
+  /** Drawn dot radius on screen in CSS px, at the current zoom. */
+  getPointRadiusPx: () => number;
   onStatusChange: (status: ProvenanceConnectorStatus | null) => void;
 }
 
@@ -117,22 +117,13 @@ export class ConnectorOverlayController {
       });
   }
 
-  // Current "Shape size" point-size config; shared by endpointBaseRadiusPx and
-  // connectorStrokeWidthPx so both derive from a single read of the dep (with its default).
-  private pointSizePx(): number {
-    return this.deps.getPointSize?.() ?? 240;
-  }
-
-  // On-screen point radius ≈ sqrt(pointSize)/3 (matches the WebGL/hit-test formula;
-  // keep in sync with POINT_SIZE_DIVISOR in stage-point.ts). Halo sits just outside.
+  // The halo sits just outside the drawn dot.
   private endpointBaseRadiusPx(): number {
-    const pointRadiusPx = Math.sqrt(Math.max(this.pointSizePx(), 1)) / 3;
-    return Math.max(4, pointRadiusPx + 2);
+    return Math.max(4, this.deps.getPointRadiusPx() + 2);
   }
 
-  // Screen-space line width scaled by point size (parallels endpointBaseRadiusPx).
   private connectorStrokeWidthPx(): number {
-    return Math.max(1, Math.sqrt(Math.max(this.pointSizePx(), 1)) / 10); // ≈1.55px at the default 240
+    return Math.max(1, 0.3 * this.deps.getPointRadiusPx());
   }
 
   // Base dash pattern "5 4" (formerly the CSS stroke-dasharray), zoom-compensated the same way

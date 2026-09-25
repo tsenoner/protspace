@@ -37,7 +37,12 @@ import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
 import type { VisibilityModel } from './styling/visibility-model';
-import { MAX_RENDERABLE_POINTS, WebGLRenderer, computeSizeScaleFactor } from './webgl';
+import {
+  MAX_RENDERABLE_POINTS,
+  WebGLRenderer,
+  computeSizeScaleFactor,
+  pointRadiusCss,
+} from './webgl';
 import { resolveColor } from './webgl/color-utils';
 import type { RendererDegradedDetail } from './scatter-plot.events';
 import { QuadtreeIndex } from './interaction/quadtree-index';
@@ -70,11 +75,9 @@ export type {
   ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
 
-// Hit-test tuning (shared by hover + click). Search radius is in screen px and
-// is divided by the zoom factor so the data-space radius stays constant; the
-// point radius is derived from point size (sqrt(size)/3 matches the WebGL draw).
-const HIT_TEST_SEARCH_RADIUS_PX = 15;
-const POINT_RADIUS_SIZE_DIVISOR = 3;
+// Hover/click tolerance for dots drawn smaller than this, in CSS px. The one
+// deliberate divergence from the drawn radius: a 2 px dot is too small to hit.
+const HIT_RADIUS_MIN_PX = 4;
 
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
@@ -246,7 +249,7 @@ export class ProtspaceScatterplot extends LitElement {
     getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
     getPlotData: () => this._plotData,
     getScales: () => this._scales,
-    getPointSize: () => this._mergedConfig.pointSize,
+    getPointRadiusPx: () => this._drawnPointRadiusCss(),
     onStatusChange: (status) => {
       if (
         this._connectorStatus?.shown === status?.shown &&
@@ -1749,13 +1752,13 @@ export class ProtspaceScatterplot extends LitElement {
   pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
     if (!this._scales) return null;
 
-    // Transform mouse coordinates to data space
-    const dataX = (mouseX - this._transform.x) / this._transform.k;
-    const dataY = (mouseY - this._transform.y) / this._transform.k;
+    const k = this._transform.k;
+    const dataX = (mouseX - this._transform.x) / k;
+    const dataY = (mouseY - this._transform.y) / k;
 
-    // Find nearest slot using spatial index (search radius adjusted for zoom)
-    const searchRadius = HIT_TEST_SEARCH_RADIUS_PX / this._transform.k;
-    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, searchRadius);
+    // The quadtree holds pre-zoom positions, so the screen-px radius is divided by k.
+    const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
+    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
 
     const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
@@ -1768,13 +1771,16 @@ export class ProtspaceScatterplot extends LitElement {
       return null;
     }
 
-    // Calculate actual distance to verify it's within the point
     const pointX = this._scales.x(nearestPoint.x);
     const pointY = this._scales.y(nearestPoint.y);
-    const distance = Math.sqrt(Math.pow(dataX - pointX, 2) + Math.pow(dataY - pointY, 2));
-    const pointRadius = Math.sqrt(this._getPointSize(nearestPoint)) / POINT_RADIUS_SIZE_DIVISOR;
+    const screenDistance = Math.hypot(dataX - pointX, dataY - pointY) * k;
 
-    return distance <= pointRadius ? nearestPoint : null;
+    return screenDistance <= hitRadius ? nearestPoint : null;
+  }
+
+  /** The radius dots are drawn with right now, in screen CSS px. */
+  private _drawnPointRadiusCss(): number {
+    return pointRadiusCss(this._mergedConfig.pointSize) * (this._webglRenderer?.pointScale() ?? 1);
   }
 
   /**

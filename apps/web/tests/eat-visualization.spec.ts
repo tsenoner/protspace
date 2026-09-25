@@ -634,7 +634,18 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('.connector-status')).not.toBeVisible();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const endpoint = plot.locator('circle.eat-provenance-endpoint').first();
+  // The halo hugs the drawn dot: radius max(4, drawn radius + 2) screen px.
+  const haloRadius = () =>
+    plot.evaluate((el) => {
+      const p = el as unknown as {
+        _webglRenderer: { pointScale(): number };
+        _mergedConfig: { pointSize: number };
+      };
+      const drawn = (Math.sqrt(p._mergedConfig.pointSize) / 3) * p._webglRenderer.pointScale();
+      return Math.max(4, drawn + 2);
+    });
   const endpointBeforeZoom = await endpoint.boundingBox();
+  const haloBeforeZoom = await haloRadius();
   const plotBounds = await plot.boundingBox();
   expect(endpointBeforeZoom).not.toBeNull();
   expect(plotBounds).not.toBeNull();
@@ -643,9 +654,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     plotBounds!.y + plotBounds!.height / 2,
   );
   await page.mouse.wheel(0, -500);
+  await expect.poll(haloRadius).toBeGreaterThan(haloBeforeZoom);
   await expect
-    .poll(async () => (await endpoint.boundingBox())?.width ?? 0)
-    .toBeCloseTo(endpointBeforeZoom!.width, 0);
+    .poll(async () => {
+      const grownBy = 2 * ((await haloRadius()) - haloBeforeZoom);
+      return ((await endpoint.boundingBox())?.width ?? 0) - endpointBeforeZoom!.width - grownBy;
+    })
+    .toBeCloseTo(0, 0);
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const firstConnectorX = await plot
     .locator('line.eat-provenance-connector')
