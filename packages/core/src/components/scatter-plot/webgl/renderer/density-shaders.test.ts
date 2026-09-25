@@ -6,6 +6,8 @@ import {
   DENSITY_ACCUM_VERTEX_SHADER,
   DENSITY_BLUR_FRAGMENT_SHADER,
   DENSITY_COMPOSITE_FRAGMENT_SHADER,
+  DENSITY_CATEGORY_ACCUM_VERTEX_SHADER,
+  DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CONTOUR_MIN_POINTS,
   DENSITY_CONTOUR_FLOOR,
   DENSITY_CONTOUR_SIGMA_GRID_PX,
@@ -28,26 +30,6 @@ function cameraUniforms(src: string): string[] {
     .filter((line) => /^uniform .*\b(u_resolution|u_transform|u_dpr|u_gamma);$/.test(line));
 }
 
-/**
- * Every statement in the contour branch that writes `line`, `coats`, `fill`,
- * `alpha` or `fragColor`, in source order, whitespace collapsed and numeric
- * literals replaced by `N`. Any extra term anywhere in the alpha derivation
- * changes it.
- */
-function contourAlphaChain(src: string): string[] {
-  const branch = src.slice(src.indexOf('if (u_style == 1)'), src.indexOf('float alpha = clamp('));
-  return branch
-    .replace(/\/\/[^\n]*/g, '')
-    .split(';')
-    .map((stmt) =>
-      stmt
-        .replace(/\s+/g, ' ')
-        .trim()
-        .replace(/(?<![\w.])\d+(?:\.\d+)?(?:e-?\d+)?/g, 'N'),
-    )
-    .filter((stmt) => /^(?:float )?(?:line|coats|fill|alpha|fragColor)\s*[*+\-/]?=/.test(stmt));
-}
-
 describe('gaussianWeights', () => {
   it('is a normalised symmetric 13-tap kernel at sigma 2, radius 6', () => {
     const w = gaussianWeights(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
@@ -64,13 +46,11 @@ describe('DENSITY_BLUR_FRAGMENT_SHADER', () => {
   });
 
   // The contour style needs a field smooth enough for a handful of nested rings
-  // rather than one loop per clump, and the heatmap needs the opposite, so the
-  // two sigmas cannot be the same constant. This is the guard on that split:
-  // a contour kernel that quietly narrows back to 13 taps brings the worms back.
-  it('bakes a second, three times wider kernel for the contour style', () => {
-    expect(DENSITY_CONTOUR_SIGMA_GRID_PX).toBe(3 * DENSITY_SIGMA_GRID_PX);
+  // rather than one loop per clump: sigma 3 on its half-resolution grid, the
+  // same 12 device px the tuned sigma 6 spanned on the density grid.
+  it('bakes a second, wider kernel for the contour style', () => {
     expect((DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER.match(/texture\(u_source/g) ?? []).length).toBe(
-      37,
+      19,
     );
     // Same uniforms, so one pass sequence drives either program.
     expect(DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER).toContain('uniform vec2 u_direction;');
@@ -117,62 +97,56 @@ describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
     expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('fragColor = vec4(mean * alpha, alpha);');
   });
 
-  // The heatmap branch is the shipped look; the contour branch is a second
-  // reading of the same texture behind u_style, so the heatmap line above and
-  // the guard above it must survive unchanged when the branch changes.
-  it('derives a continuous level field from the single bilinear fetch', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform int u_style;');
-    // One step per doubling above the floor, offset by half a step so the
-    // outermost ring sits inside the support and the floor cut trims nothing.
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain(
-      'float o = log2(max(n, 1e-8) / u_contourFloor) * 1.0 - 0.5;',
-    );
-    // Absolute levels: the frame's scaler moves with zoom and would drag the
-    // rings with it, which is the opposite of the fade-on-zoom-in the floor buys.
-    const contour = DENSITY_COMPOSITE_FRAGMENT_SHADER.slice(
-      DENSITY_COMPOSITE_FRAGMENT_SHADER.indexOf('if (u_style == 1)'),
-      DENSITY_COMPOSITE_FRAGMENT_SHADER.indexOf('float alpha = clamp('),
-    );
-    expect(contour).not.toContain('u_densityScaler');
+  it('carries no contour branch', () => {
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).not.toContain('u_style');
+    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).not.toContain('u_contourFloor');
   });
+});
 
-  // Screen-space width, not grid-space: fwidth is what keeps a line ~1 px at any
-  // zoom and any grid size. The 4-neighbour compare it replaces drew a strip two
-  // grid texels wide, so it fattened whenever the grid got coarser.
-  it('draws anti-aliased lines from fwidth and takes no neighbour taps', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('float w = fwidth(o);');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('min(f, 1.0 - f)');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).not.toContain('u_texel');
-    // One fetch for the whole shader.
-    expect((DENSITY_COMPOSITE_FRAGMENT_SHADER.match(/texture\(u_density/g) ?? []).length).toBe(1);
+describe('DENSITY_CATEGORY_ACCUM_VERTEX_SHADER', () => {
+  // The same shear lock as the heatmap accumulate: the contour fields must land
+  // points where the point pass lands them.
+  it('carries the point shader camera lines byte-identically, and flips y', () => {
+    expect(cameraLines(DENSITY_CATEGORY_ACCUM_VERTEX_SHADER)).toEqual(
+      cameraLines(POINT_VERTEX_SHADER),
+    );
+    expect(DENSITY_CATEGORY_ACCUM_VERTEX_SHADER).toContain(
+      'gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);',
+    );
   });
+});
 
-  // Lines over a stacked fill: one translucent coat per enclosing ring, so the
-  // core is darker than the fringe and nothing is painted outside the outermost
-  // ring. This asserts the SHAPE of the alpha derivation rather than one of its
-  // lines: every statement in the branch that writes `line`, `coats`, `fill`,
-  // `alpha` or `fragColor`, in order, with the numeric literals blanked so
-  // tuning a constant does not fail it. A containment check on the alpha line
-  // alone stays green when an extra term is smuggled in one line above it.
-  it('derives the fragment from the line term over one fill coat per ring', () => {
-    expect(contourAlphaChain(DENSITY_COMPOSITE_FRAGMENT_SHADER)).toEqual([
-      'float line = N - smoothstep(N, max(w * N, N), min(f, N - f))',
-      'line *= step(u_contourFloor, n) * step(o, N) * step(w, N)',
-      'float coats = clamp(floor(o) + N, N, N)',
-      'float fill = step(N, coats) * mix(N, N, (coats - N) / N)',
-      'float alpha = (line + fill * (N - line)) * u_densityAlpha',
-      'fragColor = vec4(mix(mean, vec3(N), N) * alpha, alpha)',
-    ]);
+describe('DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER', () => {
+  // One fetch per field, never a neighbour tap: fwidth gives the screen-space
+  // width, so the lines stay the same weight at any zoom and grid size.
+  it('fetches each field once and draws one guarded ring set per slot', () => {
+    const src = DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER;
+    expect((src.match(/texture\(/g) ?? []).length).toBe(4);
+    expect(src).not.toContain('u_texel');
+    expect(src).toContain('float w = fwidth(o);');
+    const rings = src.split('\n').filter((l) => l.includes('acc = over(ring('));
+    expect(rings).toHaveLength(16);
+    // A uniform guard on every block keeps control flow uniform around fwidth.
+    expect(rings.every((l) => /^ {2}if \(u_slotCount > \d+\) /.test(l))).toBe(true);
+    expect(rings[15]).toContain('ring(d3.w), u_slotColors[15]');
   });
 
   // Three cuts, all needed: the floor keeps rings off isolated points, the
   // ceiling stops a deep core silting up with micro-loops, the slope cut stops
   // the log's unbounded gradient at the support rim smearing into a solid band.
   it('cuts the line below the floor, past the top level, and where it cannot resolve', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('uniform float u_contourFloor;');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('step(u_contourFloor, n)');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('step(o, 4.5)');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('step(w, 1.0)');
+    const src = DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER;
+    expect(src).toContain('step(u_contourFloor, n)');
+    expect(src).toContain('step(o, 4.5)');
+    expect(src).toContain('step(w, 1.0)');
+    // Absolute levels: the frame's scaler would drag the rings with the zoom.
+    expect(src).not.toContain('u_densityScaler');
+  });
+
+  it('fills 20 % to 80 % in the dominant slot colour only', () => {
+    const src = DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER;
+    expect(src).toContain('mix(0.20, 0.80,');
+    expect(src).toContain('vec4 acc = vec4(bestColor * fill, fill);');
   });
 });
 
@@ -186,6 +160,7 @@ describe('DENSITY_CONTOUR_FLOOR', () => {
       DENSITY_CONTOUR_BLUR_RADIUS
     ]!;
     expect(DENSITY_CONTOUR_FLOOR).toBeCloseTo(DENSITY_CONTOUR_MIN_POINTS * w0 * w0, 12);
+    expect(DENSITY_CONTOUR_FLOOR).toBeCloseTo(0.0886792, 7);
     expect(DENSITY_CONTOUR_MIN_POINTS).toBe(5);
   });
 

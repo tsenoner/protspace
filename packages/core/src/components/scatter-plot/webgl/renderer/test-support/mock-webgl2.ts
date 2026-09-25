@@ -191,7 +191,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     texSubImage2D: vi.fn(),
     // Left a plain noop: webgl-renderer.lifecycle.test.ts wraps it with vi.spyOn.
     deleteTexture: noop,
-    activeTexture: noop,
+    // Recording: the contour composite must keep off unit 1, the label atlas.
+    activeTexture: vi.fn(),
     createFramebuffer: () => ({}),
     bindFramebuffer: noop,
     framebufferTexture2D: noop,
@@ -223,6 +224,9 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     uniform1i: vi.fn(),
     uniform2f: noop,
     uniform3f: noop,
+    // Recording: the contour palette is uploaded here, and must not be rebuilt
+    // on a camera frame.
+    uniform3fv: vi.fn(),
     uniformMatrix3fv: noop,
     uniform4fv: noop,
     pixelStorei: noop,

@@ -152,18 +152,44 @@ ${taps}
 export const DENSITY_BLUR_FRAGMENT_SHADER = blurSource(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
 
 /**
- * The contour style blurs three times wider than the heatmap, and needs its own
- * kernel to do it. At sigma 2 the level field still carries every 5-point clump
- * in a cluster, so the iso-lines came out as a knot of micro-loops around each
- * of them instead of the few nested rings the reference picture shows. The
- * heatmap wants the opposite: it REPLACES the points, so it has to stay sharp
- * enough to show where they actually are.
+ * Legend colours that get their own contour field and ring set: four slots per
+ * RGBA field, so 16 = 4 fields. The default legend is at most 12 items (10
+ * values + Other + N/A), so 16 leaves room for a raised maxVisibleValues.
+ * Past it, the 15 most populous colours keep a slot and the rest pool into a
+ * grey one. A multiple of 4.
+ */
+export const DENSITY_CATEGORY_CAP = 16;
+/**
+ * Texture units of the contour fields. Unit 1 is skipped: it holds the label
+ * atlas (bindPointDrawState), and the composite runs between the two point
+ * runs, so the selected run that follows still samples it.
+ */
+export const DENSITY_FIELD_UNITS = [0, 2, 3, 4] as const;
+
+/**
+ * The contour fields sit on a grid this many times coarser per side than the
+ * heatmap's: 4 device px per cell instead of 2. The blur shrinks by the same
+ * factor, so it still spans 12 device px, and the floor below still means 5
+ * coincident points (it moves by -0.0016 levels). At 1 four fields would blur
+ * 4 x 38.4M taps per frame at 1080p; at 2 they blur 19.7M, about half of what
+ * the one merged field cost. 1 restores the old sampling exactly.
+ */
+export const DENSITY_CONTOUR_GRID_DIVISOR = 2;
+
+/**
+ * The contour style blurs three times wider than the heatmap (in density-grid
+ * cells: 6), and needs its own kernel to do it. At sigma 2 the level field
+ * still carries every 5-point clump in a cluster, so the iso-lines came out as
+ * a knot of micro-loops around each of them instead of the few nested rings the
+ * reference picture shows. The heatmap wants the opposite: it REPLACES the
+ * points, so it has to stay sharp enough to show where they actually are.
  *
  * 6, not 4 or 8: at 4 the loops were still there on the demo dataset, at 8 the
- * outermost ring floated a cluster-radius clear of its own points.
+ * outermost ring floated a cluster-radius clear of its own points. Expressed in
+ * cells of the coarser contour grid.
  */
-export const DENSITY_CONTOUR_SIGMA_GRID_PX = 6;
-/** ceil(3 * sigma) = 18, so 37 taps per pass. Contour style only. */
+export const DENSITY_CONTOUR_SIGMA_GRID_PX = 6 / DENSITY_CONTOUR_GRID_DIVISOR;
+/** ceil(3 * sigma) = 9, so 19 taps per pass. Contour style only. */
 export const DENSITY_CONTOUR_BLUR_RADIUS = Math.ceil(3 * DENSITY_CONTOUR_SIGMA_GRID_PX);
 export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
   DENSITY_CONTOUR_SIGMA_GRID_PX,
@@ -171,18 +197,15 @@ export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
 );
 
 /*
- * Contour style v2: iso-lines over a stacked translucent fill.
+ * Contour style: one ring set per legend colour, over a fill in the locally
+ * dominant colour.
  *
  * Points draw underneath and the selection above; the layer contributes thin
  * lines and, inside them, one pale coat per enclosing ring, so the picture stays
- * the scatter plot with its density annotated, the way Embedding Atlas draws it. The heatmap style (u_style == 0) is
- * untouched by everything below.
- *
- * The level field is continuous, one step per doubling of density above the
- * support floor, and a line is drawn where it crosses an integer. fwidth turns
- * that into a fixed screen-space width at any zoom and any grid size, which is
- * what the old 4-neighbour band compare could not do: its lines were two grid
- * texels wide, i.e. 4 device px, and got fatter as the grid got coarser.
+ * the scatter plot with its density annotated, the way Embedding Atlas draws it.
+ * Each colour's level field is continuous, one step per doubling of its density
+ * above the support floor, and a line is drawn where it crosses an integer.
+ * fwidth turns that into a fixed screen-space width at any zoom and grid size.
  */
 
 /**
@@ -232,22 +255,21 @@ const DENSITY_CONTOUR_SPACING = 1.0;
  */
 const DENSITY_CONTOUR_LINE_PX = 2;
 /**
- * The line and fill are the mean point colour mixed this far toward white. The
- * user wants the ring to read as "the points' colour, a bit lighter", like
- * Embedding Atlas (which lightens on black); darkening (the earlier 0.35
- * multiplier) turned every ring near-black on white and lost the category hue.
- * 0.35 washed the hue out toward grey, so 0.15 keeps the rings close to the
- * points' own colour.
+ * Lines and fill are the category colour mixed this far toward white. The user
+ * wants the ring to read as "the points' colour, a bit lighter", like Embedding
+ * Atlas (which lightens on black); darkening (the earlier 0.35 multiplier)
+ * turned every ring near-black on white and lost the category hue. 0.35 washed
+ * the hue out toward grey, so 0.15 keeps the rings close to the points' colour.
  */
-const DENSITY_CONTOUR_LIGHTEN = 0.15;
+export const DENSITY_CONTOUR_LIGHTEN = 0.15;
 /**
- * Fill opacity of the band just inside the outermost ring and of the core inside
- * the last ring; the bands between step linearly from one to the other, so the
- * fill deepens ring by ring the way overlapping translucent filled contours
- * mix. The user asked for 20 % to 80 %.
+ * Fill opacity of the core inside the last ring; the band just inside the
+ * outermost ring gets a quarter of it and the bands between step linearly, so
+ * the fill deepens ring by ring. The user asked for 20 % to 80 %. 0 draws lines
+ * only.
  */
-const DENSITY_CONTOUR_FILL_OUTER = 0.2;
 const DENSITY_CONTOUR_FILL_CORE = 0.8;
+const DENSITY_CONTOUR_FILL_OUTER = DENSITY_CONTOUR_FILL_CORE / 4;
 /**
  * Levels per device pixel past which a line cannot be resolved. Above it the
  * ramp would smear into a solid band, which is exactly what the log of a field
@@ -255,14 +277,151 @@ const DENSITY_CONTOUR_FILL_CORE = 0.8;
  */
 const DENSITY_CONTOUR_MAX_SLOPE = 1.0;
 
+/** Half an 8-bit step: staged colours are k / 255, and so are the slot keys. */
+const SLOT_MATCH_TOLERANCE = '0.5 / 255.0';
+
+/**
+ * Pass 1 of the contour style, run once per group of four slots. A point is
+ * written, as a one-hot in its slot's channel, only by the draw of the group
+ * that holds its slot; every other draw moves it off-clip like a hidden point,
+ * so across the groups each visible point still lands exactly once.
+ *
+ * The slot is looked up by colour in the buffer the point pass draws, so hiding
+ * or recolouring a category reaches the layer on the same restage as the points.
+ */
+export const DENSITY_CATEGORY_ACCUM_VERTEX_SHADER = `#version 300 es
+precision highp float;
+
+in vec2 a_dataPosition;
+in vec4 a_color;
+
+uniform vec2 u_resolution;
+uniform vec3 u_transform;
+uniform float u_dpr;
+uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}]; // sRGB, as staged
+uniform int u_slotCount;
+uniform int u_tailSlot;                            // -1: every visible colour has a slot
+uniform int u_group;                               // this draw writes slots 4g .. 4g+3
+
+out vec4 v_accum;
+
+int slotOf(vec3 c) {
+  for (int i = 0; i < ${DENSITY_CATEGORY_CAP}; i++) {
+    if (i >= u_slotCount) break;
+    if (all(lessThan(abs(c - u_slotKeys[i]), vec3(${SLOT_MATCH_TOLERANCE})))) return i;
+  }
+  return u_tailSlot;
+}
+
+void main() {
+  int slot = a_color.a > 0.0 ? slotOf(a_color.rgb) : -1;
+  int local = slot - 4 * u_group;
+  if (slot < 0 || local < 0 || local > 3) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 1.0;
+    v_accum = vec4(0.0);
+    return;
+  }
+
+  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
+  vec2 physicalPos = cssTransformed * u_dpr;
+  vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;
+
+  gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
+  gl_PointSize = 1.0;
+
+  // Binary weight, like the heatmap: a faded (selection) point still counts 1.
+  v_accum = vec4(equal(ivec4(local), ivec4(0, 1, 2, 3)));
+}`;
+
+/**
+ * Pass 3 of the contour style. The fill takes the slot with the largest density
+ * and that slot's own coats, so colours never mix and coverage never passes the
+ * fill core; every slot's lines then go on top, "over" in slot order (legend
+ * bottom to top, as the points are painted).
+ *
+ * Unrolled at module load, and every slot block is guarded by a UNIFORM
+ * condition, so control flow stays uniform and fwidth stays defined.
+ */
+function categoryCompositeSource(cap: number): string {
+  const fields = cap / 4;
+  const channel = (i: number) => `d${i >> 2}.${'xyzw'[i & 3]}`;
+  const samplers = Array.from({ length: fields }, (_, g) => `uniform sampler2D u_field${g};`);
+  const fetches = Array.from(
+    { length: fields },
+    (_, g) => `  vec4 d${g} = texture(u_field${g}, v_texCoord);`,
+  );
+  const dominant = Array.from(
+    { length: cap },
+    (_, i) =>
+      `  if (u_slotCount > ${i} && ${channel(i)} > best) { best = ${channel(i)}; bestColor = u_slotColors[${i}]; }`,
+  );
+  const lines = Array.from(
+    { length: cap },
+    (_, i) => `  if (u_slotCount > ${i}) acc = over(ring(${channel(i)}), u_slotColors[${i}], acc);`,
+  );
+  return `#version 300 es
+precision highp float;
+
+${samplers.join('\n')}
+uniform vec3 u_slotColors[${cap}]; // linear, lightened: the ring and fill colours
+uniform int u_slotCount;
+uniform float u_densityAlpha;
+uniform float u_contourFloor;      // blurred density of DENSITY_CONTOUR_MIN_POINTS coincident points
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+// The -0.5 puts the outermost ring half a level inside the floor, so the floor
+// cut trims nothing visible. No scaler: levels are absolute.
+float level(float n) {
+  return log2(max(n, 1e-8) / u_contourFloor) * ${DENSITY_CONTOUR_SPACING.toFixed(1)} - 0.5;
+}
+
+// Three cuts: below the support floor, past the top level (half a level past the
+// last ring, so that ring keeps its full width), and where the field is too
+// steep for a line to mean anything.
+float ring(float n) {
+  float o = level(n);
+  float f = fract(o);
+  float w = fwidth(o);
+  float line = 1.0 - smoothstep(0.0, max(w * ${DENSITY_CONTOUR_LINE_PX.toFixed(2)}, 1e-6), min(f, 1.0 - f));
+  return line * step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
+       * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
+}
+
+vec4 over(float a, vec3 c, vec4 acc) {
+  return vec4(c * a, a) + acc * (1.0 - a);
+}
+
+void main() {
+${fetches.join('\n')}
+  float best = 0.0;
+  vec3 bestColor = vec3(0.0);
+${dominant.join('\n')}
+  // Enclosing rings (0 outside the outermost, LEVELS + 1 in the core) pick the
+  // fill: OUTER for one, CORE for LEVELS + 1, a straight ramp between.
+  float coats = clamp(floor(level(best)) + 1.0, 0.0, ${(DENSITY_CONTOUR_LEVELS + 1).toFixed(1)});
+  float fill = step(0.5, coats)
+    * mix(${DENSITY_CONTOUR_FILL_OUTER.toFixed(2)}, ${DENSITY_CONTOUR_FILL_CORE.toFixed(2)},
+          (coats - 1.0) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)});
+  vec4 acc = vec4(bestColor * fill, fill);
+${lines.join('\n')}
+  // Premultiplied linear, the same convention POINT_FRAGMENT_SHADER writes.
+  fragColor = acc * u_densityAlpha;
+}`;
+}
+
+export const DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER =
+  categoryCompositeSource(DENSITY_CATEGORY_CAP);
+
+/** Heatmap pass 3: the kernel-weighted mean colour, faded in by the smoothed count. */
 export const DENSITY_COMPOSITE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_density;   // blurred: rgb = sum(linear colour), a = smoothed count
 uniform float u_densityAlpha;
 uniform float u_densityScaler;
-uniform int u_style;           // 0 = heatmap, 1 = contour
-uniform float u_contourFloor;  // blurred density of DENSITY_CONTOUR_MIN_POINTS coincident points
 
 in vec2 v_texCoord;
 out vec4 fragColor;
@@ -271,33 +430,6 @@ void main() {
   vec4 d = texture(u_density, v_texCoord);       // LINEAR upsample from the grid
   float n = d.a;
   vec3 mean = n > 0.0 ? d.rgb / n : vec3(0.0);   // kernel-weighted mean colour, 0/0 guarded
-
-  if (u_style == 1) {
-    // Continuous level from the ONE fetch above. The -0.5 puts the outermost
-    // ring half a level inside the floor, so the floor cut below trims nothing
-    // visible. The frame's scaler is deliberately absent: levels are absolute.
-    float o = log2(max(n, 1e-8) / u_contourFloor) * ${DENSITY_CONTOUR_SPACING.toFixed(1)} - 0.5;
-    float f = fract(o);
-    float w = fwidth(o);
-    float line =
-      1.0 - smoothstep(0.0, max(w * ${DENSITY_CONTOUR_LINE_PX.toFixed(2)}, 1e-6), min(f, 1.0 - f));
-    // Three cuts: below the support floor, past the top level, and where the
-    // field is too steep for a line to mean anything. The ceiling is half a
-    // level past the last ring, not on it: cutting at the crossing itself keeps
-    // only the outer half of that ring's ramp and draws it at half width.
-    line *= step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
-          * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
-    // Enclosing rings (0 outside the outermost, LEVELS + 1 in the core) pick the
-    // fill: OUTER for one, CORE for LEVELS + 1, a straight ramp between.
-    float coats = clamp(floor(o) + 1.0, 0.0, ${(DENSITY_CONTOUR_LEVELS + 1).toFixed(1)});
-    float fill = step(0.5, coats)
-      * mix(${DENSITY_CONTOUR_FILL_OUTER.toFixed(2)}, ${DENSITY_CONTOUR_FILL_CORE.toFixed(2)},
-            (coats - 1.0) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)});
-    float alpha = (line + fill * (1.0 - line)) * u_densityAlpha;
-    fragColor = vec4(mix(mean, vec3(1.0), ${DENSITY_CONTOUR_LIGHTEN.toFixed(2)}) * alpha, alpha);
-    return;
-  }
-
   float alpha = clamp(n * u_densityScaler, 0.0, 1.0) * u_densityAlpha;
   // Premultiplied linear, the same convention POINT_FRAGMENT_SHADER writes.
   fragColor = vec4(mean * alpha, alpha);
