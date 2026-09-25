@@ -184,9 +184,9 @@ const redBytes = (p: SlotPalette) =>
 
 describe('computeDensityGrid', () => {
   it('halves the device canvas, clamps the long side, never goes below 1', () => {
-    expect(computeDensityGrid(1920, 1080)).toEqual({ width: 960, height: 540 });
-    expect(computeDensityGrid(3200, 2000)).toEqual({ width: 1024, height: 640 });
-    expect(computeDensityGrid(1, 1)).toEqual({ width: 1, height: 1 });
+    expect(computeDensityGrid(1920, 1080, 'heatmap')).toEqual({ width: 960, height: 540 });
+    expect(computeDensityGrid(3200, 2000, 'heatmap')).toEqual({ width: 1024, height: 640 });
+    expect(computeDensityGrid(1, 1, 'heatmap')).toEqual({ width: 1, height: 1 });
   });
 
   it('puts the contour style on a grid half as fine again', () => {
