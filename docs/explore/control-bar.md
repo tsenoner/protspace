@@ -279,7 +279,8 @@ dataset stored in your browser — visiting the app again without the parameter 
 dataset back. Choosing an example from the menu, on the other hand, does replace the stored
 dataset, and puts `dataset=<id>` in the URL so the link is shareable and the browser's **Back**
 button returns to whatever was shown before — except when your own import was showing: the menu
-choice clears it, so **Back** lands on the example instead of restoring it. `annotation`,
+choice clears it, so **Back** goes to the entry with no `dataset` parameter, which loads the demo
+rather than restoring your import. `annotation`,
 `projection` and `tooltip` parameters in the same URL apply to the loaded example. An unknown id
 shows a warning and the app starts up normally. If an example fails to download, ProtSpace shows
 an error and leaves the current plot as it was.

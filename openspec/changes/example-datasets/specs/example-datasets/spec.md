@@ -16,7 +16,7 @@ The app SHALL define a static catalog of example datasets. Each entry SHALL have
 
 ### Requirement: Choosing an example from the Import menu
 
-The control bar's Import menu SHALL list every catalog entry under an "Examples" heading, below "Load your dataset": the demo first, then the rest by ascending protein count. Each item SHALL show its label, with the description as its tooltip. The currently loaded example SHALL be disabled. Choosing an item SHALL load that example and replace the user's stored import, as choosing the demo does today.
+The control bar's Import menu SHALL list every catalog entry under an "Examples" heading, below "Load your dataset": the demo first, then the rest by ascending protein count. Each item SHALL show its label, with the description as its tooltip. The currently loaded example SHALL be disabled. Choosing an item SHALL load that example and replace the user's stored import.
 
 #### Scenario: Choose an example
 
