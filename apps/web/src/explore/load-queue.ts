@@ -1,8 +1,9 @@
-import type { LoadMeta, DatasetLoadKind, DataLoaderLoadOptions } from './types';
+import type { LoadMeta, DatasetLoadKind, DataLoaderLoadOptions, ExampleLoadContext } from './types';
 
 interface PendingLoadFinalization {
-  promise: Promise<void>;
-  resolve: () => void;
+  /** Resolves to whether the load reached `data-loaded` (true) or `data-error` (false). */
+  promise: Promise<boolean>;
+  resolve: (success: boolean) => void;
 }
 
 interface LoadQueueOptions {
@@ -15,11 +16,13 @@ export interface LoadQueue {
     options: DataLoaderLoadOptions | undefined,
     loadFromFile: (file: File, options?: DataLoaderLoadOptions) => Promise<void>,
   ): Promise<void>;
-  registerFileLoad(file: File, kind: DatasetLoadKind): LoadMeta;
+  registerFileLoad(file: File, kind: DatasetLoadKind, example?: ExampleLoadContext): LoadMeta;
   getLoadMetaForFile(file: File): LoadMeta | undefined;
   getRunningLoadMeta(): LoadMeta | null;
   getLatestSequence(): number;
-  resolvePendingLoadFinalization(sequence: number): void;
+  /** Resolves once `resolvePendingLoadFinalization` is called for this sequence. */
+  awaitLoadOutcome(sequence: number): Promise<boolean>;
+  resolvePendingLoadFinalization(sequence: number, success?: boolean): void;
   dispose(): void;
 }
 
@@ -36,8 +39,8 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
       return existing;
     }
 
-    let resolve = () => {};
-    const promise = new Promise<void>((resolvePromise) => {
+    let resolve: (success: boolean) => void = () => {};
+    const promise = new Promise<boolean>((resolvePromise) => {
       resolve = resolvePromise;
     });
     const pending = { promise, resolve };
@@ -45,23 +48,27 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
     return pending;
   };
 
-  const registerFileLoad = (file: File, kind: DatasetLoadKind) => {
-    const nextMeta = {
+  const registerFileLoad = (file: File, kind: DatasetLoadKind, example?: ExampleLoadContext) => {
+    const nextMeta: LoadMeta = {
       sequence: nextLoadSequence + 1,
       kind,
+      example,
     };
     nextLoadSequence = nextMeta.sequence;
     loadMetaByFile.set(file, nextMeta);
     return nextMeta;
   };
 
-  const resolvePendingLoadFinalization = (sequence: number) => {
+  const awaitLoadOutcome = (sequence: number): Promise<boolean> =>
+    ensurePendingLoadFinalization(sequence).promise;
+
+  const resolvePendingLoadFinalization = (sequence: number, success = true) => {
     const pending = pendingLoadFinalizationBySequence.get(sequence);
     if (!pending) {
       return;
     }
 
-    pending.resolve();
+    pending.resolve(success);
     pendingLoadFinalizationBySequence.delete(sequence);
   };
 
@@ -104,9 +111,10 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
     getLoadMetaForFile: (file) => loadMetaByFile.get(file),
     getRunningLoadMeta: () => runningLoadMeta,
     getLatestSequence: () => nextLoadSequence,
+    awaitLoadOutcome,
     resolvePendingLoadFinalization,
     dispose() {
-      pendingLoadFinalizationBySequence.forEach((pending) => pending.resolve());
+      pendingLoadFinalizationBySequence.forEach((pending) => pending.resolve(false));
       pendingLoadFinalizationBySequence.clear();
       runningLoadMeta = null;
     },

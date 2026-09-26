@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSearchParamsWithExploreView,
+  getDatasetParam,
+  getDatasetSearchParamsUpdate,
   getResolvedExploreViewNormalization,
   parseExploreViewRequest,
   resolveExploreView,
+  setDatasetParam,
 } from './url-state';
 
 describe('explore url state', () => {
@@ -344,6 +347,91 @@ describe('explore url state', () => {
       );
 
       expect(next.get('tooltip')).toBe('ec');
+    });
+  });
+
+  describe('dataset param', () => {
+    it('reads the dataset param when present', () => {
+      expect(getDatasetParam(new URLSearchParams('dataset=demo'))).toBe('demo');
+    });
+
+    it('returns null when the dataset param is absent', () => {
+      expect(getDatasetParam(new URLSearchParams('annotation=ec'))).toBeNull();
+    });
+
+    it('sets the dataset param without touching unrelated params', () => {
+      const next = setDatasetParam(new URLSearchParams('annotation=ec'), 'demo');
+      expect(next.toString()).toBe('annotation=ec&dataset=demo');
+    });
+
+    it('deletes the dataset param when given null', () => {
+      const next = setDatasetParam(new URLSearchParams('dataset=demo&annotation=ec'), null);
+      expect(next.toString()).toBe('annotation=ec');
+    });
+
+    it('is a no-op when deleting an already-absent dataset param', () => {
+      const next = setDatasetParam(new URLSearchParams('annotation=ec'), null);
+      expect(next.toString()).toBe('annotation=ec');
+    });
+
+    describe('getDatasetSearchParamsUpdate', () => {
+      it('pushes the dataset param on a menu choice', () => {
+        const update = getDatasetSearchParamsUpdate(
+          new URLSearchParams('annotation=ec'),
+          'demo',
+          'menu',
+        );
+
+        expect(update).toEqual({
+          next: new URLSearchParams('annotation=ec&dataset=demo'),
+          replace: false,
+        });
+      });
+
+      it('replaces (deletes) the dataset param on a user import', () => {
+        const update = getDatasetSearchParamsUpdate(
+          new URLSearchParams('dataset=demo&annotation=ec'),
+          null,
+          'user',
+        );
+
+        expect(update).toEqual({
+          next: new URLSearchParams('annotation=ec'),
+          replace: true,
+        });
+      });
+
+      it('replaces (deletes) the dataset param on a startup/fallback load', () => {
+        const update = getDatasetSearchParamsUpdate(
+          new URLSearchParams('dataset=demo'),
+          'demo',
+          'startup',
+        );
+
+        expect(update).toEqual({
+          next: new URLSearchParams(),
+          replace: true,
+        });
+      });
+
+      it('never writes anything for a url-sourced load', () => {
+        const update = getDatasetSearchParamsUpdate(
+          new URLSearchParams('dataset=demo'),
+          'demo',
+          'url',
+        );
+
+        expect(update).toBeNull();
+      });
+
+      it('is a no-op when the delete would be a no-op (param already absent)', () => {
+        expect(
+          getDatasetSearchParamsUpdate(new URLSearchParams('annotation=ec'), null, 'startup'),
+        ).toBeNull();
+        expect(
+          getDatasetSearchParamsUpdate(new URLSearchParams('annotation=ec'), null, 'user'),
+        ).toBeNull();
+      });
     });
   });
 });

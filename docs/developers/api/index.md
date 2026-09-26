@@ -204,24 +204,27 @@ Projection, annotation, selection, filter and export controls.
 
 ### Properties
 
-| Property                | Type                     | Description                              |
-| ----------------------- | ------------------------ | ---------------------------------------- |
-| `projections`           | `string[]`               | Projection names to offer                |
-| `annotations`           | `string[]`               | Annotation names to offer                |
-| `selectedProjection`    | `string`                 | Active projection                        |
-| `selectedAnnotation`    | `string`                 | Active annotation                        |
-| `tooltipAnnotations`    | `string[]`               | Annotations pinned into the plot tooltip |
-| `selectionMode`         | `boolean`                | Selection mode toggle state              |
-| `selectionTool`         | `'rectangle' \| 'lasso'` | Active selection tool                    |
-| `selectedProteinsCount` | `number`                 | Count shown in the selection controls    |
-| `isolationMode`         | `boolean`                | Isolation state mirrored from the plot   |
-| `isolationHistory`      | `string[][]`             | Isolation stack mirrored from the plot   |
+| Property                | Type                      | Description                                                     |
+| ----------------------- | ------------------------- | --------------------------------------------------------------- |
+| `projections`           | `string[]`                | Projection names to offer                                       |
+| `annotations`           | `string[]`                | Annotation names to offer                                       |
+| `selectedProjection`    | `string`                  | Active projection                                               |
+| `selectedAnnotation`    | `string`                  | Active annotation                                               |
+| `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip                        |
+| `selectionMode`         | `boolean`                 | Selection mode toggle state                                     |
+| `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                                           |
+| `selectedProteinsCount` | `number`                  | Count shown in the selection controls                           |
+| `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot                          |
+| `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot                          |
+| `exampleDatasets`       | `ExampleDatasetSummary[]` | Example catalog, listed in the Import menu's "Examples" section |
+| `currentExampleId`      | `string \| null`          | id of the example currently loaded, `null` for a user import    |
 
 ### HTML attributes
 
 `selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`,
 `selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
-`current-dataset-name`, `current-dataset-is-demo`, `scatterplot-selector`, `auto-sync`.
+`current-dataset-name`, `scatterplot-selector`, `auto-sync`. `exampleDatasets` and
+`currentExampleId` are `attribute: false`, JavaScript-only.
 
 ### Events
 
@@ -238,7 +241,7 @@ Projection, annotation, selection, filter and export controls.
 | `reset-isolation`                 | `{}`                                     | Reset-isolation button pressed             |
 | `export`                          | `{ type, ...export options }`            | Export requested                           |
 | `open-publish-editor`             | `{}`                                     | Figure editor requested                    |
-| `load-demo-dataset`               | none                                     | Demo dataset requested                     |
+| `load-example-dataset`            | `{ id: string }`                         | An example dataset was chosen              |
 | `selection-disabled-notification` | `{ message, severity, source, context }` | Host-consumed warning (selection auto-off) |
 
 With `auto-sync`, the control bar also applies these changes directly to the target scatterplot, so

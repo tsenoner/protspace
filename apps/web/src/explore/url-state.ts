@@ -1,3 +1,4 @@
+import type { DatasetChangeSource } from './types';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -6,6 +7,50 @@ import type {
   RequestedExploreView,
   ResolvedExploreView,
 } from './view-state';
+
+/**
+ * Reads the `dataset` query parameter naming the example to show (see the
+ * "Dataset deep link" requirement in `openspec/changes/example-datasets`).
+ */
+export function getDatasetParam(searchParams: URLSearchParams): string | null {
+  return searchParams.get('dataset');
+}
+
+/**
+ * Returns a new URLSearchParams with `dataset` set to `id`, or removed when
+ * `id` is null. Never mutates `searchParams`.
+ */
+export function setDatasetParam(searchParams: URLSearchParams, id: string | null): URLSearchParams {
+  const next = new URLSearchParams(searchParams);
+  if (id === null) {
+    next.delete('dataset');
+  } else {
+    next.set('dataset', id);
+  }
+  return next;
+}
+
+/**
+ * Decides how a dataset-change should be written to the URL, mirroring
+ * `getExploreViewSearchParamsUpdate`'s pure-decision shape: a menu choice
+ * pushes `dataset=<id>`; a user import or a startup/fallback load deletes the
+ * parameter with a replace (a no-op when it is already absent); a load that
+ * happened because of the URL itself is never written back.
+ */
+export function getDatasetSearchParamsUpdate(
+  searchParams: URLSearchParams,
+  exampleId: string | null,
+  source: DatasetChangeSource,
+): { next: URLSearchParams; replace: boolean } | null {
+  if (source === 'url') {
+    return null;
+  }
+
+  const nextId = source === 'menu' ? exampleId : null;
+  const next = setDatasetParam(searchParams, nextId);
+
+  return next.toString() === searchParams.toString() ? null : { next, replace: source !== 'menu' };
+}
 
 function getRequestedValue(searchParams: URLSearchParams, key: 'annotation' | 'projection') {
   if (!searchParams.has(key)) {

@@ -52,6 +52,13 @@ export interface DataChangeDetail {
   data: ProtspaceData;
 }
 
+/** One entry of the host app's example-dataset catalog, as shown in the Import menu. */
+export interface ExampleDatasetSummary {
+  id: string;
+  label: string;
+  description: string;
+}
+
 export interface ScatterplotElementLike extends Element {
   // State properties
   selectedProjectionIndex?: number;

@@ -29,6 +29,16 @@ export interface ViewController {
   ): EffectiveExploreView | null;
   applyLatestViewForDatasetLoad(dataOverride?: VisualizationData): EffectiveExploreView | null;
   setRequestedView(viewRequest: ExploreViewRequestState): void;
+  /**
+   * Stores `viewRequest` as the latest request WITHOUT resolving or applying
+   * it. Used when a dataset switch is also pending (Back/Forward changing
+   * both `dataset` and a view param at once): resolving here would run
+   * against whichever dataset is still on screen, normalize against its
+   * annotations/projections, and write that normalization over the URL
+   * entry the switch is headed to. `applyLatestViewForDatasetLoad` resolves
+   * the recorded request against the new dataset once it's loaded.
+   */
+  recordRequestedView(viewRequest: ExploreViewRequestState): void;
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
   handleUserTooltipAnnotationsChange(): void;
@@ -217,6 +227,9 @@ export function createViewController({
     setRequestedView(viewRequest: ExploreViewRequestState) {
       latestViewRequest = cloneExploreViewRequest(viewRequest);
       applyViewSelection(latestViewRequest, 'url');
+    },
+    recordRequestedView(viewRequest: ExploreViewRequestState) {
+      latestViewRequest = cloneExploreViewRequest(viewRequest);
     },
     handleUserAnnotationChange() {
       emitCurrentUserViewChange();

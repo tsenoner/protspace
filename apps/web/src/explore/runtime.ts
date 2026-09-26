@@ -24,13 +24,12 @@ import {
   MIN_SEQUENCES,
   PIPELINE_TIMEOUT_SECONDS,
 } from './fasta-prep-limits';
+import { EXAMPLE_DATASETS } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
-import { startInitialExploreLoad } from './startup';
+import { loadRequestedDatasetOrFallback, startInitialExploreLoad } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
-
-const DEFAULT_DATASET_NAME = 'Demo dataset';
 
 function addTrackedEventListener(
   lifecycle: ReturnType<typeof createLifecycle>,
@@ -54,12 +53,14 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const { controlBar, dataLoader, legendElement, plotElement, structureViewer } = elements;
   const lifecycle = createLifecycle();
 
+  controlBar.exampleDatasets = EXAMPLE_DATASETS;
+
   const setCurrentDatasetName = (name: string) => {
     controlBar.currentDatasetName = name;
   };
 
-  const setCurrentDatasetIsDemo = (isDemo: boolean) => {
-    controlBar.currentDatasetIsDemo = isDemo;
+  const setCurrentExampleId = (id: string | null) => {
+    controlBar.currentExampleId = id;
   };
 
   const overlayController = createLoadingOverlayController();
@@ -68,8 +69,18 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const loadQueue = createLoadQueue({
     isDisposed: lifecycle.isDisposed,
   });
-  dataLoader.loadFromFileHandler = (file, options, next) =>
-    loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
+  // `datasetController` (below) owns the example-fetch supersession state, but
+  // it depends on `viewController`/`interactionController`, created after this
+  // handler must already be wired up — so this indirection is filled in once
+  // `datasetController` exists. Any load that isn't the app's own 'auto'
+  // (example/OPFS) load is a genuine user-initiated import, which must drop
+  // any example fetch still in flight per openspec/changes/example-datasets.
+  let notifyNonAutoLoadStarting: () => void = () => {};
+  dataLoader.loadFromFileHandler = (file, options, next) => {
+    if (options?.source !== 'auto') {
+      notifyNonAutoLoadStarting();
+    }
+    return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
       if (!isFastaFile(queuedFile)) {
         return next(queuedFile, queuedOptions);
       }
@@ -203,6 +214,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         throw error;
       }
     });
+  };
   lifecycle.addCleanup(() => {
     dataLoader.loadFromFileHandler = undefined;
     loadQueue.dispose();
@@ -223,7 +235,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const datasetController = createDatasetController({
     controlBar,
     dataLoader,
-    defaultDatasetName: DEFAULT_DATASET_NAME,
     getIsDisposed: lifecycle.isDisposed,
     interactionController,
     legendElement,
@@ -231,10 +242,17 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     overlayController,
     plotElement,
     structureViewer,
-    setCurrentDatasetIsDemo,
+    setCurrentExampleId,
     setCurrentDatasetName,
     viewController,
   });
+  notifyNonAutoLoadStarting = () => datasetController.supersedePendingExampleFetch();
+  // An example fetch/decode still in flight when the page is torn down (a
+  // route change, a remount) would otherwise resolve on a disposed runtime:
+  // superseding it here means it recognizes itself as stale and does
+  // nothing once it does resolve, rather than trying to render onto
+  // elements that are gone.
+  lifecycle.addCleanup(() => datasetController.supersedePendingExampleFetch());
 
   const handleExport = createExportHandler({
     controlBar,
@@ -381,10 +399,13 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
   interactionController.updateLegend();
 
-  void startInitialExploreLoad({ datasetController, plotElement, dataLoader });
+  // Startup is not kicked off here: it waits for the URL sync hook's
+  // `attachController` to call `setRequestedDataset` with the initial
+  // `?dataset=` param, so the very first load already knows which example (if
+  // any) to show instead of loading the demo/stored import and then swapping.
+  let hasStartedInitialDatasetLoad = false;
 
   console.log('ProtSpace components loaded and connected!');
-  console.log('Data will be loaded from OPFS when available, otherwise from data.parquetbundle');
   console.log('Use the control bar to change annotations and toggle selection modes!');
 
   return {
@@ -395,8 +416,36 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
       viewController.setRequestedView(requested);
     },
+    recordRequestedView(requested) {
+      if (lifecycle.isDisposed()) {
+        return;
+      }
+
+      viewController.recordRequestedView(requested);
+    },
     subscribeToViewChanges(callback) {
       return viewController.subscribeToViewChanges(callback);
+    },
+    setRequestedDataset(exampleId) {
+      if (lifecycle.isDisposed()) {
+        return;
+      }
+
+      if (!hasStartedInitialDatasetLoad) {
+        hasStartedInitialDatasetLoad = true;
+        void startInitialExploreLoad({
+          dataLoader,
+          datasetController,
+          plotElement,
+          requestedExampleId: exampleId,
+        });
+        return;
+      }
+
+      void loadRequestedDatasetOrFallback(datasetController, exampleId);
+    },
+    subscribeToDatasetChanges(callback) {
+      return datasetController.subscribeToDatasetChanges(callback);
     },
     dispose() {
       lifecycle.dispose();
