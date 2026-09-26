@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change example-datasets. Update Purpose after archive.
+Shipped example datasets are one click away in the Import menu and shareable through a `?dataset=<id>` link that never clears the user's stored import.
 
 ## Requirements
 
