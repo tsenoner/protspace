@@ -247,6 +247,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     viewController,
   });
   notifyNonAutoLoadStarting = () => datasetController.supersedePendingExampleFetch();
+  // An example fetch/decode still in flight when the page is torn down (a
+  // route change, a remount) would otherwise resolve on a disposed runtime:
+  // superseding it here means it recognizes itself as stale and does
+  // nothing once it does resolve, rather than trying to render onto
+  // elements that are gone.
+  lifecycle.addCleanup(() => datasetController.supersedePendingExampleFetch());
 
   const handleExport = createExportHandler({
     controlBar,

@@ -187,7 +187,14 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(changes).toEqual([]);
   });
 
-  it('does not emit when the persisted-or-default flow requires recovery', async () => {
+  it("emits (null, 'startup') when the persisted-or-default flow requires recovery", async () => {
+    // No example is showing while the recovery banner is up (the persisted
+    // file hasn't loaded), so a stale `?dataset=` from a failed/unknown deep
+    // link must not linger in the URL either — this emit is what tells the
+    // URL sync hook to replace-delete it. Previously a separate
+    // `reportDatasetChange` method, called from `startup.ts`, did this; now
+    // `loadPersistedOrDefaultDataset` itself emits for this outcome, the
+    // same way it already does for 'auto-loaded'.
     mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({
       kind: 'recovery-required',
       file: new File(['x'], 'mine.parquetbundle'),
@@ -199,7 +206,7 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
 
     await controller.loadPersistedOrDefaultDataset();
 
-    expect(changes).toEqual([]);
+    expect(changes).toEqual([[null, 'startup']]);
   });
 
   it('tryLoadPersistedAgain emits "startup" with a null id', async () => {
@@ -311,8 +318,9 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     expect(setCurrentExampleId).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
     expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
-    // Still finalizes the pending load so `awaitLoadOutcome` never hangs.
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1);
+    // Still finalizes the pending load (so `awaitLoadOutcome` never hangs),
+    // as a non-success — this load never actually finished.
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1, false);
   });
 
   // Narrower than the case above: the request is still current when this
@@ -351,7 +359,7 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     expect(setCurrentExampleId).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
     expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1, false);
   });
 
   // Guards the exact regression the review flagged: the perf suite also

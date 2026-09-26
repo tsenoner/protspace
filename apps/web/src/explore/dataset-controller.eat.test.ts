@@ -117,7 +117,7 @@ describe('dataset controller EAT settings restore', () => {
     expect(controlBar.hasFileSettings).toBe(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(7);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(7, true);
 
     await controller.handleDataLoaded({
       detail: {

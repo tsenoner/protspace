@@ -62,13 +62,6 @@ export interface DatasetController {
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
-  /**
-   * Reports a dataset change without loading anything, for a caller (e.g.
-   * `startup.ts`'s recovery-banner path) that needs the URL sync hook to
-   * react — here, to replace-delete a stale `?dataset=` — without a load
-   * happening through this controller.
-   */
-  reportDatasetChange(exampleId: string | null, source: DatasetChangeSource): void;
   handleLoadingStart(): void;
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
@@ -149,9 +142,13 @@ export function createDatasetController({
 
   const loadPersistedOrDefaultDataset = async (): Promise<PersistedLoadOutcome> => {
     const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset();
-    if (outcome.kind === 'auto-loaded') {
-      // The OPFS restore path (kind 'opfs') has no example metadata for
-      // `handleDataLoaded` to key on, so it's reported here instead.
+    if (outcome.kind === 'auto-loaded' || outcome.kind === 'recovery-required') {
+      // 'auto-loaded' (the OPFS restore path, kind 'opfs') has no example
+      // metadata for `handleDataLoaded` to key on, so it's reported here
+      // instead. 'recovery-required' means no example is showing while the
+      // recovery banner is up, so a stale `?dataset=` from a failed/unknown
+      // deep link must not linger in the URL either — this is what tells the
+      // URL sync hook to replace-delete it.
       emitDatasetChange(null, 'startup');
     }
     // 'default-loaded' means loadExampleDataset(DEFAULT_EXAMPLE, 'startup') ran
@@ -173,6 +170,12 @@ export function createDatasetController({
 
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;
+    // Tracks whether this load actually finished, as opposed to being
+    // ignored (stale/superseded) or throwing partway through. Previously
+    // the `finally` below always resolved the pending load as a success
+    // regardless of which of those happened, which handed
+    // `persisted-dataset.ts`'s `loadExampleDataset` a false "loaded" signal.
+    let success = false;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -354,11 +357,13 @@ export function createDatasetController({
       } catch (statusError) {
         console.warn('Failed to update OPFS load status to success:', statusError);
       }
+
+      success = true;
     } catch (error) {
       console.error('Failed to finalize loaded dataset state:', error);
     } finally {
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, success);
       }
     }
   };
@@ -429,9 +434,6 @@ export function createDatasetController({
       return () => {
         datasetChangeSubscribers.delete(callback);
       };
-    },
-    reportDatasetChange(exampleId, source) {
-      emitDatasetChange(exampleId, source);
     },
     handleLoadingStart() {
       console.log('Data loading started');

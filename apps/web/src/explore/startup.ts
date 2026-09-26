@@ -19,12 +19,10 @@ async function runPersistedOrDefaultFlow(datasetController: DatasetController): 
   const outcome = await datasetController.loadPersistedOrDefaultDataset();
   if (outcome.kind !== 'recovery-required') return;
 
-  // No example is showing while the recovery banner is up (the persisted
-  // file hasn't loaded), so a stale `?dataset=` from a failed/unknown deep
-  // link must not linger in the URL either — report it the same way the
-  // 'auto-loaded' and 'default-loaded' outcomes already do.
-  datasetController.reportDatasetChange(null, 'startup');
-
+  // `loadPersistedOrDefaultDataset` (dataset-controller.ts) itself emits
+  // (null, 'startup') for this outcome, so a stale `?dataset=` from a
+  // failed/unknown deep link doesn't linger in the URL while the recovery
+  // banner (no example showing) is up.
   showRecoveryBanner({
     fileName: outcome.file.name,
     failedAttempts: outcome.failedAttempts,
