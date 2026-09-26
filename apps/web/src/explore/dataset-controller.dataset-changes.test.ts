@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
     clearCorruptedPersistedDataset: vi.fn(),
     recoverFromCorruptedPersistedDataset: vi.fn(),
     supersedePendingExampleFetch: vi.fn(),
+    // Defaults to "still current" so existing tests, which don't exercise
+    // the superseded-during-decode path, render as before.
+    isCurrentExampleRequest: vi.fn(() => true),
   },
 }));
 
@@ -258,7 +261,7 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     const loadMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: DEMO, source: 'menu' as const },
+      example: { entry: DEMO, source: 'menu' as const, requestId: 1 },
     };
     const { controller, setCurrentExampleId, setCurrentDatasetName } = createController({
       getRunningLoadMeta: () => loadMeta,
@@ -274,6 +277,81 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     expect(setCurrentDatasetName).toHaveBeenCalledWith(DEMO.label);
     expect(setCurrentExampleId).toHaveBeenCalledWith(DEMO.id);
     expect(changes).toEqual([[DEMO.id, 'menu']]);
+  });
+
+  // Fix 2's repro: a Back to a 5K entry starts loading 40K, and a second
+  // Back (~150ms later, while 40K is still decoding) starts loading 5K
+  // again. 40K's request is no longer current by the time its decode
+  // finishes, so it must never render, emit, or set name/id — otherwise it
+  // is briefly shown under `dataset=5K`, and can even win the race and leave
+  // the wrong dataset/annotation on screen.
+  it('skips render/emit entirely for an example load superseded during decode', async () => {
+    const file = new File(['x'], '40K.parquetbundle');
+    const loadMeta = {
+      sequence: 1,
+      kind: 'default' as const,
+      example: { entry: OTHER, source: 'url' as const, requestId: 1 },
+    };
+    mocks.persisted.isCurrentExampleRequest.mockReturnValue(false);
+    const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
+      createController({
+        getRunningLoadMeta: () => loadMeta,
+        getLoadMetaForFile: () => loadMeta,
+      });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.handleDataLoaded({
+      detail: { data, file, source: 'auto' },
+    } as unknown as Event);
+
+    expect(mocks.persisted.isCurrentExampleRequest).toHaveBeenCalledWith(1);
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+    expect(setCurrentExampleId).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+    expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
+    // Still finalizes the pending load so `awaitLoadOutcome` never hangs.
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1);
+  });
+
+  // Narrower than the case above: the request is still current when this
+  // function starts (so it proceeds into `loadData`), and only becomes
+  // superseded WHILE `loadData` is awaiting — the realistic timing for a
+  // real decode, which is what let the e2e repro (rapid Back landing mid-
+  // decode) through a single up-front check alone.
+  it('re-checks after loadData and skips labeling/emit/view-apply if superseded while it was awaiting', async () => {
+    const file = new File(['x'], '40K.parquetbundle');
+    const loadMeta = {
+      sequence: 1,
+      kind: 'default' as const,
+      example: { entry: OTHER, source: 'url' as const, requestId: 1 },
+    };
+    mocks.persisted.isCurrentExampleRequest
+      .mockReturnValueOnce(true) // check before loadData: still current
+      .mockReturnValueOnce(false); // check after loadData: superseded meanwhile
+    const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
+      createController({
+        getRunningLoadMeta: () => loadMeta,
+        getLoadMetaForFile: () => loadMeta,
+      });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.handleDataLoaded({
+      detail: { data, file, source: 'auto' },
+    } as unknown as Event);
+
+    expect(mocks.persisted.isCurrentExampleRequest).toHaveBeenCalledTimes(2);
+    // loadData DID run (the request was current when it started)...
+    expect(mocks.loadData).toHaveBeenCalledTimes(1);
+    // ...but nothing after it did, since it was superseded by the time it
+    // resolved.
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+    expect(setCurrentExampleId).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+    expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1);
   });
 
   // Guards the exact regression the review flagged: the perf suite also

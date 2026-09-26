@@ -43,6 +43,15 @@ export type ExampleLoadOutcome = 'loaded' | 'failed' | 'superseded';
 export interface ExampleLoadContext {
   entry: ExampleDataset;
   source: DatasetChangeSource;
+  /**
+   * The example-request sequence number this load was started under (see
+   * `beginExampleRequest`/`isCurrentExampleRequest` in `persisted-dataset.ts`).
+   * `handleDataLoaded` (dataset-controller.ts) checks this against the
+   * current sequence before rendering: a newer request may have started
+   * while this one was still decoding, and that request already owns the
+   * screen.
+   */
+  requestId: number;
 }
 
 export interface LoadMeta {

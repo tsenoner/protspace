@@ -113,6 +113,7 @@ describe('loadExampleDataset', () => {
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: DEMO,
       source: 'menu',
+      requestId: expect.any(Number),
     });
     expect(dataLoader.loadFromFile).toHaveBeenCalledWith(expect.any(File), { source: 'auto' });
     expect(notifyMock.error).not.toHaveBeenCalled();
@@ -217,6 +218,7 @@ describe('loadExampleDataset', () => {
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: OTHER,
       source: 'menu',
+      requestId: expect.any(Number),
     });
     expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1);
   });
@@ -297,6 +299,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: OTHER,
       source: 'menu',
+      requestId: expect.any(Number),
     });
   });
 });

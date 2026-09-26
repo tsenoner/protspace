@@ -105,11 +105,20 @@ export function createPersistedDatasetController({
       // Name/id/emit are set by `handleDataLoaded`, once the load has actually
       // finished decoding — never here, so a fetch that resolves after this
       // request was superseded (or whose bundle fails to parse) can never
-      // overwrite what's currently shown.
-      const loadMeta = registerFileLoad(file, 'default', { entry, source });
+      // overwrite what's currently shown. The request id travels with the
+      // load meta so `handleDataLoaded` can tell a load superseded mid-decode
+      // apart from one that's still current, and skip rendering it.
+      const loadMeta = registerFileLoad(file, 'default', { entry, source, requestId });
       const outcome = awaitLoadOutcome(loadMeta.sequence);
       await dataLoader.loadFromFile(file, { source: 'auto' });
       const success = await outcome;
+      // A newer request may have superseded this one while it was decoding
+      // (handleDataLoaded skips its own render for that case, but the
+      // boolean it resolves with doesn't say why) — check again so a stale
+      // decode is never reported as this call's own success or failure.
+      if (!isCurrentExampleRequest(requestId)) {
+        return 'superseded';
+      }
       return success ? 'loaded' : 'failed';
     } catch (error) {
       if (!isCurrentExampleRequest(requestId)) {
@@ -198,6 +207,15 @@ export function createPersistedDatasetController({
 
   return {
     clearCorruptedPersistedDataset,
+    /**
+     * Whether `requestId` (from an `ExampleLoadContext`) is still the most
+     * recent example request. `handleDataLoaded` (dataset-controller.ts)
+     * checks this before rendering an example load, so one superseded while
+     * it was still decoding — a newer menu/url/user request started after
+     * its fetch resolved but before this event fired — never renders,
+     * emits, or touches the view.
+     */
+    isCurrentExampleRequest,
     loadExampleDataset,
     loadPersistedOrDefaultDataset,
     loadExampleDatasetAndClearPersistedFile,

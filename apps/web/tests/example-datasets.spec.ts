@@ -26,6 +26,7 @@ const PUBLIC_DATA_DIR = path.resolve(SPEC_DIR, '../public/data');
 const DEMO_COUNT = 7831;
 const FIVE_K_COUNT = 5181;
 const PHOSPHATASE_COUNT = 1587;
+const FORTY_K_COUNT = 40026;
 
 const PHOSPHATASE_BUNDLE_PATH = path.join(PUBLIC_DATA_DIR, 'phosphatase.parquetbundle');
 
@@ -375,5 +376,65 @@ test.describe('Example datasets: Import menu and deep link', () => {
     expect(await getDatasetName(page)).toBe(datasetNameBefore);
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
     expect(await isExampleDisabled(page, 'phosphatase')).toBe(false);
+  });
+
+  test('rapid Back past a decoding example keeps the target entry intact (2 repro)', async ({
+    page,
+  }) => {
+    // Regression: start at ?dataset=5K&annotation=phylum. Choose 40K from
+    // the menu, then the demo — history is now [5K+phylum, 40K+<its
+    // default>, demo+<its default>]. Back once (-> the 40K entry) starts
+    // loading 40K again; before that finishes decoding, Back again (-> the
+    // 5K entry) starts loading 5K. 40K's load must not be allowed to resolve
+    // the still-pending view request (now 'phylum', recorded for 5K) against
+    // ITS OWN data and write the result onto the URL: previously that raced
+    // and could replace-write 40K's default annotation
+    // (`protein_existence`) onto the 5K entry, and briefly show 40K's plot
+    // under `dataset=5K`.
+    await page.goto('/explore?dataset=5K&annotation=phylum');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('phylum');
+
+    await chooseExampleFromMenu(page, '40K');
+    await waitForProteinCount(page, FORTY_K_COUNT);
+    await expectDatasetParam(page, '40K');
+
+    await chooseExampleFromMenu(page, 'demo');
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expectDatasetParam(page, 'demo');
+
+    // Hold the *next* fetch of the 40K bundle open until released, so its
+    // decode is still in flight when the second Back fires just after.
+    let release40K: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release40K = resolve;
+    });
+    await page.route('**/data/40K.parquetbundle', async (route) => {
+      await gate;
+      await route.continue();
+    });
+
+    await page.goBack(); // -> dataset=40K, fetch held by the route above
+    await expectDatasetParam(page, '40K');
+
+    release40K();
+    // Give the (now-unblocked) fetch a moment to land before Back again, so
+    // the race is against 40K's decode specifically, not its network fetch.
+    await page.waitForTimeout(150);
+    await page.goBack(); // -> dataset=5K, while 40K may still be decoding
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+
+    // A correct implementation never lets the superseded 40K load touch the
+    // view or the URL once it finishes decoding.
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+    expect(await getSelectedAnnotation(page)).toBe('phylum');
+    expect(
+      await page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')),
+    ).toBe('phylum');
   });
 });

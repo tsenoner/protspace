@@ -194,6 +194,25 @@ export function createDatasetController({
         return;
       }
 
+      // An example load whose request was superseded — a newer menu/url/user
+      // request started after this one's fetch resolved, either before this
+      // event fired at all or while `loadData` below is still running — must
+      // not label itself, emit, or touch the view: the newer request already
+      // owns the screen. The load-queue-level staleness check above can't
+      // catch this, since the two requests can be adjacent (this one still
+      // `running`) rather than overlapping at the queue level. Checked again
+      // after `loadData` (a real decode can take long enough for a second
+      // Back/menu choice to land while it's still running), since a request
+      // current at the top of this function is not guaranteed to still be
+      // current by the time it finishes.
+      const isSupersededExampleLoad = () =>
+        loadMeta.example != null &&
+        !persistedDatasetController.isCurrentExampleRequest(loadMeta.example.requestId);
+
+      if (isSupersededExampleLoad()) {
+        return;
+      }
+
       if (loadMeta.kind === 'user' && file) {
         overlayController.update(
           true,
@@ -217,6 +236,12 @@ export function createDatasetController({
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
 
       await loadData(data);
+
+      // Re-check: `loadData` can take long enough for a newer example
+      // request to land while it was running (see the check above).
+      if (isSupersededExampleLoad()) {
+        return;
+      }
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
