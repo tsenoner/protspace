@@ -150,7 +150,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 
     const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu');
 
-    expect(result).toBe(true);
+    expect(result).toBe('loaded');
     expect(setCurrentDatasetName).toHaveBeenCalledWith(DEMO.label);
     expect(setCurrentExampleId).toHaveBeenCalledWith(DEMO.id);
     expect(changes).toEqual([[DEMO.id, 'menu']]);
@@ -158,7 +158,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
     vi.unstubAllGlobals();
   });
 
-  it('a parse failure (data-error after a successful fetch) leaves name/id/emit untouched and resolves false', async () => {
+  it("a parse failure (data-error after a successful fetch) leaves name/id/emit untouched and resolves 'failed'", async () => {
     const { controller, setCurrentExampleId, setCurrentDatasetName, overlayController } =
       createRealController(async (_file, ctrl) => {
         await ctrl.handleDataError({
@@ -181,7 +181,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 
     const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu');
 
-    expect(result).toBe(false);
+    expect(result).toBe('failed');
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(setCurrentExampleId).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
@@ -197,7 +197,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
     vi.unstubAllGlobals();
   });
 
-  it('a deep-link load (?dataset=) that fails to parse also resolves false without emitting', async () => {
+  it("a deep-link load (?dataset=) that fails to parse also resolves 'failed' without emitting", async () => {
     const { controller } = createRealController(async (_file, ctrl) => {
       await ctrl.handleDataError({
         detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
@@ -216,7 +216,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 
     const result = await controller.loadExampleDataset(DEMO.id);
 
-    expect(result).toBe(false);
+    expect(result).toBe('failed');
     expect(changes).toEqual([]);
 
     vi.unstubAllGlobals();

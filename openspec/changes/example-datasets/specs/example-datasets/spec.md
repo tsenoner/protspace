@@ -70,3 +70,8 @@ If fetching or parsing an example fails, the app SHALL show an error notificatio
 
 - **WHEN** the app opens with `?dataset=<id>` and the fetch fails
 - **THEN** an error notification is shown, the parameter is removed, and the stored import or demo loads
+
+#### Scenario: A request is superseded
+
+- **WHEN** a second load for a different example starts before an earlier one finishes
+- **THEN** the earlier request is abandoned silently, without a fallback load, a notification, or any change to the plot or URL

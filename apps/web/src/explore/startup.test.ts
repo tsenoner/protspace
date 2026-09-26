@@ -36,8 +36,8 @@ const DEMO = EXAMPLE_DATASETS[0];
 function createDatasetController() {
   return {
     loadDefaultDatasetAndClearPersistedFile: vi.fn().mockResolvedValue(undefined),
-    loadExampleDatasetAndClearPersistedFile: vi.fn().mockResolvedValue(true),
-    loadExampleDataset: vi.fn().mockResolvedValue(true),
+    loadExampleDatasetAndClearPersistedFile: vi.fn().mockResolvedValue('loaded'),
+    loadExampleDataset: vi.fn().mockResolvedValue('loaded'),
     loadPersistedOrDefaultDataset: vi.fn().mockResolvedValue({ kind: 'default-loaded' }),
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),
     subscribeToDatasetChanges: vi.fn(() => () => {}),
@@ -79,7 +79,7 @@ describe('loadRequestedDatasetOrFallback', () => {
 
   it('falls back to the persisted-or-default flow when a known id fails to load, without an extra warning', async () => {
     const datasetController = createDatasetController();
-    datasetController.loadExampleDataset.mockResolvedValue(false);
+    datasetController.loadExampleDataset.mockResolvedValue('failed');
 
     await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
 
@@ -88,6 +88,23 @@ describe('loadRequestedDatasetOrFallback', () => {
     // fallback path here must not warn on top of that.
     expect(notifyMock.warning).not.toHaveBeenCalled();
     expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledTimes(1);
+  });
+
+  it("never runs the fallback for a 'superseded' outcome: no toast, no fallback load, no warning", async () => {
+    // Regression covered by example-datasets.spec.ts's "rapid Back past a
+    // still-loading entry" case: a request abandoned because a newer one
+    // started must do nothing further. Treating 'superseded' like 'failed'
+    // here is what let a stale request run the persisted-or-default flow
+    // (the demo) over whatever the newer request had already loaded.
+    const datasetController = createDatasetController();
+    datasetController.loadExampleDataset.mockResolvedValue('superseded');
+
+    await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
+
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id);
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+    expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
+    expect(datasetController.reportDatasetChange).not.toHaveBeenCalled();
   });
 
   it('runs the normal persisted-or-default flow directly when no id is requested', async () => {

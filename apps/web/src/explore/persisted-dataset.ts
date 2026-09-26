@@ -12,7 +12,13 @@ import {
   getCorruptedPersistedDatasetNotification,
   getExampleLoadFailureNotification,
 } from './notifications';
-import type { DatasetChangeSource, DatasetLoadKind, ExampleLoadContext, LoadMeta } from './types';
+import type {
+  DatasetChangeSource,
+  DatasetLoadKind,
+  ExampleLoadContext,
+  ExampleLoadOutcome,
+  LoadMeta,
+} from './types';
 
 const DEFAULT_EXAMPLE = EXAMPLE_DATASETS[0];
 
@@ -73,14 +79,14 @@ export function createPersistedDatasetController({
   const loadExampleDataset = async (
     entry: ExampleDataset,
     source: DatasetChangeSource,
-  ): Promise<boolean> => {
+  ): Promise<ExampleLoadOutcome> => {
     const requestId = beginExampleRequest();
     overlayController.update(true, 0, `Downloading ${entry.label}…`);
 
     try {
       const response = await fetch(entry.url);
       if (!isCurrentExampleRequest(requestId)) {
-        return false;
+        return 'superseded';
       }
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
@@ -88,7 +94,7 @@ export function createPersistedDatasetController({
 
       const arrayBuffer = await response.arrayBuffer();
       if (!isCurrentExampleRequest(requestId)) {
-        return false;
+        return 'superseded';
       }
 
       const fileName = entry.url.split('/').pop() ?? entry.id;
@@ -103,16 +109,17 @@ export function createPersistedDatasetController({
       const loadMeta = registerFileLoad(file, 'default', { entry, source });
       const outcome = awaitLoadOutcome(loadMeta.sequence);
       await dataLoader.loadFromFile(file, { source: 'auto' });
-      return await outcome;
+      const success = await outcome;
+      return success ? 'loaded' : 'failed';
     } catch (error) {
       if (!isCurrentExampleRequest(requestId)) {
-        return false;
+        return 'superseded';
       }
       console.error(`Failed to load example dataset "${entry.id}":`, error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       notify.error(getExampleLoadFailureNotification(entry, message));
       overlayController.update(false);
-      return false;
+      return 'failed';
     }
   };
 
@@ -174,11 +181,11 @@ export function createPersistedDatasetController({
   const loadExampleDatasetAndClearPersistedFile = async (
     id: string,
     source: DatasetChangeSource,
-  ): Promise<boolean> => {
+  ): Promise<ExampleLoadOutcome> => {
     const entry = findExampleDataset(id);
     if (!entry) {
       console.warn(`Unknown example dataset id: ${id}`);
-      return false;
+      return 'failed';
     }
 
     try {

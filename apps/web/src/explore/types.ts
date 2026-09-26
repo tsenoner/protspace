@@ -24,6 +24,16 @@ export type DatasetLoadKind = 'default' | 'opfs' | 'user';
 export type DatasetChangeSource = 'menu' | 'url' | 'user' | 'startup';
 
 /**
+ * The real result of an example load, distinguishing a genuine failure from
+ * a request abandoned because a newer one started (see
+ * `beginExampleRequest`/`isCurrentExampleRequest` in `persisted-dataset.ts`).
+ * Only `'failed'` should trigger a caller's fallback; `'superseded'` means a
+ * later request already owns the screen and this one must do nothing more —
+ * no toast, no fallback, no emit, no overlay change.
+ */
+export type ExampleLoadOutcome = 'loaded' | 'failed' | 'superseded';
+
+/**
  * Which example a 'default'-kind load is for, and why it was requested. Only
  * present when the load was started by `loadExampleDataset`/
  * `loadExampleDatasetAndClearPersistedFile` (persisted-dataset.ts); a

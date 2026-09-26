@@ -56,9 +56,13 @@ async function runPersistedOrDefaultFlow(datasetController: DatasetController): 
  *
  * An unknown id warns and falls back; a known id whose fetch fails has
  * already been reported by the loader (`notify.error`) and also falls back.
- * Either way the fallback's own success is reported through
- * `DatasetController.subscribeToDatasetChanges` with source 'startup', which
- * is what tells the URL sync hook to remove the stale parameter.
+ * A known id that was *superseded* by a newer request (a second Back/menu
+ * choice landing while this one was still loading) is abandoned silently:
+ * some other, newer request already owns the screen, so this one must not
+ * run the fallback and load the demo over it. Either way a real fallback's
+ * own success is reported through `DatasetController.subscribeToDatasetChanges`
+ * with source 'startup', which is what tells the URL sync hook to remove the
+ * stale parameter.
  */
 export async function loadRequestedDatasetOrFallback(
   datasetController: DatasetController,
@@ -66,8 +70,8 @@ export async function loadRequestedDatasetOrFallback(
 ): Promise<void> {
   if (requestedExampleId) {
     if (findExampleDataset(requestedExampleId)) {
-      const success = await datasetController.loadExampleDataset(requestedExampleId);
-      if (success) return;
+      const outcome = await datasetController.loadExampleDataset(requestedExampleId);
+      if (outcome !== 'failed') return;
     } else {
       notify.warning(getUnknownExampleDatasetNotification(requestedExampleId));
     }

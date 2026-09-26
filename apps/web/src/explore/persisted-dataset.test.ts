@@ -108,7 +108,7 @@ describe('loadExampleDataset', () => {
 
     const result = await resultPromise;
 
-    expect(result).toBe(true);
+    expect(result).toBe('loaded');
     expect(fetchMock).toHaveBeenCalledWith(DEMO.url);
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: DEMO,
@@ -123,7 +123,7 @@ describe('loadExampleDataset', () => {
   // reports a corrupt bundle as a successful load. Driving the real
   // awaitLoadOutcome(false) — the same signal handleDataError sends — proves
   // the result is now the load's actual outcome, not a guess.
-  it('returns false and never sets name/id when the load reaches data-error (parse failure)', async () => {
+  it("resolves 'failed' and never sets name/id when the load reaches data-error (parse failure)", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
@@ -140,7 +140,7 @@ describe('loadExampleDataset', () => {
 
     const result = await resultPromise;
 
-    expect(result).toBe(false);
+    expect(result).toBe('failed');
     // persisted-dataset.ts itself never sets these for an example load — that
     // now happens only in dataset-controller's handleDataLoaded, on success.
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
@@ -150,7 +150,7 @@ describe('loadExampleDataset', () => {
     expect(notifyMock.error).not.toHaveBeenCalled();
   });
 
-  it('notifies, dismisses the overlay, and returns false on an HTTP failure, without registering a load', async () => {
+  it("notifies, dismisses the overlay, and resolves 'failed' on an HTTP failure, without registering a load", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
@@ -162,14 +162,14 @@ describe('loadExampleDataset', () => {
 
     const result = await controller.loadExampleDataset(DEMO, 'menu');
 
-    expect(result).toBe(false);
+    expect(result).toBe('failed');
     expect(notifyMock.error).toHaveBeenCalledTimes(1);
     expect(overlayController.update).toHaveBeenCalledWith(false);
     expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
     expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
   });
 
-  it('notifies and returns false when the fetch itself rejects (network error)', async () => {
+  it("notifies and resolves 'failed' when the fetch itself rejects (network error)", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -177,7 +177,7 @@ describe('loadExampleDataset', () => {
 
     const result = await controller.loadExampleDataset(DEMO, 'menu');
 
-    expect(result).toBe(false);
+    expect(result).toBe('failed');
     expect(notifyMock.error).toHaveBeenCalledTimes(1);
   });
 
@@ -209,8 +209,8 @@ describe('loadExampleDataset', () => {
     // Now let A's fetch resolve — it must see it's been superseded.
     resolveA({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
 
-    expect(await resultA).toBe(false);
-    expect(await resultB).toBe(true);
+    expect(await resultA).toBe('superseded');
+    expect(await resultB).toBe('loaded');
 
     // Only B ever registered a load or reached the data loader.
     expect(loadQueue.registerFileLoad).toHaveBeenCalledTimes(1);
@@ -247,7 +247,7 @@ describe('loadExampleDataset', () => {
     // A's fetch rejects after being superseded — must not surface an error toast
     // or touch the overlay (B's overlay state must be left alone).
     resolveA(undefined as never);
-    await expect(resultA).resolves.toBe(false);
+    await expect(resultA).resolves.toBe('superseded');
 
     expect(notifyMock.error).not.toHaveBeenCalled();
     expect(overlayController.update).not.toHaveBeenCalled();
@@ -272,7 +272,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
       'menu',
     );
 
-    expect(result).toBe(false);
+    expect(result).toBe('failed');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not-a-real-id'));
     expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
     warnSpy.mockRestore();
@@ -292,7 +292,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
     loadQueue.resolveOutcome(1, true);
 
-    expect(await resultPromise).toBe(true);
+    expect(await resultPromise).toBe('loaded');
     expect(clearLastImportedFile).toHaveBeenCalled();
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: OTHER,
@@ -329,7 +329,7 @@ describe('supersedePendingExampleFetch', () => {
     controller.supersedePendingExampleFetch();
     resolveFetch({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
 
-    expect(await resultPromise).toBe(false);
+    expect(await resultPromise).toBe('superseded');
     expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
     expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
   });

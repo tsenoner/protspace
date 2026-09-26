@@ -295,6 +295,62 @@ test.describe('Example datasets: Import menu and deep link', () => {
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
   });
 
+  test('rapid Back past a still-loading entry lands on the newer example, not a stale fallback (1c repro)', async ({
+    page,
+  }) => {
+    // Regression: history null -> 5K -> phosphatase -> demo. Back once (to
+    // phosphatase) starts a fresh fetch for it; before that fetch settles,
+    // Back again (to 5K) starts and finishes loading 5K. The stale
+    // phosphatase request must then resolve as "superseded" and do nothing —
+    // previously it resolved `false`, which `loadRequestedDatasetOrFallback`
+    // treated as a real failure and used to run the persisted-or-default
+    // fallback (the demo), stomping the correctly-loaded 5K and deleting
+    // `dataset=` from the URL.
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+
+    await chooseExampleFromMenu(page, '5K');
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+
+    await chooseExampleFromMenu(page, 'phosphatase');
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await expectDatasetParam(page, 'phosphatase');
+
+    await chooseExampleFromMenu(page, 'demo');
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expectDatasetParam(page, 'demo');
+
+    // Hold the *next* fetch of the phosphatase bundle — the one Back is
+    // about to trigger — open until explicitly released.
+    let releasePhosphatase: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releasePhosphatase = resolve;
+    });
+    await page.route('**/data/phosphatase.parquetbundle', async (route) => {
+      await gate;
+      await route.continue();
+    });
+
+    await page.goBack(); // -> dataset=phosphatase, fetch held by the route above
+    await expectDatasetParam(page, 'phosphatase');
+
+    await page.goBack(); // -> dataset=5K, fetch not held, loads normally
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+
+    // Now let the stale phosphatase fetch through. A correct implementation
+    // must abandon it silently.
+    releasePhosphatase();
+    // Give any (incorrect) fallback a moment to happen, then assert nothing
+    // moved off the 5K entry a Back landed on.
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+  });
+
   test('a corrupt bundle changes nothing and leaves the item retryable', async ({ page }) => {
     // Distinct from the 500 case above: the fetch itself succeeds (200), so
     // this exercises the parse-failure ('data-error') path in

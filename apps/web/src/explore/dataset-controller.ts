@@ -21,7 +21,7 @@ import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
-import type { DatasetChangeSource } from './types';
+import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
 import type { ViewController } from './view-controller';
 
 const DEFAULT_EXAMPLE_ID = EXAMPLE_DATASETS[0].id;
@@ -48,9 +48,9 @@ export interface DatasetController {
   loadExampleDatasetAndClearPersistedFile(
     id: string,
     source?: DatasetChangeSource,
-  ): Promise<boolean>;
+  ): Promise<ExampleLoadOutcome>;
   /** Loads a known example without touching OPFS (a `?dataset=` deep link or Back/Forward). */
-  loadExampleDataset(id: string): Promise<boolean>;
+  loadExampleDataset(id: string): Promise<ExampleLoadOutcome>;
   loadPersistedOrDefaultDataset(): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
   /**
@@ -132,13 +132,13 @@ export function createDatasetController({
   const loadExampleDatasetAndClearPersistedFile = async (
     id: string,
     source: DatasetChangeSource = 'menu',
-  ): Promise<boolean> =>
+  ): Promise<ExampleLoadOutcome> =>
     persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id, source);
 
-  const loadExampleDataset = async (id: string): Promise<boolean> => {
+  const loadExampleDataset = async (id: string): Promise<ExampleLoadOutcome> => {
     const entry = findExampleDataset(id);
     if (!entry) {
-      return false;
+      return 'failed';
     }
     return persistedDatasetController.loadExampleDataset(entry, 'url');
   };
