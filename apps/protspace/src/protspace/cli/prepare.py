@@ -44,6 +44,7 @@ from protspace.cli.common_options import (
     Opt_Similarity,
     Opt_Verbose,
     build_embed_config,
+    parse_refetch,
     require_similarity_extra,
 )
 
@@ -136,32 +137,6 @@ Opt_StatsAnnotation = Annotated[
         rich_help_panel="Output",
     ),
 ]
-REFETCH_STAGES = frozenset(
-    {
-        "query",
-        "embed",
-        "similarity",
-        "projections",
-        "uniprot",
-        "taxonomy",
-        "interpro",
-        "ted",
-        "biocentral",
-    }
-)
-ANNOTATION_SOURCES = frozenset(
-    {
-        "uniprot",
-        "taxonomy",
-        "interpro",
-        "ted",
-        "biocentral",
-    }
-)
-REFETCH_SHORTHANDS: dict[str, frozenset[str]] = {
-    "all": REFETCH_STAGES,
-    "annotations": ANNOTATION_SOURCES,
-}
 Opt_Refetch = Annotated[
     str | None,
     typer.Option(
@@ -213,28 +188,6 @@ Opt_NoLog = Annotated[
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _parse_refetch(raw: str | None) -> frozenset[str]:
-    """Parse ``--refetch`` value into a set of stage names."""
-    if not raw:
-        return frozenset()
-    stages: set[str] = set()
-    for token in raw.split(","):
-        token = token.strip().lower()
-        if not token:
-            continue
-        if token in REFETCH_SHORTHANDS:
-            stages |= REFETCH_SHORTHANDS[token]
-        elif token in REFETCH_STAGES:
-            stages.add(token)
-        else:
-            raise typer.BadParameter(
-                f"Unknown refetch stage: '{token}'. "
-                f"Valid stages: {', '.join(sorted(REFETCH_STAGES))}. "
-                f"Shorthands: {', '.join(sorted(REFETCH_SHORTHANDS))}."
-            )
-    return frozenset(stages)
 
 
 def _embed_all(
@@ -353,7 +306,7 @@ def prepare(
 
     setup_logging(verbose)
 
-    refetch_stages = _parse_refetch(refetch)
+    refetch_stages = parse_refetch(refetch)
     if refetch_stages:
         logger.info(f"Refetching stages: {', '.join(sorted(refetch_stages))}")
 

@@ -27,42 +27,6 @@ from protspace.utils.constants import MDS_NAME
 
 logger = logging.getLogger(__name__)
 
-# Before the source-label fix, a TED domain with no CATH assignment was
-# formatted as `unclassified|{plddt}`; it now keeps TED's own `-`. Anchored to a
-# domain boundary so an encoded CATH name that merely contains the word cannot
-# match. The boundary itself is captured so the rewrite can restore it.
-_LEGACY_TED_LABEL_RE = r"(^|;)unclassified(?=\|)"
-
-
-def _migrate_legacy_ted_labels(df: pd.DataFrame) -> bool:
-    """Rewrite pre-fix TED labels in *df* in place. True if anything changed.
-
-    Annotation caches store already-formatted values and never re-run the
-    formatter, so a cache written before the source-label fix keeps serving
-    `unclassified`. Rewriting the stored string is the exact inverse of that
-    fix: the old formatter's unlabeled branch differed from today's only in the
-    literal it emitted, so this reproduces a refetch of the column without a
-    single HTTP call — the alternative being one sequential request per
-    accession. Mirrors how `encoding.migrate_legacy_annotation_table` repairs
-    v1 cells on read.
-    """
-    from protspace.data.annotations.retrievers.ted_retriever import TED_ANNOTATIONS
-
-    migrated = False
-    for column in TED_ANNOTATIONS:
-        values = df.get(column)
-        if values is None:
-            continue
-        # Literal pre-filter: the anchored regex costs ~10x more per row, and
-        # every run after the migration scans a clean column.
-        if not values.str.contains("unclassified", regex=False, na=False).any():
-            continue
-        repaired = values.str.replace(_LEGACY_TED_LABEL_RE, r"\1-", regex=True)
-        if not repaired.equals(values):
-            df[column] = repaired
-            migrated = True
-    return migrated
-
 
 @dataclass(frozen=True)
 class ReducerParams:
@@ -403,44 +367,12 @@ class ReductionPipeline:
 
         return common_headers
 
-    @staticmethod
-    def _restore_cached_columns(
-        api_df: pd.DataFrame, cached: pd.DataFrame
-    ) -> pd.DataFrame:
-        """Refill blank cells in ``api_df`` from ``cached``, matched on identifier.
-
-        Only blanks are refilled, so anything the current run did retrieve wins
-        and a protein absent from the cache simply stays blank.
-        """
-        columns = [
-            c for c in cached.columns if c != "identifier" and c in api_df.columns
-        ]
-        if not columns or "identifier" not in api_df.columns:
-            return api_df
-
-        lookup = cached.drop_duplicates(subset="identifier").set_index("identifier")
-        restored = api_df.copy()
-        for column in columns:
-            fallback = restored["identifier"].map(lookup[column]).fillna("")
-            blank = restored[column].isna() | (restored[column].astype(str) == "")
-            restored.loc[blank, column] = fallback[blank]
-        return restored
-
     def _fetch_annotations(
         self, headers: list[str], embedding_sets: list[EmbeddingSet] = None
     ) -> pd.DataFrame:
         """Fetch annotations from APIs with incremental caching support."""
-        from protspace.data.annotations.configuration import (
-            ANNOTATION_GROUPS,
-            TAXONOMY_LOOKUP_ANNOTATION,
-            AnnotationConfiguration,
-        )
-        from protspace.data.annotations.encoding import stale_cache_columns
-        from protspace.data.annotations.manager import (
-            ProteinAnnotationManager,
-            resolve_fasta_sequence_length,
-            uncached_headers,
-        )
+        from protspace.data.annotations.cache import CACHE_FILENAME, fetch_annotations
+        from protspace.data.annotations.configuration import AnnotationConfiguration
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
         sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
@@ -470,227 +402,20 @@ class ReductionPipeline:
         if annotations_list is None and csv_df is not None:
             return csv_df
 
-        keep_tmp = self.config.keep_tmp
+        cache_path = None
         intermediate_dir = self.config.intermediate_dir
-        refetch = self.config.refetch_stages
-        _ANN_SOURCES = ("uniprot", "taxonomy", "interpro", "ted", "biocentral")
-        refetching_annotations = bool(refetch & set(_ANN_SOURCES))
-
-        if keep_tmp and intermediate_dir:
+        if self.config.keep_tmp and intermediate_dir:
             intermediate_dir.mkdir(parents=True, exist_ok=True)
-            cache_path = intermediate_dir / "all_annotations.parquet"
+            cache_path = intermediate_dir / CACHE_FILENAME
 
-            if cache_path.exists():
-                cached_df = pd.read_parquet(cache_path)
-                missing_identifiers = uncached_headers(headers, cached_df)
-                if missing_identifiers:
-                    # Rows the cache has no entry for. The manager fetches each
-                    # source for exactly these and reuses cached values for the
-                    # rest, so the cache is filled in rather than rebuilt.
-                    logger.warning(
-                        "Annotation cache lacks %d of %d requested identifier(s); "
-                        "fetching annotations for them",
-                        len(missing_identifiers),
-                        len(headers),
-                    )
-
-                # Repair at the cache-read boundary, which dominates every path
-                # that reuses a stored column, then persist so it stays a
-                # one-time cost rather than a rewrite on every resumed run.
-                if _migrate_legacy_ted_labels(cached_df):
-                    logger.info(
-                        "Rewrote legacy 'unclassified' TED domain labels in the "
-                        "cached annotations to TED's '-'."
-                    )
-                    with staged_write(cache_path) as staged:
-                        cached_df.to_parquet(staged, index=False)
-                cached_annotations = set(cached_df.columns) - {"identifier"}
-
-                if annotations_list is None:
-                    required = set(ANNOTATION_GROUPS["default"])
-                else:
-                    required = set(annotations_list)
-
-                # Values stored under a superseded contract cannot be repaired
-                # locally — a legacy xref_pdb "True", for instance, may be a
-                # genuine PDB hit or an empty that was transformed twice.
-                stale_columns = stale_cache_columns(cached_df)
-                # Only pay a refetch for the ones this run actually surfaces.
-                # Without an explicit -a the whole cached frame is emitted, so
-                # treat that as consuming all of them.
-                refresh_columns = (
-                    stale_columns
-                    if annotations_list is None
-                    else stale_columns & required
-                )
-                discard_columns = stale_columns - refresh_columns
-                if discard_columns:
-                    # Unused this run, so drop rather than refetch: they must not
-                    # ride along into a cache this run stamps as current. A later
-                    # run that requests one sees it missing and fetches it through
-                    # the ordinary path.
-                    logger.info(
-                        "Dropping legacy cached column(s) "
-                        f"{', '.join(sorted(discard_columns))}: not requested by "
-                        "this run and stored under superseded semantics"
-                    )
-                    cached_df = cached_df.drop(columns=sorted(discard_columns))
-                    cached_annotations -= discard_columns
-
-                missing = required - cached_annotations
-
-                if (
-                    not missing
-                    and not missing_identifiers
-                    and not refetching_annotations
-                    and not refresh_columns
-                ):
-                    logger.warning("Using cached annotations")
-                    if annotations_list:
-                        cols = ["identifier"] + [
-                            f for f in annotations_list if f in cached_df.columns
-                        ]
-                        api_df = cached_df[cols]
-                    else:
-                        api_df = cached_df
-
-                    # Warn if cached annotations are all empty. Checked *before*
-                    # the FASTA length fallback below, otherwise a derived
-                    # length makes a wholly useless cache look populated and
-                    # silently suppresses this warning.
-                    data_cols = [c for c in api_df.columns if c != "identifier"]
-                    if data_cols:
-                        non_empty = api_df[data_cols].apply(
-                            lambda col: (col != "").any()
-                        )
-                        if not non_empty.any():
-                            logger.warning(
-                                "All cached annotations are empty. This may be "
-                                "from a previous run with non-UniProt identifiers. "
-                                "Use --refetch annotations to re-fetch, or provide "
-                                "a FASTA file with -f."
-                            )
-
-                    if "length" in api_df.columns and sequences:
-                        missing_lengths = ~api_df["length"].astype(bool)
-                        if missing_lengths.any():
-                            api_df = api_df.copy()
-                            api_df.loc[missing_lengths, "length"] = [
-                                resolve_fasta_sequence_length(
-                                    identifier, length, sequences
-                                )
-                                for identifier, length in zip(
-                                    api_df.loc[missing_lengths, "identifier"],
-                                    api_df.loc[missing_lengths, "length"],
-                                    strict=True,
-                                )
-                            ]
-
-                    return self._merge_csv(api_df, csv_df)
-
-                sources = AnnotationConfiguration.determine_sources_to_fetch(
-                    cached_annotations, required
-                )
-
-                if refetching_annotations:
-                    # Override with explicitly requested sources
-                    sources = {src: src in refetch for src in _ANN_SOURCES}
-                    logger.info(
-                        "--refetch: re-fetching "
-                        f"{', '.join(s for s in _ANN_SOURCES if sources[s])}"
-                    )
-                migration_sources = set()
-                if refresh_columns:
-                    stale_by_source = (
-                        AnnotationConfiguration.categorize_annotations_by_source(
-                            refresh_columns
-                        )
-                    )
-                    migration_sources = {
-                        source for source, columns in stale_by_source.items() if columns
-                    }
-                    for source in migration_sources:
-                        sources[source] = True
-                    logger.warning(
-                        "Refreshing legacy annotation cache column(s) "
-                        f"{', '.join(sorted(refresh_columns))} to apply current "
-                        "semantics"
-                    )
-
-                legacy_uniprot = None
-                if refetching_annotations or refresh_columns:
-                    # Drop cached columns for refetched sources so manager
-                    # re-fetches them
-                    cached_by_source = (
-                        AnnotationConfiguration.categorize_annotations_by_source(
-                            cached_annotations
-                        )
-                    )
-                    cols_to_drop = set().union(
-                        *(cached_by_source[s] for s in _ANN_SOURCES if sources[s])
-                    )
-                    if cached_by_source["taxonomy"] and not sources["taxonomy"]:
-                        cols_to_drop.discard(TAXONOMY_LOOKUP_ANNOTATION)
-                    if "uniprot" in migration_sources and "uniprot" not in refetch:
-                        # Keep what the migration is about to discard. If its
-                        # refresh fails, these cached values beat the empty
-                        # annotations a failed fetch produces — except the stale
-                        # columns themselves, whose ambiguity is the whole reason
-                        # for the migration.
-                        preserved = [
-                            c
-                            for c in cached_by_source["uniprot"]
-                            if c not in refresh_columns and c in cached_df.columns
-                        ]
-                        if preserved:
-                            legacy_uniprot = cached_df[
-                                ["identifier", *preserved]
-                            ].copy()
-                    cached_df = cached_df.drop(
-                        columns=[c for c in cols_to_drop if c in cached_df.columns]
-                    )
-                else:
-                    logger.info(f"Missing annotations: {missing}")
-
-                manager = ProteinAnnotationManager(
-                    headers=headers,
-                    annotations=annotations_list,
-                    output_path=cache_path,
-                    sequences=sequences,
-                    cached_data=cached_df,
-                    sources_to_fetch=sources,
-                    # --refetch annotations is the documented remedy for a cache
-                    # poisoned by an earlier partial failure, so there the cached
-                    # columns are exactly what must not be protected. The failed
-                    # source is still dropped rather than written empty, so the
-                    # poison leaves the cache and the next run refetches it.
-                    protect_cached_columns=not refetching_annotations,
-                )
-                api_df = manager.to_pd()
-                if legacy_uniprot is not None and manager.uniprot_fetch_failed:
-                    logger.warning(
-                        "Legacy UniProt cache refresh failed; reusing the cached "
-                        "annotations for this run and leaving the cache "
-                        "unversioned so a later run retries the refresh"
-                    )
-                    api_df = self._restore_cached_columns(api_df, legacy_uniprot)
-                return self._merge_csv(api_df, csv_df)
-            else:
-                api_df = ProteinAnnotationManager(
-                    headers=headers,
-                    annotations=annotations_list,
-                    output_path=cache_path,
-                    sequences=sequences,
-                ).to_pd()
-                return self._merge_csv(api_df, csv_df)
-        else:
-            api_df = ProteinAnnotationManager(
-                headers=headers,
-                annotations=annotations_list,
-                output_path=None,
-                sequences=sequences,
-            ).to_pd()
-            return self._merge_csv(api_df, csv_df)
+        fetched = fetch_annotations(
+            headers,
+            annotations_list,
+            sequences=sequences,
+            cache_path=cache_path,
+            refetch=self.config.refetch_stages,
+        )
+        return self._merge_csv(fetched.frame, csv_df)
 
     def _resolve_annotation_names(self) -> tuple[list[str], str | None]:
         """Parse annotation arguments into annotation names and optional CSV path.

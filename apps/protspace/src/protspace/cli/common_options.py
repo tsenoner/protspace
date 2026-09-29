@@ -58,6 +58,58 @@ EMBEDDER_HELP_LICENSE = "Note: ankh_* and ankh3_* are non-commercial (CC-BY-NC-S
 
 
 # ---------------------------------------------------------------------------
+# --refetch stages, shared by prepare and annotate
+# ---------------------------------------------------------------------------
+
+# The annotation sources, each refetchable on its own. `annotate` accepts only
+# these; `prepare` also recomputes the stages before them.
+ANNOTATION_SOURCES = frozenset(
+    {
+        "uniprot",
+        "taxonomy",
+        "interpro",
+        "ted",
+        "biocentral",
+    }
+)
+REFETCH_STAGES = ANNOTATION_SOURCES | {"query", "embed", "similarity", "projections"}
+REFETCH_SHORTHANDS: dict[str, frozenset[str]] = {
+    "all": REFETCH_STAGES,
+    "annotations": ANNOTATION_SOURCES,
+}
+
+
+def parse_refetch(
+    raw: str | None,
+    stages: frozenset[str] = REFETCH_STAGES,
+    shorthands: dict[str, frozenset[str]] = REFETCH_SHORTHANDS,
+) -> frozenset[str]:
+    """Parse a ``--refetch`` value into a set of stage names.
+
+    *stages* and *shorthands* are what the calling command accepts, so an
+    unknown or inapplicable stage fails as a usage error naming the valid ones.
+    """
+    if not raw:
+        return frozenset()
+    parsed: set[str] = set()
+    for token in raw.split(","):
+        token = token.strip().lower()
+        if not token:
+            continue
+        if token in shorthands:
+            parsed |= shorthands[token]
+        elif token in stages:
+            parsed.add(token)
+        else:
+            raise typer.BadParameter(
+                f"Unknown refetch stage: '{token}'. "
+                f"Valid stages: {', '.join(sorted(stages))}. "
+                f"Shorthands: {', '.join(sorted(shorthands))}."
+            )
+    return frozenset(parsed)
+
+
+# ---------------------------------------------------------------------------
 # Shared option types
 # ---------------------------------------------------------------------------
 
