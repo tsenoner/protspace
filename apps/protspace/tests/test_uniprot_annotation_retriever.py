@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from src.protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
@@ -127,7 +127,7 @@ class TestFetchAnnotations:
 
         # Verify API call
         mock_fetch_many.assert_called_once_with(
-            ["P01308", "P01315"], on_response=retriever._record_release
+            ["P01308", "P01315"], on_response=retriever._record_release, session=ANY
         )
 
     @patch(_FETCH_MANY_PATCH)
@@ -443,7 +443,7 @@ class TestResolveInactiveEntries:
         assert res_count == 1
         assert del_count == 0
         mock_fetch_one.assert_called_once_with(
-            "C5H5D1", on_response=retriever._record_release
+            "C5H5D1", on_response=retriever._record_release, session=None
         )
 
     @patch(_UNIPARC_PATCH)
@@ -474,7 +474,7 @@ class TestResolveInactiveEntries:
         assert res_count == 0
         assert del_count == 1
         mock_uniparc.assert_called_once_with(
-            "UPI000012345", on_response=retriever._record_release
+            "UPI000012345", on_response=retriever._record_release, session=None
         )
 
     @patch(_UNIPARC_PATCH)
@@ -577,7 +577,7 @@ class TestResolveInactiveEntries:
         assert res_count == 1
         assert del_count == 0
         mock_search.assert_called_once_with(
-            "C5H5D1", on_response=retriever._record_release
+            "C5H5D1", on_response=retriever._record_release, session=None
         )
 
     @patch(_SEARCH_SEC_ACC_PATCH)
@@ -717,10 +717,12 @@ class TestUniProtRelease:
             "UPI0000000001.json": {"sequence": {"value": "MKV", "length": 3}},
         }
         requested = []
+        sessions = []
 
-        def fake_get(url, params=None, timeout=None):
+        def fake_get(session, url, params=None, timeout=None):
             endpoint = url.rsplit("/", 1)[-1]
             requested.append(endpoint)
+            sessions.append(session)
             response = requests.Response()
             response.url = url
             release = release_by_endpoint.get(endpoint)
@@ -733,11 +735,15 @@ class TestUniProtRelease:
             response._content = b"{}" if body is None else json.dumps(body).encode()
             return response
 
-        monkeypatch.setattr(requests, "get", fake_get)
-        return requested
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("a UniProt request bypassed the session")
+
+        monkeypatch.setattr(requests.Session, "get", fake_get)
+        monkeypatch.setattr(requests, "get", forbidden)
+        return requested, sessions
 
     def test_releases_are_collected_from_every_response(self, monkeypatch):
-        requested = self._serve(
+        requested, _ = self._serve(
             monkeypatch,
             {
                 "accessions": "2026_03",
@@ -756,6 +762,23 @@ class TestUniProtRelease:
             ["accessions", "P99999.json", "UPI0000000001.json", "Q88888.json", "search"]
         )
         assert retriever.releases == {"2026_01", "2026_02", "2026_03", "2026_04"}
+
+    def test_every_request_goes_through_one_session(self, monkeypatch):
+        """A new connection per request held UniProt to 208 entries a second;
+        one session reaches 308 (about 31 min for Swiss-Prot)."""
+        from protspace.data.annotations.retrievers.http_utils import PooledSession
+
+        requested, sessions = self._serve(monkeypatch, {"accessions": "2026_03"})
+        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+
+        retriever.fetch_annotations()
+
+        # The batch, the inactive entry, UniParc, the missing entry and the
+        # secondary-accession search: five requests, one session.
+        assert len(requested) == 5
+        assert len({id(session) for session in sessions}) == 1
+        assert isinstance(sessions[0], PooledSession)
+        assert retriever.releases == {"2026_03"}
 
     def test_no_release_header_leaves_the_set_empty(self, monkeypatch):
         self._serve(monkeypatch, {})

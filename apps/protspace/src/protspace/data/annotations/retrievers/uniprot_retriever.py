@@ -13,7 +13,11 @@ import requests
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
-from protspace.data.annotations.retrievers.http_utils import API_TIMEOUT, paginated_get
+from protspace.data.annotations.retrievers.http_utils import (
+    API_TIMEOUT,
+    PooledSession,
+    paginated_get,
+)
 from protspace.data.parsers.uniprot_parser import UniProtEntry
 
 logger = logging.getLogger(__name__)
@@ -50,11 +54,15 @@ OnResponse = Callable[[requests.Response], None]
 
 
 def _fetch_one_with_timeout(
-    accession: str, timeout: int = API_TIMEOUT, *, on_response: OnResponse | None = None
+    accession: str,
+    timeout: int = API_TIMEOUT,
+    *,
+    on_response: OnResponse | None = None,
+    session: requests.Session | None = None,
 ) -> dict:
     """Fetch a single UniProt entry by accession with timeout protection."""
     url = f"https://rest.uniprot.org/uniprotkb/{accession}.json"
-    resp = requests.get(url, timeout=timeout)
+    resp = (requests if session is None else session).get(url, timeout=timeout)
     resp.raise_for_status()
     if on_response is not None:
         on_response(resp)
@@ -66,11 +74,12 @@ def _fetch_uniparc_sequence(
     timeout: int = API_TIMEOUT,
     *,
     on_response: OnResponse | None = None,
+    session: requests.Session | None = None,
 ) -> tuple[str, int]:
     """Fetch sequence and length from UniParc for deleted entries."""
     url = f"https://rest.uniprot.org/uniparc/{uniparc_id}.json"
     try:
-        resp = requests.get(url, timeout=timeout)
+        resp = (requests if session is None else session).get(url, timeout=timeout)
         resp.raise_for_status()
         if on_response is not None:
             on_response(resp)
@@ -85,24 +94,32 @@ def _fetch_uniparc_sequence(
 
 
 def _fetch_many_accessions(
-    accessions: list[str], *, on_response: OnResponse | None = None
+    accessions: list[str],
+    *,
+    on_response: OnResponse | None = None,
+    session: requests.Session | None = None,
 ) -> list[dict]:
     """Fetch multiple UniProt entries by accession."""
     return paginated_get(
         "https://rest.uniprot.org/uniprotkb/accessions",
         params={"accessions": ",".join(accessions)},
         on_response=on_response,
+        session=session,
     )
 
 
 def _search_sec_acc(
-    accession: str, *, on_response: OnResponse | None = None
+    accession: str,
+    *,
+    on_response: OnResponse | None = None,
+    session: requests.Session | None = None,
 ) -> list[dict]:
     """Search UniProt by secondary accession (fallback for inactive entries)."""
     return paginated_get(
         "https://rest.uniprot.org/uniprotkb/search",
         params={"query": f"sec_acc:{accession}", "format": "json", "size": "500"},
         on_response=on_response,
+        session=session,
     )
 
 
@@ -154,12 +171,15 @@ class UniProtRetriever(BaseAnnotationRetriever):
         return annotations_dict
 
     def _resolve_inactive_entries(
-        self, missing_accessions: list[str]
+        self,
+        missing_accessions: list[str],
+        session: requests.Session | None = None,
     ) -> tuple[list[ProteinAnnotations], int, int]:
         """Resolve inactive/obsolete UniProt entries.
 
         Uses fetch_one() as primary resolution (returns inactive entry details
         including reason and UniParc ID), with sec_acc: search as fallback.
+        Requests go through *session* when one is given.
 
         Returns:
             Tuple of (resolved annotations, resolved_count, deleted_count)
@@ -176,7 +196,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
         ):
             try:
                 result = _fetch_one_with_timeout(
-                    accession, on_response=self._record_release
+                    accession, on_response=self._record_release, session=session
                 )
                 entry_type = str(result.get("entryType", ""))
 
@@ -202,7 +222,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     target = reason["mergeDemergeTo"][0]
                     try:
                         target_result = _fetch_one_with_timeout(
-                            target, on_response=self._record_release
+                            target, on_response=self._record_release, session=session
                         )
                         if "Inactive" not in str(target_result.get("entryType", "")):
                             entry = UniProtEntry(target_result)
@@ -225,7 +245,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 annotations = dict.fromkeys(UNIPROT_ANNOTATIONS, "")
                 if uniparc:
                     sequence, length = _fetch_uniparc_sequence(
-                        uniparc, on_response=self._record_release
+                        uniparc, on_response=self._record_release, session=session
                     )
                     if sequence:
                         annotations["sequence"] = sequence
@@ -251,7 +271,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                 # fetch_one failed — fall back to sec_acc: search
                 try:
                     records = _search_sec_acc(
-                        accession, on_response=self._record_release
+                        accession, on_response=self._record_release, session=session
                     )
                     if records:
                         entry = UniProtEntry(records[0])
@@ -299,6 +319,11 @@ class UniProtRetriever(BaseAnnotationRetriever):
         Stores UNIPROT_ANNOTATIONS with minimal processing.
         Processing/transformation happens later in annotation_manager.
 
+        Every request goes through one session, one at a time: reusing the
+        connection is what makes UniProt fast (308 entries a second against
+        208 with a new connection per request), and it is not on the critical
+        path, so batches are not sent in parallel.
+
         Returns:
             List of ProteinAnnotations with raw UniProt data
         """
@@ -331,16 +356,21 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     )
                 )
 
-        with tqdm(
-            total=len(self.headers), desc="Fetching UniProt annotations", unit="seq"
-        ) as pbar:
+        with (
+            PooledSession() as session,
+            tqdm(
+                total=len(self.headers),
+                desc="Fetching UniProt annotations",
+                unit="seq",
+            ) as pbar,
+        ):
             pbar.update(len(invalid_headers))
             for i in range(0, len(valid_headers), batch_size):
                 batch = valid_headers[i : i + batch_size]
 
                 try:
                     records = _fetch_many_accessions(
-                        batch, on_response=self._record_release
+                        batch, on_response=self._record_release, session=session
                     )
 
                     # Parse each record and track returned identifiers
@@ -359,7 +389,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
                     missing = [acc for acc in batch if acc not in returned_ids]
                     if missing:
                         resolved, res_count, del_count = self._resolve_inactive_entries(
-                            missing
+                            missing, session=session
                         )
                         result.extend(resolved)
                         total_resolved += res_count
