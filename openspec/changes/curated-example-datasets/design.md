@@ -316,26 +316,33 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 
 ### 14. Docs page generated from catalog + manifest + prose (D10)
 
-- **Generator.** `docs/scripts/generate-examples.mts` (tsx) reads the catalog, the manifest and a docs-only `docs/scripts/example-details.ts` (title, tagline, what to look at, try next, source and query, embedding, projection parameters, figure, notes, thumbnail). It writes `docs/explore/example-datasets.md`.
+- **Generator.** `docs/scripts/generate-examples.mts` (tsx) reads the catalog, the manifest and a docs-only `docs/scripts/example-details.ts` (title, tagline, how to read the view, try next, source and query, embedding, projection parameters, paper figure, notes). It writes `docs/explore/example-datasets.md`, formatted with the repository's prettier settings so `format:check` never fights it.
+- **Who owns which fact.** The catalog owns what the app shows (insight, `defaultView`, the large-download note); the manifest owns everything that depends on the build (protein count, size, columns and their sources, separation scores, EAT columns, releases per column group, ProtSpace version, command); the prose owns the rest. The card's "how to read the view" must name the entry's colour-by annotation as inline code, so a `defaultView` change cannot leave the prose describing another view. The thumbnail is `docs/explore/images/examples/<id>.png` by convention.
 - **`--check`** fails when:
   - the page is stale;
-  - a catalog id has no details, or details exist for an id outside the catalog;
-  - a thumbnail named in the details is missing;
-  - the demo file disagrees with its manifest record.
+  - a catalog id has no prose, or prose exists for an id outside the catalog;
+  - a card's thumbnail is missing;
+  - a repo-hosted file (the demo) disagrees with its manifest record;
+  - a label's count or size disagrees with the manifest, or the prose does not name the colour-by annotation.
+- **Interim state (until the swap).** The page, the check and the anchor pin land with §5, before the final catalog exists, so `example-details.ts` carries three transitional lists that the check keeps honest:
+  - `INTERIM_CATALOG_IDS`: the ten test and perf entries, which get no card. The check fails when a listed id leaves the catalog, so the list empties with the swap.
+  - `beforeSwap` on the five final ids that have no catalog entry yet: their insight and provisional `defaultView`, exactly as the catalog entry will state them. The check fails while an id has both, which moves them into the catalog at the swap.
+  - `THUMBNAILS_PENDING`: cards without a thumbnail. The check fails when a listed thumbnail exists.
+  - A value still to come renders as `‹…›` (a build value from a missing manifest record, or an author fact in the prose), flagged by a warning at the top of the page. Once `INTERIM_CATALOG_IDS` is empty, the check refuses any `‹…›` and any `beforeSwap`.
 - **Scripts and CI.** `docs:examples` and `docs:examples:check` join `precommit`, and the `ci.yml` `build-docs` job runs both `docs:examples:check` and the existing `docs:annotations:check`, which runs in no workflow today.
 - **Page layout.**
   - Cards use `## Title {#id}`.
   - "Open in ProtSpace" and "Download" are raw `<a href>`, because markdown links to `/explore?…` or to a bundle fail `docs:build`.
   - A `::: details How this bundle was built` block holds the exact command.
   - Citation text is journal-neutral: the 2026 preprint DOI `10.64898/2026.05.04.722720` and the FAQ citation anchor. UniProt is credited under CC BY 4.0.
-- **Anchor pin.** VitePress never checks anchors, so `example-datasets-docs.test.ts` is retargeted from `control-bar.md`'s table to this page and asserts `{#<id>}` for every catalog id.
+- **Anchor pin.** VitePress never checks anchors, so `example-datasets-docs.test.ts` is retargeted from `control-bar.md`'s table to this page and asserts `{#<id>}` for every catalog id (outside `INTERIM_CATALOG_IDS`), that every `docsUrl` points at its id's section, and that no section names an id outside the catalog (other than a `beforeSwap` one).
 - **Thumbnails.** An opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`) opens each `?dataset=<id>`, asserts the curated view with no URL write and no drift warning, and captures the thumbnail.
 
 ### 15. Sequencing: machinery first, catalog swap last
 
 - **Tasks §1–§6** land on this branch while the CLI fixes proceed elsewhere. They run against the **interim** catalog (today's eleven entries, repo-hosted), each given a provisional `defaultView` naming columns and projections that its current file really has. An interim manifest written from those files keeps the drift test meaningful.
 - **Fixture copies.** §4 adds the fixtures as byte-identical copies (same blobs) and repoints every test. §7 deletes the `apps/web/public/data/` originals, so for the four non-demo fixtures the branch diff is a plain `git mv` (D9). The demo fixture is a copy, because the product demo keeps its path with new content.
-- **Docs.** §5 lands the generator, the prose for the final six ids and the CI wiring of `docs:annotations:check`. The generated page, the retargeted pin test and the `docs:examples:check` wiring land at the swap (§7), because the catalog↔details check can only pass against the final catalog.
+- **Docs.** §5 lands the generator, the prose for the final six ids, the generated page, the retargeted pin test and the CI and precommit wiring of both docs checks. The interim lists in `example-details.ts` (Decision 14) let the catalog↔prose check pass against the interim catalog; the swap (§7) empties them, and from then on the check enforces every rule for every id.
 - **The swap (§7)** replaces the catalog and the manifest, deletes the old bundles, updates the E2E routing table's ids, and regenerates the docs page, thumbnails and the demo's docs images.
 - **Commits.** Every commit keeps `pnpm test:ci`, `pnpm format:check`, `pnpm precommit` and the E2E suite green.
 

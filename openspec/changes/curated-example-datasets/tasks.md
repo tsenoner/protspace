@@ -164,17 +164,20 @@ Before every commit:
 
 ## 5. Docs tooling and prose
 
-- [ ] 5.1 `docs/scripts/example-details.ts` holds docs-only prose for the six final ids: title, tagline, what the default view shows, what to try next, source and query, membership release, embedding, projection parameters, paper figure, notes and thumbnail path. Use journal-neutral citation text (preprint DOI `10.64898/2026.05.04.722720` plus the FAQ citation anchor) and credit UniProt under CC BY 4.0.
-- [ ] 5.2 `docs/scripts/generate-examples.mts` writes `docs/explore/example-datasets.md`:
+- [x] 5.1 `docs/scripts/example-details.ts` holds docs-only prose for the six final ids: title, tagline, how to read the default view, what to try next, source and query, embedding, projection parameters, paper figure and notes (the membership release comes from the manifest, and the thumbnail path is `images/examples/<id>.png` by convention). Use journal-neutral citation text (preprint DOI `10.64898/2026.05.04.722720` plus the FAQ citation anchor) and credit UniProt under CC BY 4.0.
+  - Until the swap it also holds the interim lists (design Decision 14): `INTERIM_CATALOG_IDS`, `beforeSwap` (insight and provisional `defaultView` for the five final ids not yet in the catalog) and `THUMBNAILS_PENDING`. Author facts still to come are written as `‹…›`.
+- [x] 5.2 `docs/scripts/generate-examples.mts` writes `docs/explore/example-datasets.md` (formatted with prettier):
   - `## Title {#id}` cards;
   - raw `<a href>` "Open in ProtSpace" and "Download (size)" links;
   - a `::: details How this bundle was built` block with the manifest command;
   - release per column group;
   - an intro stating that examples reopen curated, how to keep changes, and the imported-copy storage edge case.
-  - `--check` fails on a stale page, a catalog/details id mismatch, a missing named thumbnail, or a demo/manifest mismatch.
-- [ ] 5.3 Scripts `docs:examples` and `docs:examples:check`. Add `docs:annotations:check` to the `ci.yml` `build-docs` job now; `docs:examples:check` joins it and `precommit` at the swap (7.10).
+  - `--check` fails on a stale page, a catalog/details id mismatch, a missing thumbnail, a demo/manifest mismatch, a label that disagrees with the manifest, or prose that does not name the colour-by annotation; while the interim lists are non-empty it allows their exceptions, and once they are empty it refuses `‹…›` placeholders and `beforeSwap`.
+  - The manifest gained a `statistics` flag so the cards can say whether a bundle has separation scores.
+- [ ] 5.3 Scripts `docs:examples` and `docs:examples:check`, with `docs:examples:check` in `precommit` (done). Add `docs:annotations:check` and `docs:examples:check` to the `ci.yml` `build-docs` job (the interim lists let both pass before the swap).
 - [ ] 5.4 Opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`), with a `projects[]` entry: every catalog id opens on its `defaultView` with no URL write and no drift warning, and writes `docs/explore/images/examples/<id>.png`.
-- [ ] 5.5 Sidebar entry "Example Datasets" after "Importing Data" in `docs/.vitepress/config.mts`; `/docs/explore/example-datasets` in `apps/web/public/sitemap.xml`.
+- [x] 5.5 Sidebar entry "Example Datasets" after "Importing Data" in `docs/.vitepress/config.mts`; `/docs/explore/example-datasets` in `apps/web/public/sitemap.xml`.
+  - `example-datasets-docs.test.ts` is retargeted from `control-bar.md` to the new page (anchors for every catalog id outside `INTERIM_CATALOG_IDS`, every `docsUrl` pointing at its section, no section outside the catalog except a `beforeSwap` one).
 - [ ] 5.6 `docs/explore/control-bar.md` §9 (the ⓘ, the Large badge, "About these examples" and Cancel landed with §3): shrink it to behaviour (menu vs link; the curated reset (c); failure keeps the plot plus Retry (a); the Large badge, progress and Cancel (e); the "About these examples" link), move the id table to the new page, and drop "every bundle that ships". Fix the stale demo alt text and the "NOT phospholipase A2" example (the lines at 137 and 192).
 - [ ] 5.7 `docs/explore/importing-data.md` (the (d) exception, with the export-and-import route and the imported-copy edge case, and "Starting fresh" landed with §2):
   - the "Settings persist per dataset" bullet gains the example exception (d) with the export-and-import route;
@@ -232,7 +235,7 @@ Before every commit:
   - fix `docs/explore/eat.md`'s `?dataset=` link.
 - [ ] 7.8 Remove `apps/web/public/data/` entirely (including `datasets.json`); this makes the four non-demo fixtures `git mv`s in the branch diff. Replace `apps/web/public/data.parquetbundle` with the new demo. Enable the "only the demo under `public/`" assertion.
 - [ ] 7.9 Update `apps/web/tests/helpers/example-fixtures.ts` to the final ids, each routed to a fixture that contains its `defaultView` names.
-- [ ] 7.10 Generate `docs/explore/example-datasets.md`; retarget `example-datasets-docs.test.ts` to it (`{#id}` for every catalog id); wire `docs:examples:check` into `ci.yml` `build-docs` and `precommit`; add the thumbnails.
+- [ ] 7.10 Empty the interim lists in `docs/scripts/example-details.ts` (`INTERIM_CATALOG_IDS`; move each `beforeSwap` into its catalog entry), fill in the remaining `‹…›` author facts, add the thumbnails (emptying `THUMBNAILS_PENDING`), and regenerate `docs/explore/example-datasets.md`. (The page, the retargeted pin test and the CI/precommit wiring landed with §5.)
 - [ ] 7.11 Re-run `pnpm docs:images` against the new demo; check the PLD/Kunitz overlay coordinates and the demo-dependent alt texts.
 - [ ] 7.12 Full verification:
   - `pnpm test:ci`, `pnpm format:check`, `pnpm precommit`;

@@ -97,6 +97,7 @@ export default defineConfig({
         items: [
           { text: 'Interface Overview', link: '/explore/' },
           { text: 'Importing Data', link: '/explore/importing-data' },
+          { text: 'Example Datasets', link: '/explore/example-datasets' },
           { text: 'Navigating the Scatterplot', link: '/explore/scatterplot' },
           { text: 'Using the Legend', link: '/explore/legend' },
           { text: 'Separation Scores', link: '/explore/separation-scores' },
