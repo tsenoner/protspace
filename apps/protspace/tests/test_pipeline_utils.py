@@ -506,6 +506,63 @@ class TestAnnotationCacheMigration:
         assert result["gene_name"].tolist() == ["LEGACY_GENE"]
         assert result["protein_name"].tolist() == ["Legacy protein"]
 
+    def test_legacy_pdb_refresh_reuses_sources_no_later_change_marks_stale(
+        self, tmp_path, monkeypatch
+    ):
+        """Only UniProt is refetched while the other cached sources are current.
+
+        TED values carry no later semantics change, so an unversioned cache's
+        TED column is reused as the PDB refresh has always promised. (Its
+        InterPro columns would not be: the family and InterPro fix marks them
+        stale too.)
+        """
+        from protspace.data.annotations.retrievers.ted_retriever import TedRetriever
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+            UniProtRetriever,
+        )
+
+        pd.DataFrame(
+            {
+                "identifier": ["P01308"],
+                "xref_pdb": ["True"],
+                "gene_name": ["INS"],
+                "protein_name": ["Insulin"],
+                "uniprot_kb_id": ["INS_HUMAN"],
+                "ted_domains": ["-|90.0"],
+            }
+        ).to_parquet(tmp_path / "all_annotations.parquet", index=False)
+        calls = []
+
+        def uniprot(retriever):
+            calls.append("uniprot")
+            return [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={
+                        "xref_pdb": "1A7F",
+                        "gene_name": "INS",
+                        "protein_name": "Insulin",
+                        "uniprot_kb_id": "INS_HUMAN",
+                    },
+                )
+                for h in retriever.headers
+            ]
+
+        def no_ted(_retriever):
+            raise AssertionError("cached TED values are current and must be reused")
+
+        monkeypatch.setattr(UniProtRetriever, "fetch_annotations", uniprot)
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", no_ted)
+
+        result = _cache_pipeline(
+            tmp_path, annotations=["xref_pdb", "ted_domains"]
+        )._fetch_annotations(["P01308"])
+
+        assert calls == ["uniprot"]
+        assert result["xref_pdb"].tolist() == ["True"]
+        assert result["ted_domains"].tolist() == ["-|90.0"]
+
     def test_legacy_pdb_cache_is_not_refetched_when_pdb_is_not_requested(
         self, tmp_path, monkeypatch
     ):
