@@ -149,14 +149,16 @@ Before every commit:
 - [x] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.
   - The scenarios name examples by role (`small`, `other`, `slow`), so the swap (7.9) edits only the helper's table; held requests pass on with `route.fallback()` so they reach the fixture, and protspace.app's copies are refused so a development build's fallback can never download a real example. With the three `public/data` originals moved away, the project still passes (26/26).
 - [ ] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the latter enabled at 7.8; the former landed with 4.1, plus "every repo-hosted record's file ships under `public/`").
-- [ ] 4.11 Perf datasets:
+- [x] 4.11 Perf datasets:
   - `perf/datasets.manifest.json` (`{ id, file, bytes, sha256 }`) for the eleven current `public/data` bundles plus `beta_lactamase_2026_stats` (113K) and `phosphatase_eat` (832), under their original names;
-  - `pnpm perf:fetch` (the same fetch script, perf mode) into `perf/datasets/`.
-- [ ] 4.12 `perf/webgl-perf.spec.ts` routes `**/data/<id>.parquetbundle` and `**/data/datasets.json` to `perf/datasets/`; a missing file is recorded as a dataset error naming `pnpm perf:fetch`.
+  - `pnpm perf:fetch` (the same fetch script, perf mode; `--only` for a subset) into `perf/datasets/`.
+  - Each record also carries `default` (the ten of the former `datasets.json`, the default sweep) and `source` (the git blob or manuscript path it was staged from). The `example-bundles.yml` workflow runs `pnpm perf:fetch` on PRs that change the list, so it stays red until the owner publishes the release (8.1).
+- [x] 4.12 `perf/webgl-perf.spec.ts` routes `**/data/<id>.parquetbundle` and `**/data/datasets.json` to `perf/datasets/`; a missing file is recorded as a dataset error naming `pnpm perf:fetch`.
   - Remove the fallback list in `apps/web/src/perf/webgl-perf-suite.ts`.
-  - Update `perf/README.md` and `perf/plot_perf_results.py`.
+  - Update `perf/README.md` and `perf/plot_perf_results.py` (the plotter needed no change: the release keeps the original ids its ordering list names).
+  - A missing or malformed `datasets.json` is recorded under `failures` (the results file is still emitted), and a failed dataset fetch carries the response body (the spec's `pnpm perf:fetch` hint) into its error.
   - Point `load-large-bundle.spec.ts` and its `playwright.config.ts` comment at `perf/datasets/573K_swissprot.parquetbundle`.
-- [ ] 4.13 A staging script (`build_showcase.py stage-perf`, task 6.6) collects the `perf-datasets` assets from git blobs and the NM paths into a local directory with `SHA256SUMS`, and prints the owner's `gh release create` command without running it.
+- [x] 4.13 A staging script (`build_showcase.py stage-perf`, task 6.6) collects the `perf-datasets` assets from git blobs and the NM paths into a local directory with `SHA256SUMS`, and prints the owner's `gh release create` command without running it (only the `stage-perf` subcommand exists so far; §6 adds the others).
 - [ ] 4.14 `CONTRIBUTING.md`: fixtures vs examples, `pnpm examples:fetch`, `pnpm perf:fetch`, and stopping a running dev server before E2E so the startup pin applies.
 
 ## 5. Docs tooling and prose

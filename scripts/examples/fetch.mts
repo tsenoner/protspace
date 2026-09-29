@@ -1,11 +1,16 @@
 /**
- * Download and verify the example bundles the web app serves.
+ * Download and verify the bundle files ProtSpace pins in GitHub releases: the
+ * web app's example bundles, or (`--perf`) the WebGL perf harness's datasets.
  *
  * `apps/web/src/explore/example-manifest.ts` names every example's file with
  * its byte count and sha256. Repo-hosted files (the startup demo) are checked
  * where they are committed, under `apps/web/public/`. Release-hosted files are
  * downloaded from their GitHub release into `--out`, checked, and only then
  * moved into place; a file already there with the right bytes is kept.
+ *
+ * With `--perf`, the list is `perf/datasets.manifest.json` (the `perf-datasets`
+ * release, written by `build_showcase.py stage-perf`) and the files go to the
+ * gitignored `perf/datasets/`, where `perf/webgl-perf.spec.ts` serves them.
  *
  * Any missing asset, size mismatch or checksum mismatch exits non-zero, which
  * is what fails the deploy (`.github/workflows/deploy.yml`) before anything
@@ -14,10 +19,13 @@
  * Usage:
  *   pnpm examples:fetch                          # into apps/web/public/examples/ (gitignored)
  *   pnpm examples:fetch --out apps/web/dist/examples --with-retained   # the deploy
+ *   pnpm perf:fetch [--only 573K_swissprot,5K]   # into perf/datasets/ (gitignored)
  *
  * Options:
- *   --out DIR          where release-hosted files go (default apps/web/public/examples)
- *   --with-retained    also fetch the previous release's retained files
+ *   --out DIR          where downloaded files go
+ *   --with-retained    examples: also fetch the previous release's retained files
+ *   --perf             fetch the perf datasets instead of the examples
+ *   --only IDS         perf: only these comma-separated dataset ids
  *   --base-url URL     release download root (default https://github.com/tsenoner/protspace/releases/download)
  */
 import { createHash } from 'node:crypto';
@@ -29,6 +37,8 @@ import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PUBLIC_DIR = join(REPO_ROOT, 'apps/web/public');
+const PERF_MANIFEST = join(REPO_ROOT, 'perf/datasets.manifest.json');
+const PERF_DATASETS_DIR = join(REPO_ROOT, 'perf/datasets');
 const DEFAULT_BASE_URL = 'https://github.com/tsenoner/protspace/releases/download';
 const ATTEMPTS = 3;
 
@@ -116,18 +126,31 @@ function verifyRepoFile(label: string, file: string, pinned: { bytes: number; sh
   return null;
 }
 
-async function main(): Promise<number> {
-  const { values } = parseArgs({
-    options: {
-      out: { type: 'string', default: join(PUBLIC_DIR, 'examples') },
-      'with-retained': { type: 'boolean', default: false },
-      'base-url': { type: 'string', default: DEFAULT_BASE_URL },
-    },
-  });
-  const outDir = resolve(values.out);
-  const baseUrl = values['base-url'].replace(/\/$/, '');
-  const errors: string[] = [];
+/** `perf/datasets.manifest.json`: the `perf-datasets` release's files. */
+interface PerfManifest {
+  release: string;
+  datasets: { id: string; file: string; bytes: number; sha256: string; default: boolean }[];
+}
 
+/** The perf datasets to fetch: every one, or those `only` names (unknown ids are errors). */
+function perfFiles(only: string | undefined, errors: string[]): PinnedFile[] {
+  const manifest = JSON.parse(readFileSync(PERF_MANIFEST, 'utf8')) as PerfManifest;
+  const wanted = only
+    ?.split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  for (const id of wanted ?? []) {
+    if (!manifest.datasets.some((dataset) => dataset.id === id)) {
+      errors.push(`${id}: not in ${relative(REPO_ROOT, PERF_MANIFEST)}`);
+    }
+  }
+  return manifest.datasets
+    .filter((dataset) => !wanted || wanted.includes(dataset.id))
+    .map((dataset) => ({ label: dataset.id, release: manifest.release, ...dataset }));
+}
+
+/** The example files to fetch; repo-hosted ones are verified in place instead. */
+function exampleFiles(withRetained: boolean, errors: string[]): PinnedFile[] {
   const pinned: PinnedFile[] = [];
   for (const [id, record] of Object.entries(EXAMPLE_MANIFEST.examples)) {
     if (record.hosting === 'repo') {
@@ -141,15 +164,36 @@ async function main(): Promise<number> {
     }
     pinned.push({ label: id, release: EXAMPLE_MANIFEST.release, ...record });
   }
-  if (values['with-retained']) {
+  if (withRetained) {
     for (const retained of EXAMPLE_MANIFEST.retained) {
       pinned.push({ label: `retained ${retained.release}`, ...retained });
     }
   }
-
   if (pinned.length === 0) {
     console.log('No release-hosted example bundles in the manifest; nothing to download.');
   }
+  return pinned;
+}
+
+async function main(): Promise<number> {
+  const { values } = parseArgs({
+    options: {
+      out: { type: 'string' },
+      'with-retained': { type: 'boolean', default: false },
+      perf: { type: 'boolean', default: false },
+      only: { type: 'string' },
+      'base-url': { type: 'string', default: DEFAULT_BASE_URL },
+    },
+  });
+  const outDir = resolve(
+    values.out ?? (values.perf ? PERF_DATASETS_DIR : join(PUBLIC_DIR, 'examples')),
+  );
+  const baseUrl = values['base-url'].replace(/\/$/, '');
+  const errors: string[] = [];
+  const pinned = values.perf
+    ? perfFiles(values.only, errors)
+    : exampleFiles(values['with-retained'], errors);
+
   for (const file of pinned) {
     const error = await fetchPinned(file, outDir, baseUrl);
     if (error) errors.push(error);
@@ -158,7 +202,8 @@ async function main(): Promise<number> {
   if (errors.length > 0) {
     // Leave no half-verified directory behind for a deploy step to upload.
     for (const file of pinned) rmSync(join(outDir, `${file.file}.part`), { force: true });
-    console.error(`\n${errors.length} example bundle(s) failed verification:`);
+    const what = values.perf ? 'perf dataset' : 'example bundle';
+    console.error(`\n${errors.length} ${what}(s) failed verification:`);
     for (const error of errors) console.error(`  - ${error}`);
     return 1;
   }

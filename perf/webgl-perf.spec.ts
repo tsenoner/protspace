@@ -1,5 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
+import * as path from 'path';
 
 const EXPECTED_SCENARIOS = ['annotationChange', 'zoomInOut', 'dragCanvas', 'clickPoint'] as const;
 const ITERATIONS = (() => {
@@ -19,6 +20,54 @@ const DOWNLOAD_TIMEOUT_MS = SUITE_TIMEOUT_MS - 60_000;
  * download itself, and page teardown — the page has to WIN this race, not tie it.
  */
 const PAGE_RUN_BUDGET_MS = DOWNLOAD_TIMEOUT_MS - 120_000;
+
+/** `perf/datasets.manifest.json`: the `perf-datasets` release, which `pnpm perf:fetch` downloads. */
+interface PerfManifest {
+  datasets: { id: string; file: string; default: boolean }[];
+}
+const PERF_MANIFEST = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'datasets.manifest.json'), 'utf8'),
+) as PerfManifest;
+const PERF_DATASETS_DIR = path.join(__dirname, 'datasets');
+
+/**
+ * Serves the benchmark's datasets from `perf/datasets/` rather than from
+ * anything the app ships. The in-page suite asks for `/data/datasets.json` (the
+ * default sweep) and `/data/<id>.parquetbundle`; both are answered here from
+ * the perf manifest and the fetched files, so the benchmark measures the same
+ * bytes whatever the example catalog holds. A dataset that was never fetched
+ * answers 404 with a body naming `pnpm perf:fetch`, which the suite records as
+ * that dataset's error while the rest of the sweep carries on.
+ */
+async function servePerfDatasets(page: Page): Promise<void> {
+  await page.route('**/data/datasets.json', (route) =>
+    route.fulfill({
+      json: PERF_MANIFEST.datasets
+        .filter((dataset) => dataset.default)
+        .map((dataset) => dataset.id),
+    }),
+  );
+  await page.route('**/data/*.parquetbundle', (route) => {
+    const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() ?? '');
+    const dataset = PERF_MANIFEST.datasets.find((entry) => entry.file === name);
+    if (!dataset) {
+      return route.fulfill({
+        status: 404,
+        contentType: 'text/plain',
+        body: `${name} is not a perf dataset (see perf/datasets.manifest.json)`,
+      });
+    }
+    const file = path.join(PERF_DATASETS_DIR, dataset.file);
+    if (!fs.existsSync(file)) {
+      return route.fulfill({
+        status: 404,
+        contentType: 'text/plain',
+        body: `perf/datasets/${dataset.file} is missing; run \`pnpm perf:fetch\``,
+      });
+    }
+    return route.fulfill({ path: file, contentType: 'application/octet-stream' });
+  });
+}
 
 test.describe('WebGL render perf benchmark (headed)', () => {
   const consoleErrors: string[] = [];
@@ -61,6 +110,7 @@ test.describe('WebGL render perf benchmark (headed)', () => {
     // (`static.cloudflareinsights.com`) and the hyphenated spelling the e2e
     // suite's ignore list also carries.
     await page.route(/cloudflare-?insights\.com/, (route) => route.abort());
+    await servePerfDatasets(page);
 
     page.on('console', (msg) => {
       if (msg.type() === 'error') {

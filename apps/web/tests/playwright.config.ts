@@ -151,9 +151,9 @@ export default defineConfig({
       },
       testMatch: /url-view-state\.spec\.ts/,
     },
-    // Fixture-dependent 573k-protein regression — copy
-    // protspace/data/other/sprot/sprot_50.parquetbundle to
-    // app/tests/fixtures/, then opt in via RUN_LARGE_BUNDLE_E2E=1.
+    // 573k-protein regression on the Swiss-Prot bundle of the perf-datasets
+    // release: run `pnpm perf:fetch --only 573K_swissprot` (into perf/datasets/),
+    // then opt in via RUN_LARGE_BUNDLE_E2E=1.
     ...optIn('RUN_LARGE_BUNDLE_E2E', {
       name: 'load-large-bundle',
       use: {

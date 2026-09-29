@@ -22,6 +22,7 @@
     "test:ci": "turbo test:ci",
     "test:contract": "vitest --run --config tests/contract/vitest.config.ts",
     "perf": "playwright test -c perf/playwright.config.ts perf/webgl-perf.spec.ts",
+    "perf:fetch": "tsx scripts/examples/fetch.mts --perf",
     "lint": "turbo lint && pnpm lint:tooling",
     "lint:tooling": "eslint scripts/ perf/ tests/ docs/",
     "lint:fix": "turbo lint -- --fix && pnpm lint:tooling --fix",
