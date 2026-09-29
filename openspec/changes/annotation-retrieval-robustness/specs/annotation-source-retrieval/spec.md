@@ -124,6 +124,28 @@ a service outage.
 - **THEN** it is written to stderr at warning level
 - **AND** it contains none of the prep service's `BIOCENTRAL_UNAVAILABLE` substrings
 
+### Requirement: Biocentral never submits a sequence it cannot predict
+
+Biocentral prediction SHALL leave out every sequence shorter than 7 or longer than 5,000
+residues, the server's limits, because the server refuses a whole request that holds one. Those
+proteins SHALL get empty prediction values without making the source incomplete, and SHALL be
+counted in one stderr warning that contains none of the prep service's `BIOCENTRAL_UNAVAILABLE`
+substrings. When the server refuses a request and names a sequence as too short or too long, the
+batch SHALL be sent again without it.
+
+#### Scenario: A venom peptide shorter than 7 residues
+
+- **WHEN** one sequence in a batch has 6 residues
+- **THEN** it is not submitted and its prediction values are empty
+- **AND** every other protein in the batch receives its predictions
+- **AND** the Biocentral source is complete, so its columns are cached
+
+#### Scenario: The server refuses a sequence the local limits let through
+
+- **WHEN** a prediction request fails with a 422 naming a sequence as too short or too long
+- **THEN** the batch is sent again without that sequence
+- **AND** that protein's prediction values are empty
+
 ### Requirement: A failed TED lookup is retried after every other accession
 
 TED retrieval SHALL look up again, after the first pass over all accessions, every accession

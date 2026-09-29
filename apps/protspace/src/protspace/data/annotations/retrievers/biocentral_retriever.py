@@ -29,6 +29,16 @@ _PREDICTION_MODELS = {
 # untested beyond a few thousand, and an example-scale run is 100K-485K.
 _BATCH_SIZE = 1000
 
+# The server's per-sequence length limits (biocentral.rostlab.org v1.2.1). It
+# answers a request holding any sequence outside them with 422 for the whole
+# request, so such sequences are never sent: they cannot be predicted at all.
+_MIN_SEQUENCE_LENGTH = 7
+_MAX_SEQUENCE_LENGTH = 5000
+# How a 422 names the offending sequence, should the server's limits change.
+_REFUSED_SEQUENCE = re.compile(r"(\S+) is too (?:short|long)\b")
+# Resends of one batch after the server names a refused sequence.
+_MAX_REFUSAL_RESENDS = 5
+
 
 class BiocentralPredictionRetriever(BaseAnnotationRetriever):
     """Retrieves prediction annotations from the Biocentral API."""
@@ -141,6 +151,16 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                 f"Deduplicated {len(all_seqs)} → {len(seq_data)} unique sequences"
             )
 
+        # Representatives the server cannot predict: never a fetch failure,
+        # so their empty columns are genuine absences and stay cacheable.
+        unpredictable = {
+            header
+            for header, seq in seq_data.items()
+            if not _MIN_SEQUENCE_LENGTH <= len(seq) <= _MAX_SEQUENCE_LENGTH
+        }
+        for header in unpredictable:
+            del seq_data[header]
+
         batches = self._batches(seq_data)
         logger.info(
             f"Running Biocentral predictions ({', '.join(m.name for m in model_enums)}) "
@@ -159,22 +179,39 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                     f"({len(batch)} sequences)"
                 )
                 try:
-                    batch_result = self._predict_batch(api, model_enums, batch)
+                    batch_result = self._predict_batch_resending_refused(
+                        api, model_enums, batch, unpredictable
+                    )
                 except Exception as e:
                     batch_result = None
                     logger.warning(f"{label} failed: {e}")
                 else:
-                    if not batch_result:
+                    if batch_result is None:
                         logger.warning(f"{label} returned no predictions")
 
-                if batch_result:
+                if batch_result is not None:
                     # Keyed by the batch's own representative identifiers,
                     # which are unique across batches, so merging cannot clash.
                     predictions.update(batch_result)
                 else:
                     failed_batches += 1
-                    failed_representatives.update(batch)
+                    failed_representatives.update(
+                        header for header in batch if header not in unpredictable
+                    )
                 pbar.update(len(batch))
+
+        if unpredictable:
+            skipped = sum(
+                1
+                for header in all_seqs
+                if self._seq_duplicates.get(header, header) in unpredictable
+            )
+            # A length limit, not a shortfall: these are left empty and cached.
+            logger.warning(
+                f"Biocentral cannot predict {skipped:,} of {len(all_seqs):,} "
+                f"proteins (shorter than {_MIN_SEQUENCE_LENGTH} or longer than "
+                f"{_MAX_SEQUENCE_LENGTH:,} residues); their predictions stay empty"
+            )
 
         if failed_batches:
             self.prediction_failed = True
@@ -199,6 +236,35 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         return [
             dict(items[i : i + _BATCH_SIZE]) for i in range(0, len(items), _BATCH_SIZE)
         ]
+
+    @classmethod
+    def _predict_batch_resending_refused(
+        cls, api, model_enums: list, batch: dict[str, str], unpredictable: set[str]
+    ) -> dict | None:
+        """Predict one batch, resending it without any sequence the server
+        refuses on length (adding those to *unpredictable*).
+
+        Returns ``None`` when the server answers a non-empty batch with nothing,
+        and ``{}`` when every sequence in it was refused.
+        """
+        remaining = dict(batch)
+        for _ in range(_MAX_REFUSAL_RESENDS + 1):
+            if not remaining:
+                return {}
+            try:
+                result = cls._predict_batch(api, model_enums, remaining)
+            except Exception as e:
+                refused = set(_REFUSED_SEQUENCE.findall(str(e))) & set(remaining)
+                if not refused:
+                    raise
+                unpredictable.update(refused)
+                for header in refused:
+                    del remaining[header]
+                continue
+            return result or None
+        raise RuntimeError(
+            f"the server kept refusing sequences after {_MAX_REFUSAL_RESENDS} resends"
+        )
 
     @staticmethod
     def _predict_batch(api, model_enums: list, batch: dict[str, str]) -> dict | None:

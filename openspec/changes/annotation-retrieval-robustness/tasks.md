@@ -386,3 +386,14 @@ ignored `Retry-After`.
 - [x] 7.10 Gates, all clean: `uv run pytest apps/protspace/tests -q`; from `apps/protspace`,
       `uv run ruff check src tests` and `uv run ruff format --check src tests`; and
       `openspec validate annotation-retrieval-robustness --strict`.
+
+## 8. Biocentral length limits (found by the showcase demo build)
+
+- [x] 8.1 Failing tests in `test_biocentral_retriever.py`: sequences of 6 and 5,001 residues are
+      not submitted, stay empty and leave the source complete, while 7 and 5,000 are predicted;
+      a 422 naming a sequence resends the batch without it; an unexplained failure still fails.
+- [x] 8.2 Leave out sequences outside 7–5,000 residues before batching, resend a batch without a
+      sequence a 422 names (at most 5 times), and warn once with the count. Commit:
+      `fix(protspace): skip sequences Biocentral refuses instead of the batch`.
+- [x] 8.3 Docs: `docs/guide/fetching-and-caching.md`, `apps/protspace/CLAUDE.md`, and the spec
+      delta requirement "Biocentral never submits a sequence it cannot predict".

@@ -146,8 +146,11 @@ each of thousands of batches.
 
 Some requests are not retried. Biocentral predictions are requested in batches of at most 1,000
 sequences, each sent once: a failed batch loses only its own proteins, and Biocentral stays out of
-the cache, so the next run requests them again. UniProt's extra lookups for an inactive accession
-(its replacement entry, or its sequence from UniParc) are single attempts too.
+the cache, so the next run requests them again. Biocentral only predicts sequences of 7 to 5,000
+residues and refuses a whole request holding any other, so shorter or longer sequences (short
+venom peptides, titin) are never sent: their prediction columns stay empty, a warning gives how
+many, and the rest of the source is cached as usual. UniProt's extra lookups for an inactive
+accession (its replacement entry, or its sequence from UniParc) are single attempts too.
 
 ### Requests run in parallel, within limits
 

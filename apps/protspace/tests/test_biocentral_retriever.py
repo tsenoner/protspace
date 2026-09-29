@@ -151,9 +151,12 @@ class _FakeBiocentral:
     answers with a membrane prediction per sequence, keyed like the live server
     (v1.2.1) by the submitted identifier. Batches listed in *failing* raise."""
 
-    def __init__(self, failing=(), error=None):
+    def __init__(self, failing=(), error=None, rejects=()):
         self.failing = set(failing)
         self.error = error or RuntimeError("prediction task failed")
+        # Identifiers the server refuses on length, failing the whole request
+        # the way biocentral.rostlab.org v1.2.1 answers with 422.
+        self.rejects = set(rejects)
         self.requests: list[dict[str, str]] = []
         self.health_checks = 0
 
@@ -172,7 +175,15 @@ class _FakeBiocentral:
             for seq_id, seq in sequence_data.items()
         }
         task = MagicMock()
-        if batch_number in self.failing:
+        rejected = sorted(self.rejects & set(sequence_data))
+        if rejected:
+            error = RuntimeError(
+                "(422)\nHTTP response body: detail=[ValidationError(msg='Value error, "
+                f"{rejected[0]} is too short, min_seq_length=7, max_seq_length=5000')]"
+            )
+            task.run.side_effect = error
+            task.run_with_progress.side_effect = error
+        elif batch_number in self.failing:
             task.run.side_effect = self.error
             task.run_with_progress.side_effect = self.error
         else:
@@ -235,6 +246,73 @@ class TestBatchedPredictions:
         assert long_seq in fake.requests[0].values()
         assert values["LONG"] == f"membrane:{long_seq}"
         assert not retriever.prediction_failed
+
+
+class TestSequenceLengthLimits:
+    """The server refuses a whole request when any one sequence is shorter than
+    7 or longer than 5,000 residues (422). Venom peptides and titin-sized
+    proteins are real inputs, so one of them must not cost 999 neighbours
+    their predictions, and cannot be predicted by retrying either."""
+
+    def test_sequences_outside_the_limits_are_not_submitted(self, caplog):
+        short, long_ = _seq(1, length=6), _seq(2, length=5001)
+        edge_short, edge_long = _seq(3, length=7), _seq(4, length=5000)
+        sequences = {
+            "SHORT": short,
+            "LONG": long_,
+            "EDGE7": edge_short,
+            "EDGE5000": edge_long,
+            "DUP_SHORT": short,
+        }
+        fake = _FakeBiocentral()
+
+        with caplog.at_level("WARNING"):
+            retriever, values = _predict(sequences, fake)
+
+        submitted = {seq for r in fake.requests for seq in r.values()}
+        assert submitted == {edge_short, edge_long}
+        assert values == {
+            "SHORT": "",
+            "LONG": "",
+            "EDGE7": f"membrane:{edge_short}",
+            "EDGE5000": f"membrane:{edge_long}",
+            "DUP_SHORT": "",
+        }
+        # A length the server cannot predict is a genuine absence, not a
+        # fetch failure: the source stays cacheable.
+        assert not retriever.prediction_failed
+
+        notes = [r for r in caplog.records if "cannot predict" in r.getMessage()]
+        assert len(notes) == 1
+        assert notes[0].levelname == "WARNING"
+        assert "3 of 5 proteins" in notes[0].getMessage()
+        text = notes[0].getMessage().lower()
+        assert not [p for p in _BIOCENTRAL_DOWN_PATTERNS if p in text]
+
+    def test_a_batch_refused_for_a_named_sequence_is_resent_without_it(self):
+        """Should the server's limits differ from ours, the 422 names the
+        sequence; the batch is sent again without it."""
+        sequences = {f"P{i}": _seq(i) for i in range(5)}
+        fake = _FakeBiocentral(rejects={"P2"})
+
+        retriever, values = _predict(sequences, fake)
+
+        assert len(fake.requests) == 2
+        assert "P2" not in fake.requests[1]
+        assert values["P2"] == ""
+        for pid in ("P0", "P1", "P3", "P4"):
+            assert values[pid] == f"membrane:{sequences[pid]}"
+        assert not retriever.prediction_failed
+
+    def test_an_unexplained_rejection_still_fails_the_batch(self):
+        sequences = {f"P{i}": _seq(i) for i in range(3)}
+        fake = _FakeBiocentral(failing={1}, error=RuntimeError("(422) other"))
+
+        retriever, values = _predict(sequences, fake)
+
+        assert len(fake.requests) == 1
+        assert retriever.prediction_failed
+        assert set(values.values()) == {""}
 
 
 class TestFailedBatch:
