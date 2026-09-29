@@ -30,12 +30,34 @@ FORMAT_VERSION_KEY = b"protspace_format_version"
 # and has to be refetched (or dropped) instead of reused.
 #
 #   v1: xref_pdb distinguishes "no UniProt entry" ("") from "no PDB" ("False")
+#   v2: protein_families keeps names whole ("(TC 3.A.3)" is no longer cut at
+#       its first ".") and lists every section's family instead of a section
+#       qualifier; the InterPro columns reach every protein sharing a sequence,
+#       where v1 gave them to only one of each group
 #
 # To record a new semantics change, add an entry — the version is derived from
 # this table, so the two cannot drift apart. The pipeline reads nothing else to
 # decide which columns and sources a legacy cache must refresh.
+#
+# The InterPro columns are spelled out rather than imported: the retriever
+# imports this module. A test pins them to `INTERPRO_ANNOTATIONS`.
+_INTERPRO_COLUMNS = frozenset(
+    {
+        "pfam",
+        "superfamily",
+        "cath",
+        "signal_peptide",
+        "smart",
+        "cdd",
+        "panther",
+        "prosite",
+        "prints",
+        "pfam_clan",
+    }
+)
 CACHE_SEMANTICS_CHANGES: dict[int, frozenset[str]] = {
     1: frozenset({"xref_pdb"}),
+    2: frozenset({"protein_families"}) | _INTERPRO_COLUMNS,
 }
 ANNOTATION_CACHE_VERSION = max(CACHE_SEMANTICS_CHANGES)
 ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"

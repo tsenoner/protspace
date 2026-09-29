@@ -271,6 +271,12 @@ def fetch_annotations(
         migration_sources = {
             source for source, columns in stale_by_source.items() if columns
         }
+        if "interpro" in migration_sources and "sequence" not in cached_annotations:
+            # InterPro is looked up by sequence, so a refresh from a cache
+            # without one would find nothing and stamp that as current. Fetch
+            # the sequences as a missing InterPro column would
+            # (`determine_sources_to_fetch`).
+            migration_sources.add("uniprot")
         for source in migration_sources:
             sources[source] = True
         logger.warning(

@@ -9,6 +9,11 @@ import pandas as pd
 import pytest
 
 from protspace.data.annotations.cache import _migrate_legacy_ted_labels
+from protspace.data.annotations.encoding import (
+    ANNOTATION_CACHE_VERSION,
+    ANNOTATION_CACHE_VERSION_ATTR,
+    annotation_cache_version_attrs,
+)
 from protspace.data.loaders.embedding_set import (
     EmbeddingSet,
     format_param_suffix,
@@ -566,6 +571,9 @@ class TestAnnotationCacheMigration:
                 "gene_name": ["INS"],
                 "protein_name": ["Insulin"],
                 "uniprot_kb_id": ["INS_HUMAN"],
+                # Cached with InterPro, which looked it up: a refresh without
+                # it would have to fetch it from UniProt first.
+                "sequence": ["MALWMRLLPL"],
             }
         )
         cached.attrs = {"protspace_annotation_cache_version": 1}
@@ -594,9 +602,7 @@ class TestAnnotationCacheMigration:
         assert result["xref_pdb"].tolist() == ["True"]
         # Stale at v2, so refreshed from its own source.
         assert result["signal_peptide"].tolist() == ["True"]
-        assert pd.read_parquet(cache_path).attrs == {
-            "protspace_annotation_cache_version": 2
-        }
+        assert pd.read_parquet(cache_path).attrs[ANNOTATION_CACHE_VERSION_ATTR] == 2
 
     def test_unrequested_legacy_pdb_column_is_dropped_before_stamping(
         self, tmp_path, monkeypatch
@@ -640,13 +646,18 @@ class TestAnnotationCacheMigration:
 
         assert result["ted_domains"].tolist() == ["3.40.50.2000|94.2"]
         rewritten = pd.read_parquet(cache_path)
-        assert rewritten.attrs == {"protspace_annotation_cache_version": 1}
+        assert (
+            rewritten.attrs[ANNOTATION_CACHE_VERSION_ATTR] == ANNOTATION_CACHE_VERSION
+        )
         assert "xref_pdb" not in rewritten.columns
 
     def test_legacy_pdb_migration_preserves_cached_taxonomy(
         self, tmp_path, monkeypatch
     ):
         """Migration must retain taxonomy while replacing stale UniProt values."""
+        from protspace.data.annotations.retrievers.interpro_retriever import (
+            InterProRetriever,
+        )
         from protspace.data.annotations.retrievers.uniprot_retriever import (
             ProteinAnnotations,
             UniProtRetriever,
@@ -694,6 +705,21 @@ class TestAnnotationCacheMigration:
         monkeypatch.setattr(
             UniProtRetriever, "fetch_annotations", fetch_current_annotations
         )
+        # The unstamped cache also predates the v2 InterPro fix, so the
+        # requested signal_peptide is refreshed alongside UniProt.
+        monkeypatch.setattr(
+            InterProRetriever,
+            "fetch_annotations",
+            lambda _self: [
+                ProteinAnnotations(
+                    identifier="unresolved", annotations={"signal_peptide": "True"}
+                ),
+                ProteinAnnotations(
+                    identifier="resolved_without_pdb",
+                    annotations={"signal_peptide": "False"},
+                ),
+            ],
+        )
         pipeline = _cache_pipeline(
             tmp_path, annotations=["xref_pdb", "genus", "signal_peptide"]
         )
@@ -707,7 +733,10 @@ class TestAnnotationCacheMigration:
         assert result["signal_peptide"].tolist() == ["True", "False"]
         migrated_cache = pd.read_parquet(cache_path)
         assert migrated_cache["genus"].tolist() == ["", "Homo"]
-        assert migrated_cache.attrs == {"protspace_annotation_cache_version": 1}
+        assert (
+            migrated_cache.attrs[ANNOTATION_CACHE_VERSION_ATTR]
+            == ANNOTATION_CACHE_VERSION
+        )
 
         def fail_if_refetched(_self):
             raise AssertionError("current cache should use the fast path")
@@ -1254,9 +1283,12 @@ def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monke
     )
 
     cache_path = tmp_path / "all_annotations.parquet"
-    pd.DataFrame(
+    cached = pd.DataFrame(
         {"identifier": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001"]}
-    ).to_parquet(cache_path, index=False)
+    )
+    # Current, so this is a fill-in rather than a legacy InterPro refresh.
+    cached.attrs = annotation_cache_version_attrs()
+    cached.to_parquet(cache_path, index=False)
 
     monkeypatch.setattr(
         UniProtRetriever,
