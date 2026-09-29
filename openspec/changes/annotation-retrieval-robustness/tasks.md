@@ -293,7 +293,7 @@ returns AI-predicted InterPro-N matches, which leaked into the member-database c
   - `map_in_order` yields in input order under jittered delays, never runs more than `workers`
     calls at once, never submits more than `2 × workers` ahead, runs inline with one worker, and
     once closed early starts no further call and leaves none running.
-- [x] 6.4 Add `pooled_session`, the session-wide `Retry-After` pause, `map_in_order` and the
+- [x] 6.4 Add `PooledSession`, the session-wide `Retry-After` pause, `map_in_order` and the
       `session` parameters to `http_utils.py`. Commit:
       `refactor(protspace): let the retry helpers share a session`.
 - [x] 6.5 Failing tests in `test_ted_retriever.py`:
@@ -303,7 +303,7 @@ returns AI-predicted InterPro-N matches, which leaked into the member-database c
   - with a service that stays down, the final pass stops after 10 failures in a row at any
     concurrency and makes at most `10 + 2 × workers` lookups;
   - the CATH names load once when parallel lookups need them.
-- [x] 6.6 Run both TED passes through `map_in_order` on one `pooled_session`, with lookups that
+- [x] 6.6 Run both TED passes through `map_in_order` on one `PooledSession`, with lookups that
       return their error instead of raising, and load the CATH names under a lock. Commit:
       `perf(protspace): look up TED domains 8 at a time over one session`.
 - [x] 6.7 Failing tests in `test_interpro_annotation_retriever.py`:
@@ -313,14 +313,14 @@ returns AI-predicted InterPro-N matches, which leaked into the member-database c
   - the outage breaker trips after 10 lost batches in a row in input order at any concurrency,
     and requests at most `10 + 2 × workers` batches;
   - the existing ordering-sensitive retry and breaker tests pin one worker.
-- [x] 6.8 Send InterPro match batches through `map_in_order` on one `pooled_session`. Commit:
+- [x] 6.8 Send InterPro match batches through `map_in_order` on one `PooledSession`. Commit:
       `perf(protspace): send 4 InterPro match batches at a time`.
 - [x] 6.9 Failing tests in `test_uniprot_annotation_retriever.py`: the batches, the inactive-entry
       lookups, UniParc and the secondary-accession search all go through one session, and
       `releases` still collects every `X-UniProt-Release`. Move the fake servers of
       `test_uniprot_annotation_retriever.py` and `test_annotation_retrieval_e2e.py` to
       `requests.Session`.
-- [x] 6.10 Give `UniProtRetriever.fetch_annotations` one `pooled_session` and pass it to every
+- [x] 6.10 Give `UniProtRetriever.fetch_annotations` one `PooledSession` and pass it to every
       request helper, keeping one request at a time. Commit:
       `perf(protspace): reuse one connection for UniProt requests`.
 - [x] 6.11 Docs: in `docs/guide/fetching-and-caching.md`, the parallel lookups, the shared
@@ -336,3 +336,53 @@ returns AI-predicted InterPro-N matches, which leaked into the member-database c
       14.4 and 120.2 lookups a second; 1,200 Swiss-Prot sequences through `InterProRetriever`
       (`pfam`, `cdd`, `prosite`, `prints`) gave identical rows at 1 and 4, at 51 and 223
       sequences a second, with no lost batch and no unscored `pfam` hit.
+
+## 7. Throughput review follow-ups
+
+A review of section 6 found that one slow request still idled the pool, that a request already
+waiting out a `Retry-After` could resend inside a longer one, that a tripped breaker or Ctrl-C
+waited out the retry budgets of the requests in flight, and that UniProt's single-attempt lookups
+ignored `Retry-After`.
+
+- [x] 7.1 Failing tests in `test_http_retry.py`, on a fake clock that replaces `http_utils.time`
+      and `http_utils._sleep` instead of the global `time.sleep`: a pause extended by another
+      request while one waits is waited out to its new end, on the fake clock and with real
+      threads.
+- [x] 7.2 Check the pause's end again after every sleep. Commit:
+      `fix(protspace): wait out a Retry-After extended during the wait`.
+- [x] 7.3 Failing tests:
+  - `test_http_retry.py`: a stopped `PooledSession` sends nothing (`FetchStopped`); setting
+    `stop` ends a backoff and a `Retry-After` pause at once, with the error of the attempt made;
+    `map_in_order` sets `stop` when closed early or interrupted, not when it runs to the end;
+    closing it releases the calls waiting to retry;
+  - `test_interpro_annotation_retriever.py` and `test_ted_retriever.py`: when the breaker trips
+    while later batches or final-pass lookups back off, they give up after one attempt and the
+    fetch returns at once.
+- [x] 7.4 Give `PooledSession` a `stop` event, wait on it in the backoff and the pause, have
+      `map_in_order` set it on any early end, and pass the session's event from TED and InterPro.
+      Commit: `fix(protspace): stop retrying once a fetch is abandoned`.
+- [x] 7.5 Failing tests:
+  - `map_in_order` keeps 16 calls per worker going while its first call waits;
+  - `map_as_completed` yields every `(index, result)` once, runs at most `workers` calls, keeps
+    at most two per worker queued, holds a slow call on its own worker, runs inline with one
+    worker, and sets `stop` on an early end;
+  - TED: the first of 1,000 lookups answers only once the other 999 have, and the "still failed"
+    warning is identical at 1, 8 and 16 workers;
+  - InterPro: the first of 200 batches answers only once 100 others have;
+  - the breaker-bound tests pin the lookahead to two per worker, so their bound stays tighter
+    than the input.
+- [x] 7.6 Add `map_as_completed` for TED's first pass (failures sorted before the final pass) and
+      submit 64 calls per worker ahead in `map_in_order`. Commit:
+      `perf(protspace): keep workers busy while one lookup is slow`.
+- [x] 7.7 Failing tests in `test_uniprot_annotation_retriever.py`: a `Retry-After` on an
+      inactive-entry lookup, and on a UniParc lookup, holds the next request until it ends.
+- [x] 7.8 Send `_fetch_one_with_timeout` and `_fetch_uniparc_sequence` through
+      `get_with_retry(attempts=1)`. Commit:
+      `fix(protspace): let UniProt entry lookups honour Retry-After`.
+- [x] 7.9 Docs: the TED durations in `docs/guide/fetching-and-caching.md` and in this change's
+      TED final-pass requirement; the slow-request and stop behaviour in the guide, the spec delta,
+      `design.md` and `apps/protspace/CLAUDE.md`; `PooledSession` for `pooled_session` in
+      `design.md` and tasks 6.4 to 6.10.
+- [x] 7.10 Gates, all clean: `uv run pytest apps/protspace/tests -q`; from `apps/protspace`,
+      `uv run ruff check src tests` and `uv run ruff format --check src tests`; and
+      `openspec validate annotation-retrieval-robustness --strict`.

@@ -43,7 +43,7 @@ partition" below.
 
 **Non-Goals:**
 
-- Checkpoints _within_ a source, such as a TED journal that resumes a crashed 20-hour TED pass
+- Checkpoints _within_ a source, such as a TED journal that resumes a crashed TED pass
   halfway through. The final retry pass covers transient failures; a killed process still redoes
   that one source. Candidate follow-up.
 - Per-identifier retrieval provenance: recording which proteins a source actually covered, so an
@@ -183,41 +183,59 @@ set that pace. Measured against the live APIs with Swiss-Prot accessions:
 
 No 429 and no 5xx came back in 680 TED requests at up to 16 in parallel.
 
-`http_utils` gains three pieces:
+`http_utils` gains these pieces:
 
 - `get_with_retry`, `post_with_retry` and `paginated_get` take an optional `session`. Without one
   they call `requests.get`/`requests.post` as before, so the taxonomy retriever is unchanged.
-- `pooled_session(connections)` returns a `requests.Session` whose connection pool holds that many
+- `PooledSession(connections)` is a `requests.Session` whose connection pool holds that many
   connections per host. When a server answers any request on the session with `Retry-After`,
   every later attempt on the session waits until that time, not only the thread that received
   it. Under concurrency, one request's backoff would otherwise leave the others firing at a
-  server that asked for a pause.
-- `map_in_order(fn, items, workers)` runs at most `workers` calls at once and yields their results
-  in input order. It submits at most `2 × workers` calls ahead of the result it yields, so a 573K
-  input never holds 573K futures. With `workers <= 1` it calls `fn` inline, one item at a time.
-  Closing the iterator early cancels the queued calls and waits for the running ones, so no
-  request outlives the fetch. An interrupt cancels the queue without waiting.
+  server that asked for a pause. A waiting thread checks the end again after each sleep, because
+  another request's `Retry-After` may have pushed it later meanwhile. The session also carries a
+  `stop` event: once it is set, the retry helpers send nothing more on the session
+  (`FetchStopped`), and a request waiting to retry gives up at once with the error of the attempt
+  it made. The backoff and the pause wait on that event instead of sleeping.
+- `map_in_order(fn, items, workers, stop)` runs at most `workers` calls at once and yields their
+  results in input order, for the passes whose breaker counts in input order: TED's final pass
+  and InterPro. It submits at most 64 calls per worker ahead of the result it yields. While one
+  slow call holds up the next result, the other workers have that many calls to go on with,
+  which covers an InterPro batch's whole retry budget (about two minutes) at 4 workers; two per
+  worker, the first choice, let one slow call idle the whole pool. A 573K input still never holds
+  573K futures, and an InterPro future holds at most the results the fetch keeps anyway.
+- `map_as_completed(fn, items, workers, stop)` yields `(index, result)` as calls finish, with two
+  calls per worker queued, for TED's first pass. That pass files each result by position and
+  counts nothing in input order, so a lookup that times out (about 21 s: two 10 s attempts and a
+  1 s backoff) holds up only its own worker. Its failures are sorted before the final pass.
+- Both call `fn` inline with `workers <= 1`. When the iteration ends early, because the caller
+  closes it as a breaker does or an error or interrupt ends it, they set `stop` (the session's),
+  cancel the queued calls and wait for the running ones, which give up after their current
+  attempt. No request outlives the fetch. An interrupt does not wait.
 
 The retrievers use them as follows:
 
 - **TED** sends up to `ted_retriever.MAX_CONCURRENT_REQUESTS` (8) lookups at once, in the first
-  pass and in the final pass. Each lookup returns its value or its error rather than raising, and
-  the results are consumed in input order, so failure counting, the final pass and its breaker
-  work on the same sequence as before. The CATH names still load lazily, now under a lock, so
-  parallel lookups do not download them twice.
+  pass and in the final pass. Each lookup returns its value or its error rather than raising. The
+  first pass takes the results as they finish and the final pass in input order, so failure
+  counting, the final pass and its breaker work on the same sequence as before. The CATH names
+  still load lazily, now under a lock, so parallel lookups do not download them twice.
 - **InterPro** sends up to `interpro_retriever.MAX_CONCURRENT_REQUESTS` (4) match batches at once,
   with the same retry budget and MD5 fan-out.
 - **UniProt** reuses one session for its batches, inactive-entry lookups, UniParc and
-  secondary-accession searches, one request at a time. Parallel batches would save about 10
+  secondary-accession searches, one request at a time. The single-attempt inactive-entry and
+  UniParc lookups go through `get_with_retry` with one attempt, so they wait out, and pass on, a
+  `Retry-After` like every other request on the session. Parallel batches would save about 10
   minutes of 31. They would also need the per-batch inactive-entry resolution, the result list
   and the release set made safe for threads. UniProt is not on the critical path.
 
 The breakers count failures in input order, as the results are consumed. After 10 lost InterPro
 batches or 10 failed TED final-pass lookups in a row, the loop stops, the queued requests are
-cancelled, and the running ones finish. Everything not yet consumed counts as lost, whether or
-not its request completed. Once a service is down, the requests made are therefore bounded by the
-breaker's limit plus the `2 × workers` submitted ahead. A lookup that succeeds resets the count,
-as before.
+cancelled, and the running ones make no further attempt. Everything not yet consumed counts as
+lost, whether or not its request completed. The requests started beyond the ten are at most the
+64 per worker submitted ahead. In an outage every failing call pays its full backoff, so the
+workers stay in step with the results being used and it is about two per worker in practice; only
+a call much slower than the failing ones around it lets the others run further ahead. A lookup
+that succeeds resets the count, as before.
 
 The limits are module constants and constructor keywords (`max_concurrent_requests`). This
 follows how the retrievers expose `CHUNK_SIZE`, `_BATCH_SIZE` and the attempt budgets. There is no
@@ -296,7 +314,8 @@ path:
 
 `protect_cached_columns` keeps what the cache already holds for an incomplete source instead of
 dropping it. It used to do that by skipping the whole write, which also discarded every source
-that did finish: one InterPro batch lost after its retries cost a completed 18-40 hour TED pass.
+that did finish: one InterPro batch lost after its retries cost a completed TED pass (18-40 hours before this
+change).
 The write now goes ahead with the incomplete source's cached values read back from the file and
 kept unchanged, for the proteins the cache holds them for. A protein the cache holds no value
 for is left out and fetched by the next run, because an empty cell would read as "no
@@ -482,9 +501,14 @@ Frozen interfaces:
 - **Parallel requests load the public APIs harder.** → The defaults (8 for AlphaFold DB, 4 for
   InterPro) are the levels measured without a single 429 or 5xx. A `Retry-After` pauses every
   request on the session, and the retry budgets and breakers are unchanged.
-- **Ctrl-C waits for the requests in flight.** → The queue is cancelled at once, but Python cannot
-  stop a running thread. The process exits when the running requests finish, which takes at most
-  one request's retry budget and is usually well under a second.
+- **Ctrl-C waits for the requests in flight.** → The queue is cancelled and `stop` set at once.
+  Python cannot stop a running thread, but the running requests make no further attempt, so the
+  process exits once the attempts in flight end: at most one request timeout (10 s for TED, 30 s
+  for InterPro), and usually well under a second.
+- **The ordered passes can run further ahead of a tripped breaker.** → Up to 64 calls per worker,
+  and only when one call is much slower than the failing ones around it; in an outage each
+  failing call pays its full backoff and the workers stay in step. `stop` ends the retries of
+  whatever is still running.
 - **A cache written by a pre-release build of this branch keeps InterPro-N values.** → It is
   stamped version 2, the version the filter joins. Only development caches are affected, and
   `--refetch interpro` repairs one.

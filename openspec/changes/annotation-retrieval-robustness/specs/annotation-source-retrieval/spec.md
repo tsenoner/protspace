@@ -128,8 +128,8 @@ a service outage.
 
 TED retrieval SHALL look up again, after the first pass over all accessions, every accession
 whose lookup failed in that pass, using the default attempt budget. Only lookups still failing
-after this final pass SHALL make the TED source incomplete. TED is one request per accession, 18
-to 40 hours at Swiss-Prot scale, so without this a single lookup that fails its small
+after this final pass SHALL make the TED source incomplete. TED is one request per accession,
+over half a million at Swiss-Prot scale, so without this a single lookup that fails its small
 first-pass budget discards the whole source.
 
 #### Scenario: A lookup fails during a brief outage
@@ -194,9 +194,11 @@ TED and InterPro retrieval SHALL send their requests over one reused connection 
 with at most 8 TED lookups and 4 InterPro match batches in flight by default, and SHALL produce
 the same values, in the same order and with the same failure counts, as sending one request at a
 time. UniProt retrieval SHALL send all its requests over one reused connection pool, one at a
-time. A new connection per request and one request at a time made TED take about 23 hours and
-InterPro about 4 at Swiss-Prot scale; the measured parallel rates bring each to about 1.5 hours
-without a 429 or 5xx from either service.
+time. A request that is slow to finish SHALL NOT stop the other requests of its source from being
+sent while it runs, and once a pass stops early no request of it SHALL be attempted again. A new
+connection per request and one request at a time made TED take about 23 hours and InterPro about 4
+at Swiss-Prot scale; the measured parallel rates bring each to about 1.5 hours without a 429 or
+5xx from either service.
 
 #### Scenario: Parallel results match sequential ones
 
@@ -212,20 +214,32 @@ without a 429 or 5xx from either service.
 
 #### Scenario: The server asks for a pause
 
-- **WHEN** any request of a source receives a retryable status with a `Retry-After` header
+- **WHEN** any TED, InterPro or UniProt request, a single-attempt UniProt lookup included,
+  receives a retryable status with a `Retry-After` header
 - **THEN** no request of that source is attempted before that time, capped at the shared maximum
-  backoff
+  backoff, even by a request that was already waiting out an earlier, shorter pause
+
+#### Scenario: One request is slow
+
+- **WHEN** one TED lookup or InterPro batch takes far longer than the others, such as a lookup
+  that times out
+- **THEN** the other requests go on being sent while it runs: every other TED first-pass lookup,
+  and up to 64 per concurrent request ahead of it in the passes whose results are used in input
+  order (the TED final pass and InterPro)
 
 #### Scenario: A service goes down during a parallel pass
 
 - **WHEN** TED final-pass lookups or InterPro batches fail 10 in a row, counted in input order
-- **THEN** no request is started beyond those already submitted, at most twice the concurrency
-  limit ahead of the last result used
+- **THEN** no request is started beyond those already submitted, at most 64 per concurrent
+  request ahead of the last result used
+- **AND** a request still retrying makes no further attempt, so the fetch ends once the attempts
+  in flight end
 
 #### Scenario: The fetch is interrupted
 
 - **WHEN** a TED or InterPro fetch is interrupted
-- **THEN** no queued request is started, and the process stops once the requests in flight end
+- **THEN** no queued request is started and no request in flight is attempted again, and the
+  process stops once the attempts in flight end
 
 #### Scenario: UniProt reuses its connection
 
