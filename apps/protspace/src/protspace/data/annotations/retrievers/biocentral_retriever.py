@@ -38,6 +38,12 @@ _MAX_SEQUENCE_LENGTH = 5000
 _REFUSED_SEQUENCE = re.compile(r"(\S+) is too (?:short|long)\b")
 # Resends of one batch after the server names a refused sequence.
 _MAX_REFUSAL_RESENDS = 5
+# Total residues per request. The models fail on ~500K (820 phosphatases) and
+# succeed on the same sequences as two requests of ~250K each.
+_MAX_BATCH_RESIDUES = 200_000
+# A batch that fails for no stated reason is split in half and resent, at most
+# this many levels deep (1 + 2 + 4 requests), so an outage is not hammered.
+_MAX_SPLIT_DEPTH = 2
 
 
 class BiocentralPredictionRetriever(BaseAnnotationRetriever):
@@ -178,26 +184,15 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                     f"Biocentral prediction batch {number} of {len(batches)} "
                     f"({len(batch)} sequences)"
                 )
-                try:
-                    batch_result = self._predict_batch_resending_refused(
-                        api, model_enums, batch, unpredictable
-                    )
-                except Exception as e:
-                    batch_result = None
-                    logger.warning(f"{label} failed: {e}")
-                else:
-                    if batch_result is None:
-                        logger.warning(f"{label} returned no predictions")
-
-                if batch_result is not None:
-                    # Keyed by the batch's own representative identifiers,
-                    # which are unique across batches, so merging cannot clash.
-                    predictions.update(batch_result)
-                else:
+                batch_predictions, batch_failed = self._predict_with_fallbacks(
+                    api, model_enums, batch, unpredictable, label
+                )
+                # Keyed by the batch's own representative identifiers, which
+                # are unique across batches, so merging cannot clash.
+                predictions.update(batch_predictions)
+                if batch_failed:
                     failed_batches += 1
-                    failed_representatives.update(
-                        header for header in batch if header not in unpredictable
-                    )
+                    failed_representatives.update(batch_failed)
                 pbar.update(len(batch))
 
         if unpredictable:
@@ -231,40 +226,80 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
 
     @staticmethod
     def _batches(seq_data: dict[str, str]) -> list[dict[str, str]]:
-        """Split unique sequences into consecutive batches of ``_BATCH_SIZE``."""
-        items = list(seq_data.items())
-        return [
-            dict(items[i : i + _BATCH_SIZE]) for i in range(0, len(items), _BATCH_SIZE)
-        ]
+        """Split unique sequences into consecutive batches of at most
+        ``_BATCH_SIZE`` sequences and ``_MAX_BATCH_RESIDUES`` residues (a longer
+        sequence gets a batch of its own)."""
+        batches: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+        residues = 0
+        for header, seq in seq_data.items():
+            if current and (
+                len(current) >= _BATCH_SIZE or residues + len(seq) > _MAX_BATCH_RESIDUES
+            ):
+                batches.append(current)
+                current, residues = {}, 0
+            current[header] = seq
+            residues += len(seq)
+        if current:
+            batches.append(current)
+        return batches
 
     @classmethod
-    def _predict_batch_resending_refused(
-        cls, api, model_enums: list, batch: dict[str, str], unpredictable: set[str]
-    ) -> dict | None:
-        """Predict one batch, resending it without any sequence the server
-        refuses on length (adding those to *unpredictable*).
+    def _predict_with_fallbacks(
+        cls,
+        api,
+        model_enums: list,
+        batch: dict[str, str],
+        unpredictable: set[str],
+        label: str,
+        depth: int = 0,
+    ) -> tuple[dict, set[str]]:
+        """Predict one batch; return its predictions and the representatives
+        left without any.
 
-        Returns ``None`` when the server answers a non-empty batch with nothing,
-        and ``{}`` when every sequence in it was refused.
+        A sequence the server refuses on length is added to *unpredictable* and
+        the batch resent without it. A batch that fails otherwise, or comes back
+        empty, is split in half and each half resent, ``_MAX_SPLIT_DEPTH`` levels
+        deep, so one bad request loses as few proteins as possible.
         """
         remaining = dict(batch)
         for _ in range(_MAX_REFUSAL_RESENDS + 1):
             if not remaining:
-                return {}
+                return {}, set()
             try:
                 result = cls._predict_batch(api, model_enums, remaining)
             except Exception as e:
                 refused = set(_REFUSED_SEQUENCE.findall(str(e))) & set(remaining)
-                if not refused:
-                    raise
-                unpredictable.update(refused)
-                for header in refused:
-                    del remaining[header]
-                continue
-            return result or None
-        raise RuntimeError(
-            f"the server kept refusing sequences after {_MAX_REFUSAL_RESENDS} resends"
-        )
+                if refused:
+                    unpredictable.update(refused)
+                    for header in refused:
+                        del remaining[header]
+                    continue
+                reason = f"failed: {e}"
+            else:
+                if result:
+                    return result, set()
+                reason = "returned no predictions"
+            break
+        else:
+            reason = f"was refused {_MAX_REFUSAL_RESENDS + 1} times"
+
+        if depth < _MAX_SPLIT_DEPTH and len(remaining) > 1:
+            items = list(remaining.items())
+            half = len(items) // 2
+            predictions: dict = {}
+            failed: set[str] = set()
+            for part in (dict(items[:half]), dict(items[half:])):
+                part_predictions, part_failed = cls._predict_with_fallbacks(
+                    api, model_enums, part, unpredictable, label, depth + 1
+                )
+                predictions.update(part_predictions)
+                failed |= part_failed
+            return predictions, failed
+
+        scope = f"{label}" if depth == 0 else f"{label}, a part of {len(remaining)}"
+        logger.warning(f"{scope} {reason}")
+        return {}, set(remaining)
 
     @staticmethod
     def _predict_batch(api, model_enums: list, batch: dict[str, str]) -> dict | None:

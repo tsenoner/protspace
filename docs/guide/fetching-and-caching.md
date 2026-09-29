@@ -144,9 +144,10 @@ usually passed; that final pass gives up after 10 failures in a row. InterPro li
 after 10 batches in a row are lost, and counts the rest as lost rather than paying the backoff for
 each of thousands of batches.
 
-Some requests are not retried. Biocentral predictions are requested in batches of at most 1,000
-sequences, each sent once: a failed batch loses only its own proteins, and Biocentral stays out of
-the cache, so the next run requests them again. Biocentral only predicts sequences of 7 to 5,000
+Biocentral predictions are requested in batches of at most 1,000 sequences and 200,000 residues
+(its models fail on much larger requests). A batch that fails is split in half and each half sent
+again, two levels deep; whatever still fails loses only its own proteins, and Biocentral stays out
+of the cache, so the next run requests them again. Biocentral only predicts sequences of 7 to 5,000
 residues and refuses a whole request holding any other, so shorter or longer sequences (short
 venom peptides, titin) are never sent: their prediction columns stay empty, a warning gives how
 many, and the rest of the source is cached as usual. UniProt's extra lookups for an inactive

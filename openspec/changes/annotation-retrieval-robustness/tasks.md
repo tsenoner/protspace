@@ -397,3 +397,9 @@ ignored `Retry-After`.
       `fix(protspace): skip sequences Biocentral refuses instead of the batch`.
 - [x] 8.3 Docs: `docs/guide/fetching-and-caching.md`, `apps/protspace/CLAUDE.md`, and the spec
       delta requirement "Biocentral never submits a sequence it cannot predict".
+- [x] 8.4 Failing tests (`TestResidueBudget`): batches stay under a residue budget, a sequence
+      over it goes alone, a failed batch is split and its halves resent, splitting stops after two
+      levels; the older failure tests now fail on identifiers so splitting cannot rescue them.
+- [x] 8.5 Bound batches at 200,000 residues and split a failed batch two levels deep (measured
+      live: 820 phosphatases, 494,522 residues, fail as one request and succeed as two halves).
+      Commit: `fix(protspace): bound Biocentral requests by residues, split on failure`.

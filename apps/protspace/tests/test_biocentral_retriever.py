@@ -151,8 +151,11 @@ class _FakeBiocentral:
     answers with a membrane prediction per sequence, keyed like the live server
     (v1.2.1) by the submitted identifier. Batches listed in *failing* raise."""
 
-    def __init__(self, failing=(), error=None, rejects=()):
+    def __init__(self, failing=(), error=None, rejects=(), failing_ids=()):
         self.failing = set(failing)
+        # Identifiers whose every request fails (a batch split and resent
+        # still fails while it holds one of them).
+        self.failing_ids = set(failing_ids)
         self.error = error or RuntimeError("prediction task failed")
         # Identifiers the server refuses on length, failing the whole request
         # the way biocentral.rostlab.org v1.2.1 answers with 422.
@@ -183,7 +186,7 @@ class _FakeBiocentral:
             )
             task.run.side_effect = error
             task.run_with_progress.side_effect = error
-        elif batch_number in self.failing:
+        elif batch_number in self.failing or self.failing_ids & set(sequence_data):
             task.run.side_effect = self.error
             task.run_with_progress.side_effect = self.error
         else:
@@ -306,13 +309,66 @@ class TestSequenceLengthLimits:
 
     def test_an_unexplained_rejection_still_fails_the_batch(self):
         sequences = {f"P{i}": _seq(i) for i in range(3)}
-        fake = _FakeBiocentral(failing={1}, error=RuntimeError("(422) other"))
+        fake = _FakeBiocentral(failing={1, 2, 3, 4, 5, 6, 7}, error=RuntimeError("x"))
 
         retriever, values = _predict(sequences, fake)
 
-        assert len(fake.requests) == 1
         assert retriever.prediction_failed
         assert set(values.values()) == {""}
+
+
+class TestResidueBudget:
+    """The server's models fail on a request of about 500K residues (820
+    phosphatases) that succeeds as two halves of 250K, so batches are bounded
+    by total residues as well as by count, and a failed batch is split."""
+
+    def test_batches_stay_under_the_residue_budget(self, monkeypatch):
+        import sys
+
+        module = sys.modules[BiocentralPredictionRetriever.__module__]
+        monkeypatch.setattr(module, "_MAX_BATCH_RESIDUES", 100)
+        sequences = {f"P{i}": _seq(i, length=30) for i in range(10)}
+        fake = _FakeBiocentral()
+
+        retriever, values = _predict(sequences, fake)
+
+        assert [len(r) for r in fake.requests] == [3, 3, 3, 1]
+        assert all(sum(map(len, r.values())) <= 100 for r in fake.requests)
+        assert not retriever.prediction_failed
+        assert values == {pid: f"membrane:{seq}" for pid, seq in sequences.items()}
+
+    def test_a_sequence_over_the_budget_is_sent_on_its_own(self, monkeypatch):
+        import sys
+
+        module = sys.modules[BiocentralPredictionRetriever.__module__]
+        monkeypatch.setattr(module, "_MAX_BATCH_RESIDUES", 100)
+        sequences = {"A": _seq(1, 30), "BIG": _seq(2, 150), "C": _seq(3, 30)}
+        fake = _FakeBiocentral()
+
+        _, values = _predict(sequences, fake)
+
+        assert [sorted(r) for r in fake.requests] == [["A"], ["BIG"], ["C"]]
+        assert values["BIG"] == f"membrane:{sequences['BIG']}"
+
+    def test_a_failed_batch_is_split_and_its_halves_resent(self):
+        sequences = {f"P{i}": _seq(i) for i in range(8)}
+        fake = _FakeBiocentral(failing={1})
+
+        retriever, values = _predict(sequences, fake)
+
+        assert [len(r) for r in fake.requests] == [8, 4, 4]
+        assert not retriever.prediction_failed
+        assert values == {pid: f"membrane:{seq}" for pid, seq in sequences.items()}
+
+    def test_splitting_stops_after_two_levels(self):
+        sequences = {f"P{i}": _seq(i) for i in range(8)}
+        fake = _FakeBiocentral(failing=set(range(1, 20)))
+
+        retriever, _ = _predict(sequences, fake)
+
+        # 1 whole batch + 2 halves + 4 quarters, then it gives up.
+        assert len(fake.requests) == 7
+        assert retriever.prediction_failed
 
 
 class TestFailedBatch:
@@ -321,7 +377,7 @@ class TestFailedBatch:
 
     def test_the_other_batches_keep_their_predictions(self, caplog):
         sequences = {f"P{i}": _seq(i) for i in range(2500)}
-        fake = _FakeBiocentral(failing={2})
+        fake = _FakeBiocentral(failing_ids={f"P{i}" for i in range(1000, 2000)})
 
         with caplog.at_level("WARNING"):
             retriever, values = _predict(sequences, fake)
@@ -363,7 +419,8 @@ class TestFailedBatch:
         when the batch itself failed with an outage-looking error."""
         sequences = {f"P{i}": _seq(i) for i in range(1500)}
         fake = _FakeBiocentral(
-            failing={1}, error=ConnectionError("503 Server Error: connection refused")
+            failing_ids={f"P{i}" for i in range(1000)},
+            error=ConnectionError("503 Server Error: connection refused"),
         )
 
         with caplog.at_level("WARNING"):
@@ -376,7 +433,7 @@ class TestFailedBatch:
 
     def test_every_batch_failing_marks_the_source_failed(self):
         sequences = {f"P{i}": _seq(i) for i in range(3)}
-        fake = _FakeBiocentral(failing={1})
+        fake = _FakeBiocentral(failing_ids=set(sequences))
 
         retriever, values = _predict(sequences, fake)
 

@@ -146,6 +146,31 @@ batch SHALL be sent again without it.
 - **THEN** the batch is sent again without that sequence
 - **AND** that protein's prediction values are empty
 
+### Requirement: Biocentral requests stay within a residue budget
+
+Biocentral prediction SHALL bound each request by total residues (at most 200,000) as well as by
+sequence count, giving a longer sequence a request of its own, because the server's models fail
+on requests of about 500,000 residues that succeed when split. A request that fails without
+naming a refused sequence SHALL be split in half and each half sent again, at most two levels
+deep, and only the proteins of parts that still fail SHALL lack predictions.
+
+#### Scenario: Long proteins fill a batch before its count limit
+
+- **WHEN** the unique sequences of a run exceed 200,000 residues before reaching 1,000 sequences
+- **THEN** a new batch is started so that no request exceeds 200,000 residues
+
+#### Scenario: A failed batch is recovered by splitting
+
+- **WHEN** a batch fails and both of its halves succeed when sent again
+- **THEN** every protein of the batch receives its predictions
+- **AND** the Biocentral source is complete
+
+#### Scenario: Splitting is bounded
+
+- **WHEN** every part of a failed batch keeps failing
+- **THEN** at most seven requests are sent for it (the batch, two halves, four quarters)
+- **AND** the source is incomplete
+
 ### Requirement: A failed TED lookup is retried after every other accession
 
 TED retrieval SHALL look up again, after the first pass over all accessions, every accession
