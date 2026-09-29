@@ -60,6 +60,19 @@ function baseInputs(overrides: Partial<VisibilityInputs> = {}): VisibilityInputs
 }
 
 describe('computeVisibilityModel', () => {
+  describe('focusedValues (Shift+hover)', () => {
+    it('fades points with none of the focused values; selection still wins', () => {
+      const data = makeData(['A', 'B', null], [[0], [1], [0, 1], []]);
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(model.baseOpacityOf(point('p3', 3))).toBe(OPACITIES.faded);
+    });
+  });
+
   // ── #6a: reliability dimming removed — predicted points render at base
   // opacity, identical to observed points, distinguished only by the hollow
   // ring glyph (drawn elsewhere). Confidence no longer feeds opacity at all.

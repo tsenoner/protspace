@@ -20,6 +20,7 @@ import {
   plotDataId,
   materializePlotDataPoint,
   materializeEatOverlay,
+  getProteinAnnotationValues,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -97,6 +98,7 @@ type VisibilityModelMemoKey = {
   selectedOpacity: number;
   fadedOpacity: number;
   eatOverlayEnabled: boolean;
+  focusedValues: string[] | null;
 };
 
 // Default configuration moved to config.ts
@@ -198,6 +200,7 @@ export class ProtspaceScatterplot extends LitElement {
     hiddenAnnotationValues: string[];
     selectedProteinIds: string[] | null;
     highlightedProteinIds: string[] | null;
+    focusedValues: string[] | null;
     baseOpacity: number;
     selectedOpacity: number;
     fadedOpacity: number;
@@ -214,6 +217,10 @@ export class ProtspaceScatterplot extends LitElement {
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
   private _hoveredProteinId: string | null = null;
+  private _hoveredPoint: PlotDataPoint | null = null;
+  private _shiftDown = false;
+  /** Shift+hover: the hovered point's category values; every other point fades. */
+  @state() private _focusedValues: string[] | null = null;
   private _cachedScales: ScalePair | null = null;
   private _scalesCacheDeps: {
     plotDataLength: number;
@@ -450,7 +457,9 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _syncWebglSelectionActive() {
     this._webglRenderer?.setSelectionActive(
-      this.selectedProteinIds.length > 0 || this.highlightedProteinIds.length > 0,
+      this.selectedProteinIds.length > 0 ||
+        this.highlightedProteinIds.length > 0 ||
+        this._focusedValues !== null,
     );
   }
 
@@ -514,6 +523,9 @@ export class ProtspaceScatterplot extends LitElement {
     this.addEventListener('dragleave', this.handleDragLeave);
     this.addEventListener('drop', this.handleDrop);
     window.addEventListener('keydown', this._handleConnectorKeydown);
+    window.addEventListener('keydown', this._handleShiftKey);
+    window.addEventListener('keyup', this._handleShiftKey);
+    window.addEventListener('blur', this._handleWindowBlur);
   }
 
   disconnectedCallback() {
@@ -549,6 +561,12 @@ export class ProtspaceScatterplot extends LitElement {
     this.removeEventListener('dragleave', this.handleDragLeave);
     this.removeEventListener('drop', this.handleDrop);
     window.removeEventListener('keydown', this._handleConnectorKeydown);
+    window.removeEventListener('keydown', this._handleShiftKey);
+    window.removeEventListener('keyup', this._handleShiftKey);
+    window.removeEventListener('blur', this._handleWindowBlur);
+    this._hoveredPoint = null;
+    this._shiftDown = false;
+    this._focusedValues = null;
   }
 
   private _handleConnectorKeydown = (event: KeyboardEvent) => {
@@ -643,6 +661,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._refreshStyleGettersCache(changedProperties);
     this._reconcileSelectionOverlays(changedProperties);
     this._reconcileTooltipMeasurement(changedProperties);
+    this._reconcileFocus(changedProperties);
     if (this.data && changedProperties.has('eatOverlayEnabled')) {
       this.dispatchEvent(
         new CustomEvent('data-change', {
@@ -843,6 +862,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
+      changedProperties.has('_focusedValues') ||
       changedProperties.has('eatOverlayEnabled') ||
       changedProperties.has('config')
     ) {
@@ -853,7 +873,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _reconcileSelectionOverlays(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectedProteinIds') ||
-      changedProperties.has('highlightedProteinIds')
+      changedProperties.has('highlightedProteinIds') ||
+      changedProperties.has('_focusedValues')
     ) {
       this._updateSelectionOverlays();
       this._syncWebglSelectionActive();
@@ -861,7 +882,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._renderPlot();
     }
     // Render for other changes
-    const selectionKeys = ['selectedProteinIds', 'highlightedProteinIds'];
+    const selectionKeys = ['selectedProteinIds', 'highlightedProteinIds', '_focusedValues'];
     const changedKeys = Array.from(changedProperties.keys()).map(String);
     const onlySelectionChanged =
       changedKeys.length > 0 && changedKeys.every((k) => selectionKeys.includes(k));
@@ -1490,7 +1511,8 @@ export class ProtspaceScatterplot extends LitElement {
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === this.eatOverlayEnabled
+      key.eatOverlayEnabled === this.eatOverlayEnabled &&
+      key.focusedValues === this._focusedValues
     ) {
       return this._visibilityModelCache;
     }
@@ -1503,6 +1525,7 @@ export class ProtspaceScatterplot extends LitElement {
         selectedProteinIds: this.selectedProteinIds,
         highlightedProteinIds: this.highlightedProteinIds,
         opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
+        focusedValues: this._focusedValues,
       },
       this._visibilityModelCache ?? undefined,
     );
@@ -1518,6 +1541,7 @@ export class ProtspaceScatterplot extends LitElement {
       selectedOpacity,
       fadedOpacity,
       eatOverlayEnabled: this.eatOverlayEnabled,
+      focusedValues: this._focusedValues,
     };
     return model;
   }
@@ -1549,6 +1573,7 @@ export class ProtspaceScatterplot extends LitElement {
     const allOpacityTiersInteractive = baseOpacity > 0 && selectedOpacity > 0 && fadedOpacity > 0;
     const selectedProteinIdsKey = allOpacityTiersInteractive ? null : this.selectedProteinIds;
     const highlightedProteinIdsKey = allOpacityTiersInteractive ? null : this.highlightedProteinIds;
+    const focusedValuesKey = allOpacityTiersInteractive ? null : this._focusedValues;
 
     const key = this._visiblePointCountKey;
     if (
@@ -1561,6 +1586,7 @@ export class ProtspaceScatterplot extends LitElement {
       key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
       key.selectedProteinIds === selectedProteinIdsKey &&
       key.highlightedProteinIds === highlightedProteinIdsKey &&
+      key.focusedValues === focusedValuesKey &&
       key.baseOpacity === baseOpacity &&
       key.selectedOpacity === selectedOpacity &&
       key.fadedOpacity === fadedOpacity &&
@@ -1590,6 +1616,7 @@ export class ProtspaceScatterplot extends LitElement {
       hiddenAnnotationValues: this.hiddenAnnotationValues,
       selectedProteinIds: selectedProteinIdsKey,
       highlightedProteinIds: highlightedProteinIdsKey,
+      focusedValues: focusedValuesKey,
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
@@ -1668,6 +1695,9 @@ export class ProtspaceScatterplot extends LitElement {
       this.eatOverlayEnabled,
     );
     this._tooltipData = { x, y, view };
+    this._hoveredPoint = point;
+    // The hover runs a frame after its mousemove, so a Shift press in between is only in _shiftDown.
+    this._updateFocus(event.shiftKey || this._shiftDown);
 
     if (this._hoveredProteinId !== point.id) {
       this._hoveredProteinId = point.id;
@@ -1834,6 +1864,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (this._tooltipData) {
       this._tooltipData = null;
     }
+    this._hoveredPoint = null;
+    this._updateFocus(false);
 
     // Dispatch "hover cleared" signal so other components can reset their hover UI.
     if (this._hoveredProteinId !== null) {
@@ -1844,6 +1876,58 @@ export class ProtspaceScatterplot extends LitElement {
           bubbles: true,
         }),
       );
+    }
+  }
+
+  /** Shift+hover focus: keep the hovered point's category, fade everything else. */
+  private _updateFocus(shift: boolean): void {
+    const point = this._hoveredPoint;
+    // The materialized data is what the visibility model reads: numeric bins and EAT
+    // predictions exist only there, not in the raw `this.data`.
+    const data = this._getMaterializedData() ?? this.data;
+    let next: string[] | null = null;
+    // A selection outranks focus, so skip the O(N) focus mask while one is active.
+    if (shift && point && data && this.selectedAnnotation && !this.selectedProteinIds.length) {
+      const values = getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation);
+      if (values.length > 0) {
+        // A point in the "Other" bucket focuses the whole bucket, as the legend shows it.
+        const inOther = values.some((v) => this.otherAnnotationValues.includes(v));
+        next = inOther ? [...values, ...this.otherAnnotationValues] : values;
+      }
+    }
+    const current = this._focusedValues;
+    const same =
+      next === current ||
+      (next !== null && current !== null && next.join('\u0000') === current.join('\u0000'));
+    if (!same) this._focusedValues = next;
+  }
+
+  private _handleShiftKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Shift') return;
+    this._shiftDown = event.type === 'keydown';
+    // Typing a capital in a text field should not flash the focus on the plot.
+    const target = event.composedPath()[0] as HTMLElement | undefined;
+    if (this._shiftDown && target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+    this._updateFocus(this._shiftDown);
+  };
+
+  private _handleWindowBlur = () => {
+    this._shiftDown = false;
+    this._updateFocus(false);
+  };
+
+  /** Re-derive the focus when its inputs change under a still cursor. */
+  private _reconcileFocus(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('data')) this._hoveredPoint = null;
+    if (
+      changedProperties.has('data') ||
+      changedProperties.has('selectedAnnotation') ||
+      changedProperties.has('otherAnnotationValues') ||
+      changedProperties.has('numericAnnotationSettings') ||
+      changedProperties.has('eatOverlayEnabled') ||
+      changedProperties.has('selectedProteinIds')
+    ) {
+      this._updateFocus(this._focusedValues !== null);
     }
   }
 
