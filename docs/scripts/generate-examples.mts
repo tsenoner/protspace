@@ -45,6 +45,8 @@ const THUMBNAIL_DIR = join(REPO_ROOT, 'docs/explore/images/examples');
 /** A value still to come. Rendered as is; the check refuses it once the catalog swap is done. */
 const PENDING = '‹pending build›';
 const PLACEHOLDER = /‹[^›]*›/;
+/** A UniProt release name, e.g. `2026_03`. */
+const UNIPROT_RELEASE = /^\d{4}_\d{2}$/;
 
 const PREPRINT_DOI = '10.64898/2026.05.04.722720';
 
@@ -189,6 +191,31 @@ function validate(): string[] {
   for (const id of THUMBNAILS_PENDING) {
     if (!EXAMPLE_DETAILS[id]) {
       errors.push(`THUMBNAILS_PENDING names "${id}", which has no card; remove it.`);
+    }
+  }
+  if (swapped && THUMBNAILS_PENDING.length > 0) {
+    errors.push(
+      `The catalog swap is done, but THUMBNAILS_PENDING still lists ${THUMBNAILS_PENDING.join(', ')}; capture their thumbnails with the examples-live Playwright project and empty it.`,
+    );
+  }
+
+  // After the swap every stated release must be a real one. A note such as
+  // "2025_04 (inferred; confirm …)" stamped into a bundle by the build is not a
+  // ‹…› placeholder, so the placeholder check below would let it through.
+  if (swapped) {
+    for (const entry of EXAMPLE_DATASETS) {
+      const { releases } = EXAMPLE_MANIFEST.examples[entry.id];
+      const stated = [
+        ['membership', releases.membership],
+        ...Object.entries(releases.annotations),
+      ] as const;
+      for (const [group, release] of stated) {
+        if (release !== null && !UNIPROT_RELEASE.test(release)) {
+          errors.push(
+            `"${entry.id}": the ${group} release "${release}" is not a UniProt release (YYYY_MM); confirm it (tasks 7.1), rebuild the bundle and rerun write_manifest.py.`,
+          );
+        }
+      }
     }
   }
 
