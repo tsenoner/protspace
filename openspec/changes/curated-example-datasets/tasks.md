@@ -165,7 +165,7 @@ Before every commit:
   - Update `perf/README.md` and `perf/plot_perf_results.py` (the plotter needed no change: the release keeps the original ids its ordering list names).
   - A missing or malformed `datasets.json` is recorded under `failures` (the results file is still emitted), and a failed dataset fetch carries the response body (the spec's `pnpm perf:fetch` hint) into its error.
   - Point `load-large-bundle.spec.ts` and its `playwright.config.ts` comment at `perf/datasets/573K_swissprot.parquetbundle`.
-- [x] 4.13 A staging script (`build_showcase.py stage-perf`, task 6.6) collects the `perf-datasets` assets from git blobs and the NM paths into a local directory with `SHA256SUMS`, and prints the owner's `gh release create` command without running it (only the `stage-perf` subcommand exists so far; §6 adds the others).
+- [x] 4.13 A staging script (`build_showcase.py stage-perf`, task 6.6) collects the `perf-datasets` assets from git blobs and the NM paths into a local directory with `SHA256SUMS`, and prints the owner's `gh release create` command without running it (§6 added the build, verify and `stage-release` subcommands to the same script).
 - [x] 4.14 `CONTRIBUTING.md`: fixtures vs examples, `pnpm examples:fetch`, `pnpm perf:fetch`, and stopping a running dev server before E2E so the startup pin applies.
 
 - [x] 4.15 Review fixes to hosting:
@@ -207,29 +207,37 @@ Before every commit:
 
 ## 6. Showcase build script (Python dev tooling, `chore:` commits)
 
-- [ ] 6.1 `apps/protspace/scripts/generate_examples/build_showcase.py` plus `showcase.toml` hold per-dataset recipes (design Decision 9), with subcommands `build <id>`, `verify <id>`, `manifest`, `stage-release` and `stage-perf`. Every step runs through `uv run`.
-- [ ] 6.2 Helpers:
+- [x] 6.1 `apps/protspace/scripts/generate_examples/build_showcase.py` plus `showcase.toml` hold per-dataset recipes (design Decision 9), with subcommands `build <id>`, `verify <id>`, `report`, `record-load`, `stage-release` and `stage-perf` (the manifest is `stage-release`'s, through `write_manifest.py`; no second writer). Every step runs through `uv run`.
+- [x] 6.2 Helpers:
   - `split_bundle`, `select_proj` (keep, rename `UMAP_2` → `ProtT5 — UMAP 2`, UMAP first), and `extract_ann` (part 0 only);
   - drop `sequence`/`organism_id`;
   - put the insight annotation first;
   - explicit `--stats-annotation` lists (G12);
   - envelope settings with the curated legend and the EAT threshold (venom 0, phosphatase 0.5).
-- [ ] 6.3 EAT specifics:
+- [x] 6.3 EAT specifics:
   - venom: freeze coordinates, statistics, `ec`, `protein_families` and `*__pred_*`, and add InterPro, TED and Biocentral from full-length sequences;
   - phosphatase: re-encode the v1 columns before grafting (or rebuild and graft `eat_split` plus `*__pred_*`), add the withheld-truth columns, and **refuse** any step that refills `ec`/`protein_families` on the 213 query rows.
-- [ ] 6.4 Provenance key/value metadata on the annotations table: `example_id`, `protspace_version`, `git_sha`, `uniprot_release` per column group, `membership_release`, `built_at`, `command` and `zenodo_doi`.
-- [ ] 6.5 `verify <id>` gates:
+- [x] 6.4 Provenance key/value metadata on the annotations table: `example_id`, `protspace_version`, `git_sha`, `uniprot_release` per column group, `membership_release`, `built_at`, `command` and `zenodo_doi`.
+- [x] 6.5 `verify <id>` gates:
   - the common gates and each dataset's story gates (design Decision 9);
   - the obsolete-accession count;
   - `defaultView` names present, read from the catalog;
   - the phosphatase accuracy against fetched truth (91.5 % over 213; 98.1 % over n = 160 at reliability ≥ 0.5);
   - the Swiss-Prot load time and heap (the D2 gate, measured in a real browser).
-- [ ] 6.6 `stage-release` writes `<id>_<release>.parquetbundle` files plus `SHA256SUMS` into a staging directory, calls `write_manifest.py`, and prints the owner's `gh release create`/`upload` commands; `stage-perf` does the same for task 4.13.
-- [ ] 6.7 `generate_toxprot_demo.py`:
+- [x] 6.6 `stage-release` writes `<id>_<release>.parquetbundle` files plus `SHA256SUMS` into a staging directory, calls `write_manifest.py`, and prints the owner's `gh release create`/`upload` commands; `stage-perf` does the same for task 4.13.
+  - One tool: the build branch's pipeline rebased onto this branch keeps the web side's `stage-perf` (`PERF_DATASETS`, `--out`, `perf/datasets.manifest.json` as `{ release, datasets }`) and drops its own `manifest.json` sidecar and `[perf]` list.
+- [x] 6.7 `generate_toxprot_demo.py`:
   - all annotation columns, keeping the mature `length`;
   - InterPro and Biocentral run on **full-length** sequences (G8);
   - the default settings source becomes the demo fixture.
-- [ ] 6.8 pytest for the pure helpers (projection rename and order, provenance metadata, the no-refill guard, gate predicates) under `apps/protspace/tests/`. Run `uv run pytest` and `uv run ruff check`.
+- [x] 6.8 pytest for the pure helpers (projection rename and order, provenance metadata, the no-refill guard, gate predicates) under `apps/protspace/tests/`. Run `uv run pytest` and `uv run ruff check`.
+- [x] 6.9 Review fixes to the build:
+  - a fetch step is done only when the CLI reported every requested source complete: its incomplete-source warnings (it exits 0 on a partial InterPro, TED or Biocentral fetch) make the step run again, then fail without a marker;
+  - provenance records the release the CLI recorded for its data (`run.log`, the cache's release stamp, the FASTA responses); what UniProt serves at a probe only stops a fetch from starting, so a finished build can be finalized after a rollover;
+  - step markers are keyed on a digest of the step's inputs (the recipe keys it reads, style file contents, input file fingerprints, the CLI commit, its command), so a `showcase.toml` or style edit re-runs the steps that read it;
+  - the D2 measurement (`record-load`) is tied to the file's sha256, `pending` blocks like a failure, the web-cut decision is kept for later builds, and `stage-release` ships only files whose `verify.json` passed on their exact bytes (`--force` to override);
+  - `pfam_duplicates` fails without its cache, the obsolete-accession count falls back to `protein_name` (and fails when it cannot count), a refreshed source empty on every row fails, an unknown gate type fails, and an unconfirmed release (not `YYYY_MM`) keeps the `provenance` gate pending;
+  - outputs may not land in the repository or an input directory.
 
 ## 7. Data build and catalog swap (after the CLI fixes merge)
 

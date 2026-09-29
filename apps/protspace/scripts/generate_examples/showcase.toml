@@ -1,0 +1,455 @@
+# Showcase example datasets for the protspace.app Import menu.
+#
+# Read by build_showcase.py in this directory; README.md has usage per dataset.
+# OpenSpec change: openspec/changes/curated-example-datasets (design Decisions 1 and
+# 9-13, tasks §6-§7).
+#
+# Path templates: {repo} is the checkout this file lives in, {home} is $HOME, and
+# every name under [paths] can be used too. Override a path with
+# `--path NAME=VALUE` (or PROTSPACE_SUITE for {suite}). Every input is READ-ONLY:
+# the build writes only under the output root.
+#
+# `default_view` values are PROVISIONAL (D5). The web catalog
+# (apps/web/src/explore/example-datasets.ts) owns the final picks; once an entry
+# there has a defaultView, the build uses it and this one is ignored. Pick the
+# final view from `report/report.md` and the thumbnails (G2, tasks 7.5).
+
+[build]
+uniprot_release = "2026_03"       # annotations are refreshed at this release; the build stops if UniProt serves another
+release_tag = "showcase-2026_03"  # GitHub release hosting the five paper bundles (D8)
+file_pattern = "{id}_{release}.parquetbundle"
+out_root = "{home}/protspace-showcase/2026_03"
+catalog = "{repo}/apps/web/src/explore/example-datasets.ts"
+github_repo = "tsenoner/protspace"
+zenodo_doi = ""                   # the paper-companion deposit's DOI, if known before the build (else write_manifest.py --zenodo-doi, tasks 8.3)
+incomplete_retries = 1            # extra runs of a fetch step whose sources the CLI did not fully retrieve
+incomplete_retry_wait_s = 300     # wait before the first extra run (doubled for the second, …)
+
+[paths]
+suite = "{home}/Documents/projects/protspace-suite"
+nm_data = "{suite}/protspace_publication/nm_2026/data"
+cli_data = "{suite}/protspace/apps/protspace/data"
+
+[report]
+k = 15                # layout neighbours for the kNN label agreement
+max_queries = 20000   # query points sampled per candidate view
+legend_top = 10       # the legend view: top labels + Other
+
+# ---------------------------------------------------------------------------
+# demo: the startup dataset (D3). ToxProt venom proteins, embedded as mature
+# peptides; the four projections are kept, so the docs captures stay valid.
+# ---------------------------------------------------------------------------
+[datasets.demo]
+kind = "demo-refresh"
+name = "Venom toxins (demo)"
+hosting = "repo"
+repo_file = "data.parquetbundle"
+proteins = 7831
+membership = "ToxProt: (taxonomy_id:33208) AND (cc_tissue_specificity:venom OR cc_scl_term:SL-0177) AND (reviewed:true)"
+membership_release = "2026_01 (inferred from the 2026-05-01 build)"
+paper_release = "2026_01 (mature-peptide length from the 2026-05-01 build)"
+source = [
+  "{repo}/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle",
+  "{repo}/apps/web/public/data.parquetbundle",
+]
+source_sha256 = "dcebba0f1ca15b49a44ebacd2a0807b2e7b528d51efb84de7a8c8a6ba27770fb"
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2", "ESM2-650M — UMAP 2", "ESM2-650M — PCA 2"]
+refresh_groups = ["all"]                  # InterPro and Biocentral see full-length sequences (G8)
+keep_source_columns = ["length"]          # the embedded mature-peptide length
+fasta = { fallback_tsv = "{cli_data}/toxins/tmp/toxprot.tsv" }
+source_legends = ["protein_families"]     # the hand-curated top 13 + Other
+styles = "styles/demo.json"
+stats = false                             # two embeddings without a metadata `source` column; keep the startup file small
+reviewed = "Swiss-Prot"
+max_obsolete = 50
+
+[datasets.demo.default_view]
+projection = "ProtT5 — UMAP 2"
+annotation = "protein_families"
+tooltip = ["species", "ec"]
+
+[datasets.demo.report]
+annotations = ["protein_families", "ec", "pfam", "order", "family", "predicted_subcellular_location"]
+projections = ["ProtT5 — UMAP 2", "ESM2-650M — UMAP 2"]
+
+[[datasets.demo.gates]]
+type = "coverage"            # was 26.9 % when InterPro saw mature peptides
+column = "pfam"
+min_fraction = 0.5
+
+[[datasets.demo.gates]]
+type = "full_length_inputs"
+min_fraction = 0.99
+
+[[datasets.demo.gates]]
+type = "source_column_kept"
+column = "length"
+
+# ---------------------------------------------------------------------------
+# venom-eat: Fig. 4 a, d, e, f. Coordinates, statistics and the EAT columns are
+# the paper's; InterPro, TED and Biocentral are added from full-length sequences.
+# Opens at reliability 0 so the separation strips stay visible (D6, G1).
+# ---------------------------------------------------------------------------
+[datasets.venom-eat]
+kind = "eat-graft"
+name = "Venom toxins · EAT"
+hosting = "release"
+proteins = 811
+figure = "Fig. 4a, d, e, f"
+membership = "Reviewed secreted animal toxins (KW-0800 and KW-0964); the exact query is unrecorded (ask the author, tasks 7.1)"
+membership_release = "unrecorded (bundle built 2026-08-05)"
+paper_release = "unrecorded (UniProt columns fetched about 2026-08)"
+source = [
+  "{repo}/apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle",
+  "{repo}/apps/web/public/data/venom_eat_stats.parquetbundle",
+  "{repo}/perf/datasets/venom_eat_stats.parquetbundle",
+]
+source_sha256 = "75124338953565bdb394f110be54b6f29e35099536cafc15d9d359aad51bfb31"
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+frozen = ["ec", "protein_families", "*__pred_*", "cluster_*"]
+keep_paper_columns = true
+refresh_groups = ["interpro", "ted", "biocentral"]
+fasta = { fallback_column = "sequence" }
+freeze_statistics = true
+envelope = { eatOverlayEnabled = true, eatConfidenceThreshold = 0.0 }
+styles = "styles/venom-eat.json"
+reviewed = "Swiss-Prot"
+max_obsolete = 10
+
+[datasets.venom-eat.default_view]
+projection = "ProtT5 — UMAP 2"
+annotation = "ec"
+tooltip = ["protein_families", "species"]
+
+[datasets.venom-eat.report]
+annotations = ["ec", "protein_families", "family", "order", "cc_subcellular_location", "pfam", "cluster_elbow_ProtT5 — UMAP 2"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.venom-eat.gates]]
+type = "eat_transfers"
+column = "ec"
+expected_predicted = 384
+threshold = 0.5
+expected_at_threshold = 244
+
+[[datasets.venom-eat.gates]]
+type = "eat_source"
+accession = "P0DPU8"
+column = "ec"
+source = "F5CPF0"
+confidence = 0.583
+tol = 0.001
+value_contains = "3.1.1.4"
+
+# ---------------------------------------------------------------------------
+# phosphatase-eat: the benchmark behind the abstract's 91.5 % / 98.1 %. EC and
+# family were withheld from 213 queries and transferred from 619 references
+# (k = 1, Euclidean). Everything else is refreshed; the refreshed EC and family
+# of the queries become the withheld-truth columns (G6). Opens at reliability 0.5.
+# ---------------------------------------------------------------------------
+[datasets.phosphatase-eat]
+kind = "eat-graft"
+name = "Phosphatases · EAT benchmark"
+hosting = "release"
+proteins = 832
+figure = "Abstract; Results (EAT benchmark)"
+membership = "(ft_domain:phosphatase) AND (reviewed:true), 832 entries with a UniProt ProtT5 vector"
+membership_release = "2025_03"
+paper_release = "2025_03"
+source = [
+  "{repo}/apps/web/tests/fixtures/phosphatase_eat.parquetbundle",
+  "{cli_data}/eat_demo/phosphatase_eat.parquetbundle",
+]
+source_sha256 = "06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33"
+embeddings = ["{cli_data}/eat_demo/phosphatase_prot_t5.h5:prot_t5"]
+pins = [{ path = "{cli_data}/eat_demo/phosphatase_prot_t5.h5", bytes = 2026752 }]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+frozen = ["ec", "protein_families", "eat_split", "*__pred_*"]
+keep_paper_columns = false
+refresh_groups = ["all"]
+withheld = { split_column = "eat_split", query_value = "query", columns = { ec = "ec_withheld", protein_families = "protein_families_withheld" } }
+stats = true
+stats_annotations = ["ec", "protein_families", "domain", "kingdom", "phylum", "cc_subcellular_location", "protein_existence", "xref_pdb"]
+envelope = { eatOverlayEnabled = true, eatConfidenceThreshold = 0.5 }
+styles = "styles/phosphatase-eat.json"
+reviewed = "Swiss-Prot"
+max_obsolete = 10
+
+[datasets.phosphatase-eat.default_view]
+projection = "ProtT5 — UMAP 2"
+annotation = "ec"
+tooltip = ["eat_split", "ec_withheld", "protein_families_withheld"]
+
+[datasets.phosphatase-eat.report]
+annotations = ["ec", "protein_families", "eat_split", "pfam", "kingdom", "cluster_elbow_ProtT5 — UMAP 2"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.phosphatase-eat.gates]]
+type = "category_counts"
+column = "eat_split"
+expected = { query = 213, reference = 619 }
+
+[[datasets.phosphatase-eat.gates]]
+type = "no_refill"
+split_column = "eat_split"
+query_value = "query"
+columns = ["ec", "protein_families"]
+
+[[datasets.phosphatase-eat.gates]]
+type = "eat_accuracy"   # research/critic/c3_eat.py: 91.5 % over 213, 98.1 % over 160 at ≥ 0.5
+column = "ec"
+truth_column = "ec_withheld"
+split_column = "eat_split"
+query_value = "query"
+threshold = 0.5
+expected_n = 213
+expected_accuracy = 91.5
+expected_n_at_threshold = 160
+expected_accuracy_at_threshold = 98.1
+tol_pp = 0.1
+
+# ---------------------------------------------------------------------------
+# human-fly: Fig. 2B. Paper membership (105,562) and coordinates; the 146 rows
+# without a UniProt vector keep their paper position and are annotated from FASTA.
+# ---------------------------------------------------------------------------
+[datasets.human-fly]
+kind = "paper-refresh"
+name = "Human + fly proteomes"
+hosting = "release"
+proteins = 105562
+figure = "Fig. 2B"
+membership = "Reference proteomes UP000005640 (human) and UP000000803 (fly)"
+membership_release = "2025_04 (inferred; confirm with the author, tasks 7.1)"
+embeddings = [
+  "{cli_data}/other/homsap_dromel/homsap_UP000005640.h5:prot_t5",
+  "{cli_data}/other/homsap_dromel/dromel_UP000000803.h5:prot_t5",
+]
+projections_source = "{nm_data}/joint_proteome_105k_stats"
+pins = [
+  { path = "{nm_data}/joint_proteome_105k_stats/projections_metadata.parquet", sha256 = "ad013e9c6fe7b0f9971a327409e59425b3032458dad8b768e9c56a3a497bb5f6" },
+  { path = "{nm_data}/joint_proteome_105k_stats/projections_data.parquet", sha256 = "9de7a914aeb5b3bc0228e60fb1edc14c781a888e7ab794e48aa964ce149df692" },
+  { path = "{cli_data}/other/homsap_dromel/homsap_UP000005640.h5", bytes = 202839568 },
+  { path = "{cli_data}/other/homsap_dromel/dromel_UP000000803.h5", bytes = 53485072 },
+]
+projections = ["UMAP_2=ProtT5 — UMAP 2", "PCA_2=ProtT5 — PCA 2"]
+missing_rows = "annotate"
+stages = [
+  { groups = ["species", "protein_families", "uniprot", "taxonomy"] },
+  { groups = ["interpro"] },   # 1-1.7 h
+  { groups = ["ted"] },        # 3.3-12 h; do not overlap another TED build (429s)
+  { groups = ["biocentral"] }, # batched by the fixed CLI
+]
+stats = true
+stats_annotations = ["species", "protein_families", "reviewed", "protein_existence"]
+styles = "styles/human-fly.json"
+reviewed = "mixed"
+max_obsolete = 400   # G17: about 195 expected
+
+[datasets.human-fly.default_view]
+projection = "ProtT5 — UMAP 2"
+annotation = "species"
+tooltip = ["protein_families", "reviewed"]
+
+[datasets.human-fly.report]
+annotations = ["species", "protein_families", "reviewed", "protein_existence", "cluster_elbow_ProtT5 — UMAP 2"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.human-fly.gates]]
+type = "category_counts"
+column = "species"
+expected = { "Homo sapiens" = 83598, "Drosophila melanogaster" = 21964 }
+rel_tol = 0.005
+
+[[datasets.human-fly.gates]]
+type = "label_split"   # conserved: kinases sit in the shared region
+column = "protein_families"
+by = "species"
+label = "protein kinase superfamily"
+expected_total = 1703
+rel_tol = 0.15
+min_per_group = { "Homo sapiens" = 100, "Drosophila melanogaster" = 100 }
+
+[[datasets.human-fly.gates]]
+type = "label_exclusive"
+column = "protein_families"
+by = "species"
+group = "Homo sapiens"
+labels = ["MHC class I family", "MHC class II family", "beta-defensin family", "intercrine beta (chemokine CC) family"]
+min_fraction = 0.98
+
+[[datasets.human-fly.gates]]
+type = "label_exclusive"
+column = "protein_families"
+by = "species"
+group = "Drosophila melanogaster"
+labels = ["PBP/GOBP family"]
+min_fraction = 0.98
+
+[[datasets.human-fly.gates]]
+type = "neighbourhood"   # the paper: 1.000 human neighbours
+name = "human-only regions"
+projection = "ProtT5 — UMAP 2"
+column = "species"
+value = "Homo sapiens"
+subset_column = "protein_families"
+subset_labels = ["MHC class I family", "MHC class II family", "intercrine beta (chemokine CC) family"]
+k = 50
+min_mean = 0.9
+
+[[datasets.human-fly.gates]]
+type = "neighbourhood"   # the paper: 0.000 human neighbours
+name = "fly-only regions"
+projection = "ProtT5 — UMAP 2"
+column = "species"
+value = "Drosophila melanogaster"
+subset_column = "protein_families"
+subset_labels = ["PBP/GOBP family"]
+k = 50
+min_mean = 0.9
+
+# ---------------------------------------------------------------------------
+# beta-lactamase: Fig. 3. UniProt family:"beta-lactamase" at 2026_02, the
+# paper's 113,015 entries and coordinates (UMAP first; PCA was index 0).
+# ---------------------------------------------------------------------------
+[datasets.beta-lactamase]
+kind = "paper-refresh"
+name = "β-lactamases"
+hosting = "release"
+proteins = 113015
+figure = "Fig. 3"
+membership = "UniProtKB family:\"beta-lactamase\", the 113,015 entries with a UniProt ProtT5 vector"
+membership_release = "2026_02"
+embeddings = ["{nm_data}/beta_lactamase_2026_uniprot.h5:prot_t5"]
+projections_source = "{nm_data}/beta_lactamase_2026_stats/data.parquetbundle"
+pins = [
+  { path = "{nm_data}/beta_lactamase_2026_stats/data.parquetbundle", sha256 = "58c60e6074d6afcdeff400d13e383e07d4d59bd082404c851925352417cef6b0" },
+  { path = "{nm_data}/beta_lactamase_2026_uniprot.h5", bytes = 274218512 },
+]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+stages = [
+  { groups = ["protein_families", "uniprot", "taxonomy"] },
+  { groups = ["interpro"] },   # 0.5-4 h
+  { groups = ["ted"] },        # 3.6-8 h
+  { groups = ["biocentral"] },
+]
+stats = true
+stats_annotations = ["protein_families", "ec", "kingdom", "domain", "signal_peptide", "protein_existence", "reviewed", "xref_pdb"]
+styles = "styles/beta-lactamase.json"
+reviewed = "mixed"
+max_obsolete = 200   # G17: about 80 expected
+
+[datasets.beta-lactamase.default_view]
+projection = "ProtT5 — UMAP 2"
+annotation = "protein_families"
+tooltip = ["ec", "species"]
+
+[datasets.beta-lactamase.report]
+annotations = ["protein_families", "ec", "domain", "kingdom", "cluster_elbow_ProtT5 — UMAP 2"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.beta-lactamase.gates]]
+type = "category_counts"   # the Fig. 3 legend, drift < 2 %
+column = "protein_families"
+rel_tol = 0.02
+abs_tol = 5
+
+[datasets.beta-lactamase.gates.expected]
+"metallo-beta-lactamase superfamily" = 80446
+"class-A beta-lactamase family" = 11725
+"DNA repair metallo-beta-lactamase (DRMBL) family" = 7459
+"beta-lactamase family" = 3991
+"class-D beta-lactamase family" = 3683
+"class-C beta-lactamase family" = 3140
+"hcp beta-lactamase family" = 2326
+"P-Pant transferase superfamily" = 25
+"OBAP family" = 15
+"calreticulin family" = 13
+
+[[datasets.beta-lactamase.gates]]
+type = "accession_label"   # curated as class C (IC) ...
+accession = "Q02940"
+column = "protein_families"
+label = "class-C beta-lactamase family"
+
+[[datasets.beta-lactamase.gates]]
+type = "neighbourhood"     # ... but sits away from the other class-C proteins
+name = "Q02940 away from class C"
+projection = "ProtT5 — UMAP 2"
+column = "protein_families"
+value = "class-C beta-lactamase family"
+accessions = ["Q02940"]
+k = 50
+max_mean = 0.2
+
+# ---------------------------------------------------------------------------
+# swissprot: Fig. 2A, marked Large. Paper membership (573,649) and the UMAP
+# coordinates only (D2). Ships only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap,
+# measured in a browser and recorded with `record-load` (tied to the file's sha256);
+# otherwise rebuild with --web-cut (drops GO and TED; the full file goes to Zenodo;
+# the decision is kept for later builds) and measure the cut file.
+# ---------------------------------------------------------------------------
+[datasets.swissprot]
+kind = "paper-refresh"
+name = "Swiss-Prot"
+hosting = "release"
+large = true
+proteins = 573649
+figure = "Fig. 2A"
+membership = "UniProtKB/Swiss-Prot entries with a UniProt ProtT5 vector (UniProt omits sequences over 12,000 aa)"
+membership_release = "2025_04 (inferred; confirm with the author, tasks 7.1)"
+embeddings = ["{cli_data}/other/sprot/per-protein.h5:prot_t5"]
+projections_source = "{nm_data}/swissprot_573k_stats"
+pins = [
+  { path = "{nm_data}/swissprot_573k_stats/projections_metadata.parquet", sha256 = "67ded19506da5065b0ca8f039fd9fe5727a74f69823ea84fd7e30851a0c3d57f" },
+  { path = "{nm_data}/swissprot_573k_stats/projections_data.parquet", sha256 = "969dcb46d921c5b3c79e77b836bdec63dbe04b3be78342ab5aa64cbd64603582" },
+  { path = "{cli_data}/other/sprot/per-protein.h5", bytes = 1425064360 },
+]
+projections = ["UMAP_2=ProtT5 — UMAP 2"]
+stages = [
+  { groups = ["domain", "uniprot", "taxonomy"] },   # about 1 h
+  { groups = ["interpro"] },                        # about 5 h (2-20 h)
+  { groups = ["ted"] },                             # 18-40 h: the critical path, run it alone
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },  # needs the Rostlab operators' OK: --enable-stage biocentral
+]
+stats = true
+stats_annotations = ["domain", "kingdom", "protein_existence", "signal_peptide", "reviewed", "protein_families"]
+web_cut = ["go_bp", "go_cc", "go_mf", "ted_domains"]
+styles = "styles/swissprot.json"
+reviewed = "Swiss-Prot"
+max_obsolete = 100   # G17: about 45 expected
+
+[datasets.swissprot.default_view]
+projection = "ProtT5 — UMAP 2"
+annotation = "domain"
+tooltip = ["protein_families", "species"]
+
+[datasets.swissprot.report]
+annotations = ["domain", "kingdom", "protein_families", "pfam_clan", "cluster_elbow_ProtT5 — UMAP 2"]
+projections = ["ProtT5 — UMAP 2"]
+
+[[datasets.swissprot.gates]]
+type = "category_counts"   # Fig. 2A, within ±1 %
+column = "domain"
+rel_tol = 0.01
+abs_tol = 5
+
+[datasets.swissprot.gates.expected]
+Bacteria = 336823
+Eukaryota = 199528
+Archaea = 19814
+Riboviria = 6881
+Varidnaviria = 4297
+Duplodnaviria = 4018
+Monodnaviria = 1293
+Adnaviria = 254
+Ribozyviria = 35
+
+[[datasets.swissprot.gates]]
+type = "pfam_duplicates"   # was 70.3 % vs 5.5 % before the InterPro fan-out fix
+warn_gap = 0.05
+max_gap = 0.15
+
+[[datasets.swissprot.gates]]
+type = "browser_load"      # D2, measured by hand: build_showcase.py record-load
+max_seconds = 35
+max_heap_mb = 1536

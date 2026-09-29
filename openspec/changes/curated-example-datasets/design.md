@@ -243,6 +243,13 @@ Readers ignore unknown keys. The same fields go into the manifest.
 
 If a story gate fails, that dataset ships frozen (strategy F) and is labelled so.
 
+**What makes a build trustworthy:**
+
+- **Complete sources.** The CLI exits 0 when a source was only partly fetched (a partial result beats none for its users) and says so only in warnings. A fetch step counts as done only when none of those warnings appeared; otherwise it runs again, which fetches just what the CLI left out of its cache, and then fails without a marker.
+- **The release the data came from.** Provenance takes the release the CLI recorded for its data (`run.log`'s `uniprot_release:` line, the annotation cache's release stamp, UniProt's FASTA response headers). What UniProt serves at a probe only stops a fetch from starting on another release, so a finished build can still be finalized after a rollover.
+- **Resumable, not stale.** Step markers are keyed on a digest of everything a step reads: the recipe keys it uses, style file contents, input file fingerprints, the CLI commit and its command.
+- **Shipping.** The D2 measurement is recorded against the file's sha256, and the web-cut decision is kept for later builds. `stage-release` ships only files whose last `verify` passed (no failed or pending gate) on exactly their bytes, and writes the manifest through `write_manifest.py`, the one writer (Decision 11).
+
 ### 10. Hosting: release assets, deployed same-origin, verified (D8)
 
 - **Why same-origin from a release.** Browser `fetch()` from GitHub release URLs fails CORS. jsDelivr caps files at 20 MB. Zenodo is slow and gives each version a new URL. Git would add about 70 MB of history per regeneration, and a full-feature Swiss-Prot could exceed GitHub's 100 MB per-file limit.
