@@ -20,52 +20,30 @@ vi.mock('./opfs-dataset-store', () => ({
   readLastLoadStatus: vi.fn().mockResolvedValue(null),
 }));
 
+import { createLoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 
 const DEMO = EXAMPLE_DATASETS[0];
 const OTHER = EXAMPLE_DATASETS[1];
-
-/**
- * A fake load queue's registerFileLoad/awaitLoadOutcome pair, wired the way
- * dataset-controller.ts wires the real load-queue.ts: each registered file
- * gets an incrementing sequence, and its outcome is whatever the test tells
- * `resolveOutcome` to settle it as (mirroring handleDataLoaded resolving
- * `true`, handleDataError resolving `false`).
- */
-function createFakeLoadQueue() {
-  let sequence = 0;
-  const outcomes = new Map<number, { promise: Promise<boolean>; resolve: (v: boolean) => void }>();
-
-  const registerFileLoad = vi.fn((_file: File, kind: string, example?: unknown) => {
-    sequence += 1;
-    const meta = { sequence, kind, example };
-    let resolve: (v: boolean) => void = () => {};
-    const promise = new Promise<boolean>((r) => {
-      resolve = r;
-    });
-    outcomes.set(sequence, { promise, resolve });
-    return meta;
-  });
-
-  const awaitLoadOutcome = vi.fn((seq: number) => outcomes.get(seq)!.promise);
-
-  const resolveOutcome = (seq: number, success: boolean) => outcomes.get(seq)!.resolve(success);
-
-  return { registerFileLoad, awaitLoadOutcome, resolveOutcome };
-}
 
 function createController() {
   const dataLoader = { loadFromFile: vi.fn().mockResolvedValue(undefined) };
   const overlayController = { update: vi.fn() };
   const setCurrentExampleId = vi.fn();
   const setCurrentDatasetName = vi.fn();
-  const loadQueue = createFakeLoadQueue();
+  // The real queue, with `registerFileLoad` spied on. `resolveOutcome` settles
+  // a load the way handleDataLoaded (`true`) / handleDataError (`false`) do.
+  const realQueue = createLoadQueue({ isDisposed: () => false });
+  const loadQueue = {
+    registerFileLoad: vi.fn(realQueue.registerFileLoad),
+    resolveOutcome: realQueue.resolvePendingLoadFinalization,
+  };
 
   const controller = createPersistedDatasetController({
     dataLoader: dataLoader as never,
     overlayController,
-    registerFileLoad: loadQueue.registerFileLoad as never,
-    awaitLoadOutcome: loadQueue.awaitLoadOutcome,
+    registerFileLoad: loadQueue.registerFileLoad,
+    awaitLoadOutcome: realQueue.awaitLoadOutcome,
     setCurrentExampleId,
     setCurrentDatasetName,
   });

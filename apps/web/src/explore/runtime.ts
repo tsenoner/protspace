@@ -69,16 +69,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const loadQueue = createLoadQueue({
     isDisposed: lifecycle.isDisposed,
   });
-  // `datasetController` (below) owns the example-fetch supersession state, but
-  // it depends on `viewController`/`interactionController`, created after this
-  // handler must already be wired up — so this indirection is filled in once
-  // `datasetController` exists. Any load that isn't the app's own 'auto'
-  // (example/OPFS) load is a genuine user-initiated import, which must drop
-  // any example fetch still in flight per openspec/specs/example-datasets.
-  let notifyNonAutoLoadStarting: () => void = () => {};
   dataLoader.loadFromFileHandler = (file, options, next) => {
+    // A non-'auto' load is a user import, which supersedes any example fetch
+    // still in flight. `datasetController` is declared below; this handler
+    // only runs on a later load, after this synchronous setup has finished.
     if (options?.source !== 'auto') {
-      notifyNonAutoLoadStarting();
+      datasetController.supersedePendingExampleFetch();
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
       if (!isFastaFile(queuedFile)) {
@@ -246,7 +242,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     setCurrentDatasetName,
     viewController,
   });
-  notifyNonAutoLoadStarting = () => datasetController.supersedePendingExampleFetch();
   // An example fetch/decode still in flight when the page is torn down (a
   // route change, a remount) would otherwise resolve on a disposed runtime:
   // superseding it here means it recognizes itself as stale and does

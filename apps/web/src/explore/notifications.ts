@@ -139,14 +139,14 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
 
 export function getExampleLoadFailureNotification(
   entry: ExampleDataset,
-  message: string,
+  error: unknown,
 ): NotifyOptions {
   return {
     title: `Couldn't load "${entry.label}".`,
-    description: message,
+    description: getErrorMessage(error),
     durationMs: 10_000,
     dedupeKey: `example-load-error:${entry.id}`,
-    action: buildReportAction(`Example dataset "${entry.id}"`, message),
+    action: buildReportAction(`Example dataset "${entry.id}"`, error),
   };
 }
 

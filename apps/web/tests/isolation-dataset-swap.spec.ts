@@ -2,8 +2,10 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   dismissTourIfPresent,
+  getProteinCount,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
+  waitForProteinCount,
 } from './helpers/explore';
 
 /**
@@ -48,31 +50,6 @@ async function loadDemoDataset(page: Page): Promise<void> {
       }),
     );
   });
-}
-
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as { data?: { protein_ids?: string[] } } | null;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as {
-        data?: { protein_ids?: string[] };
-      } | null;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
 }
 
 /** Engage isolation deterministically: take the first N plot points as the selection

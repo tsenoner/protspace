@@ -110,7 +110,7 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
   });
 
-  // The emit for a successful example load now happens inside handleDataLoaded
+  // The emit for a successful example load happens inside handleDataLoaded
   // (see the "handleDataLoaded" describe block below), keyed on the example
   // carried in load meta — not here. These wrappers just forward the id/source
   // to persisted-dataset.ts and return its real outcome.
@@ -165,7 +165,7 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(mocks.persisted.loadExampleDataset).not.toHaveBeenCalled();
   });
 
-  it('emits "startup" with a null id when the persisted-or-default flow restores a stored file (OPFS)', async () => {
+  it('does not emit for "auto-loaded": the OPFS load reports through handleDataLoaded', async () => {
     mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'auto-loaded' });
     const { controller } = createController();
     const changes: Array<[string | null, string]> = [];
@@ -173,7 +173,7 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
 
     await controller.loadPersistedOrDefaultDataset();
 
-    expect(changes).toEqual([[null, 'startup']]);
+    expect(changes).toEqual([]);
   });
 
   it('does not emit for "default-loaded": that example load reports through handleDataLoaded internally', async () => {
@@ -191,10 +191,7 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     // No example is showing while the recovery banner is up (the persisted
     // file hasn't loaded), so a stale `?dataset=` from a failed/unknown deep
     // link must not linger in the URL either — this emit is what tells the
-    // URL sync hook to replace-delete it. Previously a separate
-    // `reportDatasetChange` method, called from `startup.ts`, did this; now
-    // `loadPersistedOrDefaultDataset` itself emits for this outcome, the
-    // same way it already does for 'auto-loaded'.
+    // URL sync hook to replace-delete it.
     mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({
       kind: 'recovery-required',
       file: new File(['x'], 'mine.parquetbundle'),
@@ -209,12 +206,18 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(changes).toEqual([[null, 'startup']]);
   });
 
-  it('tryLoadPersistedAgain emits "startup" with a null id', async () => {
-    const { controller } = createController();
+  it('emits "startup" with a null id when an OPFS restore finishes loading', async () => {
+    const loadMeta = { sequence: 1, kind: 'opfs' as const };
+    const { controller } = createController({
+      getRunningLoadMeta: () => loadMeta,
+      getLoadMetaForFile: () => loadMeta,
+    });
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
-    await controller.tryLoadPersistedAgain(new File(['x'], 'mine.parquetbundle'));
+    await controller.handleDataLoaded({
+      detail: { data, file: new File(['x'], 'mine.parquetbundle'), source: 'auto' },
+    } as unknown as Event);
 
     expect(changes).toEqual([[null, 'startup']]);
   });

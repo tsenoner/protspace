@@ -4,40 +4,19 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   clickLegendItem,
   dismissTourIfPresent,
+  getCurrentDatasetName,
   getFirstLegendItemValue,
+  getProteinCount,
   isLegendItemHidden,
+  openImportMenu,
   waitForExploreDataLoad,
-  waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
+  waitForProteinCount,
 } from './helpers/explore';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
 const CUSTOM_5K_PROTEIN_COUNT = 5181;
-
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as any;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as any;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
-}
 
 async function clearPersistedDataset(page: Page): Promise<void> {
   await page.evaluate(async () => {
@@ -109,17 +88,6 @@ async function writeUnreadablePersistedDataset(page: Page): Promise<void> {
     await datasetWritable.write(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]));
     await datasetWritable.close();
   });
-}
-
-async function openImportMenu(page: Page): Promise<void> {
-  await waitForExploreInteractionReady(page);
-  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
-  // Importing a custom dataset leaves the menu open (nothing closes it), so only
-  // click the trigger when the menu is closed — re-clicking would toggle it shut.
-  if (!(await ownDataset.isVisible().catch(() => false))) {
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-  }
-  await expect(ownDataset).toBeVisible();
 }
 
 async function loadCustomDatasetFromImportMenu(page: Page, datasetPath: string): Promise<void> {
@@ -221,15 +189,6 @@ async function loadCustomDatasetFromPath(
     },
     { byteValues: bytes, name: fileName },
   );
-}
-
-async function getCurrentDatasetName(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const controlBar = document.getElementById('myControlBar') as {
-      currentDatasetName?: string;
-    } | null;
-    return controlBar?.currentDatasetName ?? null;
-  });
 }
 
 async function loadDemoDatasetFromImportMenu(page: Page): Promise<void> {

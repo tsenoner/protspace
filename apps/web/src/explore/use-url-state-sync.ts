@@ -18,8 +18,7 @@ export function useExploreUrlStateSync(
   const pendingUrlRequestRef = useRef(false);
   const requestState = useMemo(() => parseExploreViewRequest(searchParams), [searchParams]);
   const requestStateRef = useRef(requestState);
-  const datasetParam = useMemo(() => getDatasetParam(searchParams), [searchParams]);
-  const datasetParamRef = useRef(datasetParam);
+  const datasetParam = getDatasetParam(searchParams);
   // The dataset id the app currently reflects (last value written by this
   // hook, or last value the controller reported). Lets the effect below tell
   // Back/Forward (or a hand-edited URL) apart from a param change this hook's
@@ -30,8 +29,7 @@ export function useExploreUrlStateSync(
     setSearchParamsRef.current = setSearchParams;
     searchParamsRef.current = new URLSearchParams(searchParams);
     requestStateRef.current = requestState;
-    datasetParamRef.current = datasetParam;
-  }, [datasetParam, requestState, searchParams, setSearchParams]);
+  }, [requestState, searchParams, setSearchParams]);
 
   const handleViewChange = useCallback((change: ExploreViewChange) => {
     const update = getExploreViewSearchParamsUpdate(searchParamsRef.current, change, {
@@ -77,8 +75,9 @@ export function useExploreUrlStateSync(
       controller.setRequestedView(requestStateRef.current);
       // Kicks off the very first dataset load, so it already knows the
       // requested example instead of loading the demo/stored import first.
-      currentDatasetIdRef.current = datasetParamRef.current;
-      controller.setRequestedDataset(datasetParamRef.current);
+      const initialDatasetParam = getDatasetParam(searchParamsRef.current);
+      currentDatasetIdRef.current = initialDatasetParam;
+      controller.setRequestedDataset(initialDatasetParam);
 
       return () => {
         if (controllerRef.current === controller) {
@@ -97,7 +96,8 @@ export function useExploreUrlStateSync(
   // the view param first would run it against whichever dataset is still on
   // screen — the OLD one — normalize it against that dataset's annotations/
   // projections, and write the normalization over the URL entry the switch
-  // is headed to (see the "1(b)" scenario in the example-datasets review).
+  // is headed to (e.g. Back from `?dataset=A&annotation=x` to
+  // `?dataset=B&annotation=y` would resolve `y` against A).
   // So when a dataset switch is pending, only record the requested view
   // (`recordRequestedView`, no resolve/apply/URL write) and let the dataset
   // load apply it once the new data is in, via

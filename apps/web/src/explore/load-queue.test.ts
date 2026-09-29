@@ -15,7 +15,7 @@ describe('createLoadQueue', () => {
     const promise = queue.enqueueLoadFromFile(file, undefined, loadFn);
     // loadFn runs synchronously within the microtask, so meta is available after a tick
     await vi.waitFor(() => expect(loadFn).toHaveBeenCalled());
-    queue.resolvePendingLoadFinalization(queue.getLoadMetaForFile(file)!.sequence);
+    queue.resolvePendingLoadFinalization(queue.getLoadMetaForFile(file)!.sequence, true);
     await promise;
 
     expect(loadFn).toHaveBeenCalledOnce();
@@ -44,7 +44,7 @@ describe('createLoadQueue', () => {
     const promise = queue.enqueueLoadFromFile(file, undefined, loadFn);
     // Resolve finalization so the queue can complete
     const meta = queue.getLoadMetaForFile(file)!;
-    queue.resolvePendingLoadFinalization(meta.sequence);
+    queue.resolvePendingLoadFinalization(meta.sequence, true);
     await promise;
 
     expect(capturedRunning).not.toBeNull();
@@ -57,7 +57,7 @@ describe('createLoadQueue', () => {
 
     const promise = queue.enqueueLoadFromFile(file, undefined, async () => {});
     const meta = queue.getLoadMetaForFile(file)!;
-    queue.resolvePendingLoadFinalization(meta.sequence);
+    queue.resolvePendingLoadFinalization(meta.sequence, true);
     await promise;
 
     expect(queue.getRunningLoadMeta()).toBeNull();
@@ -80,12 +80,12 @@ describe('createLoadQueue', () => {
 
     // Resolve A's finalization so B can proceed
     const metaA = queue.getLoadMetaForFile(fileA)!;
-    queue.resolvePendingLoadFinalization(metaA.sequence);
+    queue.resolvePendingLoadFinalization(metaA.sequence, true);
     await promiseA;
 
     // Now resolve B
     const metaB = queue.getLoadMetaForFile(fileB)!;
-    queue.resolvePendingLoadFinalization(metaB.sequence);
+    queue.resolvePendingLoadFinalization(metaB.sequence, true);
     await promiseB;
 
     expect(order).toEqual(['a-start', 'b-start']);
@@ -102,14 +102,14 @@ describe('createLoadQueue', () => {
 
     // Resolve A so B can start
     const metaA = queue.getLoadMetaForFile(fileA)!;
-    queue.resolvePendingLoadFinalization(metaA.sequence);
+    queue.resolvePendingLoadFinalization(metaA.sequence, true);
 
     const promiseB = queue.enqueueLoadFromFile(fileB, undefined, async () => {
       runningDuringB = queue.getRunningLoadMeta();
     });
 
     const metaB = queue.getLoadMetaForFile(fileB)!;
-    queue.resolvePendingLoadFinalization(metaB.sequence);
+    queue.resolvePendingLoadFinalization(metaB.sequence, true);
     await promiseB;
 
     expect(runningDuringB).not.toBeNull();
@@ -124,7 +124,7 @@ describe('createLoadQueue', () => {
 
     disposed = true;
     const promise = queue.enqueueLoadFromFile(file, undefined, loadFn);
-    queue.resolvePendingLoadFinalization(queue.getLoadMetaForFile(file)!.sequence);
+    queue.resolvePendingLoadFinalization(queue.getLoadMetaForFile(file)!.sequence, true);
     await promise;
 
     expect(loadFn).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe('createLoadQueue', () => {
 
     const promise = queue.enqueueLoadFromFile(file, { source: 'auto' }, async () => {});
     const meta = queue.getLoadMetaForFile(file)!;
-    queue.resolvePendingLoadFinalization(meta.sequence);
+    queue.resolvePendingLoadFinalization(meta.sequence, true);
     await promise;
 
     expect(meta.kind).toBe('default');

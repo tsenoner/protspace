@@ -16,13 +16,8 @@ import {
   getCorruptedPersistedDatasetNotification,
   getExampleLoadFailureNotification,
 } from './notifications';
-import type {
-  DatasetChangeSource,
-  DatasetLoadKind,
-  ExampleLoadContext,
-  ExampleLoadOutcome,
-  LoadMeta,
-} from './types';
+import type { LoadQueue } from './load-queue';
+import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
 
 export type PersistedLoadOutcome =
   | { kind: 'auto-loaded' }
@@ -39,9 +34,8 @@ interface PersistedDatasetOptions {
   overlayController: {
     update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
   };
-  registerFileLoad(file: File, kind: DatasetLoadKind, example?: ExampleLoadContext): LoadMeta;
-  /** Resolves once the registered load reaches `data-loaded` (true) or `data-error` (false). */
-  awaitLoadOutcome(sequence: number): Promise<boolean>;
+  registerFileLoad: LoadQueue['registerFileLoad'];
+  awaitLoadOutcome: LoadQueue['awaitLoadOutcome'];
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
 }
@@ -135,8 +129,7 @@ export function createPersistedDatasetController({
         return 'superseded';
       }
       console.error(`Failed to load example dataset "${entry.id}":`, error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      notify.error(getExampleLoadFailureNotification(entry, message));
+      notify.error(getExampleLoadFailureNotification(entry, error));
       overlayController.update(false);
       return 'failed';
     }

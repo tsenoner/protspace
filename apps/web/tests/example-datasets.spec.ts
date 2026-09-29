@@ -3,9 +3,13 @@ import { expect, test, type Page } from '@playwright/test';
 import { findExampleDataset } from '../src/explore/example-datasets';
 import {
   dismissTourIfPresent,
+  getCurrentDatasetName,
+  getProteinCount,
+  openImportMenu,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
+  waitForProteinCount,
 } from './helpers/explore';
 
 /**
@@ -30,31 +34,6 @@ const FORTY_K_COUNT = 40026;
 
 const PHOSPHATASE_BUNDLE_PATH = path.join(PUBLIC_DATA_DIR, 'phosphatase.parquetbundle');
 
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as { data?: { protein_ids?: string[] } } | null;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as {
-        data?: { protein_ids?: string[] };
-      } | null;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
-}
-
 async function getSelectedAnnotation(page: Page): Promise<string | null> {
   return page.evaluate(() => {
     const controlBar = document.querySelector('protspace-control-bar') as
@@ -68,27 +47,8 @@ async function getDatasetParam(page: Page): Promise<string | null> {
   return page.evaluate(() => new URL(window.location.href).searchParams.get('dataset'));
 }
 
-async function getDatasetName(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { currentDatasetName?: string })
-      | null;
-    return controlBar?.currentDatasetName ?? null;
-  });
-}
-
 async function expectDatasetParam(page: Page, expected: string | null): Promise<void> {
   await expect.poll(() => getDatasetParam(page)).toBe(expected);
-}
-
-/** Mirrors `dataset-reload.spec.ts`'s helper: open the menu only if it's closed. */
-async function openImportMenu(page: Page): Promise<void> {
-  await waitForExploreInteractionReady(page);
-  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
-  if (!(await ownDataset.isVisible().catch(() => false))) {
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-  }
-  await expect(ownDataset).toBeVisible();
 }
 
 async function chooseExampleFromMenu(page: Page, id: string): Promise<void> {
@@ -366,14 +326,14 @@ test.describe('Example datasets: Import menu and deep link', () => {
       route.fulfill({ status: 200, body: 'not-a-valid-bundle' }),
     );
 
-    const datasetNameBefore = await getDatasetName(page);
+    const datasetNameBefore = await getCurrentDatasetName(page);
 
     await chooseExampleFromMenu(page, 'phosphatase');
 
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
     await expectDatasetParam(page, null);
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
-    expect(await getDatasetName(page)).toBe(datasetNameBefore);
+    expect(await getCurrentDatasetName(page)).toBe(datasetNameBefore);
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
     expect(await isExampleDisabled(page, 'phosphatase')).toBe(false);
   });

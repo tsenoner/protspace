@@ -22,7 +22,7 @@ export interface LoadQueue {
   getLatestSequence(): number;
   /** Resolves once `resolvePendingLoadFinalization` is called for this sequence. */
   awaitLoadOutcome(sequence: number): Promise<boolean>;
-  resolvePendingLoadFinalization(sequence: number, success?: boolean): void;
+  resolvePendingLoadFinalization(sequence: number, success: boolean): void;
   dispose(): void;
 }
 
@@ -62,7 +62,7 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
   const awaitLoadOutcome = (sequence: number): Promise<boolean> =>
     ensurePendingLoadFinalization(sequence).promise;
 
-  const resolvePendingLoadFinalization = (sequence: number, success = true) => {
+  const resolvePendingLoadFinalization = (sequence: number, success: boolean) => {
     const pending = pendingLoadFinalizationBySequence.get(sequence);
     if (!pending) {
       return;
