@@ -370,7 +370,7 @@ The annotation cache always stores scores; `--no-scores` strips them from the ou
 The annotation cache is read per column and per protein: a source is queried only for the proteins
 whose values the cache cannot supply, and a cache covering more proteins than the current run keeps
 those extra rows. It is also written after each source finishes, not only at the end of the run, so
-a crash or failure in a late source (TED can run for many hours) does not cost the sources that
+a crash or failure in a late source (TED can run for hours) does not cost the sources that
 already finished. An embedding HDF5 records the backend and model that wrote it, and a run that
 points at another producer's file stops rather than mixing two embedding spaces.
 

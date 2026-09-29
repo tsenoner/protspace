@@ -30,6 +30,10 @@ Two consequences follow from the "Needs" column:
   sequence — pass the original FASTA with `-f` and it will use that instead of asking UniProt.
   Proteins with identical sequences are looked up once and all receive the result.
 
+InterPro columns hold each member database's own matches. The InterPro API also returns matches
+that InterPro-N, an AI model, predicts for those databases, without a score. ProtSpace leaves
+them out, so a `pfam` value is always a Pfam match.
+
 `length` is a special case: when UniProt has no length for a protein but a matching FASTA sequence
 is available, ProtSpace counts the residues itself (`*` terminators and `-` gaps do not count). A
 length that UniProt _does_ provide always wins.
@@ -113,8 +117,8 @@ says which source was short.
 ### Each source is saved as it finishes
 
 The sources are fetched one after another — UniProt, taxonomy, InterPro, TED, Biocentral — and at
-Swiss-Prot scale they finish hours apart (UniProt in about an hour, TED in a day or more). The cache
-is therefore written after each source that was fetched, under the same rules as the final write,
+Swiss-Prot scale each takes from half an hour (UniProt) to an hour or two (InterPro, TED). The
+cache is therefore written after each source that was fetched, under the same rules as the final write,
 not only at the end of the run. If the run crashes or is interrupted during TED, the UniProt and
 InterPro results are already on disk and the next run fetches only TED.
 
@@ -144,6 +148,19 @@ Some requests are not retried. Biocentral predictions are requested in batches o
 sequences, each sent once: a failed batch loses only its own proteins, and Biocentral stays out of
 the cache, so the next run requests them again. UniProt's extra lookups for an inactive accession
 (its replacement entry, or its sequence from UniParc) are single attempts too.
+
+### Requests run in parallel, within limits
+
+At Swiss-Prot scale TED is over half a million requests, one per protein, and InterPro about 5,000
+batches. Both reuse their connections and keep a few requests in flight at once: TED up to 8
+lookups, InterPro up to 4 batches. UniProt reuses its connection too, but sends one request at a
+time. The results are exactly those of one request at a time, in the same order, and failures are
+counted the same way; the "10 in a row" cut-offs above count in input order.
+
+The limits are deliberately modest, because these are shared public services, and they are not a
+command-line option. When a service answers any request with `Retry-After`, every request to that
+service waits, not only the one that received it. Interrupting a run stops it once the requests
+already in flight have finished.
 
 ## Embeddings belong to one backend and model
 
@@ -213,7 +230,7 @@ Caches written by older versions are migrated when read, so you do not have to d
   same way, by refetching UniProt once when the column is requested.
 - A cache written before InterPro values reached every protein sharing a sequence (only one protein
   of each identical-sequence group got them) refetches InterPro once when an InterPro column is
-  requested.
+  requested. The refetch also drops the InterPro-N predictions that such a cache holds.
 
 If such a refresh cannot retrieve the source, the old values are not stamped as current, and the
 next run tries again. At Swiss-Prot scale the one-time refresh takes hours.
