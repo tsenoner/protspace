@@ -136,8 +136,14 @@ function renderShapeSizeInput(
   callbacks: SettingsDialogCallbacks,
 ): TemplateResult {
   const onInput = (e: Event) => {
-    const value = parsePositiveInt((e.target as HTMLInputElement).value);
-    if (value !== null) callbacks.onShapeSizeChange(Math.min(value, MAX_SHAPE_SIZE));
+    const input = e.target as HTMLInputElement;
+    const value = parsePositiveInt(input.value);
+    if (value === null) return;
+    const capped = Math.min(value, MAX_SHAPE_SIZE);
+    // Lit skips `.value` when the capped size equals the last one it rendered, so
+    // without this the field would keep showing e.g. 640 while 64 is applied.
+    if (capped !== value) input.value = String(capped);
+    callbacks.onShapeSizeChange(capped);
   };
 
   return renderFieldCard(

@@ -178,8 +178,9 @@ describe('shape size input', () => {
   });
 
   it('caps typed sizes at 64', () => {
-    const { callbacks } = typeSize('100');
+    const { input, callbacks } = typeSize('100');
     expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(64);
+    expect(input.value).toBe('64');
   });
 });
 
