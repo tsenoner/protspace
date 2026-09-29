@@ -3,6 +3,7 @@
 Dated copies of `perf/test-results/chrome/webgl-perf-*/webgl-perf-suite-chrome*.json`. Playwright
 deletes the output directory of every selected project at the start of the next run, so a run worth
 comparing against has to be copied here immediately.
+The JSON files are gitignored (machine-specific, ~45K lines); this README keeps the numbers.
 
 | File                                                    | Produced by                                                                     |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
