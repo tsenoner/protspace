@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from src.protspace.data.annotations.retrievers.uniprot_retriever import (
@@ -125,7 +126,9 @@ class TestFetchAnnotations:
         assert result[1].annotations["annotation_score"] == "4.0"
 
         # Verify API call
-        mock_fetch_many.assert_called_once_with(["P01308", "P01315"])
+        mock_fetch_many.assert_called_once_with(
+            ["P01308", "P01315"], on_response=retriever._record_release
+        )
 
     @patch(_FETCH_MANY_PATCH)
     def test_fetch_annotations_batching_logic(self, mock_fetch_many):
@@ -439,7 +442,9 @@ class TestResolveInactiveEntries:
         assert resolved[0].annotations["length"] == "110"
         assert res_count == 1
         assert del_count == 0
-        mock_fetch_one.assert_called_once_with("C5H5D1")
+        mock_fetch_one.assert_called_once_with(
+            "C5H5D1", on_response=retriever._record_release
+        )
 
     @patch(_UNIPARC_PATCH)
     @patch(_FETCH_ONE_PATCH)
@@ -468,7 +473,9 @@ class TestResolveInactiveEntries:
         assert resolved[0].annotations["protein_name"] == ""
         assert res_count == 0
         assert del_count == 1
-        mock_uniparc.assert_called_once_with("UPI000012345")
+        mock_uniparc.assert_called_once_with(
+            "UPI000012345", on_response=retriever._record_release
+        )
 
     @patch(_UNIPARC_PATCH)
     @patch(_FETCH_ONE_PATCH)
@@ -569,7 +576,9 @@ class TestResolveInactiveEntries:
         assert resolved[0].annotations["protein_name"] == "Crotastatin"
         assert res_count == 1
         assert del_count == 0
-        mock_search.assert_called_once_with("C5H5D1")
+        mock_search.assert_called_once_with(
+            "C5H5D1", on_response=retriever._record_release
+        )
 
     @patch(_SEARCH_SEC_ACC_PATCH)
     @patch(_FETCH_ONE_PATCH)
@@ -681,3 +690,80 @@ class TestFetchAnnotationsWithMissingEntries:
 
         assert len(result) == 2
         mock_fetch_one.assert_not_called()
+
+
+class TestUniProtRelease:
+    """The UniProtKB release travels in the X-UniProt-Release header of the
+    responses the retriever already receives; no extra request is made."""
+
+    @staticmethod
+    def _serve(monkeypatch, release_by_endpoint: dict[str, str]):
+        """Fake UniProt: P01308 comes back from the batch endpoint; P99999 is
+        a deleted entry resolved one by one (its sequence from UniParc);
+        Q88888 is missing from the single-entry endpoint and found by a
+        secondary-accession search. Each endpoint reports its own release."""
+        import requests
+        from requests.structures import CaseInsensitiveDict
+
+        bodies = {
+            "accessions": {"results": [_make_mock_record("P01308")]},
+            "P99999.json": {
+                "entryType": "Inactive",
+                "inactiveReason": {"inactiveReasonType": "DELETED"},
+                "extraAttributes": {"uniParcId": "UPI0000000001"},
+            },
+            "Q88888.json": None,  # 404
+            "search": {"results": [_make_mock_record("Q88880")]},
+            "UPI0000000001.json": {"sequence": {"value": "MKV", "length": 3}},
+        }
+        requested = []
+
+        def fake_get(url, params=None, timeout=None):
+            endpoint = url.rsplit("/", 1)[-1]
+            requested.append(endpoint)
+            response = requests.Response()
+            response.url = url
+            release = release_by_endpoint.get(endpoint)
+            # Real servers send it lower-case; lookups must not care.
+            response.headers = CaseInsensitiveDict(
+                {"x-uniprot-release": release} if release else {}
+            )
+            body = bodies[endpoint]
+            response.status_code = 404 if body is None else 200
+            response._content = b"{}" if body is None else json.dumps(body).encode()
+            return response
+
+        monkeypatch.setattr(requests, "get", fake_get)
+        return requested
+
+    def test_releases_are_collected_from_every_response(self, monkeypatch):
+        requested = self._serve(
+            monkeypatch,
+            {
+                "accessions": "2026_03",
+                "P99999.json": "2026_02",
+                "UPI0000000001.json": "2026_01",
+                "search": "2026_04",
+            },
+        )
+        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+
+        result = retriever.fetch_annotations()
+
+        assert {r.identifier for r in result} == {"P01308", "P99999", "Q88888"}
+        # Every path was exercised, and none made a request of its own.
+        assert sorted(requested) == sorted(
+            ["accessions", "P99999.json", "UPI0000000001.json", "Q88888.json", "search"]
+        )
+        assert retriever.releases == {"2026_01", "2026_02", "2026_03", "2026_04"}
+
+    def test_no_release_header_leaves_the_set_empty(self, monkeypatch):
+        self._serve(monkeypatch, {})
+        retriever = UniProtRetriever(headers=["P01308", "P99999", "Q88888"])
+
+        retriever.fetch_annotations()
+
+        assert retriever.releases == set()
+
+    def test_a_retriever_that_fetched_nothing_has_an_empty_set(self):
+        assert UniProtRetriever(headers=["P01308"]).releases == set()

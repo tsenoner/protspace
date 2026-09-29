@@ -120,17 +120,21 @@ def paginated_get(
     params: dict | None = None,
     timeout: int = API_TIMEOUT,
     result_key: str = "results",
+    on_response: Callable[[requests.Response], None] | None = None,
 ) -> list[dict]:
     """Fetch all pages from a UniProt-style REST API endpoint.
 
     Follows Link headers with rel="next" for automatic pagination.
     Returns the concatenated contents of the ``result_key`` array
-    across all pages. Each page is fetched through :func:`get_with_retry`.
+    across all pages. Each page is fetched through :func:`get_with_retry`,
+    and handed to *on_response*, when given, so a caller can read its headers.
     """
     results = []
 
     while url:
         resp = get_with_retry(url, params=params, timeout=timeout)
+        if on_response is not None:
+            on_response(resp)
         data = resp.json()
         results.extend(data.get(result_key, []))
 

@@ -205,3 +205,30 @@ class TestPostWithRetry:
         with pytest.raises(requests.Timeout):
             http_utils.post_with_retry("https://example.test/x", json={})
         assert len(calls) == http_utils.MAX_ATTEMPTS
+
+
+def test_on_response_sees_every_page(monkeypatch):
+    """Callers read response headers (UniProt's release) through this hook."""
+    pages = [
+        _response(
+            200,
+            {"results": [{"a": 1}]},
+            headers={"Link": '<https://example.test/x?cursor=2>; rel="next"'},
+        ),
+        _response(200, {"results": [{"a": 2}]}),
+    ]
+    calls = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(url)
+        return pages[len(calls) - 1]
+
+    monkeypatch.setattr(http_utils.requests, "get", fake_get)
+    seen = []
+
+    results = http_utils.paginated_get(
+        "https://example.test/x", on_response=seen.append
+    )
+
+    assert results == [{"a": 1}, {"a": 2}]
+    assert seen == pages
