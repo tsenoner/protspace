@@ -227,6 +227,9 @@ class ReductionPipeline:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
+        # UniProtKB release(s) behind the annotations of the last
+        # `_fetch_annotations` call; empty when no UniProt data was used.
+        self.uniprot_releases: set[str] = set()
         reducer_dict = asdict(config.reducer_params)
         self.base = BaseProcessor(reducer_dict, get_reducers())
 
@@ -399,6 +402,7 @@ class ReductionPipeline:
             annotations_list = None
 
         # CSV-only: no API annotations requested
+        self.uniprot_releases = set()
         if annotations_list is None and csv_df is not None:
             return csv_df
 
@@ -415,6 +419,7 @@ class ReductionPipeline:
             cache_path=cache_path,
             refetch=self.config.refetch_stages,
         )
+        self.uniprot_releases = set(fetched.uniprot_releases)
         return self._merge_csv(fetched.frame, csv_df)
 
     def _resolve_annotation_names(self) -> tuple[list[str], str | None]:

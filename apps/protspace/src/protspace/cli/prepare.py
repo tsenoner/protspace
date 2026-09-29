@@ -512,7 +512,8 @@ def prepare(
             reducer_params=reducer_params,
         )
 
-        ReductionPipeline(config).run(embedding_sets)
+        pipeline = ReductionPipeline(config)
+        pipeline.run(embedding_sets)
 
         if keep_tmp and not refetch_stages:
             logger.warning(
@@ -540,6 +541,7 @@ def prepare(
             output_path=output_path,
             n_proteins=len(embedding_sets[0].headers) if embedding_sets else 0,
             n_embedding_sets=len(embedding_sets),
+            uniprot_releases=pipeline.uniprot_releases,
         )
 
 
@@ -594,6 +596,7 @@ def _write_run_log(
     output_path: Path,
     n_proteins: int,
     n_embedding_sets: int,
+    uniprot_releases: set[str],
 ) -> None:
     """Write a reproducibility log to {output_dir}/run.log.
 
@@ -643,6 +646,11 @@ def _write_run_log(
         "## Annotations",
         f"categories: {', '.join(pipeline_config.annotations or ['default'])}",
         f"scores: {scores}",
+        # The same query can return different values a release later, so the
+        # numbers in a bundle trace back only through this line. "none" when
+        # no UniProt data was used, "unknown" for values from a cache that
+        # never recorded its release.
+        f"uniprot_release: {', '.join(sorted(uniprot_releases)) or 'none'}",
         "",
         "## Output",
         f"format: {'parquetbundle' if pipeline_config.bundled else 'parquet'}",

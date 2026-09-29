@@ -144,6 +144,13 @@ given without `-e`, `prot_t5` is used.
 | `--no-log`                   | Skip writing `run.log` to the output directory.                                                                                                                              | off     |
 | `-v, --verbose`              | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                                                                                                                       | -       |
 
+Each run appends its command, version, settings and timing to `run.log` in the output directory.
+The `uniprot_release:` line under `## Annotations` names the UniProtKB release the annotations came
+from (for example `2026_03`), whether they were fetched in that run or read from the annotation
+cache. It lists every release when cached and newly fetched values differ, says `unknown` for values
+from a cache written before releases were recorded, and says `none` when the annotations came only
+from a CSV file.
+
 ## Projection Methods
 
 Methods require a dimension suffix: `2` for 2D, `3` for 3D.

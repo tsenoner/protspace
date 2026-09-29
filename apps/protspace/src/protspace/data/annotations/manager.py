@@ -59,6 +59,33 @@ _SOURCE_COLUMNS: dict[str, list[str]] = {
     "biocentral": BIOCENTRAL_ANNOTATIONS,
 }
 
+# The UniProtKB release(s) the cache's UniProt values came from, from the
+# `X-UniProt-Release` header of the responses. Stored next to the cache version
+# in `DataFrame.attrs`, which pandas round-trips through the parquet metadata,
+# as a sorted, comma-separated string. Absent means unknown.
+UNIPROT_RELEASE_ATTR = "protspace_uniprot_release"
+UNKNOWN_RELEASE = "unknown"
+
+
+def read_release_stamp(df: pd.DataFrame | None) -> set[str]:
+    """Releases *df* records for its UniProt values, ``{"unknown"}`` if none."""
+    stamp = None if df is None else df.attrs.get(UNIPROT_RELEASE_ATTR)
+    if not isinstance(stamp, str):
+        return {UNKNOWN_RELEASE}
+    return {part.strip() for part in stamp.split(",") if part.strip()} or {
+        UNKNOWN_RELEASE
+    }
+
+
+def _observed_releases(retriever) -> set[str]:
+    """Releases a UniProt retriever saw in its responses' headers.
+
+    Anything but a set (an older retriever, or a test's ``Mock``) counts as none
+    seen, rather than as a release named after whatever the attribute holds.
+    """
+    releases = getattr(retriever, "releases", None)
+    return {str(r) for r in releases} if isinstance(releases, set) else set()
+
 
 def resolve_fasta_sequence_length(
     identifier: str,
@@ -142,6 +169,10 @@ class ProteinAnnotationManager:
         # the same rules, so they would otherwise repeat one warning per source.
         self._cache_warnings: set[str] = set()
         self._cached_values_memo: dict = {}
+        # How UniProt got its values this run (see `_fetch_plan`), and the
+        # releases its fetches reported; None until a fetch has run.
+        self._uniprot_mode: str | None = None
+        self._fetched_releases: set[str] | None = None
         # Initialize configuration first so we can derive sources_to_fetch
         self.config = AnnotationConfiguration(annotations)
         self.user_annotations = self.config.user_annotations
@@ -190,6 +221,7 @@ class ProteinAnnotationManager:
         fill_in = uncached_headers(self.headers, self.cached_data)
         self._cached_values_memo = {}
         plan = self._fetch_plan(fill_in)
+        self._uniprot_mode = plan["uniprot"]
         # Sources that go over the network this run, in fetch order.
         pending = [s for s in SOURCE_ORDER if plan[s] and self._requests(s)]
 
@@ -359,12 +391,14 @@ class ProteinAnnotationManager:
         df = DataFormatter.to_dataframe(self.transformer.transform(self._merge(values)))
         waiting = set().union(*(SOURCE_ANNOTATIONS[s] for s in pending))
         cached_columns = set() if self.cached_data is None else self.cached_data.columns
+        fill_rows = True
         if fill_in and waiting & set(cached_columns):
             new = {str(h) for h in fill_in}
             df = df[~df[df.columns[0]].astype(str).isin(new)].reset_index(drop=True)
+            fill_rows = False
         if df.empty:
             return
-        self._cache_frame(df, checkpoint=True)
+        self._cache_frame(df, fill_rows=fill_rows, checkpoint=True)
 
     def _with_retained_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         """Append cached rows for identifiers outside this run, when they fit.
@@ -438,15 +472,24 @@ class ProteinAnnotationManager:
             self._cache_frame(df)
         return df
 
-    def _cache_frame(self, df: pd.DataFrame, checkpoint: bool = False) -> None:
+    def _cache_frame(
+        self, df: pd.DataFrame, fill_rows: bool = True, checkpoint: bool = False
+    ) -> None:
         """Write *df* to the cache under the rules :meth:`_write_cache_and_frame` sets.
 
         Shared by the final write and every checkpoint, so a checkpoint can never
-        store what the final write would refuse to.
+        store what the final write would refuse to. *fill_rows* says whether the
+        rows filled in for identifiers the cache lacked are in *df*.
         """
         drop = self._incomplete_columns()
         if not drop:
-            self._write_cache(self._with_retained_rows(df))
+            retained = self._with_retained_rows(df)
+            self._write_cache(
+                retained,
+                self._cached_releases(
+                    retained_rows=len(retained) > len(df), fill_rows=fill_rows
+                ),
+            )
             return
 
         incomplete = ", ".join(sorted(self.incomplete_sources))
@@ -483,7 +526,10 @@ class ProteinAnnotationManager:
             self.output_path,
             incomplete,
         )
-        self._write_cache(df.drop(columns=[c for c in df.columns if c in drop]))
+        self._write_cache(
+            df.drop(columns=[c for c in df.columns if c in drop]),
+            self._cached_releases(retained_rows=False, fill_rows=fill_rows),
+        )
 
     def _warn_once(self, message: str, *args) -> None:
         """Log a cache warning once per run, not once per checkpoint."""
@@ -493,10 +539,50 @@ class ProteinAnnotationManager:
         self._cache_warnings.add(key)
         logger.warning(message, *args)
 
-    def _write_cache(self, df: pd.DataFrame) -> None:
-        """Persist *df* as the annotation cache, stamped with the current semantics."""
+    @property
+    def uniprot_releases(self) -> set[str]:
+        """UniProtKB release(s) this run's UniProt values came from.
+
+        Fetched values carry the releases their responses reported, cached ones
+        the release the cache records; either is ``"unknown"`` when not known.
+        """
+        return self._releases(retained_rows=False, fill_rows=True)
+
+    def _releases(self, *, retained_rows: bool, fill_rows: bool) -> set[str]:
+        """Releases of the UniProt values in a frame built from this run.
+
+        *retained_rows*: the frame holds cached rows for identifiers outside
+        the run. *fill_rows*: it holds the rows filled in this run.
+        """
+        fetched = self._fetched_releases or {UNKNOWN_RELEASE}
+        if self._uniprot_mode == "all":
+            cached = read_release_stamp(self.cached_data) if retained_rows else set()
+            return fetched | cached
+        cached = read_release_stamp(self.cached_data)
+        if self._uniprot_mode == "fill" and fill_rows:
+            return cached | fetched
+        return cached
+
+    def _cached_releases(
+        self, *, retained_rows: bool, fill_rows: bool
+    ) -> set[str] | None:
+        """Releases to stamp on a cache write, or None if it has no UniProt values."""
+        if "uniprot" in self._uncacheable_sources():
+            return None
+        return self._releases(retained_rows=retained_rows, fill_rows=fill_rows)
+
+    def _write_cache(self, df: pd.DataFrame, releases: set[str] | None = None) -> None:
+        """Persist *df* as the annotation cache, stamped with the current semantics.
+
+        *releases* are the UniProt releases its values came from; they are
+        recorded only when at least one is known, since no stamp already reads
+        as unknown.
+        """
         df = df.copy()
+        df.attrs.pop(UNIPROT_RELEASE_ATTR, None)
         df.attrs.update(annotation_cache_version_attrs())
+        if releases and releases != {UNKNOWN_RELEASE}:
+            df.attrs[UNIPROT_RELEASE_ATTR] = ",".join(sorted(releases))
         # Staged: with retained rows folded in, this frame is a superset holding
         # rows for identifiers no other file has, so a half-written cache loses
         # data rather than costing one refetch.
@@ -564,6 +650,7 @@ class ProteinAnnotationManager:
             )
             annotations = retriever.fetch_annotations()
         except Exception as e:
+            self._record_releases(set())
             self.incomplete_sources.add("uniprot")
             failed_sources.append(f"UniProt ({str(e)})")
             logger.warning(f"Failed to retrieve UniProt annotations: {e}")
@@ -578,7 +665,14 @@ class ProteinAnnotationManager:
         # swallowed as "UniProt is unreachable" and discard a successful fetch.
         if retriever.failed_batch_count > 0:
             self.incomplete_sources.add("uniprot")
+        self._record_releases(_observed_releases(retriever))
         return annotations
+
+    def _record_releases(self, observed: set[str]) -> None:
+        """Add one UniProt fetch's releases; a fetch that saw none adds unknown."""
+        self._fetched_releases = (self._fetched_releases or set()) | (
+            observed or {UNKNOWN_RELEASE}
+        )
 
     def _fetch_taxonomy(
         self,

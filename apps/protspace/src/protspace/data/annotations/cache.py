@@ -39,6 +39,15 @@ class AnnotationFetch:
     # Sources whose retrieval did not complete this run; their values in
     # `frame` are empty placeholders, not genuine absences.
     incomplete_sources: set[str] = field(default_factory=set)
+    # UniProtKB release(s) the UniProt values in `frame` came from, fetched or
+    # cached; "unknown" stands for values whose release was never recorded.
+    uniprot_releases: set[str] = field(default_factory=set)
+
+
+def _from_manager(manager, frame: pd.DataFrame) -> AnnotationFetch:
+    return AnnotationFetch(
+        frame, set(manager.incomplete_sources), set(manager.uniprot_releases)
+    )
 
 
 def _migrate_legacy_ted_labels(df: pd.DataFrame) -> bool:
@@ -121,6 +130,7 @@ def fetch_annotations(
     # replace the manager class on its own module.
     from protspace.data.annotations.manager import (
         ProteinAnnotationManager,
+        read_release_stamp,
         resolve_fasta_sequence_length,
         uncached_headers,
     )
@@ -136,7 +146,7 @@ def fetch_annotations(
             output_path=None,
             sequences=sequences,
         )
-        return AnnotationFetch(manager.to_pd(), set(manager.incomplete_sources))
+        return _from_manager(manager, manager.to_pd())
 
     if not cache_path.exists():
         manager = ProteinAnnotationManager(
@@ -145,7 +155,7 @@ def fetch_annotations(
             output_path=cache_path,
             sequences=sequences,
         )
-        return AnnotationFetch(manager.to_pd(), set(manager.incomplete_sources))
+        return _from_manager(manager, manager.to_pd())
 
     cached_df = pd.read_parquet(cache_path)
     missing_identifiers = uncached_headers(headers, cached_df)
@@ -241,7 +251,7 @@ def fetch_annotations(
                     )
                 ]
 
-        return AnnotationFetch(api_df)
+        return AnnotationFetch(api_df, uniprot_releases=read_release_stamp(cached_df))
 
     sources = AnnotationConfiguration.determine_sources_to_fetch(
         cached_annotations, required
@@ -312,12 +322,13 @@ def fetch_annotations(
         # and the next run refetches it.
         protect_cached_columns=not refetching_annotations,
     )
-    api_df = manager.to_pd()
+    fetched = _from_manager(manager, manager.to_pd())
     if legacy_uniprot is not None and manager.uniprot_fetch_failed:
         logger.warning(
             "Legacy UniProt cache refresh failed; reusing the cached "
             "annotations for this run and leaving the cache "
             "unversioned so a later run retries the refresh"
         )
-        api_df = _restore_cached_columns(api_df, legacy_uniprot)
-    return AnnotationFetch(api_df, set(manager.incomplete_sources))
+        fetched.frame = _restore_cached_columns(fetched.frame, legacy_uniprot)
+        fetched.uniprot_releases |= read_release_stamp(legacy_uniprot)
+    return fetched
