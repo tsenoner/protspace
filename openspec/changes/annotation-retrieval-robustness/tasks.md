@@ -73,7 +73,7 @@ section 4 runs after all three are merged back. Rules for every track:
 
 ## 2. Track 2 — parser + bundle (family names, internal columns)
 
-- [ ] 2.1 Failing tests in a new `test_protein_families_parser.py`, using real UniProt text
+- [x] 2.1 Failing tests in a new `test_protein_families_parser.py`, using real UniProt text
       shapes:
   - `… (TC 3.A.3) family. Type IIA subfamily` keeps `(TC 3.A.3)`;
   - `X superfamily. Y family. Z subfamily` yields `X superfamily`;
@@ -85,27 +85,30 @@ section 4 runs after all three are merged back. Rules for every track:
   - four sections (the P27708 shape, `In the 2nd section`, `In the 3rd section`) yield four;
   - a repeated family appears once;
   - a `;` inside a name is still percent-encoded.
-- [ ] 2.2 Rewrite `UniProtEntry.protein_families` to walk every SIMILARITY text and apply the
+- [x] 2.2 Rewrite `UniProtEntry.protein_families` to walk every SIMILARITY text and apply the
       design.md rules: drop the section qualifier, drop the prefix, and split sentences at a `.`
       followed by whitespace or the end of the text, never inside parentheses.
-- [ ] 2.3 Failing tests: `transform_protein_families` returns a multi-family value with evidence
+- [x] 2.3 Failing tests: `transform_protein_families` returns a multi-family value with evidence
       unchanged, and does so again when fed its own output; `strip_scores_from_df` strips each
       family's evidence and drops none.
-- [ ] 2.4 Make `transform_protein_families` pass values through unchanged. Rewrite the
+- [x] 2.4 Make `transform_protein_families` pass values through unchanged. Rewrite the
       first-family expectations in `test_transformer.py` and in the protein-family test methods
       of `test_annotation_manager.py` (only those methods) to the new contract. Commit parser
       and transformer together as `fix(protspace): keep UniProt family names whole`.
-- [ ] 2.5 Failing tests in a new `test_bundle_internal_columns.py`:
+- [x] 2.5 Failing tests in a new `test_bundle_internal_columns.py`:
   - `write_bundle`, and `protspace bundle -a` given a cache-shaped parquet, drop `organism_id`
     and `sequence`, keep every other column, and keep the v2 format stamp;
   - `replace_annotations_in_bundle`, and `protspace transfer`, drop them from a bundle that
     carried them;
   - `protspace annotate -a sequence`, with its HTTP mocked, still writes `sequence` to its
     parquet.
-- [ ] 2.6 Drop `INTERNAL_ANNOTATIONS` in `data/io/bundle.py` inside `write_bundle` (annotations
+- [x] 2.6 Drop `INTERNAL_ANNOTATIONS` in `data/io/bundle.py` inside `write_bundle` (annotations
       table) and `replace_annotations_in_bundle`, before stamping. Import the constant inside
       the function. Commit: `fix(protspace): never write internal columns into a bundle`.
-- [ ] 2.7 Track gate: the same three commands as 1.11, all clean.
+- [x] 2.7 Track gate: the same three commands as 1.11, all clean. Run ruff on
+      `src/ packages/ tests/` from `apps/protspace`, as CI does: from the repository root,
+      `ruff check apps/protspace` also reaches three notebooks that already fail at the base
+      commit (I001, E402, format), which CI's ruff paths skip.
 
 ## 3. Track 3 — pipeline (per-source cache, `annotate --cache-dir`, `uniprot_release`)
 
