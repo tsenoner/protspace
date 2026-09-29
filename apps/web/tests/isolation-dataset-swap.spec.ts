@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   dismissTourIfPresent,
@@ -7,6 +6,7 @@ import {
   waitForExploreInteractionReady,
   waitForProteinCount,
 } from './helpers/explore';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 /**
  * Regression test for issue #222: the Reset chip in the control bar must clear
@@ -17,8 +17,7 @@ import {
  * actually reset.
  */
 
-const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
-const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
+const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
 
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.

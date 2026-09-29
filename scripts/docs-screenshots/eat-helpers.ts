@@ -7,13 +7,13 @@ import { dismissProductTour, waitForDataLoad } from './helpers';
  *
  * Every other capture in this folder runs against the app's built-in demo
  * dataset, which carries no transferred annotations. EAT needs a bundle that
- * actually has `*__pred_*` columns, so these captures load the shipped venom
- * bundle by hand: 811 proteins, `ec` with 384 transferred values and
+ * actually has `*__pred_*` columns, so these captures load the pinned venom
+ * fixture by hand: 811 proteins, `ec` with 384 transferred values and
  * `protein_families` with 14, plus a statistics part.
  */
 const VENOM_EAT_BUNDLE = path.join(
   __dirname,
-  '../../apps/web/public/data/venom_eat_stats.parquetbundle',
+  '../../apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle',
 );
 
 /** Protein count in the venom bundle; the load gate waits for exactly this. */

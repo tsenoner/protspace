@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { dismissTourIfPresent } from './helpers/explore';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -14,7 +15,7 @@ const RAW_NUMERIC_BUNDLE_PATH = path.join(
   'fixtures',
   'phosphatase_no_binning.parquetbundle',
 );
-const REPLACEMENT_BUNDLE_PATH = path.join(SPEC_DIR, '..', 'public', 'data', '5K.parquetbundle');
+const REPLACEMENT_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
 
 async function loadBundleFromBytes(
   page: Page,
@@ -2530,7 +2531,7 @@ test('loading a new dataset clears active filters before rendering the replaceme
     }),
   ).toBe(true);
 
-  await loadBundleFromBytes(page, replacementBundleBytes, '5K.parquetbundle');
+  await loadBundleFromBytes(page, replacementBundleBytes, 'toxprot_5181_pca3d.parquetbundle');
 
   // Loading a new dataset clears the active filter and renders the full
   // replacement data.

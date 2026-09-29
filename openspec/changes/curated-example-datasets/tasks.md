@@ -130,13 +130,13 @@ Before every commit:
 - [x] 4.4 `deploy.yml`: after `pnpm build`, run `pnpm examples:fetch --out apps/web/dist/examples --with-retained`; the deploy fails on any mismatch.
   - A job on PRs that touch `example-manifest.ts` (its own workflow, `example-bundles.yml`, so the path filter scopes it) runs the same fetch into a temporary directory, then `write_manifest.py --refresh --check` against the fetched files.
 - [x] 4.5 Development fallback: in `import.meta.env.DEV`, when a release-hosted file's same-origin fetch is not OK or returns HTML, retry from `https://protspace.app/examples/<file>`. Unit test with mocked `fetch`: a production build never leaves the origin.
-- [ ] 4.6 Fixtures: add byte-identical copies (the same blobs) in `apps/web/tests/fixtures/`:
+- [x] 4.6 Fixtures: add byte-identical copies (the same blobs) in `apps/web/tests/fixtures/`:
   - `demo_toxprot_7831` (from `public/data.parquetbundle`);
   - `toxprot_5181_pca3d` (5K);
   - `pe1_40026_pca3d` (40K);
   - `phosphatase_1587`;
   - `venom_eat_stats_811`.
-  - Repoint the path users: `dataset-reload.spec.ts`, `isolation-dataset-swap.spec.ts`, `numeric-binning.spec.ts`, `example-datasets.spec.ts`, `scripts/docs-screenshots/eat-helpers.ts` and `packages/core/.../bundle-roundtrip.test.ts` (5 sites).
+  - Repoint the path users (through `apps/web/tests/helpers/fixtures.ts`): `dataset-reload.spec.ts`, `isolation-dataset-swap.spec.ts`, `numeric-binning.spec.ts`, `example-datasets.spec.ts`, `scripts/docs-screenshots/eat-helpers.ts` (and `docs/explore/images/README.md`), `packages/core/.../bundle-roundtrip.test.ts` (5 sites) and `generate_toxprot_demo.py`'s default settings source (the demo fixture; task 6.7).
   - `tests/helpers/opfs.ts` (`seedOpfsState`, used by `dataset-recovery.spec.ts` and `example-datasets.spec.ts`) passes fixture bytes into `page.evaluate` instead of fetching `/data/5K.parquetbundle`.
   - The `public/data/` originals are deleted in 7.8.
 - [ ] 4.7 Startup pin:

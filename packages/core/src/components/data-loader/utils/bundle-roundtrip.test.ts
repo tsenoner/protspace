@@ -32,8 +32,11 @@ function loadArrayBuffer(filePath: string): ArrayBuffer {
  * are properly handled and don't cause JSON serialization errors.
  */
 describe('round-trip with real data files', () => {
-  it('should successfully export 5K.parquetbundle after loading', async () => {
-    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
+  it('should successfully export the 5,181-protein fixture after loading', async () => {
+    const filePath = resolve(
+      __dirname,
+      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
+    );
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Extract from the bundle
@@ -53,8 +56,11 @@ describe('round-trip with real data files', () => {
     expect(isParquetBundle(exportedBuffer)).toBe(true);
   });
 
-  it('should successfully export with settings after loading 5K.parquetbundle', async () => {
-    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
+  it('should successfully export with settings after loading the 5,181-protein fixture', async () => {
+    const filePath = resolve(
+      __dirname,
+      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
+    );
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Extract from the bundle
@@ -108,7 +114,10 @@ describe('round-trip with real data files', () => {
   });
 
   it('re-emits a statistics part behind the zero-byte settings sentinel', async () => {
-    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
+    const filePath = resolve(
+      __dirname,
+      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
+    );
     const extraction = await extractRowsFromParquetBundle(loadArrayBuffer(filePath));
     const data = convertParquetToVisualizationData(extraction);
 
@@ -313,8 +322,11 @@ describe('metadata preservation through round-trip', () => {
     return rest;
   }
 
-  it('should preserve projection metadata fields through export/import cycle (5K)', async () => {
-    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
+  it('should preserve projection metadata fields through export/import cycle (5,181-protein fixture)', async () => {
+    const filePath = resolve(
+      __dirname,
+      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
+    );
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Load original
@@ -358,7 +370,10 @@ describe('metadata preservation through round-trip', () => {
   });
 
   it('should preserve projection metadata fields (n_components, svd_solver, etc.)', async () => {
-    const filePath = resolve(__dirname, '../../../../../../apps/web/public/data/5K.parquetbundle');
+    const filePath = resolve(
+      __dirname,
+      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
+    );
     const arrayBuffer = loadArrayBuffer(filePath);
 
     // Load original

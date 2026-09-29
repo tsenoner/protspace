@@ -13,9 +13,10 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
-const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
-const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
+const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
+const CUSTOM_5K_BUNDLE_NAME = path.basename(CUSTOM_5K_BUNDLE_PATH);
 const CUSTOM_5K_PROTEIN_COUNT = 5181;
 
 async function clearPersistedDataset(page: Page): Promise<void> {
@@ -373,7 +374,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     expect(lifecycle.loadingStarts).toBe(1);
     expect(lifecycle.loadedEvents).toBe(1);
-    expect(await getCurrentDatasetName(page)).toBe('5K.parquetbundle');
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
   });
 });
 
@@ -435,7 +436,7 @@ test.describe('Persisted dataset failure handling', () => {
     const userLoadPromise = loadCustomDatasetFromPath(
       page,
       CUSTOM_5K_BUNDLE_PATH,
-      '5K.parquetbundle',
+      CUSTOM_5K_BUNDLE_NAME,
     );
     await page.waitForFunction(
       () => (window as Window & { __firstProtspaceLoadHeld?: boolean }).__firstProtspaceLoadHeld,
@@ -447,11 +448,11 @@ test.describe('Persisted dataset failure handling', () => {
     });
     await userLoadPromise;
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
-    await expect.poll(() => getCurrentDatasetName(page)).toBe('5K.parquetbundle');
+    await expect.poll(() => getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
     await dismissTourIfPresent(page);
 
     expect(await getProteinCount(page)).toBe(CUSTOM_5K_PROTEIN_COUNT);
-    expect(await getCurrentDatasetName(page)).toBe('5K.parquetbundle');
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
   });
 
   test('OPFS access restrictions show a toast without blocking the current session load', async ({

@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
   EXAMPLE_DATASETS,
@@ -17,6 +16,7 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
+import { PHOSPHATASE_1587_FIXTURE } from './helpers/fixtures';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 
 /**
@@ -31,15 +31,12 @@ import { clearOpfs, seedOpfsState } from './helpers/opfs';
  * signal without depending on annotation names.
  */
 
-const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
-const PUBLIC_DATA_DIR = path.resolve(SPEC_DIR, '../public/data');
-
 const DEMO_COUNT = 7831;
 const FIVE_K_COUNT = 5181;
 const PHOSPHATASE_COUNT = 1587;
 const FORTY_K_COUNT = 40026;
 
-const PHOSPHATASE_BUNDLE_PATH = path.join(PUBLIC_DATA_DIR, 'phosphatase.parquetbundle');
+const PHOSPHATASE_BUNDLE_PATH = PHOSPHATASE_1587_FIXTURE;
 
 async function getSelectedAnnotation(page: Page): Promise<string | null> {
   return page.evaluate(() => {

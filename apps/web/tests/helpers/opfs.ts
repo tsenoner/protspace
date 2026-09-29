@@ -1,7 +1,6 @@
+import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-
-/** A bundle the app serves, used as the stored import's bytes. */
-const FIXTURE_PUBLIC_PATH = '/data/5K.parquetbundle';
+import { TOXPROT_5181_FIXTURE } from './fixtures';
 
 interface SeedOpfsParams {
   fileName: string;
@@ -10,14 +9,19 @@ interface SeedOpfsParams {
   lastError?: string;
 }
 
-/** Writes a stored import (the 5K bundle) with the given load status into OPFS. */
+/**
+ * Writes a stored import with the given load status into OPFS. Its bytes are
+ * the 5,181-protein fixture's, read here and handed to the page, so the seed
+ * depends on no file the app serves.
+ */
 export async function seedOpfsState(page: Page, params: SeedOpfsParams): Promise<void> {
+  const bytesBase64 = readFileSync(TOXPROT_5181_FIXTURE).toString('base64');
   await page.evaluate(
-    async ({ fileName, status, failedAttempts, lastError, publicPath }) => {
+    async ({ fileName, status, failedAttempts, lastError, bytesBase64 }) => {
       const root = await navigator.storage.getDirectory();
       const dir = await root.getDirectoryHandle('protspace-last-import', { create: true });
 
-      const blob = await fetch(publicPath).then((r) => r.blob());
+      const blob = new Blob([Uint8Array.from(atob(bytesBase64), (c) => c.charCodeAt(0))]);
       const dataHandle = await dir.getFileHandle('dataset.bin', { create: true });
       const dataWritable = await dataHandle.createWritable();
       await dataWritable.write(blob);
@@ -45,7 +49,7 @@ export async function seedOpfsState(page: Page, params: SeedOpfsParams): Promise
       status: params.status,
       failedAttempts: params.failedAttempts,
       lastError: params.lastError,
-      publicPath: FIXTURE_PUBLIC_PATH,
+      bytesBase64,
     },
   );
 }
