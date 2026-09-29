@@ -26,7 +26,7 @@ import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { progressAfterExampleDownload } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
-import type { PersistedLoadOutcome } from './persisted-dataset';
+import type { ExampleLoadCancel, PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
 import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
 import { createEmptyExploreViewRequest } from './url-state';
@@ -41,12 +41,19 @@ interface DatasetControllerOptions {
   loadQueue: LoadQueue;
   overlayController: {
     update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
+    setCancelHandler(handler: (() => void) | null, label?: string): void;
   };
   plotElement: ProtspaceScatterplot;
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
   structureViewer: ProtspaceStructureViewer;
   viewController: ViewController;
+  /**
+   * Called after the loading overlay's Cancel has aborted an example
+   * download, under the new user epoch it took (`handleCancelledExampleLoad`
+   * in startup.ts).
+   */
+  onExampleLoadCancelled?(cancel: ExampleLoadCancel): void;
 }
 
 export interface DatasetController {
@@ -131,11 +138,12 @@ export function createDatasetController({
   setCurrentDatasetName,
   structureViewer,
   viewController,
+  onExampleLoadCancelled,
 }: DatasetControllerOptions): DatasetController {
   // An example's download fills the first part of the loading bar
   // (persisted-dataset.ts). Its decode and render phases report 0–100 of
   // their own, mapped onto the rest, so the bar never runs backwards.
-  const phaseOverlayController: DatasetControllerOptions['overlayController'] = {
+  const phaseOverlayController: Pick<DatasetControllerOptions['overlayController'], 'update'> = {
     update(show, progress, message, subMessage) {
       const afterDownload =
         show && progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
@@ -170,6 +178,7 @@ export function createDatasetController({
     retryUrlExample(exampleId) {
       exampleRetrySubscribers.forEach((callback) => callback(exampleId));
     },
+    onExampleLoadCancelled,
   });
 
   // Reports which example (or no example) is now showing and why, so the URL
@@ -590,4 +599,4 @@ export function createDatasetController({
   };
 }
 
-export type { PersistedLoadOutcome };
+export type { ExampleLoadCancel, PersistedLoadOutcome };

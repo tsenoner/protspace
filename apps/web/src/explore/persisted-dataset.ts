@@ -77,10 +77,17 @@ export type PersistedLoadOutcome =
       failedAttempts: number;
     };
 
+/** An example download the user cancelled: the epoch the cancel took, and how the load began. */
+export interface ExampleLoadCancel {
+  epoch: number;
+  source: DatasetChangeSource;
+}
+
 interface PersistedDatasetOptions {
   dataLoader: ProtspaceDataLoader;
   overlayController: {
     update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
+    setCancelHandler(handler: (() => void) | null, label?: string): void;
   };
   registerFileLoad: LoadQueue['registerFileLoad'];
   awaitLoadOutcome: LoadQueue['awaitLoadOutcome'];
@@ -92,6 +99,16 @@ interface PersistedDatasetOptions {
    * names the example. Without it, Retry loads the example directly.
    */
   retryUrlExample?(id: string): void;
+  /**
+   * Called after the loading overlay's Cancel has aborted an example download
+   * (see `offerCancel`), so the caller can decide what the screen shows next.
+   */
+  onExampleLoadCancelled?(cancel: ExampleLoadCancel): void;
+}
+
+interface PendingExample {
+  epoch: number;
+  source: DatasetChangeSource;
 }
 
 export function createPersistedDatasetController({
@@ -102,6 +119,7 @@ export function createPersistedDatasetController({
   setCurrentExampleId,
   setCurrentDatasetName,
   retryUrlExample,
+  onExampleLoadCancelled,
 }: PersistedDatasetOptions) {
   // Which request owns the screen (the "Request precedence" requirement in
   // openspec/specs/example-datasets). A user request (a menu choice,
@@ -118,11 +136,26 @@ export function createPersistedDatasetController({
   let pendingDownload: AbortController | null = null;
   // The example load in flight (download and decode), for
   // `cancelPendingExampleLoad`.
-  let pendingExample: { epoch: number; source: DatasetChangeSource } | null = null;
+  let pendingExample: PendingExample | null = null;
+  // The download whose Cancel button the loading overlay shows, if any.
+  let cancelOwner: PendingExample | null = null;
+
+  /** Removes the overlay's Cancel button, if `owner` (by default any download) put it there. */
+  const withdrawCancel = (owner?: PendingExample) => {
+    if (cancelOwner === null || (owner !== undefined && cancelOwner !== owner)) {
+      return;
+    }
+    cancelOwner = null;
+    overlayController.setCancelHandler(null);
+  };
+
   const beginUserRequest = (): number => {
     requestEpoch += 1;
     pendingDownload?.abort();
     pendingDownload = null;
+    // Synchronously, so a request that puts up its own overlay button (a
+    // FASTA import, another example) never has it cleared by this one.
+    withdrawCancel();
     return requestEpoch;
   };
   const currentRequestEpoch = (): number => requestEpoch;
@@ -178,8 +211,13 @@ export function createPersistedDatasetController({
     showDownloadProgress(0);
     const download = new AbortController();
     pendingDownload = download;
-    const pending = { epoch: requestId, source };
+    const pending: PendingExample = { epoch: requestId, source };
     pendingExample = pending;
+    // The startup demo, and the demo a recovery button loads, offer no
+    // Cancel: they are the fallback a cancel would run.
+    if (source !== 'startup') {
+      offerCancel(pending);
+    }
 
     try {
       const response = await fetch(entry.url, { signal: download.signal });
@@ -196,6 +234,10 @@ export function createPersistedDatasetController({
       if (!body || !isCurrentRequest(requestId)) {
         return 'superseded';
       }
+
+      // Decoding starts now, and the data loader cannot abort it, so the
+      // Cancel button goes.
+      withdrawCancel(pending);
 
       const fileName = entry.url.split('/').pop() ?? entry.id;
       const file = new File([body], fileName, {
@@ -247,6 +289,7 @@ export function createPersistedDatasetController({
       overlayController.update(false);
       return 'failed';
     } finally {
+      withdrawCancel(pending);
       if (pendingDownload === download) {
         pendingDownload = null;
       }
@@ -254,6 +297,22 @@ export function createPersistedDatasetController({
         pendingExample = null;
       }
     }
+  };
+
+  /**
+   * Puts a Cancel button on the loading overlay for `pending`'s download. It
+   * is a user request: it cancels the download (`cancelPendingExampleLoad`),
+   * with no notification, fallback or URL write here, then hands the new
+   * epoch to `onExampleLoadCancelled`, which decides what the screen shows.
+   */
+  const offerCancel = (pending: PendingExample) => {
+    cancelOwner = pending;
+    overlayController.setCancelHandler(() => {
+      if (pendingExample !== pending || !cancelPendingExampleLoad()) {
+        return;
+      }
+      onExampleLoadCancelled?.({ epoch: currentRequestEpoch(), source: pending.source });
+    }, 'Cancel download');
   };
 
   /**

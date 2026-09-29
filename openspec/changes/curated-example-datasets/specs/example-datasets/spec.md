@@ -198,7 +198,7 @@ A user-initiated dataset request SHALL take precedence over any app-initiated lo
 
 ### Requirement: Example download progress and cancel
 
-While an example downloads, the loading overlay SHALL show progress as the number of bytes received divided by the entry's decoded size from the manifest, capped at 100 %, and SHALL NOT compute it from the response's `Content-Length`, which is the compressed size when the response is gzip-encoded. Until decoding starts the overlay SHALL offer a Cancel button, and pressing it SHALL count as a user request. When a dataset is displayed, Cancel SHALL abort the download and leave the displayed dataset and the URL unchanged, without a notification and without a fallback load. When nothing is displayed yet, Cancel SHALL abort the download, remove the `dataset` parameter without a new history entry, and run the normal startup load, without a notification. The Cancel button SHALL be removed once decoding starts.
+While an example downloads, the loading overlay SHALL show progress as the number of bytes received divided by the entry's decoded size from the manifest, capped at 100 %, and SHALL NOT compute it from the response's `Content-Length`, which is the compressed size when the response is gzip-encoded. Until decoding starts the overlay SHALL offer a Cancel button, and pressing it SHALL count as a user request; the startup load's own demo download (at startup, or from a recovery-banner button) SHALL NOT offer one, since it is what a cancel falls back to. When a dataset is displayed, Cancel SHALL abort the download and leave the displayed dataset and the URL unchanged, without a notification and without a fallback load. When nothing is displayed yet, Cancel SHALL abort the download, remove the `dataset` parameter without a new history entry, and run the normal startup load, without a notification. The Cancel button SHALL be removed once decoding starts.
 
 #### Scenario: Progress with a compressed response
 
@@ -219,6 +219,11 @@ While an example downloads, the loading overlay SHALL show progress as the numbe
 
 - **WHEN** the download has finished and the bundle is being decoded
 - **THEN** the overlay no longer offers Cancel
+
+#### Scenario: The startup demo
+
+- **WHEN** the app opens without `?dataset=` and no stored import, and downloads the demo
+- **THEN** the overlay shows the download's progress and offers no Cancel
 
 ### Requirement: Example datasets documentation
 

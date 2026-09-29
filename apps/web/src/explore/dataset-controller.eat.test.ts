@@ -92,7 +92,7 @@ describe('dataset controller EAT settings restore', () => {
         getLatestSequence: () => 7,
         resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
       },
-      overlayController: { update: vi.fn() },
+      overlayController: { update: vi.fn(), setCancelHandler: vi.fn() },
       plotElement,
       setCurrentExampleId: vi.fn(),
       setCurrentDatasetName: vi.fn(),

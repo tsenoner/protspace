@@ -5,7 +5,11 @@ import { progressAfterExampleDownload } from './loading-overlay';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
-  persistedOptions: null as null | { retryUrlExample?: (id: string) => void },
+  persistedOptions: null as null | {
+    retryUrlExample?: (id: string) => void;
+    onExampleLoadCancelled?: (cancel: { epoch: number; source: string }) => void;
+    overlayController?: unknown;
+  },
   loadData: vi.fn(),
   markLastLoadStatus: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
@@ -31,7 +35,7 @@ vi.mock('./data-renderer', () => ({
 }));
 
 vi.mock('./persisted-dataset', () => ({
-  createPersistedDatasetController: (options: { retryUrlExample?: (id: string) => void }) => {
+  createPersistedDatasetController: (options: NonNullable<typeof mocks.persistedOptions>) => {
     mocks.persistedOptions = options;
     return mocks.persisted;
   },
@@ -67,7 +71,10 @@ const data: VisualizationData = {
   annotation_data: { ec: new Int32Array([0]) },
 };
 
-function createController(loadQueueOverrides: Record<string, unknown> = {}) {
+function createController(
+  loadQueueOverrides: Record<string, unknown> = {},
+  extraOptions: Record<string, unknown> = {},
+) {
   const viewController = {
     subscribeToViewChanges: vi.fn(() => () => {}),
     resolveLatestView: vi.fn(),
@@ -96,12 +103,13 @@ function createController(loadQueueOverrides: Record<string, unknown> = {}) {
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
       ...loadQueueOverrides,
     },
-    overlayController: { update: vi.fn() },
+    overlayController: { update: vi.fn(), setCancelHandler: vi.fn() },
     plotElement: {},
     setCurrentExampleId: vi.fn(),
     setCurrentDatasetName: vi.fn(),
     structureViewer: {},
     viewController,
+    ...extraOptions,
   } as unknown as Parameters<typeof createDatasetController>[0];
 
   return {
@@ -312,6 +320,15 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     mocks.persistedOptions?.retryUrlExample?.(DEMO.id);
 
     expect(retries).toEqual([OTHER.id]);
+  });
+
+  it("hands the overlay and the cancel callback to the persisted controller, for the download's Cancel", () => {
+    const onExampleLoadCancelled = vi.fn();
+    const { overlayController } = createController({}, { onExampleLoadCancelled });
+
+    expect(mocks.persistedOptions?.overlayController).toBe(overlayController);
+    mocks.persistedOptions?.onExampleLoadCancelled?.({ epoch: 3, source: 'menu' });
+    expect(onExampleLoadCancelled).toHaveBeenCalledWith({ epoch: 3, source: 'menu' });
   });
 
   it('cancelPendingExampleLoad delegates to the persisted controller', () => {

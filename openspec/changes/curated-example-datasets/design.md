@@ -151,10 +151,13 @@ Rejected:
   - The overlay ranges are re-mapped so the download gets a real share of the bar: it fills the first 40 %, and for an example load the decode and render phases' own 0–100 scale is mapped onto the remaining 60 % (`progressAfterExampleDownload`, `loading-overlay.ts`), so the bar never runs backwards. User imports and OPFS restores keep today's scale.
   - The overlay is updated only when the "x / y MB" text changes (every 0.1 MB), not on every chunk.
 - **Cancel.**
-  - During the download, the overlay offers Cancel (`setCancelHandler`), backed by an `AbortController`. Cancel is a user request: it takes a new epoch and calls `cancelPendingExampleLoad()`.
-  - When a dataset is displayed, Cancel leaves it and the URL unchanged and shows no toast. `registerFileLoad` is never called.
-  - The handler is cleared when decoding starts, because decoding runs on the main thread (no worker) and cannot be interrupted.
-  - **Nothing displayed yet** (a startup `?dataset=swissprot` link): D7e's "no fallback" would leave an empty page. Consistent with Decision 3, Cancel there runs the normal startup load and replace-removes the parameter, without a toast. This extends D7e to a case it does not name, and is flagged for confirmation.
+  - During the download, the overlay offers "Cancel download" (`setCancelHandler`), backed by an `AbortController`. Cancel is a user request: it takes a new epoch and calls `cancelPendingExampleLoad()`.
+  - It is offered for menu, URL and Retry downloads, not for `'startup'` ones (the startup demo, or the demo a recovery button loads): those are what a cancel on an empty screen would fall back to.
+  - When a dataset is displayed, Cancel leaves it and the URL unchanged and shows no toast. `registerFileLoad` is never called. After a cancelled Back/Forward the entry still names the example, so, as after a failed one (G11), the recorded view is re-recorded from the screen.
+  - The handler is cleared when decoding starts, because the data loader offers no way to abort a decode (it runs in a worker, or on the main thread as a fallback, and takes no signal).
+  - The overlay has one Cancel slot, which the FASTA upload also uses. `beginUserRequest` withdraws an example's button synchronously, so a newer request's own button is never cleared by a superseded download settling later.
+  - `persisted-dataset.ts` only aborts. What follows is `handleCancelledExampleLoad` (`startup.ts`), reached through `onExampleLoadCancelled` (`runtime.ts`), because only that module runs the full startup flow with its recovery banner.
+  - **Nothing displayed yet** (a startup `?dataset=swissprot` link): D7e's "no fallback" would leave an empty page. Consistent with Decision 3, Cancel there runs the normal startup load under the cancel's epoch and replace-removes the parameter, without a toast. This extends D7e to a case it does not name, and is flagged for confirmation.
 - **Large.** A catalog entry's `large: { memory, loadTime }` becomes the summary's `large: true`, which renders a "Large" badge, and `toExampleDatasetSummary` (`example-datasets.ts`) appends "Large: a ‹size› download that needs ‹memory› of browser memory and takes ‹loadTime› to load." to the popover's description. For `swissprot` that is about 1 GB and 15–35 s, confirmed by the D2 gate measurement (task 7.2).
 
 ### 8. Import menu UI (`@protspace/core`, catalog-agnostic)

@@ -27,7 +27,11 @@ import {
 import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
-import { loadDatasetAfterNavigation, startInitialExploreLoad } from './startup';
+import {
+  handleCancelledExampleLoad,
+  loadDatasetAfterNavigation,
+  startInitialExploreLoad,
+} from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
 
@@ -243,6 +247,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     setCurrentExampleId,
     setCurrentDatasetName,
     viewController,
+    onExampleLoadCancelled(cancel) {
+      if (lifecycle.isDisposed()) {
+        return;
+      }
+      handleCancelledExampleLoad(datasetController, viewController, cancel).catch(
+        (error: unknown) => {
+          console.error('Startup load after a cancelled download failed:', error);
+        },
+      );
+    },
   });
   // An example fetch/decode still in flight when the page is torn down (a
   // route change, a remount) would otherwise resolve on a disposed runtime:

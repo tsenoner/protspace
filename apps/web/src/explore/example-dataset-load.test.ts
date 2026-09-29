@@ -102,7 +102,7 @@ function createRealController(
   };
   const setCurrentExampleId = vi.fn();
   const setCurrentDatasetName = vi.fn();
-  const overlayController = { update: vi.fn() };
+  const overlayController = { update: vi.fn(), setCancelHandler: vi.fn() };
 
   controller = createDatasetController({
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false } as never,

@@ -1,7 +1,7 @@
 import type { DataLoader as ProtspaceDataLoader, ProtspaceScatterplot } from '@protspace/core';
 import { notify } from '../lib/notify';
 import { maybeRunWebglPerfSuite } from '../perf/webgl-perf-suite';
-import type { DatasetController } from './dataset-controller';
+import type { DatasetController, ExampleLoadCancel } from './dataset-controller';
 import { findExampleDataset } from './example-datasets';
 import { getUnknownExampleDatasetNotification } from './notifications';
 import { clearLastImportedFile } from './opfs-dataset-store';
@@ -132,6 +132,34 @@ export async function loadDatasetAfterNavigation(
   if (outcome === 'failed') {
     viewController.recordCurrentView();
   }
+}
+
+/**
+ * What follows the loading overlay's Cancel of an example download, which
+ * has already aborted the download and dismissed the overlay under a new user
+ * epoch (`cancel.epoch`), with no notification.
+ *
+ * With a dataset on screen, that is all: it stays, and the URL is left alone.
+ * After a cancelled Back/Forward the entry still names the example, as after
+ * a failed one, so the recorded view becomes the one on screen again.
+ *
+ * With nothing on screen yet (a startup `?dataset=` link), the normal
+ * startup load runs under that epoch: the stored import, the demo or the
+ * recovery banner. Its outcome is reported with source 'startup', which
+ * replace-removes the `dataset` parameter.
+ */
+export async function handleCancelledExampleLoad(
+  datasetController: DatasetController,
+  viewController: Pick<ViewController, 'recordCurrentView'>,
+  { epoch, source }: ExampleLoadCancel,
+): Promise<void> {
+  if (datasetController.hasDisplayedDataset()) {
+    if (source === 'url') {
+      viewController.recordCurrentView();
+    }
+    return;
+  }
+  await loadRequestedDatasetOrFallback(datasetController, null, { epoch });
 }
 
 export async function startInitialExploreLoad({

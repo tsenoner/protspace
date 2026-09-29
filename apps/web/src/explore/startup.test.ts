@@ -30,10 +30,12 @@ vi.mock('./recovery-banner', () => ({
 }));
 
 import {
+  handleCancelledExampleLoad,
   loadDatasetAfterNavigation,
   loadRequestedDatasetOrFallback,
   startInitialExploreLoad,
 } from './startup';
+import { showRecoveryBanner } from './recovery-banner';
 
 const DEMO = EXAMPLE_DATASETS[0];
 
@@ -292,5 +294,74 @@ describe('startInitialExploreLoad', () => {
 
     expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 5 });
     expect(datasetController.beginUserRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleCancelledExampleLoad (the loading overlay's Cancel)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('keeps the dataset on screen after a cancelled menu choice, and does nothing else', async () => {
+    const datasetController = createDatasetController();
+    const viewController = { recordCurrentView: vi.fn() };
+
+    await handleCancelledExampleLoad(datasetController as never, viewController, {
+      epoch: 9,
+      source: 'menu',
+    });
+
+    expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
+    expect(datasetController.loadExampleDataset).not.toHaveBeenCalled();
+    expect(viewController.recordCurrentView).not.toHaveBeenCalled();
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('after a cancelled Back/Forward, keeps the dataset on screen and records its view again', async () => {
+    const datasetController = createDatasetController();
+    const viewController = { recordCurrentView: vi.fn() };
+
+    await handleCancelledExampleLoad(datasetController as never, viewController, {
+      epoch: 9,
+      source: 'url',
+    });
+
+    expect(viewController.recordCurrentView).toHaveBeenCalledTimes(1);
+    expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
+  });
+
+  it('with nothing on screen, runs the startup load under the epoch the cancel took', async () => {
+    const datasetController = createDatasetController();
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    const viewController = { recordCurrentView: vi.fn() };
+
+    await handleCancelledExampleLoad(datasetController as never, viewController, {
+      epoch: 9,
+      source: 'url',
+    });
+
+    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 9 });
+    expect(datasetController.loadExampleDataset).not.toHaveBeenCalled();
+    expect(datasetController.beginUserRequest).not.toHaveBeenCalled();
+    expect(viewController.recordCurrentView).not.toHaveBeenCalled();
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('with nothing on screen and a stored import that needs recovery, shows the banner again', async () => {
+    const datasetController = createDatasetController();
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({
+      kind: 'recovery-required',
+      file: new File(['x'], 'mine.parquetbundle'),
+      failedAttempts: 1,
+    });
+
+    await handleCancelledExampleLoad(
+      datasetController as never,
+      { recordCurrentView: vi.fn() },
+      { epoch: 9, source: 'menu' },
+    );
+
+    expect(showRecoveryBanner).toHaveBeenCalledTimes(1);
   });
 });

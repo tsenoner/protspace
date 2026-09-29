@@ -51,9 +51,15 @@ function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSigna
   return (fetchMock.mock.calls[index]?.[1] as RequestInit).signal as AbortSignal;
 }
 
-function createController({ retryUrlExample }: { retryUrlExample?: (id: string) => void } = {}) {
+function createController({
+  retryUrlExample,
+  onExampleLoadCancelled,
+}: {
+  retryUrlExample?: (id: string) => void;
+  onExampleLoadCancelled?: (cancel: { epoch: number; source: string }) => void;
+} = {}) {
   const dataLoader = { loadFromFile: vi.fn().mockResolvedValue(undefined) };
-  const overlayController = { update: vi.fn() };
+  const overlayController = { update: vi.fn(), setCancelHandler: vi.fn() };
   const setCurrentExampleId = vi.fn();
   const setCurrentDatasetName = vi.fn();
   // The real queue, with `registerFileLoad` spied on. `resolveOutcome` settles
@@ -72,6 +78,7 @@ function createController({ retryUrlExample }: { retryUrlExample?: (id: string) 
     setCurrentExampleId,
     setCurrentDatasetName,
     retryUrlExample,
+    onExampleLoadCancelled,
   });
 
   return {
@@ -670,6 +677,159 @@ describe('cancelPendingExampleLoad', () => {
     expect(controller.cancelPendingExampleLoad()).toBe(false);
     expect(controller.currentRequestEpoch()).toBe(epoch);
     expect(overlayController.update).not.toHaveBeenCalled();
+  });
+});
+
+/** The handler of the overlay's Cancel button as last set, or null when there is none. */
+function cancelButtonHandler(setCancelHandler: ReturnType<typeof vi.fn>): (() => void) | null {
+  const calls = setCancelHandler.mock.calls;
+  return (calls[calls.length - 1]?.[0] as (() => void) | null | undefined) ?? null;
+}
+
+describe('the Cancel button of an example download', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A fetch that never answers, and rejects like a real one once its signal aborts. */
+  const pendingFetch = () =>
+    vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    );
+
+  it('is offered while a menu or URL download runs, labelled "Cancel download"', () => {
+    vi.stubGlobal('fetch', pendingFetch());
+    const { controller, overlayController } = createController();
+
+    void controller.loadExampleDataset(OTHER, 'menu');
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(
+      expect.any(Function),
+      'Cancel download',
+    );
+
+    void controller.loadExampleDataset(OTHER, 'url');
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(
+      expect.any(Function),
+      'Cancel download',
+    );
+  });
+
+  it('is not offered for the startup demo, which is what a cancel would fall back to', async () => {
+    vi.stubGlobal('fetch', pendingFetch());
+    const { controller, overlayController } = createController();
+
+    void controller.loadPersistedOrDefaultDataset();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(DEMO.url, expect.anything()));
+
+    expect(overlayController.setCancelHandler).not.toHaveBeenCalled();
+  });
+
+  it('aborts the download, hides the overlay, never loads or notifies, and reports the cancel', async () => {
+    const fetchMock = pendingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const onExampleLoadCancelled = vi.fn();
+    const { controller, overlayController, loadQueue } = createController({
+      onExampleLoadCancelled,
+    });
+
+    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const cancel = cancelButtonHandler(overlayController.setCancelHandler);
+    const epochBefore = controller.currentRequestEpoch();
+    overlayController.update.mockClear();
+
+    cancel?.();
+
+    // A user request: it takes a new epoch, which the caller is told about.
+    expect(controller.currentRequestEpoch()).toBe(epochBefore + 1);
+    expect(fetchSignal(fetchMock).aborted).toBe(true);
+    expect(overlayController.update).toHaveBeenCalledWith(false);
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(null);
+    expect(onExampleLoadCancelled).toHaveBeenCalledWith({
+      epoch: epochBefore + 1,
+      source: 'menu',
+    });
+    expect(await result).toBe('superseded');
+    expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
+    expect(notifyMock.error).not.toHaveBeenCalled();
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('reports how the cancelled load began', async () => {
+    vi.stubGlobal('fetch', pendingFetch());
+    const onExampleLoadCancelled = vi.fn();
+    const { controller, overlayController } = createController({ onExampleLoadCancelled });
+
+    const result = controller.loadExampleDataset(OTHER, 'url');
+    cancelButtonHandler(overlayController.setCancelHandler)?.();
+
+    expect(onExampleLoadCancelled).toHaveBeenCalledWith(expect.objectContaining({ source: 'url' }));
+    expect(await result).toBe('superseded');
+  });
+
+  it('goes as soon as decoding starts, before the load is registered', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
+    const { controller, dataLoader, overlayController, loadQueue } = createController();
+
+    const result = controller.loadExampleDataset(OTHER, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(null);
+    const cancelCalls = overlayController.setCancelHandler.mock.invocationCallOrder;
+    const withdrawn = cancelCalls[cancelCalls.length - 1]!;
+    expect(withdrawn).toBeLessThan(loadQueue.registerFileLoad.mock.invocationCallOrder[0]!);
+    loadQueue.resolveOutcome(1, true);
+    await result;
+  });
+
+  it('goes when the download fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+    );
+    const { controller, overlayController } = createController();
+
+    expect(await controller.loadExampleDataset(OTHER, 'menu')).toBe('failed');
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(null);
+  });
+
+  it('goes when a newer user request supersedes the download, and the stale button does nothing', async () => {
+    const fetchMock = pendingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const onExampleLoadCancelled = vi.fn();
+    const { controller, overlayController } = createController({ onExampleLoadCancelled });
+
+    const result = controller.loadExampleDataset(OTHER, 'menu');
+    const staleCancel = cancelButtonHandler(overlayController.setCancelHandler);
+    const epoch = controller.beginUserRequest();
+
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(null);
+    expect(await result).toBe('superseded');
+    staleCancel?.();
+    expect(controller.currentRequestEpoch()).toBe(epoch);
+    expect(onExampleLoadCancelled).not.toHaveBeenCalled();
+  });
+
+  it("never removes a newer download's button", async () => {
+    vi.stubGlobal('fetch', pendingFetch());
+    const { controller, overlayController } = createController();
+
+    const first = controller.loadExampleDataset(OTHER, 'menu');
+    void controller.loadExampleDataset(DEMO, 'menu');
+    const newerCancel = cancelButtonHandler(overlayController.setCancelHandler);
+    expect(newerCancel).not.toBeNull();
+
+    // The first download settles as superseded after the second offered Cancel.
+    expect(await first).toBe('superseded');
+    expect(cancelButtonHandler(overlayController.setCancelHandler)).toBe(newerCancel);
   });
 });
 

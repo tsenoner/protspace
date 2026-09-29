@@ -105,13 +105,13 @@ Before every commit:
   - build the `File` from a `Blob` of the chunks;
   - re-map the overlay ranges so the download gets a real share (0–40 %; `progressAfterExampleDownload` in `loading-overlay.ts` maps an example's decode and render phases onto 40–100 %).
   - Unit test: progress stays capped when a gzip-sized `Content-Length` is present.
-- [ ] 3.5 Cancel:
-  - `overlayController.setCancelHandler(…, 'Cancel download')` during the download; it takes a user epoch and calls `cancelPendingExampleLoad()`;
+- [x] 3.5 Cancel:
+  - `overlayController.setCancelHandler(…, 'Cancel download')` during the download (not for `'startup'` loads); it takes a user epoch and calls `cancelPendingExampleLoad()`;
   - no toast, `registerFileLoad` never called, the overlay hidden, the URL unchanged;
-  - on an empty screen, run the startup load and replace-remove `dataset=`;
+  - on an empty screen, run the startup load and replace-remove `dataset=` (`handleCancelledExampleLoad` in `startup.ts`, wired through `onExampleLoadCancelled`); after a cancelled Back/Forward with a plot on screen, re-record the displayed view;
   - clear the handler when decoding starts.
   - Unit tests in `persisted-dataset.test.ts`/`startup.test.ts`.
-- [ ] 3.6 E2E: a gated fetch plus Cancel leaves the previous dataset, the URL unchanged, and no overlay or toast; the Large badge and the info popover's docs link are visible.
+- [x] 3.6 E2E: a gated fetch plus Cancel leaves the previous dataset, the URL unchanged, and no overlay or toast; the Large badge and the info popover's docs link are visible. Also: Cancel of a startup deep link runs the startup load and removes `dataset=` in place.
 - [x] 3.7 `docs/developers/api/index.md`: the new `examplesDocsUrl` property/attribute and the `ExampleDatasetSummary` fields.
 
 ## 4. Hosting, manifest, and decoupling fixtures and perf

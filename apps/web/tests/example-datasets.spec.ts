@@ -4,6 +4,8 @@ import {
   EXAMPLE_DATASETS,
   EXAMPLES_DOCS_URL,
   findExampleDataset,
+  formatMegabytes,
+  type ExampleDataset,
 } from '../src/explore/example-datasets';
 import {
   dismissTourIfPresent,
@@ -547,6 +549,88 @@ test.describe('Example datasets: Import menu info', () => {
     await expect(
       controlBar.locator('.import-current-dataset-row [data-example-info="demo"]'),
     ).toHaveCount(1);
+  });
+});
+
+/**
+ * The catalog's large example. Its download is always held and cancelled
+ * below, never completed, so what the bundle holds does not matter.
+ */
+function largeExample(): ExampleDataset {
+  const large = EXAMPLE_DATASETS.find((entry) => entry.large);
+  if (!large) {
+    throw new Error('The catalog needs a large example.');
+  }
+  return large;
+}
+
+/** The glob of an example's bundle request, from its catalog `url`. */
+const bundleGlob = (entry: ExampleDataset) => `**/${entry.url.replace(/^\.\//, '')}`;
+
+test.describe('Example datasets: download progress and Cancel', () => {
+  test('Cancel during a menu download leaves the previous dataset and the URL, with no toast (e)', async ({
+    page,
+  }) => {
+    const large = largeExample();
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await pickAnnotation(page, 'ec');
+    await expect.poll(() => getUrlParam(page, 'annotation')).toBe('ec');
+    const searchBefore = await getSearch(page);
+    const historyLengthBefore = await page.evaluate(() => history.length);
+
+    const failedRequests: string[] = [];
+    page.on('requestfailed', (request) => failedRequests.push(request.url()));
+    const release = await holdNextRequest(page, bundleGlob(large));
+    await chooseExampleFromMenu(page, large.id);
+
+    const overlay = page.locator('#progressive-loading');
+    await expect(overlay).toBeVisible();
+    // Progress is measured against the decoded size the catalog records.
+    await expect(overlay.locator('#processing-text')).toHaveText(
+      `0.0 / ${formatMegabytes(large.sizeBytes)}`,
+    );
+    const cancel = overlay.getByRole('button', { name: 'Cancel download' });
+    await cancel.click();
+
+    await expect(overlay).toHaveCount(0);
+    await expect
+      .poll(() => failedRequests.some((url) => url.endsWith(large.url.replace(/^\./, ''))))
+      .toBe(true);
+    release();
+
+    // Nothing lands later: the demo, its view and the URL are as they were.
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(DEMO_COUNT);
+    expect(await getSelectedAnnotation(page)).toBe('ec');
+    expect(await getSearch(page)).toBe(searchBefore);
+    expect(await page.evaluate(() => history.length)).toBe(historyLengthBefore);
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+    expect(await isExampleDisabled(page, 'demo')).toBe(true);
+    expect(await isExampleDisabled(page, large.id)).toBe(false);
+  });
+
+  test('Cancel of a startup deep link runs the startup load and removes dataset= in place (e)', async ({
+    page,
+  }) => {
+    const large = largeExample();
+    const release = await holdNextRequest(page, bundleGlob(large));
+    await page.goto(`/explore?dataset=${large.id}`);
+
+    const cancel = page.locator('#progressive-loading').getByRole('button', {
+      name: 'Cancel download',
+    });
+    await expect(cancel).toBeVisible({ timeout: 30_000 });
+    const historyLengthBefore = await page.evaluate(() => history.length);
+    await cancel.click();
+
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expectDatasetParam(page, null);
+    expect(await page.evaluate(() => history.length)).toBe(historyLengthBefore);
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+    release();
   });
 });
 
