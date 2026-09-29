@@ -1,17 +1,25 @@
 import json
 import os
+import random
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
 import requests
 
 from src.protspace.data.annotations.retrievers.interpro_retriever import (
     CACHE_MAX_AGE_DAYS,
     INTERPRO_ANNOTATIONS,
+    MAX_CONCURRENT_REQUESTS,
     InterProRetriever,
 )
+
+# Tests below stub `time.sleep` out of the retry backoff; parallel fakes need
+# a real delay to finish out of order.
+_real_sleep = time.sleep
 
 # Alias for test compatibility
 InterProAnnotationRetriever = InterProRetriever
@@ -144,7 +152,7 @@ class TestInterProAnnotationRetrieverInit:
 class TestInterProAnnotationRetrieverFetch:
     """Test InterProAnnotationRetriever fetch_annotations method."""
 
-    @patch("src.protspace.data.annotations.retrievers.interpro_retriever.requests.post")
+    @patch("requests.Session.post")
     def test_fetch_annotations_success(self, mock_post):
         """Test successful annotation fetching."""
         headers = [TEST_PROTEIN_ID]
@@ -1106,7 +1114,8 @@ class TestIdenticalSequences:
             headers=list(sequences), annotations=["pfam"], sequences=sequences
         )
         with patch(
-            "requests.post", side_effect=_fake_matches_endpoint(results, submitted)
+            "requests.Session.post",
+            side_effect=_fake_matches_endpoint(results, submitted),
         ):
             result = retriever.fetch_annotations()
 
@@ -1163,7 +1172,9 @@ class TestMatchRequestRetry:
                 response.raise_for_status.side_effect = requests.HTTPError(str(outcome))
             return response
 
-        monkeypatch.setattr(requests, "post", fake_post)
+        monkeypatch.setattr(
+            requests.Session, "post", lambda _session, url, **kw: fake_post(url, **kw)
+        )
         return calls
 
     def test_a_batch_that_fails_once_is_recovered(self, monkeypatch):
@@ -1191,8 +1202,12 @@ class TestMatchRequestRetry:
         sequences = self._proteins(4)  # two batches of two
         calls = self._serve(monkeypatch, [503] * http_utils.MAX_ATTEMPTS + [None])
 
+        # The fake answers by call order, so one batch at a time.
         retriever = InterProAnnotationRetriever(
-            headers=list(sequences), annotations=["pfam"], sequences=sequences
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=1,
         )
         result = retriever.fetch_annotations()
 
@@ -1233,7 +1248,10 @@ class TestOutageBreaker:
         calls = TestMatchRequestRetry._serve(monkeypatch, [503] * 1000)
 
         retriever = InterProAnnotationRetriever(
-            headers=list(sequences), annotations=["pfam"], sequences=sequences
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=1,
         )
         retriever.fetch_annotations()
 
@@ -1253,8 +1271,12 @@ class TestOutageBreaker:
         outcomes = lost * (limit - 1) + [None] + lost * (limit - 1) + [None]
         calls = TestMatchRequestRetry._serve(monkeypatch, outcomes)
 
+        # The fake answers by call order, so one batch at a time.
         retriever = InterProAnnotationRetriever(
-            headers=list(sequences), annotations=["pfam"], sequences=sequences
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=1,
         )
         result = retriever.fetch_annotations()
 
@@ -1545,3 +1567,146 @@ class TestInterProNPredictions:
         )
 
         assert self._parse([result], ["pfam"])["P0"]["pfam"] == "PF00001 (7tm_1)|5.0"
+
+
+class _MatchesServer:
+    """A thread-safe stand-in for the Matches API, answering by batch content.
+
+    Every MD5 gets a Pfam match of its own. A batch holding an MD5 from
+    *down* answers 503 on every attempt; one holding an MD5 from *flaky*
+    answers 503 once, then succeeds. Each call takes up to *jitter* seconds,
+    so parallel batches finish out of order.
+    """
+
+    def __init__(self, down=(), flaky=(), jitter=0.002):
+        self.down, self.flaky, self.jitter = set(down), set(flaky), jitter
+        self.calls: list[tuple[str, ...]] = []
+        self.sessions: set[int] = set()
+        self.active = self.peak = 0
+        self._lock = threading.Lock()
+
+    def install(self, monkeypatch):
+        from protspace.data.annotations.retrievers import http_utils
+
+        monkeypatch.setattr(http_utils.time, "sleep", lambda _: None)
+        # A plain function, so the session binds as its first argument.
+        monkeypatch.setattr(
+            requests.Session,
+            "post",
+            lambda session, url, **kwargs: self._post(session, url, **kwargs),
+        )
+
+    def _post(self, session, url, json=None, headers=None, timeout=None):
+        batch = tuple(json["md5"])
+        with self._lock:
+            tries = self.calls.count(batch)
+            self.calls.append(batch)
+            self.sessions.add(id(session))
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            _real_sleep(random.Random(f"{batch}{tries}").uniform(0, self.jitter))
+            response = Mock(spec=requests.Response)
+            response.headers = {}
+            if self.down & set(batch) or (self.flaky & set(batch) and tries == 0):
+                response.status_code = 503
+                response.raise_for_status.side_effect = requests.HTTPError("503")
+                return response
+            response.status_code = 200
+            response.raise_for_status.return_value = None
+            response.json.return_value = {
+                "results": [
+                    create_api_result(
+                        md5,
+                        matches=[
+                            create_signature(
+                                f"PF{int(md5[:4], 16):05d}", score=int(md5[4:6], 16)
+                            )
+                        ],
+                    )
+                    for md5 in batch
+                ]
+            }
+            return response
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+class TestParallelBatches:
+    """One batch at a time held InterPro to about 35 sequences a second (3.8 h
+    for Swiss-Prot); 4 in parallel over one session measured 92. Parallel
+    batches must give exactly the values and lost-batch count of one batch
+    at a time."""
+
+    @staticmethod
+    def _retriever(monkeypatch, sequences, **kwargs):
+        import sys
+
+        # Patch the module the retriever under test was loaded from.
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 2)
+        return InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences, **kwargs
+        )
+
+    @staticmethod
+    def _sequences(count):
+        # Every fifth protein repeats an earlier one's sequence.
+        return {
+            f"P{i:03d}": "M" + "A" * (i - 1 if i % 5 == 4 else i) for i in range(count)
+        }
+
+    def test_parallel_batches_give_the_values_of_one_at_a_time(self, monkeypatch):
+        sequences = self._sequences(100)
+        md5s = sorted({_md5(s) for s in sequences.values()})
+        # Lost batches are never 10 in a row, so the breaker stays out of it.
+        down, flaky = md5s[3::17], md5s[5::11]
+
+        outputs = {}
+        for workers in (1, 4, 8):
+            _MatchesServer(down, flaky).install(monkeypatch)
+            retriever = self._retriever(
+                monkeypatch, sequences, max_concurrent_requests=workers
+            )
+            rows = retriever.fetch_annotations()
+            outputs[workers] = (rows, retriever.failed_batch_count)
+
+        rows, lost = outputs[1]
+        assert lost > 0
+        assert sum(1 for row in rows if row.annotations["pfam"]) > 50
+        assert outputs[4] == outputs[1]
+        assert outputs[8] == outputs[1]
+
+    def test_by_default_four_batches_share_one_session(self, monkeypatch):
+        server = _MatchesServer(jitter=0.004)
+        server.install(monkeypatch)
+        sequences = self._sequences(120)
+
+        self._retriever(monkeypatch, sequences).fetch_annotations()
+
+        assert MAX_CONCURRENT_REQUESTS == 4
+        assert 1 < server.peak <= MAX_CONCURRENT_REQUESTS
+        assert len(server.sessions) == 1
+
+    @pytest.mark.parametrize("workers", [4, 8])
+    def test_the_breaker_bounds_parallel_batches(self, monkeypatch, caplog, workers):
+        """Lost batches in a row are counted in input order, so parallel
+        batches stop after the same 10; only the batches already submitted
+        ahead, at most two per worker, still go out."""
+        from protspace.data.annotations.retrievers import http_utils
+
+        sequences = TestMatchRequestRetry._proteins(120)  # 60 batches of 2
+        server = _MatchesServer(down={_md5(s) for s in sequences.values()})
+        server.install(monkeypatch)
+
+        retriever = self._retriever(
+            monkeypatch, sequences, max_concurrent_requests=workers
+        )
+        retriever.fetch_annotations()
+
+        batches = len(set(server.calls))
+        assert 10 <= batches <= 10 + 2 * workers
+        assert len(server.calls) == batches * http_utils.MAX_ATTEMPTS
+        assert retriever.failed_batch_count == 60
+        stopped = [r for r in caplog.records if "remaining 50 of 60" in r.getMessage()]
+        assert len(stopped) == 1

@@ -7,6 +7,8 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from collections import namedtuple
+from contextlib import closing
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
 
@@ -16,7 +18,11 @@ from tqdm import tqdm
 from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
-from protspace.data.annotations.retrievers.http_utils import post_with_retry
+from protspace.data.annotations.retrievers.http_utils import (
+    PooledSession,
+    map_in_order,
+    post_with_retry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +69,12 @@ MATCHES_TIMEOUT = 30
 # timeouts, and the first one already makes the source incomplete, so asking
 # thousands more during an outage only adds hours.
 _MAX_CONSECUTIVE_LOST_BATCHES = 10
+# Match batches in flight at once, over one session. Measured on the Matches
+# API with Swiss-Prot sequences, 100 per batch: 35 sequences a second one
+# batch at a time (3.8 h for Swiss-Prot's 490K distinct sequences), 92 with 4
+# in parallel (1.5 h), 123 with 8. Raising it asks more of a public server;
+# the constructor takes an override.
+MAX_CONCURRENT_REQUESTS = 4
 
 # Mapping from annotation key to InterPro entry API database path
 # Used to resolve human-readable names for databases where the matches API
@@ -127,6 +139,7 @@ class InterProRetriever(BaseAnnotationRetriever):
         headers: list[str] = None,
         annotations: list[str] = None,
         sequences: dict[str, str] = None,
+        max_concurrent_requests: int | None = None,
     ):
         """
         Initialize the InterPro annotation retriever.
@@ -135,6 +148,8 @@ class InterProRetriever(BaseAnnotationRetriever):
             headers: List of protein identifiers
             annotations: List of InterPro database annotations to fetch (e.g., pfam, superfamily, cath, smart, ...)
             sequences: Dictionary mapping protein identifiers to their sequences (needed for MD5 calculation)
+            max_concurrent_requests: Match batches in flight at once; defaults
+                to ``MAX_CONCURRENT_REQUESTS``
         """
         super().__init__(headers, annotations)
         self.headers = self._manage_headers(self.headers) if self.headers else []
@@ -142,6 +157,11 @@ class InterProRetriever(BaseAnnotationRetriever):
             self.annotations if self.annotations else INTERPRO_ANNOTATIONS
         )
         self.sequences = sequences if sequences else {}
+        self.max_concurrent_requests = (
+            MAX_CONCURRENT_REQUESTS
+            if max_concurrent_requests is None
+            else max_concurrent_requests
+        )
         # Batches whose matches never arrived. Their proteins fall through as
         # "no InterPro match", indistinguishable from a real absence, so the
         # caller needs to know the difference before caching them.
@@ -219,6 +239,10 @@ class InterProRetriever(BaseAnnotationRetriever):
         """
         Submit MD5 hashes to InterPro API in batches.
 
+        Up to ``max_concurrent_requests`` batches are in flight at once over
+        one session. Their answers are taken in input order, so the results
+        and the lost-batch accounting are those of one batch at a time.
+
         Args:
             md5s: List of MD5 hashes to query
 
@@ -233,48 +257,71 @@ class InterProRetriever(BaseAnnotationRetriever):
         )
 
         consecutive_lost = 0
-        with tqdm(
-            total=len(md5s), desc="Fetching InterPro annotations", unit="seq"
-        ) as pbar:
-            for i, chunk in enumerate(chunks, 1):
-                if consecutive_lost >= _MAX_CONSECUTIVE_LOST_BATCHES:
-                    skipped = len(chunks) - i + 1
-                    self.failed_batch_count += skipped
-                    logger.error(
-                        f"InterPro lost {consecutive_lost} batches in a row, so it "
-                        f"is taken to be down; the remaining {skipped} of "
-                        f"{len(chunks)} batches are not requested. InterPro "
-                        "annotations are incomplete and will not be cached."
-                    )
-                    pbar.update(sum(len(c) for c in chunks[i - 1 :]))
-                    break
+        with PooledSession(self.max_concurrent_requests) as session:
+            answers = map_in_order(
+                partial(self._post_batch, session),
+                chunks,
+                self.max_concurrent_requests,
+            )
+            with (
+                tqdm(
+                    total=len(md5s), desc="Fetching InterPro annotations", unit="seq"
+                ) as pbar,
+                closing(answers),
+            ):
+                for i, answer in enumerate(answers, 1):
+                    if isinstance(answer, requests.exceptions.RequestException):
+                        self.failed_batch_count += 1
+                        consecutive_lost += 1
+                        logger.error(
+                            f"InterPro batch {i} of {len(chunks)} failed: {answer}"
+                        )
+                    else:
+                        all_results.extend(answer)
+                        consecutive_lost = 0
+                    pbar.update(len(chunks[i - 1]))
 
-                post_url = f"{BASE_URL}/matches"
-                payload = {"md5": chunk}
-
-                try:
-                    # Retried like every other batched annotation request: a
-                    # batch still failing after that is a lost batch, which
-                    # keeps the whole InterPro source out of the cache.
-                    response = post_with_retry(
-                        post_url,
-                        json=payload,
-                        headers={"Accept": "application/json"},
-                        timeout=MATCHES_TIMEOUT,
-                    )
-                    batch_results = response.json().get("results", [])
-                    all_results.extend(batch_results)
-                    consecutive_lost = 0
-
-                except requests.exceptions.RequestException as e:
-                    self.failed_batch_count += 1
-                    consecutive_lost += 1
-                    logger.error(f"InterPro batch {i} of {len(chunks)} failed: {e}")
-
-                pbar.update(len(chunk))
+                    skipped = len(chunks) - i
+                    if consecutive_lost >= _MAX_CONSECUTIVE_LOST_BATCHES and skipped:
+                        # Leaving the loop cancels the batches not yet sent;
+                        # any still in flight finish, but are not used.
+                        self.failed_batch_count += skipped
+                        logger.error(
+                            f"InterPro lost {consecutive_lost} batches in a row, "
+                            "so it is taken to be down: no further batch is "
+                            f"requested, and the remaining {skipped} of "
+                            f"{len(chunks)} count as lost. InterPro annotations "
+                            "are incomplete and will not be cached."
+                        )
+                        pbar.update(sum(len(c) for c in chunks[i:]))
+                        break
 
         logger.info(f"Retrieved {len(all_results)} total results from InterPro API")
         return all_results
+
+    @staticmethod
+    def _post_batch(
+        session: requests.Session, chunk: list[str]
+    ) -> list[dict] | requests.exceptions.RequestException:
+        """One batch's match results, or the error that lost the batch.
+
+        Returned rather than raised, so a parallel pass keeps every other
+        batch's results and counts the loss where the caller reads it.
+        Retried like every other batched annotation request: a batch still
+        failing after that is lost, which keeps the whole InterPro source out
+        of the cache.
+        """
+        try:
+            response = post_with_retry(
+                f"{BASE_URL}/matches",
+                json={"md5": chunk},
+                headers={"Accept": "application/json"},
+                timeout=MATCHES_TIMEOUT,
+                session=session,
+            )
+            return response.json().get("results", [])
+        except requests.exceptions.RequestException as e:
+            return e
 
     def _parse_interpro_results(
         self, api_results: list[dict], md5_to_identifiers: dict[str, list[str]]

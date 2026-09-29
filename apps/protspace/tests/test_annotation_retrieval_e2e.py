@@ -106,8 +106,16 @@ def offline_apis(monkeypatch):
             )
         return _response(url, {"results": results})
 
+    # The retrievers send through a session; anything else still goes
+    # through the module-level functions. Both lead here.
     monkeypatch.setattr(requests, "get", fake_get)
     monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(
+        requests.Session, "get", lambda _session, url, **kw: fake_get(url, **kw)
+    )
+    monkeypatch.setattr(
+        requests.Session, "post", lambda _session, url, **kw: fake_post(url, **kw)
+    )
     return requested
 
 
