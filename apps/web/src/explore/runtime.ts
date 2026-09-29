@@ -76,11 +76,17 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   dataLoader.loadFromFileHandler = (file, options, next) => {
     // A non-'auto' load is a user import: a user request, which supersedes
-    // any example load still in flight and any startup load not yet started.
+    // any load still in flight and any startup load not yet started. Its load
+    // is tagged with the epoch it took, so a newer user request made while it
+    // prepares or decodes supersedes it in turn (`handleDataLoaded`).
     // `datasetController` is declared below; this handler only runs on a
     // later load, after this synchronous setup has finished.
+    const epoch =
+      options?.source !== 'auto'
+        ? datasetController.beginUserRequest()
+        : datasetController.currentRequestEpoch();
     if (options?.source !== 'auto') {
-      datasetController.beginUserRequest();
+      loadQueue.registerFileLoad(file, 'user', undefined, epoch);
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
       if (!isFastaFile(queuedFile)) {
@@ -126,9 +132,27 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
             }
           : undefined;
 
-      const abortController = new AbortController();
+      // The upload's Cancel aborts it, and so does a newer user request (a
+      // Back/Forward, say), which owns the screen from then on: a superseded
+      // preparation touches neither the overlay nor the queue slot again.
+      const preparation = datasetController.beginImportPreparation(epoch);
+      const abandon = () => {
+        preparation.settle();
+        const meta = loadQueue.getLoadMetaForFile(queuedFile);
+        if (meta) {
+          loadQueue.resolvePendingLoadFinalization(meta.sequence, false);
+        }
+      };
+      if (!preparation.isCurrent()) {
+        abandon();
+        return;
+      }
+      const showProgress = (progress: number, subMessage: string) => {
+        if (preparation.isCurrent()) {
+          overlayController.update(true, progress, 'Preparing FASTA…', subMessage);
+        }
+      };
       overlayController.update(true, 5, 'Preparing FASTA…', 'Uploading…', colabNote);
-      overlayController.setCancelHandler(() => abortController.abort());
       let lastProgress = 5;
       let creep = 0;
 
@@ -160,7 +184,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
           const subMessage = overdue
             ? 'Still working — large jobs can take a few minutes…'
             : embeddingLabel;
-          overlayController.update(true, lastProgress, 'Preparing FASTA…', subMessage);
+          showProgress(lastProgress, subMessage);
         }, 250);
       };
 
@@ -174,44 +198,48 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       try {
         const bundleFile = await prepareFastaBundle(queuedFile, {
           baseUrl: import.meta.env.VITE_PREP_API_BASE ?? '',
-          signal: abortController.signal,
+          signal: preparation.signal,
           onProgress: (stage, payload) => {
             if (stage === 'queued') {
               const queuePos =
                 typeof payload.queue_position === 'number' ? payload.queue_position : 0;
               if (queuePos > 0) {
                 lastProgress = 5;
-                overlayController.update(
-                  true,
-                  lastProgress,
-                  'Preparing FASTA…',
-                  `Position ${queuePos} in queue…`,
-                );
+                showProgress(lastProgress, `Position ${queuePos} in queue…`);
               } else {
                 lastProgress = 12;
-                overlayController.update(true, lastProgress, 'Preparing FASTA…', embeddingLabel);
+                showProgress(lastProgress, embeddingLabel);
                 startCreep();
               }
             } else if (stage === 'embedding' || stage === 'annotating') {
               lastProgress = Math.max(lastProgress, 12);
-              overlayController.update(true, lastProgress, 'Preparing FASTA…', embeddingLabel);
+              showProgress(lastProgress, embeddingLabel);
               startCreep();
             } else if (stage === 'projecting') {
               stopCreep();
               lastProgress = 70;
-              overlayController.update(true, lastProgress, 'Preparing FASTA…', 'Projecting…');
+              showProgress(lastProgress, 'Projecting…');
             } else if (stage === 'bundling') {
               lastProgress = 90;
-              overlayController.update(true, lastProgress, 'Preparing FASTA…', 'Bundling…');
+              showProgress(lastProgress, 'Bundling…');
             }
           },
         });
         stopCreep();
-        overlayController.setCancelHandler(null);
+        if (!preparation.isCurrent()) {
+          abandon();
+          return;
+        }
+        preparation.settle();
         return next(bundleFile, queuedOptions);
       } catch (error) {
         stopCreep();
-        overlayController.setCancelHandler(null);
+        if (!preparation.isCurrent()) {
+          // Aborted by the newer request, which owns the overlay: no toast.
+          abandon();
+          return;
+        }
+        preparation.settle();
         overlayController.update(false, 0, '', '');
         throw error;
       }
@@ -464,10 +492,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
     cancelPendingMenuLoad() {
       if (lifecycle.isDisposed()) {
-        return;
+        return 'none';
       }
 
-      datasetController.cancelPendingExampleLoad({ source: 'menu' });
+      return datasetController.cancelPendingExampleLoad({ source: 'menu' });
     },
     subscribeToDatasetChanges(callback) {
       return datasetController.subscribeToDatasetChanges(callback);

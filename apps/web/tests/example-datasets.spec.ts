@@ -21,7 +21,11 @@ import {
   type ControlBarView,
 } from './helpers/explore';
 import { e2eExample, exampleBundleGlob, serveExampleFixtures } from './helpers/example-fixtures';
-import { PHOSPHATASE_1587_FIXTURE, STARTUP_DATASET_URL } from './helpers/fixtures';
+import {
+  PE1_40026_FIXTURE,
+  PHOSPHATASE_1587_FIXTURE,
+  STARTUP_DATASET_URL,
+} from './helpers/fixtures';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 
 /**
@@ -787,6 +791,55 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
   });
 
+  test('Back after a menu example has begun replacing the plot lets it finish on its own entry (b1)', async ({
+    page,
+  }) => {
+    // History: [bare demo, demo+ec]. SLOW is chosen from the menu, and Back
+    // lands once its data is on the plot but before its load has finished
+    // (its overlay is still up). It is too late to cancel: SLOW finishes on
+    // its curated view, labelled and named in a pushed entry, and the entry
+    // the user went back to is left as it was.
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await pickAnnotation(page, 'ec');
+    await expect.poll(() => getUrlParam(page, 'annotation')).toBe('ec');
+
+    await chooseExampleFromMenu(page, SLOW.id);
+    // Back in the same task that sees SLOW's data on the plot with the
+    // loading overlay still up, so the race is hit, never merely approached.
+    await page.waitForFunction(
+      ({ count }) => {
+        const plot = document.querySelector('#myPlot') as {
+          data?: { protein_ids?: string[] };
+        } | null;
+        const rendering =
+          plot?.data?.protein_ids?.length === count &&
+          document.getElementById('progressive-loading') !== null &&
+          window.location.search.includes('annotation=ec');
+        if (rendering) {
+          history.back();
+        }
+        return rendering;
+      },
+      { count: SLOW.count },
+      { polling: 'raf', timeout: 30_000 },
+    );
+
+    await waitForProteinCount(page, SLOW.count);
+    await expectDatasetParam(page, SLOW.id);
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView(SLOW.id));
+    expect(await getCurrentDatasetName(page)).toBe(SLOW.entry.label);
+    expect(await getUrlParam(page, 'annotation')).toBeNull();
+
+    // The entry the user went back to still holds the demo, untouched.
+    await page.goBack();
+    await expect.poll(() => getSearch(page)).toBe('');
+    await waitForProteinCount(page, DEMO_COUNT);
+    expect(await getSearch(page)).toBe('');
+  });
+
   test('Back to an entry without dataset= while an example is loading runs the startup load instead (b2)', async ({
     page,
   }) => {
@@ -826,6 +879,122 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     expect(await getProteinCount(page)).toBe(0);
     expect(await getSearch(page)).toBe('');
     await expect(banner).toBeVisible();
+  });
+});
+
+test.describe('Example datasets: a Back/Forward supersedes a load already under way (b2)', () => {
+  /**
+   * Stores the 40,026-protein fixture as a healthy import and reopens the app,
+   * so its restore decodes long enough for a Back/Forward to land meanwhile.
+   * Resolves once the restore's overlay is up.
+   */
+  async function openWithLargeStoredImport(page: Page): Promise<void> {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await clearOpfs(page);
+    await seedOpfsState(page, {
+      fileName: 'mine.parquetbundle',
+      status: 'success',
+      failedAttempts: 0,
+      fixture: PE1_40026_FIXTURE,
+    });
+    await page.goto('/explore');
+    await expect(page.locator('#progressive-loading')).toBeVisible();
+  }
+
+  /** A same-document entry naming an example, reached like Forward. */
+  async function forwardToExample(page: Page, id: string): Promise<void> {
+    await page.evaluate((exampleId) => {
+      history.pushState(null, '', `/explore?dataset=${exampleId}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, id);
+  }
+
+  test('Forward to an example while the stored import restores shows the example on its entry', async ({
+    page,
+  }) => {
+    await openWithLargeStoredImport(page);
+    await forwardToExample(page, OTHER.id);
+
+    await waitForProteinCount(page, OTHER.count);
+    // The superseded restore must not replace-remove `dataset=` from the
+    // entry the user went to.
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(OTHER.count);
+    expect(await getSearch(page)).toBe(`?dataset=${OTHER.id}`);
+    expect(await getCurrentDatasetName(page)).toBe(OTHER.entry.label);
+
+    // The stored import is untouched and healthy: opening the app without
+    // the parameter restores it, with no recovery banner.
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await waitForProteinCount(page, 40026);
+    await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
+  });
+
+  test('Forward to an example that fails while the stored import restores falls back to the import', async ({
+    page,
+  }) => {
+    const { toast } = exampleFailureToast(page, OTHER.id);
+    await page.route(OTHER.glob, failWith500);
+    await openWithLargeStoredImport(page);
+    await forwardToExample(page, OTHER.id);
+
+    await expect(toast).toBeVisible();
+    // Nothing was on screen yet, so the startup load runs: the import it had
+    // begun restoring, not a recovery banner over it.
+    await waitForProteinCount(page, 40026);
+    await page.waitForTimeout(1_000);
+    await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
+    expect(await getProteinCount(page)).toBe(40026);
+    expect(await getCurrentDatasetName(page)).toBe('mine.parquetbundle');
+    await expectDatasetParam(page, null);
+  });
+
+  test('Forward to an example during a FASTA preparation aborts it and shows the example', async ({
+    page,
+  }) => {
+    const fasta = Array.from({ length: 25 }, (_, i) => `>P${10000 + i}\nMKTAYIAKQRQ`).join('\n');
+    await page.route('**/api/prepare', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({
+            status: 202,
+            contentType: 'application/json',
+            body: JSON.stringify({ job_id: 'race-job' }),
+          })
+        : route.fallback(),
+    );
+    // The preparation stays in progress until something aborts it.
+    await page.route('**/api/prepare/race-job/events', () => new Promise<void>(() => {}));
+    let bundleRequested = false;
+    await page.route('**/api/prepare/race-job/bundle', (route) => {
+      bundleRequested = true;
+      return route.abort();
+    });
+
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await page
+      .locator('protspace-data-loader')
+      .locator('input[type="file"]')
+      .setInputFiles({ name: 'mine.fasta', mimeType: 'text/plain', buffer: Buffer.from(fasta) });
+    const overlay = page.locator('#progressive-loading');
+    await expect(overlay).toContainText('Preparing FASTA');
+
+    await forwardToExample(page, OTHER.id);
+
+    // The newer request owns the screen: the preparation neither holds the
+    // load queue nor lands later and removes `dataset=` from the entry.
+    await waitForProteinCount(page, OTHER.count);
+    await expect(overlay).toHaveCount(0);
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(OTHER.count);
+    expect(await getSearch(page)).toBe(`?dataset=${OTHER.id}`);
+    expect(bundleRequested).toBe(false);
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
   });
 });
 

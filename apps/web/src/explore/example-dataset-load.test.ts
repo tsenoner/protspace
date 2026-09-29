@@ -51,7 +51,13 @@ vi.mock('./tooltip-annotations-store', () => ({
 
 import { createDatasetController, type DatasetController } from './dataset-controller';
 import { createLoadQueue } from './load-queue';
-import { clearLastImportedFile } from './opfs-dataset-store';
+import {
+  clearLastImportedFile,
+  loadLastImportedFile,
+  markLastLoadStatus,
+  readLastLoadStatus,
+  saveLastImportedFile,
+} from './opfs-dataset-store';
 
 const DEMO = EXAMPLE_DATASETS[0];
 
@@ -123,7 +129,14 @@ function createRealController(
     viewController: viewController as never,
   });
 
-  return { controller, dataLoader, setCurrentExampleId, setCurrentDatasetName, overlayController };
+  return {
+    controller,
+    dataLoader,
+    loadQueue,
+    setCurrentExampleId,
+    setCurrentDatasetName,
+    overlayController,
+  };
 }
 
 describe('example load: real fetch + load-queue + handleDataLoaded/handleDataError', () => {
@@ -326,5 +339,152 @@ describe('example load: the stored import is replaced only once the example has 
     // No toast, and the overlay the newer request owns is left alone.
     expect(notifyMock.error).not.toHaveBeenCalled();
     expect(overlayController.update).not.toHaveBeenCalledWith(false);
+  });
+});
+
+describe('a load a newer user request supersedes after it has started', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadData.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(loadLastImportedFile).mockReset().mockResolvedValue(null);
+    vi.mocked(readLastLoadStatus).mockReset().mockResolvedValue(null);
+  });
+
+  const lastStatusMark = () => {
+    const { calls } = vi.mocked(markLastLoadStatus).mock;
+    return calls[calls.length - 1];
+  };
+
+  const loaded = (file: File) =>
+    ({ detail: { data, settings: null, source: 'auto', file } }) as unknown as Event;
+
+  it('a menu example that has begun rendering is committed: a view-only Back leaves it to finish', async () => {
+    let cancelDuringRender: string | undefined;
+    const { controller } = createRealController(async (file, ctrl) => {
+      mocks.loadData.mockImplementationOnce(async () => {
+        // A Back that only changes the view lands while the plot is swapping.
+        cancelDuringRender = ctrl.cancelPendingExampleLoad({ source: 'menu' });
+      });
+      await ctrl.handleDataLoaded(loaded(file));
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) }),
+    );
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
+      'loaded',
+    );
+    expect(cancelDuringRender).toBe('committed');
+    expect(changes).toEqual([[DEMO.id, 'menu']]);
+    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('a menu example still decoding is cancelled by a Back, and nothing of it lands', async () => {
+    const { controller } = createRealController(async (file, ctrl) => {
+      expect(ctrl.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
+      await ctrl.handleDataLoaded(loaded(file));
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) }),
+    );
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
+      'superseded',
+    );
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
+  });
+
+  it('the startup restore superseded mid-decode renders and emits nothing, and records its success', async () => {
+    const stored = new File(['x'], 'mine.parquetbundle');
+    vi.mocked(loadLastImportedFile).mockResolvedValue(stored);
+    vi.mocked(readLastLoadStatus).mockResolvedValue({ status: 'success', failedAttempts: 0 });
+    const { controller } = createRealController(async (file, ctrl) => {
+      // A Back/Forward to an example entry lands while the restore decodes.
+      ctrl.beginUserRequest();
+      await ctrl.handleDataLoaded(loaded(file));
+    });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    expect(await controller.loadPersistedOrDefaultDataset()).toEqual({ kind: 'auto-loaded' });
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    // No (null, 'startup') emit, which would remove `dataset=` from the entry
+    // the user went to.
+    expect(changes).toEqual([]);
+    expect(controller.hasDisplayedDataset()).toBe(false);
+    // Not left 'pending', which would offer recovery for a file that loads.
+    expect(lastStatusMark()).toEqual(['success']);
+  });
+
+  it('the startup restore superseded while it renders emits nothing and records its success', async () => {
+    const stored = new File(['x'], 'mine.parquetbundle');
+    vi.mocked(loadLastImportedFile).mockResolvedValue(stored);
+    vi.mocked(readLastLoadStatus).mockResolvedValue({ status: 'success', failedAttempts: 0 });
+    const { controller } = createRealController(async (file, ctrl) => {
+      mocks.loadData.mockImplementationOnce(async () => {
+        ctrl.beginUserRequest();
+      });
+      await ctrl.handleDataLoaded(loaded(file));
+    });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.loadPersistedOrDefaultDataset();
+    expect(changes).toEqual([]);
+    expect(lastStatusMark()).toEqual(['success']);
+  });
+
+  it('a user import superseded while it decodes is neither saved, shown nor reported', async () => {
+    const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
+      ctrl.beginUserRequest();
+      await ctrl.handleDataLoaded({
+        detail: { data, settings: null, source: 'user', file },
+      } as unknown as Event);
+    });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    const file = new File(['x'], 'mine.parquetbundle');
+    // As runtime.ts's load handler does for a user import.
+    loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
+    await dataLoader.loadFromFile(file, { source: 'user' });
+
+    expect(saveLastImportedFile).not.toHaveBeenCalled();
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+  });
+
+  it('a user import that stays current is saved, shown and reported', async () => {
+    const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
+      await ctrl.handleDataLoaded({
+        detail: { data, settings: null, source: 'user', file },
+      } as unknown as Event);
+    });
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    const file = new File(['x'], 'mine.parquetbundle');
+    loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
+    await dataLoader.loadFromFile(file, { source: 'user' });
+
+    expect(saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.loadData).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual([[null, 'user']]);
   });
 });

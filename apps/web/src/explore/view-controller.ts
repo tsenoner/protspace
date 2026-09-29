@@ -152,7 +152,7 @@ export function createViewController({
     const currentData = dataOverride ?? plotElement.getCurrentData?.();
     const { availableAnnotations, availableProjections } = getViewOptions(currentData);
     const resolved = resolveExploreView(
-      latestViewRequest.requested,
+      latestViewRequest,
       availableAnnotations,
       availableProjections,
       datasetDefaults,
@@ -170,7 +170,7 @@ export function createViewController({
     const currentData = dataOverride ?? plotElement.getCurrentData?.();
     const { availableAnnotations, availableProjections } = getViewOptions(currentData);
     const resolved = resolveExploreView(
-      latestViewRequest.requested,
+      latestViewRequest,
       availableAnnotations,
       availableProjections,
       datasetDefaults,

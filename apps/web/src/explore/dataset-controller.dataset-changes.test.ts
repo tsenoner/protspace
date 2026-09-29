@@ -23,7 +23,9 @@ const mocks = vi.hoisted(() => ({
     recoverFromCorruptedPersistedDataset: vi.fn(),
     beginUserRequest: vi.fn(() => 1),
     currentRequestEpoch: vi.fn(() => 0),
-    cancelPendingExampleLoad: vi.fn(() => false),
+    cancelPendingExampleLoad: vi.fn((): string => 'none'),
+    commitExampleLoad: vi.fn(),
+    beginImportPreparation: vi.fn(),
     // Defaults to "still current" so existing tests, which don't exercise
     // the superseded-during-decode path, render as before.
     isCurrentRequest: vi.fn(() => true),
@@ -332,10 +334,10 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
   });
 
   it('cancelPendingExampleLoad delegates to the persisted controller', () => {
-    mocks.persisted.cancelPendingExampleLoad.mockReturnValue(true);
+    mocks.persisted.cancelPendingExampleLoad.mockReturnValue('cancelled');
     const { controller } = createController();
 
-    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(true);
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
     expect(mocks.persisted.cancelPendingExampleLoad).toHaveBeenCalledWith({ source: 'menu' });
   });
 

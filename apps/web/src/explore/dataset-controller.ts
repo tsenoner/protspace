@@ -26,9 +26,18 @@ import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { progressAfterExampleDownload } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
-import type { ExampleLoadCancel, PersistedLoadOutcome } from './persisted-dataset';
+import type {
+  ExampleLoadCancel,
+  ImportPreparation,
+  PersistedLoadOutcome,
+} from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
-import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
+import type {
+  DatasetChangeSource,
+  ExampleCancelResult,
+  ExampleLoadOutcome,
+  LoadMeta,
+} from './types';
 import { createEmptyExploreViewRequest } from './url-state';
 import type { ViewController } from './view-controller';
 
@@ -79,14 +88,21 @@ export interface DatasetController {
   beginUserRequest(): number;
   /** The request epoch an app-initiated flow starting now runs under. */
   currentRequestEpoch(): number;
+  /**
+   * Starts the preparation step (a FASTA upload) of the user import that took
+   * `epoch`: the next user request aborts it and takes its Cancel button over
+   * (`beginImportPreparation` in persisted-dataset.ts).
+   */
+  beginImportPreparation(epoch: number): ImportPreparation;
   /** Whether any dataset has been rendered yet (false only before the first load succeeds). */
   hasDisplayedDataset(): boolean;
   /**
    * Cancels the example load in flight (only one started from `source`, when
    * given): supersedes it as a user request, aborts its download and
-   * dismisses its overlay. Returns whether one was cancelled.
+   * dismisses its overlay. One that has begun replacing the plot is
+   * `'committed'` and finishes.
    */
-  cancelPendingExampleLoad(options?: { source?: DatasetChangeSource }): boolean;
+  cancelPendingExampleLoad(options?: { source?: DatasetChangeSource }): ExampleCancelResult;
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
@@ -234,6 +250,17 @@ export function createDatasetController({
     return outcome;
   };
 
+  /**
+   * Whether a newer user request has superseded `meta`'s load: an example
+   * load (by the epoch in its example context), an OPFS restore or a user
+   * import (by the epoch it began under). Loads without an epoch (the perf
+   * suite's) are never superseded.
+   */
+  const isLoadSuperseded = (meta: LoadMeta | null | undefined): boolean => {
+    const epoch = meta?.example?.requestId ?? meta?.epoch;
+    return epoch !== undefined && !persistedDatasetController.isCurrentRequest(epoch);
+  };
+
   let currentDatasetHash: string | null = null;
   viewController.subscribeToViewChanges((change) => {
     if (currentDatasetHash !== null) {
@@ -267,17 +294,38 @@ export function createDatasetController({
         return;
       }
 
-      // An example load superseded by a newer user request, before or during
-      // `loadData`, must not label itself, emit, or touch the view: the newer
-      // request owns the screen. The queue-level check above can't see this
-      // (this load is still the running one), so it is checked here and again
-      // after each await below.
-      const isSupersededExampleLoad = () =>
-        loadMeta.example != null &&
-        !persistedDatasetController.isCurrentRequest(loadMeta.example.requestId);
+      // A load superseded by a newer user request, before or during `loadData`,
+      // must not label itself, emit, save, or touch the view: the newer
+      // request owns the screen, and its own load renders over this one or
+      // its fallback runs. That covers example loads, and also the startup
+      // restore of the stored import and a user import, whose emit would
+      // otherwise remove `dataset=` from the entry a Back/Forward went to. The
+      // queue-level check above can't see this (this load is still the
+      // running one), so it is checked here and again after each await below.
+      const isSuperseded = () => isLoadSuperseded(loadMeta);
+      const skipSupersededLoad = async () => {
+        if (loadMeta.kind !== 'opfs') {
+          return;
+        }
+        // The stored import decoded fine; only a newer request kept it off
+        // screen. Record that, so no 'pending' status is left behind to offer
+        // recovery for it, and a later startup load restores it.
+        try {
+          await markLastLoadStatus('success');
+        } catch (statusError) {
+          console.warn('Failed to update OPFS load status to success:', statusError);
+        }
+      };
 
-      if (isSupersededExampleLoad()) {
+      if (isSuperseded()) {
+        await skipSupersededLoad();
         return;
+      }
+      if (loadMeta.example) {
+        // From here the example replaces the stored import and the plot, so
+        // it can no longer be cancelled (a Back/Forward that only changes the
+        // view leaves it to finish); a newer user request still supersedes it.
+        persistedDatasetController.commitExampleLoad(loadMeta.example.requestId);
       }
 
       if (loadMeta.kind === 'user' && file) {
@@ -293,6 +341,9 @@ export function createDatasetController({
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
         }
+        if (isSuperseded()) {
+          return;
+        }
       } else if (loadMeta.example?.replacesStoredImport) {
         // A menu choice replaces the stored import only now that the example
         // has downloaded, decoded and is still current — never before the
@@ -305,7 +356,7 @@ export function createDatasetController({
         } catch (error) {
           console.warn('Failed to clear persisted dataset before showing example dataset:', error);
         }
-        if (isSupersededExampleLoad()) {
+        if (isSuperseded()) {
           return;
         }
       }
@@ -337,9 +388,10 @@ export function createDatasetController({
 
       await loadData(data);
 
-      // Re-check: `loadData` can take long enough for a newer example
-      // request to land while it was running (see the check above).
-      if (isSupersededExampleLoad()) {
+      // Re-check: `loadData` can take long enough for a newer user request
+      // to land while it was running (see the check above).
+      if (isSuperseded()) {
+        await skipSupersededLoad();
         return;
       }
 
@@ -465,16 +517,10 @@ export function createDatasetController({
     }
   };
 
-  // An example load superseded while it decodes (a newer user request, or a
-  // cancel) still reports decode progress. It must not put the overlay back
-  // up: a cancel has dismissed it, and a newer request owns it.
-  const isRunningLoadSuperseded = (): boolean => {
-    const running = loadQueue.getRunningLoadMeta();
-    return (
-      running?.example != null &&
-      !persistedDatasetController.isCurrentRequest(running.example.requestId)
-    );
-  };
+  // A load superseded while it decodes (a newer user request, or a cancel)
+  // still reports decode progress. It must not put the overlay back up: a
+  // cancel has dismissed it, and a newer request owns it.
+  const isRunningLoadSuperseded = (): boolean => isLoadSuperseded(loadQueue.getRunningLoadMeta());
 
   const handleDataError = async (event: Event) => {
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
@@ -558,6 +604,7 @@ export function createDatasetController({
     loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
     beginUserRequest: persistedDatasetController.beginUserRequest,
+    beginImportPreparation: persistedDatasetController.beginImportPreparation,
     currentRequestEpoch: persistedDatasetController.currentRequestEpoch,
     cancelPendingExampleLoad: persistedDatasetController.cancelPendingExampleLoad,
     hasDisplayedDataset: () => currentDatasetHash !== null,

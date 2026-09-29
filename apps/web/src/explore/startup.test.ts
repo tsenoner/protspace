@@ -226,6 +226,29 @@ describe('loadDatasetAfterNavigation (Back/Forward after the first load)', () =>
     expect(viewController.recordCurrentView).toHaveBeenCalledTimes(1);
   });
 
+  it('a Back to an entry without dataset= whose demo fails keeps the plot and re-records its view', async () => {
+    const datasetController = createDatasetController();
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'default-failed' });
+    const viewController = createViewController();
+
+    await loadDatasetAfterNavigation(datasetController as never, viewController, null);
+
+    // As after a failed example: the entry's view parameters must not reach
+    // a later import or load.
+    expect(viewController.recordCurrentView).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed startup demo with nothing on screen records no view', async () => {
+    const datasetController = createDatasetController();
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'default-failed' });
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    const viewController = createViewController();
+
+    await loadDatasetAfterNavigation(datasetController as never, viewController, null);
+
+    expect(viewController.recordCurrentView).not.toHaveBeenCalled();
+  });
+
   it('a failed Back before anything is on screen still falls back', async () => {
     const datasetController = createDatasetController();
     datasetController.loadExampleDataset.mockResolvedValue('failed');

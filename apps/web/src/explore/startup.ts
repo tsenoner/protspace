@@ -14,6 +14,8 @@ import type { ViewController } from './view-controller';
  * What a dataset request came to: the example's own outcome, or `'fallback'`
  * when the startup load (stored import, demo or recovery banner) ran instead,
  * or `'preempted'` when a user request took over before that could start.
+ * `'failed'` also covers a startup load whose demo download failed (no import
+ * stored): either way nothing new is on screen.
  */
 type DatasetRequestOutcome = ExampleLoadOutcome | 'fallback' | 'preempted';
 
@@ -104,7 +106,8 @@ export async function loadRequestedDatasetOrFallback(
   }
 
   const kind = await runPersistedOrDefaultFlow(datasetController, epoch);
-  return kind === 'preempted' ? 'preempted' : 'fallback';
+  if (kind === 'preempted') return 'preempted';
+  return kind === 'default-failed' ? 'failed' : 'fallback';
 }
 
 /**
@@ -118,7 +121,8 @@ export async function loadRequestedDatasetOrFallback(
  * URL and history entry stay as they are. The view request recorded for the
  * failed entry is then replaced by the view on screen, so a later import or
  * load doesn't inherit the failed entry's parameters; Retry records them
- * again.
+ * again. The same holds when the entry names no dataset and the demo its
+ * startup load falls back to fails to download.
  */
 export async function loadDatasetAfterNavigation(
   datasetController: DatasetController,
@@ -129,7 +133,7 @@ export async function loadDatasetAfterNavigation(
     epoch: datasetController.beginUserRequest(),
     keepCurrentOnFailure: datasetController.hasDisplayedDataset(),
   });
-  if (outcome === 'failed') {
+  if (outcome === 'failed' && datasetController.hasDisplayedDataset()) {
     viewController.recordCurrentView();
   }
 }

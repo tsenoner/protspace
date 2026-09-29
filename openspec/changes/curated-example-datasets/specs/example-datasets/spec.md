@@ -60,7 +60,7 @@ The control bar's Import menu SHALL list every catalog entry under an "Examples"
 
 ### Requirement: Dataset deep link
 
-The `dataset` query parameter SHALL name the example to show. At startup, a known id SHALL be loaded in place of restoring the stored import, and the stored import SHALL be left untouched. Choosing an example from the menu SHALL push a new history entry whose query is the previous one with `dataset=<id>` set and `annotation`, `projection` and `tooltip` removed; other parameters SHALL be kept. Importing a user file SHALL remove the parameter without adding a history entry. Loading the demo by default at startup SHALL NOT set the parameter. When Back or Forward changes the parameter, the app SHALL load the named example, or run the normal startup load when the parameter is gone. `annotation`, `projection` and `tooltip` parameters in the same URL SHALL apply to the loaded example. When the URL names none of them, the example SHALL open on its whole `defaultView`, tooltip included, and nothing SHALL be written to the URL. When the URL names some of them, a missing or invalid `annotation` or `projection` SHALL fall back to the example's `defaultView` value rather than to the bundle's first one, an invalid value SHALL be normalized in the URL, and an absent `tooltip` SHALL mean no tooltip annotations. A `defaultView` name missing from the loaded bundle SHALL fall back to the bundle's first annotation or projection, and to no tooltip annotation, with a development-mode warning.
+The `dataset` query parameter SHALL name the example to show. At startup, a known id SHALL be loaded in place of restoring the stored import, and the stored import SHALL be left untouched. Choosing an example from the menu SHALL push a new history entry whose query is the previous one with `dataset=<id>` set and `annotation`, `projection` and `tooltip` removed; other parameters SHALL be kept. Importing a user file SHALL remove the parameter without adding a history entry. Loading the demo by default at startup SHALL NOT set the parameter. When Back or Forward changes the parameter, the app SHALL load the named example, or run the normal startup load when the parameter is gone. `annotation`, `projection` and `tooltip` parameters in the same URL SHALL apply to the loaded example. When the URL names none of them, the example SHALL open on its whole `defaultView`, tooltip included, and nothing SHALL be written to the URL. A parameter present with an empty value SHALL count as named. When the URL names some of them, a missing or invalid `annotation` or `projection` SHALL fall back to the example's `defaultView` value rather than to the bundle's first one, an invalid value SHALL be normalized in the URL, and an absent `tooltip` SHALL mean no tooltip annotations. A `defaultView` name missing from the loaded bundle SHALL fall back to the bundle's first annotation or projection, and to no tooltip annotation, with a development-mode warning.
 
 #### Scenario: Open a deep link
 
@@ -76,6 +76,11 @@ The `dataset` query parameter SHALL name the example to show. At startup, a know
 
 - **WHEN** the app opens with `?dataset=<id>&annotation=<a>` and the example has annotation `<a>`
 - **THEN** the example loads with `<a>` selected, on its `defaultView` projection, with no tooltip annotations
+
+#### Scenario: An empty view parameter
+
+- **WHEN** the app opens with `?dataset=<id>&tooltip=`
+- **THEN** the example shows its `defaultView` annotation and projection with no tooltip annotations, and the empty parameter is removed from the URL without a new history entry
 
 #### Scenario: Invalid view parameter
 
@@ -104,7 +109,7 @@ The `dataset` query parameter SHALL name the example to show. At startup, a know
 
 ### Requirement: Example load failure
 
-If fetching or parsing an example fails, the app SHALL show an error notification and dismiss the loading overlay. When a dataset is already displayed, a failed load, whether started by a menu choice or by Back/Forward, SHALL leave the current plot, the current history entry and the URL unchanged and SHALL NOT run a fallback load. For a failed download, the notification SHALL offer Retry as its primary action and Report as its secondary action; for a bundle that downloads but fails to parse it SHALL offer Report only. After a failed Back/Forward, the app SHALL treat the displayed view as the current view request, so later loads do not inherit the failed entry's view parameters. Retry after a failed Back/Forward SHALL re-request the example with the view parameters of the history entry that names it; Retry after a failed menu choice SHALL repeat that menu choice. The next history entry the app writes for a user view change SHALL name the displayed dataset. Only when nothing is displayed yet SHALL a failed deep link remove the parameter without a new history entry and continue with the normal startup load.
+If fetching or parsing an example fails, the app SHALL show an error notification and dismiss the loading overlay. When a dataset is already displayed, a failed load, whether started by a menu choice or by Back/Forward, SHALL leave the current plot, the current history entry and the URL unchanged and SHALL NOT run a fallback load. For a failed download, the notification SHALL offer Retry as its primary action and Report as its secondary action; for a bundle that downloads but fails to parse it SHALL offer Report only. After a failed Back/Forward, including a Back to an entry without `dataset=` whose startup demo fails to download, the app SHALL treat the displayed view as the current view request, so later loads do not inherit the failed entry's view parameters. Each failed download SHALL keep its own notification, whose Retry repeats that request, even when the same example failed moments before from another kind of request. Retry after a failed Back/Forward SHALL re-request the example with the view parameters of the history entry that names it; Retry after a failed menu choice SHALL repeat that menu choice. The next history entry the app writes for a user view change SHALL name the displayed dataset. Only when nothing is displayed yet SHALL a failed deep link remove the parameter without a new history entry and continue with the normal startup load.
 
 #### Scenario: Menu choice fails
 
@@ -125,6 +130,11 @@ If fetching or parsing an example fails, the app SHALL show an error notificatio
 
 - **WHEN** after a failed Back or Forward the user imports a file or changes the view instead of retrying
 - **THEN** the failed entry's `annotation`, `projection` and `tooltip` are not applied, and any history entry the app writes names the displayed dataset
+
+#### Scenario: A menu failure, then a Back failure of the same example
+
+- **WHEN** choosing an example from the menu fails, and within seconds a Back to an entry naming the same example fails too
+- **THEN** two notifications are shown, and the second one's Retry re-requests that entry's example without replacing the stored import
 
 #### Scenario: A corrupt bundle
 
@@ -164,7 +174,7 @@ Every load of an example, whether from the Import menu, a deep link, Back/Forwar
 
 ### Requirement: Request precedence
 
-A user-initiated dataset request SHALL take precedence over any app-initiated load that began before it. User-initiated requests are a menu choice, a Back/Forward navigation (including one to an entry without `dataset=`), a file import, a recovery-banner button, a Retry and a Cancel. App-initiated loads are the startup restore of the stored import, the startup demo, the recovery load after a corrupt stored import, and the fallback after a failed deep link. An app-initiated load preempted by a user request SHALL stop before starting any load, and SHALL show no recovery banner and no notification. While a URL-driven switch to a dataset is pending, a history navigation that changes only the view parameters for that same dataset SHALL be recorded and applied by the pending load, not resolved against the dataset still on screen. A Back/Forward navigation while a menu-chosen example is loading SHALL cancel that load: its download is aborted, the loading overlay is dismissed if the navigation starts no load of its own, and no history entry is pushed for it.
+A user-initiated dataset request SHALL take precedence over any app-initiated load that began before it. User-initiated requests are a menu choice, a Back/Forward navigation (including one to an entry without `dataset=`), a file import, a recovery-banner button, a Retry and a Cancel. App-initiated loads are the startup restore of the stored import, the startup demo, the recovery load after a corrupt stored import, and the fallback after a failed deep link. An app-initiated load preempted by a user request SHALL stop before starting any load, and SHALL show no recovery banner and no notification. While a URL-driven switch to a dataset is pending, a history navigation that changes only the view parameters for that same dataset SHALL be recorded and applied by the pending load, not resolved against the dataset still on screen. A Back/Forward navigation while a menu-chosen example is loading SHALL cancel that load: its download is aborted, the loading overlay is dismissed if the navigation starts no load of its own, and no history entry is pushed for it. Once that example has decoded and begun replacing the stored import and the plot, a Back/Forward that changes only the view parameters SHALL NOT cancel it: the example finishes on its curated view and pushes its own entry, and the entry the navigation landed on is left unchanged. A load superseded by a newer user request, whether an example, the startup restore of the stored import or a user import, SHALL NOT render, save the import, or change the URL; a superseded restore that decoded SHALL still record that it loaded, so no recovery banner is offered for it. A startup load run by a user request while that restore is still in flight SHALL wait for it and restore the import, not offer recovery. A user request SHALL abort a FASTA preparation still running, and the loading overlay's Cancel SHALL act on the newest request. A restore preempted after it marked the stored import's load as pending SHALL put the previous status back.
 
 #### Scenario: A menu choice during the startup restore
 
@@ -190,6 +200,26 @@ A user-initiated dataset request SHALL take precedence over any app-initiated lo
 
 - **WHEN** the user chooses an example and presses Back before it has loaded
 - **THEN** the example's download is aborted, the entry the user went back to is shown, and no `dataset=` entry is pushed for the cancelled example
+
+#### Scenario: Back once the menu example is rendering
+
+- **WHEN** the user chooses an example and presses Back after its data has reached the plot but before its load has finished
+- **THEN** the example finishes on its curated view with its `dataset=` entry pushed, and the entry the user went back to is not modified
+
+#### Scenario: Forward during the startup restore
+
+- **WHEN** the stored import is still being restored at startup and a Back/Forward lands on an entry naming an example
+- **THEN** the example is shown, its entry keeps `dataset=`, and the stored import is left healthy for the next startup
+
+#### Scenario: Forward during the startup restore to an example that fails
+
+- **WHEN** the stored import is still being restored at startup and a Back/Forward lands on an entry naming an example whose download fails
+- **THEN** an error notification is shown, the stored import is restored, and no recovery banner appears
+
+#### Scenario: Back/Forward during a FASTA preparation
+
+- **WHEN** a FASTA import is being prepared and a Back/Forward lands on an entry naming an example
+- **THEN** the preparation is aborted, the example is shown on that entry, and the preparation never lands later
 
 #### Scenario: Back to an entry without a dataset
 

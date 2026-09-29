@@ -18,6 +18,7 @@ vi.mock('./opfs-dataset-store', () => ({
   loadLastImportedFile: vi.fn().mockResolvedValue(null),
   markLastLoadStatus: vi.fn().mockResolvedValue(undefined),
   readLastLoadStatus: vi.fn().mockResolvedValue(null),
+  restoreLastLoadStatus: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { createLoadQueue } from './load-queue';
@@ -27,6 +28,7 @@ import {
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
+  restoreLastLoadStatus,
 } from './opfs-dataset-store';
 import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
@@ -638,7 +640,7 @@ describe('cancelPendingExampleLoad', () => {
     const pending = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
     overlayController.update.mockClear();
 
-    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(true);
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
     expect(fetchSignal(fetchMock).aborted).toBe(true);
     expect(overlayController.update).toHaveBeenCalledWith(false);
     response.resolve(okResponse());
@@ -657,7 +659,7 @@ describe('cancelPendingExampleLoad', () => {
     void controller.loadExampleDataset(OTHER, 'url');
     overlayController.update.mockClear();
 
-    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(false);
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('none');
     expect(fetchSignal(fetchMock).aborted).toBe(false);
     expect(overlayController.update).not.toHaveBeenCalled();
   });
@@ -669,12 +671,12 @@ describe('cancelPendingExampleLoad', () => {
     );
     const { controller, overlayController } = createController();
 
-    expect(controller.cancelPendingExampleLoad()).toBe(false);
+    expect(controller.cancelPendingExampleLoad()).toBe('none');
     expect(await controller.loadExampleDataset(OTHER, 'menu')).toBe('failed');
     overlayController.update.mockClear();
     const epoch = controller.currentRequestEpoch();
 
-    expect(controller.cancelPendingExampleLoad()).toBe(false);
+    expect(controller.cancelPendingExampleLoad()).toBe('none');
     expect(controller.currentRequestEpoch()).toBe(epoch);
     expect(overlayController.update).not.toHaveBeenCalled();
   });
@@ -890,5 +892,192 @@ describe('Retry on a failed example download', () => {
 
     expect(retryUrlExample).toHaveBeenCalledWith(OTHER.id);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('an example that has begun replacing the plot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('can no longer be cancelled once committed, but a newer user request still supersedes it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
+    const { controller, dataLoader, loadQueue, overlayController } = createController();
+
+    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+    const requestId = (loadQueue.registerFileLoad.mock.calls[0]![2] as { requestId: number })
+      .requestId;
+    // Still decoding: a Back/Forward cancels it.
+    expect(controller.isCurrentRequest(requestId)).toBe(true);
+
+    controller.commitExampleLoad(requestId);
+    const epoch = controller.currentRequestEpoch();
+    overlayController.update.mockClear();
+
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('committed');
+    expect(controller.currentRequestEpoch()).toBe(epoch);
+    expect(overlayController.update).not.toHaveBeenCalled();
+
+    loadQueue.resolveOutcome(1, true);
+    expect(await result).toBe('loaded');
+    // Settled: nothing is left to cancel.
+    expect(controller.cancelPendingExampleLoad()).toBe('none');
+  });
+
+  it("ignores a commit for another request's load", async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const result = controller.loadExampleDataset(OTHER, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+    controller.commitExampleLoad(-1);
+
+    expect(controller.cancelPendingExampleLoad()).toBe('cancelled');
+    loadQueue.resolveOutcome(1, true);
+    expect(await result).toBe('superseded');
+  });
+});
+
+describe("a user import's preparation step (a FASTA upload)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("offers the overlay's Cancel, which aborts it", () => {
+    const { controller, overlayController } = createController();
+
+    const preparation = controller.beginImportPreparation(controller.beginUserRequest());
+    expect(preparation.isCurrent()).toBe(true);
+    cancelButtonHandler(overlayController.setCancelHandler)?.();
+
+    expect(preparation.signal.aborted).toBe(true);
+    // A user's own cancel is not a new request: the import still owns the screen.
+    expect(preparation.isCurrent()).toBe(true);
+  });
+
+  it('is aborted by the next user request, which takes its Cancel button over', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {})),
+    );
+    const { controller, overlayController } = createController();
+
+    const preparation = controller.beginImportPreparation(controller.beginUserRequest());
+    void controller.loadExampleDataset(OTHER, 'url');
+
+    expect(preparation.signal.aborted).toBe(true);
+    expect(preparation.isCurrent()).toBe(false);
+    const exampleCancel = cancelButtonHandler(overlayController.setCancelHandler);
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(
+      expect.any(Function),
+      'Cancel download',
+    );
+
+    // Settling later never removes the example's button.
+    preparation.settle();
+    expect(cancelButtonHandler(overlayController.setCancelHandler)).toBe(exampleCancel);
+  });
+
+  it('settles by removing its own Cancel button', () => {
+    const { controller, overlayController } = createController();
+
+    const preparation = controller.beginImportPreparation(controller.beginUserRequest());
+    preparation.settle();
+
+    expect(overlayController.setCancelHandler).toHaveBeenLastCalledWith(null);
+    // The next user request has nothing left to abort.
+    controller.beginUserRequest();
+    expect(preparation.signal.aborted).toBe(false);
+  });
+
+  it('starts aborted, with no Cancel button, when its import is already superseded', () => {
+    const { controller, overlayController } = createController();
+
+    const epoch = controller.beginUserRequest();
+    controller.beginUserRequest();
+    const preparation = controller.beginImportPreparation(epoch);
+
+    expect(preparation.signal.aborted).toBe(true);
+    expect(preparation.isCurrent()).toBe(false);
+    expect(overlayController.setCancelHandler).not.toHaveBeenCalled();
+  });
+});
+
+describe('the startup restore and the requests that supersede it', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('puts the previous status back when preempted while marking the load pending', async () => {
+    const previous = { status: 'success' as const, failedAttempts: 0 };
+    const marking = deferred<void>();
+    vi.mocked(loadLastImportedFile).mockResolvedValueOnce(new File(['x'], 'mine.parquetbundle'));
+    vi.mocked(readLastLoadStatus).mockResolvedValueOnce(previous);
+    vi.mocked(markLastLoadStatus).mockImplementationOnce(() => marking.promise);
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const startup = controller.loadPersistedOrDefaultDataset();
+    await vi.waitFor(() => expect(markLastLoadStatus).toHaveBeenCalledWith('pending'));
+    controller.beginUserRequest();
+    marking.resolve();
+
+    expect(await startup).toEqual({ kind: 'preempted' });
+    expect(restoreLastLoadStatus).toHaveBeenCalledWith(previous);
+    expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
+    expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
+  });
+
+  it('waits for a superseded restore still in flight before reading the stored status', async () => {
+    const file = new File(['x'], 'mine.parquetbundle');
+    vi.mocked(loadLastImportedFile).mockResolvedValue(file);
+    vi.mocked(readLastLoadStatus).mockResolvedValue({ status: 'success', failedAttempts: 0 });
+    const { controller, dataLoader } = createController();
+    const firstLoad = deferred<void>();
+    dataLoader.loadFromFile.mockImplementationOnce(() => firstLoad.promise);
+
+    void controller.loadPersistedOrDefaultDataset();
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+    // A Back/Forward (to an example that then fails, say) runs the startup
+    // load again under its own epoch while the first restore still decodes.
+    const epoch = controller.beginUserRequest();
+    const fallback = controller.loadPersistedOrDefaultDataset({ epoch });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loadLastImportedFile).toHaveBeenCalledTimes(1);
+
+    // The superseded restore settles (handleDataLoaded skipped it and recorded
+    // its success), and only then is the stored status read again.
+    firstLoad.resolve();
+    expect(await fallback).toEqual({ kind: 'auto-loaded' });
+    expect(loadLastImportedFile).toHaveBeenCalledTimes(2);
+    expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(2);
+    vi.mocked(loadLastImportedFile).mockReset().mockResolvedValue(null);
+    vi.mocked(readLastLoadStatus).mockReset().mockResolvedValue(null);
+  });
+
+  it('reports a failed startup demo as default-failed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+    );
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller } = createController();
+
+    expect(await controller.loadPersistedOrDefaultDataset()).toEqual({ kind: 'default-failed' });
+    errorSpy.mockRestore();
+    expect(notifyMock.error).toHaveBeenCalledTimes(1);
   });
 });

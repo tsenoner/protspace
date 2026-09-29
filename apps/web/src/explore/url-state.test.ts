@@ -59,7 +59,7 @@ describe('explore url state', () => {
 
   it('treats empty values as invalid and normalizes them', () => {
     const parsed = parseExploreViewRequest(new URLSearchParams('annotation=&projection=%20'));
-    const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam'], ['UMAP', 'PCA']);
+    const resolved = resolveExploreView(parsed, ['ec', 'pfam'], ['UMAP', 'PCA']);
 
     expect(parsed).toEqual({
       requested: {
@@ -97,7 +97,7 @@ describe('explore url state', () => {
 
   it('keeps both requested values when they are valid', () => {
     const parsed = parseExploreViewRequest(new URLSearchParams('annotation=pfam&projection=PCA'));
-    const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam'], ['UMAP', 'PCA']);
+    const resolved = resolveExploreView(parsed, ['ec', 'pfam'], ['UMAP', 'PCA']);
 
     expect(resolved).toEqual({
       effective: {
@@ -122,7 +122,7 @@ describe('explore url state', () => {
     const parsed = parseExploreViewRequest(
       new URLSearchParams('annotation=pfam&annotation=ec&projection=PCA&projection=UMAP'),
     );
-    const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam'], ['UMAP', 'PCA']);
+    const resolved = resolveExploreView(parsed, ['ec', 'pfam'], ['UMAP', 'PCA']);
 
     expect(resolved).toEqual({
       effective: {
@@ -147,7 +147,7 @@ describe('explore url state', () => {
     const parsed = parseExploreViewRequest(
       new URLSearchParams('annotation=pfam&projection=UNKNOWN'),
     );
-    const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam'], ['UMAP', 'PCA']);
+    const resolved = resolveExploreView(parsed, ['ec', 'pfam'], ['UMAP', 'PCA']);
 
     expect(resolved).toEqual({
       effective: {
@@ -172,7 +172,7 @@ describe('explore url state', () => {
     const parsed = parseExploreViewRequest(
       new URLSearchParams('annotation=unknown&projection=UNKNOWN'),
     );
-    const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam'], ['UMAP', 'PCA']);
+    const resolved = resolveExploreView(parsed, ['ec', 'pfam'], ['UMAP', 'PCA']);
 
     expect(resolved).toEqual({
       effective: {
@@ -196,8 +196,8 @@ describe('explore url state', () => {
   it('returns null when the dataset has no available view options yet', () => {
     const parsed = parseExploreViewRequest(new URLSearchParams('annotation=ec&projection=UMAP'));
 
-    expect(resolveExploreView(parsed.requested, [], ['UMAP'])).toBeNull();
-    expect(resolveExploreView(parsed.requested, ['ec'], [])).toBeNull();
+    expect(resolveExploreView(parsed, [], ['UMAP'])).toBeNull();
+    expect(resolveExploreView(parsed, ['ec'], [])).toBeNull();
   });
 
   it('preserves unrelated params for user-driven writes', () => {
@@ -242,7 +242,7 @@ describe('explore url state', () => {
 
     it('resolves a landing request to the whole default view with no normalization', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams('dataset=phosphatase'));
-      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+      const resolved = resolveExploreView(parsed, annotations, projections, defaults);
 
       expect(resolved?.effective).toEqual({
         annotation: 'pfam',
@@ -256,9 +256,39 @@ describe('explore url state', () => {
       });
     });
 
+    it('treats a parameter named with an empty value as named, not as a landing', () => {
+      const emptyTooltip = parseExploreViewRequest(
+        new URLSearchParams('dataset=phosphatase&tooltip='),
+      );
+      const resolvedTooltip = resolveExploreView(emptyTooltip, annotations, projections, defaults);
+      expect(resolvedTooltip?.effective).toEqual({
+        annotation: 'pfam',
+        projection: 'UMAP 2',
+        tooltip: [],
+      });
+      // The empty parameter is dropped from the URL; the curated tooltip is
+      // never written into it.
+      const normalize = getResolvedExploreViewNormalization(emptyTooltip, resolvedTooltip!);
+      expect(normalize).toEqual({ annotation: false, projection: false, tooltip: true });
+      expect(
+        buildSearchParamsWithExploreView(
+          new URLSearchParams('dataset=phosphatase&tooltip='),
+          resolvedTooltip!.effective,
+          { mode: 'normalize', normalize },
+        ).toString(),
+      ).toBe('dataset=phosphatase');
+
+      const emptyAnnotation = parseExploreViewRequest(
+        new URLSearchParams('dataset=phosphatase&annotation='),
+      );
+      expect(
+        resolveExploreView(emptyAnnotation, annotations, projections, defaults)?.effective,
+      ).toEqual({ annotation: 'pfam', projection: 'UMAP 2', tooltip: [] });
+    });
+
     it('fills only the missing field of a partial request, with no tooltip', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams('annotation=ec'));
-      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+      const resolved = resolveExploreView(parsed, annotations, projections, defaults);
 
       expect(resolved?.effective).toEqual({ annotation: 'ec', projection: 'UMAP 2', tooltip: [] });
       expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
@@ -272,7 +302,7 @@ describe('explore url state', () => {
       const parsed = parseExploreViewRequest(
         new URLSearchParams('annotation=ec&projection=PCA+2&tooltip=gene_name'),
       );
-      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+      const resolved = resolveExploreView(parsed, annotations, projections, defaults);
 
       expect(resolved?.effective).toEqual({
         annotation: 'ec',
@@ -285,7 +315,7 @@ describe('explore url state', () => {
       const parsed = parseExploreViewRequest(
         new URLSearchParams('annotation=unknown&projection=nope'),
       );
-      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+      const resolved = resolveExploreView(parsed, annotations, projections, defaults);
 
       expect(resolved?.effective).toEqual({
         annotation: 'pfam',
@@ -301,7 +331,7 @@ describe('explore url state', () => {
 
     it('falls back to the first available names when the defaults drift from the data', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams(''));
-      const resolved = resolveExploreView(parsed.requested, annotations, projections, {
+      const resolved = resolveExploreView(parsed, annotations, projections, {
         annotation: 'protein_families',
         projection: 'ProtT5 — UMAP 2',
         tooltip: ['kingdom', 'species'],
@@ -321,7 +351,7 @@ describe('explore url state', () => {
 
     it('drops the effective annotation from the default tooltip', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams(''));
-      const resolved = resolveExploreView(parsed.requested, annotations, projections, {
+      const resolved = resolveExploreView(parsed, annotations, projections, {
         annotation: 'ec',
         tooltip: ['ec', 'species'],
       });
@@ -336,12 +366,12 @@ describe('explore url state', () => {
     it('matches the first-available behaviour when there are no defaults', () => {
       for (const query of ['', 'annotation=pfam', 'annotation=unknown&projection=UMAP+2']) {
         const parsed = parseExploreViewRequest(new URLSearchParams(query));
-        expect(resolveExploreView(parsed.requested, annotations, projections, {})).toEqual(
-          resolveExploreView(parsed.requested, annotations, projections),
+        expect(resolveExploreView(parsed, annotations, projections, {})).toEqual(
+          resolveExploreView(parsed, annotations, projections),
         );
       }
       const bare = parseExploreViewRequest(new URLSearchParams(''));
-      expect(resolveExploreView(bare.requested, annotations, projections)?.effective).toEqual({
+      expect(resolveExploreView(bare, annotations, projections)?.effective).toEqual({
         annotation: 'annotation_score',
         projection: 'PCA 2',
         tooltip: [],
@@ -388,7 +418,7 @@ describe('explore url state', () => {
       const parsed = parseExploreViewRequest(
         new URLSearchParams('annotation=pfam&tooltip=pfam%2Cec'),
       );
-      const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam', 'go'], ['UMAP']);
+      const resolved = resolveExploreView(parsed, ['ec', 'pfam', 'go'], ['UMAP']);
 
       expect(resolved!.effective.tooltip).toEqual(['ec']);
       expect(resolved!.matchesRequested.tooltip).toBe(false);
@@ -399,7 +429,7 @@ describe('explore url state', () => {
       const parsed = parseExploreViewRequest(
         new URLSearchParams('annotation=pfam&tooltip=ec%2Cunknown%2Cgo'),
       );
-      const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam', 'go'], ['UMAP']);
+      const resolved = resolveExploreView(parsed, ['ec', 'pfam', 'go'], ['UMAP']);
 
       expect(resolved!.effective.tooltip).toEqual(['ec', 'go']);
       expect(resolved!.matchesRequested.tooltip).toBe(false);
@@ -410,7 +440,7 @@ describe('explore url state', () => {
       const parsed = parseExploreViewRequest(
         new URLSearchParams('annotation=pfam&tooltip=ec%2Cgo'),
       );
-      const resolved = resolveExploreView(parsed.requested, ['ec', 'pfam', 'go'], ['UMAP']);
+      const resolved = resolveExploreView(parsed, ['ec', 'pfam', 'go'], ['UMAP']);
 
       expect(resolved!.effective.tooltip).toEqual(['ec', 'go']);
       expect(resolved!.matchesRequested.tooltip).toBe(true);

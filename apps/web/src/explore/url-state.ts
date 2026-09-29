@@ -5,7 +5,6 @@ import type {
   ExploreViewDefaults,
   ExploreViewNormalization,
   ExploreViewRequestState,
-  RequestedExploreView,
   ResolvedExploreView,
 } from './view-state';
 
@@ -261,9 +260,11 @@ function pickAvailable(preferred: string | undefined, available: readonly string
  * projections, filling what the request leaves unset from the dataset's own
  * `defaults` (an example's curated `defaultView`):
  *
- * - A landing request, one with no annotation, projection or tooltip at all (a
- *   menu choice, a bare `?dataset=<id>`, the startup demo, Back to a bare
- *   entry), takes the whole default view, tooltip included.
+ * - A landing request, one that names no annotation, projection or tooltip at
+ *   all (a menu choice, a bare `?dataset=<id>`, the startup demo, Back to a
+ *   bare entry), takes the whole default view, tooltip included. A parameter
+ *   named with an empty value (`tooltip=`, `annotation=`) is named: that
+ *   request is not a landing, so an empty `tooltip=` means no tooltip.
  * - Otherwise a valid requested value wins, and a missing or invalid
  *   annotation or projection falls back to the default. An absent tooltip
  *   means none: user-driven URL writes always set annotation and projection
@@ -275,7 +276,7 @@ function pickAvailable(preferred: string | undefined, available: readonly string
  * first available annotation or projection.
  */
 export function resolveExploreView(
-  requested: RequestedExploreView,
+  { requested, present }: Pick<ExploreViewRequestState, 'requested' | 'present'>,
   availableAnnotations: string[],
   availableProjections: string[],
   defaults: ExploreViewDefaults = {},
@@ -291,6 +292,9 @@ export function resolveExploreView(
   const projectionIsValid =
     requestedProjection !== undefined && availableProjections.includes(requestedProjection);
   const isLanding =
+    !present.annotation &&
+    !present.projection &&
+    !present.tooltip &&
     requestedAnnotation === undefined &&
     requestedProjection === undefined &&
     requested.tooltip === undefined;

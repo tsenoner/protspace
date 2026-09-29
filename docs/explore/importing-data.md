@@ -47,7 +47,8 @@ sequence extensions are not accepted.
    line underneath tracks the job: _Position N in queue…_ while waiting, then the embedding step
    (the longest phase, the bar creeps forward while it runs), then _Projecting…_, then
    _Bundling…_. If a job runs longer than expected the status changes to _Still working, large
-   jobs can take a few minutes…_.
+   jobs can take a few minutes…_. Going to another dataset meanwhile with the browser's Back or
+   Forward cancels the preparation, as **Cancel** does.
 4. **The finished bundle opens automatically.** ProtSpace downloads it and loads it into the
    scatterplot; there is no second click.
 

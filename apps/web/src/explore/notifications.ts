@@ -9,6 +9,7 @@ import { buildBugContext, buildMailto, clientContext } from '../lib/support';
 import type { ExampleDataset } from './example-datasets';
 import { FastaPrepError } from './fasta-prep-client';
 import { COLAB_NOTEBOOK_URL, MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
+import type { DatasetChangeSource } from './types';
 
 /**
  * Build a "Report this" toast action that opens a prefilled support email
@@ -142,18 +143,22 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
  * that downloads but fails to parse is reported by
  * `getDataLoadFailureNotification` instead), Retry is the primary action and
  * "Report this" the secondary one.
+ *
+ * The dedupe key names how the load began (`source`), because Retry repeats
+ * that request: a menu choice and a Back/Forward to the same example that both
+ * fail within the dedupe window each keep their own toast and their own Retry.
  */
 export function getExampleLoadFailureNotification(
   entry: ExampleDataset,
   error: unknown,
-  onRetry?: () => void,
+  { source, onRetry }: { source: DatasetChangeSource; onRetry?: () => void },
 ): NotifyOptions {
   const report = buildReportAction(`Example dataset "${entry.id}"`, error);
   return {
     title: `Couldn't load "${entry.label}".`,
     description: getErrorMessage(error),
     durationMs: 10_000,
-    dedupeKey: `example-load-error:${entry.id}`,
+    dedupeKey: `example-load-error:${source}:${entry.id}`,
     ...(onRetry
       ? { action: { label: 'Retry', onClick: onRetry }, secondaryAction: report }
       : { action: report }),

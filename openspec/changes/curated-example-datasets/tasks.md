@@ -82,6 +82,12 @@ Before every commit:
   - (b1) a gated fetch plus two `goBack()` calls keeps the second entry's `annotation`; Back during a pending menu load leaves the previous dataset with no `dataset=` pushed;
   - (b2) Back to an entry without `dataset=` while an example is pending shows the startup load, not the example;
   - (d) change a legend colour on `?dataset=demo`, reload, and the curated colour is back; the same steps on a user import keep the change.
+- [x] 2.12 Review fixes to (a), (b1) and (b2), with unit tests and E2E cases (design Decisions 4 and 5):
+  - a menu example that has begun replacing the plot is committed, and a view-only Back/Forward leaves it to finish (E2E: Back after its protein count flips);
+  - the OPFS restore and user imports are superseded like example loads, a superseded restore still records `'success'`, and a startup flow waits for a restore in flight (E2E: Forward during the restore, with the example succeeding and failing);
+  - a restore preempted while marking `'pending'` puts the previous status back;
+  - a user request aborts a FASTA preparation and takes the overlay's Cancel over (E2E: Forward during a preparation);
+  - failure toasts dedupe per request kind; a failed startup demo after Back re-records the view; an empty `tooltip=`/`annotation=` is named, not a landing.
 - [ ] 2.11 File a separate issue for the pre-existing bug where a failed user import marks the healthy stored import as `error`, and add it to Project #2.
 
 ## 3. Import-menu UI, download progress and cancel

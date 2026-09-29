@@ -225,7 +225,7 @@ describe('explore notifications', () => {
     const notification = getExampleLoadFailureNotification(
       entry,
       new Error('File not found: 500 Internal Server Error'),
-      onRetry,
+      { source: 'menu', onRetry },
     );
 
     expect(notification.title).toBe(`Couldn't load "${entry.label}".`);
@@ -237,10 +237,23 @@ describe('explore notifications', () => {
   });
 
   it('offers only "Report this" for an example failure without a retry', () => {
-    const notification = getExampleLoadFailureNotification(EXAMPLE_DATASETS[1], new Error('x'));
+    const notification = getExampleLoadFailureNotification(EXAMPLE_DATASETS[1], new Error('x'), {
+      source: 'menu',
+    });
 
     expect(notification.action?.label).toBe('Report this');
     expect(notification.secondaryAction).toBeUndefined();
+  });
+
+  it('dedupes example failures per request kind, so each keeps its own Retry', () => {
+    const entry = EXAMPLE_DATASETS[1];
+    const key = (source: 'menu' | 'url') =>
+      getExampleLoadFailureNotification(entry, new Error('x'), { source, onRetry: vi.fn() })
+        .dedupeKey;
+
+    expect(key('menu')).not.toBe(key('url'));
+    expect(key('url')).toBe(key('url'));
+    expect(key('url')).toContain(entry.id);
   });
 
   it('attaches a "Report this" mailto action to the export failure notification', () => {

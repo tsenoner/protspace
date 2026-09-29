@@ -120,6 +120,7 @@ Rejected:
   - A POP navigation (`useNavigationType() === 'POP'`) while a **menu** load is pending cancels that load through `cancelPendingExampleLoad()`, which supersedes the request, aborts the fetch and hides the overlay.
   - Without this, the menu load finishes and pushes over the entry the user went back to.
   - The same primitive serves the Cancel button (Decision 7).
+- **The commit point.** Once `handleDataLoaded` has checked that an example load is still current, it calls `commitExampleLoad`: from there the load clears the stored import and swaps the plot's data, so `cancelPendingExampleLoad` returns `'committed'` and leaves it to finish (a newer user request still supersedes it). Cancelling it there would leave its data on screen under the previous dataset's name and URL, with the stored import already deleted. The hook ignores the view of a view-only POP that meets a committed menu load: the example finishes on its curated view and pushes its own entry, and resolving the landed-on entry's view against the example's data could otherwise write that normalization over it. Reloading the entry's dataset instead was rejected: the stored import it showed is already gone.
 
 ### 5. (b2) User requests win: a request epoch (D7b2)
 
@@ -128,6 +129,13 @@ Rejected:
   - App-initiated flows capture the epoch current when they began, and check `isCurrentRequest(epoch)` before each step that would start a load: the startup OPFS restore, the startup demo, the corrupt-store recovery load, and the deep-link fallback.
   - Taking a new epoch also aborts the download of the example load it supersedes (one `AbortController` per download), so a superseded download stops using bandwidth. An aborted download settles as `'superseded'`, silently.
 - **The `preempted` outcome.** `PersistedLoadOutcome` gains `{ kind: 'preempted' }`, which shows no recovery banner. A corrupt restore preempted by a click only clears the store.
+- **Loads already under way.** The epoch check also covers loads that have started:
+  - The OPFS restore carries the epoch it began under, and a user import the one its request took (`runtime.ts` registers the load with it). `handleDataLoaded` skips a superseded one before rendering, after the import's save and after `loadData`: no render, no save, no emit, so it cannot replace-remove `dataset=` from the entry a Back/Forward went to. A superseded restore that decoded still marks its status `'success'`.
+  - A startup flow that runs while a superseded restore is still in flight (a Back to an example that fails, before anything is on screen) waits for it before reading the stored status, which would still say `'pending'`, and then restores the import itself. The alternative, keeping the in-flight restore as "the plot on screen", would leave an empty page once the restore is skipped.
+  - A restore preempted after it marked the load `'pending'` writes the previous status back (`restoreLastLoadStatus`), since nothing was attempted.
+  - A FASTA preparation runs through `beginImportPreparation`: the next user request aborts it, like an example download, and the overlay's single Cancel slot is owned per request, so a newer request's button is never replaced or removed by the preparation. Without the abort, an example requested by Back/Forward would wait in the load queue behind a preparation of several minutes, whose result would then land and remove `dataset=`.
+  - The toast of a failed download is deduped per request kind (`example-load-error:<source>:<id>`), so a menu failure cannot swallow a Back failure's toast and leave the menu's Retry in its place.
+  - A Back to an entry without `dataset=` whose startup demo fails reports `'default-failed'`, so the displayed view is re-recorded as after any failed Back.
 - The loader's `'loaded' | 'failed' | 'superseded'` outcome and the `requestId` checks in `handleDataLoaded`/`handleDataError` keep their meaning.
 - The queue's `reserveSequence`/`isLatestSequence` encodes "newest wins", not "user wins", so it is not the fix.
 

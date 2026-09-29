@@ -292,6 +292,35 @@ export async function markLastLoadStatus(
   await writeMetadata(directory, next);
 }
 
+/**
+ * Writes back a load status read earlier with `readLastLoadStatus`, attempt
+ * count and error included: for a load that was marked 'pending' but never
+ * started, because a user request preempted it.
+ */
+export async function restoreLastLoadStatus(previous: {
+  status: LastLoadStatus;
+  lastError?: string;
+  failedAttempts: number;
+}): Promise<void> {
+  const directory = await getStoreDirectory(false);
+  if (!directory) return;
+
+  let current: StoredDatasetMetadata | null = null;
+  try {
+    current = await readMetadata();
+  } catch {
+    return;
+  }
+  if (!current) return;
+
+  await writeMetadata(directory, {
+    ...current,
+    lastLoadStatus: previous.status,
+    lastError: previous.lastError,
+    failedAttempts: previous.failedAttempts,
+  });
+}
+
 export async function readLastLoadStatus(): Promise<{
   status: LastLoadStatus;
   lastError?: string;

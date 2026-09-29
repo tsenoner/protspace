@@ -197,7 +197,14 @@ export function useExploreUrlStateSync(
       // Back/Forward while an example chosen from the menu is still loading:
       // the user went elsewhere, so that load must not land and push its
       // entry over the one they went to.
-      controller.cancelPendingMenuLoad();
+      if (controller.cancelPendingMenuLoad() === 'committed') {
+        // Too late to cancel: the example has begun replacing the stored
+        // import and the plot, and finishes by pushing its own entry on its
+        // curated view. Leave the entry the user went to untouched: resolving
+        // its view now would run against the example's data and could write
+        // that normalization over the entry.
+        return;
+      }
     }
 
     if (action === 'record-view') {

@@ -13,6 +13,7 @@ import {
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
+  restoreLastLoadStatus,
 } from './opfs-dataset-store';
 import {
   getCorruptedPersistedDatasetNotification,
@@ -20,7 +21,7 @@ import {
 } from './notifications';
 import type { LoadQueue } from './load-queue';
 import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
-import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
+import type { DatasetChangeSource, ExampleCancelResult, ExampleLoadOutcome } from './types';
 
 /**
  * Reads a download's body chunk by chunk and reports the bytes received so
@@ -66,6 +67,8 @@ async function readDownload(
 export type PersistedLoadOutcome =
   | { kind: 'auto-loaded' }
   | { kind: 'default-loaded' }
+  /** No import is stored, and the demo loaded in its place failed (its toast is shown). */
+  | { kind: 'default-failed' }
   /**
    * A user request made after this app-initiated flow began took over: the
    * flow stopped before starting any load, and shows no banner or message.
@@ -82,6 +85,19 @@ export type PersistedLoadOutcome =
 export interface ExampleLoadCancel {
   epoch: number;
   source: DatasetChangeSource;
+}
+
+/**
+ * The preparation step of a user import (a FASTA upload to the prep backend),
+ * started with `beginImportPreparation`.
+ */
+export interface ImportPreparation {
+  /** Aborted by the overlay's Cancel, and by the next user request. */
+  signal: AbortSignal;
+  /** Whether no newer user request has superseded the import. */
+  isCurrent(): boolean;
+  /** Removes the preparation's Cancel button, unless a newer request has put up its own. */
+  settle(): void;
 }
 
 interface PersistedDatasetOptions {
@@ -110,7 +126,11 @@ interface PersistedDatasetOptions {
 interface PendingExample {
   epoch: number;
   source: DatasetChangeSource;
+  /** Set once the load has begun replacing the plot (`commitExampleLoad`). */
+  committed: boolean;
 }
+
+type LoadStatusSnapshot = Awaited<ReturnType<typeof readLastLoadStatus>>;
 
 export function createPersistedDatasetController({
   dataLoader,
@@ -135,14 +155,26 @@ export function createPersistedDatasetController({
   // requests the newest wins.
   let requestEpoch = 0;
   let pendingDownload: AbortController | null = null;
+  // The preparation step of a user import still running (a FASTA upload),
+  // which the next user request aborts like an example download.
+  let pendingPreparation: AbortController | null = null;
   // The example load in flight (download and decode), for
   // `cancelPendingExampleLoad`.
   let pendingExample: PendingExample | null = null;
-  // The download whose Cancel button the loading overlay shows, if any.
-  let cancelOwner: PendingExample | null = null;
+  // The startup restore of the stored import while its load is in flight;
+  // settles once that load has rendered, been skipped as superseded, or failed.
+  let restoreInFlight: Promise<void> | null = null;
+  // Whose Cancel button the loading overlay shows (an example download or an
+  // import's preparation), if anyone's. The overlay has one Cancel slot.
+  let cancelOwner: object | null = null;
 
-  /** Removes the overlay's Cancel button, if `owner` (by default any download) put it there. */
-  const withdrawCancel = (owner?: PendingExample) => {
+  const offerOverlayCancel = (owner: object, handler: () => void, label?: string) => {
+    cancelOwner = owner;
+    overlayController.setCancelHandler(handler, label);
+  };
+
+  /** Removes the overlay's Cancel button, if `owner` (by default anyone) put it there. */
+  const withdrawCancel = (owner?: object) => {
     if (cancelOwner === null || (owner !== undefined && cancelOwner !== owner)) {
       return;
     }
@@ -154,6 +186,8 @@ export function createPersistedDatasetController({
     requestEpoch += 1;
     pendingDownload?.abort();
     pendingDownload = null;
+    pendingPreparation?.abort();
+    pendingPreparation = null;
     // Synchronously, so a request that puts up its own overlay button (a
     // FASTA import, another example) never has it cleared by this one.
     withdrawCancel();
@@ -212,7 +246,7 @@ export function createPersistedDatasetController({
     showDownloadProgress(0);
     const download = new AbortController();
     pendingDownload = download;
-    const pending: PendingExample = { epoch: requestId, source };
+    const pending: PendingExample = { epoch: requestId, source, committed: false };
     pendingExample = pending;
     // The startup demo, and the demo a recovery button loads, offer no
     // Cancel: they are the fallback a cancel would run.
@@ -286,7 +320,7 @@ export function createPersistedDatasetController({
         }
         void loadExampleDataset(entry, source, { replacesStoredImport });
       };
-      notify.error(getExampleLoadFailureNotification(entry, error, retry));
+      notify.error(getExampleLoadFailureNotification(entry, error, { source, onRetry: retry }));
       overlayController.update(false);
       return 'failed';
     } finally {
@@ -307,13 +341,16 @@ export function createPersistedDatasetController({
    * epoch to `onExampleLoadCancelled`, which decides what the screen shows.
    */
   const offerCancel = (pending: PendingExample) => {
-    cancelOwner = pending;
-    overlayController.setCancelHandler(() => {
-      if (pendingExample !== pending || !cancelPendingExampleLoad()) {
-        return;
-      }
-      onExampleLoadCancelled?.({ epoch: currentRequestEpoch(), source: pending.source });
-    }, 'Cancel download');
+    offerOverlayCancel(
+      pending,
+      () => {
+        if (pendingExample !== pending || cancelPendingExampleLoad() !== 'cancelled') {
+          return;
+        }
+        onExampleLoadCancelled?.({ epoch: currentRequestEpoch(), source: pending.source });
+      },
+      'Cancel download',
+    );
   };
 
   /**
@@ -321,19 +358,69 @@ export function createPersistedDatasetController({
    * `source`, was started that way: a new user epoch supersedes it and aborts
    * its download, and the overlay it put up is dismissed. The load then
    * settles as `'superseded'`, with no notification, fallback, emit or URL
-   * write. Resolves whether a load was cancelled.
+   * write. A load that has begun replacing the stored import and the plot is
+   * `'committed'` and left to finish: cancelling it then would leave its data
+   * on screen under the previous dataset's name and URL.
    */
-  const cancelPendingExampleLoad = ({ source }: { source?: DatasetChangeSource } = {}): boolean => {
+  const cancelPendingExampleLoad = ({
+    source,
+  }: { source?: DatasetChangeSource } = {}): ExampleCancelResult => {
     const pending = pendingExample;
     if (!pending || !isCurrentRequest(pending.epoch)) {
-      return false;
+      return 'none';
     }
     if (source !== undefined && pending.source !== source) {
-      return false;
+      return 'none';
+    }
+    if (pending.committed) {
+      return 'committed';
     }
     beginUserRequest();
     overlayController.update(false);
-    return true;
+    return 'cancelled';
+  };
+
+  /**
+   * Marks the example load that took `requestId` as committed: it has decoded,
+   * is still current, and `handleDataLoaded` is about to replace the stored
+   * import and the plot with it. From here `cancelPendingExampleLoad` leaves
+   * it alone; a newer user request still supersedes it.
+   */
+  const commitExampleLoad = (requestId: number) => {
+    const pending = pendingExample;
+    if (pending?.epoch !== requestId) {
+      return;
+    }
+    pending.committed = true;
+    withdrawCancel(pending);
+  };
+
+  /**
+   * Starts the preparation step of the user import that took `epoch` (a FASTA
+   * upload to the prep backend). The overlay's Cancel aborts it, and so does
+   * the next user request, which also takes the Cancel button over: the newest
+   * request owns the screen, and a preparation it superseded must not hold the
+   * load queue for minutes. Already aborted when `epoch` is no longer current.
+   */
+  const beginImportPreparation = (epoch: number): ImportPreparation => {
+    const preparation = new AbortController();
+    const owner = {};
+    if (isCurrentRequest(epoch)) {
+      pendingPreparation = preparation;
+      offerOverlayCancel(owner, () => preparation.abort());
+    } else {
+      preparation.abort();
+    }
+    return {
+      signal: preparation.signal,
+      isCurrent: () => isCurrentRequest(epoch),
+      settle: () => {
+        withdrawCancel(owner);
+        if (pendingPreparation === preparation) {
+          pendingPreparation = null;
+        }
+      },
+    };
   };
 
   /**
@@ -359,19 +446,51 @@ export function createPersistedDatasetController({
     return true;
   };
 
-  /** Resolves false, without loading, once a user request has moved past `epoch`. */
-  const loadPersistedFile = async (persistedFile: File, epoch: number): Promise<boolean> => {
+  /**
+   * Restores the stored import under `epoch`. Resolves false, without loading,
+   * once a user request has moved past it. `previousStatus` is the load status
+   * the caller read before, if it did: a restore preempted after marking the
+   * load pending puts that status back, since nothing was attempted.
+   */
+  const loadPersistedFile = async (
+    persistedFile: File,
+    epoch: number,
+    previousStatus?: LoadStatusSnapshot,
+  ): Promise<boolean> => {
+    if (!isCurrentRequest(epoch)) {
+      return false;
+    }
+    const before = previousStatus === undefined ? await readLastLoadStatus() : previousStatus;
     if (!isCurrentRequest(epoch)) {
       return false;
     }
     await markLastLoadStatus('pending');
     if (!isCurrentRequest(epoch)) {
+      if (before) {
+        try {
+          await restoreLastLoadStatus(before);
+        } catch (error) {
+          console.warn('Failed to restore the stored import load status:', error);
+        }
+      }
       return false;
     }
     registerFileLoad(persistedFile, 'opfs', undefined, epoch);
     setCurrentDatasetName(persistedFile.name);
     setCurrentExampleId(null);
-    await dataLoader.loadFromFile(persistedFile, { source: 'auto' });
+    const load = dataLoader.loadFromFile(persistedFile, { source: 'auto' });
+    const settled = load.then(
+      () => {},
+      () => {},
+    );
+    restoreInFlight = settled;
+    try {
+      await load;
+    } finally {
+      if (restoreInFlight === settled) {
+        restoreInFlight = null;
+      }
+    }
     return true;
   };
 
@@ -384,6 +503,15 @@ export function createPersistedDatasetController({
   const loadPersistedOrDefaultDataset = async ({
     epoch = currentRequestEpoch(),
   }: { epoch?: number } = {}): Promise<PersistedLoadOutcome> => {
+    // The startup restore may still be decoding, superseded by the user
+    // request this flow now runs for (a Back to an example whose download
+    // failed, say). Until it settles its stored status reads 'pending', which
+    // would offer recovery for a file that loads fine. So wait for it:
+    // superseded, it renders nothing but records its outcome, and the
+    // restore below runs it again under this flow's epoch.
+    if (restoreInFlight) {
+      await restoreInFlight;
+    }
     let persistedFile: File | null = null;
     try {
       persistedFile = await loadLastImportedFile();
@@ -404,7 +532,10 @@ export function createPersistedDatasetController({
 
     if (!persistedFile) {
       const outcome = await loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup', { epoch });
-      return outcome === 'superseded' ? { kind: 'preempted' } : { kind: 'default-loaded' };
+      if (outcome === 'superseded') {
+        return { kind: 'preempted' };
+      }
+      return outcome === 'failed' ? { kind: 'default-failed' } : { kind: 'default-loaded' };
     }
 
     const status = await readLastLoadStatus();
@@ -426,7 +557,7 @@ export function createPersistedDatasetController({
       };
     }
 
-    if (!(await loadPersistedFile(persistedFile, epoch))) {
+    if (!(await loadPersistedFile(persistedFile, epoch, status))) {
       return { kind: 'preempted' };
     }
     return { kind: 'auto-loaded' };
@@ -457,8 +588,10 @@ export function createPersistedDatasetController({
   return {
     /** Takes a new request epoch for a user request (see `requestEpoch` above). */
     beginUserRequest,
+    beginImportPreparation,
     cancelPendingExampleLoad,
     clearCorruptedPersistedDataset,
+    commitExampleLoad,
     currentRequestEpoch,
     /**
      * Whether `epoch` (an `ExampleLoadContext.requestId`, or the epoch an

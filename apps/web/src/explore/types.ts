@@ -33,6 +33,18 @@ export type DatasetChangeSource = 'menu' | 'url' | 'user' | 'startup';
  */
 export type ExampleLoadOutcome = 'loaded' | 'failed' | 'superseded';
 
+/** What cancelling the example load in flight did (`cancelPendingExampleLoad`). */
+export type ExampleCancelResult =
+  /** The example was still downloading or decoding: it is cancelled. */
+  | 'cancelled'
+  /**
+   * The example has begun replacing the stored import and the plot: it can
+   * no longer be cancelled, and finishes loading.
+   */
+  | 'committed'
+  /** No such example load is in flight. */
+  | 'none';
+
 /**
  * Which example a 'default'-kind load is for, and why it was requested. Only
  * present when the load was started by `loadExampleDataset`/
@@ -95,9 +107,10 @@ export interface ExploreController {
   setRequestedDataset(exampleId: string | null): Promise<void>;
   /**
    * Cancels an example chosen from the Import menu that is still loading
-   * (Back/Forward away from it); a no-op otherwise.
+   * (Back/Forward away from it). One that has already begun replacing the
+   * plot is `'committed'`: it finishes and pushes its own history entry.
    */
-  cancelPendingMenuLoad(): void;
+  cancelPendingMenuLoad(): ExampleCancelResult;
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
@@ -115,7 +128,9 @@ export const NOOP_CONTROLLER: ExploreController = {
   setRequestedDataset() {
     return Promise.resolve();
   },
-  cancelPendingMenuLoad() {},
+  cancelPendingMenuLoad() {
+    return 'none';
+  },
   subscribeToDatasetChanges() {
     return () => {};
   },

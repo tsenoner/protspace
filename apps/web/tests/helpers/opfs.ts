@@ -7,15 +7,17 @@ interface SeedOpfsParams {
   status: 'pending' | 'success' | 'error';
   failedAttempts: number;
   lastError?: string;
+  /** The bundle to store; by default the 5,181-protein fixture. */
+  fixture?: string;
 }
 
 /**
  * Writes a stored import with the given load status into OPFS. Its bytes are
- * the 5,181-protein fixture's, read here and handed to the page, so the seed
- * depends on no file the app serves.
+ * a fixture's (by default the 5,181-protein one), read here and handed to the
+ * page, so the seed depends on no file the app serves.
  */
 export async function seedOpfsState(page: Page, params: SeedOpfsParams): Promise<void> {
-  const bytesBase64 = readFileSync(TOXPROT_5181_FIXTURE).toString('base64');
+  const bytesBase64 = readFileSync(params.fixture ?? TOXPROT_5181_FIXTURE).toString('base64');
   await page.evaluate(
     async ({ fileName, status, failedAttempts, lastError, bytesBase64 }) => {
       const root = await navigator.storage.getDirectory();
