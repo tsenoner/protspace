@@ -47,6 +47,19 @@ describe('control-bar import menu', () => {
     expect(importMenu).not.toBeNull();
   });
 
+  it('omits the Examples section when the host sets no catalog', async () => {
+    controlBar.exampleDatasets = [];
+    await controlBar.updateComplete;
+    const trigger = controlBar.shadowRoot?.querySelector(
+      '[data-driver-id="import"] .dropdown-trigger',
+    ) as HTMLButtonElement | null;
+    trigger?.click();
+    await controlBar.updateComplete;
+
+    expect(controlBar.shadowRoot?.querySelector('.import-menu')).not.toBeNull();
+    expect(controlBar.shadowRoot?.querySelector('.import-examples')).toBeNull();
+  });
+
   it('lists every catalog entry under the Examples heading', async () => {
     const trigger = controlBar.shadowRoot?.querySelector(
       '[data-driver-id="import"] .dropdown-trigger',

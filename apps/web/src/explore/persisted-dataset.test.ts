@@ -114,6 +114,7 @@ describe('loadExampleDataset', () => {
       entry: DEMO,
       source: 'menu',
       requestId: expect.any(Number),
+      replacesStoredImport: false,
     });
     expect(dataLoader.loadFromFile).toHaveBeenCalledWith(expect.any(File), { source: 'auto' });
     expect(notifyMock.error).not.toHaveBeenCalled();
@@ -219,6 +220,7 @@ describe('loadExampleDataset', () => {
       entry: OTHER,
       source: 'menu',
       requestId: expect.any(Number),
+      replacesStoredImport: false,
     });
     expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1);
   });
@@ -280,7 +282,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
     warnSpy.mockRestore();
   });
 
-  it('clears the persisted file and loads the requested example', async () => {
+  it('loads the requested example flagged to replace the stored import, without clearing it up front', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
@@ -295,11 +297,15 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
     loadQueue.resolveOutcome(1, true);
 
     expect(await resultPromise).toBe('loaded');
-    expect(clearLastImportedFile).toHaveBeenCalled();
+    // The clear happens in handleDataLoaded once the example has decoded
+    // (covered end to end in example-dataset-load.test.ts), never before the
+    // fetch — a failed download must not delete the import still on screen.
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: OTHER,
       source: 'menu',
       requestId: expect.any(Number),
+      replacesStoredImport: true,
     });
   });
 });

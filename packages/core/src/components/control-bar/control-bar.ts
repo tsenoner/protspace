@@ -1036,25 +1036,29 @@ export class ProtspaceControlBar extends LitElement {
                           Load your dataset
                         </button>
                       </div>
-                      <div class="import-examples">
-                        <span class="import-examples-label">Examples</span>
-                        <div class="import-actions">
-                          ${this.exampleDatasets.map(
-                            (example) => html`
-                              <button
-                                class="btn-secondary"
-                                @click=${() => this.handleLoadExampleDataset(example.id)}
-                                data-driver-id="import-example-dataset"
-                                data-example-id=${example.id}
-                                title=${example.description}
-                                ?disabled=${example.id === this.currentExampleId}
-                              >
-                                ${example.label}
-                              </button>
-                            `,
-                          )}
-                        </div>
-                      </div>
+                      ${this.exampleDatasets.length > 0
+                        ? html`
+                            <div class="import-examples">
+                              <span class="import-examples-label">Examples</span>
+                              <div class="import-actions">
+                                ${this.exampleDatasets.map(
+                                  (example) => html`
+                                    <button
+                                      class="btn-secondary"
+                                      @click=${() => this.handleLoadExampleDataset(example.id)}
+                                      data-driver-id="import-example-dataset"
+                                      data-example-id=${example.id}
+                                      title=${example.description}
+                                      ?disabled=${example.id === this.currentExampleId}
+                                    >
+                                      ${example.label}
+                                    </button>
+                                  `,
+                                )}
+                              </div>
+                            </div>
+                          `
+                        : ''}
                     </div>
                   `
                 : ''}

@@ -42,7 +42,7 @@ export function bindControlBarEvents({
 
   // This event name is part of the control-bar custom element contract in @protspace/core.
   // An unknown id is handled once, inside loadExampleDatasetAndClearPersistedFile
-  // (persisted-dataset.ts), which warns and returns false without side effects.
+  // (persisted-dataset.ts), which warns and resolves 'failed' without side effects.
   addControlBarListener('load-example-dataset', (event: Event) => {
     const { id } = (event as CustomEvent<{ id: string }>).detail;
     void datasetController.loadExampleDatasetAndClearPersistedFile(id);

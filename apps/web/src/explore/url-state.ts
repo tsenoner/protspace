@@ -10,7 +10,7 @@ import type {
 
 /**
  * Reads the `dataset` query parameter naming the example to show (see the
- * "Dataset deep link" requirement in `openspec/changes/example-datasets`).
+ * "Dataset deep link" requirement in `openspec/specs/example-datasets/spec.md`).
  */
 export function getDatasetParam(searchParams: URLSearchParams): string | null {
   return searchParams.get('dataset');

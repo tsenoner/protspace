@@ -223,8 +223,9 @@ Projection, annotation, selection, filter and export controls.
 
 `selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`,
 `selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
-`current-dataset-name`, `scatterplot-selector`, `auto-sync`. `exampleDatasets` and
-`currentExampleId` are `attribute: false`, JavaScript-only.
+`current-dataset-name`, `current-example-id`, `scatterplot-selector`, `auto-sync`.
+`exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary` type
+(`{ id, label, description }`) is exported from `@protspace/core`.
 
 ### Events
 

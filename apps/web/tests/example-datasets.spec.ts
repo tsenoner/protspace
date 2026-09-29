@@ -9,7 +9,7 @@ import {
 } from './helpers/explore';
 
 /**
- * Covers `openspec/changes/example-datasets`: the Import menu's "Examples"
+ * Covers `openspec/specs/example-datasets`: the Import menu's "Examples"
  * section and the `?dataset=` deep link (task 5.1). Uses the real local
  * bundles under `apps/web/public/data/` — the only mocked request is the
  * induced-failure scenario, which routes a single bundle URL to a 500.

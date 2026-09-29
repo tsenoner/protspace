@@ -4,8 +4,9 @@
  * perf harness reads independently — the two lists are allowed to differ).
  *
  * Order matters: the demo is first, then the rest ascend by protein count, to
- * match the Import menu's "Examples" section (see `openspec/changes/example-datasets/design.md`).
- * Labels and descriptions are verbatim from that design doc's catalog table.
+ * match the Import menu's "Examples" section (see `openspec/specs/example-datasets/spec.md`).
+ * Labels and descriptions are verbatim from the catalog table in the archived
+ * design doc (`openspec/changes/archive/2026-09-26-example-datasets/design.md`).
  */
 export interface ExampleDataset {
   id: string;
@@ -85,6 +86,9 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
     url: './data/beta_lactamase_pn.parquetbundle',
   },
 ];
+
+/** The startup demo: what loads when there is no `?dataset=` and no stored import. */
+export const DEFAULT_EXAMPLE_DATASET: ExampleDataset = EXAMPLE_DATASETS[0];
 
 export function findExampleDataset(id: string): ExampleDataset | undefined {
   return EXAMPLE_DATASETS.find((entry) => entry.id === id);

@@ -13,9 +13,13 @@ import {
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
 } from './notifications';
-import { markLastLoadStatus, saveLastImportedFile } from './opfs-dataset-store';
+import {
+  clearLastImportedFile,
+  markLastLoadStatus,
+  saveLastImportedFile,
+} from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
-import { EXAMPLE_DATASETS, findExampleDataset } from './example-datasets';
+import { DEFAULT_EXAMPLE_DATASET, findExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
@@ -23,8 +27,6 @@ import type { PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
 import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
 import type { ViewController } from './view-controller';
-
-const DEFAULT_EXAMPLE_ID = EXAMPLE_DATASETS[0].id;
 
 interface DatasetControllerOptions {
   controlBar: ProtspaceControlBar;
@@ -137,7 +139,7 @@ export function createDatasetController({
   };
 
   const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
-    await loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE_ID, 'startup');
+    await loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE_DATASET.id, 'startup');
   };
 
   const loadPersistedOrDefaultDataset = async (): Promise<PersistedLoadOutcome> => {
@@ -228,6 +230,21 @@ export function createDatasetController({
         } catch (error) {
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
+        }
+      } else if (loadMeta.example?.replacesStoredImport) {
+        // A menu choice replaces the stored import only now that the example
+        // has downloaded, decoded and is still current — never before the
+        // fetch, which deleted the import still on screen whenever the
+        // download or parse failed or the request was superseded. Running
+        // inside this load's queue slot also orders it after the save of any
+        // user import queued ahead of it, so the last choice is what sticks.
+        try {
+          await clearLastImportedFile();
+        } catch (error) {
+          console.warn('Failed to clear persisted dataset before showing example dataset:', error);
+        }
+        if (isSupersededExampleLoad()) {
+          return;
         }
       }
 
@@ -375,6 +392,24 @@ export function createDatasetController({
 
     if (customEvent.detail.originalError?.name === 'AbortError') {
       console.log('Data load cancelled by user');
+      if (loadSequence !== null) {
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
+      }
+      return;
+    }
+
+    // A superseded example request is abandoned silently (see the
+    // openspec/specs/example-datasets "A request is superseded" scenario): its
+    // parse failure must not toast, and must not dismiss the overlay that the
+    // newer request — possibly still downloading — now owns.
+    if (
+      runningLoadMeta?.example &&
+      !persistedDatasetController.isCurrentExampleRequest(runningLoadMeta.example.requestId)
+    ) {
+      console.warn(
+        `Ignoring load error for superseded example "${runningLoadMeta.example.entry.id}":`,
+        customEvent.detail.message,
+      );
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence, false);
       }

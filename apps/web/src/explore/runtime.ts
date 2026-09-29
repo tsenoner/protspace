@@ -74,7 +74,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   // handler must already be wired up — so this indirection is filled in once
   // `datasetController` exists. Any load that isn't the app's own 'auto'
   // (example/OPFS) load is a genuine user-initiated import, which must drop
-  // any example fetch still in flight per openspec/changes/example-datasets.
+  // any example fetch still in flight per openspec/specs/example-datasets.
   let notifyNonAutoLoadStarting: () => void = () => {};
   dataLoader.loadFromFileHandler = (file, options, next) => {
     if (options?.source !== 'auto') {

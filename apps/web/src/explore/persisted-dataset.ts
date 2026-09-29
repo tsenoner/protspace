@@ -1,6 +1,10 @@
 import type { DataLoader as ProtspaceDataLoader } from '@protspace/core';
 import { notify } from '../lib/notify';
-import { EXAMPLE_DATASETS, findExampleDataset, type ExampleDataset } from './example-datasets';
+import {
+  DEFAULT_EXAMPLE_DATASET,
+  findExampleDataset,
+  type ExampleDataset,
+} from './example-datasets';
 import {
   StoredDatasetCorruptError,
   clearLastImportedFile,
@@ -19,8 +23,6 @@ import type {
   ExampleLoadOutcome,
   LoadMeta,
 } from './types';
-
-const DEFAULT_EXAMPLE = EXAMPLE_DATASETS[0];
 
 export type PersistedLoadOutcome =
   | { kind: 'auto-loaded' }
@@ -79,6 +81,7 @@ export function createPersistedDatasetController({
   const loadExampleDataset = async (
     entry: ExampleDataset,
     source: DatasetChangeSource,
+    { replacesStoredImport = false }: { replacesStoredImport?: boolean } = {},
   ): Promise<ExampleLoadOutcome> => {
     const requestId = beginExampleRequest();
     overlayController.update(true, 0, `Downloading ${entry.label}…`);
@@ -107,8 +110,15 @@ export function createPersistedDatasetController({
       // request was superseded (or whose bundle fails to parse) can never
       // overwrite what's currently shown. The request id travels with the
       // load meta so `handleDataLoaded` can tell a load superseded mid-decode
-      // apart from one that's still current, and skip rendering it.
-      const loadMeta = registerFileLoad(file, 'default', { entry, source, requestId });
+      // apart from one that's still current, and skip rendering it. The
+      // stored import, when this load replaces it, is likewise cleared there
+      // (see `ExampleLoadContext.replacesStoredImport`), not here.
+      const loadMeta = registerFileLoad(file, 'default', {
+        entry,
+        source,
+        requestId,
+        replacesStoredImport,
+      });
       const outcome = awaitLoadOutcome(loadMeta.sequence);
       await dataLoader.loadFromFile(file, { source: 'auto' });
       const success = await outcome;
@@ -134,7 +144,7 @@ export function createPersistedDatasetController({
 
   const recoverFromCorruptedPersistedDataset = async (context: string) => {
     await clearCorruptedPersistedDataset(context);
-    await loadExampleDataset(DEFAULT_EXAMPLE, 'startup');
+    await loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup');
   };
 
   const loadPersistedFile = async (persistedFile: File): Promise<void> => {
@@ -159,7 +169,7 @@ export function createPersistedDatasetController({
     }
 
     if (!persistedFile) {
-      await loadExampleDataset(DEFAULT_EXAMPLE, 'startup');
+      await loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup');
       return { kind: 'default-loaded' };
     }
 
@@ -197,12 +207,11 @@ export function createPersistedDatasetController({
       return 'failed';
     }
 
-    try {
-      await clearLastImportedFile();
-    } catch (error) {
-      console.warn('Failed to clear persisted dataset before loading example dataset:', error);
-    }
-    return loadExampleDataset(entry, source);
+    // The stored import is cleared by `handleDataLoaded` once this example
+    // has actually decoded, not up front: clearing before the fetch deleted
+    // the import still on screen whenever the download or parse failed or
+    // the request was superseded.
+    return loadExampleDataset(entry, source, { replacesStoredImport: true });
   };
 
   return {
