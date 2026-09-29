@@ -344,3 +344,125 @@ def test_check_reports_a_stale_manifest(tmp_path, capsys):
     )
     manifest = write_manifest.parse_manifest(out.read_text())
     assert manifest["examples"]["demo"]["proteins"] == 2
+
+
+def test_group_objects_contribute_their_release_and_unknown_groups_are_left_out(
+    tmp_path,
+):
+    # The shape an earlier showcase build wrote: {group: {"release", "columns"}}.
+    bundle = _write_bundle(
+        tmp_path / "b.parquetbundle",
+        ids=["P1"],
+        annotations={"ec": ["1"], "cluster_leiden": ["3"]},
+        projections=["UMAP_2"],
+        metadata={
+            "uniprot_release": json.dumps(
+                {
+                    "computed": {"columns": ["cluster_leiden"], "release": None},
+                    "refreshed": {"columns": ["ec"], "release": "2026_03"},
+                    "paper": "2025_03",
+                }
+            )
+        },
+    )
+    record = write_manifest.read_bundle_record(
+        bundle, example_id="x", file="b", hosting="repo"
+    )
+    assert record["releases"]["annotations"] == {
+        "refreshed": "2026_03",
+        "paper": "2025_03",
+    }
+
+
+def _release_bundle(directory: Path, name: str, family: str) -> Path:
+    return _write_bundle(
+        directory / name,
+        ids=["P1"],
+        annotations={"family": [family]},
+        projections=["UMAP_2"],
+    )
+
+
+def test_a_retained_file_named_like_a_new_one_with_other_bytes_is_refused(tmp_path):
+    new = _release_bundle(tmp_path, "swissprot_2026_03.parquetbundle", "new")
+    retained = [
+        {
+            "release": "showcase-2026_03",
+            "file": "swissprot_2026_03.parquetbundle",
+            "bytes": 1,
+            "sha256": "old",
+        }
+    ]
+    with pytest.raises(SystemExit, match="new name"):
+        write_manifest.build_manifest(
+            repo=[],
+            release=[("swissprot", new)],
+            release_tag="showcase-2026_03b",
+            retained=retained,
+        )
+
+
+def test_a_retained_file_identical_to_a_new_one_is_dropped_and_others_kept(tmp_path):
+    same = _release_bundle(tmp_path, "venom-eat_2026_03.parquetbundle", "v")
+    raw = same.read_bytes()
+    retained = [
+        {
+            "release": "showcase-2026_03",
+            "file": same.name,
+            "bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        },
+        {
+            "release": "showcase-2026_03",
+            "file": "old.parquetbundle",
+            "bytes": 1,
+            "sha256": "o",
+        },
+    ]
+    manifest = write_manifest.build_manifest(
+        repo=[],
+        release=[("venom-eat", same)],
+        release_tag="showcase-2026_05",
+        retained=retained,
+    )
+    assert [entry["file"] for entry in manifest["retained"]] == ["old.parquetbundle"]
+
+
+def test_the_zenodo_doi_survives_refresh_while_the_bytes_are_unchanged(tmp_path):
+    public = tmp_path / "public"
+    out = tmp_path / "example-manifest.ts"
+    demo = _write_bundle(
+        public / "data.parquetbundle",
+        ids=["P1"],
+        annotations={"family": ["a"]},
+        projections=["UMAP_2"],
+    )
+    refresh = ["--refresh", "--public-dir", str(public), "--out", str(out)]
+    assert (
+        write_manifest.main(
+            ["--repo", f"demo={demo}", "--public-dir", str(public), "--out", str(out)]
+        )
+        == 0
+    )
+
+    # The deposit is made after the build: the owner records its DOI...
+    assert write_manifest.main([*refresh, "--zenodo-doi", "10.5281/zenodo.42"]) == 0
+
+    def doi() -> str | None:
+        return write_manifest.parse_manifest(out.read_text())["examples"]["demo"][
+            "zenodoDoi"
+        ]
+
+    assert doi() == "10.5281/zenodo.42"
+    # ...and CI's check, which re-reads the file, still passes.
+    assert write_manifest.main([*refresh, "--check"]) == 0
+
+    # A rebuilt file is not the deposited one: its DOI is not carried over.
+    _write_bundle(
+        demo,
+        ids=["P1", "P2"],
+        annotations={"family": ["a", "b"]},
+        projections=["UMAP_2"],
+    )
+    assert write_manifest.main(refresh) == 0
+    assert doi() is None

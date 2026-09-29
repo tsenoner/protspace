@@ -18,7 +18,11 @@ release (``--release``: served from ``examples/<file>`` once the deploy has
 downloaded it). Provenance (ProtSpace version, git SHA, UniProt releases, build
 command, build time, Zenodo DOI) comes from the key/value metadata that the
 showcase build writes onto a bundle's annotations table; a bundle without it
-records ``null``.
+records ``null``. The Zenodo DOI is the exception, because the deposit is made
+after the bundles are built: ``--zenodo-doi`` sets it for every bundle that
+carries none, and later runs keep a DOI the manifest already records for a
+file whose bytes have not changed, so the CI check (``--refresh --check``)
+still passes.
 
 The script needs only pyarrow, so it runs outside the protspace environment::
 
@@ -77,7 +81,9 @@ META_PROTSPACE_VERSION = "protspace_version"
 META_GIT_SHA = "git_sha"
 META_MEMBERSHIP_RELEASE = "membership_release"
 # A JSON object mapping a column group to the release its values come from
-# (e.g. {"uniprot": "2026_03", "eat": "2026_02"}), or a single release string.
+# (e.g. {"uniprot": "2026_03", "eat": "2026_02"}), or a single release string. A
+# group's value may also be an object with a "release" key (and its "columns"),
+# as older showcase builds wrote it; a group whose release is unknown is left out.
 META_UNIPROT_RELEASE = "uniprot_release"
 META_BUILT_AT = "built_at"
 META_COMMAND = "command"
@@ -157,6 +163,15 @@ def _decode_metadata(raw: dict[bytes, bytes] | None) -> dict[str, str]:
     return {k.decode(): v.decode() for k, v in (raw or {}).items()}
 
 
+def _group_release(value: object) -> str | None:
+    """A column group's release: a string, or the ``release`` of a group object."""
+    if isinstance(value, dict):
+        value = value.get("release")
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    return str(value)
+
+
 def _annotation_releases(value: str | None) -> dict[str, str]:
     if not value:
         return {}
@@ -165,7 +180,8 @@ def _annotation_releases(value: str | None) -> dict[str, str]:
     except json.JSONDecodeError:
         return {"all": value}
     if isinstance(parsed, dict):
-        return {str(k): str(v) for k, v in parsed.items()}
+        releases = {str(k): _group_release(v) for k, v in parsed.items()}
+        return {k: v for k, v in releases.items() if v is not None}
     return {"all": str(parsed)}
 
 
@@ -279,6 +295,56 @@ def _repo_file(path: Path, public_dir: Path) -> str:
         ) from error
 
 
+def reconcile_retained(examples: dict[str, dict], retained: list[dict]) -> list[dict]:
+    """The retained files that can be served next to ``examples``' release files.
+
+    Release files are all deployed into one ``examples/`` directory, so a
+    retained file named like a current one would overwrite it (or be
+    overwritten). The same name with the same bytes is simply still served as
+    the current file and is dropped from ``retained``; the same name with
+    other bytes is refused, because the deploy could then serve stale bytes
+    under the current name.
+    """
+    current = {
+        record["file"]: example_id
+        for example_id, record in examples.items()
+        if record["hosting"] == "release"
+    }
+    kept = []
+    for entry in retained:
+        example_id = current.get(entry["file"])
+        if example_id is None:
+            kept.append(entry)
+        elif examples[example_id]["sha256"] != entry["sha256"]:
+            raise SystemExit(
+                f"retained {entry['file']} of {entry['release']} has the name of "
+                f"{example_id}'s new file but other bytes; the deploy would serve one "
+                "under the other's name. Give the new file a new name (for example a "
+                "build suffix) before releasing it."
+            )
+    return kept
+
+
+def fill_zenodo_doi(
+    examples: dict[str, dict], *, previous: dict | None, zenodo_doi: str | None
+) -> None:
+    """Sets ``zenodoDoi`` on records whose bundle carries none.
+
+    ``zenodo_doi`` (``--zenodo-doi``) wins; otherwise a DOI the previous
+    manifest records for the same example is kept while its bytes are unchanged.
+    """
+    previous_examples = (previous or {}).get("examples", {})
+    for example_id, record in examples.items():
+        if record["zenodoDoi"]:
+            continue
+        if zenodo_doi:
+            record["zenodoDoi"] = zenodo_doi
+            continue
+        before = previous_examples.get(example_id)
+        if before and before.get("sha256") == record["sha256"]:
+            record["zenodoDoi"] = before.get("zenodoDoi")
+
+
 def build_manifest(
     *,
     repo: list[tuple[str, Path]],
@@ -286,6 +352,8 @@ def build_manifest(
     release_tag: str | None,
     retained: list[dict],
     public_dir: Path = PUBLIC_DIR,
+    previous: dict | None = None,
+    zenodo_doi: str | None = None,
 ) -> dict:
     if release and not release_tag:
         raise SystemExit("--release needs --release-tag")
@@ -301,14 +369,21 @@ def build_manifest(
         examples[example_id] = read_bundle_record(
             path, example_id=example_id, file=path.name, hosting="release"
         )
+    fill_zenodo_doi(examples, previous=previous, zenodo_doi=zenodo_doi)
     return {
         "release": release_tag if release else None,
-        "retained": retained,
+        "retained": reconcile_retained(examples, retained),
         "examples": examples,
     }
 
 
-def refresh_manifest(previous: dict, *, public_dir: Path, examples_dir: Path) -> dict:
+def refresh_manifest(
+    previous: dict,
+    *,
+    public_dir: Path,
+    examples_dir: Path,
+    zenodo_doi: str | None = None,
+) -> dict:
     """Re-read every example already in the manifest from its file."""
     repo = []
     release = []
@@ -323,6 +398,8 @@ def refresh_manifest(previous: dict, *, public_dir: Path, examples_dir: Path) ->
         release_tag=previous.get("release"),
         retained=list(previous.get("retained", [])),
         public_dir=public_dir,
+        previous=previous,
+        zenodo_doi=zenodo_doi,
     )
 
 
@@ -355,6 +432,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Re-read the examples already in the manifest instead of taking --repo/--release.",
     )
+    parser.add_argument(
+        "--zenodo-doi",
+        help="The paper-companion deposit's DOI, for every bundle that carries none.",
+    )
     parser.add_argument("--examples-dir", type=Path, default=DEFAULT_EXAMPLES_DIR)
     parser.add_argument("--public-dir", type=Path, default=PUBLIC_DIR)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -374,7 +455,10 @@ def main(argv: list[str] | None = None) -> int:
                 "--refresh takes its examples from the manifest, not --repo/--release"
             )
         manifest = refresh_manifest(
-            previous, public_dir=args.public_dir, examples_dir=args.examples_dir
+            previous,
+            public_dir=args.public_dir,
+            examples_dir=args.examples_dir,
+            zenodo_doi=args.zenodo_doi,
         )
     else:
         if not args.repo and not args.release:
@@ -387,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
             release_tag=args.release_tag,
             retained=retained,
             public_dir=args.public_dir,
+            previous=previous,
+            zenodo_doi=args.zenodo_doi,
         )
 
     rendered = render_manifest(manifest)
