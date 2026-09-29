@@ -86,20 +86,6 @@ async function setDensity(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void
   await settle(page);
 }
 
-type ContourMode = 'off' | 'on';
-
-async function setContour(page: Page, mode: ContourMode): Promise<void> {
-  await page.evaluate((value) => {
-    const plot = document.querySelector('#myPlot') as PlotInternals | null;
-    if (plot)
-      plot.config = {
-        ...(plot.config ?? {}),
-        densityLayer: value === 'off' ? 'off' : 'on',
-      };
-  }, mode);
-  await settle(page);
-}
-
 async function showOnly(page: Page, shown: readonly string[]): Promise<void> {
   await page.evaluate((keep) => {
     const plot = document.querySelector('#myPlot') as PlotInternals | null;
@@ -223,9 +209,9 @@ test.describe('density layer pixels', () => {
     const sets: Record<string, string[]> = { A: [first], B: [second], AB: [first, second] };
     for (const [name, shown] of Object.entries(sets)) {
       await showOnly(page, shown);
-      await setContour(page, 'on');
+      await setDensity(page, 'on');
       await captureFrame(page, `${name}:on`);
-      await setContour(page, 'off');
+      await setDensity(page, 'off');
       await captureFrame(page, `${name}:off`);
     }
 
@@ -296,9 +282,9 @@ test.describe('density layer pixels', () => {
       }, target);
     const maxDelta = (p: number[], q: number[]) => Math.max(...p.map((v, c) => Math.abs(v - q[c])));
 
-    await setContour(page, 'off');
+    await setDensity(page, 'off');
     const offUnselected = await pixel();
-    await setContour(page, 'on');
+    await setDensity(page, 'on');
     expect(maxDelta(await pixel(), offUnselected), 'the layer paints nothing here').toBeGreaterThan(
       8,
     );
@@ -309,7 +295,7 @@ test.describe('density layer pixels', () => {
     }, target.id);
     await settle(page);
     const on = await pixel();
-    await setContour(page, 'off');
+    await setDensity(page, 'off');
     const off = await pixel();
     expect(off[3], 'the selected point is not drawn').toBeGreaterThan(0);
     expect(
