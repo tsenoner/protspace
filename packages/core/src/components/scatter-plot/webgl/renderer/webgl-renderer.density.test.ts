@@ -1,18 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
 import type { DensityLayerMode } from '@protspace/utils';
-import type { ScalePair, WebGLStyleGetters } from '../types';
+import type { WebGLStyleGetters } from '../types';
 import type { GLResources } from './gl-resources';
-import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
-
-const scales = (): ScalePair => ({
-  x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
-  y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
-});
+import type { MockGLOptions } from './test-support/mock-webgl2';
 
 type Config = {
   width: number;
@@ -26,23 +19,14 @@ function setup(
   getTransform: () => d3.ZoomTransform = () => d3.zoomIdentity,
   style: WebGLStyleGetters = styleGetters(),
 ) {
-  const { canvas, gl } = createMockCanvas(opts);
-  const degraded: RendererDegradedDetail[] = [];
-  const renderer = new WebGLRenderer(
-    canvas,
-    scales,
+  const { renderer, gl, degraded } = makeRendererWithStyle(style, opts, {
+    getConfig: () => config as never,
     getTransform,
-    () => config as never,
-    style,
-    undefined,
-    () => [1, 1, 1],
-    (detail) => degraded.push(detail),
-  );
-  const glRecord = gl as unknown as Record<string, (...a: unknown[]) => unknown>;
+  });
   return {
     renderer,
-    gl: gl as unknown as Record<string, ReturnType<typeof vi.fn>>,
-    glRecord,
+    gl,
+    glRecord: gl as unknown as Record<string, (...a: unknown[]) => unknown>,
     degraded,
     resources: (renderer as unknown as { resources: GLResources }).resources,
   };
@@ -421,20 +405,17 @@ describe('density layer failure is not a gamma failure', () => {
 
 describe('context loss', () => {
   it('clears the density latch so the next context can try again', () => {
-    const { canvas, gl, setContextLost } = createMockCanvas();
-    const renderer = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
+    const { renderer, gl, setContextLost } = makeRendererWithStyle(
       styleGetters(),
+      {},
+      { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
     );
     renderer.render(plotData(50));
     const priv = renderer as unknown as { densityDisabled: boolean };
     priv.densityDisabled = true;
 
     setContextLost(true);
-    vi.spyOn(gl as WebGL2RenderingContext, 'isContextLost').mockReturnValue(true);
+    vi.spyOn(gl as unknown as WebGL2RenderingContext, 'isContextLost').mockReturnValue(true);
     renderer.render(plotData(50));
 
     expect(priv.densityDisabled).toBe(false);

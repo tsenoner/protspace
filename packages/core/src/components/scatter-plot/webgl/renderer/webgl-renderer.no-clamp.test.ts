@@ -10,12 +10,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { MAX_RENDERABLE_POINTS } from '../types';
-import { WebGLRenderer } from './webgl-renderer';
-import { createMockCanvas } from './test-support/mock-webgl2';
 import {
   plotData,
   styleGetters,
   makeRenderer as makeBaseRenderer,
+  makeRendererWithStyle,
   realAtlasAllocations,
 } from './test-support/renderer-fixture';
 
@@ -69,16 +68,11 @@ describe('WebGLRenderer upload accounting', () => {
   });
 
   it('grows dots on zoom-in through a uniform, uploading nothing', () => {
-    const { canvas } = createMockCanvas();
     let transform = d3.zoomIdentity;
-    const renderer = new WebGLRenderer(
-      canvas,
-      () => ({ x: d3.scaleLinear(), y: d3.scaleLinear() }),
-      () => transform,
-      () => ({ width: 800, height: 600 }),
+    const { renderer } = makeRendererWithStyle(
       styleGetters(),
-      undefined,
-      () => [1, 1, 1],
+      {},
+      { getTransform: () => transform },
     );
     const pd = plotData(50_000);
 
