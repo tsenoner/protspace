@@ -394,6 +394,11 @@ Legacy annotation caches are migrated when they are read:
   the whole UniProt source once and warns which columns it is refreshing; cached columns from other
   sources are reused. A run that does not request `xref_pdb` drops it from the cache instead, so a
   later run that asks for it still migrates.
+- A cache written before [`protein_families`](/guide/annotations#protein_families) kept family
+  names whole, or before InterPro columns reached every protein sharing a sequence, is refreshed
+  the same way: a run that requests `protein_families` re-fetches UniProt once, a run that requests
+  an InterPro column re-fetches InterPro once, and a run that requests neither drops those columns.
+  At Swiss-Prot scale this one-time refresh takes hours.
 
 Projection caches are keyed by embedding name, method, dimensions and every parameter, so changing
 any parameter creates a new entry. Use `--refetch all` to bypass all caches, or `--refetch <stages>`
@@ -599,6 +604,11 @@ protspace bundle -p projections/ -a annotations.parquet \
 
 A bundle written with `-s` has five parts and the web app renders that table, see
 [Separation Scores](/explore/separation-scores).
+
+A bundle never carries the internal `organism_id` and `sequence` columns, which ProtSpace fetches
+only to look up taxonomy and sequence-based annotations. `bundle` drops them even when the
+annotations parquet has them (for example from `annotate -a sequence`, whose own parquet keeps
+them), and `transfer` drops them from an older bundle that still carries them.
 
 ## `protspace transfer`
 

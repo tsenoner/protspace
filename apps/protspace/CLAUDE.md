@@ -141,8 +141,9 @@ src/protspace/
 │   │   ├── query.py            # UniProt query → FASTA download
 │   │   └── similarity.py       # FASTA → MMseqs2 → similarity matrix
 │   ├── annotations/
+│   │   ├── cache.py            # all_annotations.parquet reuse: fill-in, legacy refresh, --refetch (prepare + annotate --cache-dir)
 │   │   ├── configuration.py    # Annotation category definitions
-│   │   ├── encoding.py         # Bundle format v2 wire contract (percent-encoding)
+│   │   ├── encoding.py         # Bundle format v2 wire contract (percent-encoding) + cache semantics versions
 │   │   ├── manager.py          # ProteinAnnotationManager orchestrator
 │   │   ├── merging.py          # Merge UniProt + InterPro annotations
 │   │   ├── scores.py           # Annotation score computation
@@ -220,6 +221,10 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 - **HDF5 loading:** `load_h5()` in `data/loaders/h5.py` handles both flat and grouped HDF5 layouts, validates embedding dimensions are consistent, and rejects per-residue embeddings with a clear error message.
 - **Multi-input merging:** `merge_same_name_sets()` in `data/loaders/embedding_set.py` unions proteins when multiple `-i` inputs share the same embedding name (e.g., two species with ProtT5). Inputs with different names are intersected for multi-embedding comparison. Duplicate proteins with identical embeddings are deduplicated; conflicting embeddings raise an error.
 - **UniProt ID validation:** `uniprot_retriever.py` pre-filters identifiers with a UniProt accession regex — non-matching IDs (e.g., `NCBI|...`, `sp|P12345|NAME`) are skipped with a summary warning. Identifiers must be bare accessions (e.g., `P12345`, `A0A2P1BSS8`). Inactive entries are resolved via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc.
+- **Annotation cache (`all_annotations.parquet`):** `data/annotations/cache.py:fetch_annotations` decides what to reuse and fetch, for both `prepare` (via `ReductionPipeline._fetch_annotations`) and `annotate --cache-dir`. `ProteinAnnotationManager.to_pd` writes a checkpoint after each source fetched over the network (except the last, which the final write covers) under the final write's rules: a pending source keeps its cached columns, and new fill-in rows wait until every pending source the cache holds has filled them in. A cache holds values per identifier, not per sequence. `encoding.CACHE_SEMANTICS_CHANGES` versions stored meaning (v1 `xref_pdb`; v2 `protein_families` + every InterPro column): a requested stale column refetches its source once, an unrequested one is dropped. The cache also carries `protspace_uniprot_release` (from the `X-UniProt-Release` header, collected on `UniProtRetriever.releases`), which `prepare` writes to `run.log` as `uniprot_release:`.
+- **Retrieval robustness:** InterPro is queried once per sequence MD5 and fans the matches out to every identifier sharing it, and its POST goes through `http_utils.post_with_retry` (same loop as `get_with_retry`). Biocentral predicts in batches of `_BATCH_SIZE` (1,000); a failed batch sets `prediction_failed` and one stderr warning that stays clear of `_BIOCENTRAL_DOWN_PATTERNS`. TED retries first-pass failures once more after the pass with the full budget, stopping after 10 consecutive failures. Each source's manager-facing failure signal (`failed_batch_count` / `prediction_failed` / `failed_lookup_count`) keeps an incomplete source out of the cache.
+- **Family names:** `UniProtEntry.protein_families` keeps the first sentence of every SIMILARITY text, never splitting inside parentheses (`(TC 3.A.3)` survives), drops `In the … section;` qualifiers, and `;`-joins distinct families with their evidence; `transform_protein_families` passes values through unchanged.
+- **Bundle columns:** `data/io/bundle.py` drops `INTERNAL_ANNOTATIONS` (`organism_id`, `sequence`) in `write_bundle` and `replace_annotations_in_bundle`, so `bundle`/`transfer` never carry them; `annotate -a sequence` still writes `sequence` to its own parquet.
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
 - **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
 - **Config validation:** `DimensionReductionConfig` (frozen dataclass in `utils/constants.py`) validates all parameters on init.
@@ -271,9 +276,17 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_annotation_manager.py` | Annotation fetch, merge, cache, configuration, evidence parsing; per-identifier reuse (a source is fetched only for the identifiers the cache lacks, taxonomy only for unseen organisms, rows outside the run are kept, a failed fill-in caches nothing) |
 | `test_transformer.py` | Annotation transformers (field normalization, EC names) |
 | `test_reducers.py` | All 6 DR methods: shapes, finite output, float16, config validation |
-| `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing |
+| `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing, identical sequences all receiving the matches, POST retry before a batch counts as lost |
+| `test_http_retry.py` | `get_with_retry` / `post_with_retry`: transient status + network errors retried, `Retry-After` honoured and capped, 4xx not retried, bounded attempts; `paginated_get`'s `on_response` sees every page |
+| `test_annotation_checkpoints.py` | Per-source cache checkpoints: an interrupt during TED keeps UniProt + InterPro cached, a later incomplete source, pending sources keep their cached columns, fill-in rows wait for pending sources, nothing written on a cache hit or without a cache |
+| `test_annotate_cache_dir.py` | `annotate --cache-dir` / `--refetch`: resume after an interrupt, reusing a `prepare` cache, `--refetch` without a cache is a usage error, no cache without the flag, internal columns only when requested |
+| `test_run_log.py` | UniProt release stamp on the cache (full fetch, fill-in, refetch, unstamped → `unknown`, `Mock`/missing `releases`) and the `run.log` `uniprot_release:` line |
+| `test_legacy_cache_refresh.py` | Cache version 2: `protein_families` refetches UniProt once, an InterPro column refetches InterPro once (and fetches sequences the cache lacks), unrequested stale columns are dropped, a failed refresh stamps nothing stale as current; the literal InterPro list in `encoding.py` pinned to `INTERPRO_ANNOTATIONS` |
+| `test_annotation_retrieval_e2e.py` | One offline `prepare` through the real UniProt + InterPro retrievers: the release header reaches `run.log`, shared-sequence proteins both get Pfam in the bundle, no internal columns |
+| `test_protein_families_parser.py` | Family parsing on real UniProt text shapes: `(TC …)` kept whole, section qualifiers dropped, multi-section entries `;`-joined with evidence, repeats once; transformer + `--no-scores` on multi-family cells |
+| `test_bundle_internal_columns.py` | `write_bundle`, `bundle -a`, `replace_annotations_in_bundle` and `transfer` drop `organism_id`/`sequence` and keep the v2 stamp; `annotate -a sequence` still writes `sequence` |
 | `test_settings_converter.py` | Settings table ↔ visualization state conversion |
-| `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution |
+| `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution, `X-UniProt-Release` collected from every response on `releases` |
 | `test_pipeline_utils.py` | ReductionPipeline, projection cache identity (a changed, reordered or grown matrix under one embedding name misses; an unchanged rerun hits; `--refetch projections` always recomputes), annotation cache fill-in wiring, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
 | `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, auto-cluster self-validity (filed under the membership column, gated on it, and equal to driving `AnnotationValidityStatistic` directly so an out-of-band re-score cannot drift), faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
 | `test_stats_cli.py` | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
@@ -287,13 +300,13 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_local_embedder.py` | Local embedding backend: producer/digest stamping, refusing a Biocentral cache before a checkpoint loads, re-embedding a changed sequence; checkpoint resolution (12 short keys, Synthyra ESM-C), the notebook-gating sets pinned to the registry each constrains (`COLAB_OVERSIZED`→`LOCAL_CHECKPOINTS`, `BIOCENTRAL_INVALID`→`ALL_SHORT_KEYS`), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, over-length + OOM skips reported not failed, non-skip shortfall fails, esm2_8m end-to-end + resume (slow) |
 | `test_fasta.py` | FASTA parsing, edge cases, CSV annotation loading |
 | `test_query.py` | UniProt query FASTA download: a truncated download is never published, atomic cache publication, umask-derived permissions, and a retained FASTA owned by its query text (`prepare -q A` then `-q B` in one output directory) |
-| `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence) |
+| `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence), batches of at most `_BATCH_SIZE`, a failed batch keeps the others and warns clear of `_BIOCENTRAL_DOWN_PATTERNS`, long sequences still sent |
 | `test_taxonomy_annotation_retriever.py` | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
 | `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
 | `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
-| `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names) |
+| `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried) |
 | `test_pfam_clan.py` | Pfam CLAN transformer (mapping, dedup, edge cases) |
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
 | `test_output_combinations.py` | Output format flag combinations |

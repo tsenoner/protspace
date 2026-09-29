@@ -28,6 +28,7 @@ Two consequences follow from the "Needs" column:
   identifiers, not a failure.
 - **Sequence-dependent sources work with any identifier**, as long as ProtSpace can find the
   sequence — pass the original FASTA with `-f` and it will use that instead of asking UniProt.
+  Proteins with identical sequences are looked up once and all receive the result.
 
 `length` is a special case: when UniProt has no length for a protein but a matching FASTA sequence
 is available, ProtSpace counts the residues itself (`*` terminators and `-` gaps do not count). A
@@ -75,6 +76,11 @@ The cache is judged **by column and by row**. ProtSpace compares what you asked 
 So asking for a new annotation is cheap, asking for the same ones again is free, and adding a
 handful of proteins to a large run costs a handful of lookups rather than a full refetch.
 
+The cache is values **per identifier**, not per sequence. A sequence-dependent source (InterPro,
+Biocentral) cached for `P12345` is reused for `P12345` even if the sequence behind that identifier
+changed — for example when you switch from a full-length FASTA to one holding mature peptides. When
+the sequences change, use a separate output directory, or add `--refetch interpro,biocentral`.
+
 A cache holding _more_ proteins than the current run is fine: the extra rows are filtered out of the
 bundle, and a run for part of a dataset keeps them rather than replacing the cache with its own
 subset.
@@ -101,16 +107,34 @@ ProtSpace therefore **caches only the sources that completed**:
 Either way the run still returns everything it did retrieve — your bundle is built, and the message
 says which source was short.
 
+### Each source is saved as it finishes
+
+The sources are fetched one after another — UniProt, taxonomy, InterPro, TED, Biocentral — and at
+Swiss-Prot scale they finish hours apart (UniProt in about an hour, TED in a day or more). The cache
+is therefore written after each source that was fetched, under the same rules as the final write,
+not only at the end of the run. If the run crashes or is interrupted during TED, the UniProt and
+InterPro results are already on disk and the next run fetches only TED.
+
+Two rules keep these intermediate writes honest. A source still waiting its turn keeps whatever the
+cache already held for it. And when a run adds proteins to an existing cache, their rows are written
+only once every source the cache holds has filled them in, so an interrupted run never leaves a
+half-annotated row that the next run would read as complete.
+
 ### Transient failures are retried first
 
 Requests that time out, fail to connect, or return a retryable status (429, 503, …) are retried with
 exponential backoff, honouring `Retry-After`. Only a request still failing after several attempts
 counts as lost data. A malformed request (`400`, `404`) is not retried — asking again will not help.
+This covers every source's requests, including the InterPro match lookups, which are sent 100
+sequences at a time.
 
 This matters at scale: UniProt is queried 100 accessions at a time, so a Swiss-Prot-sized run is
 thousands of sequential requests, and without retries a single blip would be near-certain. Sources
 fetched one request per protein (TED) use a smaller retry budget, so a full outage does not multiply
-the backoff by the number of proteins.
+the backoff by the number of proteins. Instead, TED retries every lookup that failed once more after
+its first pass over all proteins, with the full retry budget, by which time a short outage has
+usually passed; that final pass gives up after 10 failures in a row. Biocentral predictions are
+requested in batches of at most 1,000 sequences, so a failed batch loses only its own proteins.
 
 ## Embeddings belong to one backend and model
 
@@ -144,6 +168,25 @@ rather than leaving the old values in place, so the next run fetches them instea
 To skip caching altogether, pass `--no-keep-tmp`. Nothing is written to `{output}/tmp/`, and every
 run starts from scratch.
 
+## Annotating without `prepare`
+
+`protspace annotate` fetches annotations on their own. By default it keeps no cache. With
+`--cache-dir DIR` it reads and writes `DIR/all_annotations.parquet` under exactly the rules above,
+so an interrupted run resumes when you repeat the command, and `--refetch` accepts the annotation
+stages (`uniprot`, `taxonomy`, `interpro`, `ted`, `biocentral`, or `annotations`). Point it at a
+`prepare` run's `{output}/tmp/` to reuse that run's annotations:
+
+```bash
+protspace annotate -i data.h5 -a default,interpro,ted -o annotations.parquet --cache-dir out/tmp
+```
+
+## Which UniProt release
+
+Every UniProt response names the UniProtKB release its data came from. ProtSpace records it on the
+annotation cache, and `run.log` gives it in a `uniprot_release:` line under `## Annotations`, for
+annotations fetched in that run and for ones read from the cache alike. A cache filled in across
+two releases lists both, and one written before releases were recorded reads `unknown`.
+
 ## Legacy caches
 
 Caches written by older versions are migrated when read, so you do not have to delete them:
@@ -154,6 +197,15 @@ Caches written by older versions are migrated when read, so you do not have to d
   from "no UniProt entry" cannot be fixed in place. A run that surfaces the column refetches the
   UniProt source once and says which columns it is refreshing; other sources are reused. A run that
   does not ask for `xref_pdb` drops it instead, so a later run that does ask still migrates.
+- A cache written before [`protein_families`](/guide/annotations#protein_families) kept family
+  names whole (a name like `… (TC 3.A.3) family` used to be cut at its first `.`) is refreshed the
+  same way, by refetching UniProt once when the column is requested.
+- A cache written before InterPro values reached every protein sharing a sequence (only one protein
+  of each identical-sequence group got them) refetches InterPro once when an InterPro column is
+  requested.
+
+If such a refresh cannot retrieve the source, the old values are not stamped as current, and the
+next run tries again. At Swiss-Prot scale the one-time refresh takes hours.
 
 ## Troubleshooting
 
@@ -165,8 +217,9 @@ add `--refetch annotations`.
 UniProt. If a message said a source was incomplete, re-run: that source was deliberately not cached.
 
 **A re-run refetches more than expected** — a source that did not complete on the previous run is
-not in the cache, by design. A run whose input includes proteins the cache does not cover also
-rebuilds every annotation for that input.
+not in the cache, by design. A run whose input includes proteins the cache does not cover queries
+each source for those proteins, and a cache written by an older version may refresh a source once
+(see [Legacy caches](#legacy-caches)).
 
 **Nothing is being cached** — check that `--keep-tmp` is on (it is by default) and that `{output}/`
 is writable.
