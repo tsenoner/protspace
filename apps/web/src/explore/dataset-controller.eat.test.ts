@@ -76,6 +76,8 @@ describe('dataset controller EAT settings restore', () => {
       getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
       applyLatestViewForDatasetLoad: vi.fn(),
       setRequestedView: vi.fn(),
+      recordRequestedView: vi.fn(),
+      setDatasetDefaults: vi.fn(),
     };
     const options = {
       controlBar,

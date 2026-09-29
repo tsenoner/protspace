@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import { EXAMPLE_DATASETS } from './example-datasets';
 import { createEmptyExploreViewRequest } from './url-state';
@@ -67,6 +67,8 @@ function createController(loadQueueOverrides: Record<string, unknown> = {}) {
     getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
     applyLatestViewForDatasetLoad: vi.fn(),
     setRequestedView: vi.fn(),
+    recordRequestedView: vi.fn(),
+    setDatasetDefaults: vi.fn(),
   };
   const options = {
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
@@ -387,5 +389,125 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(setCurrentExampleId).not.toHaveBeenCalled();
     expect(changes).toEqual([]);
+  });
+});
+
+describe('handleDataLoaded: curated default view', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadData.mockResolvedValue(undefined);
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+    // `clearAllMocks` keeps implementations, and an earlier block leaves this
+    // returning false.
+    mocks.persisted.isCurrentExampleRequest.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Runs one successful `handleDataLoaded` for `loadMeta` and returns the view-controller mock. */
+  async function loadWith(loadMeta: Record<string, unknown>, loadedData: VisualizationData = data) {
+    const { controller, viewController } = createController({
+      getRunningLoadMeta: () => loadMeta,
+      getLoadMetaForFile: () => loadMeta,
+    });
+    await controller.handleDataLoaded({
+      detail: { data: loadedData, file: new File(['x'], 'bundle.parquetbundle'), source: 'auto' },
+    } as unknown as Event);
+    return viewController;
+  }
+
+  function exampleMeta(source: 'menu' | 'url' | 'startup', entry = OTHER) {
+    return { sequence: 1, kind: 'default' as const, example: { entry, source, requestId: 1 } };
+  }
+
+  it('a menu load sets the example defaults and resets the request before loadData', async () => {
+    const viewController = await loadWith(exampleMeta('menu'));
+
+    expect(viewController.setDatasetDefaults).toHaveBeenCalledWith(OTHER.defaultView);
+    expect(viewController.recordRequestedView).toHaveBeenCalledWith(
+      createEmptyExploreViewRequest(),
+    );
+    const loadDataOrder = mocks.loadData.mock.invocationCallOrder[0];
+    expect(viewController.setDatasetDefaults.mock.invocationCallOrder[0]).toBeLessThan(
+      loadDataOrder,
+    );
+    expect(viewController.recordRequestedView.mock.invocationCallOrder[0]).toBeLessThan(
+      loadDataOrder,
+    );
+  });
+
+  it.each(['url', 'startup'] as const)(
+    'a %s load sets the example defaults but keeps the recorded request',
+    async (source) => {
+      const viewController = await loadWith(exampleMeta(source));
+
+      expect(viewController.setDatasetDefaults).toHaveBeenCalledWith(OTHER.defaultView);
+      expect(viewController.setDatasetDefaults.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.loadData.mock.invocationCallOrder[0],
+      );
+      expect(viewController.recordRequestedView).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['user import', { sequence: 1, kind: 'user' as const }],
+    ['OPFS restore', { sequence: 1, kind: 'opfs' as const }],
+    ['perf load', { sequence: 1, kind: 'default' as const }],
+  ])('a %s clears the defaults and keeps the recorded request', async (_label, loadMeta) => {
+    const viewController = await loadWith(loadMeta);
+
+    expect(viewController.setDatasetDefaults).toHaveBeenCalledWith(null);
+    expect(viewController.recordRequestedView).not.toHaveBeenCalled();
+  });
+
+  it('a load superseded before render changes neither the defaults nor the request', async () => {
+    mocks.persisted.isCurrentExampleRequest.mockReturnValue(false);
+
+    const viewController = await loadWith(exampleMeta('menu'));
+
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(viewController.setDatasetDefaults).not.toHaveBeenCalled();
+    expect(viewController.recordRequestedView).not.toHaveBeenCalled();
+  });
+
+  it('warns in development when the bundle lacks a defaultView name', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await loadWith(exampleMeta('url', DEMO));
+
+    const drift = warn.mock.calls
+      .map(([message]) => String(message))
+      .filter((message) => message.includes('defaultView names missing'));
+    expect(drift).toHaveLength(1);
+    expect(drift[0]).toContain(`Example "${DEMO.id}"`);
+    expect(drift[0]).toContain(`annotation "${DEMO.defaultView.annotation}"`);
+    expect(drift[0]).toContain(`projection "${DEMO.defaultView.projection}"`);
+  });
+
+  it('does not warn when the bundle has every defaultView name', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { annotation, projection, tooltip = [] } = DEMO.defaultView;
+    const category = {
+      kind: 'categorical' as const,
+      values: ['a'],
+      colors: ['#000'],
+      shapes: ['circle'],
+    };
+    const matchingData: VisualizationData = {
+      ...data,
+      projections: [{ name: projection, dimension: 2, data: new Float32Array([0, 0]) }],
+      annotations: Object.fromEntries([annotation, ...tooltip].map((name) => [name, category])),
+      annotation_data: Object.fromEntries(
+        [annotation, ...tooltip].map((name) => [name, new Int32Array([0])]),
+      ),
+    };
+
+    await loadWith(exampleMeta('url', DEMO), matchingData);
+
+    expect(
+      warn.mock.calls.some(([message]) => String(message).includes('defaultView names missing')),
+    ).toBe(false);
   });
 });

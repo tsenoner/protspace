@@ -37,4 +37,42 @@ describe('example datasets catalog', () => {
     const publicPath = entry.url.replace(/^\.\//, '../../public/');
     expect(SHIPPED_BUNDLE_PATHS.has(publicPath)).toBe(true);
   });
+
+  it.each(EXAMPLE_DATASETS)('states the size of "$id" in its label', (entry) => {
+    expect(entry.label).toContain(`${(entry.sizeBytes / 1e6).toFixed(1)} MB`);
+  });
+
+  it.each(EXAMPLE_DATASETS)('links "$id" to its docs section', (entry) => {
+    expect(entry.docsUrl).toBe(`/docs/explore/example-datasets#${entry.id}`);
+  });
+});
+
+// Mirrors `TOOLTIP_ONLY_ANNOTATIONS` in packages/core/src/components/control-bar/control-bar.ts,
+// which the colour-by dropdown never offers.
+const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
+const EAT_COMPANION_PATTERN = /__pred_(value|confidence|source)$/;
+
+describe('example datasets curated default view', () => {
+  it.each(EXAMPLE_DATASETS)('"$id" names a projection and an annotation', (entry) => {
+    expect(entry.defaultView.projection.trim()).not.toBe('');
+    expect(entry.defaultView.annotation.trim()).not.toBe('');
+  });
+
+  it.each(EXAMPLE_DATASETS)('"$id" colours by a colourable annotation', (entry) => {
+    const { annotation } = entry.defaultView;
+    expect(TOOLTIP_ONLY_ANNOTATIONS.has(annotation)).toBe(false);
+    expect(annotation).not.toMatch(EAT_COMPANION_PATTERN);
+  });
+
+  it.each(EXAMPLE_DATASETS)(
+    '"$id" has a tooltip without duplicates or the colour-by annotation',
+    (entry) => {
+      const tooltip = entry.defaultView.tooltip ?? [];
+      expect(new Set(tooltip).size).toBe(tooltip.length);
+      expect(tooltip).not.toContain(entry.defaultView.annotation);
+      for (const name of tooltip) {
+        expect(name).not.toMatch(EAT_COMPANION_PATTERN);
+      }
+    },
+  );
 });

@@ -10,12 +10,12 @@ Before every commit:
 
 ## 1. Curated default view
 
-- [ ] 1.1 `example-datasets.ts`:
+- [x] 1.1 `example-datasets.ts`:
   - add `ExampleDefaultView { projection; annotation; tooltip? }` and a **required** `defaultView`, plus `insight`, `sizeBytes`, `docsUrl` and `large?`;
   - give each interim entry a provisional `defaultView` naming a column and projection its current bundle really has;
   - rewrite the header comment (no more "verbatim from the archived design").
-- [ ] 1.2 `view-state.ts`: add `ExploreViewDefaults`.
-- [ ] 1.3 `url-state.ts`: `resolveExploreView(requested, annotations, projections, defaults = {})` with the landing rule.
+- [x] 1.2 `view-state.ts`: add `ExploreViewDefaults`.
+- [x] 1.3 `url-state.ts`: `resolveExploreView(requested, annotations, projections, defaults = {})` with the landing rule.
   - `url-state.test.ts` cases:
     - a landing request takes the whole default, tooltip included, with no normalization;
     - a partial request fills only the missing field, and the tooltip is `[]`;
@@ -23,19 +23,19 @@ Before every commit:
     - drifted default names fall back to `[0]`;
     - the default tooltip drops the effective annotation;
     - `{}` gives today's output.
-- [ ] 1.4 `view-controller.ts`: add `setDatasetDefaults(defaults | null)` and use it in both resolve calls.
+- [x] 1.4 `view-controller.ts`: add `setDatasetDefaults(defaults | null)` and use it in both resolve calls.
   - `view-controller.test.ts`: an empty `setRequestedView` after `setDatasetDefaults` applies the defaults with no normalization, and `null` restores the first-available fallback.
-- [ ] 1.5 `dataset-controller.ts` `handleDataLoaded`, after the supersede checks and before `loadData`:
+- [x] 1.5 `dataset-controller.ts` `handleDataLoaded`, after the supersede checks and before `loadData`:
   - `setDatasetDefaults(loadMeta.example?.entry.defaultView ?? null)`;
   - for `source === 'menu'`, `recordRequestedView(createEmptyExploreViewRequest())`;
   - a development-mode `console.warn` naming any `defaultView` name the loaded data lacks.
-- [ ] 1.6 `dataset-controller.dataset-changes.test.ts`:
+- [x] 1.6 `dataset-controller.dataset-changes.test.ts`:
   - a menu load calls both methods before `loadData` (`invocationCallOrder`);
   - a `url` or `startup` load keeps the recorded request;
   - user, OPFS and perf loads pass `null`;
   - a load superseded before render changes neither.
   - Add `vi.fn()` for `setDatasetDefaults`/`recordRequestedView` to the hand-built mocks in `example-dataset-load.test.ts`, `dataset-controller.dataset-changes.test.ts` and `dataset-controller.eat.test.ts`.
-- [ ] 1.7 `example-datasets.test.ts` (this lands with the manifest, task 4.1): assert, for every entry,
+- [ ] 1.7 `example-datasets.test.ts` (this lands with the manifest, task 4.1; the colourable-annotation and tooltip checks already landed with §1): assert, for every entry,
   - that each `defaultView` name is in the entry's manifest `columns`/`projections`;
   - that the annotation is colourable (not tooltip-only, not `__pred_*`);
   - that the tooltip has no duplicates and does not repeat the annotation;
@@ -44,7 +44,7 @@ Before every commit:
 
 ## 2. Behaviour decisions (a), (b1), (b2), (c), (d)
 
-- [ ] 2.1 (c) `getDatasetSearchParamsUpdate(…, 'menu')`: set `dataset=<id>`, delete `annotation`/`projection`/`tooltip`, keep other parameters.
+- [x] 2.1 (c) `getDatasetSearchParamsUpdate(…, 'menu')`: set `dataset=<id>`, delete `annotation`/`projection`/`tooltip`, keep other parameters.
   - Update the `url-state.test.ts` expectation `annotation=ec&dataset=demo` to `dataset=demo`.
   - Add: `seed=` survives a menu choice; `user`/`startup` keep the view parameters.
 - [ ] 2.2 (a) Keep the plot on a failed Back/Forward:
@@ -74,7 +74,7 @@ Before every commit:
   - a corrupt restore during a click only clears the store;
   - a mid-session `null` request begins a user request before the startup flow.
 - [ ] 2.9 (d) Keep the reset on every example load. The hint and docs text are tasks 3.1 and 5.x.
-- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9:
+- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the two (c) cases landed with §1 against the interim catalog's `phosphatase`):
   - (c) from `?annotation=<a>&tooltip=<t>`, a menu choice gives `?dataset=<id>` and the control bar shows `defaultView`; Back restores `<a>` and `<t>`;
   - (c) `?dataset=<id>`, pick an annotation, Back → `defaultView`; explicit deep-link parameters beat the defaults;
   - (a) a fixture routed to 500 on Back keeps the plot, the URL and `history.length`, and Retry recovers after `unroute`;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createEmptyExploreViewRequest } from './url-state';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
@@ -231,6 +232,75 @@ describe('createViewController', () => {
     expect(changes).toHaveLength(1);
     expect(changes[0].source).toBe('user');
     expect(changes[0].effective.tooltip).toEqual([]);
+  });
+
+  describe('dataset defaults', () => {
+    const defaults = { annotation: 'pfam', projection: 'PCA', tooltip: ['go'] };
+
+    it('applies the defaults to an empty request, with no normalization (Back to a bare entry)', () => {
+      const { controlBar, viewController } = setup();
+      const changes: ExploreViewChange[] = [];
+      viewController.subscribeToViewChanges((change) => changes.push(change));
+
+      viewController.setDatasetDefaults(defaults);
+      viewController.setRequestedView(createEmptyExploreViewRequest());
+
+      expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
+      expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
+      expect(controlBar.applyTooltipAnnotationsSelection).toHaveBeenCalledWith(['go']);
+      expect(changes).toHaveLength(1);
+      expect(changes[0].effective).toEqual({
+        annotation: 'pfam',
+        projection: 'PCA',
+        tooltip: ['go'],
+      });
+      expect(changes[0].normalize).toEqual({
+        annotation: false,
+        projection: false,
+        tooltip: false,
+      });
+    });
+
+    it('resolveLatestView honours the defaults', () => {
+      const { viewController } = setup();
+      viewController.setDatasetDefaults(defaults);
+      viewController.recordRequestedView(createEmptyExploreViewRequest());
+
+      expect(viewController.resolveLatestView()).toEqual({
+        annotation: 'pfam',
+        projection: 'PCA',
+        tooltip: ['go'],
+      });
+    });
+
+    it('fills only what an explicit request leaves unset', () => {
+      const { viewController } = setup();
+      viewController.setDatasetDefaults(defaults);
+
+      const result = viewController.applyViewSelection(makeRequest('go'), 'url');
+
+      expect(result).toEqual({ annotation: 'go', projection: 'PCA', tooltip: [] });
+    });
+
+    it('null restores the first-available fallback', () => {
+      const { viewController } = setup();
+      viewController.setDatasetDefaults(defaults);
+      viewController.setDatasetDefaults(null);
+
+      const result = viewController.applyViewSelection(createEmptyExploreViewRequest(), 'url');
+
+      expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    });
+
+    it('keeps its own copy of the defaults', () => {
+      const { viewController } = setup();
+      const tooltip = ['go'];
+      viewController.setDatasetDefaults({ ...defaults, tooltip });
+      tooltip.push('ec');
+      viewController.recordRequestedView(createEmptyExploreViewRequest());
+
+      expect(viewController.resolveLatestView()?.tooltip).toEqual(['go']);
+    });
   });
 
   it('dispose clears subscribers', () => {

@@ -132,7 +132,7 @@ server**. (The one time data leaves your machine is a FASTA upload, described ab
 - **Starting fresh**: To reset all settings for a dataset, re-import a `.parquetbundle` that has embedded settings, or clear site data in your browser settings.
 
 ::: info URL-backed view state
-If the URL points to an annotation or projection that does not exist in the currently loaded dataset, ProtSpace falls back to the closest valid view and updates the URL to match.
+If the URL points to an annotation or projection that does not exist in the currently loaded dataset, ProtSpace falls back to the example's curated view, or to the dataset's first annotation or projection for your own imports, and updates the URL to match.
 :::
 
 ::: warning Automatic dataset restore requires OPFS

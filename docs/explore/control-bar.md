@@ -281,7 +281,10 @@ dataset, and puts `dataset=<id>` in the URL so the link is shareable and the bro
 button returns to whatever was shown before — except when your own import was showing: the menu
 choice clears it, so **Back** goes to the entry with no `dataset` parameter, which loads the demo
 rather than restoring your import. `annotation`,
-`projection` and `tooltip` parameters in the same URL apply to the loaded example. An unknown id
+`projection` and `tooltip` parameters in the same URL apply to the loaded example. Without them,
+an example opens on its curated view: the projection, colour-by annotation and tooltip fields
+chosen for it. A menu choice always opens that curated view, so the previous dataset's view
+parameters don't carry over; **Back** still returns to them. An unknown id
 shows a warning and the app starts up normally. If an example fails to download, ProtSpace shows
 an error and leaves the current plot as it was.
 

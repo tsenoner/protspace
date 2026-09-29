@@ -97,6 +97,8 @@ function createRealController(
     getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
     applyLatestViewForDatasetLoad: vi.fn(),
     setRequestedView: vi.fn(),
+    recordRequestedView: vi.fn(),
+    setDatasetDefaults: vi.fn(),
   };
   const setCurrentExampleId = vi.fn();
   const setCurrentDatasetName = vi.fn();

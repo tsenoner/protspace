@@ -7,6 +7,7 @@ import type {
   DataErrorEventDetail,
   DataLoader as ProtspaceDataLoader,
 } from '@protspace/core';
+import type { VisualizationData } from '@protspace/utils';
 import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, generateDatasetHash } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
@@ -20,12 +21,14 @@ import {
 } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
 import { DEFAULT_EXAMPLE_DATASET, findExampleDataset } from './example-datasets';
+import type { ExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
 import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
+import { createEmptyExploreViewRequest } from './url-state';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
@@ -68,6 +71,30 @@ export interface DatasetController {
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
   handleDataError(event: Event): Promise<void>;
+}
+
+/**
+ * Development aid: names every `defaultView` name the loaded bundle lacks. The
+ * view then falls back to the bundle's first annotation or projection and
+ * drops the missing tooltip names (see `resolveExploreView`).
+ */
+function warnOnMissingDefaultViewNames(entry: ExampleDataset, data: VisualizationData): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  const annotations = new Set(Object.keys(data.annotations));
+  const projections = new Set(data.projections.map((projection) => projection.name));
+  const { annotation, projection, tooltip = [] } = entry.defaultView;
+  const missing = [
+    ...(annotations.has(annotation) ? [] : [`annotation "${annotation}"`]),
+    ...(projections.has(projection) ? [] : [`projection "${projection}"`]),
+    ...tooltip.filter((name) => !annotations.has(name)).map((name) => `tooltip "${name}"`),
+  ];
+  if (missing.length > 0) {
+    console.warn(
+      `Example "${entry.id}" defaultView names missing from its bundle: ${missing.join(', ')}`,
+    );
+  }
 }
 
 export function createDatasetController({
@@ -231,6 +258,24 @@ export function createDatasetController({
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
 
+      // The dataset's own landing view fills whatever the view request leaves
+      // unset. Set for every load (null for user imports, OPFS restores and
+      // perf loads) before `loadData`, which resolves the initial view.
+      viewController.setDatasetDefaults(loadMeta.example?.entry.defaultView ?? null);
+      if (loadMeta.example) {
+        warnOnMissingDefaultViewNames(loadMeta.example.entry, data);
+      }
+      if (loadMeta.example?.source === 'menu') {
+        // A menu choice opens the example on its curated view. The recorded
+        // request still holds the previous dataset's annotation, projection
+        // and tooltip, which would otherwise carry over wherever the names
+        // also exist in this bundle; `getDatasetSearchParamsUpdate` drops the
+        // same parameters from the pushed URL. Reset only here, for a load
+        // that decoded and is still current, so a failed or superseded menu
+        // choice leaves the request, the plot and the URL as they were.
+        viewController.recordRequestedView(createEmptyExploreViewRequest());
+      }
+
       await loadData(data);
 
       // Re-check: `loadData` can take long enough for a newer example
@@ -322,6 +367,8 @@ export function createDatasetController({
       } else {
         // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
         // is authoritative. Only restore the persisted set when the URL is silent.
+        // Examples never have one (their saved state was wiped above), so a
+        // menu choice, whose request was reset above, lands on the curated view.
         if (!latestRequest.present.tooltip) {
           if (savedTooltip.length > 0) {
             viewController.setRequestedView({

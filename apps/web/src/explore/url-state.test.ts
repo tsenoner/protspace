@@ -232,6 +232,120 @@ describe('explore url state', () => {
     expect(next.toString()).toBe('annotation=pfam&projection=UMAP&webglPerf=1');
   });
 
+  describe('dataset defaults', () => {
+    const annotations = ['annotation_score', 'ec', 'pfam', 'species', 'gene_name'];
+    const projections = ['PCA 2', 'UMAP 2'];
+    const defaults = { annotation: 'pfam', projection: 'UMAP 2', tooltip: ['species', 'ec'] };
+
+    it('resolves a landing request to the whole default view with no normalization', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams('dataset=phosphatase'));
+      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+
+      expect(resolved?.effective).toEqual({
+        annotation: 'pfam',
+        projection: 'UMAP 2',
+        tooltip: ['species', 'ec'],
+      });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+        annotation: false,
+        projection: false,
+        tooltip: false,
+      });
+    });
+
+    it('fills only the missing field of a partial request, with no tooltip', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams('annotation=ec'));
+      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+
+      expect(resolved?.effective).toEqual({ annotation: 'ec', projection: 'UMAP 2', tooltip: [] });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+        annotation: false,
+        projection: false,
+        tooltip: false,
+      });
+    });
+
+    it('keeps an explicit tooltip over the default one', () => {
+      const parsed = parseExploreViewRequest(
+        new URLSearchParams('annotation=ec&projection=PCA+2&tooltip=gene_name'),
+      );
+      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+
+      expect(resolved?.effective).toEqual({
+        annotation: 'ec',
+        projection: 'PCA 2',
+        tooltip: ['gene_name'],
+      });
+    });
+
+    it('falls back to the default for an invalid annotation and flags it for normalization', () => {
+      const parsed = parseExploreViewRequest(
+        new URLSearchParams('annotation=unknown&projection=nope'),
+      );
+      const resolved = resolveExploreView(parsed.requested, annotations, projections, defaults);
+
+      expect(resolved?.effective).toEqual({
+        annotation: 'pfam',
+        projection: 'UMAP 2',
+        tooltip: [],
+      });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+        annotation: true,
+        projection: true,
+        tooltip: false,
+      });
+    });
+
+    it('falls back to the first available names when the defaults drift from the data', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams(''));
+      const resolved = resolveExploreView(parsed.requested, annotations, projections, {
+        annotation: 'protein_families',
+        projection: 'ProtT5 — UMAP 2',
+        tooltip: ['kingdom', 'species'],
+      });
+
+      expect(resolved?.effective).toEqual({
+        annotation: 'annotation_score',
+        projection: 'PCA 2',
+        tooltip: ['species'],
+      });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+        annotation: false,
+        projection: false,
+        tooltip: false,
+      });
+    });
+
+    it('drops the effective annotation from the default tooltip', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams(''));
+      const resolved = resolveExploreView(parsed.requested, annotations, projections, {
+        annotation: 'ec',
+        tooltip: ['ec', 'species'],
+      });
+
+      expect(resolved?.effective).toEqual({
+        annotation: 'ec',
+        projection: 'PCA 2',
+        tooltip: ['species'],
+      });
+    });
+
+    it('matches the first-available behaviour when there are no defaults', () => {
+      for (const query of ['', 'annotation=pfam', 'annotation=unknown&projection=UMAP+2']) {
+        const parsed = parseExploreViewRequest(new URLSearchParams(query));
+        expect(resolveExploreView(parsed.requested, annotations, projections, {})).toEqual(
+          resolveExploreView(parsed.requested, annotations, projections),
+        );
+      }
+      const bare = parseExploreViewRequest(new URLSearchParams(''));
+      expect(resolveExploreView(bare.requested, annotations, projections)?.effective).toEqual({
+        annotation: 'annotation_score',
+        projection: 'PCA 2',
+        tooltip: [],
+      });
+    });
+  });
+
   describe('tooltip param', () => {
     it('parses comma-separated tooltip annotations', () => {
       const parsed = parseExploreViewRequest(
@@ -375,7 +489,7 @@ describe('explore url state', () => {
     });
 
     describe('getDatasetSearchParamsUpdate', () => {
-      it('pushes the dataset param on a menu choice', () => {
+      it('pushes the dataset param on a menu choice, dropping the view params', () => {
         const update = getDatasetSearchParamsUpdate(
           new URLSearchParams('annotation=ec'),
           'demo',
@@ -383,9 +497,33 @@ describe('explore url state', () => {
         );
 
         expect(update).toEqual({
-          next: new URLSearchParams('annotation=ec&dataset=demo'),
+          next: new URLSearchParams('dataset=demo'),
           replace: false,
         });
+      });
+
+      it('keeps unrelated params on a menu choice but drops annotation, projection and tooltip', () => {
+        const update = getDatasetSearchParamsUpdate(
+          new URLSearchParams(
+            'seed=1&annotation=ec&projection=ProtT5+%E2%80%94+UMAP+2&tooltip=pfam,species&dataset=demo',
+          ),
+          'phosphatase',
+          'menu',
+        );
+
+        expect(update?.replace).toBe(false);
+        expect(update?.next.toString()).toBe('seed=1&dataset=phosphatase');
+      });
+
+      it('keeps the view params on a user import and on a startup load', () => {
+        const searchParams = new URLSearchParams('dataset=demo&annotation=ec&tooltip=pfam');
+
+        expect(getDatasetSearchParamsUpdate(searchParams, null, 'user')?.next.toString()).toBe(
+          'annotation=ec&tooltip=pfam',
+        );
+        expect(getDatasetSearchParamsUpdate(searchParams, 'demo', 'startup')?.next.toString()).toBe(
+          'annotation=ec&tooltip=pfam',
+        );
       });
 
       it('replaces (deletes) the dataset param on a user import', () => {

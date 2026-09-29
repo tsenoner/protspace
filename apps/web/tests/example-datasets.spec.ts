@@ -62,6 +62,60 @@ async function isExampleDisabled(page: Page, id: string): Promise<boolean> {
   return page.locator(`protspace-control-bar [data-example-id="${id}"]`).isDisabled();
 }
 
+interface ControlBarView {
+  annotation: string | null;
+  projection: string | null;
+  tooltip: string[];
+}
+
+async function getControlBarView(page: Page): Promise<ControlBarView> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & {
+          selectedAnnotation?: string;
+          selectedProjection?: string;
+          tooltipAnnotations?: string[];
+        })
+      | null;
+    return {
+      annotation: controlBar?.selectedAnnotation ?? null,
+      projection: controlBar?.selectedProjection ?? null,
+      tooltip: [...(controlBar?.tooltipAnnotations ?? [])],
+    };
+  });
+}
+
+/** The catalog's curated view for `id`, in the shape `getControlBarView` reads. */
+function curatedView(id: string): ControlBarView {
+  const entry = findExampleDataset(id);
+  if (!entry) {
+    throw new Error(`Catalog is missing the "${id}" example used by this test.`);
+  }
+  return {
+    annotation: entry.defaultView.annotation,
+    projection: entry.defaultView.projection,
+    tooltip: [...(entry.defaultView.tooltip ?? [])],
+  };
+}
+
+async function getSearch(page: Page): Promise<string> {
+  return page.evaluate(() => window.location.search);
+}
+
+/**
+ * Collects the development-mode warnings `dataset-controller.ts` logs when a
+ * loaded example's bundle lacks one of its `defaultView` names.
+ */
+function collectDefaultViewDriftWarnings(page: Page): string[] {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().includes('defaultView names missing')) {
+      warnings.push(message.text());
+    }
+  });
+  return warnings;
+}
+
 async function importUserFile(page: Page, filePath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
@@ -124,10 +178,9 @@ test.describe('Example datasets: Import menu and deep link', () => {
   });
 
   test('an annotation set before a menu choice survives Back (1a repro)', async ({ page }) => {
-    // Demo has an 'ec' annotation; 5K's default annotation is 'phylum' (see
-    // the deep-link-with-view-param test below), so switching demo -> 5K
-    // forces a normalization write. That write must land on the NEW history
-    // entry (dataset=5K), not the one still holding demo+ec.
+    // Demo has an 'ec' annotation and 5K does not. The menu choice pushes a
+    // bare `dataset=5K` entry (5K opens on its curated view); the entry
+    // still holding demo+ec must stay untouched, so Back restores 'ec'.
     await page.goto('/explore?annotation=ec');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -220,7 +273,7 @@ test.describe('Example datasets: Import menu and deep link', () => {
   });
 
   test('a deep link with a view param selects that annotation on the example', async ({ page }) => {
-    // 'phylum' is 5K's default annotation, so it would pass even if the
+    // 'phylum' is 5K's curated annotation, so it would pass even if the
     // param were ignored; 'length_fixed' is not, so it actually proves the
     // param was applied.
     await page.goto('/explore?dataset=5K&annotation=length_fixed');
@@ -342,15 +395,14 @@ test.describe('Example datasets: Import menu and deep link', () => {
     page,
   }) => {
     // Regression: start at ?dataset=5K&annotation=phylum. Choose 40K from
-    // the menu, then the demo — history is now [5K+phylum, 40K+<its
-    // default>, demo+<its default>]. Back once (-> the 40K entry) starts
-    // loading 40K again; before that finishes decoding, Back again (-> the
-    // 5K entry) starts loading 5K. 40K's load must not be allowed to resolve
-    // the still-pending view request (now 'phylum', recorded for 5K) against
-    // ITS OWN data and write the result onto the URL: previously that raced
-    // and could replace-write 40K's default annotation
-    // (`protein_existence`) onto the 5K entry, and briefly show 40K's plot
-    // under `dataset=5K`.
+    // the menu, then the demo — history is now [5K+phylum, bare 40K, bare
+    // demo]. Back once (-> the 40K entry) starts loading 40K again; before
+    // that finishes decoding, Back again (-> the 5K entry) starts loading
+    // 5K. 40K's load must not be allowed to resolve the still-pending view
+    // request (now 'phylum', recorded for 5K) against ITS OWN data and write
+    // the result onto the URL: previously that raced and could replace-write
+    // 40K's fallback annotation onto the 5K entry, and briefly show 40K's
+    // plot under `dataset=5K`.
     await page.goto('/explore?dataset=5K&annotation=phylum');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -396,5 +448,108 @@ test.describe('Example datasets: Import menu and deep link', () => {
     expect(
       await page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')),
     ).toBe('phylum');
+  });
+});
+
+test.describe('Example datasets: curated default view', () => {
+  test('a menu choice opens the curated view on a bare entry, and Back restores the previous view', async ({
+    page,
+  }) => {
+    const driftWarnings = collectDefaultViewDriftWarnings(page);
+    // The demo and the phosphatase bundle both have 'ec' and 'pfam', so any
+    // carry-over of the previous view into the new example would show here.
+    await page.goto('/explore?annotation=ec&tooltip=pfam');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expect
+      .poll(() => getControlBarView(page))
+      .toMatchObject({ annotation: 'ec', tooltip: ['pfam'] });
+
+    await chooseExampleFromMenu(page, 'phosphatase');
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await expect.poll(() => getSearch(page)).toBe('?dataset=phosphatase');
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView('phosphatase'));
+
+    await page.goBack();
+    await expectDatasetParam(page, null);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expect
+      .poll(() => getControlBarView(page))
+      .toMatchObject({ annotation: 'ec', tooltip: ['pfam'] });
+    expect(await getSearch(page)).toBe('?annotation=ec&tooltip=pfam');
+    expect(driftWarnings).toEqual([]);
+  });
+
+  test('a bare deep link opens the curated view and writes nothing to the URL', async ({
+    page,
+  }) => {
+    const driftWarnings = collectDefaultViewDriftWarnings(page);
+
+    await page.goto('/explore?dataset=phosphatase');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView('phosphatase'));
+    expect(await getSearch(page)).toBe('?dataset=phosphatase');
+    expect(driftWarnings).toEqual([]);
+  });
+
+  test('Back to a bare entry of the same example lands on its curated view again', async ({
+    page,
+  }) => {
+    const curated = curatedView('phosphatase');
+    await page.goto('/explore?dataset=phosphatase');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await expect.poll(() => getControlBarView(page)).toEqual(curated);
+
+    const controlBar = page.locator('protspace-control-bar');
+    await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
+    await controlBar.locator('.dropdown-item[data-annotation="pfam"]').click();
+    await expect.poll(() => getControlBarView(page)).toMatchObject({ annotation: 'pfam' });
+    await expect
+      .poll(() => page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')))
+      .toBe('pfam');
+
+    await page.goBack();
+    await expect.poll(() => getSearch(page)).toBe('?dataset=phosphatase');
+    await expect.poll(() => getControlBarView(page)).toEqual(curated);
+  });
+
+  test('explicit deep-link view params win over the curated view', async ({ page }) => {
+    const curated = curatedView('phosphatase');
+
+    await page.goto('/explore?dataset=phosphatase&annotation=pfam');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+
+    // Any view param makes the request the user's: the missing projection
+    // comes from the curated view, and an absent tooltip means none.
+    await expect
+      .poll(() => getControlBarView(page))
+      .toEqual({ annotation: 'pfam', projection: curated.projection, tooltip: [] });
+    expect(await getSearch(page)).toBe('?dataset=phosphatase&annotation=pfam');
+  });
+
+  test('an invalid annotation falls back to the curated one and is normalized in the URL', async ({
+    page,
+  }) => {
+    const curated = curatedView('phosphatase');
+
+    await page.goto('/explore?dataset=phosphatase&annotation=not_a_column');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+
+    await expect
+      .poll(() => getControlBarView(page))
+      .toEqual({ annotation: curated.annotation, projection: curated.projection, tooltip: [] });
+    await expect
+      .poll(() => page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')))
+      .toBe(curated.annotation);
   });
 });

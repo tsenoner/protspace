@@ -3,6 +3,7 @@ import type { VisualizationData } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
+  ExploreViewDefaults,
   ExploreViewRequestState,
 } from './view-state';
 import {
@@ -39,6 +40,14 @@ export interface ViewController {
    * the recorded request against the new dataset once it's loaded.
    */
   recordRequestedView(viewRequest: ExploreViewRequestState): void;
+  /**
+   * Sets the loaded dataset's own landing view (an example's curated
+   * `defaultView`), which fills whatever the view request leaves unset (see
+   * `resolveExploreView`); `null` for a dataset without one. Both resolve
+   * paths use it, so Back to a bare entry of the same dataset, which never
+   * reloads, also lands on the curated view.
+   */
+  setDatasetDefaults(defaults: ExploreViewDefaults | null): void;
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
   handleUserTooltipAnnotationsChange(): void;
@@ -51,6 +60,7 @@ export function createViewController({
   controlBar,
 }: ViewControllerOptions): ViewController {
   let latestViewRequest = createEmptyExploreViewRequest();
+  let datasetDefaults: ExploreViewDefaults = {};
   let isApplyingView = false;
   const subscribers = new Set<(change: ExploreViewChange) => void>();
 
@@ -137,6 +147,7 @@ export function createViewController({
       latestViewRequest.requested,
       availableAnnotations,
       availableProjections,
+      datasetDefaults,
     );
     return resolved?.effective ?? null;
   };
@@ -154,6 +165,7 @@ export function createViewController({
       latestViewRequest.requested,
       availableAnnotations,
       availableProjections,
+      datasetDefaults,
     );
 
     if (!resolved) {
@@ -230,6 +242,16 @@ export function createViewController({
     },
     recordRequestedView(viewRequest: ExploreViewRequestState) {
       latestViewRequest = cloneExploreViewRequest(viewRequest);
+    },
+    setDatasetDefaults(defaults: ExploreViewDefaults | null) {
+      datasetDefaults =
+        defaults === null
+          ? {}
+          : {
+              annotation: defaults.annotation,
+              projection: defaults.projection,
+              tooltip: defaults.tooltip && [...defaults.tooltip],
+            };
     },
     handleUserAnnotationChange() {
       emitCurrentUserViewChange();

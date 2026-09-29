@@ -2,6 +2,7 @@ import type { DatasetChangeSource } from './types';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
+  ExploreViewDefaults,
   ExploreViewNormalization,
   ExploreViewRequestState,
   RequestedExploreView,
@@ -30,12 +31,15 @@ export function setDatasetParam(searchParams: URLSearchParams, id: string | null
   return next;
 }
 
+const EXPLORE_VIEW_PARAM_KEYS = ['annotation', 'projection', 'tooltip'] as const;
+
 /**
  * Decides how a dataset-change should be written to the URL, mirroring
  * `getExploreViewSearchParamsUpdate`'s pure-decision shape: a menu choice
- * pushes `dataset=<id>`; a user import or a startup/fallback load deletes the
- * parameter with a replace (a no-op when it is already absent); a load that
- * happened because of the URL itself is never written back.
+ * pushes `dataset=<id>` without the view parameters; a user import or a
+ * startup/fallback load deletes the parameter with a replace (a no-op when it
+ * is already absent); a load that happened because of the URL itself is never
+ * written back.
  */
 export function getDatasetSearchParamsUpdate(
   searchParams: URLSearchParams,
@@ -48,6 +52,14 @@ export function getDatasetSearchParamsUpdate(
 
   const nextId = source === 'menu' ? exampleId : null;
   const next = setDatasetParam(searchParams, nextId);
+  if (source === 'menu') {
+    // A menu choice opens the example on its curated view, so the previous
+    // dataset's view parameters must not ride along into the new entry. The
+    // previous entry keeps its own, so Back restores them.
+    for (const key of EXPLORE_VIEW_PARAM_KEYS) {
+      next.delete(key);
+    }
+  }
 
   return next.toString() === searchParams.toString() ? null : { next, replace: source !== 'menu' };
 }
@@ -212,10 +224,33 @@ function resolveTooltip(
   return { value: filtered, matches: !dropped && filtered.length === requested.length };
 }
 
+function pickAvailable(preferred: string | undefined, available: readonly string[]): string {
+  return preferred !== undefined && available.includes(preferred) ? preferred : available[0];
+}
+
+/**
+ * Resolves a view request against the loaded dataset's annotations and
+ * projections, filling what the request leaves unset from the dataset's own
+ * `defaults` (an example's curated `defaultView`):
+ *
+ * - A landing request, one with no annotation, projection or tooltip at all (a
+ *   menu choice, a bare `?dataset=<id>`, the startup demo, Back to a bare
+ *   entry), takes the whole default view, tooltip included.
+ * - Otherwise a valid requested value wins, and a missing or invalid
+ *   annotation or projection falls back to the default. An absent tooltip
+ *   means none: user-driven URL writes always set annotation and projection
+ *   and drop an empty tooltip, so there its absence means the user cleared it.
+ * - A default name the dataset lacks falls back to the first available
+ *   annotation or projection, and a missing default tooltip name is dropped.
+ *
+ * With `defaults = {}` (user imports, OPFS restores) every fallback is the
+ * first available annotation or projection.
+ */
 export function resolveExploreView(
   requested: RequestedExploreView,
   availableAnnotations: string[],
   availableProjections: string[],
+  defaults: ExploreViewDefaults = {},
 ): ResolvedExploreView | null {
   if (availableAnnotations.length === 0 || availableProjections.length === 0) {
     return null;
@@ -227,14 +262,26 @@ export function resolveExploreView(
     requestedAnnotation !== undefined && availableAnnotations.includes(requestedAnnotation);
   const projectionIsValid =
     requestedProjection !== undefined && availableProjections.includes(requestedProjection);
+  const isLanding =
+    requestedAnnotation === undefined &&
+    requestedProjection === undefined &&
+    requested.tooltip === undefined;
 
-  const effectiveAnnotation = annotationIsValid ? requestedAnnotation : availableAnnotations[0];
-  const tooltip = resolveTooltip(requested.tooltip, effectiveAnnotation, availableAnnotations);
+  const effectiveAnnotation = annotationIsValid
+    ? requestedAnnotation
+    : pickAvailable(defaults.annotation, availableAnnotations);
+  const tooltip = resolveTooltip(
+    isLanding ? defaults.tooltip : requested.tooltip,
+    effectiveAnnotation,
+    availableAnnotations,
+  );
 
   return {
     effective: {
       annotation: effectiveAnnotation,
-      projection: projectionIsValid ? requestedProjection : availableProjections[0],
+      projection: projectionIsValid
+        ? requestedProjection
+        : pickAvailable(defaults.projection, availableProjections),
       tooltip: tooltip.value,
     },
     matchesRequested: {
