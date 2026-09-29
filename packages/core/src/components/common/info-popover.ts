@@ -52,7 +52,7 @@ const POPOVER_BOUNDARY_ATTRIBUTE = 'data-info-popover-boundary';
  *   edge keeps the bubble out of the list entirely, so every row's label stays visible while you
  *   move the pointer up and down the column of ⓘ icons.
  *
- * Renders nothing when there is neither a description nor a docs URL.
+ * Renders nothing when there is neither a description, a detail nor a docs URL.
  */
 @customElement('protspace-info-popover')
 class ProtspaceInfoPopover extends LitElement {
@@ -60,6 +60,11 @@ class ProtspaceInfoPopover extends LitElement {
 
   /** Short description text shown in the popover. */
   @property({ type: String }) description = '';
+  /**
+   * Optional second paragraph, below the description: the Import menu puts an example's
+   * one-line insight here.
+   */
+  @property({ type: String }) detail = '';
   /** Optional site-relative or absolute documentation URL. */
   @property({ type: String, attribute: 'docs-url' }) docsUrl = '';
   /** Human-readable annotation label, used for accessible button labelling. */
@@ -91,11 +96,13 @@ class ProtspaceInfoPopover extends LitElement {
   private readonly popoverId = `protspace-info-popover-${++infoPopoverSequence}`;
 
   /**
-   * `aria-describedby` target. It is the description paragraph, never the popover itself: the
-   * popover carries an `aria-label`, and accname step 2C returns that label rather than
-   * descending into the contents, which would silently empty the description for every consumer.
+   * `aria-describedby` targets. They are the description and detail paragraphs, never the popover
+   * itself: the popover carries an `aria-label`, and accname step 2C returns that label rather
+   * than descending into the contents, which would silently empty the description for every
+   * consumer.
    */
   private readonly descriptionId = `${this.popoverId}-description`;
+  private readonly detailId = `${this.popoverId}-detail`;
 
   /** Whether the popover is currently visible (any of the three triggers). */
   private get isOpen(): boolean {
@@ -400,8 +407,13 @@ class ProtspaceInfoPopover extends LitElement {
   }
 
   render() {
-    const hasContent = this.description.length > 0 || this.docsUrl.length > 0;
+    const hasContent =
+      this.description.length > 0 || this.detail.length > 0 || this.docsUrl.length > 0;
     if (!hasContent) return nothing;
+    const describedBy = [
+      ...(this.description ? [this.descriptionId] : []),
+      ...(this.detail ? [this.detailId] : []),
+    ].join(' ');
 
     const ariaLabel = this.label ? `Information about ${this.label}` : 'Annotation information';
     const open = this.isOpen;
@@ -427,7 +439,7 @@ class ProtspaceInfoPopover extends LitElement {
         aria-label=${ariaLabel}
         aria-expanded=${open}
         aria-controls=${open ? this.popoverId : nothing}
-        aria-describedby=${open && this.description ? this.descriptionId : nothing}
+        aria-describedby=${open && describedBy ? describedBy : nothing}
         @pointerdown=${this._onPointerDown}
         @focus=${this._onFocus}
         @click=${this._onClick}
@@ -468,6 +480,9 @@ class ProtspaceInfoPopover extends LitElement {
               ? html`<p id=${this.descriptionId} class="popover-description">
                   ${this.description}
                 </p>`
+              : nothing}
+            ${this.detail
+              ? html`<p id=${this.detailId} class="popover-detail">${this.detail}</p>`
               : nothing}
             ${this.docsUrl
               ? html`<a

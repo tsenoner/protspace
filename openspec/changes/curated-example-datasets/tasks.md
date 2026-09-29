@@ -86,15 +86,15 @@ Before every commit:
 
 ## 3. Import-menu UI, download progress and cancel
 
-- [ ] 3.1 `packages/core` control bar (the hint line landed with §2):
+- [x] 3.1 `packages/core` control bar (the hint line landed with §2):
   - `ExampleDatasetSummary` gains optional `insight`, `docsUrl` and `large`;
   - new `examplesDocsUrl` property (`examples-docs-url`) renders "About these examples ↗" in the Examples heading row;
   - a muted hint line: examples open curated, and changes are not kept;
-  - each item becomes a row (button plus `protspace-info-popover` with description, insight and "Learn more ↗"), following the `annotation-select.ts` pattern; drop `title=`;
+  - each item becomes a row (button plus `protspace-info-popover` with description, insight and "Learn more ↗"), following the `annotation-select.ts` pattern; drop `title=`. The popover gains an optional `detail` paragraph, which carries the insight;
   - a "Large" badge;
   - the same info control next to the current-dataset name when an example is loaded;
   - then run `pnpm --filter @protspace/core build`.
-- [ ] 3.2 `control-bar.import-menu.test.ts`:
+- [x] 3.2 `control-bar.import-menu.test.ts`:
   - the link is rendered only when the URL is set, and the hint only with at least one example;
   - one info control per item, and opening it does not dispatch `load-example-dataset`;
   - the Large badge renders for `large: true`.
@@ -111,7 +111,7 @@ Before every commit:
   - clear the handler when decoding starts.
   - Unit tests in `persisted-dataset.test.ts`/`startup.test.ts`.
 - [ ] 3.6 E2E: a gated fetch plus Cancel leaves the previous dataset, the URL unchanged, and no overlay or toast; the Large badge and the info popover's docs link are visible.
-- [ ] 3.7 `docs/developers/api/index.md`: the new `examplesDocsUrl` property/attribute and the `ExampleDatasetSummary` fields.
+- [x] 3.7 `docs/developers/api/index.md`: the new `examplesDocsUrl` property/attribute and the `ExampleDatasetSummary` fields.
 
 ## 4. Hosting, manifest, and decoupling fixtures and perf
 

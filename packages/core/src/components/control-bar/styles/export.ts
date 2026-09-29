@@ -190,7 +190,9 @@ export const exportStyles = css`
   }
 
   .import-menu {
-    width: 240px;
+    /* Wide enough for an example's label, its "Large" badge and its info icon on one line. */
+    width: 280px;
+    max-width: calc(100vw - 2 * var(--spacing-md));
     padding: var(--spacing-md);
     box-sizing: border-box;
   }
@@ -237,9 +239,30 @@ export const exportStyles = css`
     border-top: var(--border-width) solid var(--border);
   }
 
-  .import-examples-label {
-    display: block;
+  .import-examples-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
     margin-bottom: var(--spacing-xs);
+  }
+
+  .import-examples-docs {
+    font-size: var(--text-caption);
+    font-weight: var(--font-medium);
+    color: var(--primary);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .import-examples-docs:hover {
+    text-decoration: underline;
+  }
+
+  .import-examples-docs:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .import-examples-hint {
@@ -247,5 +270,43 @@ export const exportStyles = css`
     font-size: var(--text-caption);
     color: var(--muted);
     line-height: 1.4;
+  }
+
+  /* An example item: its button, then its info popover as a sibling (never inside the button). */
+  .import-example-row,
+  .import-current-dataset-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  .import-actions .import-example-button {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: var(--spacing-xs);
+    /* A long label wraps rather than being clipped behind the badge. */
+    white-space: normal;
+  }
+
+  .import-example-label {
+    min-width: 0;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .import-example-badge {
+    flex: 0 0 auto;
+    padding: 0.1rem 0.3rem;
+    border: var(--border-width) solid var(--primary);
+    border-radius: var(--radius);
+    color: var(--primary);
+    font-size: 0.65rem;
+    font-weight: var(--font-semibold);
+    line-height: 1;
+    letter-spacing: 0.03em;
+  }
+
+  .import-example-info {
+    flex: 0 0 auto;
   }
 `;

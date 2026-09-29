@@ -163,7 +163,8 @@ Rejected:
   - The host sets a new `examplesDocsUrl` property (`examples-docs-url`) to `/docs/explore/example-datasets`.
 - **What the menu renders.**
   - The "Examples" heading row gains "About these examples ↗" and the hint line.
-  - Each item becomes a row: the button plus a `protspace-info-popover` (description, insight, "Learn more ↗" to `docsUrl`), following the `annotation-select.ts` pattern, since an interactive popover must not sit inside the `<button>`.
+  - Each item becomes a row: the button plus a `protspace-info-popover` (description, insight, "Learn more ↗" to `docsUrl`), following the `annotation-select.ts` pattern, since an interactive popover must not sit inside the `<button>`. The popover gains an optional `detail` property, a second paragraph that also describes its trigger, which carries the insight.
+  - The popover uses side placement, so it floats beside the menu instead of being clipped by the menu's scroll container.
   - The native `title=` is dropped, because it duplicates the popover.
   - The same info control appears next to the current-dataset name when an example is loaded.
   - Opening the popover never dispatches `load-example-dataset`.
