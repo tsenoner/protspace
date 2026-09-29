@@ -103,7 +103,7 @@ Sizing, opacity and zoom limits live in the `config` object property:
 
 ```javascript
 plot.config = {
-  pointSize: 40,
+  pointSize: 80,
   baseOpacity: 0.9,
   selectedOpacity: 1.0,
   fadedOpacity: 0.15,
@@ -111,7 +111,7 @@ plot.config = {
 };
 ```
 
-`pointSize` is area-like: a dot's radius is `√pointSize / 3` CSS px (2.1 px at the default 40) on a 1000×700 plot at zoom 1. Dots grow on zoom-in by `k^¼` (×1.41 at k = 4, ×2 at k = 16, at most ×4) and never shrink on zoom-out. They also scale with the plot's CSS area by `(area / 1000·700)^¼`, bounded to ×0.8…×1.5. Device pixel ratio is applied on top, so the CSS size is the same on every pixel density.
+`pointSize` is area-like: a dot's radius is `√pointSize / 3` CSS px (3.0 px at the default 80) on a 1000×700 plot at zoom 1. Dots grow on zoom-in by `k^¼` (×1.41 at k = 4, ×2 at k = 16, at most ×4) and never shrink on zoom-out. They also scale with the plot's CSS area by `(area / 1000·700)^¼`, bounded to ×0.8…×1.5. Device pixel ratio is applied on top, so the CSS size is the same on every pixel density.
 
 Omitted keys keep their defaults.
 
