@@ -40,11 +40,15 @@ METHODS = "umap2:n_neighbors=50;min_dist=0.5,pca2"
 ANNOTATIONS = "default,interpro,taxonomy"
 RANDOM_STATE = 42
 SIGNAL_RE = re.compile(r"SIGNAL\s+(\d+)\.\.(\d+)")
+# The curated legend styling comes from the demo as first published, pinned as a
+# test fixture. The product demo at apps/web/public/data.parquetbundle is this
+# script's output, so reading it would copy whatever the last run wrote.
 DEFAULT_SOURCE_SETTINGS = (
     Path(__file__).resolve().parent.parent.parent
     / "web"
-    / "public"
-    / "data.parquetbundle"
+    / "tests"
+    / "fixtures"
+    / "demo_toxprot_7831.parquetbundle"
 )
 
 # Annotation columns to keep in the final bundle, in display order.
@@ -356,7 +360,7 @@ def main() -> int:
         type=Path,
         default=DEFAULT_SOURCE_SETTINGS,
         help=(
-            "Bundle to copy settings JSON from (the existing web demo). "
+            "Bundle to copy settings JSON from (the pinned demo fixture). "
             f"Default: {DEFAULT_SOURCE_SETTINGS}"
         ),
     )
