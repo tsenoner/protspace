@@ -46,9 +46,9 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** The explorer darkens the rim to 50% of the fill color. */
+/** A soft rim: the fill color darkened to 80%, lighter than the explorer's 50%. */
 function rimColor(hex: string): string {
-  const [r, g, b] = hexToRgb(hex).map((c) => Math.round(c * 0.5));
+  const [r, g, b] = hexToRgb(hex).map((c) => Math.round(c * 0.8));
   return `rgb(${r} ${g} ${b})`;
 }
 
@@ -87,9 +87,9 @@ function drawPoints(
     ...baseCategories,
     ...palette.map((_, i) => i).filter((i) => !baseCategories.includes(i)),
   ];
-  // Rim: the explorer darkens the outer ~15% of the radius (at least one device pixel, at most
-  // about a third), inside the disc so the point does not grow.
-  const rim = Math.min(Math.max(radius * 0.15, 1 / layout.dpr), radius * 0.3);
+  // Rim: the outer ~10% of the radius (at least one device pixel, at most a quarter), inside
+  // the disc so the point does not grow.
+  const rim = Math.min(Math.max(radius * 0.1, 1 / layout.dpr), radius * 0.25);
   ctx.lineJoin = 'round';
   for (const category of order) {
     if (only !== undefined && category !== only) continue;

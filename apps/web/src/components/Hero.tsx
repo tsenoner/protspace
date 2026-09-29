@@ -140,9 +140,8 @@ const Hero = () => {
             </p>
           </div>
 
-          {/* The map: in the flow on small screens, bleeding to the viewport edge on large ones. */}
           <figure
-            className="relative -mx-4 aspect-[4/3] sm:mx-0 lg:absolute lg:bottom-6 lg:left-[52%] lg:right-0 lg:top-16 lg:mx-0 lg:aspect-auto"
+            className="relative -mx-4 aspect-[4/3] sm:mx-0 lg:col-span-6 lg:mx-0 lg:aspect-auto lg:h-[min(72vh,640px)] xl:col-span-7"
             aria-busy={demo === undefined}
           >
             {demo && annotation ? (
