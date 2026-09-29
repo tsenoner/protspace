@@ -74,7 +74,7 @@ Before every commit:
   - a corrupt restore during a click only clears the store;
   - a mid-session `null` request begins a user request before the startup flow.
 - [x] 2.9 (d) Keep the reset on every example load. The hint and docs text are tasks 3.1 and 5.x (the hint line and the `importing-data.md` exception landed with §2).
-- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the two (c) cases landed with §1 against the interim catalog's `phosphatase`):
+- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the (c) cases landed with §1, and the (a), (b1) and (b2) cases with §2, all against the interim catalog's `5K`/`phosphatase`; the (d) case and routing them through fixtures remain):
   - (c) from `?annotation=<a>&tooltip=<t>`, a menu choice gives `?dataset=<id>` and the control bar shows `defaultView`; Back restores `<a>` and `<t>`;
   - (c) `?dataset=<id>`, pick an annotation, Back → `defaultView`; explicit deep-link parameters beat the defaults;
   - (a) a fixture routed to 500 on Back keeps the plot, the URL and `history.length`, and Retry recovers after `unroute`;
@@ -136,7 +136,7 @@ Before every commit:
   - `phosphatase_1587`;
   - `venom_eat_stats_811`.
   - Repoint the path users: `dataset-reload.spec.ts`, `isolation-dataset-swap.spec.ts`, `numeric-binning.spec.ts`, `example-datasets.spec.ts`, `scripts/docs-screenshots/eat-helpers.ts` and `packages/core/.../bundle-roundtrip.test.ts` (5 sites).
-  - `dataset-recovery.spec.ts` passes fixture bytes into `page.evaluate` instead of fetching `/data/5K.parquetbundle`.
+  - `tests/helpers/opfs.ts` (`seedOpfsState`, used by `dataset-recovery.spec.ts` and `example-datasets.spec.ts`) passes fixture bytes into `page.evaluate` instead of fetching `/data/5K.parquetbundle`.
   - The `public/data/` originals are deleted in 7.8.
 - [ ] 4.7 Startup pin:
   - `playwright.config.ts` sets `webServer.env.VITE_STARTUP_DATASET_URL` to `/@fs/<repo>/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle`; the demo entry's `url` honours it; add a `vite-env.d.ts` entry.

@@ -11,6 +11,7 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
+import { clearOpfs, seedOpfsState } from './helpers/opfs';
 
 /**
  * Covers `openspec/specs/example-datasets`: the Import menu's "Examples"
@@ -666,6 +667,47 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
     expect(await getSearch(page)).toBe('');
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
+  });
+
+  test('Back to an entry without dataset= while an example is loading runs the startup load instead (b2)', async ({
+    page,
+  }) => {
+    // A stored import flagged 'error' makes the startup load show the
+    // recovery banner and load nothing, so only the pending example could
+    // ever render: nothing else would supersede it.
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await clearOpfs(page);
+    await seedOpfsState(page, {
+      fileName: 'broken.parquetbundle',
+      status: 'error',
+      failedAttempts: 1,
+      lastError: 'OOM during decode',
+    });
+    await page.goto('/explore');
+    const banner = page.locator('#protspace-recovery-banner');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+
+    // A same-document entry naming an example, reached like Forward.
+    const releasePhosphatase = await holdNextRequest(page, '**/data/phosphatase.parquetbundle');
+    await page.evaluate(() => {
+      history.pushState(null, '', '/explore?dataset=phosphatase');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('#progressive-loading')).toBeVisible();
+
+    await page.goBack(); // -> the entry without `dataset=`, while phosphatase is still downloading
+    await expect.poll(() => getSearch(page)).toBe('');
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    await expect(banner).toBeVisible();
+    releasePhosphatase();
+
+    // The abandoned example never renders under the banner.
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(0);
+    expect(await getSearch(page)).toBe('');
+    await expect(banner).toBeVisible();
   });
 });
 
