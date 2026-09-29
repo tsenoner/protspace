@@ -16,6 +16,7 @@ from tqdm import tqdm
 from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
+from protspace.data.annotations.retrievers.http_utils import post_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ DERIVED_INTERPRO_ANNOTATIONS = {"pfam_clan"}
 BASE_URL = "https://www.ebi.ac.uk/interpro/matches/api"
 INTERPRO_ENTRY_URL = "https://www.ebi.ac.uk/interpro/api/entry"
 CHUNK_SIZE = 100  # As per API documentation for batch requests
+# Per attempt. The slowest batch observed took 24 s; retries cover the tail.
+MATCHES_TIMEOUT = 30
 
 # Mapping from annotation key to InterPro entry API database path
 # Used to resolve human-readable names for databases where the matches API
@@ -219,25 +222,21 @@ class InterProRetriever(BaseAnnotationRetriever):
                 payload = {"md5": chunk}
 
                 try:
-                    response = requests.post(
+                    # Retried like every other batched annotation request: a
+                    # batch still failing after that is a lost batch, which
+                    # keeps the whole InterPro source out of the cache.
+                    response = post_with_retry(
                         post_url,
                         json=payload,
                         headers={"Accept": "application/json"},
-                        timeout=30,
+                        timeout=MATCHES_TIMEOUT,
                     )
-
-                    if response.status_code == 200:
-                        batch_results = response.json().get("results", [])
-                        all_results.extend(batch_results)
-                    else:
-                        self.failed_batch_count += 1
-                        logger.error(
-                            f"Error processing batch {i}: {response.status_code} - {response.text}"
-                        )
+                    batch_results = response.json().get("results", [])
+                    all_results.extend(batch_results)
 
                 except requests.exceptions.RequestException as e:
                     self.failed_batch_count += 1
-                    logger.error(f"Request error for batch {i}: {e}")
+                    logger.error(f"InterPro batch {i} of {len(chunks)} failed: {e}")
 
                 pbar.update(len(chunk))
 

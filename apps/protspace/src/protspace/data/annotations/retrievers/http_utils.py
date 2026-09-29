@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections.abc import Callable
 
 import requests
 
@@ -32,26 +33,18 @@ def _backoff_seconds(attempt: int, response: requests.Response | None) -> float:
     return min(BACKOFF_BASE_SECONDS * 2 ** (attempt - 1), MAX_BACKOFF_SECONDS)
 
 
-def get_with_retry(
-    url: str,
-    params: dict | None = None,
-    timeout: int = API_TIMEOUT,
-    attempts: int = MAX_ATTEMPTS,
+def _request_with_retry(
+    send: Callable[[], requests.Response], url: str, attempts: int
 ) -> requests.Response:
-    """GET *url*, retrying transient failures with exponential backoff.
+    """Call *send* until it succeeds, retrying transient failures with backoff.
 
-    Retries timeouts, connection errors and the status codes in
-    ``RETRYABLE_STATUS``. A non-retryable 4xx is raised immediately: a bad
-    accession does not become good by asking again.
-
-    *attempts* lets a per-item caller lower the budget: a source fetched one
-    request per protein cannot afford the default on a full outage, where the
-    backoff would be paid hundreds of thousands of times.
+    The one retry loop behind :func:`get_with_retry` and :func:`post_with_retry`,
+    so the GET and POST policies cannot drift apart.
     """
     for attempt in range(1, attempts + 1):
         response = None
         try:
-            response = requests.get(url, params=params, timeout=timeout)
+            response = send()
             if response.status_code not in RETRYABLE_STATUS:
                 response.raise_for_status()
                 return response
@@ -80,6 +73,46 @@ def get_with_retry(
 
     # Unreachable: the final attempt either returns or raises above.
     raise RuntimeError(f"Exhausted retries for {url}")
+
+
+def get_with_retry(
+    url: str,
+    params: dict | None = None,
+    timeout: int = API_TIMEOUT,
+    attempts: int = MAX_ATTEMPTS,
+) -> requests.Response:
+    """GET *url*, retrying transient failures with exponential backoff.
+
+    Retries timeouts, connection errors and the status codes in
+    ``RETRYABLE_STATUS``. A non-retryable 4xx is raised immediately: a bad
+    accession does not become good by asking again.
+
+    *attempts* lets a per-item caller lower the budget: a source fetched one
+    request per protein cannot afford the default on a full outage, where the
+    backoff would be paid hundreds of thousands of times.
+    """
+    return _request_with_retry(
+        lambda: requests.get(url, params=params, timeout=timeout), url, attempts
+    )
+
+
+def post_with_retry(
+    url: str,
+    json: dict | list | None = None,
+    headers: dict | None = None,
+    timeout: int = API_TIMEOUT,
+    attempts: int = MAX_ATTEMPTS,
+) -> requests.Response:
+    """POST *json* to *url* with the same retry policy as :func:`get_with_retry`.
+
+    For batched lookups sent as a request body (InterPro's MD5 matches), where
+    one lost request drops a whole batch of proteins.
+    """
+    return _request_with_retry(
+        lambda: requests.post(url, json=json, headers=headers, timeout=timeout),
+        url,
+        attempts,
+    )
 
 
 def paginated_get(

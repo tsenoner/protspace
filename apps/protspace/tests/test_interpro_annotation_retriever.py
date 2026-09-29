@@ -1121,3 +1121,84 @@ class TestIdenticalSequences:
         # Identical sequences are still one lookup each.
         assert sorted(submitted) == sorted(results)
         assert retriever.failed_batch_count == 0
+
+
+class TestMatchRequestRetry:
+    """A lost batch makes the whole InterPro source incomplete and uncached, so
+    one unretried timeout among thousands of batches costs a full refetch."""
+
+    @staticmethod
+    def _proteins(count: int) -> dict[str, str]:
+        # Distinct sequences, so each protein is its own MD5.
+        return {f"P{i}": "M" + "A" * i for i in range(count)}
+
+    @staticmethod
+    def _serve(monkeypatch, outcomes):
+        """Answer successive POSTs from *outcomes*; a status int fails, None
+        succeeds with a Pfam match for every submitted MD5."""
+        from protspace.data.annotations.retrievers import http_utils
+
+        monkeypatch.setattr(http_utils.time, "sleep", lambda _: None)
+        calls = []
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            calls.append(list(json["md5"]))
+            outcome = outcomes[len(calls) - 1]
+            response = Mock(spec=requests.Response)
+            response.headers = {}
+            if outcome is None:
+                response.status_code = 200
+                response.raise_for_status.return_value = None
+                response.json.return_value = {
+                    "results": [
+                        create_api_result(
+                            md5, matches=[create_signature("PF00001", score=1.0)]
+                        )
+                        for md5 in json["md5"]
+                    ]
+                }
+            else:
+                response.status_code = outcome
+                response.text = "unavailable"
+                response.raise_for_status.side_effect = requests.HTTPError(str(outcome))
+            return response
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        return calls
+
+    def test_a_batch_that_fails_once_is_recovered(self, monkeypatch):
+        sequences = self._proteins(3)
+        calls = self._serve(monkeypatch, [503, None])
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        result = retriever.fetch_annotations()
+
+        assert len(calls) == 2
+        assert retriever.failed_batch_count == 0
+        assert {
+            row.identifier: row.annotations["pfam"] for row in result
+        } == dict.fromkeys(sequences, "PF00001|1.0")
+
+    def test_a_batch_failing_every_attempt_is_lost_alone(self, monkeypatch):
+        import sys
+
+        from protspace.data.annotations.retrievers import http_utils
+
+        # Patch the module the retriever under test was loaded from.
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 2)
+        sequences = self._proteins(4)  # two batches of two
+        calls = self._serve(monkeypatch, [503] * http_utils.MAX_ATTEMPTS + [None])
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        result = retriever.fetch_annotations()
+
+        assert len(calls) == http_utils.MAX_ATTEMPTS + 1
+        assert retriever.failed_batch_count == 1
+        by_id = {row.identifier: row.annotations["pfam"] for row in result}
+        # The second batch is still parsed; the lost one reads as unmatched,
+        # which is why the source must be flagged incomplete.
+        assert by_id == {"P0": "", "P1": "", "P2": "PF00001|1.0", "P3": "PF00001|1.0"}
