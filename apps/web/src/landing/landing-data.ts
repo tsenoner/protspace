@@ -96,20 +96,6 @@ function displayName(name: string): string {
   return name.replace(/\s*—\s*/g, ' · ');
 }
 
-/** Rescale values to [0, 1]. */
-export function normalize(values: ArrayLike<number>): Float32Array {
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < values.length; i++) {
-    if (values[i] < min) min = values[i];
-    if (values[i] > max) max = values[i];
-  }
-  const span = max - min || 1;
-  const out = new Float32Array(values.length);
-  for (let i = 0; i < values.length; i++) out[i] = (values[i] - min) / span;
-  return out;
-}
-
 /** Run `factory` once per page load, but forget a rejected attempt so a remount can retry. */
 function once<T>(factory: () => Promise<T>): () => Promise<T> {
   let promise: Promise<T> | null = null;

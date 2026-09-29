@@ -5,7 +5,6 @@ import Footer from '@/components/Footer';
 import { AnnotationExplorerPreview } from '@/landing/AnnotationExplorerPreview';
 import { WorkflowOverview } from '@/landing/WorkflowOverview';
 import { EatPreview } from '@/landing/EatPreview';
-import { ProjectionEvaluationPreview } from '@/landing/ProjectionEvaluationPreview';
 import { ClosingCta } from '@/landing/ClosingCta';
 
 const Index = () => {
@@ -17,7 +16,6 @@ const Index = () => {
         <AnnotationExplorerPreview />
         <WorkflowOverview />
         <EatPreview />
-        <ProjectionEvaluationPreview />
         <ClosingCta />
         <Citation />
       </main>
