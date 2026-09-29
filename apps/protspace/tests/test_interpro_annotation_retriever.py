@@ -225,7 +225,7 @@ class TestInterProAnnotationRetrieverParsing:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_interpro_results(self, mock_name_map):
         """Test parsing of InterPro API results."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam", "superfamily"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -242,7 +242,7 @@ class TestInterProAnnotationRetrieverParsing:
         mock_name_map.return_value = {"SSF": {"SSF12345": "Entry API name"}}
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -257,14 +257,14 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_not_found(self):
         """Test parsing when protein not found in UniParc."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         api_result = create_api_result(TEST_MD5, found=False)
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -273,7 +273,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_filter_databases(self):
         """Test that only requested databases are included."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]  # Only requesting Pfam
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -282,7 +282,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -294,7 +294,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_missing_confidence_scores(self):
         """Test parsing when confidence scores are missing (None)."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         # Create match without score
@@ -303,7 +303,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -313,7 +313,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_duplicate_accessions(self):
         """Test that duplicate accessions collect all scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -322,7 +322,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -332,7 +332,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_multidomain(self):
         """Test parsing of multidomain proteins (multiple different accessions)."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -344,7 +344,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -357,7 +357,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_multidomain_with_duplicates(self):
         """Test multidomain proteins with some domains appearing multiple times."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -370,7 +370,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -385,7 +385,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_missing_name(self):
         """Test parsing when name is missing (should work without name)."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         # Create match without name
@@ -394,7 +394,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -532,7 +532,7 @@ class TestParsingWithNameResolution:
     )
     def test_parse_cath_with_resolved_names(self, mock_cath_names):
         """Test that CATH annotations include resolved names."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath"]
 
         match1 = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
@@ -548,7 +548,7 @@ class TestParsingWithNameResolution:
         }
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         cath_value = result[0].annotations["cath"]
@@ -558,7 +558,7 @@ class TestParsingWithNameResolution:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_superfamily_with_resolved_names(self, mock_name_map):
         """Test that SUPERFAMILY annotations include resolved names."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["superfamily"]
 
         match1 = create_signature("SSF53098", library="SUPERFAMILY", score=1.5e-20)
@@ -574,7 +574,7 @@ class TestParsingWithNameResolution:
         )
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         sf_value = result[0].annotations["superfamily"]
@@ -584,7 +584,7 @@ class TestParsingWithNameResolution:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_cath_with_api_provided_name_takes_precedence(self, mock_name_map):
         """Test that names from the matches API take precedence over resolved names."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath"]
 
         # Match with a name already provided by the matches API
@@ -601,7 +601,7 @@ class TestParsingWithNameResolution:
         mock_name_map.return_value = _make_name_map()
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         # The matches API name should take precedence
         assert (
@@ -613,7 +613,7 @@ class TestParsingWithNameResolution:
         self, mock_name_map
     ):
         """Test that SUPERFAMILY names from matches API take precedence."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["superfamily"]
 
         match = create_signature(
@@ -628,7 +628,7 @@ class TestParsingWithNameResolution:
         mock_name_map.return_value = _make_name_map(SSF={"SSF53098": "XML name"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert (
             result[0].annotations["superfamily"]
@@ -640,7 +640,7 @@ class TestParsingWithNameResolution:
     )
     def test_parse_cath_partial_name_resolution(self, mock_cath_names):
         """Test when only some CATH names can be resolved."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath"]
 
         match1 = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
@@ -651,7 +651,7 @@ class TestParsingWithNameResolution:
         mock_cath_names.return_value = {"1.10.10.10": "Winged helix"}
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         cath_value = result[0].annotations["cath"]
         # First one should have a name, second one should not
@@ -660,7 +660,7 @@ class TestParsingWithNameResolution:
 
     def test_parse_no_resolution_when_not_requested(self):
         """Test that name resolution is skipped for databases not in ENTRY_API_DB_MAPPING."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -668,7 +668,7 @@ class TestParsingWithNameResolution:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
 
@@ -680,7 +680,7 @@ class TestParsingWithNameResolution:
         self, mock_name_map, mock_cath_names
     ):
         """Test that both CATH and SUPERFAMILY names are resolved in a single parse."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath", "superfamily"]
 
         cath_match = create_signature(
@@ -698,7 +698,7 @@ class TestParsingWithNameResolution:
         )
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert "G3DSA:1.10.10.10 (Winged helix)|50.2" in result[0].annotations["cath"]
@@ -733,7 +733,7 @@ class TestNewInterProDatabases:
 
     def test_smart_with_name_and_score(self):
         """Test SMART database: has names and scores from matches API."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["smart"]
 
         match = create_signature(
@@ -742,21 +742,21 @@ class TestNewInterProDatabases:
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["smart"] == "SM00220 (InsulinA)|35.7"
 
     def test_cdd_with_name_no_score(self):
         """Test CDD database: has names, no scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cdd"]
 
         match = create_signature("cd00205", name="IGc2", library="CDD")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["cdd"] == "cd00205 (IGc2)"
@@ -764,7 +764,7 @@ class TestNewInterProDatabases:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_panther_name_via_xml(self, mock_name_map):
         """Test PANTHER database: no names in matches API, resolved via XML."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["panther"]
 
         match = create_signature("PTHR11454", library="PANTHER", score=0.0)
@@ -773,35 +773,35 @@ class TestNewInterProDatabases:
         mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["panther"] == "PTHR11454 (Insulin)|0.0"
 
     def test_prosite_with_name_no_score(self):
         """Test PROSITE database: has names, no scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["prosite"]
 
         match = create_signature("PS00009", name="INSULIN", library="PROSITE patterns")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["prosite"] == "PS00009 (INSULIN)"
 
     def test_prints_with_name_no_score(self):
         """Test PRINTS database: has names, no scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["prints"]
 
         match = create_signature("PR00276", name="INSULIN", library="PRINTS")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["prints"] == "PR00276 (INSULIN)"
@@ -809,7 +809,7 @@ class TestNewInterProDatabases:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_multiple_new_databases_simultaneously(self, mock_name_map):
         """Test fetching multiple new databases in one parse call."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["smart", "cdd", "panther", "prosite", "prints"]
 
         matches = [
@@ -825,7 +825,7 @@ class TestNewInterProDatabases:
         mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         ann = result[0].annotations
@@ -1021,7 +1021,7 @@ def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     """
     from protspace.data.annotations.encoding import decode_field, encode_field
 
-    md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+    md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
     annotations = ["cath"]
 
     raw_name = "Ribosomal Protein L15; Chain: K; domain 2"
@@ -1032,7 +1032,7 @@ def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     mock_cath_names.return_value = {"1.10.10.10": raw_name}
 
     retriever = InterProAnnotationRetriever(annotations=annotations)
-    result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+    result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
     assert len(result) == 1
     cath_value = result[0].annotations["cath"]
@@ -1050,3 +1050,74 @@ def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     name_in_parens = cath_value.split("(", 1)[1].rsplit(")", 1)[0]
     assert name_in_parens == encoded_name
     assert decode_field(name_in_parens) == raw_name
+
+
+def _md5(sequence: str) -> str:
+    import hashlib
+
+    return hashlib.md5(sequence.encode("utf-8")).hexdigest().upper()
+
+
+def _fake_matches_endpoint(results_by_md5: dict[str, dict], submitted: list[str]):
+    """A stand-in for the InterPro matches POST that answers per submitted MD5."""
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        submitted.extend(json["md5"])
+        response = Mock(spec=requests.Response)
+        response.status_code = 200
+        response.headers = {}
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "results": [results_by_md5[md5] for md5 in json["md5"]]
+        }
+        return response
+
+    return fake_post
+
+
+class TestIdenticalSequences:
+    """InterPro is queried per sequence MD5, so identical sequences are one
+    lookup. Keeping one identifier per MD5 silently emptied the others, and an
+    empty cell reads as "no InterPro match" (88,238 Swiss-Prot rows)."""
+
+    def test_every_protein_sharing_a_sequence_gets_its_matches(self):
+        shared, unique, unknown = "MKTAYIAKQR", "MVLSPADKTN", "MSTNPKPQRK"
+        sequences = {
+            "P1": shared,
+            "P2": shared,
+            "P3": unique,
+            "P4": unknown,
+            "P5": unknown,
+        }
+        results = {
+            _md5(shared): create_api_result(
+                _md5(shared),
+                matches=[create_signature("PF00001", name="7tm_1", score=50.2)],
+            ),
+            _md5(unique): create_api_result(
+                _md5(unique),
+                matches=[create_signature("PF00002", name="7tm_2", score=60.5)],
+            ),
+            _md5(unknown): create_api_result(_md5(unknown), found=False),
+        }
+        submitted: list[str] = []
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        with patch(
+            "requests.post", side_effect=_fake_matches_endpoint(results, submitted)
+        ):
+            result = retriever.fetch_annotations()
+
+        by_id = {row.identifier: row.annotations["pfam"] for row in result}
+        assert by_id == {
+            "P1": "PF00001 (7tm_1)|50.2",
+            "P2": "PF00001 (7tm_1)|50.2",
+            "P3": "PF00002 (7tm_2)|60.5",
+            "P4": "",
+            "P5": "",
+        }
+        # Identical sequences are still one lookup each.
+        assert sorted(submitted) == sorted(results)
+        assert retriever.failed_batch_count == 0

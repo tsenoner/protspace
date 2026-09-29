@@ -159,15 +159,17 @@ class InterProRetriever(BaseAnnotationRetriever):
             )
             return []
 
-        # Calculate MD5 hashes for sequences
-        md5_to_identifier = {}
+        # Group identifiers by sequence MD5. InterPro is queried per MD5, so
+        # identical sequences are one lookup whose matches belong to every
+        # protein that has that sequence.
+        md5_to_identifiers: dict[str, list[str]] = {}
         missing_sequences = []
 
-        for header in self.headers:
+        for header in dict.fromkeys(self.headers):
             if header in self.sequences:
                 sequence = self.sequences[header]
                 md5_hash = hashlib.md5(sequence.encode("utf-8")).hexdigest().upper()
-                md5_to_identifier[md5_hash] = header
+                md5_to_identifiers.setdefault(md5_hash, []).append(header)
             else:
                 missing_sequences.append(header)
 
@@ -177,12 +179,12 @@ class InterProRetriever(BaseAnnotationRetriever):
                 f" (likely deleted from UniProt): {missing_sequences[:5]}..."
             )
 
-        if not md5_to_identifier:
+        if not md5_to_identifiers:
             logger.error("No valid sequences found for MD5 calculation")
             return []
 
         # Fetch InterPro matches
-        md5s = list(md5_to_identifier.keys())
+        md5s = list(md5_to_identifiers.keys())
         api_results = self._get_matches_in_batches(md5s)
 
         if not api_results:
@@ -190,7 +192,7 @@ class InterProRetriever(BaseAnnotationRetriever):
             return []
 
         # Parse results and create annotations
-        return self._parse_interpro_results(api_results, md5_to_identifier)
+        return self._parse_interpro_results(api_results, md5_to_identifiers)
 
     def _get_matches_in_batches(self, md5s: list[str]) -> list[dict]:
         """
@@ -243,14 +245,15 @@ class InterProRetriever(BaseAnnotationRetriever):
         return all_results
 
     def _parse_interpro_results(
-        self, api_results: list[dict], md5_to_identifier: dict[str, str]
+        self, api_results: list[dict], md5_to_identifiers: dict[str, list[str]]
     ) -> list[NamedTuple]:
         """
         Parse InterPro API results and extract relevant annotations with confidence scores.
 
         Args:
             api_results: Raw API results from InterPro
-            md5_to_identifier: Mapping from MD5 hash to protein identifier
+            md5_to_identifiers: Mapping from MD5 hash to every protein identifier
+                with that sequence; each of them receives the sequence's values
 
         Returns:
             List of ProteinAnnotations with parsed InterPro data in pipe-separated format:
@@ -263,22 +266,21 @@ class InterProRetriever(BaseAnnotationRetriever):
         # Create reverse mapping from API database names to our keys
         api_to_key = {v: k for k, v in INTERPRO_MAPPING.items()}
 
-        # Initialize annotation dictionary for each protein
+        # Initialize annotation dictionary for each sequence
         # Store accessions, names, and scores separately to maintain correspondence
-        protein_annotations = {}
-        for identifier in md5_to_identifier.values():
-            protein_annotations[identifier] = {
+        sequence_annotations = {
+            md5: {
                 annotation: {"accessions": [], "names": [], "scores": []}
                 for annotation in self.annotations
             }
+            for md5 in md5_to_identifiers
+        }
 
         # Parse API results
         for result in api_results:
             sequence_md5 = result.get("md5")
-            if not result.get("found") or sequence_md5 not in md5_to_identifier:
+            if not result.get("found") or sequence_md5 not in sequence_annotations:
                 continue
-
-            protein_id = md5_to_identifier[sequence_md5]
 
             for match in result.get("matches", []):
                 signature = match.get("signature", {})
@@ -295,15 +297,15 @@ class InterProRetriever(BaseAnnotationRetriever):
                             signature_name = signature.get("name", "")
                             score = match.get("score")
 
-                            protein_annotations[protein_id][annotation_key][
+                            sequence_annotations[sequence_md5][annotation_key][
                                 "accessions"
                             ].append(signature_accession)
                             # Store name, using empty string if not available
-                            protein_annotations[protein_id][annotation_key][
+                            sequence_annotations[sequence_md5][annotation_key][
                                 "names"
                             ].append(signature_name)
                             # Store score, using empty string if not available
-                            protein_annotations[protein_id][annotation_key][
+                            sequence_annotations[sequence_md5][annotation_key][
                                 "scores"
                             ].append(str(score) if score is not None else "")
 
@@ -313,7 +315,7 @@ class InterProRetriever(BaseAnnotationRetriever):
         for annotation_key in self.annotations:
             if annotation_key in ENTRY_API_DB_MAPPING:
                 all_accessions = set()
-                for annotations_data in protein_annotations.values():
+                for annotations_data in sequence_annotations.values():
                     if annotation_key in annotations_data:
                         all_accessions.update(
                             annotations_data[annotation_key]["accessions"]
@@ -322,9 +324,9 @@ class InterProRetriever(BaseAnnotationRetriever):
                     all_accessions, annotation_key
                 )
 
-        # Convert to ProteinAnnotations objects
+        # Convert to ProteinAnnotations objects, one per protein
         result = []
-        for identifier, annotations_dict in protein_annotations.items():
+        for sequence_md5, annotations_dict in sequence_annotations.items():
             # Convert to pipe-separated format: accession|score1,score2;accession2|score1
             processed_annotations = {}
             for annotation_name, annotation_data in annotations_dict.items():
@@ -383,10 +385,11 @@ class InterProRetriever(BaseAnnotationRetriever):
                 else:
                     processed_annotations[annotation_name] = ""
 
-            result.append(
+            result.extend(
                 ProteinAnnotations(
-                    identifier=identifier, annotations=processed_annotations
+                    identifier=identifier, annotations=dict(processed_annotations)
                 )
+                for identifier in md5_to_identifiers[sequence_md5]
             )
 
         logger.info(f"Processed InterPro annotations for {len(result)} proteins")
