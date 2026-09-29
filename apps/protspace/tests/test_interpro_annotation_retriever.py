@@ -1202,3 +1202,63 @@ class TestMatchRequestRetry:
         # The second batch is still parsed; the lost one reads as unmatched,
         # which is why the source must be flagged incomplete.
         assert by_id == {"P0": "", "P1": "", "P2": "PF00001|1.0", "P3": "PF00001|1.0"}
+
+
+class TestOutageBreaker:
+    """With retries, a lost batch costs four attempts and at least 7 s of
+    backoff. During a full outage that was paid for each of the ~5,700
+    Swiss-Prot batches, over 10 hours of sleep alone, although the first lost
+    batch already made the source incomplete and uncached."""
+
+    @staticmethod
+    def _one_protein_per_batch(monkeypatch, count: int) -> dict[str, str]:
+        import sys
+
+        # Patch the module the retriever under test was loaded from.
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 1)
+        return TestMatchRequestRetry._proteins(count)
+
+    @staticmethod
+    def _limit() -> int:
+        import sys
+
+        return sys.modules[InterProRetriever.__module__]._MAX_CONSECUTIVE_LOST_BATCHES
+
+    def test_a_service_that_stays_down_is_not_asked_batch_after_batch(
+        self, monkeypatch, caplog
+    ):
+        from protspace.data.annotations.retrievers import http_utils
+
+        sequences = self._one_protein_per_batch(monkeypatch, self._limit() + 5)
+        calls = TestMatchRequestRetry._serve(monkeypatch, [503] * 1000)
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        retriever.fetch_annotations()
+
+        assert len(calls) == self._limit() * http_utils.MAX_ATTEMPTS
+        # Every batch counts as lost, requested or not.
+        assert retriever.failed_batch_count == len(sequences)
+        stopped = [r for r in caplog.records if "remaining 5 of" in r.getMessage()]
+        assert len(stopped) == 1
+
+    def test_a_batch_that_gets_through_resets_the_count(self, monkeypatch):
+        from protspace.data.annotations.retrievers import http_utils
+
+        limit = self._limit()
+        sequences = self._one_protein_per_batch(monkeypatch, 2 * limit)
+        lost = [503] * http_utils.MAX_ATTEMPTS
+        # limit - 1 lost batches, one answered, limit - 1 lost, one answered.
+        outcomes = lost * (limit - 1) + [None] + lost * (limit - 1) + [None]
+        calls = TestMatchRequestRetry._serve(monkeypatch, outcomes)
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        result = retriever.fetch_annotations()
+
+        assert len(calls) == len(outcomes)
+        assert retriever.failed_batch_count == 2 * (limit - 1)
+        matched = [row.identifier for row in result if row.annotations["pfam"]]
+        assert matched == [f"P{limit - 1}", f"P{2 * limit - 1}"]

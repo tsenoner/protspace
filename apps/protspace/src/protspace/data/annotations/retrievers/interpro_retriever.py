@@ -48,6 +48,12 @@ INTERPRO_ENTRY_URL = "https://www.ebi.ac.uk/interpro/api/entry"
 CHUNK_SIZE = 100  # As per API documentation for batch requests
 # Per attempt. The slowest batch observed took 24 s; retries cover the tail.
 MATCHES_TIMEOUT = 30
+# Batches lost in a row, each after its full retry budget, before InterPro is
+# taken to be down and the remaining batches are counted lost unrequested. A
+# lost batch costs at least 7 s of backoff and up to about two minutes with
+# timeouts, and the first one already makes the source incomplete, so asking
+# thousands more during an outage only adds hours.
+_MAX_CONSECUTIVE_LOST_BATCHES = 10
 
 # Mapping from annotation key to InterPro entry API database path
 # Used to resolve human-readable names for databases where the matches API
@@ -214,10 +220,23 @@ class InterProRetriever(BaseAnnotationRetriever):
             f"Submitting {len(md5s)} sequences to InterPro API in {len(chunks)} batch(es)..."
         )
 
+        consecutive_lost = 0
         with tqdm(
             total=len(md5s), desc="Fetching InterPro annotations", unit="seq"
         ) as pbar:
             for i, chunk in enumerate(chunks, 1):
+                if consecutive_lost >= _MAX_CONSECUTIVE_LOST_BATCHES:
+                    skipped = len(chunks) - i + 1
+                    self.failed_batch_count += skipped
+                    logger.error(
+                        f"InterPro lost {consecutive_lost} batches in a row, so it "
+                        f"is taken to be down; the remaining {skipped} of "
+                        f"{len(chunks)} batches are not requested. InterPro "
+                        "annotations are incomplete and will not be cached."
+                    )
+                    pbar.update(sum(len(c) for c in chunks[i - 1 :]))
+                    break
+
                 post_url = f"{BASE_URL}/matches"
                 payload = {"md5": chunk}
 
@@ -233,9 +252,11 @@ class InterProRetriever(BaseAnnotationRetriever):
                     )
                     batch_results = response.json().get("results", [])
                     all_results.extend(batch_results)
+                    consecutive_lost = 0
 
                 except requests.exceptions.RequestException as e:
                     self.failed_batch_count += 1
+                    consecutive_lost += 1
                     logger.error(f"InterPro batch {i} of {len(chunks)} failed: {e}")
 
                 pbar.update(len(chunk))
