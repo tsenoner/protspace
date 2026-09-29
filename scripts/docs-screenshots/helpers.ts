@@ -87,7 +87,30 @@ export async function waitForDataLoad(
     polling: 100,
   });
 
+  await assertProductStartupDataset(page);
   await awaitTwoFrames(page);
+}
+
+/**
+ * The captures photograph the product demo (`./data.parquetbundle`). A dev
+ * server left on :8080 by an E2E run serves the app with the startup load
+ * pinned to a test fixture (`VITE_STARTUP_DATASET_URL`, a `/@fs/` URL), and
+ * this config starts no server of its own, so refuse to capture from it.
+ */
+async function assertProductStartupDataset(page: Page): Promise<void> {
+  const pinned = await page.evaluate(
+    () =>
+      performance
+        .getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((name) => name.includes('/@fs/') && name.endsWith('.parquetbundle')) ?? null,
+  );
+  if (pinned) {
+    throw new Error(
+      `The app on :8080 loaded the E2E startup fixture (${pinned}), not the product demo: ` +
+        'stop that dev server and start `pnpm dev` before `pnpm docs:images`.',
+    );
+  }
 }
 
 /**

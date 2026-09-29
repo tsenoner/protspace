@@ -65,6 +65,10 @@ export default defineConfig({
         // product's demo bundle. A dev server that was already running locally
         // (reuseExistingServer) was started without it: stop it before a run.
         env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
+        // Stop the server with the run. A pinned server left on :8080 would be
+        // picked up by `pnpm docs:images` (the root config starts none), whose
+        // captures would then photograph the fixture instead of the product demo.
+        gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
       },
 
   use: {
