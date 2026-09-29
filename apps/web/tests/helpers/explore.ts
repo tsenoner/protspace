@@ -88,6 +88,55 @@ export async function waitForProteinCount(
     .catch(() => {});
 }
 
+/** The view the control bar shows: colour-by annotation, projection and tooltip annotations. */
+export interface ControlBarView {
+  annotation: string | null;
+  projection: string | null;
+  tooltip: string[];
+}
+
+export async function getControlBarView(page: Page): Promise<ControlBarView> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & {
+          selectedAnnotation?: string;
+          selectedProjection?: string;
+          tooltipAnnotations?: string[];
+        })
+      | null;
+    return {
+      annotation: controlBar?.selectedAnnotation ?? null,
+      projection: controlBar?.selectedProjection ?? null,
+      tooltip: [...(controlBar?.tooltipAnnotations ?? [])],
+    };
+  });
+}
+
+/** A catalog entry's curated view, in the shape `getControlBarView` reads. */
+export function curatedViewOf(entry: {
+  defaultView: { projection: string; annotation: string; tooltip?: readonly string[] };
+}): ControlBarView {
+  return {
+    annotation: entry.defaultView.annotation,
+    projection: entry.defaultView.projection,
+    tooltip: [...(entry.defaultView.tooltip ?? [])],
+  };
+}
+
+/**
+ * Collects the development-mode warnings `dataset-controller.ts` logs when a
+ * loaded example's bundle lacks one of its `defaultView` names.
+ */
+export function collectDefaultViewDriftWarnings(page: Page): string[] {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().includes('defaultView names missing')) {
+      warnings.push(message.text());
+    }
+  });
+  return warnings;
+}
+
 export async function getCurrentDatasetName(page: Page): Promise<string | null> {
   return page.evaluate(() => {
     const controlBar = document.querySelector('protspace-control-bar') as

@@ -202,6 +202,19 @@ export default defineConfig({
       },
       testMatch: /example-datasets\.spec\.ts/,
     },
+    // The product's examples, opened from the files the product serves (not fixtures):
+    // each must land on its curated view, and the run writes the Example datasets page's
+    // thumbnails. Run `pnpm examples:fetch` first, then opt in via RUN_EXAMPLES_E2E=1.
+    // Serial, so two large bundles never load at once.
+    ...optIn('RUN_EXAMPLES_E2E', {
+      name: 'examples-live',
+      fullyParallel: false,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /examples-live\.spec\.ts/,
+    }),
     {
       name: 'multi-annotation-tooltip',
       use: {

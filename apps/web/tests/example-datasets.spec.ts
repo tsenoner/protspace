@@ -7,7 +7,10 @@ import {
   type ExampleDataset,
 } from '../src/explore/example-datasets';
 import {
+  collectDefaultViewDriftWarnings,
+  curatedViewOf,
   dismissTourIfPresent,
+  getControlBarView,
   getCurrentDatasetName,
   getProteinCount,
   openImportMenu,
@@ -15,6 +18,7 @@ import {
   waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
   waitForProteinCount,
+  type ControlBarView,
 } from './helpers/explore';
 import { e2eExample, exampleBundleGlob, serveExampleFixtures } from './helpers/example-fixtures';
 import { PHOSPHATASE_1587_FIXTURE, STARTUP_DATASET_URL } from './helpers/fixtures';
@@ -73,58 +77,17 @@ async function isExampleDisabled(page: Page, id: string): Promise<boolean> {
   return page.locator(`protspace-control-bar [data-example-id="${id}"]`).isDisabled();
 }
 
-interface ControlBarView {
-  annotation: string | null;
-  projection: string | null;
-  tooltip: string[];
-}
-
-async function getControlBarView(page: Page): Promise<ControlBarView> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & {
-          selectedAnnotation?: string;
-          selectedProjection?: string;
-          tooltipAnnotations?: string[];
-        })
-      | null;
-    return {
-      annotation: controlBar?.selectedAnnotation ?? null,
-      projection: controlBar?.selectedProjection ?? null,
-      tooltip: [...(controlBar?.tooltipAnnotations ?? [])],
-    };
-  });
-}
-
 /** The catalog's curated view for `id`, in the shape `getControlBarView` reads. */
 function curatedView(id: string): ControlBarView {
   const entry = findExampleDataset(id);
   if (!entry) {
     throw new Error(`Catalog is missing the "${id}" example used by this test.`);
   }
-  return {
-    annotation: entry.defaultView.annotation,
-    projection: entry.defaultView.projection,
-    tooltip: [...(entry.defaultView.tooltip ?? [])],
-  };
+  return curatedViewOf(entry);
 }
 
 async function getSearch(page: Page): Promise<string> {
   return page.evaluate(() => window.location.search);
-}
-
-/**
- * Collects the development-mode warnings `dataset-controller.ts` logs when a
- * loaded example's bundle lacks one of its `defaultView` names.
- */
-function collectDefaultViewDriftWarnings(page: Page): string[] {
-  const warnings: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'warning' && message.text().includes('defaultView names missing')) {
-      warnings.push(message.text());
-    }
-  });
-  return warnings;
 }
 
 async function getUrlParam(page: Page, key: string): Promise<string | null> {

@@ -29,3 +29,18 @@ The EAT captures are the only ones that do not use the app's built-in demo datas
 pinned test fixture `apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle` through the real file
 input, because the demo dataset carries no `*__pred_*` columns. They live in `capture-eat-static.spec.ts` and
 `capture-eat-animations.spec.ts` with shared setup in `eat-helpers.ts`.
+
+## The example thumbnails
+
+`examples/<id>.png` are the [Example Datasets](../example-datasets.md) page's thumbnails, one per
+catalog example. They come from the opt-in `examples-live` E2E project, which opens every example
+from the files the product serves and checks that it lands on its curated view:
+
+```bash
+pnpm examples:fetch
+RUN_EXAMPLES_E2E=1 pnpm test:e2e --project=examples-live
+```
+
+Set `EXAMPLES_THUMBNAIL_DIR` to write them elsewhere, for example to review a candidate curated
+view before committing it. `pnpm docs:examples:check` fails when a card's thumbnail is missing
+(`THUMBNAILS_PENDING` in `docs/scripts/example-details.ts` lists the ones not captured yet).
