@@ -338,6 +338,54 @@ class TestFailedRefresh:
         assert calls == ["uniprot"]
         assert again["protein_families"].tolist() == [CURRENT_FAMILY]
 
+    def test_a_lost_uniprot_batch_does_not_cost_a_finished_ted_pass(
+        self, tmp_path, monkeypatch
+    ):
+        """The stale family is not a value to protect, so TED is still saved.
+
+        Counting the stale column as protected made every write of the run
+        stand down, leaving the version-1 cache in place: the next run then
+        repeated the refresh and the whole TED pass.
+        """
+        _write_v1_cache(tmp_path)
+        cache = _read_cache(tmp_path).drop(columns=["ted_domains"])
+        cache.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 1}
+        cache.to_parquet(tmp_path / CACHE_NAME, index=False)
+        calls: list = []
+        _lose_uniprot_batches(monkeypatch, calls)
+
+        def ted(retriever):
+            calls.append("ted")
+            return [
+                ProteinAnnotations(identifier=h, annotations={"ted_domains": "-|90.0"})
+                for h in retriever.headers
+            ]
+
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", ted)
+        annotations = ["gene_name", "protein_families", "ted_domains"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
+
+        assert calls == ["uniprot", "ted"]
+        assert result["gene_name"].tolist() == ["CACHED_GENE"]
+        cache = _read_cache(tmp_path)
+        assert cache["ted_domains"].tolist() == ["-|90.0"]
+        # The values the refresh did not question are kept; the stale family
+        # is not, so nothing stale is stamped current.
+        assert cache["gene_name"].tolist() == ["CACHED_GENE"]
+        assert not _holds_stale_value_as_current(cache, "protein_families")
+        assert "pfam" not in cache.columns
+
+        # The next run refreshes UniProt and reuses TED.
+        calls.clear()
+        _serve_uniprot(monkeypatch, calls)
+        _forbid_ted(monkeypatch)
+        again = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
+
+        assert calls == ["uniprot"]
+        assert again["protein_families"].tolist() == [CURRENT_FAMILY]
+        assert again["ted_domains"].tolist() == ["-|90.0"]
+
 
 @pytest.mark.parametrize("column", sorted(INTERPRO_ANNOTATIONS))
 def test_every_interpro_column_is_stale_in_a_v1_cache(column):

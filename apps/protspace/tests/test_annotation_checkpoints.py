@@ -9,6 +9,7 @@ checkpointed as soon as it completes. All HTTP is mocked.
 import pandas as pd
 import pytest
 
+from protspace.data.annotations.encoding import annotation_cache_version_attrs
 from protspace.data.annotations.manager import ProteinAnnotationManager
 from protspace.data.annotations.retrievers.interpro_retriever import (
     InterProRetriever,
@@ -373,13 +374,17 @@ class TestCacheWarnings:
 class TestNothingWritten:
     def test_a_full_cache_hit_writes_nothing(self, tmp_path, monkeypatch):
         cache_path = tmp_path / CACHE_NAME
-        pd.DataFrame(
+        cached = pd.DataFrame(
             {
                 "identifier": ["P01308"],
                 **{k: [v] for k, v in _uniprot_row("INS").items()},
                 "pfam": ["PF00049|1.0"],
             }
-        ).to_parquet(cache_path, index=False)
+        )
+        # Stamped current: an unstamped pfam predates the InterPro fix and is
+        # refreshed, which is not a cache hit.
+        cached.attrs = annotation_cache_version_attrs()
+        cached.to_parquet(cache_path, index=False)
         before = cache_path.stat().st_mtime_ns
 
         def no_fetch(*_args, **_kwargs):

@@ -332,8 +332,8 @@ def fetch_annotations(
     if legacy_uniprot is not None and manager.uniprot_fetch_failed:
         logger.warning(
             "Legacy UniProt cache refresh failed; reusing the cached "
-            "annotations for this run and leaving the cache "
-            "unversioned so a later run retries the refresh"
+            "annotations for this run. No stale column is cached as current, "
+            "so a later run that requests one retries the refresh"
         )
         fetched.frame = _restore_cached_columns(fetched.frame, legacy_uniprot)
         fetched.uniprot_releases |= read_release_stamp(legacy_uniprot)
