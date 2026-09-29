@@ -10,6 +10,7 @@
     "dev:docs": "vitepress dev docs",
     "docs:annotations": "tsx docs/scripts/generate-annotations.mts",
     "docs:annotations:check": "tsx docs/scripts/generate-annotations.mts --check",
+    "examples:fetch": "tsx scripts/examples/fetch.mts",
     "docs:build": "NODE_ENV=production vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "docs:screenshots": "playwright test --project=screenshots",

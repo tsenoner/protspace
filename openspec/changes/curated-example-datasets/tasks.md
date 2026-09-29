@@ -122,13 +122,13 @@ Before every commit:
   - Export only consumed symbols (knip `ignoreExportsUsedInFile: false`).
   - Generate the interim manifest from the current repo-hosted bundles (`release: null`). Unit-test the writer, and run `uv run ruff check`.
 - [x] 4.2 Catalog derives `url`, `sizeBytes` and the label's count and size from the manifest record (`./<file>` for repo-hosted, `./examples/<file>` for release-hosted). Any `import.meta.env` read is optional-chained, so tsx can load the module.
-- [ ] 4.3 `scripts/examples/fetch.mts` (tsx):
+- [x] 4.3 `scripts/examples/fetch.mts` (tsx; `--base-url` points it at a mirror or a local server):
   - `pnpm examples:fetch [--out dir] [--with-retained]` downloads `https://github.com/tsenoner/protspace/releases/download/<release>/<file>` for every release-hosted record;
   - it verifies bytes and sha256, verifies the in-repo demo against its record, and exits non-zero on any mismatch or missing asset;
   - it is a no-op for an all-repo manifest.
   - Add `apps/web/public/examples/` and `perf/datasets/` to `.gitignore`.
-- [ ] 4.4 `deploy.yml`: after `pnpm build`, run `pnpm examples:fetch --out apps/web/dist/examples --with-retained`; the deploy fails on any mismatch.
-  - `ci.yml`: a job on PRs that touch `example-manifest.ts` runs the same fetch into a temporary directory.
+- [x] 4.4 `deploy.yml`: after `pnpm build`, run `pnpm examples:fetch --out apps/web/dist/examples --with-retained`; the deploy fails on any mismatch.
+  - A job on PRs that touch `example-manifest.ts` (its own workflow, `example-bundles.yml`, so the path filter scopes it) runs the same fetch into a temporary directory, then `write_manifest.py --refresh --check` against the fetched files.
 - [x] 4.5 Development fallback: in `import.meta.env.DEV`, when a release-hosted file's same-origin fetch is not OK or returns HTML, retry from `https://protspace.app/examples/<file>`. Unit test with mocked `fetch`: a production build never leaves the origin.
 - [ ] 4.6 Fixtures: add byte-identical copies (the same blobs) in `apps/web/tests/fixtures/`:
   - `demo_toxprot_7831` (from `public/data.parquetbundle`);

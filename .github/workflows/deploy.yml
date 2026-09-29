@@ -72,6 +72,15 @@ jobs:
           mkdir -p apps/web/dist/docs
           cp -r docs/.vitepress/dist/* apps/web/dist/docs/
 
+      # The example bundles are not in git: each release-hosted example in
+      # apps/web/src/explore/example-manifest.ts, plus the previous release's
+      # retained files (kept one cycle so open tabs and published links keep
+      # working), is downloaded into dist/examples/ and checked against its
+      # manifest byte count and sha256. A missing asset or any mismatch fails
+      # the job, so nothing is published.
+      - name: Fetch and verify the example bundles
+        run: pnpm examples:fetch --out apps/web/dist/examples --with-retained
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 

@@ -1,0 +1,54 @@
+name: Example bundles
+
+# A pull request that changes which bundle files the app or the perf harness pins
+# proves the pinned files exist and match, before the deploy would find out.
+# The deploy runs the same `pnpm examples:fetch`; here it downloads into a
+# scratch directory, and the manifest writer then re-reads every file to check
+# that the committed columns, projections and protein counts are the files'.
+on:
+  pull_request:
+    # Err broad: a path filter that misses does not fail, it silently never runs.
+    paths:
+      - 'apps/web/src/explore/example-manifest.ts'
+      - 'apps/protspace/scripts/generate_examples/write_manifest.py'
+      - 'scripts/examples/**'
+      - 'package.json'
+      - '.github/workflows/example-bundles.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: example-bundles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  examples:
+    name: Example bundles match the manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch and verify every pinned example bundle
+        run: pnpm examples:fetch --out "$RUNNER_TEMP/examples" --with-retained
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+
+      - name: The manifest is what the files hold
+        run: >-
+          uv run --no-project --with pyarrow python
+          apps/protspace/scripts/generate_examples/write_manifest.py
+          --refresh --check --examples-dir "$RUNNER_TEMP/examples"

@@ -72,6 +72,12 @@ CLAUDE.md
 # Local-only large fixture for the load-reliability Playwright spec
 apps/web/tests/fixtures/sprot_50.parquetbundle
 
+# Release-hosted example bundles, downloaded by `pnpm examples:fetch` (the deploy
+# fetches them into dist/ instead; neither copy is ever committed).
+apps/web/public/examples/
+# The perf-datasets release, downloaded by `pnpm perf:fetch`.
+/perf/datasets/
+
 # Notebook scratch: the Colab notebooks fetch/write these into the working
 # directory, which is the repo root when they are run locally.
 # No .h5 is tracked anywhere, so that one is repo-wide. Bundles are tracked
