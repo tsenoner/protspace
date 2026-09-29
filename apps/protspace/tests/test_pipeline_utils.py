@@ -1314,6 +1314,201 @@ def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monke
     assert pd.read_parquet(cache_path)["identifier"].tolist() == ["OLD1"]
 
 
+class TestRowsOutsideTheRun:
+    """A run for part of the cache must not write values it never fetched.
+
+    A source fetched for the run's proteins has no value for a cached protein
+    outside the run. Writing that row with an empty cell would read as "no
+    annotation" to every later run, which then never fetches it.
+    """
+
+    @staticmethod
+    def _cache(cache_dir, **columns):
+        uniprot = {
+            "gene_name": ["INS", "IGF"],
+            "protein_name": ["Insulin", "IGF"],
+            "uniprot_kb_id": ["INS_HUMAN", "IGF_HUMAN"],
+            "organism_id": ["9606", "9606"],
+            "sequence": ["MALW", "MGKI"],
+        }
+        cached = pd.DataFrame(
+            {"identifier": ["P01308", "P01315"], **uniprot, **columns}
+        )
+        cached.attrs = annotation_cache_version_attrs()
+        cached.to_parquet(cache_dir / "all_annotations.parquet", index=False)
+
+    @staticmethod
+    def _forbid_uniprot(monkeypatch):
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            UniProtRetriever,
+        )
+
+        def cached_only(_self):
+            raise AssertionError("UniProt is cached for every protein")
+
+        monkeypatch.setattr(UniProtRetriever, "fetch_annotations", cached_only)
+
+    def test_a_new_source_is_fetched_later_for_proteins_outside_the_run(
+        self, tmp_path, monkeypatch
+    ):
+        from protspace.data.annotations.retrievers.ted_retriever import TedRetriever
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+        )
+
+        self._cache(tmp_path)
+        self._forbid_uniprot(monkeypatch)
+        ted_calls = []
+
+        def ted(retriever):
+            ted_calls.append(list(retriever.headers))
+            return [
+                ProteinAnnotations(identifier=h, annotations={"ted_domains": "-|90.0"})
+                for h in retriever.headers
+            ]
+
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", ted)
+        annotations = ["gene_name", "ted_domains"]
+
+        _cache_pipeline(tmp_path, annotations=annotations)._fetch_annotations(
+            ["P01308"]
+        )
+        cached = pd.read_parquet(tmp_path / "all_annotations.parquet")
+        assert cached.set_index("identifier").loc["P01308", "ted_domains"] == "-|90.0"
+        # P01315 was never looked up, so no TED value may be cached for it.
+        assert "P01315" not in cached["identifier"].tolist()
+
+        monkeypatch.undo()
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", ted)
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            UniProtRetriever,
+        )
+
+        monkeypatch.setattr(
+            UniProtRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={"gene_name": "IGF", "organism_id": "9606"},
+                )
+                for h in retriever.headers
+            ],
+        )
+        result = _cache_pipeline(tmp_path, annotations=annotations)._fetch_annotations(
+            ["P01315"]
+        )
+
+        assert ted_calls == [["P01308"], ["P01315"]]
+        assert result.set_index("identifier").loc["P01315", "ted_domains"] == "-|90.0"
+
+    def test_a_refetched_source_keeps_its_cached_values_outside_the_run(
+        self, tmp_path, monkeypatch
+    ):
+        """Adding `smart` for one protein must not blank another's cached `pfam`."""
+        from protspace.data.annotations.retrievers.interpro_retriever import (
+            InterProRetriever,
+        )
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+        )
+
+        self._cache(tmp_path, pfam=["PF00049|1.0", "PF00219|2.0"])
+        self._forbid_uniprot(monkeypatch)
+        monkeypatch.setattr(
+            InterProRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={"pfam": "PF00049|1.0", "smart": "SM00078|2.0"},
+                )
+                for h in retriever.headers
+            ],
+        )
+
+        _cache_pipeline(
+            tmp_path, annotations=["gene_name", "pfam", "smart"]
+        )._fetch_annotations(["P01308"])
+
+        cached = pd.read_parquet(tmp_path / "all_annotations.parquet")
+        by_id = cached.set_index("identifier")
+        assert by_id.loc["P01308", "smart"] == "SM00078|2.0"
+        # P01315 has no fetched `smart`, and its cached `pfam` must not be
+        # replaced by the empty value it got from a fetch it was not part of.
+        assert "P01315" not in by_id.index
+
+    def test_a_refetch_for_part_of_the_cache_never_blanks_the_rest(
+        self, tmp_path, monkeypatch
+    ):
+        from protspace.data.annotations.retrievers.ted_retriever import TedRetriever
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+        )
+
+        self._cache(tmp_path, ted_domains=["-|80.0", "-|70.0"])
+        self._forbid_uniprot(monkeypatch)
+        monkeypatch.setattr(
+            TedRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(identifier=h, annotations={"ted_domains": "-|90.0"})
+                for h in retriever.headers
+            ],
+        )
+
+        _cache_pipeline(
+            tmp_path,
+            annotations=["gene_name", "ted_domains"],
+            refetch_stages=frozenset({"ted"}),
+        )._fetch_annotations(["P01308"])
+
+        by_id = pd.read_parquet(tmp_path / "all_annotations.parquet").set_index(
+            "identifier"
+        )
+        assert by_id.loc["P01308", "ted_domains"] == "-|90.0"
+        assert "P01315" not in by_id.index
+
+    def test_rows_outside_the_run_are_kept_when_it_adds_no_column(
+        self, tmp_path, monkeypatch
+    ):
+        """Filling in one new protein must not cost the cache its other rows."""
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+            UniProtRetriever,
+        )
+
+        self._cache(tmp_path)
+        monkeypatch.setattr(
+            UniProtRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={
+                        "gene_name": "GCG",
+                        "protein_name": "Glucagon",
+                        "uniprot_kb_id": "GLUC_HUMAN",
+                        "organism_id": "9606",
+                        "sequence": "MKSI",
+                    },
+                )
+                for h in retriever.headers
+            ],
+        )
+
+        _cache_pipeline(tmp_path, annotations=["gene_name"])._fetch_annotations(
+            ["P01308", "P01275"]
+        )
+
+        by_id = pd.read_parquet(tmp_path / "all_annotations.parquet").set_index(
+            "identifier"
+        )
+        assert by_id.loc["P01275", "gene_name"] == "GCG"
+        assert by_id.loc["P01315", "gene_name"] == "IGF"
+        assert by_id.loc["P01308", "gene_name"] == "INS"
+
+
 @pytest.mark.parametrize(
     "cached_ids", [["P1", "P2"], ["P1", "P2", "P3"]], ids=["exact", "superset"]
 )

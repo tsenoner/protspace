@@ -481,15 +481,14 @@ class ProteinAnnotationManager:
         store what the final write would refuse to. *fill_rows* says whether the
         rows filled in for identifiers the cache lacked are in *df*.
         """
+        df = self._run_rows(df)
+        if df.empty:
+            # Every row this run could write is still waiting for a source, and
+            # writing the rest alone would only lose the cached rows.
+            return
         drop = self._incomplete_columns()
         if not drop:
-            retained = self._with_retained_rows(df)
-            self._write_cache(
-                retained,
-                self._cached_releases(
-                    retained_rows=len(retained) > len(df), fill_rows=fill_rows
-                ),
-            )
+            self._write_with_retained_rows(df, fill_rows=fill_rows)
             return
 
         incomplete = ", ".join(sorted(self.incomplete_sources))
@@ -526,9 +525,34 @@ class ProteinAnnotationManager:
             self.output_path,
             incomplete,
         )
+        self._write_with_retained_rows(
+            df.drop(columns=[c for c in df.columns if c in drop]), fill_rows=fill_rows
+        )
+
+    def _run_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """*df*'s rows for this run's identifiers.
+
+        A source fetched this run was fetched for these identifiers only, so a
+        cached identifier outside the run has no value for it: the merge leaves
+        that cell empty, and written as it is, the empty cell reads as "no
+        annotation" to every later run, which then never fetches it. Rows outside
+        the run are therefore taken from the cache instead, by
+        :meth:`_with_retained_rows`, and only when they fit.
+        """
+        identifiers = df[df.columns[0]].astype(str)
+        in_run = identifiers.isin({str(h) for h in self.headers})
+        if in_run.all():
+            return df
+        return df[in_run].reset_index(drop=True)
+
+    def _write_with_retained_rows(self, df: pd.DataFrame, *, fill_rows: bool) -> None:
+        """Write *df* plus the cached rows outside the run that fit it."""
+        retained = self._with_retained_rows(df)
         self._write_cache(
-            df.drop(columns=[c for c in df.columns if c in drop]),
-            self._cached_releases(retained_rows=False, fill_rows=fill_rows),
+            retained,
+            self._cached_releases(
+                retained_rows=len(retained) > len(df), fill_rows=fill_rows
+            ),
         )
 
     def _warn_once(self, message: str, *args) -> None:
