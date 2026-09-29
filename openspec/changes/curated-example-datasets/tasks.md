@@ -118,7 +118,7 @@ Before every commit:
 
 - [x] 4.1 Manifest writer `apps/protspace/scripts/generate_examples/write_manifest.py` (pyarrow; `chore:`) emits `apps/web/src/explore/example-manifest.ts`, with:
   - top level: `release` and `retained[]`;
-  - per id: `file`, `hosting`, `bytes`, `sha256`, `proteins`, `columns`, `projections`, `releases`, `protspaceVersion`, `gitSha?`, `command`, `builtAt` and `zenodoDoi`.
+  - per id: `file`, `hosting`, `bytes`, `sha256`, `proteins`, `columns`, `projections`, `statistics` (added with §5, for the docs page), `releases`, `protspaceVersion`, `gitSha?`, `command`, `builtAt` and `zenodoDoi`.
   - Export only consumed symbols (knip `ignoreExportsUsedInFile: false`).
   - Generate the interim manifest from the current repo-hosted bundles (`release: null`). Unit-test the writer, and run `uv run ruff check`.
 - [x] 4.2 Catalog derives `url`, `sizeBytes` and the label's count and size from the manifest record (`./<file>` for repo-hosted, `./examples/<file>` for release-hosted). Any `import.meta.env` read is optional-chained, so tsx can load the module.

@@ -264,6 +264,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - `hosting` (`'repo' | 'release'`);
   - `bytes` (decoded) and `sha256`;
   - `proteins`, `columns[]` and `projections[]`;
+  - `statistics` (whether the file carries a statistics part, so the docs page can say it has separation scores);
   - `releases` (membership, plus annotations per column group);
   - `protspaceVersion`, `gitSha?`, `command` and `builtAt`;
   - `zenodoDoi`.

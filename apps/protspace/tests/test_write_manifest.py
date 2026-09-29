@@ -79,8 +79,38 @@ def test_record_reads_everything_from_the_file(tmp_path):
     assert record["columns"] == ["family", "ec"]
     assert record["projections"] == ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
     assert record["hosting"] == "repo"
+    assert record["statistics"] is False
     assert record["releases"] == {"membership": None, "annotations": {}}
     assert record["protspaceVersion"] is None
+
+
+def test_record_notes_a_statistics_part_only_when_it_has_content(tmp_path):
+    bundle = _write_bundle(
+        tmp_path / "b.parquetbundle",
+        ids=["P1"],
+        annotations={"domain": ["Bacteria"]},
+        projections=["UMAP_2"],
+    )
+    stats = _parquet(pa.table({"annotation": ["domain"], "value": [0.5]}))
+    # Statistics but no settings: an empty settings slot keeps them fifth.
+    bundle.write_bytes(DELIMITER.join([bundle.read_bytes(), b"", stats]))
+    with_stats = write_manifest.read_bundle_record(
+        bundle, example_id="x", file="b", hosting="repo"
+    )
+
+    empty = _write_bundle(
+        tmp_path / "c.parquetbundle",
+        ids=["P1"],
+        annotations={"domain": ["Bacteria"]},
+        projections=["UMAP_2"],
+        extra_parts=2,
+    )
+    without_stats = write_manifest.read_bundle_record(
+        empty, example_id="x", file="c", hosting="repo"
+    )
+
+    assert with_stats["statistics"] is True
+    assert without_stats["statistics"] is False
 
 
 def test_record_takes_the_first_column_as_ids_when_none_is_named(tmp_path):

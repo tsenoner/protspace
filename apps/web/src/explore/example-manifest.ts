@@ -16,6 +16,8 @@ interface ExampleBundleRecord {
   readonly columns: readonly string[];
   /** Projection names, in file order. */
   readonly projections: readonly string[];
+  /** Whether the bundle carries a statistics part (separation scores, from `protspace stats`). */
+  readonly statistics: boolean;
   readonly releases: {
     /** UniProt release the protein set was drawn from. */
     readonly membership: string | null;
@@ -79,6 +81,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "ESM2-650M — UMAP 2",
         "ESM2-650M — PCA 2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -138,6 +141,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "ProtT5 — PCA 2",
         "ProtT5 — UMAP 2"
       ],
+      "statistics": true,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -200,6 +204,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "ESM2-650M — PCA 2",
         "ESM2-650M — UMAP 2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -226,6 +231,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "PCA_3"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -273,6 +279,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "UMAP_2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -320,6 +327,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "UMAP_2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -364,6 +372,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "UMAP_2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -393,6 +402,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "PCA_3"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -440,6 +450,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "UMAP_2",
         "PCA_2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -483,6 +494,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "UMAP_2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}
@@ -523,6 +535,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
         "PCA_2",
         "UMAP_2"
       ],
+      "statistics": false,
       "releases": {
         "membership": null,
         "annotations": {}

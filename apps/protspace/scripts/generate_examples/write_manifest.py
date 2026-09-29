@@ -5,7 +5,9 @@ The manifest is ``apps/web/src/explore/example-manifest.ts``, a generated
 TypeScript module. The Import-menu catalog
 (``apps/web/src/explore/example-datasets.ts``) derives each example's URL, size
 and label numbers from it; a unit test checks every curated ``defaultView``
-against the ``columns`` and ``projections`` recorded here; and
+against the ``columns`` and ``projections`` recorded here; the Example
+datasets docs page (``docs/scripts/generate-examples.mts``) states each
+example's size, protein count, columns and provenance from it; and
 ``pnpm examples:fetch``, which the deploy runs, verifies every served file
 against its byte count and sha256. Every value is read from the file, never
 typed by hand, so none of those checks can drift from the bytes that ship.
@@ -100,6 +102,8 @@ interface ExampleBundleRecord {
   readonly columns: readonly string[];
   /** Projection names, in file order. */
   readonly projections: readonly string[];
+  /** Whether the bundle carries a statistics part (separation scores, from `protspace stats`). */
+  readonly statistics: boolean;
   readonly releases: {
     /** UniProt release the protein set was drawn from. */
     readonly membership: string | null;
@@ -138,6 +142,15 @@ def split_bundle(data: bytes) -> list[bytes]:
     if not 3 <= len(parts) <= 5:
         raise ValueError(f"expected 3 to 5 bundle parts, found {len(parts)}")
     return parts
+
+
+def has_statistics(parts: list[bytes]) -> bool:
+    """Whether a split bundle carries a statistics part.
+
+    Part positions are fixed: statistics are always the fifth part, and a bundle
+    with statistics but no settings writes an empty fourth part to keep them there.
+    """
+    return len(parts) == 5 and len(parts[4]) > 0
 
 
 def _decode_metadata(raw: dict[bytes, bytes] | None) -> dict[str, str]:
@@ -196,6 +209,7 @@ def read_bundle_record(path: Path, *, example_id: str, file: str, hosting: str) 
         "proteins": proteins,
         "columns": columns,
         "projections": projections,
+        "statistics": has_statistics(parts),
         "releases": {
             "membership": meta.get(META_MEMBERSHIP_RELEASE),
             "annotations": _annotation_releases(meta.get(META_UNIPROT_RELEASE)),
