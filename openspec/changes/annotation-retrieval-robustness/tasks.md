@@ -112,7 +112,7 @@ section 4 runs after all three are merged back. Rules for every track:
 
 ## 3. Track 3 — pipeline (per-source cache, `annotate --cache-dir`, `uniprot_release`)
 
-- [ ] 3.1 Failing tests in a new `test_annotation_checkpoints.py`, with the retrievers mocked:
+- [x] 3.1 Failing tests in a new `test_annotation_checkpoints.py`, with the retrievers mocked:
   - UniProt and InterPro succeed and the TED fetch raises `KeyboardInterrupt`; the on-disk
     cache then holds the UniProt and InterPro columns, and a second run calls only TED;
   - a later source that is incomplete leaves the earlier checkpoint's columns cached;
@@ -121,23 +121,27 @@ section 4 runs after all three are merged back. Rules for every track:
   - in a fill-in run, rows for new identifiers are absent from a checkpoint until every pending
     source has filled them in;
   - a full cache hit writes nothing, and neither does `output_path=None`.
-- [ ] 3.2 Checkpoint in `ProteinAnnotationManager.to_pd` after each source fetched this run,
+- [x] 3.2 Checkpoint in `ProteinAnnotationManager.to_pd` after each source fetched this run,
       through the final write's rules, following the two design.md rules (pending sources keep
       their cached columns; new rows wait for their pending sources). Keep the failure signals
       the manager reads unchanged. Commit:
       `fix(protspace): persist each annotation source as it finishes`.
-- [ ] 3.3 Measure one checkpoint (merge, transform, write) on a synthetic 573K-row, 40-column
+- [x] 3.3 Measure one checkpoint (merge, transform, write) on a synthetic 573K-row, 40-column
       frame, and record the time and peak memory in the PR description.
-- [ ] 3.4 Move the cache orchestration out of `ReductionPipeline._fetch_annotations` into
+      Measured on an Apple-silicon Mac, 573,649 rows × 40 columns, two sources pending:
+      7.7 s per checkpoint (merge, transform, staged parquet write of an 11 MiB file), with
+      the process's peak RSS rising by about 2.6 GB during it (3.1 GB → 5.7 GB) and a traced
+      Python peak of about 1.6 GiB.
+- [x] 3.4 Move the cache orchestration out of `ReductionPipeline._fetch_annotations` into
       `data/annotations/cache.py`: the TED-label rewrite, stale-column refresh, `--refetch`,
       fill-in, the legacy UniProt fallback and the warm-cache fast path. The pipeline method
       stays as the caller that also merges the CSV. The existing `test_pipeline_utils.py` suite
       passes without edits, apart from monkeypatch targets that moved. Commit:
       `refactor(protspace): share the annotation cache logic`.
-- [ ] 3.5 Move `REFETCH_STAGES`, `ANNOTATION_SOURCES`, `REFETCH_SHORTHANDS` and the refetch
+- [x] 3.5 Move `REFETCH_STAGES`, `ANNOTATION_SOURCES`, `REFETCH_SHORTHANDS` and the refetch
       parsing from `cli/prepare.py` into `cli/common_options.py`, and leave `prepare`'s
       behaviour unchanged.
-- [ ] 3.6 Failing tests in a new `test_annotate_cache_dir.py`, or in `test_annotate_cli.py`:
+- [x] 3.6 Failing tests in a new `test_annotate_cache_dir.py`, or in `test_annotate_cli.py`:
   - a run interrupted after UniProt resumes and fetches only the remaining sources, with the
     same output as an uninterrupted run;
   - `--cache-dir OUT/tmp` reuses a `prepare`-shaped cache with no API call;
@@ -146,11 +150,11 @@ section 4 runs after all three are merged back. Rules for every track:
   - without `--cache-dir` no cache file is created anywhere;
   - output from a cache holding `organism_id`/`sequence` omits them unless requested;
   - a legacy cache is refreshed through the shared path.
-- [ ] 3.7 Add `--cache-dir` and `--refetch` to `cli/annotate.py`, calling the shared function
+- [x] 3.7 Add `--cache-dir` and `--refetch` to `cli/annotate.py`, calling the shared function
       when a cache dir is given and the unchanged `output_path=None` path otherwise, so
       `test_bundle_version.py`'s fake manager keeps working. Commit:
       `feat(protspace): resume annotate from a cache directory`.
-- [ ] 3.8 Failing tests in a new `test_run_log.py`, stubbing `UniProtRetriever.releases`:
+- [x] 3.8 Failing tests in a new `test_run_log.py`, stubbing `UniProtRetriever.releases`:
   - a full fetch stamps `2026_03` on the cache;
   - a fill-in onto `2026_02` stamps both;
   - a refetch replaces the stamp;
@@ -159,11 +163,11 @@ section 4 runs after all three are merged back. Rules for every track:
   - `run.log` shows `uniprot_release: 2026_03` for a fetch and for a cache-served run, lists
     both releases for mixed input, shows `unknown`, and shows `none` for CSV-only annotations;
   - a `Mock` or a missing `releases` attribute counts as no release.
-- [ ] 3.9 Stamp `protspace_uniprot_release` in `ProteinAnnotationManager._write_cache`, only
+- [x] 3.9 Stamp `protspace_uniprot_release` in `ProteinAnnotationManager._write_cache`, only
       when known. Resolve the run's releases in `cache.py`, expose them from the pipeline, keep
       the pipeline instance in `prepare`, and write the line under `## Annotations`. Commit:
       `feat(protspace): record the UniProt release in run.log`.
-- [ ] 3.10 Track gate: the same three commands as 1.11, all clean.
+- [x] 3.10 Track gate: the same three commands as 1.11, all clean.
 
 ## 4. Integration (after tracks 1–3 are merged into `fix/annotation-retrieval`)
 

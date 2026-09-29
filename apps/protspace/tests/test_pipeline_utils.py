@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from protspace.data.annotations.cache import _migrate_legacy_ted_labels
 from protspace.data.loaders.embedding_set import (
     EmbeddingSet,
     format_param_suffix,
@@ -18,7 +19,6 @@ from protspace.data.processors.pipeline import (
     MethodSpec,
     PipelineConfig,
     ReductionPipeline,
-    _migrate_legacy_ted_labels,
     _run_with_overridden_config,
     disambiguation_suffix,
     parse_method_spec,

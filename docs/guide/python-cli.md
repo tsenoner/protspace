@@ -144,6 +144,13 @@ given without `-e`, `prot_t5` is used.
 | `--no-log`                   | Skip writing `run.log` to the output directory.                                                                                                                              | off     |
 | `-v, --verbose`              | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                                                                                                                       | -       |
 
+Each run appends its command, version, settings and timing to `run.log` in the output directory.
+The `uniprot_release:` line under `## Annotations` names the UniProtKB release the annotations came
+from (for example `2026_03`), whether they were fetched in that run or read from the annotation
+cache. It lists every release when cached and newly fetched values differ, says `unknown` for values
+from a cache written before releases were recorded, and says `none` when the annotations came only
+from a CSV file.
+
 ## Projection Methods
 
 Methods require a dimension suffix: `2` for 2D, `3` for 3D.
@@ -362,7 +369,9 @@ The annotation cache always stores scores; `--no-scores` strips them from the ou
 
 The annotation cache is read per column and per protein: a source is queried only for the proteins
 whose values the cache cannot supply, and a cache covering more proteins than the current run keeps
-those extra rows. An embedding HDF5 records the backend and model that wrote it, and a run that
+those extra rows. It is also written after each source finishes, not only at the end of the run, so
+a crash or failure in a late source (TED can run for many hours) does not cost the sources that
+already finished. An embedding HDF5 records the backend and model that wrote it, and a run that
 points at another producer's file stops rather than mixing two embedding spaces.
 
 If a source could not be fully retrieved, its columns are **left out of the cache**: a partly empty
@@ -471,12 +480,26 @@ Extract protein identifiers from an HDF5 or FASTA file and fetch their annotatio
 protspace annotate -i embeddings/prot_t5.h5 -a default -o annotations.parquet
 ```
 
-| Flag                     | Description                           | Default               |
-| ------------------------ | ------------------------------------- | --------------------- |
-| `-i, --input`            | HDF5 or FASTA file (required).        | -                     |
-| `-a, --annotations`      | Annotation sources (repeatable).      | `default`             |
-| `-o, --output`           | Output parquet path.                  | `annotations.parquet` |
-| `--scores / --no-scores` | Include annotation confidence scores. | on                    |
+| Flag                     | Description                                                                                                                                        | Default               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `-i, --input`            | HDF5 or FASTA file (required).                                                                                                                     | -                     |
+| `-a, --annotations`      | Annotation sources (repeatable).                                                                                                                   | `default`             |
+| `-o, --output`           | Output parquet path.                                                                                                                               | `annotations.parquet` |
+| `--scores / --no-scores` | Include annotation confidence scores.                                                                                                              | on                    |
+| `--cache-dir`            | Keep the annotation cache in this directory (created if missing), so a rerun resumes.                                                              | off                   |
+| `--refetch`              | With `--cache-dir`, fetch these sources again (comma-separated): `uniprot`, `taxonomy`, `interpro`, `ted`, `biocentral`. Shorthand: `annotations`. | off                   |
+
+Without `--cache-dir`, `annotate` fetches every requested source and writes only its output file.
+With it, the command reads and writes `all_annotations.parquet` in that directory under the same
+rules as `prepare`'s [intermediate cache](#intermediate-caching): each source is saved as soon as it
+finishes, and a rerun with the same arguments fetches only the sources and proteins the cache is
+missing. Pointing it at a `prepare` run's `{output}/tmp/` reuses that run's annotations.
+
+```bash
+# Interrupted during TED? Run the same command again: UniProt and InterPro come from the cache.
+protspace annotate -i sequences.fasta -a default,interpro,ted -o annotations.parquet \
+  --cache-dir annotations_cache/
+```
 
 ## `protspace stats`
 
