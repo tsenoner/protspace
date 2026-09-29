@@ -48,6 +48,17 @@ from protspace.data.io.writers import AnnotationWriter
 
 logger = logging.getLogger(__name__)
 
+# Fetch order. Taxonomy, InterPro and Biocentral read UniProt's results (the
+# organism and the sequence), so UniProt comes first.
+SOURCE_ORDER = ("uniprot", "taxonomy", "interpro", "ted", "biocentral")
+_SOURCE_COLUMNS: dict[str, list[str]] = {
+    "uniprot": UNIPROT_ANNOTATIONS,
+    "taxonomy": TAXONOMY_ANNOTATIONS,
+    "interpro": INTERPRO_ANNOTATIONS,
+    "ted": TED_ANNOTATIONS,
+    "biocentral": BIOCENTRAL_ANNOTATIONS,
+}
+
 
 def resolve_fasta_sequence_length(
     identifier: str,
@@ -127,6 +138,10 @@ class ProteinAnnotationManager:
         # all-empty placeholders, indistinguishable from real absences, so they
         # must not reach the cache.
         self.incomplete_sources: set[str] = set()
+        # Cache warnings already logged: checkpoints and the final write apply
+        # the same rules, so they would otherwise repeat one warning per source.
+        self._cache_warnings: set[str] = set()
+        self._cached_values_memo: dict = {}
         # Initialize configuration first so we can derive sources_to_fetch
         self.config = AnnotationConfiguration(annotations)
         self.user_annotations = self.config.user_annotations
@@ -158,6 +173,11 @@ class ProteinAnnotationManager:
         """
         Main workflow: fetch → merge → transform → output.
 
+        With an ``output_path``, the cache is also written after every source
+        fetched over the network except the last, whose results the final write
+        persists: sources finish hours apart at Swiss-Prot scale, and a crash in
+        a late one must not cost the ones that already finished.
+
         Returns:
             DataFrame with requested annotations
         """
@@ -168,87 +188,26 @@ class ProteinAnnotationManager:
         # served from that cache is fetched for exactly these, so "added a few
         # sequences" costs a few lookups rather than a full refetch.
         fill_in = uncached_headers(self.headers, self.cached_data)
+        self._cached_values_memo = {}
+        plan = self._fetch_plan(fill_in)
+        # Sources that go over the network this run, in fetch order.
+        pending = [s for s in SOURCE_ORDER if plan[s] and self._requests(s)]
 
-        def filled_in(cached_source, fetch):
-            """Cached annotations plus a fetch for the identifiers they lack."""
-            if not cached_source or not fill_in:
-                return cached_source
-            return list(cached_source) + list(fetch(fill_in))
-
-        # Extract cached annotations by source if available
-        cached_uniprot = (
-            self._extract_cached_source(UNIPROT_ANNOTATIONS)
-            if self.cached_data is not None and not self.sources_to_fetch["uniprot"]
-            else None
-        )
-        cached_taxonomy = (
-            self._extract_cached_taxonomy(TAXONOMY_ANNOTATIONS)
-            if self.cached_data is not None and not self.sources_to_fetch["taxonomy"]
-            else None
-        )
-        cached_interpro = (
-            self._extract_cached_source(INTERPRO_ANNOTATIONS)
-            if self.cached_data is not None and not self.sources_to_fetch["interpro"]
-            else None
-        )
-        cached_ted = (
-            self._extract_cached_source(TED_ANNOTATIONS)
-            if self.cached_data is not None and not self.sources_to_fetch.get("ted")
-            else None
-        )
-        cached_biocentral = (
-            self._extract_cached_source(BIOCENTRAL_ANNOTATIONS)
-            if self.cached_data is not None
-            and not self.sources_to_fetch.get("biocentral")
-            else None
-        )
-
-        # 1. Conditionally fetch based on sources_to_fetch
-        uniprot_annotations = (
-            self._fetch_uniprot(failed_sources)
-            if self.sources_to_fetch["uniprot"]
-            else filled_in(
-                cached_uniprot,
-                lambda headers: self._fetch_uniprot(failed_sources, headers),
+        # 1. Fetch each source (or reuse its cached values), in dependency order.
+        results: dict = {}
+        for source in SOURCE_ORDER:
+            results[source] = self._retrieve(
+                source, plan[source], results, fill_in, failed_sources
             )
-        )
-        uniprot_annotations = self._fill_missing_fasta_lengths(uniprot_annotations)
-        # One call either way: `cached_taxonomy` is None whenever taxonomy is
-        # being fetched outright, and the helper treats that as "nothing cached".
-        taxonomy_annotations = (
-            self._fetch_taxonomy(
-                uniprot_annotations, failed_sources, cached=cached_taxonomy
-            )
-            if self.sources_to_fetch["taxonomy"] or (cached_taxonomy and fill_in)
-            else cached_taxonomy
-        )
-        interpro_annotations = (
-            self._fetch_interpro(uniprot_annotations, failed_sources)
-            if self.sources_to_fetch["interpro"]
-            else filled_in(
-                cached_interpro,
-                lambda headers: self._fetch_interpro(
-                    uniprot_annotations, failed_sources, headers
-                ),
-            )
-        )
-        ted_annotations = (
-            self._fetch_ted(failed_sources)
-            if self.sources_to_fetch.get("ted")
-            else filled_in(
-                cached_ted, lambda headers: self._fetch_ted(failed_sources, headers)
-            )
-        )
-        biocentral_annotations = (
-            self._fetch_biocentral(uniprot_annotations, failed_sources)
-            if self.sources_to_fetch.get("biocentral")
-            else filled_in(
-                cached_biocentral,
-                lambda headers: self._fetch_biocentral(
-                    uniprot_annotations, failed_sources, headers
-                ),
-            )
-        )
+            if source == "uniprot":
+                results[source] = self._fill_missing_fasta_lengths(results[source])
+            if source in pending:
+                pending.remove(source)
+                # Only the checkpoint's copy of the source's old values was
+                # still needed; the source's own result replaces it.
+                self._cached_values_memo.pop(source, None)
+                if pending and self.output_path:
+                    self._write_checkpoint(results, pending, fill_in)
 
         # Report failed sources
         if failed_sources:
@@ -257,16 +216,9 @@ class ProteinAnnotationManager:
             )
 
         # 2. Merge annotations from all sources (including cached)
-        merged_annotations = self.merger.merge(
-            uniprot_annotations,
-            taxonomy_annotations,
-            interpro_annotations,
-            ted_annotations,
-            biocentral_annotations,
-        )
-
         # 3. Apply transformations
-        transformed_annotations = self.transformer.transform(merged_annotations)
+        transformed_annotations = self.transformer.transform(self._merge(results))
+        self._cached_values_memo = {}
 
         # 4. Create output
         df = self._write_cache_and_frame(transformed_annotations)
@@ -292,6 +244,127 @@ class ProteinAnnotationManager:
             return df[columns_to_keep]
 
         return df
+
+    def _requests(self, source: str) -> bool:
+        """Whether this run asks *source* for anything, i.e. may call its API."""
+        if source == "uniprot":
+            return True  # Always needed (identifiers, organism_id)
+        return bool(getattr(self.config, f"{source}_annotations"))
+
+    def _cached_values(self, source: str):
+        """The cache's values for *source*, in the shape its fetch returns.
+
+        ``None`` without a cache. Memoized for the run: a pending source's
+        cached values are read by every checkpoint written before it runs.
+        """
+        if self.cached_data is None:
+            return None
+        if source not in self._cached_values_memo:
+            self._cached_values_memo[source] = (
+                self._extract_cached_taxonomy(TAXONOMY_ANNOTATIONS)
+                if source == "taxonomy"
+                else self._extract_cached_source(_SOURCE_COLUMNS[source])
+            )
+        return self._cached_values_memo[source]
+
+    def _fetch_plan(self, fill_in: list[str]) -> dict[str, str | None]:
+        """How each source gets its values this run.
+
+        ``"all"`` fetches it for every identifier, ``"fill"`` reuses its cached
+        values and fetches only the identifiers the cache lacks, and ``None``
+        serves it from the cache alone.
+        """
+        plan = {}
+        for source in SOURCE_ORDER:
+            if self.sources_to_fetch.get(source):
+                plan[source] = "all"
+            elif fill_in and self._cached_values(source):
+                plan[source] = "fill"
+            else:
+                plan[source] = None
+        return plan
+
+    def _retrieve(
+        self,
+        source: str,
+        mode: str | None,
+        results: dict,
+        fill_in: list[str],
+        failed_sources: list,
+    ):
+        """Return *source*'s values for this run, fetching as *mode* says."""
+        if mode is None:
+            return self._cached_values(source)
+        if source == "taxonomy":
+            # Keyed by organism, not identifier: the helper looks up only the
+            # organisms the cached values do not already resolve.
+            cached = self._cached_values(source) if mode == "fill" else None
+            return self._fetch_taxonomy(
+                results["uniprot"], failed_sources, cached=cached
+            )
+
+        # Called exactly as before this loop existed: tests replace these
+        # methods with functions that take no `headers` argument.
+        headers = () if mode == "all" else (fill_in,)
+        if source == "uniprot":
+            fetched = self._fetch_uniprot(failed_sources, *headers)
+        elif source == "interpro":
+            fetched = self._fetch_interpro(results["uniprot"], failed_sources, *headers)
+        elif source == "ted":
+            fetched = self._fetch_ted(failed_sources, *headers)
+        else:
+            fetched = self._fetch_biocentral(
+                results["uniprot"], failed_sources, *headers
+            )
+        if mode == "all":
+            return fetched
+        return list(self._cached_values(source)) + list(fetched)
+
+    def _merge(self, values: dict) -> list[ProteinAnnotations]:
+        """Merge per-source values into one record per protein."""
+        return self.merger.merge(
+            values["uniprot"],
+            values["taxonomy"],
+            values["interpro"],
+            values["ted"],
+            values["biocentral"],
+        )
+
+    def _write_checkpoint(
+        self, results: dict, pending: list[str], fill_in: list[str]
+    ) -> None:
+        """Persist the sources finished so far, following the final write's rules.
+
+        Two rules keep a checkpoint from storing a value nobody retrieved:
+
+        - A source still waiting its turn contributes its cached columns, even
+          one due to be refetched. Dropping them here would lose, say, a cached
+          ``pfam`` while a newly requested ``smart`` waits for InterPro.
+        - A row for an identifier the cache did not hold waits until every
+          pending source the cache holds columns for has filled it in. Written
+          earlier, it would carry empty values that read as "no annotation" to
+          the next run. A pending source the cache holds nothing for has no
+          column yet, so it holds no row back.
+
+        A checkpoint left with no rows is skipped: everything this run fetched
+        so far is still waiting, and writing the empty frame would only lose
+        the cached rows.
+        """
+        values = {
+            source: results[source]
+            if source in results
+            else self._cached_values(source)
+            for source in SOURCE_ORDER
+        }
+        df = DataFormatter.to_dataframe(self.transformer.transform(self._merge(values)))
+        waiting = set().union(*(SOURCE_ANNOTATIONS[s] for s in pending))
+        cached_columns = set() if self.cached_data is None else self.cached_data.columns
+        if fill_in and waiting & set(cached_columns):
+            new = {str(h) for h in fill_in}
+            df = df[~df[df.columns[0]].astype(str).isin(new)].reset_index(drop=True)
+        if df.empty:
+            return
+        self._cache_frame(df)
 
     def _with_retained_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         """Append cached rows for identifiers outside this run, when they fit.
@@ -360,14 +433,21 @@ class ProteinAnnotationManager:
         left alone -- unless this run was an explicit refetch, where the user has
         said the cached values are the problem.
         """
-        if not self.output_path:
-            return DataFormatter.to_dataframe(proteins)
-
-        drop = self._incomplete_columns()
         df = DataFormatter.to_dataframe(proteins)
+        if self.output_path:
+            self._cache_frame(df)
+        return df
+
+    def _cache_frame(self, df: pd.DataFrame) -> None:
+        """Write *df* to the cache under the rules :meth:`_write_cache_and_frame` sets.
+
+        Shared by the final write and every checkpoint, so a checkpoint can never
+        store what the final write would refuse to.
+        """
+        drop = self._incomplete_columns()
         if not drop:
             self._write_cache(self._with_retained_rows(df))
-            return df
+            return
 
         incomplete = ", ".join(sorted(self.incomplete_sources))
         remaining = set(df.columns) - drop - {"identifier"}
@@ -382,7 +462,7 @@ class ProteinAnnotationManager:
                 if shadowed
                 else "nothing else was retrieved either"
             )
-            logger.warning(
+            self._warn_once(
                 "Not caching annotations at %s: %s could not be fully retrieved, "
                 "and %s. This run's annotations are still returned. Use "
                 "--refetch annotations to rewrite the cache regardless.",
@@ -390,9 +470,9 @@ class ProteinAnnotationManager:
                 incomplete,
                 reason,
             )
-            return df
+            return
 
-        logger.warning(
+        self._warn_once(
             "Caching annotations at %s without %s: that source could not be "
             "fully retrieved, so its columns are left out and the next run "
             "fetches it again instead of reusing empty values.",
@@ -400,7 +480,14 @@ class ProteinAnnotationManager:
             incomplete,
         )
         self._write_cache(df.drop(columns=[c for c in df.columns if c in drop]))
-        return df
+
+    def _warn_once(self, message: str, *args) -> None:
+        """Log a cache warning once per run, not once per checkpoint."""
+        key = message % args
+        if key in self._cache_warnings:
+            return
+        self._cache_warnings.add(key)
+        logger.warning(message, *args)
 
     def _write_cache(self, df: pd.DataFrame) -> None:
         """Persist *df* as the annotation cache, stamped with the current semantics."""
