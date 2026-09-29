@@ -7,6 +7,11 @@
  * menu choice, a bare `?dataset=<id>` link, the startup demo). Changing what an
  * example opens on is a one-line edit of its `defaultView`.
  *
+ * What the entry's file holds is not typed here: its URL, its size and the
+ * protein count and size in its label come from its record in the generated
+ * `example-manifest.ts`, which `write_manifest.py` reads from the file itself,
+ * and a unit test checks every `defaultView` name against that record.
+ *
  * Interim catalog: the startup demo plus the bundles still shipped under
  * `apps/web/public/data/`. The `curated-example-datasets` change replaces them
  * with the manuscript's datasets; until then each `defaultView` is provisional
@@ -17,6 +22,7 @@
  */
 
 import type { ExampleDatasetSummary } from '@protspace/core';
+import { EXAMPLE_MANIFEST } from './example-manifest';
 
 /**
  * The view an example opens on when its URL names no `annotation`,
@@ -33,13 +39,14 @@ interface ExampleDefaultView {
 
 export interface ExampleDataset {
   id: string;
-  /** Menu label: name · protein count · download size. */
+  /** Menu label: name · protein count · download size, the numbers from the manifest. */
   label: string;
   description: string;
   /** One line naming what the curated view shows. */
   insight: string;
+  /** Same-origin: `./<file>` for a repo-hosted bundle, `./examples/<file>` for a release-hosted one. */
   url: string;
-  /** Size of the bundle file in bytes. */
+  /** Decoded size of the bundle file in bytes, from the manifest. */
   sizeBytes: number;
   /** The entry's section of the Example datasets documentation page. */
   docsUrl: string;
@@ -64,17 +71,51 @@ export function formatMegabytes(bytes: number): string {
   return `${(bytes / 1e6).toFixed(1)} MB`;
 }
 
-export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
+/**
+ * A protein count as the menu labels state it: exact below 1,000, one decimal
+ * in thousands below 10,000, whole thousands below a million.
+ */
+export function formatProteinCount(count: number): string {
+  if (count < 1_000) {
+    return String(count);
+  }
+  if (count < 9_950) {
+    return `${(count / 1e3).toFixed(1)}K`;
+  }
+  if (count < 999_500) {
+    return `${Math.round(count / 1e3)}K`;
+  }
+  return `${(count / 1e6).toFixed(1)}M`;
+}
+
+/** What a catalog entry states by hand; the rest comes from its manifest record. */
+type ExampleSpec = Omit<ExampleDataset, 'label' | 'url' | 'sizeBytes' | 'docsUrl'> & {
+  /** Menu name; the label adds the protein count and size from the manifest. */
+  name: string;
+};
+
+function defineExample({ name, ...spec }: ExampleSpec): ExampleDataset {
+  const record = EXAMPLE_MANIFEST.examples[spec.id];
+  if (!record) {
+    throw new Error(`Example "${spec.id}" has no record in example-manifest.ts.`);
+  }
+  return {
+    ...spec,
+    label: `${name} · ${formatProteinCount(record.proteins)} · ${formatMegabytes(record.bytes)}`,
+    url: record.hosting === 'repo' ? `./${record.file}` : `./examples/${record.file}`,
+    sizeBytes: record.bytes,
+    docsUrl: docsUrlFor(spec.id),
+  };
+}
+
+const EXAMPLE_SPECS: readonly ExampleSpec[] = [
   {
     id: 'demo',
-    label: 'Demo · 7.8K · 0.9 MB',
+    name: 'Demo',
     description:
       'Mixed UniProt sample with ESM2 and ProtT5 projections, taxonomy, Pfam/CATH and EC.',
     insight:
       'Toxin families such as three-finger toxins and phospholipase A2 form their own clusters.',
-    url: './data.parquetbundle',
-    sizeBytes: 865_499,
-    docsUrl: docsUrlFor('demo'),
     defaultView: {
       projection: 'ProtT5 — UMAP 2',
       annotation: 'protein_families',
@@ -83,13 +124,10 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
   },
   {
     id: 'venom_eat_stats',
-    label: 'Venom EAT · 811 · 0.2 MB',
+    name: 'Venom EAT',
     description:
       'Venom proteins with EAT-transferred EC and protein-family predictions, GO terms and cluster labels.',
     insight: 'Rings mark EC numbers transferred by EAT from the nearest annotated neighbour.',
-    url: './data/venom_eat_stats.parquetbundle',
-    sizeBytes: 201_687,
-    docsUrl: docsUrlFor('venom_eat_stats'),
     figure: 'Fig. 4',
     defaultView: {
       projection: 'ProtT5 — UMAP 2',
@@ -99,13 +137,10 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
   },
   {
     id: 'phosphatase',
-    label: 'Phosphatases · 1.6K · 0.4 MB',
+    name: 'Phosphatases',
     description:
       'Phosphatases with rich domain annotations (Pfam, SMART, CDD, PANTHER, TED) and predicted localisation.',
     insight: 'Phosphatase families laid out by ESM2-650M embeddings.',
-    url: './data/phosphatase.parquetbundle',
-    sizeBytes: 434_341,
-    docsUrl: docsUrlFor('phosphatase'),
     defaultView: {
       projection: 'ESM2-650M — UMAP 2',
       annotation: 'protein_families',
@@ -114,32 +149,23 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
   },
   {
     id: '5K',
-    label: 'Swiss-Prot 5K · 5.2K · 0.2 MB',
+    name: 'Swiss-Prot 5K',
     description: 'Small Swiss-Prot subset with a 3D PCA projection and length bins.',
     insight: 'Phyla on a 2D PCA; switch to PCA 3 for the 3D view.',
-    url: './data/5K.parquetbundle',
-    sizeBytes: 244_359,
-    docsUrl: docsUrlFor('5K'),
     defaultView: { projection: 'PCA_2', annotation: 'phylum', tooltip: ['protein_existence'] },
   },
   {
     id: '7K_toxprot',
-    label: 'ToxProt · 7.4K · 0.6 MB',
+    name: 'ToxProt',
     description: 'Animal toxins from UniProt ToxProt with taxonomy, domains and signal peptides.',
     insight: 'Toxin families on a UMAP of ToxProt.',
-    url: './data/7K_toxprot.parquetbundle',
-    sizeBytes: 576_771,
-    docsUrl: docsUrlFor('7K_toxprot'),
     defaultView: { projection: 'UMAP_2', annotation: 'protein_families', tooltip: ['species'] },
   },
   {
     id: '35K_ec_brenda',
-    label: 'EC (BRENDA) · 35K · 4.5 MB',
+    name: 'EC (BRENDA)',
     description: 'Enzymes with BRENDA EC numbers.',
     insight: 'Enzymes coloured by domain of life on one UMAP.',
-    url: './data/35K_ec_brenda.parquetbundle',
-    sizeBytes: 4_487_626,
-    docsUrl: docsUrlFor('35K_ec_brenda'),
     defaultView: {
       projection: 'UMAP_2',
       annotation: 'domain',
@@ -148,32 +174,23 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
   },
   {
     id: 'beta_lactamase_ec',
-    label: 'β-lactamases (EC) · 36K · 2.1 MB',
+    name: 'β-lactamases (EC)',
     description: 'β-lactamases selected by EC number.',
     insight: 'β-lactamase families on a UMAP.',
-    url: './data/beta_lactamase_ec.parquetbundle',
-    sizeBytes: 2_084_334,
-    docsUrl: docsUrlFor('beta_lactamase_ec'),
     defaultView: { projection: 'UMAP_2', annotation: 'protein_families', tooltip: ['species'] },
   },
   {
     id: '40K',
-    label: 'Swiss-Prot 40K · 40K · 1.8 MB',
+    name: 'Swiss-Prot 40K',
     description: 'Swiss-Prot subset with a 3D PCA projection.',
     insight: 'Sequence-length bins on a 2D PCA; switch to PCA 3 for the 3D view.',
-    url: './data/40K.parquetbundle',
-    sizeBytes: 1_843_827,
-    docsUrl: docsUrlFor('40K'),
     defaultView: { projection: 'PCA_2', annotation: 'length_quantile', tooltip: ['pfam'] },
   },
   {
     id: '105K_homoSapiens_drosophilaMelanogaster',
-    label: 'Human + fly · 106K · 10.1 MB',
+    name: 'Human + fly',
     description: 'Human and Drosophila melanogaster proteomes.',
     insight: 'Human and fly proteins share one layout; most families overlap across species.',
-    url: './data/105K_homoSapiens_drosophilaMelanogaster.parquetbundle',
-    sizeBytes: 10_109_361,
-    docsUrl: docsUrlFor('105K_homoSapiens_drosophilaMelanogaster'),
     figure: 'Fig. 2B',
     defaultView: {
       projection: 'UMAP_2',
@@ -183,22 +200,16 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
   },
   {
     id: '127K_beta_lactamase',
-    label: 'β-lactamases · 127K · 8.7 MB',
+    name: 'β-lactamases',
     description: 'β-lactamase family, broad selection.',
     insight: 'β-lactamase families on a UMAP.',
-    url: './data/127K_beta_lactamase.parquetbundle',
-    sizeBytes: 8_717_148,
-    docsUrl: docsUrlFor('127K_beta_lactamase'),
     defaultView: { projection: 'UMAP_2', annotation: 'protein_families', tooltip: ['species'] },
   },
   {
     id: 'beta_lactamase_pn',
-    label: 'β-lactamases (PN) · 248K · 12.2 MB',
+    name: 'β-lactamases (PN)',
     description: 'Large β-lactamase set for stress-testing at 248K points.',
     insight: 'The broadest β-lactamase selection, 248K points coloured by domain of life.',
-    url: './data/beta_lactamase_pn.parquetbundle',
-    sizeBytes: 12_210_217,
-    docsUrl: docsUrlFor('beta_lactamase_pn'),
     // Interim stand-in for `swissprot`. Rough figures from one local dev-server
     // load (5.8 s, 118 MB of JS heap plus the typed-array buffers).
     large: { memory: 'a few hundred MB', loadTime: '5–10 s' },
@@ -209,6 +220,8 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
     },
   },
 ];
+
+export const EXAMPLE_DATASETS: readonly ExampleDataset[] = EXAMPLE_SPECS.map(defineExample);
 
 /** The startup demo: what loads when there is no `?dataset=` and no stored import. */
 export const DEFAULT_EXAMPLE_DATASET: ExampleDataset = EXAMPLE_DATASETS[0];

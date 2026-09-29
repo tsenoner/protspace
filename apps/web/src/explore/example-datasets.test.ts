@@ -4,16 +4,18 @@ import {
   EXAMPLES_DOCS_URL,
   findExampleDataset,
   formatMegabytes,
+  formatProteinCount,
   toExampleDatasetSummary,
   type ExampleDataset,
 } from './example-datasets';
+import { EXAMPLE_MANIFEST } from './example-manifest';
 
-// Every catalog `url` must resolve to a bundle that actually ships under
-// apps/web/public/. Found by glob rather than fs/path/url (which would leak
-// Node types into the browser tsconfig — see packages/core/src/styles/styles-integrity.test.ts
-// for the same pattern) so a typo'd id or filename fails here instead of at
-// runtime. The demo bundle lives directly under public/, the rest under
-// public/data/.
+// Every repo-hosted manifest record must name a bundle that actually ships
+// under apps/web/public/. Found by glob rather than fs/path/url (which would
+// leak Node types into the browser tsconfig — see
+// packages/core/src/styles/styles-integrity.test.ts for the same pattern) so a
+// typo'd file name fails here instead of at runtime. Release-hosted files are
+// not in the repository; the deploy fetches and verifies them.
 const SHIPPED_BUNDLE_PATHS = new Set(
   Object.keys({
     ...import.meta.glob('../../public/data.parquetbundle'),
@@ -40,13 +42,39 @@ describe('example datasets catalog', () => {
     expect(findExampleDataset('not-a-real-dataset')).toBeUndefined();
   });
 
-  it.each(EXAMPLE_DATASETS)('ships a bundle file for "$id"', (entry) => {
-    const publicPath = entry.url.replace(/^\.\//, '../../public/');
-    expect(SHIPPED_BUNDLE_PATHS.has(publicPath)).toBe(true);
+  it.each(EXAMPLE_DATASETS)('has a manifest record for "$id"', (entry) => {
+    expect(EXAMPLE_MANIFEST.examples[entry.id]).toBeDefined();
   });
 
-  it.each(EXAMPLE_DATASETS)('states the size of "$id" in its label', (entry) => {
-    expect(entry.label).toContain(formatMegabytes(entry.sizeBytes));
+  it.each(
+    Object.entries(EXAMPLE_MANIFEST.examples).filter(([, record]) => record.hosting === 'repo'),
+  )('ships the repo-hosted bundle of "%s" under public/', (_id, record) => {
+    expect(SHIPPED_BUNDLE_PATHS.has(`../../public/${record.file}`)).toBe(true);
+  });
+
+  it.each(EXAMPLE_DATASETS)('serves "$id" from where its manifest record says', (entry) => {
+    const record = EXAMPLE_MANIFEST.examples[entry.id];
+    expect(entry.url).toBe(
+      record.hosting === 'repo' ? `./${record.file}` : `./examples/${record.file}`,
+    );
+  });
+
+  it.each(EXAMPLE_DATASETS)(
+    'takes the size and count in the label of "$id" from the manifest',
+    (entry) => {
+      const record = EXAMPLE_MANIFEST.examples[entry.id];
+      expect(entry.sizeBytes).toBe(record.bytes);
+      expect(entry.label).toMatch(
+        new RegExp(` · [0-9.]+[KM]? · ${formatMegabytes(record.bytes)}$`),
+      );
+    },
+  );
+
+  it('lists the rest in ascending order of protein count after the demo', () => {
+    const counts = EXAMPLE_DATASETS.slice(1).map(
+      (entry) => EXAMPLE_MANIFEST.examples[entry.id].proteins,
+    );
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
   });
 
   it.each(EXAMPLE_DATASETS)('links "$id" to its docs section', (entry) => {
@@ -97,6 +125,16 @@ describe('toExampleDatasetSummary', () => {
     expect(formatMegabytes(865_499)).toBe('0.9 MB');
     expect(formatMegabytes(44_912_345)).toBe('44.9 MB');
   });
+
+  it('formats protein counts the way the labels do', () => {
+    expect(formatProteinCount(811)).toBe('811');
+    expect(formatProteinCount(1_587)).toBe('1.6K');
+    expect(formatProteinCount(7_831)).toBe('7.8K');
+    expect(formatProteinCount(9_960)).toBe('10K');
+    expect(formatProteinCount(35_504)).toBe('36K');
+    expect(formatProteinCount(573_649)).toBe('574K');
+    expect(formatProteinCount(1_200_000)).toBe('1.2M');
+  });
 });
 
 // Mirrors `TOOLTIP_ONLY_ANNOTATIONS` in packages/core/src/components/control-bar/control-bar.ts,
@@ -108,6 +146,17 @@ describe('example datasets curated default view', () => {
   it.each(EXAMPLE_DATASETS)('"$id" names a projection and an annotation', (entry) => {
     expect(entry.defaultView.projection.trim()).not.toBe('');
     expect(entry.defaultView.annotation.trim()).not.toBe('');
+  });
+
+  // The drift guard: a renamed or dropped column or projection fails here, in
+  // CI, without downloading any bundle.
+  it.each(EXAMPLE_DATASETS)('"$id" names only what its bundle holds', (entry) => {
+    const record = EXAMPLE_MANIFEST.examples[entry.id];
+    const { projection, annotation, tooltip = [] } = entry.defaultView;
+    expect(record.projections).toContain(projection);
+    for (const name of [annotation, ...tooltip]) {
+      expect(record.columns).toContain(name);
+    }
   });
 
   it.each(EXAMPLE_DATASETS)('"$id" colours by a colourable annotation', (entry) => {

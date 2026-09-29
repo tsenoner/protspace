@@ -35,7 +35,7 @@ Before every commit:
   - user, OPFS and perf loads pass `null`;
   - a load superseded before render changes neither.
   - Add `vi.fn()` for `setDatasetDefaults`/`recordRequestedView` to the hand-built mocks in `example-dataset-load.test.ts`, `dataset-controller.dataset-changes.test.ts` and `dataset-controller.eat.test.ts`.
-- [ ] 1.7 `example-datasets.test.ts` (this lands with the manifest, task 4.1; the colourable-annotation and tooltip checks already landed with §1): assert, for every entry,
+- [ ] 1.7 `example-datasets.test.ts` (the colourable-annotation and tooltip checks landed with §1; the manifest-name check and the protein-count order landed with 4.1; only the id format waits for the final ids, task 7.7): assert, for every entry,
   - that each `defaultView` name is in the entry's manifest `columns`/`projections`;
   - that the annotation is colourable (not tooltip-only, not `__pred_*`);
   - that the tooltip has no duplicates and does not repeat the annotation;
@@ -116,12 +116,12 @@ Before every commit:
 
 ## 4. Hosting, manifest, and decoupling fixtures and perf
 
-- [ ] 4.1 Manifest writer `apps/protspace/scripts/generate_examples/write_manifest.py` (pyarrow; `chore:`) emits `apps/web/src/explore/example-manifest.ts`, with:
+- [x] 4.1 Manifest writer `apps/protspace/scripts/generate_examples/write_manifest.py` (pyarrow; `chore:`) emits `apps/web/src/explore/example-manifest.ts`, with:
   - top level: `release` and `retained[]`;
   - per id: `file`, `hosting`, `bytes`, `sha256`, `proteins`, `columns`, `projections`, `releases`, `protspaceVersion`, `gitSha?`, `command`, `builtAt` and `zenodoDoi`.
   - Export only consumed symbols (knip `ignoreExportsUsedInFile: false`).
   - Generate the interim manifest from the current repo-hosted bundles (`release: null`). Unit-test the writer, and run `uv run ruff check`.
-- [ ] 4.2 Catalog derives `url`, `sizeBytes` and the label's count and size from the manifest record (`./<file>` for repo-hosted, `./examples/<file>` for release-hosted). Any `import.meta.env` read is optional-chained, so tsx can load the module.
+- [x] 4.2 Catalog derives `url`, `sizeBytes` and the label's count and size from the manifest record (`./<file>` for repo-hosted, `./examples/<file>` for release-hosted). Any `import.meta.env` read is optional-chained, so tsx can load the module.
 - [ ] 4.3 `scripts/examples/fetch.mts` (tsx):
   - `pnpm examples:fetch [--out dir] [--with-retained]` downloads `https://github.com/tsenoner/protspace/releases/download/<release>/<file>` for every release-hosted record;
   - it verifies bytes and sha256, verifies the in-repo demo against its record, and exits non-zero on any mismatch or missing asset;
@@ -146,7 +146,7 @@ Before every commit:
   - Fallback if `/@fs/` fails: copy into a gitignored `public/__e2e__/` in global setup.
 - [ ] 4.8 E2E guard: run the default suite after 4.6/4.7 with the product demo temporarily replaced by another bundle, and confirm that nothing depends on it; record the result in the PR.
 - [ ] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.
-- [ ] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the latter enabled at 7.8).
+- [ ] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the latter enabled at 7.8; the former landed with 4.1, plus "every repo-hosted record's file ships under `public/`").
 - [ ] 4.11 Perf datasets:
   - `perf/datasets.manifest.json` (`{ id, file, bytes, sha256 }`) for the eleven current `public/data` bundles plus `beta_lactamase_2026_stats` (113K) and `phosphatase_eat` (832), under their original names;
   - `pnpm perf:fetch` (the same fetch script, perf mode) into `perf/datasets/`.
