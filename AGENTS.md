@@ -37,11 +37,13 @@ One-time CLI setup is in [CONTRIBUTING.md](CONTRIBUTING.md#openspec-one-time-per
 ## Before committing
 
 Always run `pnpm precommit` before any git commit. It is
-`lint-staged && quality && docs:annotations:check && docs:build`:
+`lint-staged && quality && docs:annotations:check && docs:examples:check && docs:build`:
 
 - ESLint `--fix` and Prettier `--write`, on staged files only (lint-staged)
 - TypeScript typecheck, Knip, and Knip dependency validation (`pnpm quality`)
 - `docs:annotations:check` — the generated annotation reference must match its source
+- `docs:examples:check` — the generated Example datasets page must match the example catalog,
+  the bundle manifest and its prose (`docs/scripts/example-details.ts`)
 - `docs:build`, a full VitePress build (a dead internal link fails it)
 
 **It runs no tests at all.** Run `pnpm test` yourself; `pnpm test:e2e` (below) and
@@ -56,7 +58,8 @@ still fails CI's `format:check` — also run `pnpm format:check` when anything i
 Move these in the same PR — `pnpm precommit` covers none, and all three have shipped stale:
 
 - **The published docs** (`docs/guide/`), for anything reaching a CLI flag, an option default,
-  or the bundle format. `docs/guide/annotations.md` is generated, so edit its source instead.
+  or the bundle format. `docs/guide/annotations.md` and `docs/explore/example-datasets.md` are
+  generated, so edit their sources instead.
 - **The Colab notebooks** (`apps/protspace/notebooks/`), for anything a notebook restates — a
   model list, an install command, a flag. Prettier and ruff's CI paths both skip them, so
   nothing tells you when they drift; import from the package rather than retype, as the prep

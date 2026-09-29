@@ -306,6 +306,18 @@ pnpm docs:preview  # Preview production build
 pnpm docs:images   # Generate all documentation images (screenshots, animations, GIFs)
 ```
 
+**Generated pages:** two pages are written by scripts, so edit their sources and regenerate
+rather than editing the page. `pnpm precommit` and CI fail when either is stale.
+
+- `docs/guide/annotations.md`: from the annotation registry
+  (`packages/utils/src/visualization/annotation-metadata.ts`) and
+  `docs/scripts/annotation-details.ts`; regenerate with `pnpm docs:annotations`.
+- `docs/explore/example-datasets.md`: from the example catalog
+  (`apps/web/src/explore/example-datasets.ts`), the bundle manifest
+  (`apps/web/src/explore/example-manifest.ts`) and `docs/scripts/example-details.ts`; regenerate
+  with `pnpm docs:examples`. Its thumbnails come from the opt-in `examples-live` E2E project
+  (see `docs/explore/images/README.md`).
+
 **Documentation standards:**
 
 - Follow Markdown best practices
