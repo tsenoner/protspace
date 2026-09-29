@@ -16,7 +16,12 @@ export interface LoadQueue {
     options: DataLoaderLoadOptions | undefined,
     loadFromFile: (file: File, options?: DataLoaderLoadOptions) => Promise<void>,
   ): Promise<void>;
-  registerFileLoad(file: File, kind: DatasetLoadKind, example?: ExampleLoadContext): LoadMeta;
+  registerFileLoad(
+    file: File,
+    kind: DatasetLoadKind,
+    example?: ExampleLoadContext,
+    epoch?: number,
+  ): LoadMeta;
   getLoadMetaForFile(file: File): LoadMeta | undefined;
   getRunningLoadMeta(): LoadMeta | null;
   getLatestSequence(): number;
@@ -48,11 +53,17 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
     return pending;
   };
 
-  const registerFileLoad = (file: File, kind: DatasetLoadKind, example?: ExampleLoadContext) => {
+  const registerFileLoad = (
+    file: File,
+    kind: DatasetLoadKind,
+    example?: ExampleLoadContext,
+    epoch?: number,
+  ) => {
     const nextMeta: LoadMeta = {
       sequence: nextLoadSequence + 1,
       kind,
       example,
+      ...(epoch !== undefined && { epoch }),
     };
     nextLoadSequence = nextMeta.sequence;
     loadMetaByFile.set(file, nextMeta);

@@ -62,13 +62,13 @@ Before every commit:
 - [ ] 2.5 (b1) Add the pure `decideUrlChange({ datasetParam, currentDatasetId, switchPending })` to `url-state.ts`, with unit tests.
   - `use-url-state-sync.ts` keeps a switch token settled by `setRequestedDataset`'s promise; while it is pending, a view-only change is recorded, not applied.
 - [ ] 2.6 (b1) Add `cancelPendingExampleLoad()` (supersede, abort the fetch through an `AbortController`, hide the overlay). A POP navigation (`useNavigationType()`) while a menu load is pending calls it.
-- [ ] 2.7 (b2) Request epoch in `persisted-dataset.ts`:
+- [x] 2.7 (b2) Request epoch in `persisted-dataset.ts`:
   - add `beginUserRequest()`/`isCurrentRequest(epoch)`;
   - user requests take a new epoch: menu, Back/Forward (including to an entry without `dataset=`), file import (`runtime.ts`), recovery-banner buttons, Retry and Cancel;
   - the OPFS restore, the startup demo, corrupt-store recovery and the deep-link fallback carry their start epoch and bail out before each load;
   - `PersistedLoadOutcome` gains `{ kind: 'preempted' }`, which shows no banner;
   - the opfs `data-error` recovery passes its epoch.
-- [ ] 2.8 (b2) Unit tests (`persisted-dataset.test.ts` with a deferred `loadLastImportedFile`; `startup.test.ts`; `dataset-controller.dataset-changes.test.ts`):
+- [x] 2.8 (b2) Unit tests (`persisted-dataset.test.ts` with a deferred `loadLastImportedFile`; `startup.test.ts`; `dataset-controller.dataset-changes.test.ts`):
   - a click during the OPFS read wins, with a stored file and with none;
   - `preempted` shows no banner;
   - a corrupt restore during a click only clears the store;

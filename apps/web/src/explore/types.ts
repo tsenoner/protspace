@@ -25,8 +25,8 @@ export type DatasetChangeSource = 'menu' | 'url' | 'user' | 'startup';
 
 /**
  * The real result of an example load, distinguishing a genuine failure from
- * a request abandoned because a newer one started (see
- * `beginExampleRequest`/`isCurrentExampleRequest` in `persisted-dataset.ts`).
+ * a request abandoned because a newer user request started (see
+ * `beginUserRequest`/`isCurrentRequest` in `persisted-dataset.ts`).
  * Only `'failed'` should trigger a caller's fallback; `'superseded'` means a
  * later request already owns the screen and this one must do nothing more —
  * no toast, no fallback, no emit, no overlay change.
@@ -44,12 +44,11 @@ export interface ExampleLoadContext {
   entry: ExampleDataset;
   source: DatasetChangeSource;
   /**
-   * The example-request sequence number this load was started under (see
-   * `beginExampleRequest`/`isCurrentExampleRequest` in `persisted-dataset.ts`).
-   * `handleDataLoaded` (dataset-controller.ts) checks this against the
-   * current sequence before rendering: a newer request may have started
-   * while this one was still decoding, and that request already owns the
-   * screen.
+   * The request epoch this load was started under (see
+   * `beginUserRequest`/`isCurrentRequest` in `persisted-dataset.ts`).
+   * `handleDataLoaded` (dataset-controller.ts) checks it against the current
+   * epoch before rendering: a newer user request may have started while this
+   * one was still decoding, and that request already owns the screen.
    */
   requestId: number;
   /**
@@ -66,6 +65,11 @@ export interface LoadMeta {
   sequence: number;
   kind: DatasetLoadKind;
   example?: ExampleLoadContext;
+  /**
+   * The request epoch an OPFS restore began under, so its parse-failure
+   * recovery loads the demo only if no user request has moved past it.
+   */
+  epoch?: number;
 }
 
 export interface DataLoaderLoadOptions {

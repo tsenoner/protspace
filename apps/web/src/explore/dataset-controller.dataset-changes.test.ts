@@ -15,10 +15,11 @@ const mocks = vi.hoisted(() => ({
     tryLoadPersistedAgain: vi.fn(),
     clearCorruptedPersistedDataset: vi.fn(),
     recoverFromCorruptedPersistedDataset: vi.fn(),
-    supersedePendingExampleFetch: vi.fn(),
+    beginUserRequest: vi.fn(() => 1),
+    currentRequestEpoch: vi.fn(() => 0),
     // Defaults to "still current" so existing tests, which don't exercise
     // the superseded-during-decode path, render as before.
-    isCurrentExampleRequest: vi.fn(() => true),
+    isCurrentRequest: vi.fn(() => true),
   },
 }));
 
@@ -100,6 +101,7 @@ function createController(loadQueueOverrides: Record<string, unknown> = {}) {
   return {
     controller: createDatasetController(options),
     viewController,
+    overlayController: options.overlayController,
     setCurrentExampleId: options.setCurrentExampleId,
     setCurrentDatasetName: options.setCurrentDatasetName,
   };
@@ -147,14 +149,14 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(outcome).toBe('superseded');
   });
 
-  it('loadExampleDataset never clears OPFS and forwards with source "url"', async () => {
+  it('loadExampleDataset never clears OPFS and forwards with source "url" and the epoch', async () => {
     mocks.persisted.loadExampleDataset.mockResolvedValue('loaded');
     const { controller } = createController();
 
-    const outcome = await controller.loadExampleDataset(DEMO.id);
+    const outcome = await controller.loadExampleDataset(DEMO.id, { epoch: 4 });
 
     expect(outcome).toBe('loaded');
-    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url');
+    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 4 });
     expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
   });
 
@@ -199,13 +201,29 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
       file: new File(['x'], 'mine.parquetbundle'),
       failedAttempts: 1,
     });
-    const { controller } = createController();
+    const { controller, overlayController } = createController();
+    const changes: Array<[string | null, string]> = [];
+    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+
+    await controller.loadPersistedOrDefaultDataset({ epoch: 3 });
+
+    expect(mocks.persisted.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 3 });
+    expect(changes).toEqual([[null, 'startup']]);
+    // A Back to an entry without `dataset=` supersedes a pending example
+    // whose "Downloading…" overlay would otherwise stay over the banner.
+    expect(overlayController.update).toHaveBeenCalledWith(false);
+  });
+
+  it("neither emits nor touches the overlay for 'preempted': the user request that took over reports itself", async () => {
+    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'preempted' });
+    const { controller, overlayController } = createController();
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
     await controller.loadPersistedOrDefaultDataset();
 
-    expect(changes).toEqual([[null, 'startup']]);
+    expect(changes).toEqual([]);
+    expect(overlayController.update).not.toHaveBeenCalled();
   });
 
   it('emits "startup" with a null id when an OPFS restore finishes loading', async () => {
@@ -240,12 +258,35 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(changes).toEqual([[null, 'user']]);
   });
 
-  it('supersedePendingExampleFetch delegates to the persisted controller', () => {
+  it('beginUserRequest and currentRequestEpoch delegate to the persisted controller', () => {
     const { controller } = createController();
 
-    controller.supersedePendingExampleFetch();
+    expect(controller.beginUserRequest()).toBe(1);
+    expect(controller.currentRequestEpoch()).toBe(0);
+    expect(mocks.persisted.beginUserRequest).toHaveBeenCalledTimes(1);
+  });
 
-    expect(mocks.persisted.supersedePendingExampleFetch).toHaveBeenCalledTimes(1);
+  it('an OPFS restore that fails to parse recovers under the epoch it began with', async () => {
+    // A menu click still downloading has taken a newer epoch; passing the
+    // restore's own epoch lets the recovery clear the store without loading
+    // the demo over the click.
+    const loadMeta = { sequence: 1, kind: 'opfs' as const, epoch: 2 };
+    const { controller } = createController({
+      getRunningLoadMeta: () => loadMeta,
+      getLatestSequence: () => 1,
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await controller.handleDataError({
+      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
+    } as unknown as Event);
+
+    expect(mocks.persisted.recoverFromCorruptedPersistedDataset).toHaveBeenCalledWith(
+      'could not be loaded',
+      2,
+    );
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1, false);
+    errorSpy.mockRestore();
   });
 
   it('unsubscribe stops further notifications', async () => {
@@ -304,7 +345,7 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
       kind: 'default' as const,
       example: { entry: OTHER, source: 'url' as const, requestId: 1 },
     };
-    mocks.persisted.isCurrentExampleRequest.mockReturnValue(false);
+    mocks.persisted.isCurrentRequest.mockReturnValue(false);
     const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
       createController({
         getRunningLoadMeta: () => loadMeta,
@@ -317,7 +358,7 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
       detail: { data, file, source: 'auto' },
     } as unknown as Event);
 
-    expect(mocks.persisted.isCurrentExampleRequest).toHaveBeenCalledWith(1);
+    expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledWith(1);
     expect(mocks.loadData).not.toHaveBeenCalled();
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(setCurrentExampleId).not.toHaveBeenCalled();
@@ -340,7 +381,7 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
       kind: 'default' as const,
       example: { entry: OTHER, source: 'url' as const, requestId: 1 },
     };
-    mocks.persisted.isCurrentExampleRequest
+    mocks.persisted.isCurrentRequest
       .mockReturnValueOnce(true) // check before loadData: still current
       .mockReturnValueOnce(false); // check after loadData: superseded meanwhile
     const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
@@ -355,7 +396,7 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
       detail: { data, file, source: 'auto' },
     } as unknown as Event);
 
-    expect(mocks.persisted.isCurrentExampleRequest).toHaveBeenCalledTimes(2);
+    expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(2);
     // loadData DID run (the request was current when it started)...
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     // ...but nothing after it did, since it was superseded by the time it
@@ -399,7 +440,7 @@ describe('handleDataLoaded: curated default view', () => {
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
     // `clearAllMocks` keeps implementations, and an earlier block leaves this
     // returning false.
-    mocks.persisted.isCurrentExampleRequest.mockReturnValue(true);
+    mocks.persisted.isCurrentRequest.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -463,7 +504,7 @@ describe('handleDataLoaded: curated default view', () => {
   });
 
   it('a load superseded before render changes neither the defaults nor the request', async () => {
-    mocks.persisted.isCurrentExampleRequest.mockReturnValue(false);
+    mocks.persisted.isCurrentRequest.mockReturnValue(false);
 
     const viewController = await loadWith(exampleMeta('menu'));
 

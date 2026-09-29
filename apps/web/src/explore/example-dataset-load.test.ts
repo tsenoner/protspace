@@ -294,7 +294,7 @@ describe('example load: the stored import is replaced only once the example has 
     const { controller } = createRealController(async (file, ctrl) => {
       // A newer request (a user import, another menu choice) lands while
       // this one is still decoding.
-      ctrl.supersedePendingExampleFetch();
+      ctrl.beginUserRequest();
       await loadSucceeds(file, ctrl);
     });
     stubOkFetch();
@@ -315,7 +315,7 @@ describe('example load: the stored import is replaced only once the example has 
 
   it('a superseded example whose bundle fails to parse is abandoned silently', async () => {
     const { controller, overlayController } = createRealController(async (file, ctrl) => {
-      ctrl.supersedePendingExampleFetch();
+      ctrl.beginUserRequest();
       await parseFails(file, ctrl);
     });
     stubOkFetch();

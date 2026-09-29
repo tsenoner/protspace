@@ -29,7 +29,11 @@ vi.mock('./recovery-banner', () => ({
   dismissRecoveryBanner: vi.fn(),
 }));
 
-import { loadRequestedDatasetOrFallback, startInitialExploreLoad } from './startup';
+import {
+  loadDatasetAfterNavigation,
+  loadRequestedDatasetOrFallback,
+  startInitialExploreLoad,
+} from './startup';
 
 const DEMO = EXAMPLE_DATASETS[0];
 
@@ -40,6 +44,8 @@ function createDatasetController() {
     loadExampleDataset: vi.fn().mockResolvedValue('loaded'),
     loadPersistedOrDefaultDataset: vi.fn().mockResolvedValue({ kind: 'default-loaded' }),
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),
+    beginUserRequest: vi.fn(() => 8),
+    currentRequestEpoch: vi.fn(() => 5),
     subscribeToDatasetChanges: vi.fn(() => () => {}),
     handleLoadingStart: vi.fn(),
     handleLoadingProgress: vi.fn(),
@@ -58,7 +64,8 @@ describe('loadRequestedDatasetOrFallback', () => {
 
     await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id);
+    // Without an explicit epoch it runs under the current one.
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 5 });
     expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
     expect(notifyMock.warning).not.toHaveBeenCalled();
   });
@@ -80,13 +87,15 @@ describe('loadRequestedDatasetOrFallback', () => {
     const datasetController = createDatasetController();
     datasetController.loadExampleDataset.mockResolvedValue('failed');
 
-    await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
+    await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id, { epoch: 7 });
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id);
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 7 });
     // The loader itself already notified the failure (persisted-dataset.ts); the
     // fallback path here must not warn on top of that.
     expect(notifyMock.warning).not.toHaveBeenCalled();
-    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledTimes(1);
+    // The fallback runs under the same epoch, so it yields to a user request
+    // made while the example was still loading.
+    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 7 });
   });
 
   it("never runs the fallback for a 'superseded' outcome: no toast, no fallback load, no warning", async () => {
@@ -100,7 +109,7 @@ describe('loadRequestedDatasetOrFallback', () => {
 
     await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id);
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 5 });
     expect(notifyMock.warning).not.toHaveBeenCalled();
     expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
   });
@@ -128,6 +137,55 @@ describe('loadRequestedDatasetOrFallback', () => {
     await loadRequestedDatasetOrFallback(datasetController as never, null);
 
     expect(showRecoveryBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no recovery banner when a user request preempted the flow ('preempted')", async () => {
+    const { showRecoveryBanner } = await import('./recovery-banner');
+    const datasetController = createDatasetController();
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'preempted' });
+
+    await loadRequestedDatasetOrFallback(datasetController as never, null);
+
+    expect(showRecoveryBanner).not.toHaveBeenCalled();
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('a request without an id runs the startup flow under the epoch it was given', async () => {
+    // A Back to an entry without `dataset=` passes a new user epoch, so the
+    // pending example it supersedes can't win afterwards.
+    const datasetController = createDatasetController();
+
+    await loadRequestedDatasetOrFallback(datasetController as never, null, { epoch: 8 });
+
+    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 8 });
+  });
+});
+
+describe('loadDatasetAfterNavigation (Back/Forward after the first load)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('begins a user request before loading the named example under it', async () => {
+    const datasetController = createDatasetController();
+
+    await loadDatasetAfterNavigation(datasetController as never, DEMO.id);
+
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 8 });
+    expect(datasetController.beginUserRequest.mock.invocationCallOrder[0]).toBeLessThan(
+      datasetController.loadExampleDataset.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('Back to an entry without dataset= begins a user request before the startup flow', async () => {
+    const datasetController = createDatasetController();
+
+    await loadDatasetAfterNavigation(datasetController as never, null);
+
+    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 8 });
+    expect(datasetController.beginUserRequest.mock.invocationCallOrder[0]).toBeLessThan(
+      datasetController.loadPersistedOrDefaultDataset.mock.invocationCallOrder[0],
+    );
   });
 });
 
@@ -165,12 +223,17 @@ describe('startInitialExploreLoad', () => {
       requestedExampleId: DEMO.id,
     });
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id);
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 5 });
   });
 
-  it('runs the normal flow when no example id was requested', async () => {
-    mocks.maybeRunWebglPerfSuite.mockResolvedValue(false);
+  it('runs the normal flow under the epoch captured before the perf check', async () => {
     const datasetController = createDatasetController();
+    // A user request lands while the perf check is still running: the
+    // startup flow must keep the epoch it began with, so it yields.
+    mocks.maybeRunWebglPerfSuite.mockImplementation(async () => {
+      datasetController.currentRequestEpoch.mockReturnValue(6);
+      return false;
+    });
 
     await startInitialExploreLoad({
       dataLoader,
@@ -179,6 +242,7 @@ describe('startInitialExploreLoad', () => {
       requestedExampleId: null,
     });
 
-    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledTimes(1);
+    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 5 });
+    expect(datasetController.beginUserRequest).not.toHaveBeenCalled();
   });
 });

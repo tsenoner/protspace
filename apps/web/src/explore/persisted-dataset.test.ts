@@ -21,10 +21,34 @@ vi.mock('./opfs-dataset-store', () => ({
 }));
 
 import { createLoadQueue } from './load-queue';
+import {
+  StoredDatasetCorruptError,
+  clearLastImportedFile,
+  loadLastImportedFile,
+  markLastLoadStatus,
+  readLastLoadStatus,
+} from './opfs-dataset-store';
 import { createPersistedDatasetController } from './persisted-dataset';
 
 const DEMO = EXAMPLE_DATASETS[0];
 const OTHER = EXAMPLE_DATASETS[1];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+const okResponse = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+
+/** The `AbortSignal` the `index`-th fetch was started with. */
+function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSignal {
+  return (fetchMock.mock.calls[index]?.[1] as RequestInit).signal as AbortSignal;
+}
 
 function createController() {
   const dataLoader = { loadFromFile: vi.fn().mockResolvedValue(undefined) };
@@ -87,7 +111,7 @@ describe('loadExampleDataset', () => {
     const result = await resultPromise;
 
     expect(result).toBe('loaded');
-    expect(fetchMock).toHaveBeenCalledWith(DEMO.url);
+    expect(fetchMock).toHaveBeenCalledWith(DEMO.url, { signal: expect.any(AbortSignal) });
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: DEMO,
       source: 'menu',
@@ -288,7 +312,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
   });
 });
 
-describe('supersedePendingExampleFetch', () => {
+describe('beginUserRequest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -297,27 +321,200 @@ describe('supersedePendingExampleFetch', () => {
     vi.unstubAllGlobals();
   });
 
-  it('drops a pending example fetch once called directly (as a user import or OPFS load would trigger)', async () => {
-    let resolveFetch: (value: {
-      ok: boolean;
-      arrayBuffer: () => Promise<ArrayBuffer>;
-    }) => void = () => {};
-    const fetchMock = vi.fn().mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveFetch = resolve;
-        }),
-    );
+  it('drops a pending example fetch and aborts its download (as a user import would)', async () => {
+    const response = deferred<ReturnType<typeof okResponse>>();
+    const fetchMock = vi.fn().mockReturnValue(response.promise);
     vi.stubGlobal('fetch', fetchMock);
 
     const { controller, dataLoader, loadQueue } = createController();
 
     const resultPromise = controller.loadExampleDataset(DEMO, 'menu');
-    controller.supersedePendingExampleFetch();
-    resolveFetch({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+    controller.beginUserRequest();
+    expect(fetchSignal(fetchMock).aborted).toBe(true);
+    response.resolve(okResponse());
 
     expect(await resultPromise).toBe('superseded');
     expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
     expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
+    expect(notifyMock.error).not.toHaveBeenCalled();
+  });
+
+  it('an aborted download settles silently as superseded', async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, overlayController } = createController();
+
+    const resultPromise = controller.loadExampleDataset(DEMO, 'menu');
+    overlayController.update.mockClear();
+    controller.beginUserRequest();
+
+    expect(await resultPromise).toBe('superseded');
+    expect(notifyMock.error).not.toHaveBeenCalled();
+    expect(overlayController.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('request precedence: a user request beats a startup load that began earlier', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('loads the demo at startup when nothing preempts it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const startup = controller.loadPersistedOrDefaultDataset();
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+    loadQueue.resolveOutcome(1, true);
+
+    expect(await startup).toEqual({ kind: 'default-loaded' });
+    expect(fetchMock).toHaveBeenCalledWith(DEMO.url, expect.anything());
+  });
+
+  it('a menu choice made while startup reads the stored import wins, and the import is not restored', async () => {
+    const read = deferred<File | null>();
+    vi.mocked(loadLastImportedFile).mockImplementationOnce(() => read.promise);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const startup = controller.loadPersistedOrDefaultDataset();
+    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+    read.resolve(new File(['x'], 'mine.parquetbundle'));
+
+    expect(await startup).toEqual({ kind: 'preempted' });
+    loadQueue.resolveOutcome(1, true);
+    expect(await click).toBe('loaded');
+    // Only the click registered a load; the stored import was never marked
+    // pending, read for its status, or restored over the click.
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledTimes(1);
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+      expect.any(File),
+      'default',
+      expect.objectContaining({ entry: OTHER, source: 'menu' }),
+    );
+    expect(markLastLoadStatus).not.toHaveBeenCalled();
+    expect(readLastLoadStatus).not.toHaveBeenCalled();
+  });
+
+  it('with no stored import, a menu choice made first is the only example fetched', async () => {
+    const read = deferred<File | null>();
+    vi.mocked(loadLastImportedFile).mockImplementationOnce(() => read.promise);
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const startup = controller.loadPersistedOrDefaultDataset();
+    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+    read.resolve(null);
+
+    expect(await startup).toEqual({ kind: 'preempted' });
+    loadQueue.resolveOutcome(1, true);
+    expect(await click).toBe('loaded');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(OTHER.url, expect.anything());
+  });
+
+  it('a click during the stored-status read preempts the recovery banner', async () => {
+    const status = deferred<{ status: 'error'; failedAttempts: number } | null>();
+    vi.mocked(loadLastImportedFile).mockResolvedValueOnce(new File(['x'], 'mine.parquetbundle'));
+    vi.mocked(readLastLoadStatus).mockImplementationOnce(() => status.promise as never);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
+    const { controller, setCurrentDatasetName } = createController();
+
+    const startup = controller.loadPersistedOrDefaultDataset();
+    await vi.waitFor(() => expect(readLastLoadStatus).toHaveBeenCalled());
+    void controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    status.resolve({ status: 'error', failedAttempts: 1 });
+
+    expect(await startup).toEqual({ kind: 'preempted' });
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+  });
+
+  it('a corrupt stored import found after a click is cleared without loading the demo', async () => {
+    const read = deferred<File | null>();
+    vi.mocked(loadLastImportedFile).mockImplementationOnce(() => read.promise);
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller } = createController();
+
+    const startup = controller.loadPersistedOrDefaultDataset();
+    void controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    read.reject(new StoredDatasetCorruptError('corrupt'));
+
+    expect(await startup).toEqual({ kind: 'preempted' });
+    errorSpy.mockRestore();
+    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    // No "loaded the default demo instead" notice for a load that never runs.
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(OTHER.url, expect.anything());
+  });
+
+  it('recovery under a stale epoch only clears the store', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller } = createController();
+
+    const restoreEpoch = controller.currentRequestEpoch();
+    controller.beginUserRequest();
+
+    expect(
+      await controller.recoverFromCorruptedPersistedDataset('could not be loaded', restoreEpoch),
+    ).toBe(false);
+    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('recovery under the current epoch clears the store, says so, and loads the demo', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const recovery = controller.recoverFromCorruptedPersistedDataset('could not be loaded');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+    loadQueue.resolveOutcome(1, true);
+
+    expect(await recovery).toBe(true);
+    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(DEMO.url, expect.anything());
+  });
+
+  it("the recovery banner's retry is a user request: it supersedes a pending example", async () => {
+    const response = deferred<ReturnType<typeof okResponse>>();
+    const fetchMock = vi.fn().mockReturnValue(response.promise);
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, loadQueue } = createController();
+    const file = new File(['x'], 'mine.parquetbundle');
+
+    const pending = controller.loadExampleDataset(DEMO, 'url');
+    await controller.tryLoadPersistedAgain(file);
+    response.resolve(okResponse());
+
+    expect(await pending).toBe('superseded');
+    expect(fetchSignal(fetchMock).aborted).toBe(true);
+    expect(markLastLoadStatus).toHaveBeenCalledWith('pending');
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+      file,
+      'opfs',
+      undefined,
+      controller.currentRequestEpoch(),
+    );
   });
 });

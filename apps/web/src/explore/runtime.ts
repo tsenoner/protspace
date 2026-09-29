@@ -27,7 +27,7 @@ import {
 import { EXAMPLE_DATASETS } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
-import { loadRequestedDatasetOrFallback, startInitialExploreLoad } from './startup';
+import { loadDatasetAfterNavigation, startInitialExploreLoad } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
 
@@ -70,11 +70,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     isDisposed: lifecycle.isDisposed,
   });
   dataLoader.loadFromFileHandler = (file, options, next) => {
-    // A non-'auto' load is a user import, which supersedes any example fetch
-    // still in flight. `datasetController` is declared below; this handler
-    // only runs on a later load, after this synchronous setup has finished.
+    // A non-'auto' load is a user import: a user request, which supersedes
+    // any example load still in flight and any startup load not yet started.
+    // `datasetController` is declared below; this handler only runs on a
+    // later load, after this synchronous setup has finished.
     if (options?.source !== 'auto') {
-      datasetController.supersedePendingExampleFetch();
+      datasetController.beginUserRequest();
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
       if (!isFastaFile(queuedFile)) {
@@ -247,7 +248,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   // superseding it here means it recognizes itself as stale and does
   // nothing once it does resolve, rather than trying to render onto
   // elements that are gone.
-  lifecycle.addCleanup(() => datasetController.supersedePendingExampleFetch());
+  lifecycle.addCleanup(() => {
+    datasetController.beginUserRequest();
+  });
 
   const handleExport = createExportHandler({
     controlBar,
@@ -437,7 +440,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         return;
       }
 
-      void loadRequestedDatasetOrFallback(datasetController, exampleId);
+      void loadDatasetAfterNavigation(datasetController, exampleId);
     },
     subscribeToDatasetChanges(callback) {
       return datasetController.subscribeToDatasetChanges(callback);

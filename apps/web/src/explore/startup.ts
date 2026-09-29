@@ -15,8 +15,12 @@ interface StartupOptions {
   requestedExampleId?: string | null;
 }
 
-async function runPersistedOrDefaultFlow(datasetController: DatasetController): Promise<void> {
-  const outcome = await datasetController.loadPersistedOrDefaultDataset();
+async function runPersistedOrDefaultFlow(
+  datasetController: DatasetController,
+  epoch: number,
+): Promise<void> {
+  const outcome = await datasetController.loadPersistedOrDefaultDataset({ epoch });
+  // 'preempted': a user request made meanwhile owns the screen, so no banner.
   if (outcome.kind !== 'recovery-required') return;
 
   // `loadPersistedOrDefaultDataset` (dataset-controller.ts) itself emits
@@ -61,21 +65,43 @@ async function runPersistedOrDefaultFlow(datasetController: DatasetController): 
  * own success is reported through `DatasetController.subscribeToDatasetChanges`
  * with source 'startup', which is what tells the URL sync hook to remove the
  * stale parameter.
+ *
+ * Everything runs under `epoch`: a Back/Forward passes a new user epoch
+ * (`beginUserRequest`), so it supersedes any load still in flight; the
+ * startup load passes the epoch current when it began, so its fallback yields
+ * to any user request made meanwhile.
  */
 export async function loadRequestedDatasetOrFallback(
   datasetController: DatasetController,
   requestedExampleId: string | null | undefined,
+  { epoch = datasetController.currentRequestEpoch() }: { epoch?: number } = {},
 ): Promise<void> {
   if (requestedExampleId) {
     if (findExampleDataset(requestedExampleId)) {
-      const outcome = await datasetController.loadExampleDataset(requestedExampleId);
+      const outcome = await datasetController.loadExampleDataset(requestedExampleId, { epoch });
       if (outcome !== 'failed') return;
     } else {
       notify.warning(getUnknownExampleDatasetNotification(requestedExampleId));
     }
   }
 
-  await runPersistedOrDefaultFlow(datasetController);
+  await runPersistedOrDefaultFlow(datasetController, epoch);
+}
+
+/**
+ * A `?dataset=` change after the first load, i.e. Back/Forward: a user
+ * request, including one to an entry without `dataset=`. It takes a new
+ * request epoch before anything else, so it supersedes any load still in
+ * flight (and aborts its download), and its own fallback runs under that
+ * epoch.
+ */
+export async function loadDatasetAfterNavigation(
+  datasetController: DatasetController,
+  requestedExampleId: string | null,
+): Promise<void> {
+  await loadRequestedDatasetOrFallback(datasetController, requestedExampleId, {
+    epoch: datasetController.beginUserRequest(),
+  });
 }
 
 export async function startInitialExploreLoad({
@@ -84,8 +110,11 @@ export async function startInitialExploreLoad({
   plotElement,
   requestedExampleId,
 }: StartupOptions): Promise<void> {
+  // App-initiated: a user request made from here on (a menu click while the
+  // perf check or the stored-import read is still running) wins.
+  const epoch = datasetController.currentRequestEpoch();
   const perfSuiteHandled = await maybeRunWebglPerfSuite({ plotElement, dataLoader });
   if (perfSuiteHandled) return;
 
-  await loadRequestedDatasetOrFallback(datasetController, requestedExampleId);
+  await loadRequestedDatasetOrFallback(datasetController, requestedExampleId, { epoch });
 }

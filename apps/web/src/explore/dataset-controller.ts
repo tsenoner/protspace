@@ -54,16 +54,23 @@ export interface DatasetController {
     id: string,
     source?: DatasetChangeSource,
   ): Promise<ExampleLoadOutcome>;
-  /** Loads a known example without touching OPFS (a `?dataset=` deep link or Back/Forward). */
-  loadExampleDataset(id: string): Promise<ExampleLoadOutcome>;
-  loadPersistedOrDefaultDataset(): Promise<PersistedLoadOutcome>;
+  /**
+   * Loads a known example without touching OPFS (a `?dataset=` deep link or
+   * Back/Forward), under `epoch` when given (see `beginUserRequest`).
+   */
+  loadExampleDataset(id: string, options?: { epoch?: number }): Promise<ExampleLoadOutcome>;
+  /** The startup load without an example; app-initiated, under `epoch` when given. */
+  loadPersistedOrDefaultDataset(options?: { epoch?: number }): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
   /**
-   * Invalidates any example fetch still in flight, without starting a new
-   * load. Called before a user file import or OPFS restore begins, so a
-   * slower, now-stale example fetch can never overwrite it once it resolves.
+   * Starts a user request: takes a new request epoch, which supersedes any
+   * example load still in flight and aborts its download, and returns it.
+   * Called for a user file import, for Back/Forward, and on teardown, so a
+   * slower, now-stale load can never overwrite what the user asked for.
    */
-  supersedePendingExampleFetch(): void;
+  beginUserRequest(): number;
+  /** The request epoch an app-initiated flow starting now runs under. */
+  currentRequestEpoch(): number;
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
@@ -150,28 +157,37 @@ export function createDatasetController({
   ): Promise<ExampleLoadOutcome> =>
     persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id, source);
 
-  const loadExampleDataset = async (id: string): Promise<ExampleLoadOutcome> => {
+  const loadExampleDataset = async (
+    id: string,
+    { epoch }: { epoch?: number } = {},
+  ): Promise<ExampleLoadOutcome> => {
     const entry = findExampleDataset(id);
     if (!entry) {
       return 'failed';
     }
-    return persistedDatasetController.loadExampleDataset(entry, 'url');
+    return persistedDatasetController.loadExampleDataset(entry, 'url', { epoch });
   };
 
   const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
     await loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE_DATASET.id, 'startup');
   };
 
-  const loadPersistedOrDefaultDataset = async (): Promise<PersistedLoadOutcome> => {
-    const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset();
+  const loadPersistedOrDefaultDataset = async (
+    options: { epoch?: number } = {},
+  ): Promise<PersistedLoadOutcome> => {
+    const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset(options);
     if (outcome.kind === 'recovery-required') {
       // Nothing loads while the recovery banner is up, so nothing reaches
       // `handleDataLoaded`: report "no example" here so a stale `?dataset=`
-      // from a failed/unknown deep link is replace-deleted from the URL.
+      // from a failed/unknown deep link is replace-deleted from the URL. And
+      // dismiss the overlay of an example load this request superseded (a
+      // Back to an entry without `dataset=`), which would otherwise stay up.
+      overlayController.update(false);
       emitDatasetChange(null, 'startup');
     }
     // 'auto-loaded' (OPFS) and 'default-loaded' (demo) report through
-    // `handleDataLoaded` on success.
+    // `handleDataLoaded` on success; 'preempted' means a user request took
+    // over, and that request reports its own outcome.
     return outcome;
   };
 
@@ -208,14 +224,14 @@ export function createDatasetController({
         return;
       }
 
-      // An example load superseded by a newer menu/url/user request, before
-      // or during `loadData`, must not label itself, emit, or touch the view:
-      // the newer request owns the screen. The queue-level check above can't
-      // see this (this load is still the running one), so it is checked here
-      // and again after each await below.
+      // An example load superseded by a newer user request, before or during
+      // `loadData`, must not label itself, emit, or touch the view: the newer
+      // request owns the screen. The queue-level check above can't see this
+      // (this load is still the running one), so it is checked here and again
+      // after each await below.
       const isSupersededExampleLoad = () =>
         loadMeta.example != null &&
-        !persistedDatasetController.isCurrentExampleRequest(loadMeta.example.requestId);
+        !persistedDatasetController.isCurrentRequest(loadMeta.example.requestId);
 
       if (isSupersededExampleLoad()) {
         return;
@@ -425,7 +441,7 @@ export function createDatasetController({
     // newer request — possibly still downloading — now owns.
     if (
       runningLoadMeta?.example &&
-      !persistedDatasetController.isCurrentExampleRequest(runningLoadMeta.example.requestId)
+      !persistedDatasetController.isCurrentRequest(runningLoadMeta.example.requestId)
     ) {
       console.warn(
         `Ignoring load error for superseded example "${runningLoadMeta.example.entry.id}":`,
@@ -458,7 +474,13 @@ export function createDatasetController({
         return;
       }
 
-      await persistedDatasetController.recoverFromCorruptedPersistedDataset('could not be loaded');
+      // Loads the demo only if no user request has moved past the epoch the
+      // restore began under (a menu click still downloading, say); otherwise
+      // it just clears the broken copy.
+      await persistedDatasetController.recoverFromCorruptedPersistedDataset(
+        'could not be loaded',
+        runningLoadMeta.epoch,
+      );
       return;
     }
 
@@ -481,7 +503,8 @@ export function createDatasetController({
     loadExampleDataset,
     loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
-    supersedePendingExampleFetch: persistedDatasetController.supersedePendingExampleFetch,
+    beginUserRequest: persistedDatasetController.beginUserRequest,
+    currentRequestEpoch: persistedDatasetController.currentRequestEpoch,
     subscribeToDatasetChanges(callback) {
       datasetChangeSubscribers.add(callback);
       return () => {
