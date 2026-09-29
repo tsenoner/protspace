@@ -33,9 +33,9 @@ the same backoff, `Retry-After` handling and attempt budget as the other batched
 requests. Only a request that still fails after those attempts SHALL count as a lost batch. A lost
 batch makes the whole InterPro source incomplete and uncached, so one unretried timeout among
 thousands of batches costs a full refetch on the next run. After 10 batches in a row are lost,
-InterPro retrieval SHALL count the remaining batches as lost without requesting them: each lost
-batch costs its full retry budget, and asking thousands more during an outage adds hours without
-saving the source.
+counted in the order the batches were submitted, InterPro retrieval SHALL start no further batch
+and SHALL count every batch whose matches it has not used as lost: each lost batch costs its full
+retry budget, and asking thousands more during an outage adds hours without saving the source.
 
 #### Scenario: A transient failure recovers
 
@@ -63,8 +63,8 @@ saving the source.
 #### Scenario: The service stays down
 
 - **WHEN** 10 InterPro match batches in a row are lost after their retries
-- **THEN** the remaining batches are counted as lost without a request
-- **AND** one error states how many batches were not requested
+- **THEN** no further batch is started, and every remaining batch counts as lost
+- **AND** one error states how many batches were not used
 
 #### Scenario: The service comes back
 
@@ -162,3 +162,74 @@ first-pass budget discards the whole source.
 - **WHEN** the first pass looks up an accession
 - **THEN** it uses the small per-protein attempt budget, so a full outage does not multiply the
   default backoff by the number of proteins
+
+### Requirement: InterPro columns hold member-database matches only
+
+InterPro retrieval SHALL leave out every match whose source is InterPro-N, so that each InterPro
+column holds only the matches its member database made. The InterPro Matches API returns
+InterPro-N's AI-predicted matches under the name of the member library they predict, without a
+signature name or a match-level score. Mapped by library, they became unscored hits for about 3 %
+of Swiss-Prot proteins in `pfam`, in columns the annotation registry describes as reference
+annotations rather than predictions.
+
+#### Scenario: A signature only InterPro-N predicts
+
+- **WHEN** InterPro returns a Pfam signature for a protein only as an InterPro-N match
+- **THEN** that protein's `pfam` value does not contain the signature
+
+#### Scenario: A member-database match has an InterPro-N twin
+
+- **WHEN** InterPro returns the same signature for a protein both from its member database and
+  from InterPro-N
+- **THEN** the value lists the signature once, with the member database's score
+
+#### Scenario: A match names no source
+
+- **WHEN** a match in the response has no `source` field
+- **THEN** it is treated as a member-database match and kept
+
+### Requirement: Annotation lookups reuse connections and run a bounded number at a time
+
+TED and InterPro retrieval SHALL send their requests over one reused connection pool per source,
+with at most 8 TED lookups and 4 InterPro match batches in flight by default, and SHALL produce
+the same values, in the same order and with the same failure counts, as sending one request at a
+time. UniProt retrieval SHALL send all its requests over one reused connection pool, one at a
+time. A new connection per request and one request at a time made TED take about 23 hours and
+InterPro about 4 at Swiss-Prot scale; the measured parallel rates bring each to about 1.5 hours
+without a 429 or 5xx from either service.
+
+#### Scenario: Parallel results match sequential ones
+
+- **WHEN** the same TED accessions or InterPro batches are fetched once with one request at a
+  time and once with the default concurrency, and the responses arrive in a different order
+- **THEN** every protein receives the same values, the results keep the input order, and the
+  same lookups and batches count as failed
+
+#### Scenario: The defaults stay polite
+
+- **WHEN** a run fetches TED and InterPro without overriding the limits
+- **THEN** no more than 8 TED lookups and 4 InterPro batches are in flight at any time
+
+#### Scenario: The server asks for a pause
+
+- **WHEN** any request of a source receives a retryable status with a `Retry-After` header
+- **THEN** no request of that source is attempted before that time, capped at the shared maximum
+  backoff
+
+#### Scenario: A service goes down during a parallel pass
+
+- **WHEN** TED final-pass lookups or InterPro batches fail 10 in a row, counted in input order
+- **THEN** no request is started beyond those already submitted, at most twice the concurrency
+  limit ahead of the last result used
+
+#### Scenario: The fetch is interrupted
+
+- **WHEN** a TED or InterPro fetch is interrupted
+- **THEN** no queued request is started, and the process stops once the requests in flight end
+
+#### Scenario: UniProt reuses its connection
+
+- **WHEN** UniProt retrieval fetches batches, resolves inactive entries, reads UniParc and
+  searches secondary accessions
+- **THEN** every request goes through one session, one at a time
+- **AND** the release header of every response is still recorded

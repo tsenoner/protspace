@@ -144,6 +144,96 @@ that exists.
 resolution, UniParc). No extra request is made. This is the only interface Track 3 depends on
 Track 1 for (see "Track partition").
 
+### InterPro columns hold member-database matches only
+
+The InterPro Matches API now also returns InterPro-N matches: AI predictions that carry
+`"source": "InterPro-N"` and the member library they predict, sometimes at an older release
+(`Pfam 37.3` next to Pfam 38.2 matches), with no signature name and no match-level score. The
+retriever mapped matches by `signatureLibraryRelease.library` alone, so a signature that only
+InterPro-N predicts landed in `pfam`, `cdd`, `prints` and the others as an unscored hit. In 300
+Swiss-Prot proteins that happened for 9 in `pfam` and 11 in `cdd`, about 3 % of proteins.
+
+`_parse_interpro_results` skips every match whose `source`, compared lower-case, is `interpro-n`.
+A match without a `source` field is a member-database match, as in every response before
+InterPro-N and in the existing test fixtures. The member database's own match of the same
+signature is kept, with its score. Tests use two results captured from the live API.
+
+The InterPro columns change meaning again, but cache version 2 is not released yet and already
+refreshes every InterPro column of an older cache, so the filter joins version 2 instead of adding
+version 3. A cache that a pre-release build of this branch wrote is stamped version 2 and keeps its
+InterPro-N values; such a cache needs `--refetch interpro` once.
+
+_Alternative, keep InterPro-N matches and document them:_ rejected. The registry describes these
+columns as the member databases' reference annotations, not predictions (`isPredicted: false`),
+and the unscored hits cannot be told apart from CDD, SUPERFAMILY, PRINTS and PROSITE matches,
+which carry no match-level score either. Only a blocklist of the one known predicted source is
+used, not an allowlist of member sources: a renamed native `source` would otherwise empty a whole
+column, and the empty values would be cached as "no match".
+
+### Lookups share one session and run a bounded number at a time
+
+At Swiss-Prot scale TED took about 23 hours and InterPro about 4. The clients, not the servers,
+set that pace. Measured against the live APIs with Swiss-Prot accessions:
+
+| Source           | Client today                        | Measured alternative                        |
+| ---------------- | ----------------------------------- | ------------------------------------------- |
+| TED (AFDB)       | `requests.get`, 7 req/s, ≈ 23 h     | one session, 8 parallel: 124 req/s, ≈ 1.3 h |
+| InterPro Matches | one POST at a time, 35 MD5/s, 3.8 h | one session, 4 parallel: 92 MD5/s, ≈ 1.5 h  |
+| UniProt          | `requests.get`, 208 entries/s       | one session, sequential: 308/s, ≈ 31 min    |
+
+No 429 and no 5xx came back in 680 TED requests at up to 16 in parallel.
+
+`http_utils` gains three pieces:
+
+- `get_with_retry`, `post_with_retry` and `paginated_get` take an optional `session`. Without one
+  they call `requests.get`/`requests.post` as before, so the taxonomy retriever is unchanged.
+- `pooled_session(connections)` returns a `requests.Session` whose connection pool holds that many
+  connections per host. When a server answers any request on the session with `Retry-After`,
+  every later attempt on the session waits until that time, not only the thread that received
+  it. Under concurrency, one request's backoff would otherwise leave the others firing at a
+  server that asked for a pause.
+- `map_in_order(fn, items, workers)` runs at most `workers` calls at once and yields their results
+  in input order. It submits at most `2 × workers` calls ahead of the result it yields, so a 573K
+  input never holds 573K futures. With `workers <= 1` it calls `fn` inline, one item at a time.
+  Closing the iterator early cancels the queued calls and waits for the running ones, so no
+  request outlives the fetch. An interrupt cancels the queue without waiting.
+
+The retrievers use them as follows:
+
+- **TED** sends up to `ted_retriever.MAX_CONCURRENT_REQUESTS` (8) lookups at once, in the first
+  pass and in the final pass. Each lookup returns its value or its error rather than raising, and
+  the results are consumed in input order, so failure counting, the final pass and its breaker
+  work on the same sequence as before. The CATH names still load lazily, now under a lock, so
+  parallel lookups do not download them twice.
+- **InterPro** sends up to `interpro_retriever.MAX_CONCURRENT_REQUESTS` (4) match batches at once,
+  with the same retry budget and MD5 fan-out.
+- **UniProt** reuses one session for its batches, inactive-entry lookups, UniParc and
+  secondary-accession searches, one request at a time. Parallel batches would save about 10
+  minutes of 31. They would also need the per-batch inactive-entry resolution, the result list
+  and the release set made safe for threads. UniProt is not on the critical path.
+
+The breakers count failures in input order, as the results are consumed. After 10 lost InterPro
+batches or 10 failed TED final-pass lookups in a row, the loop stops, the queued requests are
+cancelled, and the running ones finish. Everything not yet consumed counts as lost, whether or
+not its request completed. Once a service is down, the requests made are therefore bounded by the
+breaker's limit plus the `2 × workers` submitted ahead. A lookup that succeeds resets the count,
+as before.
+
+The limits are module constants and constructor keywords (`max_concurrent_requests`). This
+follows how the retrievers expose `CHUNK_SIZE`, `_BATCH_SIZE` and the attempt budgets. There is no
+CLI flag, and no environment variable: the `protspace` package reads none, and only the prep
+service is configured that way. The defaults are the measured, polite levels, and nothing raises
+them unless a caller asks.
+
+_Alternative, seed TED from its bulk file (Zenodo, 19.9 GB):_ rejected. The download alone takes
+1.1 to 4 hours here, and the result needs a per-domain MD5 check against sequence changes, exact
+formatting parity and cache integration. The fixed crawl does the same in about 1.3 hours with
+the API's exact semantics. No InterPro or UniProt bulk file carries the scores the retrievers
+emit.
+
+_Alternative, `asyncio` with `httpx` or `aiohttp`:_ rejected. It would add a dependency and a
+second retry implementation, and would gain nothing over threads for about 10 requests in flight.
+
 ### Family names are parsed by sentence, per section
 
 For each text of each `SIMILARITY` comment, in UniProt order:
@@ -354,6 +444,14 @@ repository root.
 - `apps/protspace/CLAUDE.md`.
 - `apps/protspace/notebooks/*.ipynb`, only if a notebook restates changed behaviour.
 
+**Throughput and InterPro-N (tasks section 6), on the integrated branch.**
+
+- Source: Track 1's retriever files, plus the version-2 comment in `data/annotations/encoding.py`.
+- Tests: Track 1's test files, and `test_annotation_retrieval_e2e.py`, whose fake servers move
+  from `requests.get`/`requests.post` to `requests.Session`.
+- Docs: `docs/guide/fetching-and-caching.md`, the InterPro source text in
+  `docs/scripts/annotation-details.ts` and the generated `docs/guide/annotations.md`.
+
 Frozen interfaces:
 
 - Failure signals stay as they are: `failed_batch_count` for InterPro, `prediction_failed` for
@@ -381,6 +479,15 @@ Frozen interfaces:
   cache hit, measured in task 3.6. The final write already pays the same cost once.
 - **The TED final pass can add time during a partial outage.** → Only for the failed accessions,
   cut off after 10 consecutive failures.
+- **Parallel requests load the public APIs harder.** → The defaults (8 for AlphaFold DB, 4 for
+  InterPro) are the levels measured without a single 429 or 5xx. A `Retry-After` pauses every
+  request on the session, and the retry budgets and breakers are unchanged.
+- **Ctrl-C waits for the requests in flight.** → The queue is cancelled at once, but Python cannot
+  stop a running thread. The process exits when the running requests finish, which takes at most
+  one request's retry budget and is usually well under a second.
+- **A cache written by a pre-release build of this branch keeps InterPro-N values.** → It is
+  stamped version 2, the version the filter joins. Only development caches are affected, and
+  `--refetch interpro` repairs one.
 - **Sequence-dependent sources are cached per identifier, not per sequence.** This is inherited
   from `prepare`, and `annotate --cache-dir` now exposes it too. → The docs tell users to use a
   separate cache directory, or `--refetch interpro,biocentral`, when the sequences behind the
@@ -410,8 +517,10 @@ run once with `--refetch uniprot`. The docs say so.
 
 ## Open Questions
 
-None blocking. Two follow-ups for after the rebuild:
+None blocking. TED's bulk downloads (critique G25) are settled: the bounded-concurrency crawl is
+faster than downloading them (see "Lookups share one session"). Two follow-ups for after the
+rebuild:
 
-- Whether TED at Swiss-Prot scale needs an in-source journal, or TED's bulk downloads (critique
-  G25).
+- Whether TED at Swiss-Prot scale still needs an in-source journal, now that the pass takes about
+  an hour and a half instead of a day.
 - Whether provenance should also travel inside bundles (critique G15).

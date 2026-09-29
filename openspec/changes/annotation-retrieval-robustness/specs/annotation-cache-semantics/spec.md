@@ -96,7 +96,9 @@ family-name parsing and the InterPro duplicate-sequence fixes. A run that reques
 SHALL refetch its source once and stamp the rewritten cache as current. A run that does not
 request it SHALL drop it from the cache it writes. Cached values from other sources SHALL be
 reused. The old values are wrong for about 2 % of Swiss-Prot families and 15 % of Swiss-Prot
-InterPro rows, and cannot be repaired locally.
+InterPro rows, and cannot be repaired locally. The same refresh drops the InterPro-N predictions
+that older InterPro values include, which cannot be told apart from member-database matches in a
+cached cell.
 
 #### Scenario: A legacy cache is asked for protein families
 

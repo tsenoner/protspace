@@ -16,6 +16,10 @@ already in the published bundles:
   `cation transport ATPase (P-type) (TC 3` (9,090 Swiss-Prot entries). Multi-domain entries,
   whose UniProt text reads `In the N-terminal section; belongs to the X family`, yield a
   pseudo-family instead of X (4,688 entries). A second family in another section is dropped.
+- **InterPro-N predictions leak into the member-database columns.** The InterPro Matches API now
+  also returns AI-predicted InterPro-N matches under the name of the member library they predict.
+  The retriever maps matches by library only, so they appear in `pfam`, `cdd` and the others as
+  unscored hits, for about 3 % of Swiss-Prot proteins in `pfam`.
 
 The rest make large runs unrecoverable or expensive to repeat:
 
@@ -30,6 +34,10 @@ The rest make large runs unrecoverable or expensive to repeat:
 - The annotation cache is written once, after every source has finished (`manager.py:259-272`).
   A failure in hour 20 of TED also throws away the UniProt and InterPro results already fetched.
   `protspace annotate` has no cache at all.
+- TED and InterPro are slow because of the client, not the servers: a new connection for every
+  request, one request at a time. TED takes about 23 hours for Swiss-Prot and InterPro about 4.
+  Over one reused connection pool, the same APIs answered 8 parallel TED lookups at 124 per second
+  and 4 parallel InterPro batches at 92 sequences per second, without a single 429 or 5xx.
 - `run.log` does not record which UniProt release the annotations came from. Without it, a
   rebuilt bundle's numbers cannot be traced back to a release.
 - A bundle made by `protspace bundle`, `transfer` or the bundle API from a table that holds the
@@ -39,7 +47,12 @@ The rest make large runs unrecoverable or expensive to repeat:
 ## What Changes
 
 - InterPro fans each distinct sequence's matches out to every protein with that sequence, and
-  retries a match request that fails transiently before the batch counts as lost.
+  retries a match request that fails transiently before the batch counts as lost. It keeps
+  member-database matches only and leaves InterPro-N predictions out.
+- TED looks up 8 accessions at a time and InterPro sends 4 match batches at a time, each over one
+  reused connection pool; UniProt reuses one connection. Values, their order and the failure
+  accounting are unchanged, and a `Retry-After` pauses every request of the source. The limits are
+  module constants, not flags.
 - Biocentral sends predictions in batches of at most `_BATCH_SIZE` (1,000) unique sequences. A
   failed batch loses only its own proteins, sequences of any length are still sent, and the
   completeness messages keep the embed contract's rules (stderr, warning level, no substring the
@@ -71,7 +84,8 @@ The rest make large runs unrecoverable or expensive to repeat:
 
 - `annotation-source-retrieval`: how each annotation source turns a set of proteins into
   requests, and when a failed request is retried rather than counted as lost. Covers InterPro
-  duplicate-sequence fan-out and retry, Biocentral batching, and the TED final retry pass.
+  duplicate-sequence fan-out, retry and the InterPro-N filter, Biocentral batching, the TED final
+  retry pass, and the connection reuse and bounded concurrency of TED, InterPro and UniProt.
 - `annotation-release-provenance`: which UniProt release a run's annotations came from, as
   recorded in the annotation cache and in `run.log`.
 
@@ -102,18 +116,22 @@ requirements. Per-identifier fill-in is kept, and `annotate --cache-dir` inherit
     `data/processors/pipeline.py`;
   - `cli/annotate.py`, `cli/prepare.py`, `cli/common_options.py`.
 - **Behaviour users see:**
-  - Duplicate-sequence proteins gain InterPro values.
+  - Duplicate-sequence proteins gain InterPro values, and InterPro-N predictions leave the
+    InterPro columns.
+  - At Swiss-Prot scale TED takes about 1.5 hours instead of a day, and InterPro about 1.5 hours
+    instead of 4.
   - About 2 % of Swiss-Prot entries get corrected family names, and multi-section entries become
     multi-valued in `protein_families`.
   - A legacy cache refreshes UniProt and InterPro once, and only when the run requests those
     columns.
   - New `annotate` flags and a new `run.log` line.
   - Bundles lose the internal columns.
-- **Release:** `fix(protspace)` and `feat(protspace)` commits, so this is a minor release of the
-  PyPI package. No bundle format version change, no dependency change, no web reader change.
+- **Release:** `fix(protspace)`, `perf(protspace)` and `feat(protspace)` commits, so this is a
+  minor release of the PyPI package. No bundle format version change, no dependency change, no
+  web reader change.
 - **Docs:** `docs/guide/python-cli.md`, `docs/guide/fetching-and-caching.md`, and the
-  `protein_families` entry in the annotation registry, from which `docs/guide/annotations.md` is
-  generated. The Colab notebooks restate none of the changed behaviour today, which the
+  `protein_families` entry and InterPro source text of the annotation docs, from which
+  `docs/guide/annotations.md` is generated. The Colab notebooks restate none of the changed behaviour today, which the
   integration step checks again.
 - **Downstream:** the example-dataset rebuild (PLAN Change B, phase B3) waits for this change to
   merge.
