@@ -137,16 +137,26 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
   };
 }
 
+/**
+ * A failed example download. With `onRetry` (every download failure; a bundle
+ * that downloads but fails to parse is reported by
+ * `getDataLoadFailureNotification` instead), Retry is the primary action and
+ * "Report this" the secondary one.
+ */
 export function getExampleLoadFailureNotification(
   entry: ExampleDataset,
   error: unknown,
+  onRetry?: () => void,
 ): NotifyOptions {
+  const report = buildReportAction(`Example dataset "${entry.id}"`, error);
   return {
     title: `Couldn't load "${entry.label}".`,
     description: getErrorMessage(error),
     durationMs: 10_000,
     dedupeKey: `example-load-error:${entry.id}`,
-    action: buildReportAction(`Example dataset "${entry.id}"`, error),
+    ...(onRetry
+      ? { action: { label: 'Retry', onClick: onRetry }, secondaryAction: report }
+      : { action: report }),
   };
 }
 

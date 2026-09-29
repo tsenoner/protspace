@@ -47,16 +47,16 @@ Before every commit:
 - [x] 2.1 (c) `getDatasetSearchParamsUpdate(…, 'menu')`: set `dataset=<id>`, delete `annotation`/`projection`/`tooltip`, keep other parameters.
   - Update the `url-state.test.ts` expectation `annotation=ec&dataset=demo` to `dataset=demo`.
   - Add: `seed=` survives a menu choice; `user`/`startup` keep the view parameters.
-- [ ] 2.2 (a) Keep the plot on a failed Back/Forward:
+- [x] 2.2 (a) Keep the plot on a failed Back/Forward:
   - `datasetController.hasDisplayedDataset()`;
   - `loadRequestedDatasetOrFallback(…, { keepCurrentOnFailure })` returns its outcome, and `runtime.ts` passes `hasDisplayedDataset()`;
   - `ExploreController.setRequestedDataset` returns `Promise<void>` (update `types.ts` and the no-op controller).
-- [ ] 2.3 (a) Retry and Report:
+- [x] 2.3 (a) Retry and Report:
   - `NotifyAction` becomes `{label, href} | {label, onClick}`, and `NotifyOptions.secondaryAction` maps to sonner `cancel`;
   - a download-failure toast gets Retry (primary) and Report (secondary); a parse-failure toast keeps Report only.
   - Retry after a failed Back/Forward re-reads the URL entry's view parameters, records them, and calls `setRequestedDataset(id)`; Retry after a failed menu choice repeats the menu choice.
   - Tests in `notifications.test.ts`.
-- [ ] 2.4 (a, G11) After a failed Back/Forward, re-record the displayed view in the view controller unless the user retries.
+- [x] 2.4 (a, G11) After a failed Back/Forward, re-record the displayed view in the view controller unless the user retries.
   - The hook tracks the displayed dataset id, so the next app-written entry for a user view change names the displayed dataset.
   - Unit tests: `startup.test.ts` (no fallback with the flag; fallback without it), and `dataset-controller.dataset-changes.test.ts` (`hasDisplayedDataset()` flips only on success, and stays unchanged after a `data-error`).
 - [x] 2.5 (b1) Add the pure `decideUrlChange({ datasetParam, currentDatasetId, switchPending })` to `url-state.ts`, with unit tests.

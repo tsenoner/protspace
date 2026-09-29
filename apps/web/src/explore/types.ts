@@ -101,6 +101,8 @@ export interface ExploreController {
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
+  /** Reports the Retry of a failed `?dataset=` download, for the URL sync hook to re-request. */
+  subscribeToExampleRetries(callback: (exampleId: string) => void): () => void;
   dispose(): void;
 }
 
@@ -115,6 +117,9 @@ export const NOOP_CONTROLLER: ExploreController = {
   },
   cancelPendingMenuLoad() {},
   subscribeToDatasetChanges() {
+    return () => {};
+  },
+  subscribeToExampleRetries() {
     return () => {};
   },
   dispose() {},

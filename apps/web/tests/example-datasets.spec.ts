@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { findExampleDataset } from '../src/explore/example-datasets';
 import {
   dismissTourIfPresent,
@@ -148,6 +148,20 @@ async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
   );
   return release;
 }
+
+/** The error toast for a failed example download, and its Retry button. */
+function exampleFailureToast(page: Page, id: string) {
+  const entry = findExampleDataset(id);
+  if (!entry) {
+    throw new Error(`Catalog is missing the "${id}" example used by this test.`);
+  }
+  const toast = page.locator('[data-sonner-toast]', {
+    hasText: `Couldn't load "${entry.label}".`,
+  });
+  return { toast, retry: toast.getByRole('button', { name: 'Retry' }) };
+}
+
+const failWith500 = (route: Route) => route.fulfill({ status: 500, body: 'Internal Server Error' });
 
 async function importUserFile(page: Page, filePath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
@@ -652,5 +666,96 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
     expect(await getSearch(page)).toBe('');
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
+  });
+});
+
+test.describe('Example datasets: a failed load keeps what is on screen', () => {
+  test('Back to an example whose download fails keeps the plot and the entry, and Retry recovers (a)', async ({
+    page,
+  }) => {
+    const { toast, retry } = exampleFailureToast(page, '5K');
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await chooseExampleFromMenu(page, '5K');
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await chooseExampleFromMenu(page, 'phosphatase');
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await expectDatasetParam(page, 'phosphatase');
+    const historyLength = await page.evaluate(() => history.length);
+
+    await page.route('**/data/5K.parquetbundle', failWith500);
+    await page.goBack();
+
+    await expect(toast).toBeVisible();
+    await expect(toast.getByRole('button', { name: 'Report this' })).toBeVisible();
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    // No fallback: phosphatase stays, and the entry still names 5K.
+    await page.waitForTimeout(500);
+    expect(await getProteinCount(page)).toBe(PHOSPHATASE_COUNT);
+    expect(await getSearch(page)).toBe('?dataset=5K');
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+
+    await page.unroute('**/data/5K.parquetbundle', failWith500);
+    await retry.click();
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView('5K'));
+    expect(await getSearch(page)).toBe('?dataset=5K');
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+  });
+
+  test('after a failed Back, a view change writes an entry naming the dataset on screen (a)', async ({
+    page,
+  }) => {
+    const { toast } = exampleFailureToast(page, '5K');
+    await page.goto('/explore?dataset=5K&annotation=length_fixed');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await chooseExampleFromMenu(page, 'phosphatase');
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+
+    await page.route('**/data/5K.parquetbundle', failWith500);
+    await page.goBack();
+    await expect(toast).toBeVisible();
+    expect(await getUrlParam(page, 'annotation')).toBe('length_fixed');
+
+    await pickAnnotation(page, 'ec');
+    await expectDatasetParam(page, 'phosphatase');
+    expect(await getUrlParam(page, 'annotation')).toBe('ec');
+    // Naming the displayed dataset reloads nothing.
+    await page.waitForTimeout(500);
+    expect(await getProteinCount(page)).toBe(PHOSPHATASE_COUNT);
+    expect(await getSelectedAnnotation(page)).toBe('ec');
+  });
+
+  test('a deep link whose download fails at startup falls back, and Retry opens it (a)', async ({
+    page,
+  }) => {
+    const { toast, retry } = exampleFailureToast(page, '5K');
+    await page.goto('/explore?seed=baseline');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    const baselineHistoryLength = await page.evaluate(() => history.length);
+
+    await page.route('**/data/5K.parquetbundle', failWith500);
+    await page.goto('/explore?dataset=5K');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+
+    // Nothing was on screen yet, so the startup load runs instead and the
+    // parameter is removed without a history entry of its own.
+    await expect(toast).toBeVisible();
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expectDatasetParam(page, null);
+    expect(await page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
+
+    // Retry names the example in a new entry and loads it like a link.
+    await page.unroute('**/data/5K.parquetbundle', failWith500);
+    await retry.click();
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+    await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 2);
   });
 });

@@ -381,6 +381,19 @@ export function buildSearchParamsWithExploreView(
   return next;
 }
 
+/**
+ * The request a URL naming `effective` would parse to: what the view
+ * controller records as the view on screen after a failed Back/Forward, in
+ * place of the failed entry's parameters.
+ */
+export function createExploreViewRequestFromView(
+  effective: EffectiveExploreView,
+): ExploreViewRequestState {
+  return parseExploreViewRequest(
+    buildSearchParamsWithExploreView(new URLSearchParams(), effective, { mode: 'user' }),
+  );
+}
+
 export function getExploreViewSearchParamsUpdate(
   searchParams: URLSearchParams,
   change: {
@@ -390,12 +403,22 @@ export function getExploreViewSearchParamsUpdate(
   },
   options: {
     pendingUrlRequest: boolean;
+    /**
+     * The dataset on screen, as its `dataset` parameter (null for none). A
+     * user change's new entry names it, so after a failed Back/Forward, whose
+     * entry still names the example that failed, the next entry the app
+     * writes is accurate again. Leave it out to keep `dataset` as it is.
+     */
+    displayedDatasetId?: string | null;
   },
 ): { next: URLSearchParams; replace: boolean } | null {
   if (change.source === 'user' && !options.pendingUrlRequest) {
-    const next = buildSearchParamsWithExploreView(searchParams, change.effective, {
+    let next = buildSearchParamsWithExploreView(searchParams, change.effective, {
       mode: 'user',
     });
+    if (options.displayedDatasetId !== undefined) {
+      next = setDatasetParam(next, options.displayedDatasetId);
+    }
     return next.toString() === searchParams.toString() ? null : { next, replace: false };
   }
 

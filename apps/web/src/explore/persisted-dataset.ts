@@ -43,6 +43,12 @@ interface PersistedDatasetOptions {
   awaitLoadOutcome: LoadQueue['awaitLoadOutcome'];
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
+  /**
+   * Retry for a failed `?dataset=` download (a deep link or Back/Forward):
+   * the URL sync hook re-requests it, since only it knows which history entry
+   * names the example. Without it, Retry loads the example directly.
+   */
+  retryUrlExample?(id: string): void;
 }
 
 export function createPersistedDatasetController({
@@ -52,6 +58,7 @@ export function createPersistedDatasetController({
   awaitLoadOutcome,
   setCurrentExampleId,
   setCurrentDatasetName,
+  retryUrlExample,
 }: PersistedDatasetOptions) {
   // Which request owns the screen (the "Request precedence" requirement in
   // openspec/specs/example-datasets). A user request (a menu choice,
@@ -164,7 +171,17 @@ export function createPersistedDatasetController({
         return 'superseded';
       }
       console.error(`Failed to load example dataset "${entry.id}":`, error);
-      notify.error(getExampleLoadFailureNotification(entry, error));
+      // Retry is a new user request: it repeats a menu choice (or a recovery
+      // banner's "Load default") as it was, and hands a URL-driven load back
+      // to the URL sync hook.
+      const retry = () => {
+        if (source === 'url' && retryUrlExample) {
+          retryUrlExample(entry.id);
+          return;
+        }
+        void loadExampleDataset(entry, source, { replacesStoredImport });
+      };
+      notify.error(getExampleLoadFailureNotification(entry, error, retry));
       overlayController.update(false);
       return 'failed';
     } finally {

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSearchParamsWithExploreView,
+  createExploreViewRequestFromView,
   decideUrlChange,
   getDatasetParam,
   getDatasetSearchParamsUpdate,
+  getExploreViewSearchParamsUpdate,
   getResolvedExploreViewNormalization,
   parseExploreViewRequest,
   resolveExploreView,
@@ -605,5 +607,68 @@ describe('decideUrlChange', () => {
     expect(
       decideUrlChange({ datasetParam: null, currentDatasetId: null, switchPending: false }),
     ).toBe('apply-view');
+  });
+});
+
+describe('after a failed Back/Forward', () => {
+  const effective = { annotation: 'pfam', projection: 'PCA', tooltip: ['go'] };
+  const userChange = {
+    effective,
+    source: 'user' as const,
+    normalize: { annotation: false, projection: false, tooltip: false },
+  };
+
+  it('a user change names the displayed dataset in its new entry', () => {
+    // The entry still names the example that failed (A); B is on screen.
+    const update = getExploreViewSearchParamsUpdate(
+      new URLSearchParams('dataset=A&annotation=x&seed=1'),
+      userChange,
+      { pendingUrlRequest: false, displayedDatasetId: 'B' },
+    );
+
+    expect(update?.replace).toBe(false);
+    expect(update?.next.get('dataset')).toBe('B');
+    expect(update?.next.get('annotation')).toBe('pfam');
+    expect(update?.next.get('seed')).toBe('1');
+  });
+
+  it('drops dataset= when the displayed dataset is not an example', () => {
+    const update = getExploreViewSearchParamsUpdate(
+      new URLSearchParams('dataset=A&annotation=x'),
+      userChange,
+      { pendingUrlRequest: false, displayedDatasetId: null },
+    );
+
+    expect(update?.next.has('dataset')).toBe(false);
+  });
+
+  it('leaves dataset= alone without a displayed dataset id, and for normalizations', () => {
+    const kept = getExploreViewSearchParamsUpdate(
+      new URLSearchParams('dataset=A&annotation=x'),
+      userChange,
+      { pendingUrlRequest: false },
+    );
+    expect(kept?.next.get('dataset')).toBe('A');
+
+    const normalized = getExploreViewSearchParamsUpdate(
+      new URLSearchParams('dataset=A&annotation=x'),
+      {
+        effective,
+        source: 'url',
+        normalize: { annotation: true, projection: false, tooltip: false },
+      },
+      { pendingUrlRequest: true, displayedDatasetId: 'B' },
+    );
+    expect(normalized?.replace).toBe(true);
+    expect(normalized?.next.get('dataset')).toBe('A');
+  });
+
+  it('records the view on screen as the request a URL naming it would parse to', () => {
+    expect(createExploreViewRequestFromView(effective)).toEqual(
+      parseExploreViewRequest(new URLSearchParams('annotation=pfam&projection=PCA&tooltip=go')),
+    );
+    const withoutTooltip = createExploreViewRequestFromView({ ...effective, tooltip: [] });
+    expect(withoutTooltip.present).toEqual({ annotation: true, projection: true, tooltip: false });
+    expect(withoutTooltip.requested.tooltip).toBeUndefined();
   });
 });

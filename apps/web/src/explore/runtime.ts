@@ -439,7 +439,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
           requestedExampleId: exampleId,
         });
       } else {
-        request = loadDatasetAfterNavigation(datasetController, exampleId);
+        request = loadDatasetAfterNavigation(datasetController, viewController, exampleId);
       }
       // The URL sync hook only waits for this to settle; a failure has
       // already been reported to the user by the load itself.
@@ -456,6 +456,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
     subscribeToDatasetChanges(callback) {
       return datasetController.subscribeToDatasetChanges(callback);
+    },
+    subscribeToExampleRetries(callback) {
+      return datasetController.subscribeToExampleRetries(callback);
     },
     dispose() {
       lifecycle.dispose();

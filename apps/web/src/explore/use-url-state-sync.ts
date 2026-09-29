@@ -25,6 +25,11 @@ export function useExploreUrlStateSync(
   // Back/Forward (or a hand-edited URL) apart from a param change this hook's
   // own write produced, which must not re-trigger a load.
   const currentDatasetIdRef = useRef(datasetParam);
+  // The dataset on screen, as its `dataset` parameter: the example id for a
+  // menu or URL load, null for the startup demo, a stored import or a user
+  // import. Differs from the URL only after a failed Back/Forward, which
+  // keeps the plot but leaves the entry naming the example that failed.
+  const displayedDatasetIdRef = useRef<string | null>(null);
   // 'POP' for Back/Forward (and the initial entry); 'PUSH'/'REPLACE' for
   // this hook's own writes.
   const navigationType = useNavigationType();
@@ -42,6 +47,10 @@ export function useExploreUrlStateSync(
   const handleViewChange = useCallback((change: ExploreViewChange) => {
     const update = getExploreViewSearchParamsUpdate(searchParamsRef.current, change, {
       pendingUrlRequest: pendingUrlRequestRef.current,
+      // A user change's entry names the dataset on screen, unless a switch
+      // is still loading (then the URL already names what's coming).
+      displayedDatasetId:
+        pendingSwitchRef.current === null ? displayedDatasetIdRef.current : undefined,
     });
     pendingUrlRequestRef.current = false;
 
@@ -59,10 +68,12 @@ export function useExploreUrlStateSync(
         // The URL already names this example (deep link or Back/Forward);
         // nothing to write, just record it as the current state.
         currentDatasetIdRef.current = exampleId;
+        displayedDatasetIdRef.current = exampleId;
         return;
       }
 
       currentDatasetIdRef.current = source === 'menu' ? exampleId : null;
+      displayedDatasetIdRef.current = currentDatasetIdRef.current;
 
       const update = getDatasetSearchParamsUpdate(searchParamsRef.current, exampleId, source);
       if (!update) {
@@ -80,17 +91,54 @@ export function useExploreUrlStateSync(
     const token = switchTokenRef.current;
     pendingSwitchRef.current = token;
     void controller.setRequestedDataset(id).finally(() => {
-      if (pendingSwitchRef.current === token) {
-        pendingSwitchRef.current = null;
+      if (pendingSwitchRef.current !== token) {
+        return;
       }
+      pendingSwitchRef.current = null;
+      // A switch that loaded, or fell back, has already reported the dataset
+      // now on screen. One that failed with a plot on screen (or was
+      // superseded) did not: the app still reflects the displayed dataset,
+      // so a later entry naming that dataset must not reload it.
+      currentDatasetIdRef.current = displayedDatasetIdRef.current;
     });
   }, []);
+
+  // Retry on a failed `?dataset=` download.
+  const handleExampleRetry = useCallback(
+    (exampleId: string) => {
+      const controller = controllerRef.current;
+      if (!controller) {
+        return;
+      }
+
+      const current = searchParamsRef.current;
+      if (getDatasetParam(current) === exampleId) {
+        // A failed Back/Forward: the entry still names the example, so load
+        // it again with that entry's view parameters.
+        controller.recordRequestedView(parseExploreViewRequest(current));
+        currentDatasetIdRef.current = exampleId;
+        startDatasetSwitch(controller, exampleId);
+        return;
+      }
+
+      // A failed deep link fell back and removed the parameter, or the user
+      // has moved on since: name the example in a new entry, which loads it
+      // like a link (the stored import is left alone) on its curated view.
+      const update = getDatasetSearchParamsUpdate(current, exampleId, 'menu');
+      if (update) {
+        searchParamsRef.current = update.next;
+        setSearchParamsRef.current(update.next, { replace: update.replace });
+      }
+    },
+    [startDatasetSwitch],
+  );
 
   const attachController = useCallback(
     (controller: ExploreController) => {
       controllerRef.current = controller;
       const unsubscribeView = controller.subscribeToViewChanges(handleViewChange);
       const unsubscribeDataset = controller.subscribeToDatasetChanges(handleDatasetChange);
+      const unsubscribeRetries = controller.subscribeToExampleRetries(handleExampleRetry);
       controller.setRequestedView(requestStateRef.current);
       // Kicks off the very first dataset load, so it already knows the
       // requested example instead of loading the demo/stored import first.
@@ -104,10 +152,11 @@ export function useExploreUrlStateSync(
         }
         unsubscribeView();
         unsubscribeDataset();
+        unsubscribeRetries();
         controller.dispose();
       };
     },
-    [handleDatasetChange, handleViewChange, startDatasetSwitch],
+    [handleDatasetChange, handleExampleRetry, handleViewChange, startDatasetSwitch],
   );
 
   // One effect, not two, and in this order: when Back/Forward (or a

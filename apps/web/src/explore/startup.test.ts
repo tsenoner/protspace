@@ -46,6 +46,7 @@ function createDatasetController() {
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),
     beginUserRequest: vi.fn(() => 8),
     currentRequestEpoch: vi.fn(() => 5),
+    hasDisplayedDataset: vi.fn(() => true),
     subscribeToDatasetChanges: vi.fn(() => () => {}),
     handleLoadingStart: vi.fn(),
     handleLoadingProgress: vi.fn(),
@@ -87,8 +88,11 @@ describe('loadRequestedDatasetOrFallback', () => {
     const datasetController = createDatasetController();
     datasetController.loadExampleDataset.mockResolvedValue('failed');
 
-    await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id, { epoch: 7 });
+    const outcome = await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id, {
+      epoch: 7,
+    });
 
+    expect(outcome).toBe('fallback');
     expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 7 });
     // The loader itself already notified the failure (persisted-dataset.ts); the
     // fallback path here must not warn on top of that.
@@ -96,6 +100,21 @@ describe('loadRequestedDatasetOrFallback', () => {
     // The fallback runs under the same epoch, so it yields to a user request
     // made while the example was still loading.
     expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 7 });
+  });
+
+  it('keeps the dataset on screen when a known id fails with keepCurrentOnFailure: no fallback', async () => {
+    const { showRecoveryBanner } = await import('./recovery-banner');
+    const datasetController = createDatasetController();
+    datasetController.loadExampleDataset.mockResolvedValue('failed');
+
+    const outcome = await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id, {
+      keepCurrentOnFailure: true,
+    });
+
+    expect(outcome).toBe('failed');
+    expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
+    expect(showRecoveryBanner).not.toHaveBeenCalled();
+    expect(notifyMock.warning).not.toHaveBeenCalled();
   });
 
   it("never runs the fallback for a 'superseded' outcome: no toast, no fallback load, no warning", async () => {
@@ -144,8 +163,9 @@ describe('loadRequestedDatasetOrFallback', () => {
     const datasetController = createDatasetController();
     datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'preempted' });
 
-    await loadRequestedDatasetOrFallback(datasetController as never, null);
+    const outcome = await loadRequestedDatasetOrFallback(datasetController as never, null);
 
+    expect(outcome).toBe('preempted');
     expect(showRecoveryBanner).not.toHaveBeenCalled();
     expect(notifyMock.warning).not.toHaveBeenCalled();
   });
@@ -166,26 +186,54 @@ describe('loadDatasetAfterNavigation (Back/Forward after the first load)', () =>
     vi.clearAllMocks();
   });
 
+  const createViewController = () => ({ recordCurrentView: vi.fn() });
+
   it('begins a user request before loading the named example under it', async () => {
     const datasetController = createDatasetController();
+    const viewController = createViewController();
 
-    await loadDatasetAfterNavigation(datasetController as never, DEMO.id);
+    await loadDatasetAfterNavigation(datasetController as never, viewController, DEMO.id);
 
     expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 8 });
     expect(datasetController.beginUserRequest.mock.invocationCallOrder[0]).toBeLessThan(
       datasetController.loadExampleDataset.mock.invocationCallOrder[0],
     );
+    expect(viewController.recordCurrentView).not.toHaveBeenCalled();
   });
 
   it('Back to an entry without dataset= begins a user request before the startup flow', async () => {
     const datasetController = createDatasetController();
 
-    await loadDatasetAfterNavigation(datasetController as never, null);
+    await loadDatasetAfterNavigation(datasetController as never, createViewController(), null);
 
     expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 8 });
     expect(datasetController.beginUserRequest.mock.invocationCallOrder[0]).toBeLessThan(
       datasetController.loadPersistedOrDefaultDataset.mock.invocationCallOrder[0],
     );
+  });
+
+  it('a failed Back with a dataset on screen keeps it and re-records the view on screen', async () => {
+    const datasetController = createDatasetController();
+    datasetController.loadExampleDataset.mockResolvedValue('failed');
+    const viewController = createViewController();
+
+    await loadDatasetAfterNavigation(datasetController as never, viewController, DEMO.id);
+
+    expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
+    // The failed entry's view parameters must not reach a later load.
+    expect(viewController.recordCurrentView).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed Back before anything is on screen still falls back', async () => {
+    const datasetController = createDatasetController();
+    datasetController.loadExampleDataset.mockResolvedValue('failed');
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    const viewController = createViewController();
+
+    await loadDatasetAfterNavigation(datasetController as never, viewController, DEMO.id);
+
+    expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 8 });
+    expect(viewController.recordCurrentView).not.toHaveBeenCalled();
   });
 });
 

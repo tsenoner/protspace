@@ -303,6 +303,27 @@ describe('createViewController', () => {
     });
   });
 
+  it('recordCurrentView replaces a recorded request with the view on screen, without applying it', () => {
+    const { viewController, controlBar } = setup();
+    // A failed Back recorded the entry's parameters for a load that never
+    // happened; the view on screen is ec on UMAP.
+    viewController.recordRequestedView(makeRequest('pfam', 'PCA', ['go']));
+
+    viewController.recordCurrentView();
+
+    expect(viewController.getLatestViewRequest().requested).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: undefined,
+    });
+    expect(viewController.resolveLatestView()).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+    });
+    expect(controlBar.applyAnnotationSelection).not.toHaveBeenCalled();
+  });
+
   it('dispose clears subscribers', () => {
     const { viewController } = setup();
     const changes: ExploreViewChange[] = [];

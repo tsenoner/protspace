@@ -50,7 +50,7 @@ function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSigna
   return (fetchMock.mock.calls[index]?.[1] as RequestInit).signal as AbortSignal;
 }
 
-function createController() {
+function createController({ retryUrlExample }: { retryUrlExample?: (id: string) => void } = {}) {
   const dataLoader = { loadFromFile: vi.fn().mockResolvedValue(undefined) };
   const overlayController = { update: vi.fn() };
   const setCurrentExampleId = vi.fn();
@@ -70,6 +70,7 @@ function createController() {
     awaitLoadOutcome: realQueue.awaitLoadOutcome,
     setCurrentExampleId,
     setCurrentDatasetName,
+    retryUrlExample,
   });
 
   return {
@@ -576,5 +577,65 @@ describe('cancelPendingExampleLoad', () => {
     expect(controller.cancelPendingExampleLoad()).toBe(false);
     expect(controller.currentRequestEpoch()).toBe(epoch);
     expect(overlayController.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('Retry on a failed example download', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const failThenSucceed = () =>
+    vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Server Error' })
+      .mockResolvedValue(okResponse());
+
+  /** The Retry action of the most recent error toast. */
+  const retryAction = () => {
+    const { calls } = notifyMock.error.mock;
+    const options = calls[calls.length - 1]?.[0] as {
+      action: { label: string; onClick: () => void };
+      secondaryAction: { label: string };
+    };
+    expect(options.action.label).toBe('Retry');
+    expect(options.secondaryAction.label).toBe('Report this');
+    return options.action.onClick;
+  };
+
+  it('repeats a failed menu choice as it was, replacing the stored import', async () => {
+    const fetchMock = failThenSucceed();
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, dataLoader, loadQueue } = createController();
+
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu')).toBe(
+      'failed',
+    );
+    retryAction()();
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+      expect.any(File),
+      'default',
+      expect.objectContaining({ entry: OTHER, source: 'menu', replacesStoredImport: true }),
+    );
+  });
+
+  it('hands a failed URL-driven load back to the URL sync hook', async () => {
+    const fetchMock = failThenSucceed();
+    vi.stubGlobal('fetch', fetchMock);
+    const retryUrlExample = vi.fn();
+    const { controller } = createController({ retryUrlExample });
+
+    expect(await controller.loadExampleDataset(OTHER, 'url')).toBe('failed');
+    retryAction()();
+
+    expect(retryUrlExample).toHaveBeenCalledWith(OTHER.id);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

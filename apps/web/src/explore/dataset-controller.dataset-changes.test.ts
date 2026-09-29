@@ -4,6 +4,7 @@ import { EXAMPLE_DATASETS } from './example-datasets';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
+  persistedOptions: null as null | { retryUrlExample?: (id: string) => void },
   loadData: vi.fn(),
   markLastLoadStatus: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
@@ -29,7 +30,10 @@ vi.mock('./data-renderer', () => ({
 }));
 
 vi.mock('./persisted-dataset', () => ({
-  createPersistedDatasetController: () => mocks.persisted,
+  createPersistedDatasetController: (options: { retryUrlExample?: (id: string) => void }) => {
+    mocks.persistedOptions = options;
+    return mocks.persisted;
+  },
 }));
 
 vi.mock('./opfs-dataset-store', () => ({
@@ -265,6 +269,48 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(controller.beginUserRequest()).toBe(1);
     expect(controller.currentRequestEpoch()).toBe(0);
     expect(mocks.persisted.beginUserRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('hasDisplayedDataset turns true only once a load has rendered, and a failed load keeps it', async () => {
+    const loadMeta = {
+      sequence: 1,
+      kind: 'default' as const,
+      example: { entry: OTHER, source: 'url' as const, requestId: 1 },
+    };
+    const { controller } = createController({
+      getRunningLoadMeta: () => loadMeta,
+      getLoadMetaForFile: () => loadMeta,
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(controller.hasDisplayedDataset()).toBe(false);
+    await controller.handleDataError({
+      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
+    } as unknown as Event);
+    expect(controller.hasDisplayedDataset()).toBe(false);
+
+    await controller.handleDataLoaded({
+      detail: { data, file: new File(['x'], 'b.parquetbundle'), source: 'auto' },
+    } as unknown as Event);
+    expect(controller.hasDisplayedDataset()).toBe(true);
+
+    await controller.handleDataError({
+      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
+    } as unknown as Event);
+    expect(controller.hasDisplayedDataset()).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it('reports the Retry of a failed URL-driven example to its retry subscribers', () => {
+    const { controller } = createController();
+    const retries: string[] = [];
+    const unsubscribe = controller.subscribeToExampleRetries((id) => retries.push(id));
+
+    mocks.persistedOptions?.retryUrlExample?.(OTHER.id);
+    unsubscribe();
+    mocks.persistedOptions?.retryUrlExample?.(DEMO.id);
+
+    expect(retries).toEqual([OTHER.id]);
   });
 
   it('cancelPendingExampleLoad delegates to the persisted controller', () => {

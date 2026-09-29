@@ -9,6 +9,7 @@ import type {
 import {
   cloneExploreViewRequest,
   createEmptyExploreViewRequest,
+  createExploreViewRequestFromView,
   getResolvedExploreViewNormalization,
   resolveExploreView,
 } from './url-state';
@@ -40,6 +41,13 @@ export interface ViewController {
    * the recorded request against the new dataset once it's loaded.
    */
   recordRequestedView(viewRequest: ExploreViewRequestState): void;
+  /**
+   * Records the view on screen as the latest request, as a URL naming it
+   * would. After a failed Back/Forward the recorded request still holds the
+   * failed entry's parameters; this drops them, so a later file import or
+   * load doesn't inherit them.
+   */
+  recordCurrentView(): void;
   /**
    * Sets the loaded dataset's own landing view (an example's curated
    * `defaultView`), which fills whatever the view request leaves unset (see
@@ -242,6 +250,12 @@ export function createViewController({
     },
     recordRequestedView(viewRequest: ExploreViewRequestState) {
       latestViewRequest = cloneExploreViewRequest(viewRequest);
+    },
+    recordCurrentView() {
+      const effective = getCurrentEffectiveView();
+      latestViewRequest = effective
+        ? createExploreViewRequestFromView(effective)
+        : createEmptyExploreViewRequest();
     },
     setDatasetDefaults(defaults: ExploreViewDefaults | null) {
       datasetDefaults =

@@ -71,6 +71,8 @@ export interface DatasetController {
   beginUserRequest(): number;
   /** The request epoch an app-initiated flow starting now runs under. */
   currentRequestEpoch(): number;
+  /** Whether any dataset has been rendered yet (false only before the first load succeeds). */
+  hasDisplayedDataset(): boolean;
   /**
    * Cancels the example load in flight (only one started from `source`, when
    * given): supersedes it as a user request, aborts its download and
@@ -80,6 +82,11 @@ export interface DatasetController {
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
+  /**
+   * Reports the Retry of a failed `?dataset=` download, for the URL sync hook
+   * to re-request (`retryUrlExample` in persisted-dataset.ts).
+   */
+  subscribeToExampleRetries(callback: (exampleId: string) => void): () => void;
   handleLoadingStart(): void;
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
@@ -135,6 +142,7 @@ export function createDatasetController({
     structureViewer,
   });
 
+  const exampleRetrySubscribers = new Set<(exampleId: string) => void>();
   const persistedDatasetController = createPersistedDatasetController({
     dataLoader,
     overlayController,
@@ -142,6 +150,9 @@ export function createDatasetController({
     awaitLoadOutcome: loadQueue.awaitLoadOutcome,
     setCurrentExampleId,
     setCurrentDatasetName,
+    retryUrlExample(exampleId) {
+      exampleRetrySubscribers.forEach((callback) => callback(exampleId));
+    },
   });
 
   // Reports which example (or no example) is now showing and why, so the URL
@@ -523,10 +534,17 @@ export function createDatasetController({
     beginUserRequest: persistedDatasetController.beginUserRequest,
     currentRequestEpoch: persistedDatasetController.currentRequestEpoch,
     cancelPendingExampleLoad: persistedDatasetController.cancelPendingExampleLoad,
+    hasDisplayedDataset: () => currentDatasetHash !== null,
     subscribeToDatasetChanges(callback) {
       datasetChangeSubscribers.add(callback);
       return () => {
         datasetChangeSubscribers.delete(callback);
+      };
+    },
+    subscribeToExampleRetries(callback) {
+      exampleRetrySubscribers.add(callback);
+      return () => {
+        exampleRetrySubscribers.delete(callback);
       };
     },
     handleLoadingStart() {
