@@ -33,3 +33,6 @@ export const TOXPROT_5181_FIXTURE = fixture('toxprot_5181_pca3d.parquetbundle');
 
 /** Phosphatases: 1,587 proteins, 40 annotations, ESM2-650M PCA 2 and UMAP 2. */
 export const PHOSPHATASE_1587_FIXTURE = fixture('phosphatase_1587.parquetbundle');
+
+/** 40,026 proteins; `protein_existence`, `length_*`, `pfam`, `cath`, `superfamily`, `signal_peptide`; PCA 2 and PCA 3. */
+export const PE1_40026_FIXTURE = fixture('pe1_40026_pca3d.parquetbundle');

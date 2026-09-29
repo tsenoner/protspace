@@ -74,7 +74,7 @@ Before every commit:
   - a corrupt restore during a click only clears the store;
   - a mid-session `null` request begins a user request before the startup flow.
 - [x] 2.9 (d) Keep the reset on every example load. The hint and docs text are tasks 3.1 and 5.x (the hint line and the `importing-data.md` exception landed with §2).
-- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the (c) cases landed with §1, and the (a), (b1) and (b2) cases with §2, all against the interim catalog's `5K`/`phosphatase`; the (d) case and routing them through fixtures remain):
+- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the (c) cases landed with §1, and the (a), (b1) and (b2) cases with §2; since 4.9 they run on fixtures by role; only the (d) case remains):
   - (c) from `?annotation=<a>&tooltip=<t>`, a menu choice gives `?dataset=<id>` and the control bar shows `defaultView`; Back restores `<a>` and `<t>`;
   - (c) `?dataset=<id>`, pick an annotation, Back → `defaultView`; explicit deep-link parameters beat the defaults;
   - (a) a fixture routed to 500 on Back keeps the plot, the URL and `history.length`, and Retry recovers after `unroute`;
@@ -146,7 +146,8 @@ Before every commit:
   - A guard scenario in `example-datasets.spec.ts` fails, naming the cause, when the startup load does not come from the fixture (a dev server reused without the variable).
   - Fallback if `/@fs/` fails: copy into a gitignored `public/__e2e__/` in global setup.
 - [ ] 4.8 E2E guard: run the default suite after 4.6/4.7 with the product demo temporarily replaced by another bundle, and confirm that nothing depends on it; record the result in the PR.
-- [ ] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.
+- [x] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.
+  - The scenarios name examples by role (`small`, `other`, `slow`), so the swap (7.9) edits only the helper's table; held requests pass on with `route.fallback()` so they reach the fixture, and protspace.app's copies are refused so a development build's fallback can never download a real example. With the three `public/data` originals moved away, the project still passes (26/26).
 - [ ] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the latter enabled at 7.8; the former landed with 4.1, plus "every repo-hosted record's file ships under `public/`").
 - [ ] 4.11 Perf datasets:
   - `perf/datasets.manifest.json` (`{ id, file, bytes, sha256 }`) for the eleven current `public/data` bundles plus `beta_lactamase_2026_stats` (113K) and `phosphatase_eat` (832), under their original names;

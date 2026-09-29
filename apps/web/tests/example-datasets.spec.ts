@@ -16,27 +16,34 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
+import { e2eExample, exampleBundleGlob, serveExampleFixtures } from './helpers/example-fixtures';
 import { PHOSPHATASE_1587_FIXTURE, STARTUP_DATASET_URL } from './helpers/fixtures';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 
 /**
  * Covers `openspec/specs/example-datasets`: the Import menu's "Examples"
- * section and the `?dataset=` deep link (task 5.1). Uses the real local
- * bundles under `apps/web/public/data/` — the only mocked request is the
- * induced-failure scenario, which routes a single bundle URL to a 500.
+ * section and the `?dataset=` deep link, with their history and race
+ * mechanics. Every example the suite loads is served from a pinned fixture
+ * (`helpers/example-fixtures.ts`), and the startup demo is pinned by the web
+ * server, so nothing here depends on what the product's examples hold. The
+ * scenarios name examples by role (`SMALL`, `OTHER`, `SLOW`); the annotation
+ * names they pick belong to those roles' fixtures.
  *
- * Protein counts below are read from the bundles themselves (see the sibling
- * specs that hardcode the same numbers, e.g. `CUSTOM_5K_PROTEIN_COUNT` in
- * `dataset-reload.spec.ts`) and double as a cheap "which dataset is showing"
- * signal without depending on annotation names.
+ * Protein counts double as a cheap "which dataset is showing" signal without
+ * depending on annotation names.
  */
 
+/** The pinned startup demo (`demo_toxprot_7831`). */
 const DEMO_COUNT = 7831;
-const FIVE_K_COUNT = 5181;
-const PHOSPHATASE_COUNT = 1587;
-const FORTY_K_COUNT = 40026;
 
-const PHOSPHATASE_BUNDLE_PATH = PHOSPHATASE_1587_FIXTURE;
+/** The catalog examples this suite loads, each served from a fixture. */
+const SMALL = e2eExample('small');
+const OTHER = e2eExample('other');
+const SLOW = e2eExample('slow');
+
+/** A user import, never a catalog example. */
+const USER_IMPORT_PATH = PHOSPHATASE_1587_FIXTURE;
+const USER_IMPORT_COUNT = 1587;
 
 async function getSelectedAnnotation(page: Page): Promise<string | null> {
   return page.evaluate(() => {
@@ -146,7 +153,7 @@ async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
     glob,
     async (route) => {
       await gate;
-      await route.continue().catch(() => {});
+      await route.fallback().catch(() => {});
     },
     { times: 1 },
   );
@@ -171,6 +178,17 @@ async function importUserFile(page: Page, filePath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
 }
+
+// Every example is served from its fixture, and none may open with a
+// `defaultView` name its fixture lacks.
+let driftWarnings: string[] = [];
+test.beforeEach(async ({ page }) => {
+  await serveExampleFixtures(page);
+  driftWarnings = collectDefaultViewDriftWarnings(page);
+});
+test.afterEach(() => {
+  expect(driftWarnings, 'an example opened with defaultView names its fixture lacks').toEqual([]);
+});
 
 test.describe('Example datasets: the suite runs on its pinned startup demo', () => {
   test('the startup load comes from the fixture, not the product demo', async ({ page }) => {
@@ -201,22 +219,22 @@ test.describe('Example datasets: Import menu and deep link', () => {
 
     // Store a user import so we can tell "deep link fell back to it" apart
     // from "deep link fell back to the demo".
-    await importUserFile(page, PHOSPHATASE_BUNDLE_PATH);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await importUserFile(page, USER_IMPORT_PATH);
+    await waitForProteinCount(page, USER_IMPORT_COUNT);
     await waitForPersistedExploreDataset(page);
 
     // Opening a `?dataset=` deep link must load that example and must not
     // clear the stored import.
-    await page.goto('/explore?dataset=5K');
+    await page.goto(`/explore?dataset=${SMALL.id}`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await waitForProteinCount(page, SMALL.count);
 
     // Opening the app again with no `dataset` param restores the stored import.
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await waitForProteinCount(page, USER_IMPORT_COUNT);
   });
 
   test('menu choices push dataset= and Back/Forward walk through them', async ({ page }) => {
@@ -227,19 +245,19 @@ test.describe('Example datasets: Import menu and deep link', () => {
 
     const initialHistoryLength = await page.evaluate(() => history.length);
 
-    await chooseExampleFromMenu(page, '5K');
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await chooseExampleFromMenu(page, SMALL.id);
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(initialHistoryLength + 1);
-    expect(await isExampleDisabled(page, '5K')).toBe(true);
+    expect(await isExampleDisabled(page, SMALL.id)).toBe(true);
 
-    await chooseExampleFromMenu(page, 'phosphatase');
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
-    await expectDatasetParam(page, 'phosphatase');
+    await chooseExampleFromMenu(page, OTHER.id);
+    await waitForProteinCount(page, OTHER.count);
+    await expectDatasetParam(page, OTHER.id);
 
     await page.goBack();
-    await expectDatasetParam(page, '5K');
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, SMALL.id);
+    await waitForProteinCount(page, SMALL.count);
 
     await page.goBack();
     await expectDatasetParam(page, null);
@@ -247,8 +265,8 @@ test.describe('Example datasets: Import menu and deep link', () => {
   });
 
   test('an annotation set before a menu choice survives Back (1a repro)', async ({ page }) => {
-    // Demo has an 'ec' annotation and 5K does not. The menu choice pushes a
-    // bare `dataset=5K` entry (5K opens on its curated view); the entry
+    // Demo has an 'ec' annotation and SMALL does not. The menu choice pushes a
+    // bare `dataset=SMALL` entry (SMALL opens on its curated view); the entry
     // still holding demo+ec must stay untouched, so Back restores 'ec'.
     await page.goto('/explore?annotation=ec');
     await waitForExploreDataLoad(page);
@@ -256,9 +274,9 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await waitForProteinCount(page, DEMO_COUNT);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
 
-    await chooseExampleFromMenu(page, '5K');
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await chooseExampleFromMenu(page, SMALL.id);
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
 
     await page.goBack();
     await expectDatasetParam(page, null);
@@ -269,14 +287,14 @@ test.describe('Example datasets: Import menu and deep link', () => {
   test('Back/Forward through a menu choice and a view pick keeps the target entry intact (1b repro)', async ({
     page,
   }) => {
-    // Repro from the review: ?dataset=5K -> choose demo from the menu ->
+    // Repro from the review: ?dataset=SMALL -> choose demo from the menu ->
     // pick annotation 'ec' (push) -> Back x2 -> history.go(2) should land
-    // back on the demo+ec entry unchanged; 5K's data must never be used to
+    // back on the demo+ec entry unchanged; SMALL's data must never be used to
     // normalize it.
-    await page.goto('/explore?dataset=5K');
+    await page.goto(`/explore?dataset=${SMALL.id}`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await waitForProteinCount(page, SMALL.count);
 
     await chooseExampleFromMenu(page, 'demo');
     await waitForProteinCount(page, DEMO_COUNT);
@@ -293,8 +311,8 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await page.goBack();
     await expectDatasetParam(page, 'demo');
     await page.goBack();
-    await expectDatasetParam(page, '5K');
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, SMALL.id);
+    await waitForProteinCount(page, SMALL.count);
 
     await page.evaluate(() => history.go(2));
     await expectDatasetParam(page, 'demo');
@@ -306,16 +324,16 @@ test.describe('Example datasets: Import menu and deep link', () => {
   });
 
   test('importing a user file removes dataset= without a new history entry', async ({ page }) => {
-    await page.goto('/explore?dataset=5K');
+    await page.goto(`/explore?dataset=${SMALL.id}`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
 
     const historyLengthBeforeImport = await page.evaluate(() => history.length);
 
-    await importUserFile(page, PHOSPHATASE_BUNDLE_PATH);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await importUserFile(page, USER_IMPORT_PATH);
+    await waitForProteinCount(page, USER_IMPORT_COUNT);
 
     await expectDatasetParam(page, null);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(historyLengthBeforeImport);
@@ -342,35 +360,30 @@ test.describe('Example datasets: Import menu and deep link', () => {
   });
 
   test('a deep link with a view param selects that annotation on the example', async ({ page }) => {
-    // 'phylum' is 5K's curated annotation, so it would pass even if the
+    // 'phylum' is SMALL's curated annotation, so it would pass even if the
     // param were ignored; 'length_fixed' is not, so it actually proves the
     // param was applied.
-    await page.goto('/explore?dataset=5K&annotation=length_fixed');
+    await page.goto(`/explore?dataset=${SMALL.id}&annotation=length_fixed`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await waitForProteinCount(page, SMALL.count);
 
     await expect.poll(() => getSelectedAnnotation(page)).toBe('length_fixed');
   });
 
   test('a failed menu choice leaves the previous dataset and URL unchanged', async ({ page }) => {
-    const phosphatase = findExampleDataset('phosphatase');
-    if (!phosphatase) {
-      throw new Error('Catalog is missing the "phosphatase" example used by this test.');
-    }
-
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await waitForProteinCount(page, DEMO_COUNT);
 
-    await page.route('**/data/phosphatase.parquetbundle', (route) =>
+    await page.route(OTHER.glob, (route) =>
       route.fulfill({ status: 500, body: 'Internal Server Error' }),
     );
 
-    await chooseExampleFromMenu(page, 'phosphatase');
+    await chooseExampleFromMenu(page, OTHER.id);
 
-    await expect(page.getByText(`Couldn't load "${phosphatase.label}".`)).toBeVisible();
+    await expect(page.getByText(`Couldn't load "${OTHER.entry.label}".`)).toBeVisible();
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
     await expectDatasetParam(page, null);
     // The failed load never reported a change, so the demo item is still the
@@ -381,57 +394,57 @@ test.describe('Example datasets: Import menu and deep link', () => {
   test('rapid Back past a still-loading entry lands on the newer example, not a stale fallback (1c repro)', async ({
     page,
   }) => {
-    // Regression: history null -> 5K -> phosphatase -> demo. Back once (to
-    // phosphatase) starts a fresh fetch for it; before that fetch settles,
-    // Back again (to 5K) starts and finishes loading 5K. The stale
-    // phosphatase request must then resolve as "superseded" and do nothing —
+    // Regression: history null -> SMALL -> OTHER -> demo. Back once (to
+    // OTHER) starts a fresh fetch for it; before that fetch settles,
+    // Back again (to SMALL) starts and finishes loading SMALL. The stale
+    // OTHER request must then resolve as "superseded" and do nothing —
     // previously it resolved `false`, which `loadRequestedDatasetOrFallback`
     // treated as a real failure and used to run the persisted-or-default
-    // fallback (the demo), stomping the correctly-loaded 5K and deleting
+    // fallback (the demo), stomping the correctly-loaded SMALL and deleting
     // `dataset=` from the URL.
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await waitForProteinCount(page, DEMO_COUNT);
 
-    await chooseExampleFromMenu(page, '5K');
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await chooseExampleFromMenu(page, SMALL.id);
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
 
-    await chooseExampleFromMenu(page, 'phosphatase');
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
-    await expectDatasetParam(page, 'phosphatase');
+    await chooseExampleFromMenu(page, OTHER.id);
+    await waitForProteinCount(page, OTHER.count);
+    await expectDatasetParam(page, OTHER.id);
 
     await chooseExampleFromMenu(page, 'demo');
     await waitForProteinCount(page, DEMO_COUNT);
     await expectDatasetParam(page, 'demo');
 
-    // Hold the *next* fetch of the phosphatase bundle — the one Back is
+    // Hold the *next* fetch of the OTHER bundle — the one Back is
     // about to trigger — open until explicitly released.
-    let releasePhosphatase: () => void = () => {};
+    let releaseOther: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
-      releasePhosphatase = resolve;
+      releaseOther = resolve;
     });
-    await page.route('**/data/phosphatase.parquetbundle', async (route) => {
+    await page.route(OTHER.glob, async (route) => {
       await gate;
-      await route.continue();
+      await route.fallback();
     });
 
-    await page.goBack(); // -> dataset=phosphatase, fetch held by the route above
-    await expectDatasetParam(page, 'phosphatase');
+    await page.goBack(); // -> dataset=OTHER, fetch held by the route above
+    await expectDatasetParam(page, OTHER.id);
 
-    await page.goBack(); // -> dataset=5K, fetch not held, loads normally
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await page.goBack(); // -> dataset=SMALL, fetch not held, loads normally
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
 
-    // Now let the stale phosphatase fetch through. A correct implementation
+    // Now let the stale OTHER fetch through. A correct implementation
     // must abandon it silently.
-    releasePhosphatase();
+    releaseOther();
     // Give any (incorrect) fallback a moment to happen, then assert nothing
-    // moved off the 5K entry a Back landed on.
+    // moved off the SMALL entry a Back landed on.
     await page.waitForTimeout(1_000);
-    expect(await getProteinCount(page)).toBe(FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    expect(await getProteinCount(page)).toBe(SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
   });
 
   test('a corrupt bundle changes nothing and leaves the item retryable', async ({ page }) => {
@@ -444,75 +457,75 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await dismissTourIfPresent(page);
     await waitForProteinCount(page, DEMO_COUNT);
 
-    await page.route('**/data/phosphatase.parquetbundle', (route) =>
+    await page.route(OTHER.glob, (route) =>
       route.fulfill({ status: 200, body: 'not-a-valid-bundle' }),
     );
 
     const datasetNameBefore = await getCurrentDatasetName(page);
 
-    await chooseExampleFromMenu(page, 'phosphatase');
+    await chooseExampleFromMenu(page, OTHER.id);
 
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
     await expectDatasetParam(page, null);
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
     expect(await getCurrentDatasetName(page)).toBe(datasetNameBefore);
     expect(await isExampleDisabled(page, 'demo')).toBe(true);
-    expect(await isExampleDisabled(page, 'phosphatase')).toBe(false);
+    expect(await isExampleDisabled(page, OTHER.id)).toBe(false);
   });
 
   test('rapid Back past a decoding example keeps the target entry intact (2 repro)', async ({
     page,
   }) => {
-    // Regression: start at ?dataset=5K&annotation=phylum. Choose 40K from
-    // the menu, then the demo — history is now [5K+phylum, bare 40K, bare
-    // demo]. Back once (-> the 40K entry) starts loading 40K again; before
-    // that finishes decoding, Back again (-> the 5K entry) starts loading
-    // 5K. 40K's load must not be allowed to resolve the still-pending view
-    // request (now 'phylum', recorded for 5K) against ITS OWN data and write
+    // Regression: start at ?dataset=SMALL&annotation=phylum. Choose SLOW from
+    // the menu, then the demo — history is now [SMALL+phylum, bare SLOW, bare
+    // demo]. Back once (-> the SLOW entry) starts loading SLOW again; before
+    // that finishes decoding, Back again (-> the SMALL entry) starts loading
+    // SMALL. SLOW's load must not be allowed to resolve the still-pending view
+    // request (now 'phylum', recorded for SMALL) against ITS OWN data and write
     // the result onto the URL: previously that raced and could replace-write
-    // 40K's fallback annotation onto the 5K entry, and briefly show 40K's
-    // plot under `dataset=5K`.
-    await page.goto('/explore?dataset=5K&annotation=phylum');
+    // SLOW's fallback annotation onto the SMALL entry, and briefly show SLOW's
+    // plot under `dataset=SMALL`.
+    await page.goto(`/explore?dataset=${SMALL.id}&annotation=phylum`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await waitForProteinCount(page, SMALL.count);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('phylum');
 
-    await chooseExampleFromMenu(page, '40K');
-    await waitForProteinCount(page, FORTY_K_COUNT);
-    await expectDatasetParam(page, '40K');
+    await chooseExampleFromMenu(page, SLOW.id);
+    await waitForProteinCount(page, SLOW.count);
+    await expectDatasetParam(page, SLOW.id);
 
     await chooseExampleFromMenu(page, 'demo');
     await waitForProteinCount(page, DEMO_COUNT);
     await expectDatasetParam(page, 'demo');
 
-    // Hold the *next* fetch of the 40K bundle open until released, so its
+    // Hold the *next* fetch of the SLOW bundle open until released, so its
     // decode is still in flight when the second Back fires just after.
-    let release40K: () => void = () => {};
+    let releaseSlow: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
-      release40K = resolve;
+      releaseSlow = resolve;
     });
-    await page.route('**/data/40K.parquetbundle', async (route) => {
+    await page.route(SLOW.glob, async (route) => {
       await gate;
-      await route.continue();
+      await route.fallback();
     });
 
-    await page.goBack(); // -> dataset=40K, fetch held by the route above
-    await expectDatasetParam(page, '40K');
+    await page.goBack(); // -> dataset=SLOW, fetch held by the route above
+    await expectDatasetParam(page, SLOW.id);
 
-    release40K();
+    releaseSlow();
     // Give the (now-unblocked) fetch a moment to land before Back again, so
-    // the race is against 40K's decode specifically, not its network fetch.
+    // the race is against SLOW's decode specifically, not its network fetch.
     await page.waitForTimeout(150);
-    await page.goBack(); // -> dataset=5K, while 40K may still be decoding
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await page.goBack(); // -> dataset=SMALL, while SLOW may still be decoding
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
 
-    // A correct implementation never lets the superseded 40K load touch the
+    // A correct implementation never lets the superseded SLOW load touch the
     // view or the URL once it finishes decoding.
     await page.waitForTimeout(1_000);
-    expect(await getProteinCount(page)).toBe(FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    expect(await getProteinCount(page)).toBe(SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
     expect(await getSelectedAnnotation(page)).toBe('phylum');
     expect(
       await page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')),
@@ -579,9 +592,6 @@ function largeExample(): ExampleDataset {
   return large;
 }
 
-/** The glob of an example's bundle request, from its catalog `url`. */
-const bundleGlob = (entry: ExampleDataset) => `**/${entry.url.replace(/^\.\//, '')}`;
-
 test.describe('Example datasets: download progress and Cancel', () => {
   test('Cancel during a menu download leaves the previous dataset and the URL, with no toast (e)', async ({
     page,
@@ -598,7 +608,7 @@ test.describe('Example datasets: download progress and Cancel', () => {
 
     const failedRequests: string[] = [];
     page.on('requestfailed', (request) => failedRequests.push(request.url()));
-    const release = await holdNextRequest(page, bundleGlob(large));
+    const release = await holdNextRequest(page, exampleBundleGlob(large));
     await chooseExampleFromMenu(page, large.id);
 
     const overlay = page.locator('#progressive-loading');
@@ -631,7 +641,7 @@ test.describe('Example datasets: download progress and Cancel', () => {
     page,
   }) => {
     const large = largeExample();
-    const release = await holdNextRequest(page, bundleGlob(large));
+    const release = await holdNextRequest(page, exampleBundleGlob(large));
     await page.goto(`/explore?dataset=${large.id}`);
 
     const cancel = page.locator('#progressive-loading').getByRole('button', {
@@ -653,8 +663,7 @@ test.describe('Example datasets: curated default view', () => {
   test('a menu choice opens the curated view on a bare entry, and Back restores the previous view', async ({
     page,
   }) => {
-    const driftWarnings = collectDefaultViewDriftWarnings(page);
-    // The demo and the phosphatase bundle both have 'ec' and 'pfam', so any
+    // The demo and the OTHER bundle both have 'ec' and 'pfam', so any
     // carry-over of the previous view into the new example would show here.
     await page.goto('/explore?annotation=ec&tooltip=pfam');
     await waitForExploreDataLoad(page);
@@ -664,10 +673,10 @@ test.describe('Example datasets: curated default view', () => {
       .poll(() => getControlBarView(page))
       .toMatchObject({ annotation: 'ec', tooltip: ['pfam'] });
 
-    await chooseExampleFromMenu(page, 'phosphatase');
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
-    await expect.poll(() => getSearch(page)).toBe('?dataset=phosphatase');
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedView('phosphatase'));
+    await chooseExampleFromMenu(page, OTHER.id);
+    await waitForProteinCount(page, OTHER.count);
+    await expect.poll(() => getSearch(page)).toBe(`?dataset=${OTHER.id}`);
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView(OTHER.id));
 
     await page.goBack();
     await expectDatasetParam(page, null);
@@ -676,32 +685,28 @@ test.describe('Example datasets: curated default view', () => {
       .poll(() => getControlBarView(page))
       .toMatchObject({ annotation: 'ec', tooltip: ['pfam'] });
     expect(await getSearch(page)).toBe('?annotation=ec&tooltip=pfam');
-    expect(driftWarnings).toEqual([]);
   });
 
   test('a bare deep link opens the curated view and writes nothing to the URL', async ({
     page,
   }) => {
-    const driftWarnings = collectDefaultViewDriftWarnings(page);
-
-    await page.goto('/explore?dataset=phosphatase');
+    await page.goto(`/explore?dataset=${OTHER.id}`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await waitForProteinCount(page, OTHER.count);
 
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedView('phosphatase'));
-    expect(await getSearch(page)).toBe('?dataset=phosphatase');
-    expect(driftWarnings).toEqual([]);
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView(OTHER.id));
+    expect(await getSearch(page)).toBe(`?dataset=${OTHER.id}`);
   });
 
   test('Back to a bare entry of the same example lands on its curated view again', async ({
     page,
   }) => {
-    const curated = curatedView('phosphatase');
-    await page.goto('/explore?dataset=phosphatase');
+    const curated = curatedView(OTHER.id);
+    await page.goto(`/explore?dataset=${OTHER.id}`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await waitForProteinCount(page, OTHER.count);
     await expect.poll(() => getControlBarView(page)).toEqual(curated);
 
     const controlBar = page.locator('protspace-control-bar');
@@ -713,35 +718,35 @@ test.describe('Example datasets: curated default view', () => {
       .toBe('pfam');
 
     await page.goBack();
-    await expect.poll(() => getSearch(page)).toBe('?dataset=phosphatase');
+    await expect.poll(() => getSearch(page)).toBe(`?dataset=${OTHER.id}`);
     await expect.poll(() => getControlBarView(page)).toEqual(curated);
   });
 
   test('explicit deep-link view params win over the curated view', async ({ page }) => {
-    const curated = curatedView('phosphatase');
+    const curated = curatedView(OTHER.id);
 
-    await page.goto('/explore?dataset=phosphatase&annotation=pfam');
+    await page.goto(`/explore?dataset=${OTHER.id}&annotation=pfam`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await waitForProteinCount(page, OTHER.count);
 
     // Any view param makes the request the user's: the missing projection
     // comes from the curated view, and an absent tooltip means none.
     await expect
       .poll(() => getControlBarView(page))
       .toEqual({ annotation: 'pfam', projection: curated.projection, tooltip: [] });
-    expect(await getSearch(page)).toBe('?dataset=phosphatase&annotation=pfam');
+    expect(await getSearch(page)).toBe(`?dataset=${OTHER.id}&annotation=pfam`);
   });
 
   test('an invalid annotation falls back to the curated one and is normalized in the URL', async ({
     page,
   }) => {
-    const curated = curatedView('phosphatase');
+    const curated = curatedView(OTHER.id);
 
-    await page.goto('/explore?dataset=phosphatase&annotation=not_a_column');
+    await page.goto(`/explore?dataset=${OTHER.id}&annotation=not_a_column`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await waitForProteinCount(page, OTHER.count);
 
     await expect
       .poll(() => getControlBarView(page))
@@ -756,33 +761,33 @@ test.describe('Example datasets: history steps while a load is pending', () => {
   test("a second quick Back onto another entry of the dataset still loading keeps that entry's view (b1)", async ({
     page,
   }) => {
-    // History: [5K+length_quantile, 5K+length_fixed, phosphatase]. Back twice
-    // while 5K is still downloading: the second Back lands on another entry
-    // of the same dataset. Its `length_quantile` must be applied by the 5K
-    // load, not resolved against phosphatase (which lacks it), whose fallback
+    // History: [SMALL+length_quantile, SMALL+length_fixed, OTHER]. Back twice
+    // while SMALL is still downloading: the second Back lands on another entry
+    // of the same dataset. Its `length_quantile` must be applied by the SMALL
+    // load, not resolved against OTHER (which lacks it), whose fallback
     // would otherwise be written over that entry.
-    await page.goto('/explore?dataset=5K&annotation=length_quantile');
+    await page.goto(`/explore?dataset=${SMALL.id}&annotation=length_quantile`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
+    await waitForProteinCount(page, SMALL.count);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('length_quantile');
 
     await pickAnnotation(page, 'length_fixed');
     await expect.poll(() => getUrlParam(page, 'annotation')).toBe('length_fixed');
 
-    await chooseExampleFromMenu(page, 'phosphatase');
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
-    await expectDatasetParam(page, 'phosphatase');
+    await chooseExampleFromMenu(page, OTHER.id);
+    await waitForProteinCount(page, OTHER.count);
+    await expectDatasetParam(page, OTHER.id);
 
-    const release5K = await holdNextRequest(page, '**/data/5K.parquetbundle');
+    const releaseSmall = await holdNextRequest(page, SMALL.glob);
     await page.goBack();
     await expect.poll(() => getUrlParam(page, 'annotation')).toBe('length_fixed');
     await page.goBack();
     await expect.poll(() => getUrlParam(page, 'annotation')).toBe('length_quantile');
-    release5K();
+    releaseSmall();
 
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('length_quantile');
     expect(await getUrlParam(page, 'annotation')).toBe('length_quantile');
   });
@@ -799,20 +804,20 @@ test.describe('Example datasets: history steps while a load is pending', () => {
 
     const failedRequests: string[] = [];
     page.on('requestfailed', (request) => failedRequests.push(request.url()));
-    const releasePhosphatase = await holdNextRequest(page, '**/data/phosphatase.parquetbundle');
-    await chooseExampleFromMenu(page, 'phosphatase');
+    const releaseOther = await holdNextRequest(page, OTHER.glob);
+    await chooseExampleFromMenu(page, OTHER.id);
     await expect(page.locator('#progressive-loading')).toBeVisible();
 
-    await page.goBack(); // -> the bare demo entry, while phosphatase is still downloading
+    await page.goBack(); // -> the bare demo entry, while OTHER is still downloading
     await expect.poll(() => getSearch(page)).toBe('');
     // The download is aborted and its overlay dismissed.
     await expect
-      .poll(() => failedRequests.some((url) => url.endsWith('/data/phosphatase.parquetbundle')))
+      .poll(() => failedRequests.some((url) => url.endsWith(OTHER.entry.url.slice(1))))
       .toBe(true);
     await expect(page.locator('#progressive-loading')).toHaveCount(0);
-    releasePhosphatase();
+    releaseOther();
 
-    // Nothing lands later and pushes a `dataset=phosphatase` entry.
+    // Nothing lands later and pushes a `dataset=OTHER` entry.
     await page.waitForTimeout(1_000);
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
     expect(await getSearch(page)).toBe('');
@@ -840,18 +845,18 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     await expect(banner).toBeVisible({ timeout: 10_000 });
 
     // A same-document entry naming an example, reached like Forward.
-    const releasePhosphatase = await holdNextRequest(page, '**/data/phosphatase.parquetbundle');
-    await page.evaluate(() => {
-      history.pushState(null, '', '/explore?dataset=phosphatase');
+    const releaseOther = await holdNextRequest(page, OTHER.glob);
+    await page.evaluate((id) => {
+      history.pushState(null, '', `/explore?dataset=${id}`);
       window.dispatchEvent(new PopStateEvent('popstate'));
-    });
+    }, OTHER.id);
     await expect(page.locator('#progressive-loading')).toBeVisible();
 
-    await page.goBack(); // -> the entry without `dataset=`, while phosphatase is still downloading
+    await page.goBack(); // -> the entry without `dataset=`, while OTHER is still downloading
     await expect.poll(() => getSearch(page)).toBe('');
     await expect(page.locator('#progressive-loading')).toHaveCount(0);
     await expect(banner).toBeVisible();
-    releasePhosphatase();
+    releaseOther();
 
     // The abandoned example never renders under the banner.
     await page.waitForTimeout(1_000);
@@ -865,74 +870,74 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
   test('Back to an example whose download fails keeps the plot and the entry, and Retry recovers (a)', async ({
     page,
   }) => {
-    const { toast, retry } = exampleFailureToast(page, '5K');
+    const { toast, retry } = exampleFailureToast(page, SMALL.id);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await waitForProteinCount(page, DEMO_COUNT);
-    await chooseExampleFromMenu(page, '5K');
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await chooseExampleFromMenu(page, 'phosphatase');
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
-    await expectDatasetParam(page, 'phosphatase');
+    await chooseExampleFromMenu(page, SMALL.id);
+    await waitForProteinCount(page, SMALL.count);
+    await chooseExampleFromMenu(page, OTHER.id);
+    await waitForProteinCount(page, OTHER.count);
+    await expectDatasetParam(page, OTHER.id);
     const historyLength = await page.evaluate(() => history.length);
 
-    await page.route('**/data/5K.parquetbundle', failWith500);
+    await page.route(SMALL.glob, failWith500);
     await page.goBack();
 
     await expect(toast).toBeVisible();
     await expect(toast.getByRole('button', { name: 'Report this' })).toBeVisible();
     await expect(page.locator('#progressive-loading')).toHaveCount(0);
-    // No fallback: phosphatase stays, and the entry still names 5K.
+    // No fallback: OTHER stays, and the entry still names SMALL.
     await page.waitForTimeout(500);
-    expect(await getProteinCount(page)).toBe(PHOSPHATASE_COUNT);
-    expect(await getSearch(page)).toBe('?dataset=5K');
+    expect(await getProteinCount(page)).toBe(OTHER.count);
+    expect(await getSearch(page)).toBe(`?dataset=${SMALL.id}`);
     expect(await page.evaluate(() => history.length)).toBe(historyLength);
 
-    await page.unroute('**/data/5K.parquetbundle', failWith500);
+    await page.unroute(SMALL.glob, failWith500);
     await retry.click();
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedView('5K'));
-    expect(await getSearch(page)).toBe('?dataset=5K');
+    await waitForProteinCount(page, SMALL.count);
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView(SMALL.id));
+    expect(await getSearch(page)).toBe(`?dataset=${SMALL.id}`);
     expect(await page.evaluate(() => history.length)).toBe(historyLength);
   });
 
   test('after a failed Back, a view change writes an entry naming the dataset on screen (a)', async ({
     page,
   }) => {
-    const { toast } = exampleFailureToast(page, '5K');
-    await page.goto('/explore?dataset=5K&annotation=length_fixed');
+    const { toast } = exampleFailureToast(page, SMALL.id);
+    await page.goto(`/explore?dataset=${SMALL.id}&annotation=length_fixed`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await chooseExampleFromMenu(page, 'phosphatase');
-    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await waitForProteinCount(page, SMALL.count);
+    await chooseExampleFromMenu(page, OTHER.id);
+    await waitForProteinCount(page, OTHER.count);
 
-    await page.route('**/data/5K.parquetbundle', failWith500);
+    await page.route(SMALL.glob, failWith500);
     await page.goBack();
     await expect(toast).toBeVisible();
     expect(await getUrlParam(page, 'annotation')).toBe('length_fixed');
 
     await pickAnnotation(page, 'ec');
-    await expectDatasetParam(page, 'phosphatase');
+    await expectDatasetParam(page, OTHER.id);
     expect(await getUrlParam(page, 'annotation')).toBe('ec');
     // Naming the displayed dataset reloads nothing.
     await page.waitForTimeout(500);
-    expect(await getProteinCount(page)).toBe(PHOSPHATASE_COUNT);
+    expect(await getProteinCount(page)).toBe(OTHER.count);
     expect(await getSelectedAnnotation(page)).toBe('ec');
   });
 
   test('a deep link whose download fails at startup falls back, and Retry opens it (a)', async ({
     page,
   }) => {
-    const { toast, retry } = exampleFailureToast(page, '5K');
+    const { toast, retry } = exampleFailureToast(page, SMALL.id);
     await page.goto('/explore?seed=baseline');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     const baselineHistoryLength = await page.evaluate(() => history.length);
 
-    await page.route('**/data/5K.parquetbundle', failWith500);
-    await page.goto('/explore?dataset=5K');
+    await page.route(SMALL.glob, failWith500);
+    await page.goto(`/explore?dataset=${SMALL.id}`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
@@ -944,10 +949,10 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     expect(await page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
 
     // Retry names the example in a new entry and loads it like a link.
-    await page.unroute('**/data/5K.parquetbundle', failWith500);
+    await page.unroute(SMALL.glob, failWith500);
     await retry.click();
-    await waitForProteinCount(page, FIVE_K_COUNT);
-    await expectDatasetParam(page, '5K');
+    await waitForProteinCount(page, SMALL.count);
+    await expectDatasetParam(page, SMALL.id);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 2);
   });
 });
