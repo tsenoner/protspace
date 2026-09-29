@@ -78,13 +78,21 @@ are computed, and every caller of the retriever would otherwise have to remember
 `get_with_retry`:
 
 - 4 attempts, exponential backoff capped at 30 s, `Retry-After` honoured;
-- timeouts, connection errors, `ChunkedEncodingError` and 408/425/429/5xx are retried;
-- any other 4xx is raised at once.
+- timeouts, connection errors, `ChunkedEncodingError` and the statuses in `RETRYABLE_STATUS`
+  (408, 425, 429, 500, 502, 503, 504) are retried;
+- any other status, including a 4xx and a 5xx outside that set such as 501, is raised at once.
 
 Both functions share one private loop, so they cannot drift apart. InterPro is batched (100 MD5s
 per request), so it gets the default budget, not the small per-protein one. The per-attempt
 timeout stays at 30 s: the slowest batch observed took 24 s, and the retry covers the tail. A
 batch that still fails after the last attempt increments `failed_batch_count`, as today.
+
+A lost batch now costs four attempts and at least 7 s of backoff, and up to about two minutes
+with timeouts. During a full outage that would be paid for each of the ~5,700 Swiss-Prot
+batches, over 10 hours of sleep alone, although the first lost batch already makes the source
+incomplete. So, as in TED's final pass, 10 batches lost in a row stop the loop: the remaining
+batches count as lost without a request, and one error says how many were skipped. A batch that
+gets through resets the count.
 
 ### Biocentral predicts in bounded batches
 
@@ -196,6 +204,23 @@ path:
 - honours `protect_cached_columns`;
 - keeps cached rows outside the run when the columns match (`_with_retained_rows`).
 
+`protect_cached_columns` keeps what the cache already holds for an incomplete source instead of
+dropping it. It used to do that by skipping the whole write, which also discarded every source
+that did finish: one InterPro batch lost after its retries cost a completed 18-40 hour TED pass.
+The write now goes ahead with the incomplete source's cached values read back from the file and
+kept unchanged, for the proteins the cache holds them for. A protein the cache holds no value
+for is left out and fetched by the next run, because an empty cell would read as "no
+annotation". A column stored under superseded semantics is never kept, so a failed legacy
+refresh cannot stamp its stale values current. Only when no other fetched source finished is
+the write skipped, leaving the file as it was. Kept UniProt values keep the release the cache
+recorded for them.
+
+InterPro and Biocentral look proteins up by sequence, taken from the FASTA or else from UniProt.
+When UniProt loses a batch, a protein of that batch has no sequence, and these sources return
+an empty value for it that is not a real absence. So when UniProt is incomplete and one of them
+is asked for a protein with no sequence, that source is incomplete too. Sequences from a FASTA
+keep it cacheable.
+
 The final write is unchanged. Two rules keep a checkpoint from storing a value nobody retrieved:
 
 - **Pending sources keep their cached columns.** Until a source completes in this run, the
@@ -253,14 +278,17 @@ sorted, comma-separated string:
 The pipeline exposes the resolved set after `_fetch_annotations`. `prepare` keeps the pipeline
 instance and writes `uniprot_release: <value>` under `## Annotations` in `run.log`:
 
-| Case                                    | Value written                  |
-| --------------------------------------- | ------------------------------ |
-| Releases seen, or read from the cache   | the releases, joined with `, ` |
-| UniProt data used, release not knowable | `unknown`                      |
-| No UniProt data used (CSV-only)         | `none`                         |
+| Case                                                     | Value written                  |
+| -------------------------------------------------------- | ------------------------------ |
+| Releases seen, or read from the cache                    | the releases, joined with `, ` |
+| UniProt data used, release not knowable                  | `unknown`                      |
+| No UniProt data used (CSV-only, or no UniProt accession) | `none`                         |
 
 The attribute is added only when the value is known. This avoids noise in the attribute-equality
-assertions of existing tests that mock the retriever.
+assertions of existing tests that mock the retriever. A run whose identifiers include no UniProt
+accession makes no UniProt request (`UniProtRetriever.queried_accessions` is 0), so it records
+no release, and its cache carries an empty stamp that later runs read as `none` too. A fetch
+replaced by a test reports no count and still reads as `unknown`.
 
 ### Internal columns are stripped where a bundle's annotations are written
 
@@ -371,8 +399,14 @@ No user action is needed. The first run after upgrading:
 - writes bundles without `organism_id`/`sequence`.
 
 Bundles already published keep their columns until they are rebuilt. Rollback is a version
-downgrade. Version-2 caches are read by older versions as current, which is harmless because
-their values are strictly more correct.
+downgrade, but not a harmless one for a cache this version wrote. Older versions read a
+version-2 cache as current, and any run of theirs that is not a pure cache hit passes the cached
+`protein_families` through their first-family transform again. That transform corrupts the new
+values: `CarA family|IC;CarB family|IC` becomes `CarA family|IC|IC`, and
+`inositol 1,4,5-trisphosphate 5-phosphatase family|IEA` becomes `inositol 1|IEA`. The result
+reaches the bundle and is written back to the cache stamped version 1, so it stays until the
+next upgrade refreshes it. After a downgrade, delete `{output}/tmp/all_annotations.parquet` or
+run once with `--refetch uniprot`. The docs say so.
 
 ## Open Questions
 

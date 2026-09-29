@@ -28,11 +28,14 @@ rows this way.
 ### Requirement: An InterPro match request is retried before its batch counts as lost
 
 InterPro retrieval SHALL retry a match request that times out, cannot connect, drops its
-connection mid-body, or returns a retryable status (408, 425, 429 or 5xx), using the same
-backoff, `Retry-After` handling and attempt budget as the other batched annotation requests. Only a
-request that still fails after those attempts SHALL count as a lost batch. A lost batch makes the
-whole InterPro source incomplete and uncached, so one unretried timeout among thousands of batches
-costs a full refetch on the next run.
+connection mid-body, or returns a retryable status (408, 425, 429, 500, 502, 503 or 504), using
+the same backoff, `Retry-After` handling and attempt budget as the other batched annotation
+requests. Only a request that still fails after those attempts SHALL count as a lost batch. A lost
+batch makes the whole InterPro source incomplete and uncached, so one unretried timeout among
+thousands of batches costs a full refetch on the next run. After 10 batches in a row are lost,
+InterPro retrieval SHALL count the remaining batches as lost without requesting them: each lost
+batch costs its full retry budget, and asking thousands more during an outage adds hours without
+saving the source.
 
 #### Scenario: A transient failure recovers
 
@@ -47,7 +50,8 @@ costs a full refetch on the next run.
 
 #### Scenario: A client error is not retried
 
-- **WHEN** an InterPro match request returns a non-retryable 4xx status
+- **WHEN** an InterPro match request returns a status outside the retryable set, such as a
+  non-retryable 4xx or a 501
 - **THEN** it is not retried and its batch counts as lost
 
 #### Scenario: Retries are exhausted
@@ -55,6 +59,17 @@ costs a full refetch on the next run.
 - **WHEN** an InterPro match request fails on every attempt
 - **THEN** its batch counts as lost, the InterPro source is incomplete, and the other batches'
   matches are still returned
+
+#### Scenario: The service stays down
+
+- **WHEN** 10 InterPro match batches in a row are lost after their retries
+- **THEN** the remaining batches are counted as lost without a request
+- **AND** one error states how many batches were not requested
+
+#### Scenario: The service comes back
+
+- **WHEN** a batch is answered after fewer than 10 lost batches in a row
+- **THEN** the count of lost batches in a row starts again from zero
 
 ### Requirement: Biocentral predictions are requested in bounded batches
 

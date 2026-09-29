@@ -21,7 +21,7 @@ section 4 runs after all three are merged back. Rules for every track:
       result is `found: false`, which leaves both of its identifiers empty.
 - [x] 1.2 Map `md5 → [identifiers]` in `InterProRetriever.fetch_annotations` and fan the parsed
       values out in `_parse_interpro_results`. Commit:
-      `fix(protspace): give InterPro matches to every protein sharing a sequence`.
+      `fix(protspace): give InterPro matches to all proteins sharing a sequence`.
 - [x] 1.3 Failing tests for the InterPro POST retry:
   - in `test_http_retry.py`, `post_with_retry`: 503 then 200 succeeds, 429 honours
     `Retry-After`, a 400 is not retried, attempts are bounded, and a timeout or connection
@@ -184,7 +184,7 @@ section 4 runs after all three are merged back. Rules for every track:
       `encoding.py`, and turn the hard-coded `{"protspace_annotation_cache_version": 1}`
       assertions in `test_pipeline_utils.py` into version-key checks that tolerate the release
       attribute. Commit:
-      `fix(protspace): refresh caches written before the family and InterPro fixes`.
+      `fix(protspace): refresh caches from before the family/InterPro fixes`.
 - [x] 4.4 Add an offline end-to-end test across Tracks 1 and 3: a mocked UniProt response
       carrying `X-UniProt-Release` reaches the `run.log` line of a `prepare` run, and duplicate
       sequences get InterPro values in the bundle. Commit as `test(protspace): …`.
@@ -239,6 +239,33 @@ section 4 runs after all three are merged back. Rules for every track:
       two families, P27708 four, and P04191 kept `(TC 3.A.3)` whole. A SIGINT during TED left
       a cache with the UniProt and InterPro columns, stamped version 2 and `2026_03`; the rerun
       fetched only TED, and its output matched an uninterrupted run.
-- [ ] 4.12 After review, archive the change (`openspec archive annotation-retrieval-robustness`)
-      as the last commit on the branch before merge. Merge with a merge commit, because the
+
+- [ ] 4.12 After review, and after section 5, archive the change
+      (`openspec archive annotation-retrieval-robustness`) as the last commit on the branch
+      before merge. Merge with a merge commit, because the
       branch touches `apps/protspace/`.
+
+## 5. Review follow-ups
+
+- [x] 5.1 A failed source whose columns the cache already holds no longer discards the sources
+      that finished: its current cached values are kept beside them, a stale column is never
+      kept, and the write is skipped only when no other source finished. Tests in the new
+      `test_failed_source_cache.py` and in `test_legacy_cache_refresh.py`. Commit:
+      `fix(protspace): keep a failed source's cached values, save the rest`.
+- [x] 5.2 InterPro and Biocentral count as incomplete when a lost UniProt batch left a
+      requested protein without a sequence. Commit:
+      `fix(protspace): don't cache lookups a lost UniProt batch left empty`.
+- [x] 5.3 InterPro stops requesting matches after 10 batches in a row are lost. Commit:
+      `refactor(protspace): stop asking InterPro for matches once it is down`, typed refactor
+      because the retry it bounds is unreleased.
+- [x] 5.4 A run whose identifiers include no UniProt accession reports `uniprot_release: none`,
+      and its cache says so for later runs. Commit:
+      `refactor(protspace): report no UniProt release for non-UniProt IDs`, typed refactor
+      because the line is unreleased.
+- [x] 5.5 Restate "Legacy PDB annotation caches are refreshed safely" and "An incomplete
+      annotation retrieval never overwrites the cache" as MODIFIED requirements, list the exact
+      retryable statuses, and correct the rollback note.
+- [x] 5.6 Shorten the two commit subjects over 72 characters and retype
+      `warn about an uncached source only when it stays so` as `refactor`, since the bug it
+      fixed never shipped: a message-only rewrite of the unpushed branch (`git filter-branch
+    --msg-filter`), which keeps every tree and merge.

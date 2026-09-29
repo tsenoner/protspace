@@ -126,3 +126,178 @@ InterPro rows, and cannot be repaired locally.
 - **WHEN** the refetch triggered by a legacy cache loses data
 - **THEN** no stale value of that source is written back under a current stamp
 - **AND** a later run fetches that source again
+
+## MODIFIED Requirements
+
+### Requirement: Legacy PDB annotation caches are refreshed safely
+
+ProtSpace SHALL NOT reuse an annotation cache containing `xref_pdb` as authoritative
+when that cache lacks the current annotation-semantics marker. It SHALL refetch the
+UniProt source once and reuse cached values from other sources, except cached columns
+that a later semantics change also marks stale: those are refreshed or dropped as
+"Caches written before the family and InterPro fixes are refreshed" says. An unversioned
+cache predates every change in the version table, so its `protein_families` and InterPro
+columns are among them.
+
+#### Scenario: Complete legacy PDB cache is reused
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and every requested
+  annotation
+- **THEN** ProtSpace refetches the UniProt source and stamps the rewritten cache as
+  current
+
+#### Scenario: Legacy cache has unaffected source data
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` alongside cached values
+  of a source no later semantics change affects, such as TED
+- **THEN** ProtSpace refetches only the UniProt source and reuses those cached values
+
+#### Scenario: Legacy cache also holds InterPro values
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` alongside cached
+  InterPro values, and the run requests an InterPro column
+- **THEN** ProtSpace refetches the InterPro source as well as UniProt, because the
+  InterPro fix marks those values stale
+
+#### Scenario: Legacy cache is missing a newly requested source
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and a run requests an
+  annotation from a source the cache lacks
+- **THEN** ProtSpace fetches that source in addition to refreshing UniProt
+
+#### Scenario: Cached taxonomy depends on the UniProt organism identifier
+
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and cached taxonomy
+  values, and the run requests taxonomy
+- **THEN** ProtSpace keeps the cached organism identifier available to the taxonomy
+  lookup
+
+#### Scenario: An unresolved protein precedes a taxonomy-bearing protein
+
+- **WHEN** the first cached row has no taxonomy values and a later row does
+- **THEN** ProtSpace still reuses the cached taxonomy for the rows that carry it
+
+#### Scenario: Legacy cache has no PDB annotation
+
+- **WHEN** an unversioned annotation cache does not contain `xref_pdb`, and the run
+  requests neither `protein_families` nor an InterPro column
+- **THEN** ProtSpace reuses it without a forced UniProt refresh
+
+#### Scenario: A UniProt batch fails during migration
+
+- **WHEN** a migration-triggered UniProt refresh cannot retrieve one or more batches
+- **THEN** ProtSpace writes no stale value under the current marker: it leaves the legacy
+  cache as it was, or, when another source finished, writes a current cache without the
+  stale columns
+- **AND** a subsequent run that requests a stale column retries the migration
+
+### Requirement: An incomplete annotation retrieval never overwrites the cache
+
+ProtSpace SHALL NOT cache annotations from a source whose retrieval did not
+complete, unless the run explicitly asked to refetch. Such a source emits empty
+values that are indistinguishable from a real absence, so persisting them would
+make a later run's column-based completeness check read the cache as current and
+serve the gaps instead of refetching. Sources that did complete are still
+cached, so one unavailable source does not discard the others' work. Where the
+cache already holds current values for the incomplete source's columns, those
+values are kept unchanged beside the completed sources, for the proteins the
+cache holds them for. An explicit refetch is the documented repair for a cache
+already holding such values, so it writes regardless.
+
+#### Scenario: A UniProt batch fails while creating the cache
+
+- **WHEN** a run with `--keep-tmp` and no existing cache loses one or more
+  UniProt batches, and every requested annotation comes from UniProt
+- **THEN** ProtSpace does not create the annotation cache
+- **AND** the run still returns every annotation it did retrieve
+
+#### Scenario: One source fails while another completes
+
+- **WHEN** a run requests annotations from two sources and only one of them
+  completes
+- **THEN** ProtSpace caches the completed source's columns
+- **AND** omits the incomplete source's columns, so the next run fetches only
+  that source
+
+#### Scenario: A source fails whose values the cache already holds
+
+- **WHEN** a source loses data, the cache already holds current values for some
+  of its columns, and another source fetched in the same run completes
+- **THEN** ProtSpace caches the completed source's values
+- **AND** keeps the failed source's cached values unchanged, leaving out the
+  columns the failed source was to add
+- **AND** writes no row for a protein the failed source has no cached value for,
+  so the next run fetches it
+
+#### Scenario: The failed source's cached column is stale
+
+- **WHEN** a source loses data and its cached column predates the column's current
+  semantics
+- **THEN** ProtSpace does not keep that column in any cache it writes, so no stale
+  value is stamped current
+
+#### Scenario: A source other than UniProt does not complete
+
+- **WHEN** a taxonomy batch, a TED lookup or a Biocentral prediction fails
+- **THEN** ProtSpace treats that source as incomplete for caching, exactly as it
+  treats an incomplete UniProt retrieval
+
+#### Scenario: A lost UniProt batch leaves a sequence lookup without a sequence
+
+- **WHEN** UniProt loses a batch, and InterPro or Biocentral is asked for a protein
+  that has no sequence from the FASTA or from UniProt
+- **THEN** ProtSpace treats that source as incomplete, so its empty value for the
+  protein is not cached as "no match"
+- **AND** sequences supplied by a FASTA keep the source cacheable
+
+#### Scenario: The standalone annotate command reports an incomplete source
+
+- **WHEN** `protspace annotate` finishes with a source that did not complete
+- **THEN** it still writes the requested output file
+- **AND** it warns which source was incomplete and that the affected values
+  cannot be told apart from a genuine absence
+
+#### Scenario: A UniProt batch fails with a cache already present
+
+- **WHEN** a run with `--keep-tmp` loses one or more UniProt batches and an
+  annotation cache already holds UniProt values
+- **THEN** ProtSpace leaves those cached UniProt values unchanged, and leaves the
+  cache untouched when no other source finished
+- **AND** a subsequent run retries the retrieval
+
+#### Scenario: UniProt is unreachable entirely
+
+- **WHEN** a UniProt retrieval raises before producing any rows
+- **THEN** ProtSpace caches no UniProt value from that run
+
+#### Scenario: Declining to write is reported
+
+- **WHEN** ProtSpace skips an annotation cache write because a source failed
+- **THEN** it warns and names the cache path it left alone
+
+#### Scenario: A complete UniProt retrieval still writes the cache
+
+- **WHEN** a run with `--keep-tmp` retrieves every requested UniProt batch
+- **THEN** ProtSpace writes the annotation cache as before
+
+#### Scenario: An explicit refetch clears what it could not replace
+
+- **WHEN** `--refetch annotations` is requested and the retrieval loses batches
+- **THEN** ProtSpace rewrites the annotation cache without the failed source's
+  columns, rather than leaving the cached values in place
+- **AND** the next run fetches that source instead of reading the values the
+  refetch was asked to replace
+
+#### Scenario: A source fetched one request per protein is retried sparingly
+
+- **WHEN** a source is fetched with one request per protein rather than in
+  batches
+- **THEN** ProtSpace retries each request with a smaller budget, so a full
+  outage does not pay the default backoff once per protein
+
+#### Scenario: A transient HTTP failure is retried before it counts as a loss
+
+- **WHEN** a request to an annotation API times out, cannot connect, or returns
+  a retryable status
+- **THEN** ProtSpace retries it with backoff up to a bounded number of attempts
+- **AND** only a request still failing after those attempts counts as lost data

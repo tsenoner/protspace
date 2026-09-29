@@ -36,6 +36,12 @@ the time the final bundle is built.
 - **WHEN** no UniProt response in a run carries the header
 - **THEN** no release is recorded for that run's values, and they read as `unknown` later
 
+#### Scenario: No identifier is a UniProt accession
+
+- **WHEN** a run writes a cache for identifiers none of which is a UniProt accession, so no
+  UniProt request is made
+- **THEN** the cache records that none of its values came from UniProt, rather than `unknown`
+
 ### Requirement: The run log states the UniProt release of the run's annotations
 
 `protspace prepare` SHALL write a `uniprot_release:` line in the `## Annotations` section of
@@ -68,3 +74,10 @@ data behind them.
 
 - **WHEN** a run's annotations come only from a user-supplied CSV
 - **THEN** `run.log` contains `uniprot_release: none`
+
+#### Scenario: No identifier is a UniProt accession
+
+- **WHEN** a run's identifiers include no UniProt accession, as with a FASTA of custom
+  identifiers
+- **THEN** `run.log` contains `uniprot_release: none`, both for the run that fetched the
+  annotations and for a later run served from its cache
