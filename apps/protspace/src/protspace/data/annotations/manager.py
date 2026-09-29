@@ -834,6 +834,31 @@ class ProteinAnnotationManager:
                 sequences[protein.identifier] = seq
         return sequences
 
+    def _starved_by_uniprot(
+        self, source: str, label: str, headers: list[str], sequences: dict[str, str]
+    ) -> None:
+        """Mark *source* incomplete if a lost UniProt batch left it without sequences.
+
+        InterPro and Biocentral look a protein up by its sequence, which comes
+        from the FASTA or else from UniProt. When UniProt lost a batch, a protein
+        with no sequence may be one of that batch's, so the source's empty value
+        for it is a gap rather than "no match". With every UniProt batch
+        answered, a missing sequence is genuine (an entry UniProt no longer
+        has), and the source stays complete.
+        """
+        if "uniprot" not in self.incomplete_sources:
+            return
+        missing = sum(1 for h in dict.fromkeys(headers) if not sequences.get(h))
+        if not missing:
+            return
+        self.incomplete_sources.add(source)
+        logger.warning(
+            f"{label} had no sequence for {missing} "
+            f"protein{'' if missing == 1 else 's'} because UniProt did not return "
+            f"every batch; {label} values are not cached this run and are "
+            "requested again next run."
+        )
+
     def _fetch_interpro(
         self,
         uniprot_annotations: list[ProteinAnnotations],
@@ -847,6 +872,7 @@ class ProteinAnnotationManager:
         headers = self.headers if headers is None else headers
         try:
             sequences = self._build_sequence_map(uniprot_annotations)
+            self._starved_by_uniprot("interpro", "InterPro", headers, sequences)
 
             retriever = InterProRetriever(
                 headers=headers,
@@ -876,6 +902,7 @@ class ProteinAnnotationManager:
         headers = self.headers if headers is None else headers
         try:
             sequences = self._build_sequence_map(uniprot_annotations)
+            self._starved_by_uniprot("biocentral", "Biocentral", headers, sequences)
 
             retriever = BiocentralPredictionRetriever(
                 headers=headers,

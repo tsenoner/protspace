@@ -274,3 +274,167 @@ class TestAFailedSourceKeepsItsCachedValues:
         cache = _read_cache(tmp_path)
         assert "pfam" not in cache.columns
         assert cache["ted_domains"].tolist() == ["-|90.0"]
+
+
+SEQUENCES = {"P01308": "MALWMRLLPL", "P01315": "MGKISSLPTQ"}
+
+
+def _serve_interpro_by_sequence(monkeypatch, calls: list):
+    """InterPro finds a match for every protein it was given a sequence for."""
+
+    def fetch(retriever):
+        calls.append(("interpro", sorted(retriever.sequences)))
+        return [
+            ProteinAnnotations(
+                identifier=h,
+                annotations={"pfam": CACHED_PFAM if retriever.sequences.get(h) else ""},
+            )
+            for h in retriever.headers
+        ]
+
+    monkeypatch.setattr(InterProRetriever, "fetch_annotations", fetch)
+
+
+def _serve_uniprot_sequences(monkeypatch, lost=(), sequences=SEQUENCES):
+    def fetch(retriever):
+        rows = []
+        for h in retriever.headers:
+            if h in lost:
+                retriever.failed_batch_count += 1
+                rows.append(
+                    ProteinAnnotations(
+                        identifier=h, annotations=dict.fromkeys(UNIPROT_ANNOTATIONS, "")
+                    )
+                )
+            else:
+                rows.append(
+                    ProteinAnnotations(
+                        identifier=h,
+                        annotations=_uniprot_row(h, sequence=sequences.get(h, "")),
+                    )
+                )
+        return rows
+
+    monkeypatch.setattr(UniProtRetriever, "fetch_annotations", fetch)
+
+
+class TestSequencesLostWithAUniProtBatch:
+    """InterPro and Biocentral look proteins up by the sequence UniProt supplies.
+
+    A protein whose UniProt batch was lost has no sequence, so these sources
+    return nothing for it -- an empty value that must not be cached as "no
+    match", or no later run would ever look it up again.
+    """
+
+    def test_interpro_is_not_cached_for_proteins_it_had_no_sequence_for(
+        self, tmp_path, monkeypatch
+    ):
+        calls: list = []
+        _serve_uniprot_sequences(monkeypatch, lost={"P01315"})
+        _serve_interpro_by_sequence(monkeypatch, calls)
+        headers = ["P01308", "P01315"]
+
+        manager = ProteinAnnotationManager(
+            headers=headers,
+            annotations=["gene_name", "pfam"],
+            output_path=tmp_path / CACHE_NAME,
+        )
+        manager.to_pd()
+
+        assert manager.incomplete_sources == {"uniprot", "interpro"}
+
+        calls.clear()
+        _serve_uniprot_sequences(monkeypatch)
+        result = _pipeline(tmp_path, ["gene_name", "pfam"])._fetch_annotations(headers)
+
+        assert calls == [("interpro", headers)]
+        assert result.set_index("identifier").loc["P01315", "pfam"] == CACHED_PFAM
+
+    def test_biocentral_is_not_cached_for_proteins_it_had_no_sequence_for(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        from protspace.data.annotations.retrievers.biocentral_retriever import (
+            BiocentralPredictionRetriever,
+        )
+
+        _serve_uniprot_sequences(monkeypatch, lost={"P01315"})
+        monkeypatch.setattr(
+            BiocentralPredictionRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={
+                        "predicted_membrane": "Soluble"
+                        if retriever.sequences.get(h)
+                        else ""
+                    },
+                )
+                for h in retriever.headers
+            ],
+        )
+
+        manager = ProteinAnnotationManager(
+            headers=["P01308", "P01315"],
+            annotations=["gene_name", "predicted_membrane"],
+            output_path=tmp_path / CACHE_NAME,
+        )
+        manager.to_pd()
+
+        assert manager.incomplete_sources == {"uniprot", "biocentral"}
+        # The prep service reads these substrings as a Biocentral outage; a
+        # coverage gap must not read as one. Copied from
+        # apps/prep/src/protspace_prep/pipeline.py.
+        down_patterns = (
+            "connection refused",
+            "cannot connect to host",
+            "connectionerror",
+            "temporary failure in name resolution",
+            "name or service not known",
+            "503 service unavailable",
+            "503 server error",
+            "no healthy biocentral",
+        )
+        report = [
+            r.getMessage() for r in caplog.records if "no sequence" in r.getMessage()
+        ]
+        assert report
+        assert not any(p in report[0].lower() for p in down_patterns)
+
+    def test_sequences_from_the_fasta_keep_interpro_cacheable(
+        self, tmp_path, monkeypatch
+    ):
+        calls: list = []
+        _serve_uniprot_sequences(monkeypatch, lost={"P01315"})
+        _serve_interpro_by_sequence(monkeypatch, calls)
+        _serve_ted(monkeypatch, calls)
+
+        manager = ProteinAnnotationManager(
+            headers=["P01308", "P01315"],
+            annotations=["gene_name", "pfam", "ted_domains"],
+            output_path=tmp_path / CACHE_NAME,
+            sequences=SEQUENCES,
+        )
+        manager.to_pd()
+
+        assert manager.incomplete_sources == {"uniprot"}
+        cache = _read_cache(tmp_path).set_index("identifier")
+        assert cache.loc["P01315", "pfam"] == CACHED_PFAM
+
+    def test_a_protein_uniprot_has_no_sequence_for_is_a_real_absence(
+        self, tmp_path, monkeypatch
+    ):
+        """With every UniProt batch answered, a missing sequence is genuine."""
+        calls: list = []
+        _serve_uniprot_sequences(monkeypatch, sequences={"P01308": "MALWMRLLPL"})
+        _serve_interpro_by_sequence(monkeypatch, calls)
+
+        manager = ProteinAnnotationManager(
+            headers=["P01308", "P01315"],
+            annotations=["gene_name", "pfam"],
+            output_path=tmp_path / CACHE_NAME,
+        )
+        manager.to_pd()
+
+        assert manager.incomplete_sources == set()
+        assert _read_cache(tmp_path).set_index("identifier").loc["P01315", "pfam"] == ""
