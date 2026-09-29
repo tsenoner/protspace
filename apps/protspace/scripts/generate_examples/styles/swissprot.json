@@ -1,0 +1,31 @@
+{
+  "$comment": "Fig. 2A: domain of life in Kelly's size-descending order (Bacteria yellow, Eukaryota purple, Archaea orange, ...), N/A grey.",
+  "domain": {
+    "sortMode": "manual",
+    "maxVisibleValues": 10,
+    "pinnedValues": [
+      "Bacteria",
+      "Eukaryota",
+      "Archaea",
+      "Riboviria",
+      "Varidnaviria",
+      "Duplodnaviria",
+      "Monodnaviria",
+      "Adnaviria",
+      "Ribozyviria",
+      ""
+    ],
+    "colors": {
+      "Bacteria": "#F3C300",
+      "Eukaryota": "#875692",
+      "Archaea": "#F38400",
+      "Riboviria": "#A1CAF1",
+      "Varidnaviria": "#BE0032",
+      "Duplodnaviria": "#C2B280",
+      "Monodnaviria": "#008856",
+      "Adnaviria": "#0067A5",
+      "Ribozyviria": "#F99379",
+      "": "#DDDDDD"
+    }
+  }
+}
