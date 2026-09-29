@@ -1,10 +1,16 @@
 """Tests for TED domain retriever."""
 
+import random
+import threading
+import time
+import zlib
+from collections import Counter
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.protspace.data.annotations.retrievers.ted_retriever import (
+    MAX_CONCURRENT_REQUESTS,
     TED_ANNOTATIONS,
     TedRetriever,
 )
@@ -295,31 +301,55 @@ class _AlphaFoldDomains:
     *outcomes* maps an accession to the answers of its successive lookups:
     ``"ok"`` (one domain), ``"404"`` (unknown accession) or ``"fail"``
     (raises). The last answer repeats. Unlisted accessions answer ``"ok"``.
+
+    Safe to call from parallel lookups. With *jitter*, each call takes up to
+    that many seconds, so parallel lookups finish out of order; with
+    *distinct*, each accession gets a domain of its own, so a value landing
+    on the wrong protein shows.
     """
 
-    def __init__(self, outcomes=None):
+    def __init__(self, outcomes=None, jitter=0.0, distinct=False):
         self.outcomes = outcomes or {}
+        self.jitter = jitter
+        self.distinct = distinct
         self.calls: list[tuple[str, int]] = []
+        self.sessions: set[int] = set()
+        self.active = 0
+        self.peak = 0
+        self._lock = threading.Lock()
 
-    def __call__(self, url, timeout=None, attempts=None):
+    def __call__(self, url, timeout=None, attempts=None, session=None):
         accession = url.rsplit("/", 1)[-1]
-        seen = sum(1 for acc, _ in self.calls if acc == accession)
-        self.calls.append((accession, attempts))
-        answers = self.outcomes.get(accession, ["ok"])
-        answer = answers[min(seen, len(answers) - 1)]
-        if answer == "fail":
-            raise ConnectionError(f"AlphaFold unavailable for {accession}")
-        response = MagicMock()
-        response.status_code = 404 if answer == "404" else 200
-        response.raise_for_status = MagicMock()
-        response.json.return_value = _make_alphafold_response(
-            [_make_domain("3.40.50.300", 88.3)]
-        )
-        return response
+        with self._lock:
+            seen = sum(1 for acc, _ in self.calls if acc == accession)
+            self.calls.append((accession, attempts))
+            self.sessions.add(id(session))
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            if self.jitter:
+                time.sleep(random.Random(f"{accession}{seen}").uniform(0, self.jitter))
+            answers = self.outcomes.get(accession, ["ok"])
+            answer = answers[min(seen, len(answers) - 1)]
+            if answer == "fail":
+                raise ConnectionError(f"AlphaFold unavailable for {accession}")
+            response = MagicMock()
+            response.status_code = 404 if answer == "404" else 200
+            response.raise_for_status = MagicMock()
+            plddt = (
+                zlib.crc32(accession.encode()) % 1000 / 10 if self.distinct else 88.3
+            )
+            response.json.return_value = _make_alphafold_response(
+                [_make_domain("3.40.50.300", plddt)]
+            )
+            return response
+        finally:
+            with self._lock:
+                self.active -= 1
 
 
-def _ted(headers, fake):
-    retriever = TedRetriever(headers=headers, annotations=TED_ANNOTATIONS)
+def _ted(headers, fake, **kwargs):
+    retriever = TedRetriever(headers=headers, annotations=TED_ANNOTATIONS, **kwargs)
     with patch(_REQUESTS_PATCH, side_effect=fake), patch(_CATH_NAMES_PATCH) as names:
         names.return_value = {}
         rows = retriever.fetch_annotations()
@@ -341,7 +371,10 @@ class TestFinalRetryPass:
         assert [r.identifier for r in rows] == ["Q9FAIL", "P01308"]
         assert rows[0].annotations["ted_domains"] == "3.40.50.300|88.3"
         assert retriever.failed_lookup_count == 0
-        assert [acc for acc, _ in fake.calls] == ["Q9FAIL", "P01308", "Q9FAIL"]
+        # Two first-pass lookups, in either order when they run in parallel,
+        # then the final pass.
+        assert Counter(acc for acc, _ in fake.calls[:2]) == {"Q9FAIL": 1, "P01308": 1}
+        assert [acc for acc, _ in fake.calls[2:]] == ["Q9FAIL"]
         assert "TED" not in caplog.text
 
     def test_a_lookup_failing_both_passes_counts_once_and_is_named(self, caplog):
@@ -368,11 +401,26 @@ class TestFinalRetryPass:
         headers = [f"P{i:05d}" for i in range(15)]
         fake = _AlphaFoldDomains(dict.fromkeys(headers, ["fail"]))
 
-        retriever, rows = _ted(headers, fake)
+        retriever, rows = _ted(headers, fake, max_concurrent_requests=1)
 
         # 15 first-pass lookups, then 10 final-pass attempts before giving up.
         assert len(fake.calls) == 15 + 10
         assert retriever.failed_lookup_count == 15
+        assert all(r.annotations["ted_domains"] == "" for r in rows)
+
+    @pytest.mark.parametrize("workers", [4, 8, 16])
+    def test_the_breaker_bounds_a_parallel_final_pass(self, workers):
+        """The failures in a row are counted in input order, so the pass stops
+        after the same 10 as one lookup at a time; only the lookups already
+        submitted ahead, at most two per worker, still go out."""
+        headers = [f"P{i:05d}" for i in range(100)]
+        fake = _AlphaFoldDomains(dict.fromkeys(headers, ["fail"]), jitter=0.002)
+
+        retriever, rows = _ted(headers, fake, max_concurrent_requests=workers)
+
+        final_pass = len(fake.calls) - len(headers)
+        assert 10 <= final_pass <= 10 + 2 * workers
+        assert retriever.failed_lookup_count == len(headers)
         assert all(r.annotations["ted_domains"] == "" for r in rows)
 
     def test_a_success_resets_the_consecutive_failure_count(self):
@@ -405,8 +453,83 @@ class TestFinalRetryPass:
 
         _ted(["Q9FAIL", "P01308"], fake)
 
-        assert fake.calls == [
-            ("Q9FAIL", 2),
-            ("P01308", 2),
-            ("Q9FAIL", MAX_ATTEMPTS),
-        ]
+        assert sorted(fake.calls[:2]) == [("P01308", 2), ("Q9FAIL", 2)]
+        assert fake.calls[2:] == [("Q9FAIL", MAX_ATTEMPTS)]
+
+
+class TestParallelLookups:
+    """One request at a time over a new connection each took TED about 23 h
+    for Swiss-Prot. Parallel lookups over one session must give exactly the
+    values, order and failure count of one lookup at a time."""
+
+    @staticmethod
+    def _outcomes(headers):
+        """A mix: lookups recovered in the final pass, lookups that fail both
+        passes (never 10 in a row) and accessions AlphaFold does not know."""
+        outcomes = {}
+        for i, accession in enumerate(headers):
+            if i % 13 == 0:
+                outcomes[accession] = ["fail"]
+            elif i % 7 == 0:
+                outcomes[accession] = ["fail", "ok"]
+            elif i % 11 == 0:
+                outcomes[accession] = ["404"]
+        return outcomes
+
+    @staticmethod
+    def _run(headers, workers):
+        fake = _AlphaFoldDomains(
+            TestParallelLookups._outcomes(headers), jitter=0.002, distinct=True
+        )
+        retriever, rows = _ted(headers, fake, max_concurrent_requests=workers)
+        return fake, retriever, rows
+
+    def test_parallel_lookups_give_the_values_of_one_at_a_time(self):
+        headers = [f"Q{i:05d}" for i in range(300)]
+        _, sequential, expected = self._run(headers, 1)
+        assert sequential.failed_lookup_count == 24  # multiples of 13
+
+        for workers in (8, 16):
+            _, parallel, rows = self._run(headers, workers)
+
+            assert rows == expected
+            assert parallel.failed_lookup_count == sequential.failed_lookup_count
+
+    def test_by_default_eight_lookups_share_one_session(self):
+        from protspace.data.annotations.retrievers.http_utils import PooledSession
+
+        headers = [f"Q{i:05d}" for i in range(200)]
+        sessions = []
+
+        def spy(url, timeout=None, attempts=None, session=None):
+            sessions.append(session)
+            return fake(url, timeout=timeout, attempts=attempts, session=session)
+
+        fake = _AlphaFoldDomains(jitter=0.003)
+        _ted(headers, spy)
+
+        assert MAX_CONCURRENT_REQUESTS == 8
+        assert 1 < fake.peak <= MAX_CONCURRENT_REQUESTS
+        assert len(fake.sessions) == 1
+        assert isinstance(sessions[0], PooledSession)
+
+    def test_parallel_lookups_load_the_cath_names_once(self):
+        loads = []
+
+        def slow_names():
+            loads.append(1)
+            time.sleep(0.01)
+            return {"3.40.50.300": "P-loop NTPases"}
+
+        headers = [f"Q{i:05d}" for i in range(50)]
+        retriever = TedRetriever(headers=headers, annotations=TED_ANNOTATIONS)
+        with (
+            patch(_REQUESTS_PATCH, side_effect=_AlphaFoldDomains(jitter=0.001)),
+            patch(_CATH_NAMES_PATCH, side_effect=slow_names),
+        ):
+            rows = retriever.fetch_annotations()
+
+        assert len(loads) == 1
+        assert {r.annotations["ted_domains"] for r in rows} == {
+            "3.40.50.300 (P-loop NTPases)|88.3"
+        }
