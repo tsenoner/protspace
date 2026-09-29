@@ -7,45 +7,12 @@
 import { CAMERA_TO_CLIP_GLSL } from './export-shaders';
 import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
 
-export const DENSITY_SIGMA_GRID_PX = 2;
-export const DENSITY_BLUR_RADIUS = Math.ceil(3 * DENSITY_SIGMA_GRID_PX);
-
 export function gaussianWeights(sigma: number, radius: number): number[] {
   const w: number[] = [];
   for (let i = -radius; i <= radius; i++) w.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
   const sum = w.reduce((a, b) => a + b, 0);
   return w.map((x) => x / sum);
 }
-
-export const DENSITY_ACCUM_VERTEX_SHADER = `#version 300 es
-precision highp float;
-
-in vec2 a_dataPosition;
-in vec4 a_color;
-
-uniform vec2 u_resolution;
-uniform vec3 u_transform;
-uniform float u_dpr;
-uniform float u_gamma;
-
-out vec4 v_accum;
-
-void main() {
-  float w = a_color.a > 0.0 ? 1.0 : 0.0;
-  if (w == 0.0) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    gl_PointSize = 1.0;
-    v_accum = vec4(0.0);
-    return;
-  }
-
-${CAMERA_TO_CLIP_GLSL}
-
-  gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
-  gl_PointSize = 1.0;
-
-  v_accum = vec4(pow(max(a_color.rgb, vec3(0.0)), vec3(u_gamma)) * w, w);
-}`;
 
 export const DENSITY_ACCUM_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
@@ -90,8 +57,6 @@ ${taps}
   fragColor = c;
 }`;
 }
-
-export const DENSITY_BLUR_FRAGMENT_SHADER = blurSource(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
 
 export const DENSITY_CATEGORY_CAP = 16;
 // Skips the label-atlas unit so the composite never unbinds the point draw's atlas.
@@ -234,21 +199,3 @@ ${lines.join('\n')}
 
 export const DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER =
   categoryCompositeSource(DENSITY_CATEGORY_CAP);
-
-export const DENSITY_COMPOSITE_FRAGMENT_SHADER = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_density;
-uniform float u_densityAlpha;
-uniform float u_densityScaler;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-  vec4 d = texture(u_density, v_texCoord);
-  float n = d.a;
-  vec3 mean = n > 0.0 ? d.rgb / n : vec3(0.0);
-  float alpha = clamp(n * u_densityScaler, 0.0, 1.0) * u_densityAlpha;
-  fragColor = vec4(mean * alpha, alpha);
-}`;

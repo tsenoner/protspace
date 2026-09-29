@@ -68,7 +68,7 @@ type PerfRunnerInternals = {
 
 type PerfHostInternals = ProtspaceScatterplot & {
   _webglRenderPerf: PerfRunnerInternals;
-  _mergedConfig: { densityLayer?: string; densityStyle?: string; pointSize?: number };
+  _mergedConfig: { densityLayer?: string; pointSize?: number };
   _interaction: PlotInteractionController | null;
   _webglRenderer: { syncGpu: () => void } | null;
 };
@@ -342,7 +342,7 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     expect(sp._mergedConfig.densityLayer).toBe('off');
   }, 20_000);
 
-  it('contourDrag records its own passes and restores mode and style', async () => {
+  it('contourDrag records its own passes and restores the density mode', async () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
     runner._recorder = {
@@ -362,6 +362,5 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     }
 
     expect(sp._mergedConfig.densityLayer).toBe('off');
-    expect(sp._mergedConfig.densityStyle).toBe('heatmap');
   }, 20_000);
 });

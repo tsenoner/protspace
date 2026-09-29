@@ -70,7 +70,6 @@ describe('resolveRenderableView eat-confidence exclusion', () => {
       projection: 'umap',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     };
 
     const result = resolveRenderableView(data, initialView);

@@ -110,23 +110,12 @@ function target(k: string, width: number, height: number): ColorTarget {
 
 const named = (n: string) => ({ n }) as unknown as WebGLUniformLocation;
 
-function resources(fieldCount = 1): DensityResources {
+function resources(fieldCount = 4): DensityResources {
   return {
-    accumProgram: { k: 'accum' } as unknown as WebGLProgram,
-    blurProgram: { k: 'blur' } as unknown as WebGLProgram,
     contourBlurProgram: { k: 'contourBlur' } as unknown as WebGLProgram,
-    compositeProgram: { k: 'composite' } as unknown as WebGLProgram,
     categoryAccumProgram: { k: 'categoryAccum' } as unknown as WebGLProgram,
     categoryCompositeProgram: { k: 'categoryComposite' } as unknown as WebGLProgram,
-    accumLoc: {
-      resolution: named('resolution'),
-      transform: named('transform'),
-      dpr: named('dpr'),
-      gamma: named('gamma'),
-    },
-    blurLoc: { source: named('source'), direction: named('direction') },
     contourBlurLoc: { source: named('source'), direction: named('direction') },
-    compositeLoc: { density: named('density'), alpha: named('alpha'), scaler: named('scaler') },
     categoryAccumLoc: {
       resolution: named('resolution'),
       transform: named('transform'),
@@ -155,7 +144,6 @@ const camera = {
   height: 600,
   transform: { x: 1, y: 2, k: 3 },
   dpr: 2,
-  gamma: 2.2,
 };
 
 function paletteOf(count: number): SlotPalette {
@@ -164,13 +152,8 @@ function paletteOf(count: number): SlotPalette {
   return buildSlotPalette(colors, count, 2.2);
 }
 
-function contourFrame(palette: SlotPalette, res = resources(4)): DensityFrame {
-  return {
-    res,
-    camera,
-    params: { alpha: 1, scaler: 4 },
-    plan: { style: 'contour', palette },
-  };
+function contourFrame(palette: SlotPalette, alpha = 1): DensityFrame {
+  return { res: resources(), camera, alpha, palette };
 }
 
 function stagedReds(runs: Array<[number, number]>): Float32Array {
@@ -183,17 +166,10 @@ const redBytes = (p: SlotPalette) =>
   Array.from({ length: p.count }, (_, s) => Math.round(p.keys[s * 3] * 255));
 
 describe('computeDensityGrid', () => {
-  it('halves the device canvas, clamps the long side, never goes below 1', () => {
-    expect(computeDensityGrid(1920, 1080, 'heatmap')).toEqual({ width: 960, height: 540 });
-    expect(computeDensityGrid(3200, 2000, 'heatmap')).toEqual({ width: 1024, height: 640 });
-    expect(computeDensityGrid(1, 1, 'heatmap')).toEqual({ width: 1, height: 1 });
-  });
-
-  it('puts the contour style on a grid half as fine again', () => {
-    expect(computeDensityGrid(1920, 1080, 'heatmap')).toEqual({ width: 960, height: 540 });
-    expect(computeDensityGrid(1920, 1080, 'contour')).toEqual({ width: 480, height: 270 });
-    expect(computeDensityGrid(4096, 2160, 'contour')).toEqual({ width: 512, height: 270 });
-    expect(computeDensityGrid(1, 1, 'contour')).toEqual({ width: 1, height: 1 });
+  it('quarters the device canvas, clamps the long side, never goes below 1', () => {
+    expect(computeDensityGrid(1920, 1080)).toEqual({ width: 480, height: 270 });
+    expect(computeDensityGrid(4096, 2160)).toEqual({ width: 512, height: 270 });
+    expect(computeDensityGrid(1, 1)).toEqual({ width: 1, height: 1 });
   });
 });
 
@@ -294,50 +270,31 @@ describe('resizeDensityTargets', () => {
   const allocations = (calls: string[]) => calls.filter((c) => c.startsWith('texImage2D'));
   const empty = () => ({ ...resources(), accum: null, ping: null, fields: [] }) as DensityResources;
 
-  it('allocates three targets once, then reuses them at the same canvas size', () => {
+  it('allocates the accum, ping and four fields once, then reuses them at the same size', () => {
     const { gl, calls } = mockGL();
     const res = empty();
 
-    expect(resizeDensityTargets(gl, res, 800, 600, 'heatmap')).toBe(true);
-    expect(allocations(calls)).toHaveLength(3);
-    expect(res.accum!.width).toBe(400);
-
-    expect(resizeDensityTargets(gl, res, 800, 600, 'heatmap')).toBe(true);
-    expect(allocations(calls)).toHaveLength(3);
-
-    expect(resizeDensityTargets(gl, res, 1024, 600, 'heatmap')).toBe(true);
-    expect(allocations(calls)).toHaveLength(6);
-  });
-
-  it('gives the contour style four fields on the coarser grid, and swaps back', () => {
-    const { gl, calls, spies } = mockGL();
-    const res = empty();
-
-    expect(resizeDensityTargets(gl, res, 800, 600, 'contour')).toBe(true);
+    expect(resizeDensityTargets(gl, res, 800, 600)).toBe(true);
     expect(allocations(calls)).toEqual([
       'texImage2D:34836:200x150',
       ...Array(5).fill('texImage2D:34842:200x150'),
     ]);
-    expect(resizeDensityTargets(gl, res, 800, 600, 'contour')).toBe(true);
+    expect(res.fields).toHaveLength(4);
+
+    expect(resizeDensityTargets(gl, res, 800, 600)).toBe(true);
     expect(allocations(calls)).toHaveLength(6);
 
-    expect(resizeDensityTargets(gl, res, 800, 600, 'heatmap')).toBe(true);
-    expect(spies.deleteTexture).toHaveBeenCalledTimes(6);
-    expect(allocations(calls).slice(6)).toEqual([
-      'texImage2D:34836:400x300',
-      'texImage2D:34842:400x300',
-      'texImage2D:34842:400x300',
-    ]);
-    expect(res.fields).toHaveLength(1);
+    expect(resizeDensityTargets(gl, res, 1024, 600)).toBe(true);
+    expect(allocations(calls)).toHaveLength(12);
   });
 
   it('leaves no targets behind when one is incomplete', () => {
     const { gl, spies } = mockGL({ framebufferComplete: false });
     const res = empty();
-    expect(resizeDensityTargets(gl, res, 800, 600, 'heatmap')).toBe(false);
+    expect(resizeDensityTargets(gl, res, 800, 600)).toBe(false);
     expect(res.accum).toBeNull();
     expect(res.fields).toEqual([]);
-    expect(spies.deleteFramebuffer).toHaveBeenCalledTimes(3);
+    expect(spies.deleteFramebuffer).toHaveBeenCalledTimes(6);
   });
 });
 
@@ -346,13 +303,7 @@ describe('accumulateAndBlurDensity', () => {
 
   it('accumulates additively into the grid, then blurs twice', () => {
     const { gl, calls } = mockGL();
-    const frame: DensityFrame = {
-      res: resources(),
-      camera,
-      params: { alpha: 1, scaler: 4 },
-      plan: { style: 'heatmap' },
-    };
-    accumulateAndBlurDensity(gl, frame, pointVao, 1000);
+    accumulateAndBlurDensity(gl, contourFrame(paletteOf(1)), pointVao, 1000);
 
     const firstPointDraw = calls.indexOf('drawArrays:0,0,1000');
     expect(firstPointDraw).toBeGreaterThan(-1);
@@ -393,32 +344,16 @@ describe('accumulateAndBlurDensity', () => {
 });
 
 describe('compositeDensity', () => {
-  it('draws one premultiplied-over quad from the blurred target', () => {
-    const { gl, calls } = mockGL();
-    compositeDensity(gl, {
-      res: resources(),
-      camera,
-      params: { alpha: 0.5, scaler: 4 },
-      plan: { style: 'heatmap' },
-    });
-
-    const draw = calls.indexOf('drawArrays:4,0,6');
-    expect(draw).toBeGreaterThan(-1);
-    expect(calls.filter((c) => c === 'drawArrays:4,0,6')).toHaveLength(1);
-    expect(calls.indexOf('blendFunc:1,771')).toBeLessThan(draw);
-    expect(calls.indexOf('blendFunc:1,771')).toBeGreaterThan(-1);
-    expect(calls).toContain('bindTexture:field0Tex');
-    expect(calls).toContain('u1f:alpha:0.5');
-    expect(calls).toContain('u1f:scaler:4');
-  });
-
   it('draws every slot from the four fields, off the label atlas unit', () => {
     const { gl, calls, uploads3fv } = mockGL();
     const palette = paletteOf(5);
-    compositeDensity(gl, contourFrame(palette));
+    compositeDensity(gl, contourFrame(palette, 0.5));
 
     expect(calls.filter((c) => c === 'drawArrays:4,0,6')).toHaveLength(1);
     expect(calls).toContain('u1i:slotCount:5');
+    expect(calls).toContain('u1f:alpha:0.5');
+    expect(calls.indexOf('blendFunc:1,771')).toBeGreaterThan(-1);
+    expect(calls.indexOf('blendFunc:1,771')).toBeLessThan(calls.indexOf('drawArrays:4,0,6'));
     expect(uploads3fv).toEqual([palette.colors]);
     expect(uploads3fv[0]).toBe(palette.colors);
     expect(calls).toContain(`u1f:contourFloor:${DENSITY_CONTOUR_FLOOR}`);

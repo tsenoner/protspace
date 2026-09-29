@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
-import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
+import type { DensityLayerMode } from '@protspace/utils';
 import type { ScalePair, WebGLStyleGetters } from '../types';
 import type { GLResources } from './gl-resources';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
@@ -18,7 +18,6 @@ type Config = {
   width: number;
   height: number;
   densityLayer?: DensityLayerMode;
-  densityStyle?: DensityLayerStyle;
 };
 
 function setup(
@@ -107,7 +106,7 @@ describe('density layer, off', () => {
 
     expect(accumAllocations(on.gl)).toBe(1);
     expect(on.resources.density).not.toBeNull();
-    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 6);
+    expect(onPrograms.mock.calls.length).toBe(absentPrograms.mock.calls.length + 3);
 
     absent.renderer.destroy();
     on.renderer.destroy();
@@ -144,6 +143,12 @@ describe('density layer, on', () => {
     expect(composite).toBeGreaterThan(base);
     expect(calls.slice(composite + 1, top)).toEqual([
       'bindVertexArray(null)',
+      'bindTexture(3553,null)',
+      'activeTexture(33987)',
+      'bindTexture(3553,null)',
+      'activeTexture(33986)',
+      'bindTexture(3553,null)',
+      'activeTexture(33984)',
       'bindTexture(3553,null)',
       'useProgram(obj)',
       'bindVertexArray(obj)',
@@ -186,7 +191,7 @@ describe('density layer, on', () => {
       (on.renderer as unknown as { gammaPipelineAvailable: boolean }).gammaPipelineAvailable,
     ).toBe(false);
     expect(on.resources.density).toBeNull();
-    expect(deleteProgram).toHaveBeenCalledTimes(7);
+    expect(deleteProgram).toHaveBeenCalledTimes(4);
     expect(deleteVao).toHaveBeenCalledTimes(1);
     expect(on.degraded.map((d) => d.context.reason)).toEqual(['gamma-pipeline-unavailable']);
     on.renderer.destroy();
@@ -224,9 +229,9 @@ const quadDraws = (calls: string[]) => calls.filter((c) => /^drawArrays\(\d+,0,6
 const FIVE = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231'];
 
 describe('density layer, contour', () => {
-  const contour: Config = { width: 800, height: 600, densityLayer: 'on', densityStyle: 'contour' };
+  const contour: Config = { width: 800, height: 600, densityLayer: 'on' };
 
-  it('draws one colour in the same four quads as the heatmap', () => {
+  it('draws one colour in four full-screen quads', () => {
     const { pd, style } = categories(['#e6194b']);
     const on = setup(contour, {}, undefined, style);
     const calls = recordCalls(on.glRecord);

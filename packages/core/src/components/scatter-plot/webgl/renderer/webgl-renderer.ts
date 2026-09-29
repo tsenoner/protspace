@@ -9,12 +9,7 @@
  */
 
 import * as d3 from 'd3';
-import {
-  DENSITY_STYLE_DEFAULT,
-  type PlotData,
-  type PlotDataPoint,
-  type ScatterplotConfig,
-} from '@protspace/utils';
+import { type PlotData, type PlotDataPoint, type ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -38,7 +33,6 @@ import {
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
-  computeDensityGrid,
   createDensityResources,
   resizeDensityTargets,
   destroyDensityResources,
@@ -46,11 +40,10 @@ import {
   compositeDensity,
   buildSlotPalette,
   type DensityFrame,
-  type DensityPlan,
   type DensityResources,
   type SlotPalette,
 } from './density-pass';
-import { densityFrameParams, DENSITY_CONTOUR_MIN_DENSITY } from './density-crossfade';
+import { densityFrameAlpha } from './density-crossfade';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
@@ -436,8 +429,7 @@ export class WebGLRenderer {
     const gl = this.gl;
     const res = this.resources.density;
     if (!gl || !res || this.densityDisabled) return;
-    const style = this.getConfig().densityStyle ?? DENSITY_STYLE_DEFAULT;
-    if (!resizeDensityTargets(gl, res, this.canvas.width, this.canvas.height, style)) {
+    if (!resizeDensityTargets(gl, res, this.canvas.width, this.canvas.height)) {
       this.disableDensity('density target incomplete');
     }
   }
@@ -628,27 +620,16 @@ export class WebGLRenderer {
       config.width ?? DEFAULT_VIEWPORT_WIDTH,
       config.height ?? DEFAULT_VIEWPORT_HEIGHT,
     );
-    const style = config.densityStyle ?? DENSITY_STYLE_DEFAULT;
-    const grid = computeDensityGrid(this.canvas.width, this.canvas.height, style);
-    const cellAreaCss =
-      ((this.canvas.width / grid.width) * (this.canvas.height / grid.height)) /
-      (this.dpr * this.dpr);
-    const params = densityFrameParams(
+    const alpha = densityFrameAlpha(
       this.visibleCount,
       transform.k,
       viewDimensionCss,
-      cellAreaCss,
       mode === 'on',
-      style === 'contour' ? DENSITY_CONTOUR_MIN_DENSITY : undefined,
     );
-    if (params.alpha <= 0) return null;
+    if (alpha <= 0) return null;
 
-    let plan: DensityPlan = { style: 'heatmap' };
-    if (style === 'contour') {
-      this.contourPalette ??= buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
-      if (this.contourPalette.count === 0) return null;
-      plan = { style, palette: this.contourPalette };
-    }
+    this.contourPalette ??= buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
+    if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();
     if (!res || !res.accum) return null;
@@ -660,10 +641,9 @@ export class WebGLRenderer {
         height: this.canvas.height,
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
-        gamma: this.getEffectiveGamma(),
       },
-      params,
-      plan,
+      alpha,
+      palette: this.contourPalette,
     };
   }
 

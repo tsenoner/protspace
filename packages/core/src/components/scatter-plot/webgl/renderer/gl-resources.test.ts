@@ -35,15 +35,9 @@ function makeFramebuffer(): FramebufferResources {
 
 function makeDensity(): DensityResources {
   return {
-    accumProgram: { k: 'accumProg' },
-    blurProgram: { k: 'blurProg' },
     contourBlurProgram: { k: 'contourBlurProg' },
-    compositeProgram: { k: 'compositeProg' },
     categoryAccumProgram: { k: 'categoryAccumProg' },
     categoryCompositeProgram: { k: 'categoryCompositeProg' },
-    accumLoc: {},
-    blurLoc: {},
-    compositeLoc: {},
     quadVao: { k: 'quadVao' },
     accum: { framebuffer: { k: 'afb' }, texture: { k: 'atex' }, width: 4, height: 4 },
     ping: null,
@@ -101,7 +95,7 @@ describe('GLResources', () => {
     const res = new GLResources();
     res.density = makeDensity();
     res.deleteAll(gl);
-    expect(gl.deleteProgram).toHaveBeenCalledTimes(6);
+    expect(gl.deleteProgram).toHaveBeenCalledTimes(3);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteFramebuffer).toHaveBeenCalledTimes(1);
     expect(gl.deleteTexture).toHaveBeenCalledTimes(1);

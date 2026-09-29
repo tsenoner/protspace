@@ -86,37 +86,7 @@ async function setDensity(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void
   await settle(page);
 }
 
-async function centreBlock(page: Page, half = 64): Promise<number[]> {
-  return page.evaluate((h) => {
-    const plot = document.querySelector('#myPlot');
-    const canvas = plot?.shadowRoot?.querySelector('canvas[data-key]') as HTMLCanvasElement | null;
-    if (!canvas) return [];
-    const copy = document.createElement('canvas');
-    copy.width = canvas.width;
-    copy.height = canvas.height;
-    const ctx = copy.getContext('2d');
-    if (!ctx) return [];
-    ctx.drawImage(canvas, 0, 0);
-    const x = Math.max(0, Math.round(canvas.width / 2) - h);
-    const y = Math.max(0, Math.round(canvas.height / 2) - h);
-    return Array.from(ctx.getImageData(x, y, h * 2, h * 2).data);
-  }, half);
-}
-
-function differingPixels(a: readonly number[], b: readonly number[]): number {
-  let differing = 0;
-  for (let i = 0; i < a.length; i += 4) {
-    for (let c = 0; c < 4; c++) {
-      if (Math.abs(a[i + c] - b[i + c]) > 8) {
-        differing++;
-        break;
-      }
-    }
-  }
-  return differing;
-}
-
-type ContourMode = 'off' | 'contour-on';
+type ContourMode = 'off' | 'on';
 
 async function setContour(page: Page, mode: ContourMode): Promise<void> {
   await page.evaluate((value) => {
@@ -125,7 +95,6 @@ async function setContour(page: Page, mode: ContourMode): Promise<void> {
       plot.config = {
         ...(plot.config ?? {}),
         densityLayer: value === 'off' ? 'off' : 'on',
-        densityStyle: 'contour',
       };
   }, mode);
   await settle(page);
@@ -228,43 +197,6 @@ test.describe('density layer pixels', () => {
     expect(await paintedPixels(page), 'the surviving category vanished too').toBeGreaterThan(0);
   });
 
-  test('?density=contour-on paints a different layer from ?density=on', async ({ page }) => {
-    await watchForDegraded(page);
-    await page.goto('/explore?density=on');
-    await dismissTourIfPresent(page);
-    await waitForExploreDataLoad(page);
-    await settle(page);
-
-    test.skip(
-      await gammaPipelineUnavailable(page),
-      'renderer reported gamma-pipeline-unavailable: no float render targets here',
-    );
-
-    const heatmapAlpha = await centreAlpha(page);
-    const heatmapBlock = await centreBlock(page);
-    expect(heatmapAlpha, 'canvas pixels not readable').toBeGreaterThan(0);
-    expect(heatmapBlock.length, 'canvas pixels not readable').toBeGreaterThan(0);
-
-    await page.goto('/explore?density=contour-on');
-    await dismissTourIfPresent(page);
-    await waitForExploreDataLoad(page);
-    await settle(page);
-
-    const contourBlock = await centreBlock(page);
-    const changed = differingPixels(heatmapBlock, contourBlock);
-    expect(changed, 'contour renders the same pixels as the heatmap').toBeGreaterThan(
-      heatmapBlock.length / 4 / 20,
-    );
-
-    const contourAlpha = await centreAlpha(page);
-    expect(contourAlpha, 'the contour layer added no coverage').toBeGreaterThan(0);
-    expect(
-      await page.locator('protspace-control-bar').evaluate((bar) => {
-        const select = bar.shadowRoot?.querySelector('#density-layer-select');
-        return (select as HTMLSelectElement | null)?.value ?? '';
-      }),
-    ).toBe('contour-on');
-  });
   test("contour rings are the union of each category's own rings", async ({ page }) => {
     await watchForDegraded(page);
     await page.goto('/explore');
@@ -291,7 +223,7 @@ test.describe('density layer pixels', () => {
     const sets: Record<string, string[]> = { A: [first], B: [second], AB: [first, second] };
     for (const [name, shown] of Object.entries(sets)) {
       await showOnly(page, shown);
-      await setContour(page, 'contour-on');
+      await setContour(page, 'on');
       await captureFrame(page, `${name}:on`);
       await setContour(page, 'off');
       await captureFrame(page, `${name}:off`);
@@ -366,7 +298,7 @@ test.describe('density layer pixels', () => {
 
     await setContour(page, 'off');
     const offUnselected = await pixel();
-    await setContour(page, 'contour-on');
+    await setContour(page, 'on');
     expect(maxDelta(await pixel(), offUnselected), 'the layer paints nothing here').toBeGreaterThan(
       8,
     );

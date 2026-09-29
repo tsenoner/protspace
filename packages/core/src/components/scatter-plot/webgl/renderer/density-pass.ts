@@ -1,14 +1,9 @@
-import type { DensityLayerStyle } from '@protspace/utils';
 import { NEUTRAL_VALUE_COLOR } from '../../config';
 import { createProgramFromSources } from '../shader-utils';
-import type { DensityFrameParams } from './density-crossfade';
 import {
-  DENSITY_ACCUM_VERTEX_SHADER,
   DENSITY_ACCUM_FRAGMENT_SHADER,
   DENSITY_QUAD_VERTEX_SHADER,
-  DENSITY_BLUR_FRAGMENT_SHADER,
   DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
-  DENSITY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CATEGORY_ACCUM_VERTEX_SHADER,
   DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CATEGORY_CAP,
@@ -50,25 +45,11 @@ export interface SlotPalette {
   readonly tailSlot: number;
 }
 
-export type DensityPlan =
-  | { readonly style: 'heatmap' }
-  | { readonly style: 'contour'; readonly palette: SlotPalette };
-
 export interface DensityResources {
-  accumProgram: WebGLProgram;
-  blurProgram: WebGLProgram;
   contourBlurProgram: WebGLProgram;
-  compositeProgram: WebGLProgram;
   categoryAccumProgram: WebGLProgram;
   categoryCompositeProgram: WebGLProgram;
-  accumLoc: CameraLocations & { gamma: WebGLUniformLocation | null };
-  blurLoc: BlurLocations;
   contourBlurLoc: BlurLocations;
-  compositeLoc: {
-    density: WebGLUniformLocation | null;
-    alpha: WebGLUniformLocation | null;
-    scaler: WebGLUniformLocation | null;
-  };
   categoryAccumLoc: CameraLocations & {
     slotKeys: WebGLUniformLocation | null;
     slotCount: WebGLUniformLocation | null;
@@ -91,25 +72,21 @@ export interface DensityResources {
 export interface DensityFrame {
   res: DensityResources;
   camera: DensityCamera;
-  params: DensityFrameParams;
-  plan: DensityPlan;
+  alpha: number;
+  palette: SlotPalette;
 }
 
 export function computeDensityGrid(
   canvasWidth: number,
   canvasHeight: number,
-  style: DensityLayerStyle,
 ): { width: number; height: number } {
   const w = canvasWidth / DENSITY_PIXEL_RATIO;
   const h = canvasHeight / DENSITY_PIXEL_RATIO;
-  const s =
-    Math.min(1, DENSITY_MAX_GRID_SIDE / Math.max(w, h)) /
-    (style === 'contour' ? DENSITY_CONTOUR_GRID_DIVISOR : 1);
+  const s = Math.min(1, DENSITY_MAX_GRID_SIDE / Math.max(w, h)) / DENSITY_CONTOUR_GRID_DIVISOR;
   return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) };
 }
 
-const fieldCount = (style: DensityLayerStyle) =>
-  style === 'contour' ? DENSITY_CATEGORY_CAP / 4 : 1;
+const FIELD_COUNT = DENSITY_CATEGORY_CAP / 4;
 
 export function buildSlotPalette(colors: Float32Array, count: number, gamma: number): SlotPalette {
   const entries = new Map<number, { n: number; first: number }>();
@@ -208,28 +185,10 @@ export function createDensityResources(
 ): DensityResources | null {
   const pointBindings = { a_dataPosition: pointAttribs.dataPosition, a_color: pointAttribs.color };
   const quadBindings = { a_position: QUAD_ATTRIB_INDEX };
-  const accumProgram = createProgramFromSources(
-    gl,
-    DENSITY_ACCUM_VERTEX_SHADER,
-    DENSITY_ACCUM_FRAGMENT_SHADER,
-    pointBindings,
-  );
-  const blurProgram = createProgramFromSources(
-    gl,
-    DENSITY_QUAD_VERTEX_SHADER,
-    DENSITY_BLUR_FRAGMENT_SHADER,
-    quadBindings,
-  );
   const contourBlurProgram = createProgramFromSources(
     gl,
     DENSITY_QUAD_VERTEX_SHADER,
     DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
-    quadBindings,
-  );
-  const compositeProgram = createProgramFromSources(
-    gl,
-    DENSITY_QUAD_VERTEX_SHADER,
-    DENSITY_COMPOSITE_FRAGMENT_SHADER,
     quadBindings,
   );
   const categoryAccumProgram = createProgramFromSources(
@@ -244,25 +203,10 @@ export function createDensityResources(
     DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
     quadBindings,
   );
-  const programs = [
-    accumProgram,
-    blurProgram,
-    contourBlurProgram,
-    compositeProgram,
-    categoryAccumProgram,
-    categoryCompositeProgram,
-  ];
+  const programs = [contourBlurProgram, categoryAccumProgram, categoryCompositeProgram];
   const quadVao = programs.every(Boolean) ? gl.createVertexArray() : null;
 
-  if (
-    !accumProgram ||
-    !blurProgram ||
-    !contourBlurProgram ||
-    !compositeProgram ||
-    !categoryAccumProgram ||
-    !categoryCompositeProgram ||
-    !quadVao
-  ) {
+  if (!contourBlurProgram || !categoryAccumProgram || !categoryCompositeProgram || !quadVao) {
     for (const p of programs) if (p) gl.deleteProgram(p);
     if (quadVao) gl.deleteVertexArray(quadVao);
     return null;
@@ -281,22 +225,12 @@ export function createDensityResources(
     dpr: loc(p, 'u_dpr'),
   });
   return {
-    accumProgram,
-    blurProgram,
     contourBlurProgram,
-    compositeProgram,
     categoryAccumProgram,
     categoryCompositeProgram,
-    accumLoc: { ...camera(accumProgram), gamma: loc(accumProgram, 'u_gamma') },
-    blurLoc: { source: loc(blurProgram, 'u_source'), direction: loc(blurProgram, 'u_direction') },
     contourBlurLoc: {
       source: loc(contourBlurProgram, 'u_source'),
       direction: loc(contourBlurProgram, 'u_direction'),
-    },
-    compositeLoc: {
-      density: loc(compositeProgram, 'u_density'),
-      alpha: loc(compositeProgram, 'u_densityAlpha'),
-      scaler: loc(compositeProgram, 'u_densityScaler'),
     },
     categoryAccumLoc: {
       ...camera(categoryAccumProgram),
@@ -324,10 +258,9 @@ export function resizeDensityTargets(
   res: DensityResources,
   canvasWidth: number,
   canvasHeight: number,
-  style: DensityLayerStyle,
 ): boolean {
-  const { width, height } = computeDensityGrid(canvasWidth, canvasHeight, style);
-  const want = fieldCount(style);
+  const { width, height } = computeDensityGrid(canvasWidth, canvasHeight);
+  const want = FIELD_COUNT;
   if (
     res.accum &&
     res.ping &&
@@ -366,10 +299,7 @@ function destroyDensityTargets(gl: WebGL2RenderingContext, res: DensityResources
 export function destroyDensityResources(gl: WebGL2RenderingContext, res: DensityResources): void {
   destroyDensityTargets(gl, res);
   gl.deleteVertexArray(res.quadVao);
-  gl.deleteProgram(res.accumProgram);
-  gl.deleteProgram(res.blurProgram);
   gl.deleteProgram(res.contourBlurProgram);
-  gl.deleteProgram(res.compositeProgram);
   gl.deleteProgram(res.categoryAccumProgram);
   gl.deleteProgram(res.categoryCompositeProgram);
 }
@@ -379,7 +309,6 @@ export interface DensityCamera {
   height: number;
   transform: { x: number; y: number; k: number };
   dpr: number;
-  gamma: number;
 }
 
 function setCamera(gl: WebGL2RenderingContext, loc: CameraLocations, camera: DensityCamera) {
@@ -448,21 +377,10 @@ export function accumulateAndBlurDensity(
   pointVao: WebGLVertexArrayObject | null,
   pointCount: number,
 ): void {
-  const { res, camera, plan } = frame;
+  const { res, camera, palette } = frame;
   const { accum, ping, fields } = res;
   if (!accum || !ping) return;
 
-  if (plan.style === 'heatmap') {
-    if (!fields[0]) return;
-    accumulate(gl, accum, res.accumProgram, pointVao, pointCount, () => {
-      setCamera(gl, res.accumLoc, camera);
-      gl.uniform1f(res.accumLoc.gamma, camera.gamma);
-    });
-    blur(gl, res, res.blurProgram, res.blurLoc, accum, ping, fields[0]);
-    return;
-  }
-
-  const { palette } = plan;
   const loc = res.categoryAccumLoc;
   const groups = Math.ceil(palette.count / 4);
   for (let g = 0; g < groups && fields[g]; g++) {
@@ -480,24 +398,17 @@ export function accumulateAndBlurDensity(
 }
 
 export function compositeDensity(gl: WebGL2RenderingContext, frame: DensityFrame): void {
-  const { res, params, plan } = frame;
-  const units = plan.style === 'contour' ? DENSITY_FIELD_UNITS : DENSITY_FIELD_UNITS.slice(0, 1);
+  const { res, alpha, palette } = frame;
+  const units = DENSITY_FIELD_UNITS;
   if (res.fields.length < units.length) return;
 
-  if (plan.style === 'heatmap') {
-    gl.useProgram(res.compositeProgram);
-    gl.uniform1i(res.compositeLoc.density, 0);
-    gl.uniform1f(res.compositeLoc.alpha, params.alpha);
-    gl.uniform1f(res.compositeLoc.scaler, params.scaler);
-  } else {
-    const loc = res.categoryCompositeLoc;
-    gl.useProgram(res.categoryCompositeProgram);
-    units.forEach((unit, g) => gl.uniform1i(loc.fields[g], unit));
-    gl.uniform3fv(loc.slotColors, plan.palette.colors);
-    gl.uniform1i(loc.slotCount, plan.palette.count);
-    gl.uniform1f(loc.alpha, params.alpha);
-    gl.uniform1f(loc.contourFloor, DENSITY_CONTOUR_FLOOR);
-  }
+  const loc = res.categoryCompositeLoc;
+  gl.useProgram(res.categoryCompositeProgram);
+  units.forEach((unit, g) => gl.uniform1i(loc.fields[g], unit));
+  gl.uniform3fv(loc.slotColors, palette.colors);
+  gl.uniform1i(loc.slotCount, palette.count);
+  gl.uniform1f(loc.alpha, alpha);
+  gl.uniform1f(loc.contourFloor, DENSITY_CONTOUR_FLOOR);
   units.forEach((unit, g) => {
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, res.fields[g].texture);

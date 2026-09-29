@@ -1,4 +1,4 @@
-import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
+import type { DensityLayerMode } from '@protspace/utils';
 
 export interface RequestedExploreView {
   annotation?: string;
@@ -10,7 +10,6 @@ export interface RequestedExploreView {
    */
   tooltip?: string[];
   density?: DensityLayerMode;
-  densityStyle?: DensityLayerStyle;
 }
 
 export interface ExploreViewNormalization {
@@ -36,7 +35,6 @@ export interface EffectiveExploreView {
   projection: string;
   tooltip: string[];
   density: DensityLayerMode;
-  densityStyle: DensityLayerStyle;
 }
 
 export interface ResolvedExploreView {

@@ -1,10 +1,4 @@
-import {
-  DENSITY_DEFAULT,
-  DENSITY_OPTIONS,
-  DENSITY_STYLE_DEFAULT,
-  type DensityLayerMode,
-  type DensityLayerStyle,
-} from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -74,25 +68,23 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
-const DENSITY_TOKENS: Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }> =
-  DENSITY_OPTIONS;
+const DENSITY_MODES: readonly DensityLayerMode[] = ['off', 'auto', 'on'];
 
 function parseDensityParam(searchParams: URLSearchParams): {
   mode: DensityLayerMode | undefined;
-  style: DensityLayerStyle | undefined;
   present: boolean;
   normalize: boolean;
 } {
   if (!searchParams.has('density')) {
-    return { mode: undefined, style: undefined, present: false, normalize: false };
+    return { mode: undefined, present: false, normalize: false };
   }
   const all = searchParams.getAll('density');
-  const parsed = DENSITY_TOKENS[(all[0] ?? '').trim()];
+  const raw = (all[0] ?? '').trim() as DensityLayerMode;
+  const valid = DENSITY_MODES.includes(raw);
   return {
-    mode: parsed?.mode,
-    style: parsed?.style,
+    mode: valid ? raw : undefined,
     present: true,
-    normalize: !parsed || all.length > 1,
+    normalize: !valid || all.length > 1,
   };
 }
 
@@ -104,7 +96,6 @@ export function parseExploreViewRequest(searchParams: URLSearchParams): ExploreV
     projection: getRequestedValue(searchParams, 'projection'),
     tooltip: tooltip.value,
     density: density.mode,
-    densityStyle: density.style,
   };
 
   return {
@@ -157,7 +148,6 @@ export function cloneExploreViewRequest(
         ? [...requestState.requested.tooltip]
         : requestState.requested.tooltip,
       density: requestState.requested.density,
-      densityStyle: requestState.requested.densityStyle,
     },
     present: {
       annotation: requestState.present.annotation,
@@ -232,7 +222,6 @@ export function resolveExploreView(
       projection: projectionIsValid ? requestedProjection : availableProjections[0],
       tooltip: tooltip.value,
       density: requested.density ?? DENSITY_DEFAULT,
-      densityStyle: requested.densityStyle ?? DENSITY_STYLE_DEFAULT,
     },
     matchesRequested: {
       annotation: annotationIsValid,
@@ -263,19 +252,12 @@ export function getResolvedExploreViewNormalization(
   };
 }
 
-function setDensityParam(
-  searchParams: URLSearchParams,
-  density: DensityLayerMode,
-  style: DensityLayerStyle,
-) {
-  const token = Object.keys(DENSITY_TOKENS).find(
-    (key) => DENSITY_TOKENS[key].mode === density && DENSITY_TOKENS[key].style === style,
-  );
-  if (!token || (density === DENSITY_DEFAULT && style === DENSITY_STYLE_DEFAULT)) {
+function setDensityParam(searchParams: URLSearchParams, density: DensityLayerMode) {
+  if (density === DENSITY_DEFAULT) {
     searchParams.delete('density');
     return;
   }
-  searchParams.set('density', token);
+  searchParams.set('density', density);
 }
 
 function setTooltipParam(searchParams: URLSearchParams, tooltip: readonly string[]) {
@@ -304,7 +286,7 @@ export function buildSearchParamsWithExploreView(
     next.set('annotation', effective.annotation);
     next.set('projection', effective.projection);
     setTooltipParam(next, effective.tooltip);
-    setDensityParam(next, effective.density, effective.densityStyle);
+    setDensityParam(next, effective.density);
     return next;
   }
 
@@ -321,7 +303,7 @@ export function buildSearchParamsWithExploreView(
   }
 
   if (options.normalize.density) {
-    setDensityParam(next, effective.density, effective.densityStyle);
+    setDensityParam(next, effective.density);
   }
 
   return next;

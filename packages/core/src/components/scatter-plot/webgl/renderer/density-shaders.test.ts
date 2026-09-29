@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   gaussianWeights,
-  DENSITY_SIGMA_GRID_PX,
-  DENSITY_BLUR_RADIUS,
-  DENSITY_ACCUM_VERTEX_SHADER,
-  DENSITY_BLUR_FRAGMENT_SHADER,
-  DENSITY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CATEGORY_ACCUM_VERTEX_SHADER,
   DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CONTOUR_MIN_POINTS,
@@ -16,28 +11,17 @@ import {
 } from './density-shaders';
 import { CAMERA_TO_CLIP_GLSL, POINT_VERTEX_SHADER } from './export-shaders';
 
-function cameraUniforms(src: string): string[] {
-  return src
-    .split('\n')
-    .filter((line) => /^uniform .*\b(u_resolution|u_transform|u_dpr|u_gamma);$/.test(line));
-}
-
 describe('gaussianWeights', () => {
-  it('is a normalised symmetric 13-tap kernel at sigma 2, radius 6', () => {
-    const w = gaussianWeights(DENSITY_SIGMA_GRID_PX, DENSITY_BLUR_RADIUS);
-    expect(w).toHaveLength(13);
+  it('is a normalised symmetric kernel', () => {
+    const w = gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS);
+    expect(w).toHaveLength(2 * DENSITY_CONTOUR_BLUR_RADIUS + 1);
     expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
     for (let i = 0; i < w.length; i++) expect(w[i]).toBeCloseTo(w[w.length - 1 - i]!, 12);
-    expect(w[DENSITY_BLUR_RADIUS]).toBeCloseTo(0.1997, 3);
   });
 });
 
-describe('DENSITY_BLUR_FRAGMENT_SHADER', () => {
+describe('DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER', () => {
   it('bakes exactly one texture tap per kernel weight', () => {
-    expect((DENSITY_BLUR_FRAGMENT_SHADER.match(/texture\(u_source/g) ?? []).length).toBe(13);
-  });
-
-  it('bakes a second, wider kernel for the contour style', () => {
     expect((DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER.match(/texture\(u_source/g) ?? []).length).toBe(
       19,
     );
@@ -45,42 +29,11 @@ describe('DENSITY_BLUR_FRAGMENT_SHADER', () => {
   });
 });
 
-describe('DENSITY_ACCUM_VERTEX_SHADER', () => {
+describe('DENSITY_CATEGORY_ACCUM_VERTEX_SHADER camera', () => {
   it('shares the camera snippet with the point shader', () => {
-    for (const src of [
-      POINT_VERTEX_SHADER,
-      DENSITY_ACCUM_VERTEX_SHADER,
-      DENSITY_CATEGORY_ACCUM_VERTEX_SHADER,
-    ]) {
+    for (const src of [POINT_VERTEX_SHADER, DENSITY_CATEGORY_ACCUM_VERTEX_SHADER]) {
       expect(src).toContain(CAMERA_TO_CLIP_GLSL);
     }
-  });
-
-  it('declares the camera uniforms with the point shader types', () => {
-    const point = cameraUniforms(POINT_VERTEX_SHADER);
-    expect(point).toHaveLength(4);
-    expect(cameraUniforms(DENSITY_ACCUM_VERTEX_SHADER)).toEqual(point);
-  });
-
-  it('flips y into clip space', () => {
-    expect(DENSITY_ACCUM_VERTEX_SHADER).toContain(
-      'gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);',
-    );
-  });
-});
-
-describe('DENSITY_COMPOSITE_FRAGMENT_SHADER', () => {
-  it('guards the mean-colour divide against empty cells', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('n > 0.0 ?');
-  });
-
-  it('writes premultiplied linear colour', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).toContain('fragColor = vec4(mean * alpha, alpha);');
-  });
-
-  it('carries no contour branch', () => {
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).not.toContain('u_style');
-    expect(DENSITY_COMPOSITE_FRAGMENT_SHADER).not.toContain('u_contourFloor');
   });
 });
 

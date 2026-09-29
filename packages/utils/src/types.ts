@@ -224,40 +224,19 @@ export interface ScatterplotConfig {
    */
   enableDuplicateStackUI?: boolean;
   /**
-   * GPU density heatmap composited over the base points and under the selected
-   * ones. `off` renders the points alone, `auto` cross-fades the layer in as the
-   * visible points overplot and out as the user zooms in, `on` pins it at full
-   * strength.
+   * GPU density contours composited over the base points and under the selected
+   * ones, one ring set per legend colour. `off` renders the points alone, `auto`
+   * cross-fades the layer in as the visible points overplot and out as the user
+   * zooms in, `on` pins it at full strength.
    *
    * Default: 'off'.
    */
   densityLayer?: DensityLayerMode;
-  /**
-   * How the blurred density is drawn once `densityLayer` decides it shows at
-   * all. `heatmap` is the smooth ramp; `contour` quantises it into bands and
-   * outlines them with iso-lines. The mode logic, including the `auto`
-   * cross-fade, is identical either way.
-   *
-   * Default: 'heatmap'.
-   */
-  densityStyle?: DensityLayerStyle;
 }
 
 export type DensityLayerMode = 'off' | 'auto' | 'on';
 
-export type DensityLayerStyle = 'heatmap' | 'contour';
-
 export const DENSITY_DEFAULT: DensityLayerMode = 'off';
-
-export const DENSITY_STYLE_DEFAULT: DensityLayerStyle = 'heatmap';
-
-export const DENSITY_OPTIONS = {
-  off: { mode: 'off', style: DENSITY_STYLE_DEFAULT },
-  auto: { mode: 'auto', style: 'heatmap' },
-  on: { mode: 'on', style: 'heatmap' },
-  'contour-auto': { mode: 'auto', style: 'contour' },
-  'contour-on': { mode: 'on', style: 'contour' },
-} as const satisfies Record<string, { mode: DensityLayerMode; style: DensityLayerStyle }>;
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
 

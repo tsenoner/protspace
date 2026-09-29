@@ -5,7 +5,7 @@ import type {
   ScatterplotConfig,
   VisualizationData,
 } from '@protspace/utils';
-import { DENSITY_DEFAULT, DENSITY_STYLE_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
+import { DENSITY_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
 import { DEFAULT_CONFIG } from './config';
 // Type-only: nothing here needs the class at runtime. The reverse edge
 // (plot-interaction-controller.ts -> RenderWebGLTrigger) is `import type` as well,
@@ -604,18 +604,13 @@ export class WebglRenderPerfRunner {
   private async _runContourDragScenario(iterations: number) {
     const host = this._hostAny();
     const prevConfig = host.config as ScatterplotConfig | undefined;
-    await this._setConfigAndWait(host, {
-      ...(prevConfig ?? {}),
-      densityLayer: 'on',
-      densityStyle: 'contour',
-    });
+    await this._setConfigAndWait(host, { ...(prevConfig ?? {}), densityLayer: 'on' });
     try {
       await this._runDragContinuousScenario(iterations, 'contourDrag');
     } finally {
       await this._setConfigAndWait(host, {
         ...(prevConfig ?? {}),
         densityLayer: prevConfig?.densityLayer ?? DENSITY_DEFAULT,
-        densityStyle: prevConfig?.densityStyle ?? DENSITY_STYLE_DEFAULT,
       });
     }
   }

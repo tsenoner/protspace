@@ -5,11 +5,7 @@ import type {
   ProtspaceStructureViewer,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
-import {
-  DENSITY_DEFAULT,
-  DENSITY_STYLE_DEFAULT,
-  isEatConfidenceAnnotation,
-} from '@protspace/utils';
+import { DENSITY_DEFAULT, isEatConfidenceAnnotation } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
 import type { EffectiveExploreView } from './view-state';
 
@@ -264,7 +260,6 @@ export function createDataRenderer({
         projection: resolvedInitialView.projectionName,
         tooltip: [...resolvedInitialView.tooltip],
         density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
-        densityStyle: plotElement.config?.densityStyle ?? DENSITY_STYLE_DEFAULT,
       };
     } finally {
       if (isLargeDataset && !getIsDisposed()) {

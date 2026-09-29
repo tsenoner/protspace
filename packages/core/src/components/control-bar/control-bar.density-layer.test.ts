@@ -3,12 +3,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import './control-bar';
-import type { DensityLayerMode, DensityLayerStyle, ScatterplotConfig } from '@protspace/utils';
+import type { DensityLayerMode, ScatterplotConfig } from '@protspace/utils';
 
 type Bar = HTMLElement & {
   autoSync?: boolean;
   densityLayer?: DensityLayerMode;
-  densityStyle?: DensityLayerStyle;
   updateComplete?: Promise<unknown>;
   _scatterplotElement?: unknown;
 };
@@ -46,13 +45,11 @@ describe('control-bar density layer select', () => {
     expect(handler).toHaveBeenCalledTimes(1);
     expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
       densityLayer: 'auto',
-      densityStyle: 'heatmap',
     });
     expect(controlBar.densityLayer).toBe('auto');
     expect(plot.config).toEqual({
       pointSize: 42,
       densityLayer: 'auto',
-      densityStyle: 'heatmap',
     });
   });
 
@@ -63,36 +60,25 @@ describe('control-bar density layer select', () => {
     expect(select()?.value).toBe('on');
   });
 
-  it.each([
-    ['off', 'off', 'heatmap'],
-    ['auto', 'auto', 'heatmap'],
-    ['on', 'on', 'heatmap'],
-    ['contour-auto', 'auto', 'contour'],
-    ['contour-on', 'on', 'contour'],
-  ])('option %s writes mode %s and style %s', async (value, mode, style) => {
+  it.each(['off', 'auto', 'on'] as const)('option %s writes mode %s', async (value) => {
     const handler = vi.fn();
     controlBar.addEventListener('density-layer-change', handler);
 
     const el = select();
-    expect([...el!.options].map((o) => o.value)).toEqual([
-      'off',
-      'auto',
-      'on',
-      'contour-auto',
-      'contour-on',
+    expect([...el!.options].map((o) => o.value)).toEqual(['off', 'auto', 'on']);
+    expect([...el!.options].map((o) => o.textContent?.trim())).toEqual([
+      'Contour: off',
+      'Contour: auto',
+      'Contour: on',
     ]);
 
     el!.value = value;
     el!.dispatchEvent(new Event('change'));
     await controlBar.updateComplete;
 
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
-      densityLayer: mode,
-      densityStyle: style,
-    });
-    expect(controlBar.densityLayer).toBe(mode);
-    expect(controlBar.densityStyle).toBe(style);
-    expect(plot.config).toMatchObject({ densityLayer: mode, densityStyle: style });
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: value });
+    expect(controlBar.densityLayer).toBe(value);
+    expect(plot.config).toMatchObject({ densityLayer: value });
     expect(select()?.value).toBe(value);
   });
 });

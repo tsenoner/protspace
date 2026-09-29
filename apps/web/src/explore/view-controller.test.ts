@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
-import type { DensityLayerMode, DensityLayerStyle } from '@protspace/utils';
+import type { DensityLayerMode } from '@protspace/utils';
 
 function createMockElements() {
   const plotElement = {
@@ -22,7 +22,6 @@ function createMockElements() {
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
     densityLayer: 'off' as DensityLayerMode,
-    densityStyle: 'heatmap' as DensityLayerStyle,
     applyProjectionSelection: vi.fn((projection: string) => {
       controlBar.selectedProjection = projection;
       // Simulate the real control-bar updating the plot
@@ -49,10 +48,9 @@ function makeRequest(
   projection?: string,
   tooltip?: string[],
   density?: DensityLayerMode,
-  densityStyle?: DensityLayerStyle,
 ): ExploreViewRequestState {
   return {
-    requested: { annotation, projection, tooltip, density, densityStyle },
+    requested: { annotation, projection, tooltip, density },
     present: {
       annotation: annotation !== undefined,
       projection: projection !== undefined,
@@ -82,7 +80,6 @@ describe('createViewController', () => {
       projection: 'UMAP',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     });
   });
 
@@ -110,7 +107,6 @@ describe('createViewController', () => {
       projection: 'PCA',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     });
     expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
     expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
@@ -126,7 +122,6 @@ describe('createViewController', () => {
       projection: 'UMAP',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     });
   });
 
@@ -158,7 +153,6 @@ describe('createViewController', () => {
       projection: 'PCA',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     });
     expect(changes[0].source).toBe('user');
   });
@@ -196,7 +190,6 @@ describe('createViewController', () => {
       projection: 'PCA',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     });
   });
 
@@ -210,7 +203,6 @@ describe('createViewController', () => {
       projection: 'UMAP',
       tooltip: [],
       density: 'off',
-      densityStyle: 'heatmap',
     });
   });
 
@@ -300,32 +292,7 @@ describe('createViewController', () => {
     expect(plotElement.config).toEqual({
       pointSize: 240,
       densityLayer: 'auto',
-      densityStyle: 'heatmap',
     });
-  });
-
-  it('applies a requested contour style alongside the mode', () => {
-    const { plotElement, controlBar, viewController } = setup();
-
-    const effective = viewController.applyViewSelection(
-      makeRequest('ec', 'UMAP', [], 'auto', 'contour'),
-      'url',
-    );
-
-    expect(effective?.densityStyle).toBe('contour');
-    expect(controlBar.densityStyle).toBe('contour');
-    expect(plotElement.config).toMatchObject({
-      densityLayer: 'auto',
-      densityStyle: 'contour',
-    });
-  });
-
-  it('applies a style-only change', () => {
-    const { plotElement, viewController } = setup();
-    viewController.applyViewSelection(makeRequest('ec', 'UMAP', [], 'on', 'heatmap'), 'url');
-    viewController.applyViewSelection(makeRequest('ec', 'UMAP', [], 'on', 'contour'), 'url');
-
-    expect(plotElement.config).toMatchObject({ densityLayer: 'on', densityStyle: 'contour' });
   });
 
   it('reads the current density mode back off the plot config', () => {
