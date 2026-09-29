@@ -192,21 +192,6 @@ const Hero = () => {
                 {item.label}
               </span>
             ))}
-
-            <figcaption className="pointer-events-none flex flex-wrap gap-1.5 px-4 pt-3 text-[11px] sm:px-0 lg:absolute lg:bottom-4 lg:left-3 lg:p-0">
-              {[
-                demo?.projection.name ?? 'ProtT5 · UMAP 2',
-                `${(demo?.count ?? 7831).toLocaleString()} venom proteins`,
-                'Swiss-Prot demo bundle',
-              ].map((chip) => (
-                <span
-                  key={chip}
-                  className="rounded-md border border-border/70 bg-white/90 px-2 py-0.5 font-medium tracking-wide text-muted-foreground"
-                >
-                  {chip}
-                </span>
-              ))}
-            </figcaption>
           </figure>
         </div>
       </div>
