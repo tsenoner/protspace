@@ -2009,7 +2009,7 @@ export class ProtspaceScatterplot extends LitElement {
         ${this._tooltipData
           ? html`
               <protspace-protein-tooltip
-                class="visible"
+                class=${this._focusedValues ? '' : 'visible'}
                 style="${this._getTooltipStyle()}"
                 .view=${this._tooltipData.view}
               >
