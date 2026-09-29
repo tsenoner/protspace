@@ -1699,9 +1699,11 @@ class TestParallelBatches:
     def test_the_breaker_bounds_parallel_batches(self, monkeypatch, caplog, workers):
         """Lost batches in a row are counted in input order, so parallel
         batches stop after the same 10; only the batches already submitted
-        ahead, at most two per worker, still go out."""
+        ahead still go out. The lookahead is cut to two per worker here so
+        that bound is tighter than the 60 batches."""
         from protspace.data.annotations.retrievers import http_utils
 
+        monkeypatch.setattr(http_utils, "_SUBMITTED_AHEAD_PER_WORKER", 2)
         sequences = TestMatchRequestRetry._proteins(120)  # 60 batches of 2
         server = _MatchesServer(down={_md5(s) for s in sequences.values()})
         server.install(monkeypatch)
@@ -1722,6 +1724,46 @@ class TestParallelBatches:
         assert retriever.failed_batch_count == 60
         stopped = [r for r in caplog.records if "remaining 50 of 60" in r.getMessage()]
         assert len(stopped) == 1
+
+    def test_a_slow_batch_does_not_hold_up_the_others(self, monkeypatch):
+        """The first batch answers only once 100 others have: far more than
+        two per worker, which is all a lookahead that short let run while one
+        slow batch (the slowest seen took 24 s) held up the rest."""
+        import sys
+
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 1)
+        sequences = TestMatchRequestRetry._proteins(200)
+        md5s = [_md5(s) for s in sequences.values()]
+        server = _MatchesServer(jitter=0)
+        server.install(monkeypatch)
+        post = requests.Session.post
+        answered = 0
+        lock = threading.Lock()
+        enough = threading.Event()
+        released = []
+
+        def first_is_slow(session, url, **kwargs):
+            nonlocal answered
+            if kwargs["json"]["md5"] == [md5s[0]]:
+                released.append(enough.wait(5))
+            response = post(session, url, **kwargs)
+            with lock:
+                answered += 1
+                if answered == 100:
+                    enough.set()
+            return response
+
+        monkeypatch.setattr(requests.Session, "post", first_is_slow)
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+
+        rows = retriever.fetch_annotations()
+
+        assert released == [True]
+        assert [row.identifier for row in rows] == list(sequences)
+        assert all(row.annotations["pfam"] for row in rows)
+        assert retriever.failed_batch_count == 0
 
     def test_a_tripped_breaker_stops_the_batches_still_retrying(self, monkeypatch):
         """Batches after the tenth are made to back off for 5 s. Once the

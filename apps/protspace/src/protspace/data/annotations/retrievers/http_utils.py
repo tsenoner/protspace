@@ -5,7 +5,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from itertools import islice
 
 import requests
@@ -25,9 +25,16 @@ MAX_BACKOFF_SECONDS = 30.0
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 # How many calls `map_in_order` submits ahead of the result it yields, per
-# worker. Enough that a slow request does not leave the other workers idle,
-# few enough that a 573K-accession input never holds 573K pending requests.
-_SUBMITTED_AHEAD_PER_WORKER = 2
+# worker. Its results are taken in input order, so while one slow call holds
+# up the next result the other workers only have this many calls to go on
+# with: 64 covers an InterPro batch's whole retry budget (about two minutes at
+# 4 workers) and a few seconds of TED lookups at 8, yet a 573K-accession
+# input never holds 573K pending requests. A future is small; an InterPro
+# batch's is up to the results the fetch keeps anyway.
+_SUBMITTED_AHEAD_PER_WORKER = 64
+# How many calls `map_as_completed` keeps submitted per worker. Results are
+# taken as they finish, so one ready to start as a worker frees up is enough.
+_QUEUED_PER_WORKER = 2
 
 
 def _retry_after_seconds(response: requests.Response) -> float | None:
@@ -260,6 +267,33 @@ def paginated_get(
     return results
 
 
+def _inline[T, R](
+    fn: Callable[[T], R], items: Iterable[T], stop: threading.Event | None
+) -> Iterator[R]:
+    """``fn(item)`` for every item, one at a time, setting *stop* on an early end."""
+    try:
+        for item in items:
+            yield fn(item)
+    except BaseException:
+        if stop is not None:
+            stop.set()
+        raise
+
+
+def _abandon(
+    executor: ThreadPoolExecutor, stop: threading.Event | None, exc: BaseException
+) -> None:
+    """Wind down a pass that ended early: set *stop*, so running calls give up
+    after their current attempt, and cancel the calls not yet started."""
+    if stop is not None:
+        stop.set()
+    # Ctrl-C must not sit behind the requests in flight; any other exit (an
+    # error, or the caller closing the iterator) waits for them.
+    executor.shutdown(
+        wait=isinstance(exc, (Exception, GeneratorExit)), cancel_futures=True
+    )
+
+
 def map_in_order[T, R](
     fn: Callable[[T], R],
     items: Iterable[T],
@@ -268,15 +302,17 @@ def map_in_order[T, R](
 ) -> Iterator[R]:
     """Yield ``fn(item)`` for every item, in input order, *workers* calls at a time.
 
-    For sources fetched one request per protein or per batch: the requests
-    overlap, while the caller still sees the results in the order it asked
-    for them, so its accounting (failures in a row, output order) is the same
-    as one request at a time. *fn* should return its errors rather than raise
-    them; one it raises ends the iteration at that item.
+    For sources fetched one request per protein or per batch whose caller
+    counts results in input order (an outage breaker's failures in a row):
+    the requests overlap, while the caller sees the results in the order it
+    asked for them, so its accounting is the same as one request at a time.
+    *fn* should return its errors rather than raise them; one it raises ends
+    the iteration at that item.
 
-    At most ``2 * workers`` calls are submitted ahead of the result being
-    yielded. With ``workers <= 1`` each call runs inline, when its result is
-    needed.
+    At most ``_SUBMITTED_AHEAD_PER_WORKER * workers`` calls are submitted
+    ahead of the result being yielded, so a slow call leaves the other
+    workers that many calls to go on with. With ``workers <= 1`` each call
+    runs inline, when its result is needed.
 
     When the iteration ends early -- the caller closes it, as an outage
     breaker does, or an error or interrupt ends it -- *stop* is set (pass the
@@ -286,13 +322,7 @@ def map_in_order[T, R](
     An interrupt does not wait for them.
     """
     if workers <= 1:
-        try:
-            for item in items:
-                yield fn(item)
-        except BaseException:
-            if stop is not None:
-                stop.set()
-            raise
+        yield from _inline(fn, items, stop)
         return
 
     source = iter(items)
@@ -308,12 +338,47 @@ def map_in_order[T, R](
                 pending.append(executor.submit(fn, item))
             yield result
     except BaseException as exc:
-        if stop is not None:
-            stop.set()
-        # Ctrl-C must not sit behind the requests in flight; any other exit
-        # (an error, or the caller closing the iterator) waits for them.
-        executor.shutdown(
-            wait=isinstance(exc, (Exception, GeneratorExit)), cancel_futures=True
-        )
+        _abandon(executor, stop, exc)
+        raise
+    executor.shutdown()
+
+
+def map_as_completed[T, R](
+    fn: Callable[[T], R],
+    items: Iterable[T],
+    workers: int,
+    stop: threading.Event | None = None,
+) -> Iterator[tuple[int, R]]:
+    """Yield ``(index, fn(item))`` for every item as its call finishes.
+
+    For a pass whose caller files each result by its index and counts
+    nothing in input order (TED's first pass): a slow call holds up only its
+    own worker while the others go on to the next items, however long it
+    takes. At most ``_QUEUED_PER_WORKER * workers`` calls are submitted and
+    not yet yielded. Results finishing together are yielded in input order.
+
+    Otherwise as :func:`map_in_order`: *workers* calls at a time, inline and
+    in input order with ``workers <= 1``, and an early end sets *stop*,
+    cancels the calls not yet started and waits for the running ones.
+    """
+    if workers <= 1:
+        yield from _inline(lambda pair: (pair[0], fn(pair[1])), enumerate(items), stop)
+        return
+
+    source = enumerate(items)
+    window = workers * _QUEUED_PER_WORKER
+    executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="protspace")
+    running: dict[Future[R], int] = {}
+    try:
+        while True:
+            for index, item in islice(source, window - len(running)):
+                running[executor.submit(fn, item)] = index
+            if not running:
+                break
+            done, _ = wait(running, return_when=FIRST_COMPLETED)
+            for future in sorted(done, key=running.__getitem__):
+                yield running.pop(future), future.result()
+    except BaseException as exc:
+        _abandon(executor, stop, exc)
         raise
     executor.shutdown()

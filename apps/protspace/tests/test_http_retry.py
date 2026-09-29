@@ -558,15 +558,43 @@ class TestMapInOrder:
     def test_submissions_stay_a_bounded_distance_ahead(self):
         """A 573K-accession run must not queue 573K requests up front."""
         call, state = self._jittered()
-        workers = 4
+        workers = 2
+        limit = http_utils._SUBMITTED_AHEAD_PER_WORKER * workers
         ahead = []
 
         for consumed, _ in enumerate(
-            http_utils.map_in_order(call, range(200), workers)
+            http_utils.map_in_order(call, range(3 * limit), workers)
         ):
             ahead.append(state["started"] - consumed)
 
-        assert max(ahead) <= 2 * workers + 1
+        assert max(ahead) <= limit + 1
+
+    def test_a_slow_call_does_not_leave_the_other_workers_idle(self):
+        """The first call waits until 16 calls per worker have finished after
+        it: far more than two per worker, which is all a lookahead that short
+        let run while the slow result held up the rest. A TED lookup timing
+        out twice holds its result about 21 s, an InterPro batch up to about
+        two minutes."""
+        workers = 4
+        wanted = 16 * workers
+        finished = 0
+        lock = threading.Lock()
+        enough = threading.Event()
+
+        def call(item):
+            nonlocal finished
+            if item == 0:
+                return enough.wait(5)
+            with lock:
+                finished += 1
+                if finished == wanted:
+                    enough.set()
+            return item
+
+        results = list(http_utils.map_in_order(call, range(200), workers))
+
+        assert results[0] is True
+        assert results[1:] == list(range(1, 200))
 
     def test_one_worker_runs_each_call_inline_when_its_result_is_needed(self):
         threads, seen = [], []
@@ -594,7 +622,7 @@ class TestMapInOrder:
 
         assert state["active"] == 0
         started = state["started"]
-        assert started <= 3 + 2 * workers
+        assert started <= 3 + http_utils._SUBMITTED_AHEAD_PER_WORKER * workers
         _real_sleep(0.02)
         assert state["started"] == started
 
@@ -676,4 +704,109 @@ class TestMapInOrder:
                 yielded.append(value)
 
         assert yielded == [0, 2, 4, 6, 8]
+        assert state["active"] == 0
+
+
+class TestMapAsCompleted:
+    """TED's first pass files each result by its position, so it takes them as
+    they finish: a lookup that times out holds up its own worker only."""
+
+    @pytest.mark.parametrize("workers", [1, 4, 16])
+    def test_every_item_comes_back_once_with_its_index(self, workers):
+        call, _ = TestMapInOrder._jittered()
+
+        results = list(http_utils.map_as_completed(call, range(300), workers))
+
+        assert sorted(results) == [(i, i * 2) for i in range(300)]
+
+    def test_no_more_than_the_given_number_run_at_once(self):
+        call, state = TestMapInOrder._jittered()
+
+        list(http_utils.map_as_completed(call, range(300), 4))
+
+        assert 1 < state["peak"] <= 4
+
+    def test_a_slow_call_holds_up_only_its_own_worker(self):
+        """The first call waits until every other call has finished."""
+        count = 200
+        finished = 0
+        lock = threading.Lock()
+        the_rest = threading.Event()
+
+        def call(item):
+            nonlocal finished
+            if item == 0:
+                return the_rest.wait(5)
+            with lock:
+                finished += 1
+                if finished == count - 1:
+                    the_rest.set()
+            return item
+
+        results = list(http_utils.map_as_completed(call, range(count), 4))
+
+        # True: every other call finished while the first one still ran.
+        assert sorted(results) == [(0, True)] + [(i, i) for i in range(1, count)]
+
+    def test_submissions_stay_a_bounded_distance_ahead(self):
+        call, state = TestMapInOrder._jittered()
+        workers = 4
+        ahead = []
+
+        for consumed, _ in enumerate(
+            http_utils.map_as_completed(call, range(300), workers)
+        ):
+            ahead.append(state["started"] - consumed)
+
+        assert max(ahead) <= 2 * workers
+
+    def test_one_worker_runs_each_call_inline_in_input_order(self):
+        threads = []
+
+        def call(item):
+            threads.append(threading.get_ident())
+            return item
+
+        results = list(http_utils.map_as_completed(call, "abc", 1))
+
+        assert results == [(0, "a"), (1, "b"), (2, "c")]
+        assert set(threads) == {threading.get_ident()}
+
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_closing_early_stops_and_leaves_nothing_running(self, workers):
+        call, state = TestMapInOrder._jittered()
+        stop = threading.Event()
+
+        results = http_utils.map_as_completed(call, range(1000), workers, stop=stop)
+        for _ in range(3):
+            next(results)
+        results.close()
+
+        assert stop.is_set()
+        assert state["active"] == 0
+        started = state["started"]
+        assert started <= 3 + 2 * workers
+        _real_sleep(0.02)
+        assert state["started"] == started
+
+    def test_running_to_the_end_leaves_stop_clear(self):
+        call, _ = TestMapInOrder._jittered()
+        stop = threading.Event()
+
+        list(http_utils.map_as_completed(call, range(50), 4, stop=stop))
+
+        assert not stop.is_set()
+
+    def test_an_error_raised_by_a_call_ends_the_iteration(self):
+        call, state = TestMapInOrder._jittered()
+        stop = threading.Event()
+
+        def failing(item):
+            if item == 5:
+                raise ValueError("boom")
+            return call(item)
+
+        with pytest.raises(ValueError, match="boom"):
+            list(http_utils.map_as_completed(failing, range(100), 4, stop=stop))
+        assert stop.is_set()
         assert state["active"] == 0

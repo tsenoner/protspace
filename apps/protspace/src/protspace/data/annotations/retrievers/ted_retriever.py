@@ -15,6 +15,7 @@ from protspace.data.annotations.retrievers.http_utils import (
     MAX_ATTEMPTS,
     PooledSession,
     get_with_retry,
+    map_as_completed,
     map_in_order,
 )
 
@@ -72,11 +73,14 @@ class TedRetriever(BaseAnnotationRetriever):
         """Fetch TED domain annotations for all proteins.
 
         Up to ``max_concurrent_requests`` lookups run at once over one
-        session; their results are taken in input order, so values, order and
-        failure counts are those of one lookup at a time. Lookups that fail in
-        the first pass are retried once more after it, with the default retry
-        budget, by which time a transient outage has usually passed. Only
-        lookups still failing then count as failed.
+        session. The first pass files each result by position as it
+        finishes, so a lookup that times out holds up only its own worker.
+        Lookups that fail in the first pass are retried once more after it,
+        in input order and with the default retry budget, by which time a
+        transient outage has usually passed; that pass takes its results in
+        input order for its breaker. Values, order and failure counts are
+        those of one lookup at a time. Only lookups still failing after the
+        final pass count as failed.
         """
         from protspace.data.annotations.retrievers.uniprot_retriever import (
             ProteinAnnotations,
@@ -86,7 +90,7 @@ class TedRetriever(BaseAnnotationRetriever):
         failed: list[int] = []  # positions whose first-pass lookup raised
 
         with PooledSession(self.max_concurrent_requests) as session:
-            first_pass = map_in_order(
+            first_pass = map_as_completed(
                 partial(self._try_lookup, session, attempts=_MAX_ATTEMPTS),
                 self.headers,
                 self.max_concurrent_requests,
@@ -100,7 +104,7 @@ class TedRetriever(BaseAnnotationRetriever):
                 ) as pbar,
                 closing(first_pass) as lookups,
             ):
-                for position, (value, error) in enumerate(lookups):
+                for position, (value, error) in lookups:
                     if error is None:
                         values[position] = value
                     else:
@@ -110,6 +114,8 @@ class TedRetriever(BaseAnnotationRetriever):
                             f"{self.headers[position]}: {error}"
                         )
                     pbar.update(1)
+            # Finished out of order; the final pass goes in input order.
+            failed.sort()
 
             lost = self._retry_failed(session, failed, values) if failed else []
         self.failed_lookup_count = len(lost)

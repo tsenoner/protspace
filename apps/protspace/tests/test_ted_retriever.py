@@ -409,10 +409,14 @@ class TestFinalRetryPass:
         assert all(r.annotations["ted_domains"] == "" for r in rows)
 
     @pytest.mark.parametrize("workers", [4, 8, 16])
-    def test_the_breaker_bounds_a_parallel_final_pass(self, workers):
+    def test_the_breaker_bounds_a_parallel_final_pass(self, monkeypatch, workers):
         """The failures in a row are counted in input order, so the pass stops
         after the same 10 as one lookup at a time; only the lookups already
-        submitted ahead, at most two per worker, still go out."""
+        submitted ahead still go out. The lookahead is cut to two per worker
+        here so that bound is tighter than the 100 accessions."""
+        from protspace.data.annotations.retrievers import http_utils
+
+        monkeypatch.setattr(http_utils, "_SUBMITTED_AHEAD_PER_WORKER", 2)
         headers = [f"P{i:05d}" for i in range(100)]
         fake = _AlphaFoldDomains(dict.fromkeys(headers, ["fail"]), jitter=0.002)
 
@@ -539,16 +543,56 @@ class TestParallelLookups:
         retriever, rows = _ted(headers, fake, max_concurrent_requests=workers)
         return fake, retriever, rows
 
-    def test_parallel_lookups_give_the_values_of_one_at_a_time(self):
+    def test_parallel_lookups_give_the_values_of_one_at_a_time(self, caplog):
         headers = [f"Q{i:05d}" for i in range(300)]
-        _, sequential, expected = self._run(headers, 1)
+
+        def warnings():
+            return [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+
+        with caplog.at_level("WARNING"):
+            _, sequential, expected = self._run(headers, 1)
         assert sequential.failed_lookup_count == 24  # multiples of 13
+        expected_warnings = warnings()
 
         for workers in (8, 16):
-            _, parallel, rows = self._run(headers, workers)
+            caplog.clear()
+            with caplog.at_level("WARNING"):
+                _, parallel, rows = self._run(headers, workers)
 
             assert rows == expected
             assert parallel.failed_lookup_count == sequential.failed_lookup_count
+            # The same accessions are named as still failing, in input order.
+            assert warnings() == expected_warnings
+
+    def test_a_slow_lookup_does_not_hold_up_the_others(self):
+        """The first lookup answers only once every other accession has been
+        looked up. Taken in input order, its result would hold up all but a
+        bounded number of the rest, as a lookup timing out (about 21 s in
+        the first pass) did."""
+        headers = [f"Q{i:05d}" for i in range(1000)]
+        fake = _AlphaFoldDomains(distinct=True)
+        finished = 0
+        lock = threading.Lock()
+        the_rest = threading.Event()
+        released = []
+
+        def first_is_slow(url, timeout=None, attempts=None, session=None):
+            nonlocal finished
+            if url.endswith(headers[0]):
+                released.append(the_rest.wait(5))
+            response = fake(url, timeout=timeout, attempts=attempts, session=session)
+            with lock:
+                finished += 1
+                if finished == len(headers) - 1:
+                    the_rest.set()
+            return response
+
+        retriever, rows = _ted(headers, first_is_slow)
+
+        assert released == [True]
+        assert [r.identifier for r in rows] == headers
+        assert all(r.annotations["ted_domains"] for r in rows)
+        assert retriever.failed_lookup_count == 0
 
     def test_by_default_eight_lookups_share_one_session(self):
         from protspace.data.annotations.retrievers.http_utils import PooledSession
