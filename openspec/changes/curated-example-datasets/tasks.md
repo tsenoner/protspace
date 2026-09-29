@@ -188,7 +188,7 @@ Before every commit:
 - [x] 5.8 `docs/explore/eat.md` "Trying It": `venom-eat` (threshold 0, strips visible, and "drag to 0.5 → 244 of 384"), the `?dataset=venom-eat` link, a link to its card, and a fix for "nearly half the dataset is a ring". Keep the venom numbers in `separation-scores.md` and `scatterplot.md`, since the frozen statistics part keeps them valid.
 - [x] 5.9 `docs/index.md` (drop "eleven", link the page), `docs/explore/index.md`, `docs/guide/index.md` (link `#swissprot`), `docs/guide/faq.md` (optional Swiss-Prot link), `docs/explore/images/README.md` (the venom fixture path).
   - The FAQ link was left out: its load-time sentence describes the 44.9 MB paper bundle, and the refreshed Swiss-Prot example may load more slowly (the D2 gate allows up to about 35 s). The images README got the fixture path with §4.
-- [ ] 5.10 Product tour step 2 (`product-tour.ts`) mentions **Examples** and uses the extensionless docs link; check `product-tour.spec.ts`.
+- [x] 5.10 Product tour step 2 (`product-tour.ts`) mentions **Examples** and uses the extensionless docs link; check `product-tour.spec.ts` (it asserts titles and targets only, and passes unchanged).
 
 ## 6. Showcase build script (Python dev tooling, `chore:` commits)
 
