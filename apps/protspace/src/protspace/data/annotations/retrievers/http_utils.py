@@ -62,8 +62,9 @@ class _RetryAfterPause:
             self._until = max(self._until, time.monotonic() + seconds)
 
     def wait(self) -> None:
-        remaining = self._until - time.monotonic()
-        if remaining > 0:
+        # Checked again after every sleep: another request's `Retry-After`
+        # may have moved the end later while this one slept.
+        while (remaining := self._until - time.monotonic()) > 0:
             time.sleep(remaining)
 
 

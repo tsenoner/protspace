@@ -15,14 +15,32 @@ import requests
 
 from protspace.data.annotations.retrievers import http_utils
 
-# The fixture below stubs `time.sleep` out; the concurrency tests need a real
-# delay to shuffle the order in which parallel calls finish.
+# The fixture below replaces the clock `http_utils` sleeps on; the concurrency
+# tests need a real delay to shuffle the order in which parallel calls finish.
 _real_sleep = time.sleep
 
 
+class _FakeClock:
+    """Stands in for `time` in `http_utils`: a sleep advances the clock at
+    once instead of waiting, so a test can tell when each request went out."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
 @pytest.fixture(autouse=True)
-def _no_sleeping(monkeypatch):
-    monkeypatch.setattr(http_utils.time, "sleep", lambda _: None)
+def clock(monkeypatch):
+    fake = _FakeClock()
+    monkeypatch.setattr(http_utils, "time", fake)
+    return fake
 
 
 def _response(status: int, payload: dict | None = None, headers: dict | None = None):
@@ -98,9 +116,7 @@ def test_retries_are_bounded(monkeypatch):
     assert len(calls) == http_utils.MAX_ATTEMPTS
 
 
-def test_retry_after_header_is_honoured(monkeypatch):
-    slept = []
-    monkeypatch.setattr(http_utils.time, "sleep", slept.append)
+def test_retry_after_header_is_honoured(monkeypatch, clock):
     responses = [_response(429, headers={"Retry-After": "7"}), _response(200)]
     calls = []
 
@@ -111,12 +127,10 @@ def test_retry_after_header_is_honoured(monkeypatch):
     monkeypatch.setattr(http_utils.requests, "get", fake_get)
 
     http_utils.paginated_get("https://example.test/x")
-    assert slept == [7.0]
+    assert clock.slept == [7.0]
 
 
-def test_an_absurd_retry_after_is_capped(monkeypatch):
-    slept = []
-    monkeypatch.setattr(http_utils.time, "sleep", slept.append)
+def test_an_absurd_retry_after_is_capped(monkeypatch, clock):
     responses = [_response(429, headers={"Retry-After": "99999"}), _response(200)]
     calls = []
 
@@ -127,7 +141,7 @@ def test_an_absurd_retry_after_is_capped(monkeypatch):
     monkeypatch.setattr(http_utils.requests, "get", fake_get)
 
     http_utils.paginated_get("https://example.test/x")
-    assert slept == [http_utils.MAX_BACKOFF_SECONDS]
+    assert clock.slept == [http_utils.MAX_BACKOFF_SECONDS]
 
 
 class TestPostWithRetry:
@@ -162,16 +176,14 @@ class TestPostWithRetry:
         # Every attempt resends the same body with the caller's timeout.
         assert all(c["json"] == {"md5": ["A"]} and c["timeout"] == 30 for c in calls)
 
-    def test_retry_after_header_is_honoured(self, monkeypatch):
-        slept = []
-        monkeypatch.setattr(http_utils.time, "sleep", slept.append)
+    def test_retry_after_header_is_honoured(self, monkeypatch, clock):
         self._serve(
             monkeypatch, _response(429, headers={"Retry-After": "7"}), _response(200)
         )
 
         http_utils.post_with_retry("https://example.test/x", json={})
 
-        assert slept == [7.0]
+        assert clock.slept == [7.0]
 
     def test_a_client_error_is_not_retried(self, monkeypatch):
         calls = self._serve(monkeypatch, _response(400), _response(200))
@@ -246,14 +258,17 @@ class TestSession:
     requests a second against 124 with one session and 8 in parallel."""
 
     @staticmethod
-    def _session(monkeypatch, method, *outcomes):
+    def _session(monkeypatch, method, *outcomes, sent=None):
         """A `PooledSession` answering successive *method* calls with *outcomes*,
-        and module-level `requests` calls that fail the test."""
+        and module-level `requests` calls that fail the test. *sent*, when
+        given, receives the fake clock's time of each request."""
         session = http_utils.PooledSession(2)
         calls = []
 
         def fake(url, **kwargs):
             calls.append((url, kwargs))
+            if sent is not None:
+                sent.append(http_utils.time.monotonic())
             return outcomes[len(calls) - 1]
 
         def forbidden(*_args, **_kwargs):
@@ -326,30 +341,34 @@ class TestSession:
         adapter = session.get_adapter("https://alphafold.ebi.ac.uk/api/domains/P1")
         assert adapter._pool_maxsize == 8
 
-    def test_a_retry_after_pauses_every_request_on_the_session(self, monkeypatch):
+    def test_a_retry_after_pauses_every_request_on_the_session(
+        self, monkeypatch, clock
+    ):
         """Under concurrency one request's backoff would leave the other
         workers firing at a server that asked for a pause."""
-        slept = []
-        monkeypatch.setattr(http_utils.time, "sleep", slept.append)
-        session, calls = self._session(
+        sent = []
+        session, _ = self._session(
             monkeypatch,
             "get",
             _response(429, headers={"Retry-After": "5"}),
             _response(200),
-            _response(200),
+            sent=sent,
         )
 
-        http_utils.get_with_retry("https://example.test/a", session=session)
-        # With `sleep` stubbed no time passes, so this request starts while the
-        # pause the first one received still holds: it waits too.
+        # One request is answered "come back in 5 s" and gives up.
+        with pytest.raises(requests.HTTPError):
+            http_utils.get_with_retry(
+                "https://example.test/a", attempts=1, session=session
+            )
+        # A second later, another request on the session waits out the rest.
+        clock.now += 1.0
         http_utils.get_with_retry("https://example.test/b", session=session)
 
-        assert len(calls) == 3
-        assert slept == [pytest.approx(5.0, abs=0.5), pytest.approx(5.0, abs=0.5)]
+        assert sent == [0.0, 5.0]
 
-    def test_a_backoff_without_retry_after_stays_with_its_request(self, monkeypatch):
-        slept = []
-        monkeypatch.setattr(http_utils.time, "sleep", slept.append)
+    def test_a_backoff_without_retry_after_stays_with_its_request(
+        self, monkeypatch, clock
+    ):
         session, _ = self._session(
             monkeypatch, "get", _response(503), _response(200), _response(200)
         )
@@ -357,7 +376,76 @@ class TestSession:
         http_utils.get_with_retry("https://example.test/a", session=session)
         http_utils.get_with_retry("https://example.test/b", session=session)
 
-        assert slept == [http_utils.BACKOFF_BASE_SECONDS]
+        assert clock.slept == [http_utils.BACKOFF_BASE_SECONDS]
+
+    def test_a_pause_extended_while_waiting_is_waited_out(self, monkeypatch, clock):
+        """A request already waiting out one `Retry-After` must not wake at
+        its old end when another request's `Retry-After` pushes it later."""
+        sent = []
+        session, _ = self._session(
+            monkeypatch,
+            "get",
+            _response(429, headers={"Retry-After": "1"}),
+            _response(200),
+            sent=sent,
+        )
+        real_sleep = clock.sleep
+
+        def sleep(seconds):
+            if len(clock.slept) == 0:
+                # Half a second into the wait, another request on the session
+                # is told to come back in 3 s: the pause now ends at 3.5 s.
+                clock.now += 0.5
+                session.retry_after.extend(3.0)
+                clock.now -= 0.5
+            real_sleep(seconds)
+
+        monkeypatch.setattr(clock, "sleep", sleep)
+
+        http_utils.get_with_retry("https://example.test/a", session=session)
+
+        assert sent == [0.0, pytest.approx(3.5)]
+
+    def test_a_pause_extended_by_another_thread_holds_a_waiting_one(self, monkeypatch):
+        """The same with real threads and a real clock: `b` is told to wait
+        longer while `a` already waits, and `a` resends only after `b`'s
+        pause."""
+        monkeypatch.setattr(http_utils, "time", time)
+        session = http_utils.PooledSession(2)
+        start = time.monotonic()
+        sent: list[tuple[str, float]] = []
+        answered = threading.Event()
+        b_told_to_wait: list[float] = []
+
+        def fake_get(url, **_kwargs):
+            name = url.rsplit("/", 1)[-1]
+            sent.append((name, time.monotonic() - start))
+            tries = sum(1 for n, _ in sent if n == name)
+            if tries > 1:
+                return _response(200)
+            if name == "a":
+                answered.set()
+                return _response(429, headers={"Retry-After": "0.1"})
+            # b is answered while a waits out its 0.1 s pause.
+            answered.wait(1)
+            _real_sleep(0.05)
+            b_told_to_wait.append(time.monotonic() - start)
+            return _response(429, headers={"Retry-After": "0.4"})
+
+        monkeypatch.setattr(session, "get", fake_get)
+        b = threading.Thread(
+            target=http_utils.get_with_retry,
+            args=("https://example.test/b",),
+            kwargs={"session": session},
+        )
+        b.start()
+        http_utils.get_with_retry("https://example.test/a", session=session)
+        b.join()
+
+        a_resent = [t for n, t in sent if n == "a"][1]
+        # a's own pause ended at 0.1 s; b's, which a must honour too, 0.4 s
+        # after b was answered (about 0.45 s).
+        assert a_resent >= b_told_to_wait[0] + 0.39
 
 
 class TestMapInOrder:
