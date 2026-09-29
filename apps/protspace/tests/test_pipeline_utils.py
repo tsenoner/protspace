@@ -374,7 +374,7 @@ class TestUniProtFailureCacheWriteThroughPipeline:
     def _fail_one_batch(monkeypatch):
         from protspace.data.annotations.retrievers import uniprot_retriever
 
-        def fail_batch(_accessions):
+        def fail_batch(_accessions, **_kwargs):
             raise RuntimeError("temporary UniProt failure")
 
         monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
@@ -483,7 +483,7 @@ class TestAnnotationCacheMigration:
             }
         ).to_parquet(cache_path, index=False)
 
-        def fail_batch(_accessions):
+        def fail_batch(_accessions, **_kwargs):
             raise RuntimeError("temporary UniProt failure")
 
         monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
