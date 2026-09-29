@@ -1262,3 +1262,286 @@ class TestOutageBreaker:
         assert retriever.failed_batch_count == 2 * (limit - 1)
         matched = [row.identifier for row in result if row.annotations["pfam"]]
         assert matched == [f"P{limit - 1}", f"P{2 * limit - 1}"]
+
+
+# Two results exactly as the InterPro Matches API returned them on 2026-09-29
+# for Swiss-Prot sequences (research sample `a_ipr_sample300.json`). Besides
+# the member databases' own matches, the API now returns AI-predicted
+# InterPro-N matches: `"source": "InterPro-N"`, the member library's name
+# (sometimes at an older release), no name and no match-level score.
+_CAPTURED_MIXED_SOURCES = {
+    "md5": "35F0A6AD880592A838EAE7B90C6F48E0",
+    "matches": [
+        {
+            "signature": {
+                "accession": "G3DSA:3.40.50.150",
+                "name": None,
+                "description": "Vaccinia Virus protein VP39",
+                "type": "Homologous_superfamily",
+                "signatureLibraryRelease": {
+                    "library": "CATH-Gene3D",
+                    "version": "4.3.0",
+                },
+                "entry": {
+                    "accession": "IPR029063",
+                    "name": "SAM-dependent_MTases_sf",
+                    "description": (
+                        "S-adenosyl-L-methionine-dependent methyltransferase "
+                        "superfamily"
+                    ),
+                    "type": "Homologous_superfamily",
+                    "parent": None,
+                },
+            },
+            "model-ac": "4lecA00",
+            "source": "CATH-Gene3D",
+            "locations": [
+                {
+                    "start": 72,
+                    "end": 365,
+                    "location-fragments": [
+                        {"start": 72, "end": 216, "dc-status": "C_TERMINAL_DISC"},
+                        {"start": 250, "end": 365, "dc-status": "N_TERMINAL_DISC"},
+                    ],
+                    "hmmStart": 23,
+                    "hmmEnd": 191,
+                    "hmmLength": 212,
+                    "hmmBounds": "INCOMPLETE",
+                    "envelopeStart": 72,
+                    "envelopeEnd": 365,
+                    "evalue": 8.8e-23,
+                    "score": 82.9,
+                }
+            ],
+            "score": 83.5,
+            "evalue": 5.8e-23,
+        },
+        {
+            "signature": {
+                "accession": "PTHR14614",
+                "name": None,
+                "description": "HEPATOCELLULAR CARCINOMA-ASSOCIATED ANTIGEN",
+                "type": "Family",
+                "signatureLibraryRelease": {"library": "PANTHER", "version": "19.0"},
+                "entry": {
+                    "accession": "IPR019410",
+                    "name": "Methyltransf_16",
+                    "description": "Lysine methyltransferase",
+                    "type": "Family",
+                    "parent": None,
+                },
+            },
+            "model-ac": "PTHR14614:SF109",
+            "source": "PANTHER",
+            "locations": [
+                {
+                    "start": 62,
+                    "end": 340,
+                    "location-fragments": [
+                        {"start": 62, "end": 340, "dc-status": "CONTINUOUS"}
+                    ],
+                    "hmmStart": 26,
+                    "hmmEnd": 200,
+                    "hmmLength": 229,
+                    "hmmBounds": "INCOMPLETE",
+                    "envelopeStart": 36,
+                    "envelopeEnd": 363,
+                    "evalue": 1.2e-16,
+                    "score": 72.8,
+                }
+            ],
+            "score": 72.8,
+            "evalue": 1.2e-16,
+            "ancestralNode": "AN448",
+        },
+        {
+            "signature": {
+                "accession": "PF10294",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {"library": "Pfam", "version": "37.3"},
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 92,
+                    "end": 210,
+                    "location-fragments": [
+                        {"start": 92, "end": 210, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.9990003,
+                }
+            ],
+        },
+        {
+            "signature": {
+                "accession": "G3DSA:3.40.50.150",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {
+                    "library": "CATH-Gene3D",
+                    "version": "4.3.0",
+                },
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 73,
+                    "end": 361,
+                    "location-fragments": [
+                        {"start": 73, "end": 361, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.9980611,
+                }
+            ],
+        },
+        {
+            "signature": {
+                "accession": "PTHR14614",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {"library": "PANTHER", "version": "19.0"},
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 67,
+                    "end": 351,
+                    "location-fragments": [
+                        {"start": 67, "end": 351, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.99801177,
+                }
+            ],
+        },
+    ],
+    "found": True,
+}
+
+_CAPTURED_INTERPRO_N_ONLY = {
+    "md5": "32F1BC1411E95386E089FB76C9B3314A",
+    "matches": [
+        {
+            "signature": {
+                "accession": "PS60014",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {
+                    "library": "PROSITE patterns",
+                    "version": "2025_01",
+                },
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 3,
+                    "end": 16,
+                    "location-fragments": [
+                        {"start": 3, "end": 16, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.7762832,
+                }
+            ],
+        },
+        {
+            "signature": {
+                "accession": "PF07365",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {"library": "Pfam", "version": "37.3"},
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 1,
+                    "end": 16,
+                    "location-fragments": [
+                        {"start": 1, "end": 16, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.78642863,
+                }
+            ],
+        },
+    ],
+    "found": True,
+}
+
+
+class TestInterProNPredictions:
+    """InterPro-N matches are AI predictions, not member-database matches.
+
+    They carry the member library's name, so mapping by library alone emitted
+    them into `pfam`, `cdd`, ... as unscored hits (about 3 % of Swiss-Prot
+    proteins in `pfam`). Every InterPro column holds the member databases' own
+    matches only, as the annotation registry describes them."""
+
+    @staticmethod
+    def _parse(results, annotations):
+        md5_to_identifiers = {r["md5"]: [f"P{i}"] for i, r in enumerate(results)}
+        retriever = InterProAnnotationRetriever(annotations=annotations)
+        with (
+            patch(
+                "src.protspace.data.annotations.retrievers.interpro_retriever"
+                ".get_cath_names",
+                return_value={"3.40.50.150": "Vaccinia Virus protein VP39"},
+            ),
+            patch.object(
+                InterProRetriever,
+                "_get_member_db_name_map",
+                return_value={"PANTHER": {"PTHR14614": "HCC-ASSOCIATED ANTIGEN"}},
+            ),
+        ):
+            rows = retriever._parse_interpro_results(results, md5_to_identifiers)
+        return {row.identifier: row.annotations for row in rows}
+
+    def test_a_member_database_match_is_kept_beside_its_interpro_n_twin(self):
+        by_id = self._parse([_CAPTURED_MIXED_SOURCES], ["cath", "panther", "pfam"])
+
+        assert (
+            by_id["P0"]["cath"]
+            == "G3DSA:3.40.50.150 (Vaccinia Virus protein VP39)|83.5"
+        )
+        assert by_id["P0"]["panther"] == "PTHR14614 (HCC-ASSOCIATED ANTIGEN)|72.8"
+
+    def test_a_signature_predicted_only_by_interpro_n_is_dropped(self):
+        by_id = self._parse(
+            [_CAPTURED_MIXED_SOURCES, _CAPTURED_INTERPRO_N_ONLY],
+            ["pfam", "prosite", "pfam_clan"],
+        )
+
+        # PF10294 and PS60014/PF07365 are InterPro-N predictions only.
+        assert by_id["P0"]["pfam"] == ""
+        assert by_id["P1"]["pfam"] == ""
+        assert by_id["P1"]["prosite"] == ""
+
+    def test_the_source_is_compared_without_regard_to_case(self):
+        match = create_signature("cd12951", library="CDD")
+        match["source"] = "interpro-n"
+        result = create_api_result(TEST_MD5, matches=[match])
+
+        by_id = self._parse([result], ["cdd"])
+
+        assert by_id["P0"]["cdd"] == ""
+
+    def test_a_match_without_a_source_field_is_kept(self):
+        """Older responses, and every fixture above, carry no `source`."""
+        result = create_api_result(
+            TEST_MD5, matches=[create_signature("PF00001", name="7tm_1", score=5.0)]
+        )
+
+        assert self._parse([result], ["pfam"])["P0"]["pfam"] == "PF00001 (7tm_1)|5.0"

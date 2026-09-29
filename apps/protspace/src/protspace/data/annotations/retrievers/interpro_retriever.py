@@ -39,6 +39,15 @@ INTERPRO_MAPPING = {
 # pfam_clan is a derived annotation (computed from pfam in the transformer)
 INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys()) + ["pfam_clan"]
 
+# Match sources that are not a member database's own match. The Matches API
+# also returns InterPro-N's AI-predicted matches, labelled with the member
+# library they predict (sometimes at an older release) but with no name and no
+# match-level score. Mapped by library alone they became unscored hits in
+# `pfam`, `cdd`, ... for about 3 % of Swiss-Prot proteins, so they are skipped
+# and every column keeps its member database's own matches only. Compared
+# lower-case; a match without a `source` is a member-database match.
+_PREDICTED_MATCH_SOURCES = frozenset({"interpro-n"})
+
 # Annotations derived from other InterPro fields (not fetched from API directly)
 DERIVED_INTERPRO_ANNOTATIONS = {"pfam_clan"}
 
@@ -108,6 +117,9 @@ class InterProRetriever(BaseAnnotationRetriever):
     - Count is inferred from the number of comma-separated scores
 
     Example: 'pfam': 'PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5'
+
+    Only the member databases' own matches are kept: InterPro-N's AI-predicted
+    matches, which the Matches API also returns, are skipped.
     """
 
     def __init__(
@@ -303,6 +315,8 @@ class InterProRetriever(BaseAnnotationRetriever):
                 continue
 
             for match in result.get("matches", []):
+                if (match.get("source") or "").lower() in _PREDICTED_MATCH_SOURCES:
+                    continue
                 signature = match.get("signature", {})
                 sig_lib = signature.get("signatureLibraryRelease", {})
                 source_db = sig_lib.get("library", "").lower()

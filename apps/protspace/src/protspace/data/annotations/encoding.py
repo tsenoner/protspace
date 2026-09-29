@@ -33,7 +33,8 @@ FORMAT_VERSION_KEY = b"protspace_format_version"
 #   v2: protein_families keeps names whole ("(TC 3.A.3)" is no longer cut at
 #       its first ".") and lists every section's family instead of a section
 #       qualifier; the InterPro columns reach every protein sharing a sequence,
-#       where v1 gave them to only one of each group
+#       where v1 gave them to only one of each group, and hold member-database
+#       matches only, where v1 also took InterPro-N's AI-predicted ones
 #
 # To record a new semantics change, add an entry — the version is derived from
 # this table, so the two cannot drift apart. The pipeline reads nothing else to
