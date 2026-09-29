@@ -15,25 +15,25 @@ section 4 runs after all three are merged back. Rules for every track:
 
 ## 1. Track 1 — retrievers (InterPro fan-out and retry, Biocentral batching, TED retry)
 
-- [ ] 1.1 Failing test in `test_interpro_annotation_retriever.py`: two identifiers with identical
+- [x] 1.1 Failing test in `test_interpro_annotation_retriever.py`: two identifiers with identical
       sequences both receive the same parsed InterPro values, and the mocked POST carries that
       MD5 once. Add a third, unique identifier as a control, and a duplicated sequence whose
       result is `found: false`, which leaves both of its identifiers empty.
-- [ ] 1.2 Map `md5 → [identifiers]` in `InterProRetriever.fetch_annotations` and fan the parsed
+- [x] 1.2 Map `md5 → [identifiers]` in `InterProRetriever.fetch_annotations` and fan the parsed
       values out in `_parse_interpro_results`. Commit:
       `fix(protspace): give InterPro matches to every protein sharing a sequence`.
-- [ ] 1.3 Failing tests for the InterPro POST retry:
+- [x] 1.3 Failing tests for the InterPro POST retry:
   - in `test_http_retry.py`, `post_with_retry`: 503 then 200 succeeds, 429 honours
     `Retry-After`, a 400 is not retried, attempts are bounded, and a timeout or connection
     error is retried;
   - in `test_interpro_annotation_retriever.py`, a batch that fails once and then succeeds
     leaves `failed_batch_count == 0`, and a batch that fails every attempt counts one lost
     batch while the other batches are still parsed.
-- [ ] 1.4 Add `post_with_retry` to `http_utils.py`, sharing one private retry loop with
+- [x] 1.4 Add `post_with_retry` to `http_utils.py`, sharing one private retry loop with
       `get_with_retry` so the two policies cannot diverge, and route the InterPro POST through
       it with the default budget and the unchanged 30 s timeout. Commit:
       `fix(protspace): retry InterPro match requests before counting them lost`.
-- [ ] 1.5 Failing tests in `test_biocentral_retriever.py`, with `BiocentralAPI` mocked:
+- [x] 1.5 Failing tests in `test_biocentral_retriever.py`, with `BiocentralAPI` mocked:
   - 2,500 unique sequences make 3 `predict` calls of at most 1,000 each;
   - duplicates are submitted once overall and fanned out;
   - a sequence longer than 2,000 aa is submitted;
@@ -42,11 +42,11 @@ section 4 runs after all three are merged back. Rules for every track:
     counts;
   - that warning contains none of the eight `_BIOCENTRAL_DOWN_PATTERNS` substrings. Copy the
     tuple literally, as `test_embed_completeness.py` does; do not import `protspace_prep`.
-- [ ] 1.6 Batch the deduplicated sequences at `_BATCH_SIZE` in `_run_predictions`: one health
+- [x] 1.6 Batch the deduplicated sequences at `_BATCH_SIZE` in `_run_predictions`: one health
       check, one progress bar, and per-batch results merged by sequence hash. Keep
       `prediction_failed` as the manager-facing signal and the "longer than the recommended"
       warning suppressed. Commit: `fix(protspace): batch Biocentral predictions`.
-- [ ] 1.7 Failing tests in `test_ted_retriever.py`:
+- [x] 1.7 Failing tests in `test_ted_retriever.py`:
   - a lookup that fails in the first pass and succeeds in the final pass yields its domains and
     `failed_lookup_count == 0`;
   - a lookup failing in both passes counts once, and the warning names it;
@@ -54,21 +54,21 @@ section 4 runs after all three are merged back. Rules for every track:
     further requests;
   - a 404 is never retried in the final pass;
   - the first pass still uses `attempts=2`.
-- [ ] 1.8 Collect first-pass failures in `TedRetriever.fetch_annotations` and retry them after
+- [x] 1.8 Collect first-pass failures in `TedRetriever.fetch_annotations` and retry them after
       the first pass with the default attempt budget, stopping after 10 consecutive failures.
       `failed_lookup_count` counts only lookups still failing after the final pass, and results
       keep the input order. Commit:
       `fix(protspace): retry failed TED lookups after the first pass`.
-- [ ] 1.9 Failing tests for the release header:
+- [x] 1.9 Failing tests for the release header:
   - in `test_http_retry.py`, `paginated_get` calls `on_response` once per page;
   - in `test_uniprot_annotation_retriever.py`, `UniProtRetriever.releases` collects every
     `X-UniProt-Release` value seen across batches and single-entry resolution, and is an empty
     set when no response carries the header.
-- [ ] 1.10 Add the optional `on_response` callback to `paginated_get` and record the header on
+- [x] 1.10 Add the optional `on_response` callback to `paginated_get` and record the header on
       `UniProtRetriever.releases: set[str]`, which is initialised in `__init__`. This is the
       frozen interface Track 3 consumes. Commit:
       `refactor(protspace): record the UniProt release each response reports`.
-- [ ] 1.11 Track gate, all clean: `uv run pytest apps/protspace/tests -q -m "not slow"`,
+- [x] 1.11 Track gate, all clean: `uv run pytest apps/protspace/tests -q -m "not slow"`,
       `uv run ruff check apps/protspace` and `uv run ruff format --check apps/protspace`.
 
 ## 2. Track 2 — parser + bundle (family names, internal columns)

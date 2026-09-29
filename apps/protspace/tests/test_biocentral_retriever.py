@@ -122,3 +122,185 @@ class TestBiocentralRetrieverNoSequences:
         assert len(result) == 1
         assert result[0].identifier == "P01308"
         assert all(v == "" for v in result[0].annotations.values())
+
+
+# The substrings the prep service matches (apps/prep/.../pipeline.py) to
+# classify a failure as BIOCENTRAL_UNAVAILABLE and send the user to Colab.
+# Copied, not imported: protspace must not depend on protspace_prep.
+_BIOCENTRAL_DOWN_PATTERNS = (
+    "connection refused",
+    "cannot connect to host",
+    "connectionerror",
+    "temporary failure in name resolution",
+    "name or service not known",
+    "503 service unavailable",
+    "503 server error",
+    "no healthy biocentral",
+)
+
+
+def _seq(i: int, length: int = 30) -> str:
+    """A distinct protein sequence for index *i*."""
+    alphabet = "ACDEFGHIKLMNPQRSTVWY"
+    tag = "".join(alphabet[int(d)] for d in f"{i:05d}")
+    return ("M" + tag + "G" * length)[: max(length, 6)]
+
+
+class _FakeBiocentral:
+    """Stands in for ``BiocentralAPI``: records each ``predict`` request and
+    answers with a membrane prediction per sequence, keyed like the live server
+    (v1.2.1) by the submitted identifier. Batches listed in *failing* raise."""
+
+    def __init__(self, failing=(), error=None):
+        self.failing = set(failing)
+        self.error = error or RuntimeError("prediction task failed")
+        self.requests: list[dict[str, str]] = []
+        self.health_checks = 0
+
+    def __call__(self, *args, **kwargs):  # BiocentralAPI(fixed_server_url=...)
+        return self
+
+    def wait_until_healthy(self, *args, **kwargs):
+        self.health_checks += 1
+        return self
+
+    def predict(self, model_names, sequence_data):
+        self.requests.append(dict(sequence_data))
+        batch_number = len(self.requests)
+        result = {
+            seq_id: [_make_prediction("LightAttentionMembrane", f"membrane:{seq}")]
+            for seq_id, seq in sequence_data.items()
+        }
+        task = MagicMock()
+        if batch_number in self.failing:
+            task.run.side_effect = self.error
+            task.run_with_progress.side_effect = self.error
+        else:
+            task.run.return_value = result
+            task.run_with_progress.return_value = result
+        return task
+
+
+def _predict(sequences: dict[str, str], fake: _FakeBiocentral):
+    retriever = BiocentralPredictionRetriever(
+        headers=list(sequences),
+        annotations=["predicted_membrane"],
+        sequences=sequences,
+    )
+    with patch("biocentral_api.BiocentralAPI", fake):
+        rows = retriever.fetch_annotations()
+    return retriever, {r.identifier: r.annotations["predicted_membrane"] for r in rows}
+
+
+class TestBatchedPredictions:
+    """Every unique sequence in one request is untested beyond a few thousand
+    sequences; an example-scale run would be 100,000-485,000 in one call."""
+
+    def test_sequences_are_sent_in_batches_of_at_most_1000(self):
+        sequences = {f"P{i}": _seq(i) for i in range(2500)}
+        fake = _FakeBiocentral()
+
+        retriever, values = _predict(sequences, fake)
+
+        assert [len(r) for r in fake.requests] == [1000, 1000, 500]
+        assert fake.health_checks == 1
+        assert not retriever.prediction_failed
+        assert values == {pid: f"membrane:{seq}" for pid, seq in sequences.items()}
+
+    def test_duplicates_are_submitted_once_and_fanned_out(self, monkeypatch):
+        import sys
+
+        monkeypatch.setattr(
+            sys.modules[BiocentralPredictionRetriever.__module__], "_BATCH_SIZE", 2
+        )
+        a, b, c = _seq(1), _seq(2), _seq(3)
+        # Duplicates of a and b land in later batches than their first copy.
+        sequences = {"P0": a, "P1": b, "P2": c, "P3": a, "P4": b, "P5": a}
+        fake = _FakeBiocentral()
+
+        _, values = _predict(sequences, fake)
+
+        submitted = [seq for r in fake.requests for seq in r.values()]
+        assert sorted(submitted) == sorted([a, b, c])
+        assert all(len(r) <= 2 for r in fake.requests)
+        assert values == {pid: f"membrane:{seq}" for pid, seq in sequences.items()}
+
+    def test_a_sequence_longer_than_2000_residues_is_submitted(self):
+        long_seq = _seq(7, length=2500)
+        sequences = {"SHORT": _seq(1), "LONG": long_seq}
+        fake = _FakeBiocentral()
+
+        retriever, values = _predict(sequences, fake)
+
+        assert long_seq in fake.requests[0].values()
+        assert values["LONG"] == f"membrane:{long_seq}"
+        assert not retriever.prediction_failed
+
+
+class TestFailedBatch:
+    """A failed batch loses only its own proteins, and says so without
+    reading as a service outage."""
+
+    def test_the_other_batches_keep_their_predictions(self, caplog):
+        sequences = {f"P{i}": _seq(i) for i in range(2500)}
+        fake = _FakeBiocentral(failing={2})
+
+        with caplog.at_level("WARNING"):
+            retriever, values = _predict(sequences, fake)
+
+        failed_ids = set(fake.requests[1])
+        assert len(failed_ids) == 1000
+        for pid, seq in sequences.items():
+            expected = "" if pid in failed_ids else f"membrane:{seq}"
+            assert values[pid] == expected
+        assert retriever.prediction_failed
+
+        summary = [r for r in caplog.records if "missing for" in r.getMessage()]
+        assert len(summary) == 1
+        assert summary[0].levelname == "WARNING"
+        assert "1,000 of 2,500 proteins" in summary[0].getMessage()
+        assert "1 of 3 batches" in summary[0].getMessage()
+
+    def test_a_duplicate_of_a_failed_sequence_is_counted_missing(self, caplog):
+        import sys
+
+        module = sys.modules[BiocentralPredictionRetriever.__module__]
+        a, b = _seq(1), _seq(2)
+        sequences = {"P0": a, "P1": b, "P2": a}
+        fake = _FakeBiocentral(failing={1})
+
+        with (
+            patch.object(module, "_BATCH_SIZE", 1),
+            caplog.at_level("WARNING"),
+        ):
+            _, values = _predict(sequences, fake)
+
+        assert values == {"P0": "", "P1": f"membrane:{b}", "P2": ""}
+        summary = [r for r in caplog.records if "missing for" in r.getMessage()]
+        assert "2 of 3 proteins" in summary[0].getMessage()
+
+    def test_the_shortfall_report_cannot_be_mistaken_for_an_outage(self, caplog):
+        """The prep service substring-matches stderr to classify a failure as
+        BIOCENTRAL_UNAVAILABLE. A coverage shortfall is not an outage, even
+        when the batch itself failed with an outage-looking error."""
+        sequences = {f"P{i}": _seq(i) for i in range(1500)}
+        fake = _FakeBiocentral(
+            failing={1}, error=ConnectionError("503 Server Error: connection refused")
+        )
+
+        with caplog.at_level("WARNING"):
+            _predict(sequences, fake)
+
+        summary = [r for r in caplog.records if "missing for" in r.getMessage()]
+        assert len(summary) == 1
+        text = summary[0].getMessage().lower()
+        assert not [p for p in _BIOCENTRAL_DOWN_PATTERNS if p in text]
+
+    def test_every_batch_failing_marks_the_source_failed(self):
+        sequences = {f"P{i}": _seq(i) for i in range(3)}
+        fake = _FakeBiocentral(failing={1})
+
+        retriever, values = _predict(sequences, fake)
+
+        assert retriever.prediction_failed
+        assert set(values.values()) == {""}

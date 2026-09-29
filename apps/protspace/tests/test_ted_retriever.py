@@ -287,3 +287,126 @@ class TestTedRetriever:
 class TestTedConstants:
     def test_ted_annotations(self):
         assert TED_ANNOTATIONS == ["ted_domains"]
+
+
+class _AlphaFoldDomains:
+    """Stands in for ``get_with_retry`` against the AlphaFold domains API.
+
+    *outcomes* maps an accession to the answers of its successive lookups:
+    ``"ok"`` (one domain), ``"404"`` (unknown accession) or ``"fail"``
+    (raises). The last answer repeats. Unlisted accessions answer ``"ok"``.
+    """
+
+    def __init__(self, outcomes=None):
+        self.outcomes = outcomes or {}
+        self.calls: list[tuple[str, int]] = []
+
+    def __call__(self, url, timeout=None, attempts=None):
+        accession = url.rsplit("/", 1)[-1]
+        seen = sum(1 for acc, _ in self.calls if acc == accession)
+        self.calls.append((accession, attempts))
+        answers = self.outcomes.get(accession, ["ok"])
+        answer = answers[min(seen, len(answers) - 1)]
+        if answer == "fail":
+            raise ConnectionError(f"AlphaFold unavailable for {accession}")
+        response = MagicMock()
+        response.status_code = 404 if answer == "404" else 200
+        response.raise_for_status = MagicMock()
+        response.json.return_value = _make_alphafold_response(
+            [_make_domain("3.40.50.300", 88.3)]
+        )
+        return response
+
+
+def _ted(headers, fake):
+    retriever = TedRetriever(headers=headers, annotations=TED_ANNOTATIONS)
+    with patch(_REQUESTS_PATCH, side_effect=fake), patch(_CATH_NAMES_PATCH) as names:
+        names.return_value = {}
+        rows = retriever.fetch_annotations()
+    return retriever, rows
+
+
+class TestFinalRetryPass:
+    """TED is one request per accession, 18-40 h at Swiss-Prot scale. A lookup
+    that failed its small first-pass budget used to discard the whole source;
+    now failed lookups get one more try after every other accession."""
+
+    def test_a_lookup_recovered_in_the_final_pass_is_used(self, caplog):
+        fake = _AlphaFoldDomains({"Q9FAIL": ["fail", "ok"]})
+
+        with caplog.at_level("WARNING"):
+            retriever, rows = _ted(["Q9FAIL", "P01308"], fake)
+
+        # Results keep the input order, with the recovered domains in place.
+        assert [r.identifier for r in rows] == ["Q9FAIL", "P01308"]
+        assert rows[0].annotations["ted_domains"] == "3.40.50.300|88.3"
+        assert retriever.failed_lookup_count == 0
+        assert [acc for acc, _ in fake.calls] == ["Q9FAIL", "P01308", "Q9FAIL"]
+        assert "TED" not in caplog.text
+
+    def test_a_lookup_failing_both_passes_counts_once_and_is_named(self, caplog):
+        fake = _AlphaFoldDomains({"Q9FAIL": ["fail"], "Q9GOOD": ["fail", "ok"]})
+
+        with caplog.at_level("WARNING"):
+            retriever, rows = _ted(["Q9FAIL", "Q9GOOD", "P01308"], fake)
+
+        assert retriever.failed_lookup_count == 1
+        by_id = {r.identifier: r.annotations["ted_domains"] for r in rows}
+        assert by_id == {
+            "Q9FAIL": "",
+            "Q9GOOD": "3.40.50.300|88.3",
+            "P01308": "3.40.50.300|88.3",
+        }
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "Q9FAIL" in message
+        assert "recovered 1 of 2" in message
+        assert "1 still failed" in message
+
+    def test_the_final_pass_stops_after_ten_consecutive_failures(self):
+        headers = [f"P{i:05d}" for i in range(15)]
+        fake = _AlphaFoldDomains(dict.fromkeys(headers, ["fail"]))
+
+        retriever, rows = _ted(headers, fake)
+
+        # 15 first-pass lookups, then 10 final-pass attempts before giving up.
+        assert len(fake.calls) == 15 + 10
+        assert retriever.failed_lookup_count == 15
+        assert all(r.annotations["ted_domains"] == "" for r in rows)
+
+    def test_a_success_resets_the_consecutive_failure_count(self):
+        down = [f"P{i:05d}" for i in range(9)]
+        headers = [*down, "Q9BACK", *(f"Q{i:05d}" for i in range(9))]
+        outcomes = dict.fromkeys(headers, ["fail"])
+        outcomes["Q9BACK"] = ["fail", "ok"]
+        fake = _AlphaFoldDomains(outcomes)
+
+        retriever, _ = _ted(headers, fake)
+
+        # 9 failures, a recovery, 9 more failures: never 10 in a row, so every
+        # failed accession got its final-pass lookup.
+        assert len(fake.calls) == 2 * len(headers)
+        assert retriever.failed_lookup_count == len(headers) - 1
+
+    def test_an_unknown_accession_is_not_retried(self):
+        fake = _AlphaFoldDomains({"NOT_IN_AFDB": ["404"]})
+
+        retriever, rows = _ted(["NOT_IN_AFDB"], fake)
+
+        assert fake.calls == [("NOT_IN_AFDB", 2)]
+        assert rows[0].annotations["ted_domains"] == ""
+        assert retriever.failed_lookup_count == 0
+
+    def test_the_first_pass_keeps_its_small_budget(self):
+        from protspace.data.annotations.retrievers.http_utils import MAX_ATTEMPTS
+
+        fake = _AlphaFoldDomains({"Q9FAIL": ["fail", "ok"]})
+
+        _ted(["Q9FAIL", "P01308"], fake)
+
+        assert fake.calls == [
+            ("Q9FAIL", 2),
+            ("P01308", 2),
+            ("Q9FAIL", MAX_ATTEMPTS),
+        ]

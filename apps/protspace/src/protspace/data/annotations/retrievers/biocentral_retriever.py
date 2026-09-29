@@ -4,6 +4,8 @@ import logging
 import re
 import warnings
 
+from tqdm import tqdm
+
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,8 @@ _PREDICTION_MODELS = {
     "predicted_transmembrane": "TMBED",
 }
 
+# Unique sequences per prediction request. One request with every sequence is
+# untested beyond a few thousand, and an example-scale run is 100K-485K.
 _BATCH_SIZE = 1000
 
 
@@ -39,8 +43,9 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         self.headers = headers or []
         self.annotations = annotations or BIOCENTRAL_ANNOTATIONS
         self.sequences = sequences or {}
-        # Set when predictions could not be produced at all, so empty
-        # predictions are not mistaken for negative ones.
+        # Set when any predictions could not be produced (no healthy server, or
+        # a failed batch), so empty predictions are not mistaken for negative
+        # ones and the source is kept out of the cache.
         self.prediction_failed = False
 
     def fetch_annotations(self) -> list[tuple]:
@@ -88,7 +93,9 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         """Run Biocentral predictions and return raw results.
 
         Returns:
-            Dict keyed by sequence hash, values are lists of Prediction objects.
+            Dict of Prediction lists keyed by the submitted (representative)
+            identifier, as the server returns them; ``_extract_annotation`` also
+            accepts a sequence-hash key.
         """
         from biocentral_api import BiocentralAPI, BiocentralPredictionModel
 
@@ -134,27 +141,78 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                 f"Deduplicated {len(all_seqs)} → {len(seq_data)} unique sequences"
             )
 
+        batches = self._batches(seq_data)
         logger.info(
             f"Running Biocentral predictions ({', '.join(m.name for m in model_enums)}) "
-            f"for {len(seq_data)} proteins..."
+            f"for {len(seq_data)} proteins in {len(batches)} batch(es)..."
         )
 
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=".*longer than the recommended.*",
-                    category=UserWarning,
+        predictions: dict = {}
+        failed_representatives: set[str] = set()
+        failed_batches = 0
+        with tqdm(
+            total=len(seq_data), desc="Fetching Biocentral predictions", unit="seq"
+        ) as pbar:
+            for number, batch in enumerate(batches, 1):
+                label = (
+                    f"Biocentral prediction batch {number} of {len(batches)} "
+                    f"({len(batch)} sequences)"
                 )
-                result = api.predict(
-                    model_names=model_enums,
-                    sequence_data=seq_data,
-                ).run_with_progress()
-            return result
-        except Exception as e:
+                try:
+                    batch_result = self._predict_batch(api, model_enums, batch)
+                except Exception as e:
+                    batch_result = None
+                    logger.warning(f"{label} failed: {e}")
+                else:
+                    if not batch_result:
+                        logger.warning(f"{label} returned no predictions")
+
+                if batch_result:
+                    # Keyed by the batch's own representative identifiers,
+                    # which are unique across batches, so merging cannot clash.
+                    predictions.update(batch_result)
+                else:
+                    failed_batches += 1
+                    failed_representatives.update(batch)
+                pbar.update(len(batch))
+
+        if failed_batches:
             self.prediction_failed = True
-            logger.warning(f"Biocentral prediction failed: {e}")
-            return {}
+            missing = sum(
+                1
+                for header in all_seqs
+                if self._seq_duplicates.get(header, header) in failed_representatives
+            )
+            # Worded as a coverage shortfall on purpose: the prep service reads
+            # outage phrases on stderr as "Biocentral is down", and this is not.
+            logger.warning(
+                f"Biocentral predictions missing for {missing:,} of "
+                f"{len(all_seqs):,} proteins ({failed_batches} of {len(batches)} "
+                "batches failed); they are not cached and will be requested again"
+            )
+        return predictions
+
+    @staticmethod
+    def _batches(seq_data: dict[str, str]) -> list[dict[str, str]]:
+        """Split unique sequences into consecutive batches of ``_BATCH_SIZE``."""
+        items = list(seq_data.items())
+        return [
+            dict(items[i : i + _BATCH_SIZE]) for i in range(0, len(items), _BATCH_SIZE)
+        ]
+
+    @staticmethod
+    def _predict_batch(api, model_enums: list, batch: dict[str, str]) -> dict | None:
+        """Run one prediction request; results are keyed by submitted identifier."""
+        with warnings.catch_warnings():
+            # Long sequences are predicted like any other: their length alone
+            # must never make the source fail.
+            warnings.filterwarnings(
+                "ignore",
+                message=".*longer than the recommended.*",
+                category=UserWarning,
+            )
+            # .run(), not .run_with_progress(): one bar covers the whole source.
+            return api.predict(model_names=model_enums, sequence_data=batch).run()
 
     def _extract_annotation(self, ann_name: str, header: str, predictions: dict) -> str:
         """Extract a specific annotation value for a protein from predictions."""
