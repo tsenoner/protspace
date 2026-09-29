@@ -178,15 +178,16 @@ Before every commit:
 - [ ] 5.4 Opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`), with a `projects[]` entry: every catalog id opens on its `defaultView` with no URL write and no drift warning, and writes `docs/explore/images/examples/<id>.png`.
 - [x] 5.5 Sidebar entry "Example Datasets" after "Importing Data" in `docs/.vitepress/config.mts`; `/docs/explore/example-datasets` in `apps/web/public/sitemap.xml`.
   - `example-datasets-docs.test.ts` is retargeted from `control-bar.md` to the new page (anchors for every catalog id outside `INTERIM_CATALOG_IDS`, every `docsUrl` pointing at its section, no section outside the catalog except a `beforeSwap` one).
-- [ ] 5.6 `docs/explore/control-bar.md` §9 (the ⓘ, the Large badge, "About these examples" and Cancel landed with §3): shrink it to behaviour (menu vs link; the curated reset (c); failure keeps the plot plus Retry (a); the Large badge, progress and Cancel (e); the "About these examples" link), move the id table to the new page, and drop "every bundle that ships". Fix the stale demo alt text and the "NOT phospholipase A2" example (the lines at 137 and 192).
-- [ ] 5.7 `docs/explore/importing-data.md` (the (d) exception, with the export-and-import route and the imported-copy edge case, and "Starting fresh" landed with §2):
+- [x] 5.6 `docs/explore/control-bar.md` §9 (the ⓘ, the Large badge, "About these examples" and Cancel landed with §3): shrink it to behaviour (menu vs link; the curated reset (c); failure keeps the plot plus Retry (a); the Large badge, progress and Cancel (e); the "About these examples" link), move the id table to the new page, and drop "every bundle that ships". Fix the stale demo alt text and the "NOT phospholipase A2" example (the lines at 137 and 192).
+- [x] 5.7 `docs/explore/importing-data.md` (the (d) exception, with the export-and-import route and the imported-copy edge case, and "Starting fresh" landed with §2):
   - the "Settings persist per dataset" bullet gains the example exception (d) with the export-and-import route;
   - "Starting fresh" for an example;
-  - the demo name;
+  - the demo name ("the startup demo, a small set of venom toxins", linked to its card, so it reads right before and after the relabel);
   - drop "eleven";
   - replace the Venom EAT sentence with a pointer to the new page.
-- [ ] 5.8 `docs/explore/eat.md` "Trying It": `venom-eat` (threshold 0, strips visible, and "drag to 0.5 → 244 of 384"), the `?dataset=venom-eat` link, a link to its card, and a fix for "nearly half the dataset is a ring". Keep the venom numbers in `separation-scores.md` and `scatterplot.md`, since the frozen statistics part keeps them valid.
-- [ ] 5.9 `docs/index.md` (drop "eleven", link the page), `docs/explore/index.md`, `docs/guide/index.md` (link `#swissprot`), `docs/guide/faq.md` (optional Swiss-Prot link), `docs/explore/images/README.md` (the venom fixture path).
+- [x] 5.8 `docs/explore/eat.md` "Trying It": `venom-eat` (threshold 0, strips visible, and "drag to 0.5 → 244 of 384"), the `?dataset=venom-eat` link, a link to its card, and a fix for "nearly half the dataset is a ring". Keep the venom numbers in `separation-scores.md` and `scatterplot.md`, since the frozen statistics part keeps them valid.
+- [x] 5.9 `docs/index.md` (drop "eleven", link the page), `docs/explore/index.md`, `docs/guide/index.md` (link `#swissprot`), `docs/guide/faq.md` (optional Swiss-Prot link), `docs/explore/images/README.md` (the venom fixture path).
+  - The FAQ link was left out: its load-time sentence describes the 44.9 MB paper bundle, and the refreshed Swiss-Prot example may load more slowly (the D2 gate allows up to about 35 s). The images README got the fixture path with §4.
 - [ ] 5.10 Product tour step 2 (`product-tour.ts`) mentions **Examples** and uses the extensionless docs link; check `product-tour.spec.ts`.
 
 ## 6. Showcase build script (Python dev tooling, `chore:` commits)
@@ -231,8 +232,8 @@ Before every commit:
 - [ ] 7.7 Catalog swap:
   - replace the interim entries with `demo`, `venom-eat`, `phosphatase-eat`, `human-fly`, `beta-lactamase` and `swissprot` (`large`, with the memory and load time measured at the D2 gate);
   - final names, descriptions and insights (with the numbers from the built files);
-  - relabel the demo "Venom toxins (demo)";
-  - fix `docs/explore/eat.md`'s `?dataset=` link.
+  - relabel the demo "Venom toxins (demo)" (the docs already name it by its card);
+  - `docs/explore/eat.md` already names `?dataset=venom-eat` (§5); check its counts against the built file.
 - [ ] 7.8 Remove `apps/web/public/data/` entirely (including `datasets.json`); this makes the four non-demo fixtures `git mv`s in the branch diff. Replace `apps/web/public/data.parquetbundle` with the new demo. Enable the "only the demo under `public/`" assertion.
 - [ ] 7.9 Update `apps/web/tests/helpers/example-fixtures.ts` to the final ids, each routed to a fixture that contains its `defaultView` names.
 - [ ] 7.10 Empty the interim lists in `docs/scripts/example-details.ts` (`INTERIM_CATALOG_IDS`; move each `beforeSwap` into its catalog entry), fill in the remaining `‹…›` author facts, add the thumbnails (emptying `THUMBNAILS_PENDING`), and regenerate `docs/explore/example-datasets.md`. (The page, the retargeted pin test and the CI/precommit wiring landed with §5.)

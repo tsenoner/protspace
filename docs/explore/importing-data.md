@@ -125,8 +125,8 @@ Small datasets (< 10K proteins) load instantly. Larger datasets may take a few s
 All persistence is local to your browser, **stored datasets and settings are never sent to a
 server**. (The one time data leaves your machine is a FASTA upload, described above.)
 
-- **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Choosing an example from the Import menu (see [Control Bar Features](/explore/control-bar#_9-import)) replaces it and clears the stored file. Opening an example through a `?dataset=` link does not touch the stored file — the app returns to it once you drop the parameter.
-- **Settings persist per dataset**: Legend customizations (colors, shapes, hidden categories, sort order) and export options are saved in browser storage for each dataset. When you reload or revisit the same dataset, your settings are restored.
+- **Your dataset is remembered**: The last imported file is saved in your browser's Origin Private File System (OPFS) and automatically restored when you revisit ProtSpace. Choosing an example from the Import menu (see [Example Datasets](/explore/example-datasets)) replaces it and clears the stored file. Opening an example through a `?dataset=` link does not touch the stored file — the app returns to it once you drop the parameter.
+- **Settings persist per dataset**: Legend customizations (colors, shapes, hidden categories, sort order) and export options are saved in browser storage for each dataset. When you reload or revisit the same dataset, your settings are restored, except for the examples (next point).
 - **Examples always reopen in their curated state**: Examples are the exception. Each time an example loads — from the Import menu, a link, **Back**/**Forward** or a reload — it opens with its curated legend settings and tooltip fields, and changes you made to it are discarded. To keep a customized example, export it as a `.parquetbundle` with the legend settings included and import that file; it then persists like any import. Keep the file: an imported copy counts as the same dataset as the example, so opening the example again resets the copy's saved settings until you import the file again.
 - **Annotation and projection persist in the URL**: ProtSpace keeps the currently selected annotation and projection in the page URL as query parameters (`annotation=...` and `projection=...`). Refreshing the page, using the browser's back/forward buttons, or sharing the link will restore the same view when those options exist in the active dataset. A bare `/explore` URL stays unchanged on first load; ProtSpace only writes view params after you change the selection or when it needs to normalize an invalid URL value.
 - **File-embedded settings take priority**: If a `.parquetbundle` includes saved settings (via the export dialog's "Include legend/export settings" options), those are applied on import, replacing any previously stored settings for that dataset.
@@ -149,7 +149,7 @@ ProtSpace still works normally without OPFS. Your dataset loads for the current 
 If a previous session failed to finish loading a dataset (browser crash, tab closed mid-load, or a corrupt file), ProtSpace shows a recovery banner above the scatterplot when you return. The banner names the file that didn't finish and offers three actions:
 
 - **Try again**, re-attempts the load from the stored copy. Useful if the previous failure was transient (network hiccup, momentary browser stall).
-- **Load default**, replaces the stored file with the demo dataset. Use this if you don't need to recover the specific file.
+- **Load default**, replaces the stored file with the startup demo, a small set of [venom toxins](/explore/example-datasets#demo). Use this if you don't need to recover the specific file.
 - **Clear stored data**, deletes the stored file without loading anything. Choose this if the file is corrupt or you'd rather import a fresh copy yourself.
 
 After three failed retries the banner shifts tone, recommending you clear or load the demo rather than continue retrying.
@@ -166,8 +166,8 @@ If you only have sequences, drop the FASTA straight onto the scatterplot, see
 - **[Using Google Colab](/guide/data-preparation)** - No installation required (recommended)
 - **[Using Python CLI](/guide/python-cli)** - For local processing or automation
 
-Or open the **Import** menu's **Examples** section and choose one of the eleven bundles that ship
-with the app — no download needed. See [Control Bar Features](/explore/control-bar#_9-import) for
-the full list and what each one contains. To try [transferred annotations](/explore/eat) and
-[separation scores](/explore/separation-scores), choose **Venom EAT** — the only example that
-carries both features. See [Trying It](/explore/eat#trying-it) for what is in it.
+Or open the **Import** menu's **Examples** section and choose the startup demo or one of the
+datasets behind the ProtSpace paper's figures; [Example Datasets](/explore/example-datasets) says
+what each one contains and how it was built. To try [transferred annotations](/explore/eat) and
+[separation scores](/explore/separation-scores) together, choose
+[Venom toxins (EAT)](/explore/example-datasets#venom-eat).

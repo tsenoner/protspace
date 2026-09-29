@@ -131,12 +131,11 @@ Exporting a bundle with settings included stores the **Show** state and the lowe
 
 ## Trying It
 
-A prepared example ships with the app: **Venom EAT** (`venom_eat_stats`), 811 venom proteins with two transferred columns, `ec` (384 transferred values) and `protein_families` (14), across the `ProtT5 — PCA 2` and `ProtT5 — UMAP 2` projections.
+The **Venom toxins (EAT)** example holds 811 reviewed, secreted animal toxins with two transferred columns, `ec` (384 transferred values) and `protein_families` (14), across the `ProtT5 — PCA 2` and `ProtT5 — UMAP 2` projections.
 
-Open the **Import** menu's **Examples** section and choose **Venom EAT**, or visit
-`/explore?dataset=venom_eat_stats` directly. See [Control Bar Features](/explore/control-bar#_9-import) for the full example list and the `?dataset=` link format.
+Open the **Import** menu's **Examples** section and choose it, or visit `/explore?dataset=venom-eat` directly. [Its section of Example Datasets](/explore/example-datasets#venom-eat) says how it was built.
 
-Colour by `ec` to see the effect at its strongest: nearly half the dataset is a ring, and the shape of the ringed region tells you which parts of the embedding EAT was confident enough to reach into.
+It opens coloured by `ec`, where the effect is strongest: all 384 transfers are shown, so nearly half the dataset is a ring, and the shape of the ringed region tells you which parts of the embedding EAT reached into. The reliability filter starts at 0, which also keeps the [separation score](/explore/separation-scores) strips visible. Drag it to 0.5 to keep the 244 transfers EAT was most confident in.
 
 ## Next Steps
 

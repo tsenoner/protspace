@@ -134,7 +134,7 @@ Isolate is useful for examining relationships within a specific protein subset -
 
 ## 7. Filter Button
 
-![Filter Query modal with a single condition: Protein family equal to "phospholipase A2 family" or "three-finger toxin family", a live counter shows 1082 of 7831 proteins matched](./images/filter-query-builder.png)
+![Filter Query modal with a single condition: Protein family equal to "phospholipase A2 family" or "three-finger toxin family", with a live counter of how many proteins match](./images/filter-query-builder.png)
 
 **Filter** opens a query builder modal for building complex annotation-based filters:
 
@@ -189,9 +189,10 @@ Close the modal with the **×** button, **Cancel**, **Escape** key, or clicking 
 The first condition can optionally be set to **NOT** for immediate negation.
 
 **NOT** deliberately excludes proteins with no value (N/A) for the annotation
-being negated. "NOT phospholipase A2" means "belongs to some other family", not
-"belongs to some other family, or has no family assigned at all". To include
-unannotated proteins as well, add an explicit **N/A** condition with **OR**.
+being negated. Negating one protein family, for example, means "belongs to some
+other family", not "belongs to some other family, or has no family assigned at
+all". To include unannotated proteins as well, add an explicit **N/A** condition
+with **OR**.
 :::
 
 ::: tip Missing values
@@ -251,52 +252,37 @@ Click **Import** to open the menu:
   resulting bundle automatically. See [Importing Data](/explore/importing-data) for the full flow,
   size limits, and privacy implications. You can also drag & drop either file type directly onto
   the scatterplot.
-- **Examples** lists the startup demo plus every bundle that ships with the app. Each item's label
-  gives the protein count and download size, and its **ⓘ** icon says what the example is and what
-  its curated view shows, with a link to its documentation; **About these examples** above the list
-  links to all of them. Large examples carry a **Large** badge, and their ⓘ also gives the download
-  size and the memory and time they take to open. The example currently loaded is disabled, and
-  its ⓘ also appears next to the current dataset's name. Choosing an example loads it and replaces the
-  dataset stored in your browser — see
-  [Data & Settings Persistence](/explore/importing-data#data-settings-persistence). As the note
-  under the heading says, examples open in a curated view and changes you make to one aren't
-  kept: it reopens in its curated state every time.
+- **Examples** lists the startup demo and the datasets behind the ProtSpace paper's figures;
+  [Example Datasets](/explore/example-datasets) describes each one. Each item's label gives the
+  protein count and download size, and its **ⓘ** icon says what the example is and what its
+  curated view shows, with a link to its section of that page; **About these examples** above the
+  list links to the whole page. Large examples carry a **Large** badge, and their ⓘ also gives the
+  download size and the memory and time they take to open. The example currently loaded is
+  disabled, and its ⓘ also appears next to the current dataset's name.
 
-Each example also has an id, for the `?dataset=<id>` link below:
+Choosing an example loads it, replaces the dataset stored in your browser (see
+[Data & Settings Persistence](/explore/importing-data#data-settings-persistence)), and puts
+`dataset=<id>` in the URL, so the link is shareable and the browser's **Back** button returns to
+whatever was shown before. The exception is your own import: the menu choice clears it, so **Back**
+goes to the entry with no `dataset` parameter, which loads the demo rather than restoring your
+import. A link such as `/explore?dataset=<id>`, with the id from the example's section of
+[Example Datasets](/explore/example-datasets), loads the example without touching the stored
+dataset; visiting the app again without the parameter brings the stored dataset back. An unknown
+id shows a warning and the app starts up normally.
 
-| id                                        | Example           |
-| ----------------------------------------- | ----------------- |
-| `demo`                                    | Demo              |
-| `venom_eat_stats`                         | Venom EAT         |
-| `phosphatase`                             | Phosphatases      |
-| `5K`                                      | Swiss-Prot 5K     |
-| `7K_toxprot`                              | ToxProt           |
-| `35K_ec_brenda`                           | EC (BRENDA)       |
-| `beta_lactamase_ec`                       | β-lactamases (EC) |
-| `40K`                                     | Swiss-Prot 40K    |
-| `105K_homoSapiens_drosophilaMelanogaster` | Human + fly       |
-| `127K_beta_lactamase`                     | β-lactamases      |
-| `beta_lactamase_pn`                       | β-lactamases (PN) |
+An example opens on its curated view: the projection, colour-by annotation and tooltip fields
+chosen for it. A menu choice always opens that view, so the previous dataset's `annotation`,
+`projection` and `tooltip` parameters don't carry over (**Back** still returns to them); in a link,
+those parameters win over the curated ones. As the note under the heading says, changes you make to
+an example aren't kept: it reopens in its curated state every time.
 
-Each example is also reachable directly with `?dataset=<id>` on the Explore URL, for example
-`/explore?dataset=venom_eat_stats`. Opening a deep link loads that example without touching the
-dataset stored in your browser — visiting the app again without the parameter brings the stored
-dataset back. Choosing an example from the menu, on the other hand, does replace the stored
-dataset, and puts `dataset=<id>` in the URL so the link is shareable and the browser's **Back**
-button returns to whatever was shown before — except when your own import was showing: the menu
-choice clears it, so **Back** goes to the entry with no `dataset` parameter, which loads the demo
-rather than restoring your import. `annotation`,
-`projection` and `tooltip` parameters in the same URL apply to the loaded example. Without them,
-an example opens on its curated view: the projection, colour-by annotation and tooltip fields
-chosen for it. A menu choice always opens that curated view, so the previous dataset's view
-parameters don't carry over; **Back** still returns to them. An unknown id
-shows a warning and the app starts up normally. If an example fails to download, whether you chose
-it from the menu or went **Back** or **Forward** to it, ProtSpace shows an error with a **Retry**
-button and leaves the current plot and the URL as they were. Only a link opened on an empty page
-falls back to the startup load. While an example downloads, the loading screen shows how much of it
-has arrived and offers **Cancel download** until decoding starts. Cancelling leaves the current
-plot and the URL as they were, with no message; on an empty page (a link opened fresh) it removes
-the `dataset` parameter and runs the startup load instead.
+While an example downloads, the loading screen shows how much of it has arrived and offers
+**Cancel download** until decoding starts. Cancelling leaves the current plot and the URL as they
+were, with no message; on an empty page (a link opened fresh) it removes the `dataset` parameter
+and runs the startup load instead. If an example fails to download, whether you chose it from the
+menu or went **Back** or **Forward** to it, ProtSpace shows an error with a **Retry** button and
+leaves the current plot and the URL as they were. Only a link opened on an empty page falls back to
+the startup load.
 
 ## Tips
 
