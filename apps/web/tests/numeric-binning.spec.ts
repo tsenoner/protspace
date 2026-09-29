@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { dismissTourIfPresent } from './helpers/explore';
-import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -79,7 +79,7 @@ async function loadBundleFromBytes(
 }
 
 async function loadDataset(page: Page): Promise<void> {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1064,7 +1064,7 @@ test('raw numeric annotations are materialized into frontend bins', async ({ pag
 });
 
 test('numeric settings are staged, saved, and restored on re-import', async ({ page }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1212,7 +1212,7 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
 test('reset restores numeric settings defaults and clears saved state on re-import', async ({
   page,
 }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1643,7 +1643,7 @@ test('categorical keyboard reorder promotes to manual order and keeps Other fixe
 test('real phosphatase bundle rebins length to five bins without leaving the UI stuck', async ({
   page,
 }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -2281,7 +2281,7 @@ test('categorical drag-promoted manual order persists after re-import', async ({
 });
 
 test('long categorical legend labels wrap instead of clipping', async ({ page }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');

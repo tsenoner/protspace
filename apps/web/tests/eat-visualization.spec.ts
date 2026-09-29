@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { dismissTourIfPresent } from './helpers/explore';
+import { STARTUP_URL_GLOB } from './helpers/fixtures';
 
 const EAT_FIXTURE = fileURLToPath(
   new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
@@ -16,7 +17,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function loadEatFixture(page: Page): Promise<void> {
-  await page.route('**/data.parquetbundle', (route) => route.abort());
+  await page.route(STARTUP_URL_GLOB, (route) => route.abort());
   await page.goto('/explore');
   await dismissTourIfPresent(page);
   await page.waitForFunction(() => {

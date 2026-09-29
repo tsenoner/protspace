@@ -139,10 +139,11 @@ Before every commit:
   - Repoint the path users (through `apps/web/tests/helpers/fixtures.ts`): `dataset-reload.spec.ts`, `isolation-dataset-swap.spec.ts`, `numeric-binning.spec.ts`, `example-datasets.spec.ts`, `scripts/docs-screenshots/eat-helpers.ts` (and `docs/explore/images/README.md`), `packages/core/.../bundle-roundtrip.test.ts` (5 sites) and `generate_toxprot_demo.py`'s default settings source (the demo fixture; task 6.7).
   - `tests/helpers/opfs.ts` (`seedOpfsState`, used by `dataset-recovery.spec.ts` and `example-datasets.spec.ts`) passes fixture bytes into `page.evaluate` instead of fetching `/data/5K.parquetbundle`.
   - The `public/data/` originals are deleted in 7.8.
-- [ ] 4.7 Startup pin:
+- [x] 4.7 Startup pin:
   - `playwright.config.ts` sets `webServer.env.VITE_STARTUP_DATASET_URL` to `/@fs/<repo>/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle`; the demo entry's `url` honours it; add a `vite-env.d.ts` entry.
   - Add `STARTUP_URL_GLOB` in `apps/web/tests/helpers/`, and switch the hard-coded startup globs and fetches in `numeric-binning.spec.ts` (×5), `eat-visualization.spec.ts` and `url-view-state.spec.ts`.
   - Leave the root-config docs-capture projects unpinned.
+  - A guard scenario in `example-datasets.spec.ts` fails, naming the cause, when the startup load does not come from the fixture (a dev server reused without the variable).
   - Fallback if `/@fs/` fails: copy into a gitignored `public/__e2e__/` in global setup.
 - [ ] 4.8 E2E guard: run the default suite after 4.6/4.7 with the product demo temporarily replaced by another bundle, and confirm that nothing depends on it; record the result in the PR.
 - [ ] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.

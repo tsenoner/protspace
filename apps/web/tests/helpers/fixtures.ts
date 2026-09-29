@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -9,6 +10,23 @@ import { fileURLToPath } from 'node:url';
  * blob, so the copy costs no history), named for what it holds.
  */
 const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
+
+/**
+ * The startup demo the suite runs against: the ToxProt demo as first shipped,
+ * 7,831 proteins with `ec`, a multi-valued `keyword`, and a curated
+ * `protein_families` legend with an "Other" row.
+ */
+const STARTUP_FIXTURE = fixture('demo_toxprot_7831.parquetbundle');
+
+/**
+ * The URL the app loads the startup demo from during E2E: Vite's dev-only
+ * `/@fs/` route to the fixture, handed to the app as `VITE_STARTUP_DATASET_URL`
+ * by the web server in `playwright.config.ts`.
+ */
+export const STARTUP_DATASET_URL = `/@fs${STARTUP_FIXTURE}`;
+
+/** Matches the startup load's request, for scenarios that abort, hold or refetch it. */
+export const STARTUP_URL_GLOB = `**/${basename(STARTUP_FIXTURE)}`;
 
 /** 5,181 proteins; `phylum`, `protein_existence`, `length_fixed`, `length_quantile`; PCA 2 and PCA 3 (3D). */
 export const TOXPROT_5181_FIXTURE = fixture('toxprot_5181_pca3d.parquetbundle');

@@ -104,13 +104,23 @@ type ExampleSpec = Omit<
   name: string;
 };
 
-function defineExample({ name, ...spec }: ExampleSpec): ExampleDataset {
+/**
+ * E2E only: the Playwright web server points the startup demo at a pinned test
+ * fixture, so no scenario depends on what the product demo holds. Read
+ * optional-chained, because Node (tsx, Playwright) has no `import.meta.env`.
+ */
+const STARTUP_DATASET_URL_OVERRIDE: string | undefined = import.meta.env?.VITE_STARTUP_DATASET_URL;
+
+function defineExample({ name, ...spec }: ExampleSpec, index: number): ExampleDataset {
   const record = EXAMPLE_MANIFEST.examples[spec.id];
   if (!record) {
     throw new Error(`Example "${spec.id}" has no record in example-manifest.ts.`);
   }
   const label = `${name} · ${formatProteinCount(record.proteins)} · ${formatMegabytes(record.bytes)}`;
   const common = { ...spec, label, sizeBytes: record.bytes, docsUrl: docsUrlFor(spec.id) };
+  if (index === 0 && STARTUP_DATASET_URL_OVERRIDE) {
+    return { ...common, url: STARTUP_DATASET_URL_OVERRIDE };
+  }
   if (record.hosting === 'repo') {
     return { ...common, url: `./${record.file}` };
   }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EXAMPLE_DATASETS,
   EXAMPLES_DOCS_URL,
@@ -88,6 +88,26 @@ describe('example datasets catalog', () => {
 
   it('marks at least one entry large', () => {
     expect(EXAMPLE_DATASETS.some((entry) => entry.large)).toBe(true);
+  });
+});
+
+describe('the E2E startup pin', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('points only the startup demo at VITE_STARTUP_DATASET_URL', async () => {
+    vi.stubEnv('VITE_STARTUP_DATASET_URL', '/@fs/repo/apps/web/tests/fixtures/demo.parquetbundle');
+    vi.resetModules();
+    const catalog = await import('./example-datasets');
+
+    expect(catalog.DEFAULT_EXAMPLE_DATASET.url).toBe(
+      '/@fs/repo/apps/web/tests/fixtures/demo.parquetbundle',
+    );
+    expect(catalog.EXAMPLE_DATASETS.slice(1).map((entry) => entry.url)).toEqual(
+      EXAMPLE_DATASETS.slice(1).map((entry) => entry.url),
+    );
   });
 });
 

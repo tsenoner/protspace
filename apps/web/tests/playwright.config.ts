@@ -1,5 +1,6 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { STARTUP_DATASET_URL } from './helpers/fixtures';
 import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
 const TEST_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -60,6 +61,10 @@ export default defineConfig({
         timeout: 180_000,
         stdout: 'pipe',
         stderr: 'pipe',
+        // Pins the startup demo to a test fixture, so no scenario depends on the
+        // product's demo bundle. A dev server that was already running locally
+        // (reuseExistingServer) was started without it: stop it before a run.
+        env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
       },
 
   use: {

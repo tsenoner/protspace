@@ -12,6 +12,7 @@ import {
   waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
 } from './helpers/explore';
+import { STARTUP_DATASET_URL } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -198,7 +199,7 @@ async function queueUserLoads(
   const firstFileBytes = Array.from(fs.readFileSync(firstFilePath));
 
   await page.evaluate(
-    async ({ byteValues, nextFileName }) => {
+    async ({ byteValues, nextFileName, startupUrl }) => {
       const loader = document.querySelector('protspace-data-loader') as
         | (Element & {
             loadFromFile?: (file: File, options?: { source?: 'user' | 'auto' }) => Promise<void>;
@@ -209,7 +210,7 @@ async function queueUserLoads(
         throw new Error('ProtSpace data loader was not found');
       }
 
-      const demoResponse = await fetch('/data.parquetbundle');
+      const demoResponse = await fetch(startupUrl);
       if (!demoResponse.ok) {
         throw new Error(`Failed to fetch demo dataset: ${demoResponse.status}`);
       }
@@ -227,7 +228,7 @@ async function queueUserLoads(
         loader.loadFromFile(secondFile, { source: 'user' }),
       ]);
     },
-    { byteValues: firstFileBytes, nextFileName: firstFileName },
+    { byteValues: firstFileBytes, nextFileName: firstFileName, startupUrl: STARTUP_DATASET_URL },
   );
 }
 

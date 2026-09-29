@@ -16,7 +16,7 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { PHOSPHATASE_1587_FIXTURE } from './helpers/fixtures';
+import { PHOSPHATASE_1587_FIXTURE, STARTUP_DATASET_URL } from './helpers/fixtures';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 
 /**
@@ -171,6 +171,24 @@ async function importUserFile(page: Page, filePath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
 }
+
+test.describe('Example datasets: the suite runs on its pinned startup demo', () => {
+  test('the startup load comes from the fixture, not the product demo', async ({ page }) => {
+    // Every count, column and legend assertion on the demo in this suite is
+    // about the fixture. If this fails, the dev server was started without
+    // VITE_STARTUP_DATASET_URL (see playwright.config.ts): stop a dev server
+    // left running before the suite.
+    const startupRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().endsWith('.parquetbundle')) startupRequests.push(request.url());
+    });
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+
+    expect(startupRequests.map((url) => new URL(url).pathname)).toEqual([STARTUP_DATASET_URL]);
+  });
+});
 
 test.describe('Example datasets: Import menu and deep link', () => {
   test('a deep link loads the example without touching the stored user import', async ({
