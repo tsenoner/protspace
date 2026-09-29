@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DOCS_URL } from '@/config';
 import { ScatterCanvas, toPercent } from '@/landing/ScatterCanvas';
@@ -115,24 +116,19 @@ const Hero = () => {
               <Button size="lg" variant="outline" className="px-6" asChild>
                 <a href={`${DOCS_URL}guide/data-preparation`}>Prepare data</a>
               </Button>
+              <Button size="lg" variant="outline" className="px-6" asChild>
+                <a href={DOCS_URL}>Documentation</a>
+              </Button>
             </div>
             <p className="mt-5 text-sm text-muted-foreground">
-              <a
-                href={DOCS_URL}
-                className="underline-offset-4 hover:text-foreground hover:underline"
-              >
-                Documentation
-              </a>
-              <span aria-hidden="true" className="mx-2">
-                ·
-              </span>
               <a
                 href={doiUrl(PUBLICATION_WEB.doi)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline-offset-4 hover:text-foreground hover:underline"
+                className="inline-flex items-center gap-0.5 font-medium text-foreground underline decoration-primary/40 underline-offset-4 transition-colors hover:text-primary hover:decoration-primary"
               >
                 Preprint on bioRxiv
+                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
               <span aria-hidden="true" className="mx-2">
                 ·
