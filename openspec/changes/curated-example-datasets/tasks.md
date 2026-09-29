@@ -73,7 +73,7 @@ Before every commit:
   - `preempted` shows no banner;
   - a corrupt restore during a click only clears the store;
   - a mid-session `null` request begins a user request before the startup flow.
-- [ ] 2.9 (d) Keep the reset on every example load. The hint and docs text are tasks 3.1 and 5.x.
+- [x] 2.9 (d) Keep the reset on every example load. The hint and docs text are tasks 3.1 and 5.x (the hint line and the `importing-data.md` exception landed with §2).
 - [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the two (c) cases landed with §1 against the interim catalog's `phosphatase`):
   - (c) from `?annotation=<a>&tooltip=<t>`, a menu choice gives `?dataset=<id>` and the control bar shows `defaultView`; Back restores `<a>` and `<t>`;
   - (c) `?dataset=<id>`, pick an annotation, Back → `defaultView`; explicit deep-link parameters beat the defaults;
@@ -86,7 +86,7 @@ Before every commit:
 
 ## 3. Import-menu UI, download progress and cancel
 
-- [ ] 3.1 `packages/core` control bar:
+- [ ] 3.1 `packages/core` control bar (the hint line landed with §2):
   - `ExampleDatasetSummary` gains optional `insight`, `docsUrl` and `large`;
   - new `examplesDocsUrl` property (`examples-docs-url`) renders "About these examples ↗" in the Examples heading row;
   - a muted hint line: examples open curated, and changes are not kept;
@@ -170,7 +170,7 @@ Before every commit:
 - [ ] 5.4 Opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`), with a `projects[]` entry: every catalog id opens on its `defaultView` with no URL write and no drift warning, and writes `docs/explore/images/examples/<id>.png`.
 - [ ] 5.5 Sidebar entry "Example Datasets" after "Importing Data" in `docs/.vitepress/config.mts`; `/docs/explore/example-datasets` in `apps/web/public/sitemap.xml`.
 - [ ] 5.6 `docs/explore/control-bar.md` §9: shrink it to behaviour (menu vs link; the curated reset (c); failure keeps the plot plus Retry (a); the Large badge, progress and Cancel (e); the "About these examples" link), move the id table to the new page, and drop "every bundle that ships". Fix the stale demo alt text and the "NOT phospholipase A2" example (the lines at 137 and 192).
-- [ ] 5.7 `docs/explore/importing-data.md`:
+- [ ] 5.7 `docs/explore/importing-data.md` (the (d) exception, with the export-and-import route and the imported-copy edge case, and "Starting fresh" landed with §2):
   - the "Settings persist per dataset" bullet gains the example exception (d) with the export-and-import route;
   - "Starting fresh" for an example;
   - the demo name;

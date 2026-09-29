@@ -239,6 +239,13 @@ export const exportStyles = css`
 
   .import-examples-label {
     display: block;
-    margin-bottom: var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .import-examples-hint {
+    margin: 0 0 var(--spacing-sm);
+    font-size: var(--text-caption);
+    color: var(--muted);
+    line-height: 1.4;
   }
 `;

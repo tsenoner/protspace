@@ -58,6 +58,20 @@ describe('control-bar import menu', () => {
 
     expect(controlBar.shadowRoot?.querySelector('.import-menu')).not.toBeNull();
     expect(controlBar.shadowRoot?.querySelector('.import-examples')).toBeNull();
+    expect(controlBar.shadowRoot?.querySelector('.import-examples-hint')).toBeNull();
+  });
+
+  it('says under the Examples heading that examples open curated and changes are not kept', async () => {
+    const trigger = controlBar.shadowRoot?.querySelector(
+      '[data-driver-id="import"] .dropdown-trigger',
+    ) as HTMLButtonElement | null;
+    trigger?.click();
+    await controlBar.updateComplete;
+
+    const hint = controlBar.shadowRoot?.querySelector('.import-examples .import-examples-hint');
+    expect(hint?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      "Examples open in a curated view; your changes aren't kept.",
+    );
   });
 
   it('lists every catalog entry under the Examples heading', async () => {

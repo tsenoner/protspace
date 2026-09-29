@@ -1040,6 +1040,9 @@ export class ProtspaceControlBar extends LitElement {
                         ? html`
                             <div class="import-examples">
                               <span class="import-examples-label">Examples</span>
+                              <p class="import-examples-hint">
+                                Examples open in a curated view; your changes aren't kept.
+                              </p>
                               <div class="import-actions">
                                 ${this.exampleDatasets.map(
                                   (example) => html`

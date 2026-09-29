@@ -255,7 +255,9 @@ Click **Import** to open the menu:
   gives the protein count and download size; hover it for a one-line description of what's in the
   bundle. The example currently loaded is disabled. Choosing an example loads it and replaces the
   dataset stored in your browser — see
-  [Data & Settings Persistence](/explore/importing-data#data-settings-persistence).
+  [Data & Settings Persistence](/explore/importing-data#data-settings-persistence). As the note
+  under the heading says, examples open in a curated view and changes you make to one aren't
+  kept: it reopens in its curated state every time.
 
 Each example also has an id, for the `?dataset=<id>` link below:
 
@@ -285,8 +287,10 @@ rather than restoring your import. `annotation`,
 an example opens on its curated view: the projection, colour-by annotation and tooltip fields
 chosen for it. A menu choice always opens that curated view, so the previous dataset's view
 parameters don't carry over; **Back** still returns to them. An unknown id
-shows a warning and the app starts up normally. If an example fails to download, ProtSpace shows
-an error and leaves the current plot as it was.
+shows a warning and the app starts up normally. If an example fails to download, whether you chose
+it from the menu or went **Back** or **Forward** to it, ProtSpace shows an error with a **Retry**
+button and leaves the current plot and the URL as they were. Only a link opened on an empty page
+falls back to the startup load.
 
 ## Tips
 
