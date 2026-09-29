@@ -107,6 +107,8 @@ Rejected:
   - A parse failure (a corrupt bundle) keeps Report only.
 - **The view request after a failure (G11).** The view controller's recorded request still holds the failed entry's parameters. After the failure it is re-recorded from the **displayed** view, so a later file import or view change does not inherit them.
   - Retry after a failed Back/Forward re-reads the parameters of the entry the URL still names, records them, and calls `setRequestedDataset(entry.id)`, which now returns `Promise<void>`. Retry after a failed menu choice repeats that menu choice.
+  - Retry for a URL-driven load goes through the URL sync hook (`subscribeToExampleRetries`), since only the hook knows the entry. When the URL no longer names the example (a failed startup deep link has fallen back and removed the parameter, or the user has moved on), Retry pushes a new entry naming it, which loads it like a link: on its curated view, leaving the stored import alone.
+  - Using any toast action forgets the toast's dedupe key, so a Retry that fails again is shown again.
 - **Mismatch hardening.** The hook tracks the displayed dataset id. The next history entry the app writes for a user view change names the displayed dataset, so any link copied after further interaction is accurate.
 - **When nothing is displayed** (a startup deep link), a failure falls back to the stored import or the demo and replace-removes the parameter, as today.
 
@@ -124,6 +126,7 @@ Rejected:
 - **The epoch.** `persisted-dataset.ts` replaces the example request counter with a request epoch.
   - User-initiated requests call `beginUserRequest()` and take a new epoch: a menu choice, Back/Forward (including to an entry without `dataset=`), a file import, a recovery-banner button, Retry and Cancel.
   - App-initiated flows capture the epoch current when they began, and check `isCurrentRequest(epoch)` before each step that would start a load: the startup OPFS restore, the startup demo, the corrupt-store recovery load, and the deep-link fallback.
+  - Taking a new epoch also aborts the download of the example load it supersedes (one `AbortController` per download), so a superseded download stops using bandwidth. An aborted download settles as `'superseded'`, silently.
 - **The `preempted` outcome.** `PersistedLoadOutcome` gains `{ kind: 'preempted' }`, which shows no recovery banner. A corrupt restore preempted by a click only clears the store.
 - The loader's `'loaded' | 'failed' | 'superseded'` outcome and the `requestId` checks in `handleDataLoaded`/`handleDataError` keep their meaning.
 - The queue's `reserveSequence`/`isLatestSequence` encodes "newest wins", not "user wins", so it is not the fix.
