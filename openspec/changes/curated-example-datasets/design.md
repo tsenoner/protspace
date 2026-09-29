@@ -244,6 +244,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - it checks the byte count and sha256, and **fails the deploy** on a mismatch or a missing asset;
   - it also checks the in-repo demo against its record.
   - Editing the manifest touches `apps/web/`, so it triggers a deploy.
+- **Checking a pull request.** A PR that changes the manifest (or the fetch script or the writer) runs the `example-bundles.yml` workflow: the same fetch into a scratch directory, then `write_manifest.py --refresh --check` against the fetched files, so the committed columns, projections and counts are proven to be the files'. It is a workflow of its own because a path filter scopes a whole workflow, not a job in `ci.yml`.
 - **Retention (G14).** The manifest lists the previous release's files under `retained`, and the deploy keeps serving them for one cycle. Open tabs still running the old catalog, and docs or Zenodo links to old file names, keep working. The build script drops the entry at the next regeneration.
 - **Local development.**
   - `pnpm examples:fetch` downloads into the gitignored `apps/web/public/examples/`.
@@ -255,7 +256,8 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 ### 11. The manifest is a generated TypeScript module
 
 - **Why TypeScript.** `apps/web/tsconfig.app.json` does not set `resolveJsonModule`, and no app code imports JSON, so the manifest is `apps/web/src/explore/example-manifest.ts`. It is loadable from the app, from vitest, and from tsx docs and fetch scripts.
-- **Who writes it.** `apps/protspace/scripts/generate_examples/write_manifest.py`, using pyarrow, reads each bundle, so `columns` and `projections` are the file's real names, not a hand-typed list.
+- **Who writes it.** `apps/protspace/scripts/generate_examples/write_manifest.py`, using pyarrow, reads each bundle, so `columns` and `projections` are the file's real names, not a hand-typed list. Provenance comes from the key/value metadata the build writes on the annotations table (Decision 9; a file without it records `null`), and a file stamped with another `example_id` is refused.
+- **Shape of the module.** The data is a JSON object literal assigned to `export const EXAMPLE_MANIFEST: ExampleManifest`, and the file is in `.prettierignore`, so the writer can read the previous manifest back (for `--retain-previous` and `--refresh`) and `--check` can compare it byte for byte. It is typed with an annotation rather than `as const`, because a literal type such as `hosting: 'repo'` makes consumers' `=== 'release'` checks fail to compile while the interim manifest has no release-hosted entry.
 - **Top level:** `release` (the tag, or `null` while every entry is repo-hosted) and `retained[]` (`{ release, file, bytes, sha256 }`).
 - **Per id:**
   - `file`;
@@ -266,7 +268,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - `protspaceVersion`, `gitSha?`, `command` and `builtAt`;
   - `zenodoDoi`.
 - **Catalog fields derived from it.** `url` is `./<file>` for repo-hosted entries and `./examples/<file>` for release-hosted ones; the label numbers and `sizeBytes` come from the same record.
-- **knip** runs with `ignoreExportsUsedInFile: false` and `treatConfigHintsAsErrors: true`. The generated module therefore exports only what other modules consume (the manifest constant and, if the catalog needs it, the record type); helper types stay unexported.
+- **knip** runs with `ignoreExportsUsedInFile: false` and `treatConfigHintsAsErrors: true`. The generated module therefore exports only the manifest constant; its types stay unexported.
 - **tsx.** `example-datasets.ts` must stay loadable by tsx, so any `import.meta.env` read is optional-chained (`import.meta.env?.…`), because Node has no `import.meta.env`.
 
 ### 12. Tests stop depending on the catalog (D9)
@@ -282,7 +284,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   | `data/venom_eat_stats.parquetbundle` | `venom_eat_stats_811.parquetbundle` |
   - The same blobs are reused, so history does not grow.
   - The 5K and 40K fixtures are the only 3D (`PCA_3`) bundles and are kept for that reason.
-  - Path users are repointed. `dataset-recovery.spec.ts` stops fetching the served `/data/5K.parquetbundle` and passes fixture bytes into `page.evaluate`.
+  - Path users are repointed through `apps/web/tests/helpers/fixtures.ts`. `dataset-recovery.spec.ts` stops fetching the served `/data/5K.parquetbundle` and passes fixture bytes into `page.evaluate`.
 
 - **Startup pin (G4).**
   - `playwright.config.ts` sets `webServer.env.VITE_STARTUP_DATASET_URL` to the demo fixture, served by Vite's dev-only `/@fs/<absolute path>` route (inside the default `server.fs.allow` workspace root).
@@ -290,9 +292,12 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - This replaces an auto-fixture that would have meant rewriting all 18 spec imports.
   - The few hard-coded `'**/data.parquetbundle'` aborts and fetches (`numeric-binning.spec.ts` ×5, `eat-visualization.spec.ts`, `url-view-state.spec.ts`) switch to a `STARTUP_URL_GLOB` helper. If they did not, they would silently stop matching and the tests would turn flaky instead of failing.
   - The docs-capture projects in the root config are deliberately **not** pinned, because they photograph the product demo.
+  - A guard scenario asserts that the startup load requested the fixture URL and nothing else, so a dev server reused without the variable fails with that cause named rather than as scattered count mismatches.
   - Fallback if `/@fs/` proves brittle: copy the fixture into a gitignored `apps/web/public/__e2e__/` in global setup.
 - **Catalog routing (G3).**
   - `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id the suite loads to a fixture that contains that entry's `defaultView` names (`demo` → the demo fixture, `venom-eat` → the venom fixture, `phosphatase-eat` → `phosphatase_eat`), and the spec routes the entry's URL to it.
+  - The spec names examples by the role they play (`small`, `other`, `slow`), so a catalog change edits the helper's table and not the scenarios; the annotation names a scenario picks belong to its role's fixture.
+  - A held request passes on with `route.fallback()`, so it reaches the fixture route rather than the network, and protspace.app's copies are refused, so a development build's fallback can never download a real example.
   - The spec asserts that no default-view drift warning is logged.
   - The history and race tests use explicit `annotation=`/`projection=` parameters, so any fixture serves them.
   - The large entry's Cancel test gates the fetch and never completes it, so its content does not matter.
@@ -303,9 +308,9 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 ### 13. Perf datasets move to a `perf-datasets` release (D8, W4/G18)
 
 - **Contents.** The release keeps **all** eleven current `apps/web/public/data/` bundles plus the manuscript's 113K β-lactamase (`beta_lactamase_2026_stats.parquetbundle`, named after its directory, because its own file name is `data.parquetbundle`) and the 832-protein `phosphatase_eat.parquetbundle`. The files keep their original names, so `PERF_DATASETS=venom_eat_stats,…,573K_swissprot` and the manuscript's perf protocol keep working.
-- **Integrity.** `perf/datasets.manifest.json` (`{ id, file, bytes, sha256 }`) is the committed checksum list. It replaces `apps/web/public/data/datasets.json`.
+- **Integrity.** `perf/datasets.manifest.json` (`{ id, file, bytes, sha256, default, source }`) is the committed checksum list, written by `build_showcase.py stage-perf` from pinned git blobs and the manuscript path. It replaces `apps/web/public/data/datasets.json`: `default` marks the ten of the former default sweep, and `source` says where the bytes were staged from. The `example-bundles.yml` workflow runs `pnpm perf:fetch` on a PR that changes it.
 - **Local copy.** `pnpm perf:fetch` downloads into the gitignored `perf/datasets/` and verifies the checksums.
-- **Serving.** `perf/webgl-perf.spec.ts` routes `**/data/<id>.parquetbundle` and `**/data/datasets.json` to those local files. The in-app fallback list in `webgl-perf-suite.ts` is removed, because the routed list is authoritative. A missing file is recorded as that dataset's error, naming `pnpm perf:fetch`.
+- **Serving.** `perf/webgl-perf.spec.ts` routes `**/data/<id>.parquetbundle` and `**/data/datasets.json` to those local files. The in-app fallback list in `webgl-perf-suite.ts` is removed, because the routed list is authoritative; a missing list is recorded under `failures` and the results file is still emitted. A missing file is recorded as that dataset's error, naming `pnpm perf:fetch` (the suite carries the 404 body into the error).
 - `load-large-bundle.spec.ts` reads `perf/datasets/573K_swissprot.parquetbundle`, so it can run again (still opt-in).
 
 ### 14. Docs page generated from catalog + manifest + prose (D10)

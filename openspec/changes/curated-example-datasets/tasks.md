@@ -145,7 +145,8 @@ Before every commit:
   - Leave the root-config docs-capture projects unpinned.
   - A guard scenario in `example-datasets.spec.ts` fails, naming the cause, when the startup load does not come from the fixture (a dev server reused without the variable).
   - Fallback if `/@fs/` fails: copy into a gitignored `public/__e2e__/` in global setup.
-- [ ] 4.8 E2E guard: run the default suite after 4.6/4.7 with the product demo temporarily replaced by another bundle, and confirm that nothing depends on it; record the result in the PR.
+- [x] 4.8 E2E guard: run the default suite after 4.6/4.7 with the product demo temporarily replaced by another bundle, and confirm that nothing depends on it; record the result in the PR.
+  - Result (2026-09-29): with `apps/web/public/data.parquetbundle` replaced by the 40K bundle, `CI=1 pnpm test:e2e` passed 149/149, the same as with the real demo.
 - [x] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.
   - The scenarios name examples by role (`small`, `other`, `slow`), so the swap (7.9) edits only the helper's table; held requests pass on with `route.fallback()` so they reach the fixture, and protspace.app's copies are refused so a development build's fallback can never download a real example. With the three `public/data` originals moved away, the project still passes (26/26).
 - [ ] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the latter enabled at 7.8; the former landed with 4.1, plus "every repo-hosted record's file ships under `public/`").
@@ -159,7 +160,7 @@ Before every commit:
   - A missing or malformed `datasets.json` is recorded under `failures` (the results file is still emitted), and a failed dataset fetch carries the response body (the spec's `pnpm perf:fetch` hint) into its error.
   - Point `load-large-bundle.spec.ts` and its `playwright.config.ts` comment at `perf/datasets/573K_swissprot.parquetbundle`.
 - [x] 4.13 A staging script (`build_showcase.py stage-perf`, task 6.6) collects the `perf-datasets` assets from git blobs and the NM paths into a local directory with `SHA256SUMS`, and prints the owner's `gh release create` command without running it (only the `stage-perf` subcommand exists so far; §6 adds the others).
-- [ ] 4.14 `CONTRIBUTING.md`: fixtures vs examples, `pnpm examples:fetch`, `pnpm perf:fetch`, and stopping a running dev server before E2E so the startup pin applies.
+- [x] 4.14 `CONTRIBUTING.md`: fixtures vs examples, `pnpm examples:fetch`, `pnpm perf:fetch`, and stopping a running dev server before E2E so the startup pin applies.
 
 ## 5. Docs tooling and prose
 
