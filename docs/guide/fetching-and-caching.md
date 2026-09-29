@@ -99,10 +99,13 @@ ProtSpace therefore **caches only the sources that completed**:
 
 - A source that failed is left out of the cache, so the next run fetches it again.
 - Sources that succeeded are still cached, so one flaky API does not throw away an expensive UniProt
-  fetch.
-- If leaving it out would mean overwriting an existing cache with _fewer_ columns, the existing
-  cache is kept untouched instead — unless that cache covers other proteins, in which case the
-  sources that completed replace it.
+  fetch or a day of TED lookups.
+- If the cache already held values for the failed source, those values are kept as they were, next
+  to the sources that completed. Proteins it held no value for are left out and fetched by the next
+  run. When nothing else completed, the cache is left untouched.
+- InterPro and Biocentral look proteins up by sequence, which comes from your FASTA or else from
+  UniProt. If UniProt lost a batch and one of them had no sequence for a protein, that source counts
+  as incomplete too, so its empty value is not cached as "no match". Supplying `-f` avoids this.
 
 Either way the run still returns everything it did retrieve — your bundle is built, and the message
 says which source was short.
@@ -122,19 +125,25 @@ half-annotated row that the next run would read as complete.
 
 ### Transient failures are retried first
 
-Requests that time out, fail to connect, or return a retryable status (429, 503, …) are retried with
-exponential backoff, honouring `Retry-After`. Only a request still failing after several attempts
-counts as lost data. A malformed request (`400`, `404`) is not retried — asking again will not help.
-This covers every source's requests, including the InterPro match lookups, which are sent 100
-sequences at a time.
+Requests that time out, fail to connect, or return a retryable status (408, 425, 429, 500, 502,
+503, 504) are retried with exponential backoff, honouring `Retry-After`. Only a request still failing
+after several attempts counts as lost data. Any other status, such as `400` or `404`, is not retried
+— asking again will not help. This covers the UniProt batches, the taxonomy lookups, the InterPro
+match lookups (sent 100 sequences at a time) and the TED lookups.
 
 This matters at scale: UniProt is queried 100 accessions at a time, so a Swiss-Prot-sized run is
 thousands of sequential requests, and without retries a single blip would be near-certain. Sources
 fetched one request per protein (TED) use a smaller retry budget, so a full outage does not multiply
 the backoff by the number of proteins. Instead, TED retries every lookup that failed once more after
 its first pass over all proteins, with the full retry budget, by which time a short outage has
-usually passed; that final pass gives up after 10 failures in a row. Biocentral predictions are
-requested in batches of at most 1,000 sequences, so a failed batch loses only its own proteins.
+usually passed; that final pass gives up after 10 failures in a row. InterPro likewise stops asking
+after 10 batches in a row are lost, and counts the rest as lost rather than paying the backoff for
+each of thousands of batches.
+
+Some requests are not retried. Biocentral predictions are requested in batches of at most 1,000
+sequences, each sent once: a failed batch loses only its own proteins, and Biocentral stays out of
+the cache, so the next run requests them again. UniProt's extra lookups for an inactive accession
+(its replacement entry, or its sequence from UniParc) are single attempts too.
 
 ## Embeddings belong to one backend and model
 
@@ -185,7 +194,9 @@ protspace annotate -i data.h5 -a default,interpro,ted -o annotations.parquet --c
 Every UniProt response names the UniProtKB release its data came from. ProtSpace records it on the
 annotation cache, and `run.log` gives it in a `uniprot_release:` line under `## Annotations`, for
 annotations fetched in that run and for ones read from the cache alike. A cache filled in across
-two releases lists both, and one written before releases were recorded reads `unknown`.
+two releases lists both, and one written before releases were recorded reads `unknown`. A run whose
+identifiers include no UniProt accession sends nothing to UniProt and reads `none`, as does a run
+whose annotations come only from a CSV file.
 
 ## Legacy caches
 
@@ -206,6 +217,13 @@ Caches written by older versions are migrated when read, so you do not have to d
 
 If such a refresh cannot retrieve the source, the old values are not stamped as current, and the
 next run tries again. At Swiss-Prot scale the one-time refresh takes hours.
+
+Going back to an older ProtSpace is not covered by this migration. Version 4.13 and earlier read a
+cache this version wrote as current, but any run of theirs that fetches something passes the cached
+`protein_families` through their first-family rule again, which corrupts the new values:
+`CarA family|IC;CarB family|IC` becomes `CarA family|IC|IC`, and
+`inositol 1,4,5-trisphosphate 5-phosphatase family|IEA` becomes `inositol 1|IEA`. After a
+downgrade, delete `{output}/tmp/all_annotations.parquet` or run once with `--refetch uniprot`.
 
 ## Troubleshooting
 

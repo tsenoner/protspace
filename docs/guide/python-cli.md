@@ -148,8 +148,8 @@ Each run appends its command, version, settings and timing to `run.log` in the o
 The `uniprot_release:` line under `## Annotations` names the UniProtKB release the annotations came
 from (for example `2026_03`), whether they were fetched in that run or read from the annotation
 cache. It lists every release when cached and newly fetched values differ, says `unknown` for values
-from a cache written before releases were recorded, and says `none` when the annotations came only
-from a CSV file.
+from a cache written before releases were recorded, and says `none` when no UniProt data was used:
+the annotations came only from a CSV file, or no identifier is a UniProt accession.
 
 ## Projection Methods
 
@@ -377,12 +377,12 @@ points at another producer's file stops rather than mixing two embedding spaces.
 If a source could not be fully retrieved, its columns are **left out of the cache**: a partly empty
 column is indistinguishable from one where those proteins genuinely have no entry, so caching it
 would make every later run reuse the gaps instead of refetching. Sources that did complete are
-still cached, so one flaky API does not cost an expensive UniProt fetch — unless leaving the failed
-source out would overwrite an existing cache with fewer columns, in which case the cache is kept
-untouched. Either way the run still returns everything it did retrieve, and the next run fetches
-the rest. Transient HTTP failures are retried with backoff first, so this is reserved for a source
-that is genuinely unavailable. Use `--refetch annotations` to rewrite the cache regardless — that
-is the repair path for a cache already holding empty values. See
+still cached, so one flaky API does not cost an expensive UniProt fetch or a long TED pass. Values
+the cache already held for the failed source are kept as they were, and the cache is left untouched
+only when nothing else completed. Either way the run still returns everything it did retrieve, and
+the next run fetches the rest. Transient HTTP failures are retried with backoff first, so this is
+reserved for a source that is genuinely unavailable. Use `--refetch annotations` to rewrite the
+cache regardless — that is the repair path for a cache already holding empty values. See
 [Fetching & Caching](/guide/fetching-and-caching) for the full picture.
 
 Legacy annotation caches are migrated when they are read:
@@ -398,7 +398,9 @@ Legacy annotation caches are migrated when they are read:
   names whole, or before InterPro columns reached every protein sharing a sequence, is refreshed
   the same way: a run that requests `protein_families` re-fetches UniProt once, a run that requests
   an InterPro column re-fetches InterPro once, and a run that requests neither drops those columns.
-  At Swiss-Prot scale this one-time refresh takes hours.
+  At Swiss-Prot scale this one-time refresh takes hours. An older ProtSpace (4.13 or earlier)
+  corrupts the new multi-family values if it resumes from such a cache, so after a downgrade delete
+  the cache or run once with `--refetch uniprot`.
 
 Projection caches are keyed by embedding name, method, dimensions and every parameter, so changing
 any parameter creates a new entry. Use `--refetch all` to bypass all caches, or `--refetch <stages>`
