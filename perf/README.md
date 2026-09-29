@@ -73,7 +73,7 @@ the two cannot drift; the defaults above apply only to a hand-typed
 | `dragCanvas`       | Pan / drag across the canvas, settling after every step               |
 | `dragContinuous`   | Sustained drag: one pan per animation frame, never waiting for settle |
 | `densityZoom`      | The `zoomInOut` cycle with `densityLayer: 'on'` forced on the plot    |
-| `contourDrag`      | `dragContinuous` with `densityLayer: 'on'`, `densityStyle: 'contour'` |
+| `contourDrag`      | `dragContinuous` with `densityLayer: 'on'`                            |
 | `clickPoint`       | Select a point by clicking                                            |
 
 Every pass records `durationMs` (CPU submission time: the window around
