@@ -253,7 +253,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - it also checks the in-repo demo against its record.
   - Editing the manifest touches `apps/web/`, so it triggers a deploy.
 - **Checking a pull request.** A PR that changes the manifest (or the fetch script or the writer) runs the `example-bundles.yml` workflow: the same fetch into a scratch directory, then `write_manifest.py --refresh --check` against the fetched files, so the committed columns, projections and counts are proven to be the files'. It is a workflow of its own because a path filter scopes a whole workflow, not a job in `ci.yml`.
-- **Retention (G14).** The manifest lists the previous release's files under `retained`, and the deploy keeps serving them for one cycle. Open tabs still running the old catalog, and docs or Zenodo links to old file names, keep working. The build script drops the entry at the next regeneration.
+- **Retention (G14).** The manifest lists the previous release's files under `retained`, and the deploy keeps serving them for one cycle. Every file lands in one `examples/` directory, so a retained file may not share a name with a current file unless their bytes are identical (then it is simply dropped from `retained`): the writer refuses it, and the fetch fails before downloading, since otherwise a re-release under the same name could deploy stale bytes under the current name. Open tabs still running the old catalog, and docs or Zenodo links to old file names, keep working. The build script drops the entry at the next regeneration.
 - **Local development.**
   - `pnpm examples:fetch` downloads into the gitignored `apps/web/public/examples/`.
   - In a development build (`import.meta.env.DEV`), when the same-origin file is missing (a non-OK response, or an HTML fallback), the loader retries from `https://protspace.app/examples/<file>`. protspace.app sends `access-control-allow-origin: *`.
@@ -275,7 +275,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - `statistics` (whether the file carries a statistics part, so the docs page can say it has separation scores);
   - `releases` (membership, plus annotations per column group);
   - `protspaceVersion`, `gitSha?`, `command` and `builtAt`;
-  - `zenodoDoi`.
+  - `zenodoDoi`: from the bundle when the build stamped one, else from `--zenodo-doi`, since the deposit is made after the build; later runs keep a recorded DOI while the file's sha256 is unchanged, so the CI `--refresh --check` passes without re-stamping (and re-releasing) the bundles.
 - **Catalog fields derived from it.** `url` is `./<file>` for repo-hosted entries and `./examples/<file>` for release-hosted ones; the label numbers and `sizeBytes` come from the same record.
 - **knip** runs with `ignoreExportsUsedInFile: false` and `treatConfigHintsAsErrors: true`. The generated module therefore exports only the manifest constant; its types stay unexported.
 - **tsx.** `example-datasets.ts` must stay loadable by tsx, so any `import.meta.env` read is optional-chained (`import.meta.env?.…`), because Node has no `import.meta.env`.
@@ -336,7 +336,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - `INTERIM_CATALOG_IDS`: the ten test and perf entries, which get no card. The check fails when a listed id leaves the catalog, so the list empties with the swap.
   - `beforeSwap` on the five final ids that have no catalog entry yet: their insight and provisional `defaultView`, exactly as the catalog entry will state them. The check fails while an id has both, which moves them into the catalog at the swap.
   - `THUMBNAILS_PENDING`: cards without a thumbnail. The check fails when a listed thumbnail exists.
-  - A value still to come renders as `‹…›` (a build value from a missing manifest record, or an author fact in the prose), flagged by a warning at the top of the page. Once `INTERIM_CATALOG_IDS` is empty, the check refuses any `‹…›` and any `beforeSwap`.
+  - A value still to come renders as `‹…›` (a build value from a missing manifest record, or an author fact in the prose), flagged by a warning at the top of the page. Once `INTERIM_CATALOG_IDS` is empty, the check refuses any `‹…›`, any `beforeSwap`, any entry left in `THUMBNAILS_PENDING`, and any stated release that is not `YYYY_MM` (a note such as "inferred; confirm" stamped into a bundle is no `‹…›`).
 - **Scripts and CI.** `docs:examples` and `docs:examples:check` join `precommit`, and the `ci.yml` `build-docs` job runs both `docs:examples:check` and the existing `docs:annotations:check`, which runs in no workflow today.
 - **Page layout.**
   - Cards use `## Title {#id}`.

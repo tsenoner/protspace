@@ -168,6 +168,12 @@ Before every commit:
 - [x] 4.13 A staging script (`build_showcase.py stage-perf`, task 6.6) collects the `perf-datasets` assets from git blobs and the NM paths into a local directory with `SHA256SUMS`, and prints the owner's `gh release create` command without running it (only the `stage-perf` subcommand exists so far; §6 adds the others).
 - [x] 4.14 `CONTRIBUTING.md`: fixtures vs examples, `pnpm examples:fetch`, `pnpm perf:fetch`, and stopping a running dev server before E2E so the startup pin applies.
 
+- [x] 4.15 Review fixes to hosting:
+  - `write_manifest.py` refuses a retained file named like a new one with other bytes and drops an identical one; `examples:fetch` fails before downloading when two pinned files share a name with other bytes, re-verifies every file once all are in place, and rejects a perf manifest that is not `{ release, datasets }`;
+  - `--zenodo-doi` records the deposit's DOI after the build, and later runs keep it while the bytes are unchanged;
+  - `_annotation_releases` also reads `{ group: { release, columns } }` objects, leaving out groups with no release;
+  - the E2E web server stops with the run (`gracefulShutdown`), and the docs captures refuse an app whose startup load is the E2E fixture.
+
 ## 5. Docs tooling and prose
 
 - [x] 5.1 `docs/scripts/example-details.ts` holds docs-only prose for the six final ids: title, tagline, how to read the default view, what to try next, source and query, embedding, projection parameters, paper figure and notes (the membership release comes from the manifest, and the thumbnail path is `images/examples/<id>.png` by convention). Use journal-neutral citation text (preprint DOI `10.64898/2026.05.04.722720` plus the FAQ citation anchor) and credit UniProt under CC BY 4.0.
@@ -196,6 +202,7 @@ Before every commit:
 - [x] 5.8 `docs/explore/eat.md` "Trying It": `venom-eat` (threshold 0, strips visible, and "drag to 0.5 → 244 of 384"), the `?dataset=venom-eat` link, a link to its card, and a fix for "nearly half the dataset is a ring". Keep the venom numbers in `separation-scores.md` and `scatterplot.md`, since the frozen statistics part keeps them valid.
 - [x] 5.9 `docs/index.md` (drop "eleven", link the page), `docs/explore/index.md`, `docs/guide/index.md` (link `#swissprot`), `docs/guide/faq.md` (optional Swiss-Prot link), `docs/explore/images/README.md` (the venom fixture path).
   - The FAQ link was left out: its load-time sentence describes the 44.9 MB paper bundle, and the refreshed Swiss-Prot example may load more slowly (the D2 gate allows up to about 35 s). The images README got the fixture path with §4.
+- [x] 5.11 `docs:examples:check`, once `INTERIM_CATALOG_IDS` is empty, also fails while `THUMBNAILS_PENDING` lists anything and when a stated release (membership or a column group) is not `YYYY_MM`, which the `‹…›` check alone would miss for a note stamped by the build.
 - [x] 5.10 Product tour step 2 (`product-tour.ts`) mentions **Examples** and uses the extensionless docs link; check `product-tour.spec.ts` (it asserts titles and targets only, and passes unchanged).
 
 ## 6. Showcase build script (Python dev tooling, `chore:` commits)
@@ -259,7 +266,7 @@ Before every commit:
 
 - [ ] 8.1 Create the `perf-datasets` release and upload the staged assets plus `SHA256SUMS` (task 4.13); check `pnpm perf:fetch` against it.
 - [ ] 8.2 Create the `showcase-2026_03` release and upload the staged assets (task 7.6); check `pnpm examples:fetch` and the CI manifest job.
-- [ ] 8.3 Zenodo "paper companion" deposit: the frozen paper files (all eleven old bundles, the 113K, the 832) plus the new showcase files. Write its DOI into the manifest (`zenodoDoi`) and the docs.
+- [ ] 8.3 Zenodo "paper companion" deposit: the frozen paper files (all eleven old bundles, the 113K, the 832) plus the new showcase files. Record its DOI with `write_manifest.py --refresh --examples-dir <fetched files> --zenodo-doi <doi>` (later runs keep it while the files are unchanged, so the CI check passes; no re-stamping of the bundles), then regenerate the docs page.
 - [ ] 8.4 Cloudflare cache rule for `/examples/*` (cache everything, long edge TTL, **and a Browser TTL**, since Pages sends `max-age=600`). Verify `cf-cache-status: HIT` on a second request, before the Swiss-Prot link is announced.
 - [ ] 8.5 Staging GitHub Pages deploy with a file over 100 MB, before 7.2 finishes (G19). If it fails, fall back to Cloudflare R2 on `data.protspace.app` with CORS.
 - [ ] 8.6 After deploying: `curl -sI https://protspace.app/examples/<file>` returns 200; time a Swiss-Prot load on the reference laptop and record its heap.
