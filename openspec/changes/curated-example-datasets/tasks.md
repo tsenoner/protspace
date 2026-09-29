@@ -174,7 +174,7 @@ Before every commit:
   - an intro stating that examples reopen curated, how to keep changes, and the imported-copy storage edge case.
   - `--check` fails on a stale page, a catalog/details id mismatch, a missing thumbnail, a demo/manifest mismatch, a label that disagrees with the manifest, or prose that does not name the colour-by annotation; while the interim lists are non-empty it allows their exceptions, and once they are empty it refuses `‹…›` placeholders and `beforeSwap`.
   - The manifest gained a `statistics` flag so the cards can say whether a bundle has separation scores.
-- [ ] 5.3 Scripts `docs:examples` and `docs:examples:check`, with `docs:examples:check` in `precommit` (done). Add `docs:annotations:check` and `docs:examples:check` to the `ci.yml` `build-docs` job (the interim lists let both pass before the swap).
+- [x] 5.3 Scripts `docs:examples` and `docs:examples:check`, with `docs:examples:check` in `precommit`. Add `docs:annotations:check` and `docs:examples:check` to the `ci.yml` `build-docs` job (the interim lists let both pass before the swap).
 - [ ] 5.4 Opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`), with a `projects[]` entry: every catalog id opens on its `defaultView` with no URL write and no drift warning, and writes `docs/explore/images/examples/<id>.png`.
 - [x] 5.5 Sidebar entry "Example Datasets" after "Importing Data" in `docs/.vitepress/config.mts`; `/docs/explore/example-datasets` in `apps/web/public/sitemap.xml`.
   - `example-datasets-docs.test.ts` is retargeted from `control-bar.md` to the new page (anchors for every catalog id outside `INTERIM_CATALOG_IDS`, every `docsUrl` pointing at its section, no section outside the catalog except a `beforeSwap` one).
