@@ -262,6 +262,7 @@ class InterProRetriever(BaseAnnotationRetriever):
                 partial(self._post_batch, session),
                 chunks,
                 self.max_concurrent_requests,
+                stop=session.stop,
             )
             with (
                 tqdm(
@@ -284,7 +285,8 @@ class InterProRetriever(BaseAnnotationRetriever):
                     skipped = len(chunks) - i
                     if consecutive_lost >= _MAX_CONSECUTIVE_LOST_BATCHES and skipped:
                         # Leaving the loop cancels the batches not yet sent;
-                        # any still in flight finish, but are not used.
+                        # any still in flight give up after their current
+                        # attempt, and are not used.
                         self.failed_batch_count += skipped
                         logger.error(
                             f"InterPro lost {consecutive_lost} batches in a row, "

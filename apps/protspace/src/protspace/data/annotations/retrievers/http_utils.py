@@ -50,6 +50,18 @@ def _backoff_seconds(attempt: int, response: requests.Response | None) -> float:
     return min(BACKOFF_BASE_SECONDS * 2 ** (attempt - 1), MAX_BACKOFF_SECONDS)
 
 
+def _sleep(seconds: float, stop: threading.Event | None) -> bool:
+    """Sleep *seconds*, or until *stop* is set; True when *stop* ended it."""
+    if stop is None:
+        time.sleep(seconds)
+        return False
+    return stop.wait(seconds)
+
+
+class FetchStopped(requests.exceptions.RequestException):
+    """A request not sent because the fetch it belongs to was stopped."""
+
+
 class _RetryAfterPause:
     """When the next attempt of any request on one session may start."""
 
@@ -61,11 +73,14 @@ class _RetryAfterPause:
         with self._lock:
             self._until = max(self._until, time.monotonic() + seconds)
 
-    def wait(self) -> None:
+    def wait(self, stop: threading.Event | None = None) -> bool:
+        """Block until the pause is over; False when *stop* is set first."""
         # Checked again after every sleep: another request's `Retry-After`
         # may have moved the end later while this one slept.
         while (remaining := self._until - time.monotonic()) > 0:
-            time.sleep(remaining)
+            if _sleep(remaining, stop):
+                return False
+        return stop is None or not stop.is_set()
 
 
 class PooledSession(requests.Session):
@@ -80,6 +95,12 @@ class PooledSession(requests.Session):
     later attempt the retry helpers make on the session waits until then, not
     only the request that received it: under concurrency the other workers
     would otherwise keep firing at a server that asked for a pause.
+
+    ``stop`` is set when the fetch using the session ends early, as
+    :func:`map_in_order` does when a breaker closes it or an interrupt ends
+    it. From then on the retry helpers send nothing more on the session: a
+    request waiting to retry gives up at once with the error of the attempt
+    it made, and one not yet sent raises :class:`FetchStopped`.
     """
 
     def __init__(self, connections: int = 1) -> None:
@@ -88,27 +109,29 @@ class PooledSession(requests.Session):
         self.mount("https://", adapter)
         self.mount("http://", adapter)
         self.retry_after = _RetryAfterPause()
-
-
-def _pause_of(session: requests.Session | None) -> _RetryAfterPause | None:
-    return session.retry_after if isinstance(session, PooledSession) else None
+        self.stop = threading.Event()
 
 
 def _request_with_retry(
     send: Callable[[], requests.Response],
     url: str,
     attempts: int,
-    pause: _RetryAfterPause | None = None,
+    session: requests.Session | None = None,
 ) -> requests.Response:
     """Call *send* until it succeeds, retrying transient failures with backoff.
 
     The one retry loop behind :func:`get_with_retry` and :func:`post_with_retry`,
-    so the GET and POST policies cannot drift apart. With a session's *pause*,
-    a ``Retry-After`` is shared with every request on that session.
+    so the GET and POST policies cannot drift apart. On a
+    :class:`PooledSession`, a ``Retry-After`` is shared with every request on
+    the session, and once the session's ``stop`` is set the attempt just made
+    is the last.
     """
+    pooled = session if isinstance(session, PooledSession) else None
+    pause = pooled.retry_after if pooled else None
+    stop = pooled.stop if pooled else None
     for attempt in range(1, attempts + 1):
-        if pause is not None:
-            pause.wait()
+        if pause is not None and not pause.wait(stop):
+            raise FetchStopped(f"{url} was not requested: the fetch was stopped")
         response = None
         try:
             response = send()
@@ -125,15 +148,16 @@ def _request_with_retry(
             if attempt == attempts:
                 raise
             logger.debug(f"{url} failed ({exc}); retrying {attempt}/{attempts}")
-            time.sleep(_backoff_seconds(attempt, None))
+            if _sleep(_backoff_seconds(attempt, None), stop):
+                raise
             continue
 
         # Retryable status.
         retry_after = _retry_after_seconds(response)
         shared = pause is not None and retry_after is not None
         if shared:
-            # Every request on the session holds off, this one included: the
-            # wait at the top of its next attempt serves the pause.
+            # Every request on the session holds off, this one included, even
+            # when this attempt was its last.
             pause.extend(retry_after)
         if attempt == attempts:
             response.raise_for_status()
@@ -142,8 +166,10 @@ def _request_with_retry(
             f"{url} returned {response.status_code}; retrying in {delay:.1f}s "
             f"({attempt}/{attempts})"
         )
-        if not shared:
-            time.sleep(delay)
+        stopped = not pause.wait(stop) if shared else _sleep(delay, stop)
+        if stopped:
+            # The attempt just made was the last.
+            response.raise_for_status()
 
     # Unreachable: the final attempt either returns or raises above.
     raise RuntimeError(f"Exhausted retries for {url}")
@@ -174,7 +200,7 @@ def get_with_retry(
         lambda: client.get(url, params=params, timeout=timeout),
         url,
         attempts,
-        _pause_of(session),
+        session,
     )
 
 
@@ -196,7 +222,7 @@ def post_with_retry(
         lambda: client.post(url, json=json, headers=headers, timeout=timeout),
         url,
         attempts,
-        _pause_of(session),
+        session,
     )
 
 
@@ -235,7 +261,10 @@ def paginated_get(
 
 
 def map_in_order[T, R](
-    fn: Callable[[T], R], items: Iterable[T], workers: int
+    fn: Callable[[T], R],
+    items: Iterable[T],
+    workers: int,
+    stop: threading.Event | None = None,
 ) -> Iterator[R]:
     """Yield ``fn(item)`` for every item, in input order, *workers* calls at a time.
 
@@ -247,32 +276,44 @@ def map_in_order[T, R](
 
     At most ``2 * workers`` calls are submitted ahead of the result being
     yielded. With ``workers <= 1`` each call runs inline, when its result is
-    needed. Closing the iterator early, as an outage breaker does, cancels
-    the calls not yet started and waits for the running ones, so no request
-    outlives the fetch. An interrupt cancels them without waiting.
+    needed.
+
+    When the iteration ends early -- the caller closes it, as an outage
+    breaker does, or an error or interrupt ends it -- *stop* is set (pass the
+    session's ``PooledSession.stop``, so the calls still running give up
+    after their current attempt), the calls not yet started are cancelled,
+    and the running ones are waited for, so no request outlives the fetch.
+    An interrupt does not wait for them.
     """
     if workers <= 1:
-        for item in items:
-            yield fn(item)
+        try:
+            for item in items:
+                yield fn(item)
+        except BaseException:
+            if stop is not None:
+                stop.set()
+            raise
         return
 
     source = iter(items)
     executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="protspace")
-    pending = deque(
-        executor.submit(fn, item)
-        for item in islice(source, workers * _SUBMITTED_AHEAD_PER_WORKER)
-    )
-    wait = True
     try:
+        pending = deque(
+            executor.submit(fn, item)
+            for item in islice(source, workers * _SUBMITTED_AHEAD_PER_WORKER)
+        )
         while pending:
             result = pending.popleft().result()
             for item in islice(source, 1):
                 pending.append(executor.submit(fn, item))
             yield result
     except BaseException as exc:
+        if stop is not None:
+            stop.set()
         # Ctrl-C must not sit behind the requests in flight; any other exit
         # (an error, or the caller closing the iterator) waits for them.
-        wait = isinstance(exc, (Exception, GeneratorExit))
+        executor.shutdown(
+            wait=isinstance(exc, (Exception, GeneratorExit)), cancel_futures=True
+        )
         raise
-    finally:
-        executor.shutdown(wait=wait, cancel_futures=True)
+    executor.shutdown()

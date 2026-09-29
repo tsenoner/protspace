@@ -90,6 +90,7 @@ class TedRetriever(BaseAnnotationRetriever):
                 partial(self._try_lookup, session, attempts=_MAX_ATTEMPTS),
                 self.headers,
                 self.max_concurrent_requests,
+                stop=session.stop,
             )
             with (
                 tqdm(
@@ -119,14 +120,15 @@ class TedRetriever(BaseAnnotationRetriever):
         ]
 
     def _retry_failed(
-        self, session: requests.Session, failed: list[int], values: list[str]
+        self, session: PooledSession, failed: list[int], values: list[str]
     ) -> list[str]:
         """Look up the first pass's failures again, filling *values* in place.
 
         Returns the accessions still failing. After
         ``_FINAL_PASS_MAX_CONSECUTIVE_FAILURES`` failures in a row, counted
         in input order, the service is taken to be down: no further lookup is
-        started, and every accession whose result was not used counts as
+        started, the lookups still retrying give up after their current
+        attempt, and every accession whose result was not used counts as
         failed.
         """
         lost: list[str] = []
@@ -137,6 +139,7 @@ class TedRetriever(BaseAnnotationRetriever):
             ),
             failed,
             self.max_concurrent_requests,
+            stop=session.stop,
         )
         with (
             tqdm(

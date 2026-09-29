@@ -4,6 +4,7 @@ import random
 import tempfile
 import threading
 import time
+from collections import Counter
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -17,9 +18,19 @@ from src.protspace.data.annotations.retrievers.interpro_retriever import (
     InterProRetriever,
 )
 
-# Tests below stub `time.sleep` out of the retry backoff; parallel fakes need
-# a real delay to finish out of order.
+# Parallel fakes need a real delay to finish out of order.
 _real_sleep = time.sleep
+
+
+def _no_backoff(monkeypatch):
+    """Take the retry backoff out of `http_utils`; a stopped fetch still
+    ends its wait at once."""
+    from protspace.data.annotations.retrievers import http_utils
+
+    monkeypatch.setattr(
+        http_utils, "_sleep", lambda _seconds, stop=None: bool(stop and stop.is_set())
+    )
+
 
 # Alias for test compatibility
 InterProAnnotationRetriever = InterProRetriever
@@ -1145,9 +1156,7 @@ class TestMatchRequestRetry:
     def _serve(monkeypatch, outcomes):
         """Answer successive POSTs from *outcomes*; a status int fails, None
         succeeds with a Pfam match for every submitted MD5."""
-        from protspace.data.annotations.retrievers import http_utils
-
-        monkeypatch.setattr(http_utils.time, "sleep", lambda _: None)
+        _no_backoff(monkeypatch)
         calls = []
 
         def fake_post(url, json=None, headers=None, timeout=None):
@@ -1586,9 +1595,7 @@ class _MatchesServer:
         self._lock = threading.Lock()
 
     def install(self, monkeypatch):
-        from protspace.data.annotations.retrievers import http_utils
-
-        monkeypatch.setattr(http_utils.time, "sleep", lambda _: None)
+        _no_backoff(monkeypatch)
         # A plain function, so the session binds as its first argument.
         monkeypatch.setattr(
             requests.Session,
@@ -1706,7 +1713,62 @@ class TestParallelBatches:
 
         batches = len(set(server.calls))
         assert 10 <= batches <= 10 + 2 * workers
-        assert len(server.calls) == batches * http_utils.MAX_ATTEMPTS
+        # The ten batches that tripped it spent their retry budget; a batch
+        # still running then gives up after the attempt it is making.
+        attempts = Counter(server.calls)
+        consumed = sorted(attempts, key=server.calls.index)[:10]
+        assert all(attempts[b] == http_utils.MAX_ATTEMPTS for b in consumed)
+        assert max(attempts.values()) == http_utils.MAX_ATTEMPTS
         assert retriever.failed_batch_count == 60
         stopped = [r for r in caplog.records if "remaining 50 of 60" in r.getMessage()]
         assert len(stopped) == 1
+
+    def test_a_tripped_breaker_stops_the_batches_still_retrying(self, monkeypatch):
+        """Batches after the tenth are made to back off for 5 s. Once the
+        breaker trips they give up after the attempt they made, instead of
+        holding the fetch for their whole retry budget."""
+        import sys
+
+        from protspace.data.annotations.retrievers import http_utils
+
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 1)
+        sequences = TestMatchRequestRetry._proteins(40)
+        md5s = [_md5(s) for s in sequences.values()]
+        server = _MatchesServer(down=md5s, jitter=0)
+        server.install(monkeypatch)
+        serving = threading.local()
+        post = requests.Session.post
+        # The tenth batch is answered only once a later one is backing off,
+        # so the breaker always trips with a batch still retrying.
+        later_backing_off = threading.Event()
+
+        def noting_the_batch(session, url, **kwargs):
+            serving.batch = kwargs["json"]["md5"][0]
+            if serving.batch == md5s[9]:
+                later_backing_off.wait(2)
+            return post(session, url, **kwargs)
+
+        def backoff(_seconds, stop=None):
+            if serving.batch in md5s[:10]:
+                return stop.is_set()
+            later_backing_off.set()
+            return stop.wait(5)
+
+        monkeypatch.setattr(requests.Session, "post", noting_the_batch)
+        monkeypatch.setattr(http_utils, "_sleep", backoff)
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=4,
+        )
+
+        started = time.monotonic()
+        retriever.fetch_annotations()
+
+        assert time.monotonic() - started < 2
+        attempts = Counter(batch for (batch,) in server.calls)
+        assert all(attempts[md5] == http_utils.MAX_ATTEMPTS for md5 in md5s[:10])
+        later = [attempts[md5] for md5 in md5s[10:] if md5 in attempts]
+        assert later and set(later) == {1}
+        assert retriever.failed_batch_count == 40

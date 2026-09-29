@@ -8,6 +8,7 @@ of proteins with no data, so an unretried blip costs real annotations.
 import random
 import threading
 import time
+from collections import Counter
 from unittest.mock import Mock
 
 import pytest
@@ -18,6 +19,7 @@ from protspace.data.annotations.retrievers import http_utils
 # The fixture below replaces the clock `http_utils` sleeps on; the concurrency
 # tests need a real delay to shuffle the order in which parallel calls finish.
 _real_sleep = time.sleep
+_real_wait = http_utils._sleep
 
 
 class _FakeClock:
@@ -35,12 +37,28 @@ class _FakeClock:
         self.slept.append(seconds)
         self.now += seconds
 
+    def wait(self, seconds: float, stop: threading.Event | None = None) -> bool:
+        """Stands in for `http_utils._sleep`: a stopped wait ends at once."""
+        if stop is not None and stop.is_set():
+            return True
+        self.sleep(seconds)
+        return stop is not None and stop.is_set()
+
 
 @pytest.fixture(autouse=True)
 def clock(monkeypatch):
     fake = _FakeClock()
     monkeypatch.setattr(http_utils, "time", fake)
+    # Looked up on every call, so a test may replace `fake.sleep`.
+    monkeypatch.setattr(http_utils, "_sleep", lambda *args: fake.wait(*args))
     return fake
+
+
+@pytest.fixture
+def real_clock(monkeypatch):
+    """Real time and real waits, for tests that stop a waiting thread."""
+    monkeypatch.setattr(http_utils, "time", time)
+    monkeypatch.setattr(http_utils, "_sleep", _real_wait)
 
 
 def _response(status: int, payload: dict | None = None, headers: dict | None = None):
@@ -406,11 +424,12 @@ class TestSession:
 
         assert sent == [0.0, pytest.approx(3.5)]
 
-    def test_a_pause_extended_by_another_thread_holds_a_waiting_one(self, monkeypatch):
+    def test_a_pause_extended_by_another_thread_holds_a_waiting_one(
+        self, monkeypatch, real_clock
+    ):
         """The same with real threads and a real clock: `b` is told to wait
         longer while `a` already waits, and `a` resends only after `b`'s
         pause."""
-        monkeypatch.setattr(http_utils, "time", time)
         session = http_utils.PooledSession(2)
         start = time.monotonic()
         sent: list[tuple[str, float]] = []
@@ -446,6 +465,55 @@ class TestSession:
         # a's own pause ended at 0.1 s; b's, which a must honour too, 0.4 s
         # after b was answered (about 0.45 s).
         assert a_resent >= b_told_to_wait[0] + 0.39
+
+    def test_a_stopped_session_sends_nothing(self, monkeypatch):
+        session, calls = self._session(monkeypatch, "get", _response(200))
+        session.stop.set()
+
+        with pytest.raises(http_utils.FetchStopped):
+            http_utils.get_with_retry("https://example.test/x", session=session)
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "headers", [{}, {"Retry-After": "30"}], ids=["backoff", "retry-after"]
+    )
+    def test_stopping_the_session_ends_a_wait_between_attempts(
+        self, monkeypatch, real_clock, headers
+    ):
+        """A tripped breaker or an interrupt must not wait out the retry
+        budget of a request whose result is no longer wanted: it gives up
+        with the error of the attempt it made."""
+        session = http_utils.PooledSession(2)
+        answered = threading.Event()
+        calls = []
+
+        def fake_get(url, **_kwargs):
+            calls.append(url)
+            answered.set()
+            return _response(503, headers=headers)
+
+        monkeypatch.setattr(session, "get", fake_get)
+        outcome = {}
+
+        def fetch():
+            started = time.monotonic()
+            try:
+                http_utils.get_with_retry("https://example.test/x", session=session)
+            except requests.HTTPError as exc:
+                outcome["error"] = exc
+            outcome["took"] = time.monotonic() - started
+
+        thread = threading.Thread(target=fetch)
+        thread.start()
+        assert answered.wait(1)
+        session.stop.set()
+        thread.join(2)
+
+        assert not thread.is_alive()
+        assert len(calls) == 1
+        assert "503" in str(outcome["error"])
+        # Not the 1 s backoff or 30 s pause, let alone the attempts after it.
+        assert outcome["took"] < 0.5
 
 
 class TestMapInOrder:
@@ -529,6 +597,70 @@ class TestMapInOrder:
         assert started <= 3 + 2 * workers
         _real_sleep(0.02)
         assert state["started"] == started
+
+    def test_closing_early_sets_stop(self):
+        call, _ = self._jittered()
+        stop = threading.Event()
+
+        results = http_utils.map_in_order(call, range(100), 4, stop=stop)
+        next(results)
+        assert not stop.is_set()
+        results.close()
+
+        assert stop.is_set()
+
+    def test_running_to_the_end_leaves_stop_clear(self):
+        call, _ = self._jittered()
+        stop = threading.Event()
+
+        list(http_utils.map_in_order(call, range(50), 4, stop=stop))
+
+        assert not stop.is_set()
+
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_an_interrupt_sets_stop(self, workers):
+        stop = threading.Event()
+
+        def call(item):
+            if item == 3:
+                raise KeyboardInterrupt
+            return item
+
+        with pytest.raises(KeyboardInterrupt):
+            list(http_utils.map_in_order(call, range(10), workers, stop=stop))
+        assert stop.is_set()
+
+    def test_closing_early_releases_calls_waiting_to_retry(
+        self, monkeypatch, real_clock
+    ):
+        """When a breaker closes the iteration, the calls still running give
+        up after the attempt they made instead of spending their retry budget
+        (1 + 2 + 4 s here) on results nobody will read."""
+        session = http_utils.PooledSession(4)
+        calls = Counter()
+        lock = threading.Lock()
+
+        def fake_get(url, **_kwargs):
+            with lock:
+                calls[url] += 1
+            return _response(200 if url.endswith("/0") else 503)
+
+        monkeypatch.setattr(session, "get", fake_get)
+        results = http_utils.map_in_order(
+            lambda i: http_utils.get_with_retry(
+                f"https://example.test/{i}", session=session
+            ),
+            range(100),
+            4,
+            stop=session.stop,
+        )
+
+        next(results)
+        started = time.monotonic()
+        results.close()
+
+        assert time.monotonic() - started < 0.5
+        assert set(calls.values()) == {1}
 
     def test_an_error_raised_by_a_call_ends_the_iteration_at_its_item(self):
         call, state = self._jittered()

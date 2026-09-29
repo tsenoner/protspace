@@ -457,6 +457,61 @@ class TestFinalRetryPass:
         assert fake.calls[2:] == [("Q9FAIL", MAX_ATTEMPTS)]
 
 
+class TestStoppingInFlightLookups:
+    """Final-pass lookups still retrying when the breaker trips give up after
+    the attempt they made: with a 10 s timeout and four attempts, each could
+    otherwise hold the fetch for most of a minute."""
+
+    def test_a_tripped_final_pass_breaker_stops_the_lookups_in_flight(
+        self, monkeypatch
+    ):
+        import requests
+
+        from protspace.data.annotations.retrievers import http_utils
+
+        headers = [f"P{i:05d}" for i in range(40)]
+        calls = Counter()
+        lock = threading.Lock()
+        serving = threading.local()
+        # The tenth final-pass lookup is answered only once a later one is
+        # backing off, so the breaker always trips with a lookup still retrying.
+        later_backing_off = threading.Event()
+
+        def fake_get(session, url, params=None, timeout=None):
+            accession = url.rsplit("/", 1)[-1]
+            with lock:
+                calls[accession] += 1
+                serving.accession, serving.tries = accession, calls[accession]
+            if accession == headers[9] and serving.tries == 3:
+                later_backing_off.wait(2)
+            raise requests.ConnectionError(f"AlphaFold unavailable for {accession}")
+
+        def backoff(_seconds, stop=None):
+            # The first pass (tries 1-2) and the ten final-pass lookups that
+            # trip the breaker back off at once; later final-pass lookups wait
+            # 5 s unless the fetch is stopped.
+            if serving.tries <= 2 or serving.accession in headers[:10]:
+                return stop.is_set()
+            later_backing_off.set()
+            return stop.wait(5)
+
+        monkeypatch.setattr(requests.Session, "get", fake_get)
+        monkeypatch.setattr(http_utils, "_sleep", backoff)
+        retriever = TedRetriever(headers=headers, annotations=TED_ANNOTATIONS)
+
+        started = time.monotonic()
+        with patch(_CATH_NAMES_PATCH, return_value={}):
+            retriever.fetch_annotations()
+
+        assert time.monotonic() - started < 2
+        assert retriever.failed_lookup_count == len(headers)
+        final_pass = {acc: calls[acc] - 2 for acc in headers}
+        assert all(final_pass[acc] == http_utils.MAX_ATTEMPTS for acc in headers[:10])
+        later = [n for acc, n in final_pass.items() if acc not in headers[:10]]
+        # Each later lookup was either never sent or gave up after one attempt.
+        assert set(later) <= {0, 1} and 1 in later
+
+
 class TestParallelLookups:
     """One request at a time over a new connection each took TED about 23 h
     for Swiss-Prot. Parallel lookups over one session must give exactly the
