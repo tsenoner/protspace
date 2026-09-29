@@ -214,6 +214,60 @@ class TestRunReleases:
         assert pipeline.uniprot_releases == set()
 
 
+class TestNoUniProtIdentifiers:
+    """Identifiers that are not UniProt accessions are never sent to UniProt.
+
+    No UniProt value reaches such a run, so its release is "none", not
+    "unknown", on the first run and on every run the cache then serves.
+    """
+
+    CUSTOM = ["venom_toxin_1", "my_protein_2"]
+
+    @staticmethod
+    def _forbid_requests(monkeypatch):
+        from protspace.data.annotations.retrievers import uniprot_retriever
+
+        def no_request(*_args, **_kwargs):
+            raise AssertionError("no identifier is a UniProt accession")
+
+        monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", no_request)
+
+    def test_a_run_that_queried_nothing_reports_none(self, tmp_path, monkeypatch):
+        self._forbid_requests(monkeypatch)
+        manager = ProteinAnnotationManager(
+            headers=self.CUSTOM,
+            annotations=["gene_name"],
+            output_path=tmp_path / CACHE_NAME,
+        )
+
+        manager.to_pd()
+
+        assert manager.uniprot_releases == set()
+
+    def test_the_cache_it_writes_reports_none_again(self, tmp_path, monkeypatch):
+        self._forbid_requests(monkeypatch)
+        first = _pipeline(tmp_path)
+        first._fetch_annotations(self.CUSTOM)
+
+        _forbid_uniprot(monkeypatch)
+        again = _pipeline(tmp_path)
+        again._fetch_annotations(self.CUSTOM)
+
+        assert first.uniprot_releases == set()
+        assert again.uniprot_releases == set()
+
+    def test_accessions_added_later_report_their_release(self, tmp_path, monkeypatch):
+        self._forbid_requests(monkeypatch)
+        _pipeline(tmp_path)._fetch_annotations(self.CUSTOM)
+
+        _serve_uniprot(monkeypatch, "2026_03")
+        pipeline = _pipeline(tmp_path)
+        pipeline._fetch_annotations([*self.CUSTOM, "P01308"])
+
+        assert pipeline.uniprot_releases == {"2026_03"}
+        assert _stamp(tmp_path) == "2026_03"
+
+
 class TestRunLogLine:
     @staticmethod
     def _log(tmp_path, releases):

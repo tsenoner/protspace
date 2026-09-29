@@ -122,6 +122,9 @@ class UniProtRetriever(BaseAnnotationRetriever):
         # UniProtKB releases (e.g. "2026_03") reported by the responses this
         # retriever's values came from; empty when none carried the header.
         self.releases: set[str] = set()
+        # How many identifiers the last fetch sent to UniProt: the ones that
+        # are UniProt accessions. None until a fetch has run.
+        self.queried_accessions: int | None = None
 
     def _record_release(self, response: requests.Response) -> None:
         """Note the UniProtKB release a response reports, if any."""
@@ -316,6 +319,7 @@ class UniProtRetriever(BaseAnnotationRetriever):
         )
         valid_headers = [h for h in self.headers if _uniprot_re.match(h)]
         invalid_headers = [h for h in self.headers if not _uniprot_re.match(h)]
+        self.queried_accessions = len(valid_headers)
 
         if invalid_headers:
             # Add empty annotations for non-UniProt identifiers immediately

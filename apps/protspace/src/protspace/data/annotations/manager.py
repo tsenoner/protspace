@@ -65,19 +65,22 @@ _SOURCE_COLUMNS: dict[str, list[str]] = {
 # The UniProtKB release(s) the cache's UniProt values came from, from the
 # `X-UniProt-Release` header of the responses. Stored next to the cache version
 # in `DataFrame.attrs`, which pandas round-trips through the parquet metadata,
-# as a sorted, comma-separated string. Absent means unknown.
+# as a sorted, comma-separated string. Absent means unknown; empty means no
+# UniProt value, because no identifier was a UniProt accession.
 UNIPROT_RELEASE_ATTR = "protspace_uniprot_release"
 UNKNOWN_RELEASE = "unknown"
 
 
 def read_release_stamp(df: pd.DataFrame | None) -> set[str]:
-    """Releases *df* records for its UniProt values, ``{"unknown"}`` if none."""
+    """Releases *df* records for its UniProt values.
+
+    ``{"unknown"}`` when it records none, and an empty set when it records that
+    none of its values came from UniProt.
+    """
     stamp = None if df is None else df.attrs.get(UNIPROT_RELEASE_ATTR)
     if not isinstance(stamp, str):
         return {UNKNOWN_RELEASE}
-    return {part.strip() for part in stamp.split(",") if part.strip()} or {
-        UNKNOWN_RELEASE
-    }
+    return {part.strip() for part in stamp.split(",") if part.strip()}
 
 
 def _observed_releases(retriever) -> set[str]:
@@ -88,6 +91,16 @@ def _observed_releases(retriever) -> set[str]:
     """
     releases = getattr(retriever, "releases", None)
     return {str(r) for r in releases} if isinstance(releases, set) else set()
+
+
+def _queried_uniprot(retriever) -> bool:
+    """Whether a UniProt retriever sent any identifier to UniProt.
+
+    Only a count the retriever reported can say no: anything else (a fetch
+    replaced by a test, or an older retriever) is taken to have queried.
+    """
+    count = getattr(retriever, "queried_accessions", None)
+    return not isinstance(count, int) or count > 0
 
 
 def resolve_fasta_sequence_length(
@@ -659,7 +672,11 @@ class ProteinAnnotationManager:
         *retained_rows*: the frame holds cached rows for identifiers outside
         the run. *fill_rows*: it holds the rows filled in this run.
         """
-        fetched = self._fetched_releases or {UNKNOWN_RELEASE}
+        fetched = (
+            {UNKNOWN_RELEASE}
+            if self._fetched_releases is None
+            else self._fetched_releases
+        )
         if self._uniprot_mode == "all":
             cached = read_release_stamp(self.cached_data) if retained_rows else set()
             return fetched | cached
@@ -681,12 +698,13 @@ class ProteinAnnotationManager:
 
         *releases* are the UniProt releases its values came from; they are
         recorded only when at least one is known, since no stamp already reads
-        as unknown.
+        as unknown. An empty set is recorded as an empty stamp: none of the
+        values came from UniProt.
         """
         df = df.copy()
         df.attrs.pop(UNIPROT_RELEASE_ATTR, None)
         df.attrs.update(annotation_cache_version_attrs())
-        if releases and releases != {UNKNOWN_RELEASE}:
+        if releases is not None and releases != {UNKNOWN_RELEASE}:
             df.attrs[UNIPROT_RELEASE_ATTR] = ",".join(sorted(releases))
         # Staged: with retained rows folded in, this frame is a superset holding
         # rows for identifiers no other file has, so a half-written cache loses
@@ -770,14 +788,20 @@ class ProteinAnnotationManager:
         # swallowed as "UniProt is unreachable" and discard a successful fetch.
         if retriever.failed_batch_count > 0:
             self.incomplete_sources.add("uniprot")
-        self._record_releases(_observed_releases(retriever))
+        self._record_releases(
+            _observed_releases(retriever), queried=_queried_uniprot(retriever)
+        )
         return annotations
 
-    def _record_releases(self, observed: set[str]) -> None:
-        """Add one UniProt fetch's releases; a fetch that saw none adds unknown."""
-        self._fetched_releases = (self._fetched_releases or set()) | (
-            observed or {UNKNOWN_RELEASE}
-        )
+    def _record_releases(self, observed: set[str], *, queried: bool = True) -> None:
+        """Add one UniProt fetch's releases.
+
+        A fetch that queried UniProt but saw no release adds unknown. One that
+        queried nothing, because no identifier was a UniProt accession, adds
+        nothing: no UniProt value came from it.
+        """
+        seen = observed or ({UNKNOWN_RELEASE} if queried else set())
+        self._fetched_releases = (self._fetched_releases or set()) | seen
 
     def _fetch_taxonomy(
         self,
