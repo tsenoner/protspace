@@ -1,6 +1,10 @@
 import path from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { findExampleDataset } from '../src/explore/example-datasets';
+import {
+  EXAMPLE_DATASETS,
+  EXAMPLES_DOCS_URL,
+  findExampleDataset,
+} from '../src/explore/example-datasets';
 import {
   dismissTourIfPresent,
   getCurrentDatasetName,
@@ -496,6 +500,53 @@ test.describe('Example datasets: Import menu and deep link', () => {
     expect(
       await page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')),
     ).toBe('phylum');
+  });
+});
+
+test.describe('Example datasets: Import menu info', () => {
+  test('the menu links the examples page, marks large examples, and explains an item without loading it', async ({
+    page,
+  }) => {
+    const large = EXAMPLE_DATASETS.find((entry) => entry.large);
+    const other = EXAMPLE_DATASETS.find((entry) => entry.id !== 'demo' && !entry.large);
+    if (!large || !other) {
+      throw new Error('The catalog needs a large example and another non-demo example.');
+    }
+
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await openImportMenu(page);
+
+    const controlBar = page.locator('protspace-control-bar');
+    await expect(controlBar.locator('.import-examples-docs')).toHaveAttribute(
+      'href',
+      EXAMPLES_DOCS_URL,
+    );
+    await expect(
+      controlBar.locator(`[data-example-id="${large.id}"] .import-example-badge`),
+    ).toHaveText('Large');
+    await expect(controlBar.locator('.import-example-badge')).toHaveCount(
+      EXAMPLE_DATASETS.filter((entry) => entry.large).length,
+    );
+
+    const info = controlBar.locator(`.import-examples [data-example-info="${other.id}"]`);
+    await info.locator('.info-button').click();
+    const popover = info.locator('.popover');
+    await expect(popover.locator('.popover-description')).toHaveText(other.description);
+    await expect(popover.locator('.popover-detail')).toHaveText(other.insight);
+    await expect(popover.locator('.popover-link')).toHaveAttribute('href', other.docsUrl);
+
+    // Opening the info loads nothing: the demo stays, with no `dataset=`.
+    await page.waitForTimeout(500);
+    expect(await getProteinCount(page)).toBe(DEMO_COUNT);
+    expect(await getDatasetParam(page)).toBeNull();
+
+    // The loaded example's info sits next to the current dataset name.
+    await expect(
+      controlBar.locator('.import-current-dataset-row [data-example-info="demo"]'),
+    ).toHaveCount(1);
   });
 });
 

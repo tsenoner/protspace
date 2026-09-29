@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLE_DATASETS, findExampleDataset } from './example-datasets';
+import {
+  EXAMPLE_DATASETS,
+  EXAMPLES_DOCS_URL,
+  findExampleDataset,
+  formatMegabytes,
+  toExampleDatasetSummary,
+  type ExampleDataset,
+} from './example-datasets';
 
 // Every catalog `url` must resolve to a bundle that actually ships under
 // apps/web/public/. Found by glob rather than fs/path/url (which would leak
@@ -39,11 +46,56 @@ describe('example datasets catalog', () => {
   });
 
   it.each(EXAMPLE_DATASETS)('states the size of "$id" in its label', (entry) => {
-    expect(entry.label).toContain(`${(entry.sizeBytes / 1e6).toFixed(1)} MB`);
+    expect(entry.label).toContain(formatMegabytes(entry.sizeBytes));
   });
 
   it.each(EXAMPLE_DATASETS)('links "$id" to its docs section', (entry) => {
     expect(entry.docsUrl).toBe(`/docs/explore/example-datasets#${entry.id}`);
+    expect(entry.docsUrl.startsWith(`${EXAMPLES_DOCS_URL}#`)).toBe(true);
+  });
+
+  it('marks at least one entry large', () => {
+    expect(EXAMPLE_DATASETS.some((entry) => entry.large)).toBe(true);
+  });
+});
+
+describe('toExampleDatasetSummary', () => {
+  const entry: ExampleDataset = {
+    id: 'swissprot',
+    label: 'Swiss-Prot · 574K · 44.9 MB',
+    description: 'Every reviewed UniProt protein.',
+    insight: 'Domains of life separate.',
+    url: './examples/swissprot.parquetbundle',
+    sizeBytes: 44_912_345,
+    docsUrl: '/docs/explore/example-datasets#swissprot',
+    defaultView: { projection: 'ProtT5 — UMAP 2', annotation: 'domain' },
+  };
+
+  it('passes the label, description, insight and docs link through', () => {
+    expect(toExampleDatasetSummary(entry)).toEqual({
+      id: 'swissprot',
+      label: 'Swiss-Prot · 574K · 44.9 MB',
+      description: 'Every reviewed UniProt protein.',
+      insight: 'Domains of life separate.',
+      docsUrl: '/docs/explore/example-datasets#swissprot',
+    });
+  });
+
+  it('marks a large entry and states its download size, memory and load time', () => {
+    const summary = toExampleDatasetSummary({
+      ...entry,
+      large: { memory: 'about 1 GB', loadTime: '15–35 s' },
+    });
+
+    expect(summary.large).toBe(true);
+    expect(summary.description).toBe(
+      'Every reviewed UniProt protein. Large: a 44.9 MB download that needs about 1 GB of browser memory and takes 15–35 s to load.',
+    );
+  });
+
+  it('formats sizes the way the labels do', () => {
+    expect(formatMegabytes(865_499)).toBe('0.9 MB');
+    expect(formatMegabytes(44_912_345)).toBe('44.9 MB');
   });
 });
 

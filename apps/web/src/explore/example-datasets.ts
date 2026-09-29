@@ -16,6 +16,8 @@
  * match the Import menu's "Examples" section.
  */
 
+import type { ExampleDatasetSummary } from '@protspace/core';
+
 /**
  * The view an example opens on when its URL names no `annotation`,
  * `projection` or `tooltip`. Names are exact bundle names: `projection` as in
@@ -44,11 +46,23 @@ export interface ExampleDataset {
   defaultView: ExampleDefaultView;
   /** The manuscript figure the dataset belongs to, if any. */
   figure?: string;
-  /** Slow to download and decode; the menu marks it. */
-  large?: boolean;
+  /**
+   * Slow to download and decode. The Import menu marks it "Large", and its
+   * info states the download size plus these costs, e.g. `memory: 'about
+   * 1 GB'`, `loadTime: '15–35 s'`.
+   */
+  large?: { memory: string; loadTime: string };
 }
 
-const docsUrlFor = (id: string) => `/docs/explore/example-datasets#${id}`;
+/** The Example datasets documentation page, linked from the Import menu's "Examples" heading. */
+export const EXAMPLES_DOCS_URL = '/docs/explore/example-datasets';
+
+const docsUrlFor = (id: string) => `${EXAMPLES_DOCS_URL}#${id}`;
+
+/** A byte count in decimal megabytes with one decimal, as the menu labels state sizes. */
+export function formatMegabytes(bytes: number): string {
+  return `${(bytes / 1e6).toFixed(1)} MB`;
+}
 
 export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
   {
@@ -185,7 +199,9 @@ export const EXAMPLE_DATASETS: readonly ExampleDataset[] = [
     url: './data/beta_lactamase_pn.parquetbundle',
     sizeBytes: 12_210_217,
     docsUrl: docsUrlFor('beta_lactamase_pn'),
-    large: true,
+    // Interim stand-in for `swissprot`. Rough figures from one local dev-server
+    // load (5.8 s, 118 MB of JS heap plus the typed-array buffers).
+    large: { memory: 'a few hundred MB', loadTime: '5–10 s' },
     defaultView: {
       projection: 'UMAP_2',
       annotation: 'domain',
@@ -199,4 +215,23 @@ export const DEFAULT_EXAMPLE_DATASET: ExampleDataset = EXAMPLE_DATASETS[0];
 
 export function findExampleDataset(id: string): ExampleDataset | undefined {
   return EXAMPLE_DATASETS.find((entry) => entry.id === id);
+}
+
+/**
+ * The Import menu's view of an entry. A large entry's description ends with
+ * what opening it costs: the download size, the browser memory and the load
+ * time.
+ */
+export function toExampleDatasetSummary(entry: ExampleDataset): ExampleDatasetSummary {
+  const description = entry.large
+    ? `${entry.description} Large: a ${formatMegabytes(entry.sizeBytes)} download that needs ${entry.large.memory} of browser memory and takes ${entry.large.loadTime} to load.`
+    : entry.description;
+  return {
+    id: entry.id,
+    label: entry.label,
+    description,
+    insight: entry.insight,
+    docsUrl: entry.docsUrl,
+    ...(entry.large && { large: true }),
+  };
 }

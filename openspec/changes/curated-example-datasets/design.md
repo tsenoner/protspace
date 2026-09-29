@@ -154,7 +154,7 @@ Rejected:
   - When a dataset is displayed, Cancel leaves it and the URL unchanged and shows no toast. `registerFileLoad` is never called.
   - The handler is cleared when decoding starts, because decoding runs on the main thread (no worker) and cannot be interrupted.
   - **Nothing displayed yet** (a startup `?dataset=swissprot` link): D7e's "no fallback" would leave an empty page. Consistent with Decision 3, Cancel there runs the normal startup load and replace-removes the parameter, without a toast. This extends D7e to a case it does not name, and is flagged for confirmation.
-- **Large.** `large: true` renders a "Large" badge. The info popover states the download size, about 1 GB of browser memory and a 15–35 s load.
+- **Large.** A catalog entry's `large: { memory, loadTime }` becomes the summary's `large: true`, which renders a "Large" badge, and `toExampleDatasetSummary` (`example-datasets.ts`) appends "Large: a ‹size› download that needs ‹memory› of browser memory and takes ‹loadTime› to load." to the popover's description. For `swissprot` that is about 1 GB and 15–35 s, confirmed by the D2 gate measurement (task 7.2).
 
 ### 8. Import menu UI (`@protspace/core`, catalog-agnostic)
 

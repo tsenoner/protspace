@@ -98,7 +98,8 @@ Before every commit:
   - the link is rendered only when the URL is set, and the hint only with at least one example;
   - one info control per item, and opening it does not dispatch `load-example-dataset`;
   - the Large badge renders for `large: true`.
-- [ ] 3.3 Web wiring: pass `insight`, `docsUrl` and `large` through `runtime.ts`/`control-bar-events.ts`, and set `examplesDocsUrl` to `/docs/explore/example-datasets`.
+- [x] 3.3 Web wiring: pass `insight`, `docsUrl` and `large` through `runtime.ts` (`toExampleDatasetSummary` in `example-datasets.ts`), and set `examplesDocsUrl` to `/docs/explore/example-datasets` (`EXAMPLES_DOCS_URL`).
+  - The catalog's `large` becomes `{ memory, loadTime }`, which the summary appends to a large entry's description with its download size.
 - [ ] 3.4 Streamed download in `loadExampleDataset`:
   - read `response.body`, report received ÷ `entry.sizeBytes` (capped) with "x / y MB" on the overlay;
   - build the `File` from a `Blob` of the chunks;
@@ -220,7 +221,7 @@ Before every commit:
 - [ ] 7.5 Final `defaultView` picks: score the candidates by the stated criterion (kNN label agreement, or the per-category silhouette of the story's categories); capture the `examples-live` thumbnails; **the author reviews them**; set each final pick in one catalog line. Where figure fidelity wins over the criterion, the card explains why.
 - [ ] 7.6 `build_showcase.py stage-release` for `showcase-2026_03`, writing the manifest with `release: 'showcase-2026_03'` and `hosting: 'release'` for the five paper entries and `'repo'` for the demo. Record the release per column group.
 - [ ] 7.7 Catalog swap:
-  - replace the interim entries with `demo`, `venom-eat`, `phosphatase-eat`, `human-fly`, `beta-lactamase` and `swissprot` (`large: true`);
+  - replace the interim entries with `demo`, `venom-eat`, `phosphatase-eat`, `human-fly`, `beta-lactamase` and `swissprot` (`large`, with the memory and load time measured at the D2 gate);
   - final names, descriptions and insights (with the numbers from the built files);
   - relabel the demo "Venom toxins (demo)";
   - fix `docs/explore/eat.md`'s `?dataset=` link.

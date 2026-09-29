@@ -24,7 +24,7 @@ import {
   MIN_SEQUENCES,
   PIPELINE_TIMEOUT_SECONDS,
 } from './fasta-prep-limits';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
 import { loadDatasetAfterNavigation, startInitialExploreLoad } from './startup';
@@ -53,7 +53,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const { controlBar, dataLoader, legendElement, plotElement, structureViewer } = elements;
   const lifecycle = createLifecycle();
 
-  controlBar.exampleDatasets = EXAMPLE_DATASETS;
+  controlBar.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
+  controlBar.examplesDocsUrl = EXAMPLES_DOCS_URL;
 
   const setCurrentDatasetName = (name: string) => {
     controlBar.currentDatasetName = name;
