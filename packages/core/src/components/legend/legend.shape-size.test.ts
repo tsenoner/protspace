@@ -24,6 +24,7 @@ type ShapeSizeLegend = HTMLElement & {
   data: { annotations: Record<string, { values: string[] }> } | null;
   getAllPersistedSettings: () => Record<string, { shapeSize: number }>;
   applyShapeSize: (size: number, datasetHash?: string) => void;
+  readonly pickedShapeSize: number | undefined;
 };
 
 function makeLegend() {
@@ -119,5 +120,15 @@ describe('legend shape size', () => {
     const exported = el.getAllPersistedSettings();
     expect(exported.a.shapeSize).toBe(12);
     expect(exported.b.shapeSize).toBe(12);
+  });
+
+  it('reports a dataset-level size only once one is picked', () => {
+    const { el, store, switchTo, pick } = makeLegend();
+    store('a', 50);
+    switchTo('a');
+    expect(el.shapeSize).toBe(50);
+    expect(el.pickedShapeSize).toBeUndefined();
+    pick(12);
+    expect(el.pickedShapeSize).toBe(12);
   });
 });

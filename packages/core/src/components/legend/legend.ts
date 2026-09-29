@@ -1217,6 +1217,15 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
+   * The dataset-level shape size, or undefined while none has been picked (nor
+   * applied from a bundle). A bundle writes only this, so a size merely seeded
+   * from one annotation's settings is never promoted to every annotation.
+   */
+  public get pickedShapeSize(): number | undefined {
+    return this._persistenceController.loadShapeSize() ?? undefined;
+  }
+
+  /**
    * Bundle restore: the saved overlay switch plus the saved reliability position.
    *
    * A bundle stores the LOWER bound only, so restoring it means "hide below x" — the
