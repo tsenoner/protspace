@@ -22,31 +22,26 @@ interface DemoAnnotation {
   index: Uint8Array;
 }
 
-interface DemoData {
-  count: number;
-  projection: { name: string };
+interface DemoProjection {
+  name: string;
   /** Normalized coordinates in [0, 1], y grows upward. */
   x: Float32Array;
   y: Float32Array;
+}
+
+interface DemoData {
+  count: number;
+  /** The projection /explore opens by default, the first of `projections`. */
+  projection: { name: string };
+  x: Float32Array;
+  y: Float32Array;
+  projections: DemoProjection[];
   annotations: DemoAnnotation[];
 }
 
 export interface DemoLabels {
   ids: string[];
   names: string[];
-}
-
-interface QualityMetric {
-  value: number;
-  scope: 'local' | 'global';
-  k: number;
-}
-
-export interface VenomProjection {
-  name: string;
-  x: number[];
-  y: number[];
-  quality: Record<string, QualityMetric>;
 }
 
 export interface VenomTransfer {
@@ -59,9 +54,6 @@ export interface VenomTransfer {
 export interface VenomData {
   count: number;
   ids: string[];
-  names: string[];
-  projections: VenomProjection[];
-  families: { column: string; label: string; categories: Category[]; values: number[] };
   eat: {
     column: string;
     label: string;
@@ -70,11 +62,19 @@ export interface VenomData {
     curated: number[];
     transferred: VenomTransfer[];
   };
+  /** Silhouette per category in the 2D map and in the embedding it was projected from. */
+  separation: {
+    /** The scored annotation, e.g. "Family". */
+    label: string;
+    projection: string;
+    overall: { map: number; embedding: number };
+    categories: { label: string; color: string; map: number; embedding: number }[];
+  };
 }
 
 interface DemoManifest {
   count: number;
-  projection: { name: string; xMin: number; xMax: number; yMin: number; yMax: number };
+  projections: { name: string; xMin: number; xMax: number; yMin: number; yMax: number }[];
   bin: {
     file: string;
     layout: { field: string; type: 'Uint16' | 'Uint8'; offset: number; length: number }[];
@@ -112,27 +112,34 @@ export const loadDemoData = once(async (): Promise<DemoData> => {
   if (!response.ok) throw new Error(`Failed to load ${manifest.bin.file}`);
   const buffer = await response.arrayBuffer();
   const n = manifest.count;
-  const expectedBytes = n * 4 + manifest.annotations.length * n;
+  const expectedBytes = (manifest.projections.length * 4 + manifest.annotations.length) * n;
   if (buffer.byteLength < expectedBytes) {
     throw new Error(`${manifest.bin.file} is truncated: ${buffer.byteLength} < ${expectedBytes}`);
   }
-  const xy = new Uint16Array(buffer, 0, n * 2);
-  const x = new Float32Array(n);
-  const y = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    x[i] = xy[i * 2] / 65535;
-    y[i] = xy[i * 2 + 1] / 65535;
-  }
+  const projections = manifest.projections.map((projection, k) => {
+    const slot = manifest.bin.layout.find((entry) => entry.field === `xy${k}`);
+    if (!slot) throw new Error(`Missing binary layout for ${projection.name}`);
+    const xy = new Uint16Array(buffer, slot.offset, slot.length);
+    const x = new Float32Array(n);
+    const y = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      x[i] = xy[i * 2] / 65535;
+      y[i] = xy[i * 2 + 1] / 65535;
+    }
+    return { name: displayName(projection.name), x, y };
+  });
   const annotations = manifest.annotations.map((annotation) => {
     const slot = manifest.bin.layout.find((entry) => entry.field === annotation.column);
     if (!slot) throw new Error(`Missing binary layout for ${annotation.column}`);
     return { ...annotation, index: new Uint8Array(buffer, slot.offset, slot.length) };
   });
+  const [initial] = projections;
   return {
     count: n,
-    projection: { name: displayName(manifest.projection.name) },
-    x,
-    y,
+    projection: { name: initial.name },
+    x: initial.x,
+    y: initial.y,
+    projections,
     annotations,
   };
 });
@@ -141,7 +148,7 @@ export const loadDemoLabels = once(() => fetchJson<DemoLabels>('demo-labels.json
 
 export const loadVenomData = once(async () => {
   const venom = await fetchJson<VenomData>('venom.json');
-  for (const projection of venom.projections) projection.name = displayName(projection.name);
+  venom.separation.projection = displayName(venom.separation.projection);
   return venom;
 });
 

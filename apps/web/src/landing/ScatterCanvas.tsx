@@ -3,7 +3,8 @@
  *
  * It reproduces the explorer's point vocabulary without importing the explorer: filled discs
  * with a darkened rim, grey "Other" and N/A drawn underneath, 0.9 base opacity. Category changes
- * crossfade in place so the geometry visibly stays fixed while only the annotation changes.
+ * crossfade in place so the geometry visibly stays fixed while only the annotation changes; new
+ * coordinates for the same points (another projection) move each point to its new place.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { prefersReducedMotion } from './motion';
@@ -38,6 +39,18 @@ const FADED_OPACITY = 0.18;
 const HIT_RADIUS_PX = 9;
 /** Fraction of each axis kept clear around the data, mirrored by `toPercent` for overlays. */
 const PAD_FRACTION = 0.04;
+const MORPH_MS = 800;
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+
+/** Points in flight between two projections: where they started and where they are now. */
+interface Morph {
+  fromX: Float32Array;
+  fromY: Float32Array;
+  x: Float32Array;
+  y: Float32Array;
+  start: number;
+}
 
 function hexToRgb(hex: string): [number, number, number] {
   const value = hex.replace('#', '');
@@ -162,7 +175,10 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
     previous: HTMLCanvasElement | null;
     start: number;
     frame: number;
-  }>({ current: null, previous: null, start: 0, frame: 0 });
+    morph: Morph | null;
+    /** The coordinates last rendered, to tell a new projection from a recolor. */
+    drawn: { x: Float32Array; y: Float32Array } | null;
+  }>({ current: null, previous: null, start: 0, frame: 0, morph: null, drawn: null });
 
   const layout: Layout = {
     width: box.width,
@@ -203,6 +219,28 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.globalAlpha = 1;
+
+    if (state.morph) {
+      const morph = state.morph;
+      const current = propsRef.current;
+      const t = Math.min(1, (performance.now() - morph.start) / MORPH_MS);
+      const e = easeInOut(t);
+      for (let i = 0; i < current.x.length; i++) {
+        morph.x[i] = morph.fromX[i] + (current.x[i] - morph.fromX[i]) * e;
+        morph.y[i] = morph.fromY[i] + (current.y[i] - morph.fromY[i]) * e;
+      }
+      ctx.globalAlpha = BASE_OPACITY;
+      ctx.scale(dpr, dpr);
+      drawPoints(
+        ctx,
+        { ...current, x: morph.x, y: morph.y },
+        layoutRef.current,
+        current.neutral ?? false,
+      );
+      if (t < 1) state.frame = requestAnimationFrame(composite);
+      else state.morph = null;
+      return;
+    }
 
     const elapsed = performance.now() - state.start;
     const t = state.previous ? Math.min(1, elapsed / transitionMs) : 1;
@@ -254,6 +292,21 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
       state.current.height === next.height &&
       !prefersReducedMotion();
     state.previous = canSlide ? state.current : null;
+    const { drawn } = state;
+    if (canSlide && drawn && (drawn.x !== x || drawn.y !== y) && drawn.x.length === x.length) {
+      // A new projection of the same points: move them rather than crossfade. Mid-flight, start
+      // from where the points are now.
+      const from = state.morph ?? drawn;
+      state.morph = {
+        fromX: from.x.slice(),
+        fromY: from.y.slice(),
+        x: new Float32Array(x.length),
+        y: new Float32Array(x.length),
+        start: performance.now(),
+      };
+      state.previous = null;
+    }
+    state.drawn = { x, y };
     state.start = performance.now();
     state.current = next;
     cancelAnimationFrame(state.frame);

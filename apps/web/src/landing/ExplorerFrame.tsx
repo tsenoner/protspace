@@ -17,20 +17,6 @@ const UI = {
 };
 const NEUTRAL_SWATCH = '#c4cad3';
 
-export function ToolbarChip({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <span className="flex items-center gap-1.5 text-xs">
-      <span style={{ color: UI.muted }}>{label}</span>
-      <span
-        className="rounded-[4px] border bg-white px-1.5 py-0.5 font-medium"
-        style={{ borderColor: UI.border, color: UI.text }}
-      >
-        {children}
-      </span>
-    </span>
-  );
-}
-
 /** "12 of 294" when named categories were collapsed into Other, else the category count. */
 function categorySummary(categories: Category[]): string {
   const named = categories.filter((category) => !category.kind).length;
@@ -51,8 +37,6 @@ interface ExplorerFrameProps {
   colored?: boolean;
   count?: number;
   busy?: boolean;
-  /** Smaller type and tighter rows for a miniature. */
-  compact?: boolean;
   className?: string;
   /** Sizes the plot panel, e.g. `aspect-[4/3] lg:aspect-auto lg:h-[600px]`. */
   plotClassName?: string;
@@ -67,7 +51,6 @@ export function ExplorerFrame({
   colored = true,
   count,
   busy,
-  compact,
   className,
   plotClassName,
 }: ExplorerFrameProps) {
@@ -79,29 +62,17 @@ export function ExplorerFrame({
 
   return (
     <div
-      className={cn(
-        'rounded-2xl border border-border/70',
-        compact ? 'p-1.5' : 'p-2 sm:p-3',
-        className,
-      )}
+      className={cn('rounded-2xl border border-border/70 p-2 sm:p-3', className)}
       style={{ background: UI.page }}
     >
       <div
-        className={cn(
-          'flex flex-wrap items-center rounded-md border bg-white',
-          compact ? 'gap-x-3 gap-y-1 px-2 py-1.5' : 'gap-x-5 gap-y-2 px-3 py-2',
-        )}
+        className="flex flex-wrap items-center rounded-md border bg-white gap-x-5 gap-y-2 px-3 py-2"
         style={{ borderColor: UI.border }}
       >
         {toolbar}
       </div>
 
-      <div
-        className={cn(
-          'flex flex-col',
-          compact ? 'mt-1.5 gap-1.5 sm:flex-row' : 'mt-2 gap-2 lg:flex-row',
-        )}
-      >
+      <div className="flex flex-col mt-2 gap-2 lg:flex-row">
         <div
           className={cn(
             'relative min-w-0 flex-1 overflow-hidden rounded-md border bg-white',
@@ -122,18 +93,10 @@ export function ExplorerFrame({
         </div>
 
         <div
-          className={cn(
-            'shrink-0 rounded-md border bg-white',
-            compact ? 'p-1.5 sm:w-48' : 'p-2 lg:w-64',
-          )}
+          className="shrink-0 rounded-md border bg-white p-2 lg:w-64"
           style={{ borderColor: UI.border }}
         >
-          <div
-            className={cn(
-              'flex items-baseline justify-between gap-2 px-2',
-              compact ? 'pb-1 text-[11px]' : 'pb-2 pt-1 text-sm',
-            )}
-          >
+          <div className="flex items-baseline justify-between gap-2 px-2 pb-2 pt-1 text-sm">
             <span className="font-medium" style={{ color: UI.text }}>
               {legendTitle}
             </span>
@@ -142,27 +105,18 @@ export function ExplorerFrame({
             </span>
           </div>
           <ul
-            className={cn(
-              'grid grid-cols-1 gap-1',
-              compact ? 'text-[11px]' : 'text-[13px] sm:grid-cols-2 lg:grid-cols-1',
-            )}
+            className="grid grid-cols-1 gap-1 text-[13px] sm:grid-cols-2 lg:grid-cols-1"
             aria-label={`Legend for ${legendTitle}`}
           >
             {rows.map((category) => (
               <li
                 key={category.label}
-                className={cn(
-                  'flex items-center gap-2 rounded-lg',
-                  compact ? 'px-1.5 py-0.5' : 'px-2.5 py-1.5',
-                )}
+                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5"
                 style={{ background: UI.row, color: UI.text }}
               >
                 <span
                   aria-hidden="true"
-                  className={cn(
-                    'inline-block shrink-0 rounded-full ring-1 ring-inset ring-black/25',
-                    compact ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5',
-                  )}
+                  className="inline-block shrink-0 rounded-full ring-1 ring-inset ring-black/25 h-3.5 w-3.5"
                   style={{
                     background: colored ? category.color : NEUTRAL_SWATCH,
                     transition: 'background 550ms ease',

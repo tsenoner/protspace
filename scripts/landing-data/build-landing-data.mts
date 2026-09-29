@@ -6,10 +6,11 @@
  *
  *   apps/web/public/landing/demo.json        manifest: projection bounds, annotation categories
  *                                            (labels, counts, colors) and the binary layout
- *   apps/web/public/landing/demo.bin         quantized UMAP coordinates + per-point category indices
+ *   apps/web/public/landing/demo.bin         quantized coordinates for four projections +
+ *                                            per-point category indices
  *   apps/web/public/landing/demo-labels.json protein accessions + names (fetched lazily on hover)
- *   apps/web/public/landing/venom.json       the 811-protein EAT/statistics demo: PCA + UMAP
- *                                            coordinates, projection quality metrics, EAT columns
+ *   apps/web/public/landing/venom.json       the 811-protein EAT/statistics demo: EAT columns and
+ *                                            per-family silhouette scores
  *
  * Colors follow the explorer exactly: persisted legend settings inside the bundle win; otherwise
  * categories are ranked by frequency and assigned Kelly's colors in slot order, N/A is
@@ -148,15 +149,14 @@ function categorize(
 const round = (value: number, digits: number) => Number(value.toFixed(digits));
 
 async function readProjection(parts: (ArrayBuffer | null)[], name: string) {
-  const meta = (await readRows(parts[1])).find((row) => row.projection_name === name);
-  if (!meta) throw new Error(`Projection "${name}" not found`);
   const coords = new Map<string, [number, number]>();
   for (const row of await readRows(parts[2], ['projection_name', 'identifier', 'x', 'y'])) {
     if (row.projection_name === name) {
       coords.set(String(row.identifier), [Number(row.x), Number(row.y)]);
     }
   }
-  return { info: JSON.parse(String(meta.info_json)) as Record<string, unknown>, coords };
+  if (!coords.size) throw new Error(`Projection "${name}" not found`);
+  return coords;
 }
 
 async function readSettings(
@@ -170,21 +170,8 @@ async function readSettings(
 /* Demo dataset: the bundle /explore opens by default                                          */
 /* ------------------------------------------------------------------------------------------ */
 
-async function buildDemo() {
-  const PROJECTION = 'ProtT5 — UMAP 2';
-  const ANNOTATIONS = ['protein_families', 'phylum', 'class', 'order'];
-
-  const parts = splitBundle(DEMO_BUNDLE);
-  const rows = await readRows(parts[0], ['protein_id', 'protein_name', ...ANNOTATIONS]);
-  const { coords } = await readProjection(parts, PROJECTION);
-  const settings = await readSettings(parts[3]);
-
-  const kept = rows.filter((row) => coords.has(String(row.protein_id)));
-  if (kept.length !== rows.length) throw new Error('Demo bundle: proteins without coordinates');
-  const n = kept.length;
-
-  const xs = kept.map((row) => coords.get(String(row.protein_id))![0]);
-  const ys = kept.map((row) => coords.get(String(row.protein_id))![1]);
+/** Quantize one projection to Uint16 pairs; the self-check keeps the error under a device pixel. */
+function quantizeProjection(name: string, xs: number[], ys: number[]) {
   const bounds = {
     xMin: Math.min(...xs),
     xMax: Math.max(...xs),
@@ -193,22 +180,62 @@ async function buildDemo() {
   };
   const quantize = (value: number, min: number, max: number) =>
     Math.round(((value - min) / (max - min)) * 65535);
-  const xy = new Uint16Array(n * 2);
-  for (let i = 0; i < n; i++) {
+  const xy = new Uint16Array(xs.length * 2);
+  for (let i = 0; i < xs.length; i++) {
     xy[i * 2] = quantize(xs[i], bounds.xMin, bounds.xMax);
     xy[i * 2 + 1] = quantize(ys[i], bounds.yMin, bounds.yMax);
   }
+  const span = bounds.xMax - bounds.xMin;
+  const maxErr = Math.max(
+    ...xs.map((x, i) => Math.abs((xy[i * 2] / 65535) * span + bounds.xMin - x)),
+  );
+  if (maxErr > span / 20000) throw new Error(`${name}: quantization error too large: ${maxErr}`);
+  return { name, bounds, xy };
+}
+
+async function buildDemo() {
+  /** The first is what /explore opens by default and what the hero shows. */
+  const PROJECTIONS = [
+    'ProtT5 — UMAP 2',
+    'ProtT5 — PCA 2',
+    'ESM2-650M — UMAP 2',
+    'ESM2-650M — PCA 2',
+  ];
+  const ANNOTATIONS = ['protein_families', 'phylum', 'class', 'order'];
+
+  const parts = splitBundle(DEMO_BUNDLE);
+  const rows = await readRows(parts[0], ['protein_id', 'protein_name', ...ANNOTATIONS]);
+  const settings = await readSettings(parts[3]);
+  const ids = rows.map((row) => String(row.protein_id));
+
+  const projections = [];
+  for (const name of PROJECTIONS) {
+    const coords = await readProjection(parts, name);
+    if (!ids.every((id) => coords.has(id)))
+      throw new Error(`${name}: proteins without coordinates`);
+    projections.push(
+      quantizeProjection(
+        name,
+        ids.map((id) => coords.get(id)![0]),
+        ids.map((id) => coords.get(id)![1]),
+      ),
+    );
+  }
+  const n = rows.length;
 
   const annotations = ANNOTATIONS.map((column) => ({
     column,
-    ...categorize(kept, column, settings[column]),
+    ...categorize(rows, column, settings[column]),
   }));
 
-  const chunks: Buffer[] = [Buffer.from(xy.buffer)];
-  const layout: { field: string; type: 'Uint16' | 'Uint8'; offset: number; length: number }[] = [
-    { field: 'xy', type: 'Uint16', offset: 0, length: n * 2 },
-  ];
-  let offset = xy.byteLength;
+  const chunks: Buffer[] = [];
+  const layout: { field: string; type: 'Uint16' | 'Uint8'; offset: number; length: number }[] = [];
+  let offset = 0;
+  projections.forEach((projection, k) => {
+    layout.push({ field: `xy${k}`, type: 'Uint16', offset, length: n * 2 });
+    chunks.push(Buffer.from(projection.xy.buffer));
+    offset += projection.xy.byteLength;
+  });
   for (const annotation of annotations) {
     layout.push({ field: annotation.column, type: 'Uint8', offset, length: n });
     chunks.push(Buffer.from(annotation.index.buffer));
@@ -223,7 +250,7 @@ async function buildDemo() {
       generatedBy: 'scripts/landing-data/build-landing-data.mts',
       source: DEMO_BUNDLE,
       count: n,
-      projection: { name: PROJECTION, ...bounds },
+      projections: projections.map(({ name, bounds }) => ({ name, ...bounds })),
       bin: { file: 'demo.bin', layout },
       labels: { file: 'demo-labels.json' },
       annotations: annotations.map(({ column, categories }) => ({
@@ -236,33 +263,29 @@ async function buildDemo() {
   writeFileSync(
     resolve(OUT_DIR, 'demo-labels.json'),
     JSON.stringify({
-      ids: kept.map((row) => String(row.protein_id)),
-      names: kept.map((row) => (row.protein_name == null ? '' : String(row.protein_name))),
+      ids,
+      names: rows.map((row) => (row.protein_name == null ? '' : String(row.protein_name))),
     }),
   );
-
-  // Self-check: the quantization must round-trip to well under a device pixel.
-  const span = bounds.xMax - bounds.xMin;
-  const maxErr = Math.max(
-    ...xs.map((x, i) => Math.abs((xy[i * 2] / 65535) * span + bounds.xMin - x)),
+  console.warn(
+    `demo: ${n} proteins, ${PROJECTIONS.length} projections, ${annotations.map((a) => a.column).join(', ')}`,
   );
-  if (maxErr > span / 20000) throw new Error(`Quantization error too large: ${maxErr}`);
-  console.warn(`demo: ${n} proteins, ${annotations.map((a) => a.column).join(', ')}`);
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Venom EAT + statistics dataset: real projection quality metrics and real label transfers    */
+/* Venom EAT + statistics dataset: real label transfers and real per-category separation     */
 /* ------------------------------------------------------------------------------------------ */
 
 async function buildVenom() {
-  const PROJECTIONS = ['ProtT5 — PCA 2', 'ProtT5 — UMAP 2'];
+  const PROJECTION = 'ProtT5 — UMAP 2';
   const TARGET = 'ec';
+  /** Scored for separation; taxonomic family, as the explorer's legend strips show it. */
+  const SCORED = 'family';
 
   const parts = splitBundle(VENOM_BUNDLE);
   const rows = await readRows(parts[0], [
     'protein_id',
-    'protein_name',
-    'protein_families',
+    SCORED,
     TARGET,
     `${TARGET}__pred_value`,
     `${TARGET}__pred_confidence`,
@@ -270,19 +293,6 @@ async function buildVenom() {
   ]);
   const ids = rows.map((row) => String(row.protein_id));
   const indexOf = new Map(ids.map((id, i) => [id, i]));
-
-  const projections = [];
-  for (const name of PROJECTIONS) {
-    const { info, coords } = await readProjection(parts, name);
-    projections.push({
-      name,
-      x: ids.map((id) => round(coords.get(id)![0], 3)),
-      y: ids.map((id) => round(coords.get(id)![1], 3)),
-      quality: info.quality,
-    });
-  }
-
-  const families = categorize(rows, 'protein_families');
 
   // EC categories span curated and transferred values so both draw from one color table.
   const merged = rows.map((row) => ({
@@ -305,6 +315,31 @@ async function buildVenom() {
     };
   });
 
+  // Per-category silhouette in the 2D map and in the embedding it came from, one entry per
+  // scored category, colored as its legend row (collapsed categories in Other's grey).
+  const silhouette = (await readRows(parts[4])).filter(
+    (row) =>
+      row.annotation === SCORED &&
+      row.stat_family === 'annotation_validity' &&
+      row.label_kind === 'annotation' &&
+      row.metric === 'silhouette' &&
+      (row.space_kind === 'embedding' || row.space_name === PROJECTION),
+  );
+  const score = (kind: string, category: string | null) => {
+    const row = silhouette.find(
+      (entry) => entry.space_kind === kind && (entry.category || null) === category,
+    );
+    if (!row) throw new Error(`venom: no ${kind} silhouette for ${category ?? 'the annotation'}`);
+    return round(Number(row.value), 3);
+  };
+  const settings = await readSettings(parts[3]);
+  const legend = categorize(rows, SCORED, settings[SCORED]).categories;
+  const colorOf = (label: string) =>
+    legend.find((category) => !category.kind && category.label === label)?.color ?? OTHER_COLOR;
+  const scored = [
+    ...new Set(silhouette.filter((row) => row.category).map((row) => String(row.category))),
+  ];
+
   writeFileSync(
     resolve(OUT_DIR, 'venom.json'),
     JSON.stringify({
@@ -312,20 +347,23 @@ async function buildVenom() {
       source: VENOM_BUNDLE,
       count: rows.length,
       ids,
-      names: rows.map((row) => (row.protein_name == null ? '' : String(row.protein_name))),
-      projections,
-      families: {
-        column: 'protein_families',
-        label: annotationLabel('protein_families'),
-        categories: families.categories,
-        values: Array.from(families.index),
-      },
       eat: {
         column: TARGET,
         label: annotationLabel(TARGET),
         categories: ec.categories.filter((category) => category.kind !== 'na'),
         curated,
         transferred: transferred.filter((entry) => entry != null),
+      },
+      separation: {
+        label: annotationLabel(SCORED),
+        projection: PROJECTION,
+        overall: { map: score('projection', null), embedding: score('embedding', null) },
+        categories: scored.map((label) => ({
+          label,
+          color: colorOf(label),
+          map: score('projection', label),
+          embedding: score('embedding', label),
+        })),
       },
     }),
   );

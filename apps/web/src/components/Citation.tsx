@@ -81,15 +81,16 @@ const Citation = () => {
   return (
     <Section id="citation" className="border-t border-border">
       <SectionHeading
+        compact
         eyebrow="Research software"
-        title="Paper, code and citation"
-        lede="If ProtSpace supports your work, cite the bioRxiv preprint; the Journal of Molecular Biology article describes the original tool."
+        title="Cite ProtSpace"
+        lede="Cite the bioRxiv preprint; the Journal of Molecular Biology article describes the original tool."
       />
 
-      <div className="mt-12 grid gap-10 lg:grid-cols-12 lg:gap-12">
+      <div className="mt-8 grid gap-10 lg:grid-cols-12 lg:gap-12">
         <ul className="divide-y divide-border lg:col-span-7">
           {references.map((ref) => (
-            <li key={ref.id} className="py-6 first:pt-0 last:pb-0">
+            <li key={ref.id} className="py-5 first:pt-0 last:pb-0">
               <p className="text-xs tracking-wide text-muted-foreground">{ref.tag}</p>
               <p className="mt-2 text-base leading-relaxed text-muted-foreground">{ref.citation}</p>
               <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
