@@ -173,6 +173,8 @@ into `encoding.py` would create a cycle, and a test pins the two lists together.
 machinery then does the rest:
 
 - a run that requests one of these columns refetches its source once and restamps the cache;
+  an InterPro refresh of a cache without a `sequence` column also refetches UniProt, as a missing
+  InterPro column already does, because InterPro is looked up by sequence;
 - a run that does not request them drops them;
 - other sources are reused.
 

@@ -110,6 +110,12 @@ InterPro rows, and cannot be repaired locally.
 - **WHEN** a run requests `pfam` from a cache stamped before the InterPro fix
 - **THEN** ProtSpace refetches the InterPro source once and reuses cached UniProt values
 
+#### Scenario: A legacy cache holds no sequences for the InterPro refresh
+
+- **WHEN** a run requests `pfam` from a cache stamped before the InterPro fix that has no
+  `sequence` column
+- **THEN** ProtSpace also refetches the UniProt source, so InterPro has sequences to look up
+
 #### Scenario: A legacy cache is not asked for the affected columns
 
 - **WHEN** a run requests neither `protein_families` nor any InterPro column from such a cache

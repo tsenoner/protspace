@@ -171,30 +171,30 @@ section 4 runs after all three are merged back. Rules for every track:
 
 ## 4. Integration (after tracks 1–3 are merged into `fix/annotation-retrieval`)
 
-- [ ] 4.1 Merge each track branch with a merge commit (never squash), resolve any conflicts, and
+- [x] 4.1 Merge each track branch with a merge commit (never squash), resolve any conflicts, and
       run the full non-slow suite.
-- [ ] 4.2 Failing tests for the legacy-cache refresh:
+- [x] 4.2 Failing tests for the legacy-cache refresh:
   - a cache stamped at version 1 with `protein_families` refetches UniProt once when that
     column is requested;
   - one with `pfam` refetches InterPro once;
   - one requesting neither drops both and refetches nothing;
   - a failed refresh writes no stale value under a current stamp;
   - a test pins the literal InterPro list in `encoding.py` to `INTERPRO_ANNOTATIONS`.
-- [ ] 4.3 Add `CACHE_SEMANTICS_CHANGES[2]` (`protein_families` plus the ten InterPro columns) in
+- [x] 4.3 Add `CACHE_SEMANTICS_CHANGES[2]` (`protein_families` plus the ten InterPro columns) in
       `encoding.py`, and turn the hard-coded `{"protspace_annotation_cache_version": 1}`
       assertions in `test_pipeline_utils.py` into version-key checks that tolerate the release
       attribute. Commit:
       `fix(protspace): refresh caches written before the family and InterPro fixes`.
-- [ ] 4.4 Add an offline end-to-end test across Tracks 1 and 3: a mocked UniProt response
+- [x] 4.4 Add an offline end-to-end test across Tracks 1 and 3: a mocked UniProt response
       carrying `X-UniProt-Release` reaches the `run.log` line of a `prepare` run, and duplicate
       sequences get InterPro values in the bundle. Commit as `test(protspace): …`.
-- [ ] 4.5 Update `docs/guide/python-cli.md`:
+- [x] 4.5 Update `docs/guide/python-cli.md`:
   - add `--cache-dir` and `--refetch` to the `annotate` flag table, with a resume example;
   - mention the `run.log` `uniprot_release:` line;
   - under Intermediate Caching, describe per-source persistence;
   - add a legacy-cache bullet for the family and InterPro refresh;
   - state that bundles never carry `organism_id`/`sequence`.
-- [ ] 4.6 Update `docs/guide/fetching-and-caching.md`:
+- [x] 4.6 Update `docs/guide/fetching-and-caching.md`:
   - per-source persistence;
   - InterPro retries covering the POST;
   - Biocentral batches;
@@ -202,28 +202,43 @@ section 4 runs after all three are merged back. Rules for every track:
   - `annotate --cache-dir` sharing `prepare`'s cache;
   - a caveat that sequence-dependent sources are cached per identifier, so use a separate cache
     directory or `--refetch interpro,biocentral` when the FASTA behind the identifiers changes.
-- [ ] 4.7 Rewrite the `protein_families` description in
+- [x] 4.7 Rewrite the `protein_families` description in
       `packages/utils/src/visualization/annotation-metadata.ts` and its details in
       `docs/scripts/annotation-details.ts`. Families are kept whole, and multi-section entries
       list each family. Then regenerate with `pnpm docs:annotations` and pass
       `pnpm docs:annotations:check`. Commit:
       `docs(utils): describe multi-family protein_families`.
-- [ ] 4.8 Add the new test files and the caching behaviour to `apps/protspace/CLAUDE.md`.
-- [ ] 4.9 Check `apps/protspace/notebooks/*.ipynb` for restated behaviour: the first-family
+- [x] 4.8 Add the new test files and the caching behaviour to `apps/protspace/CLAUDE.md`.
+- [x] 4.9 Check `apps/protspace/notebooks/*.ipynb` for restated behaviour: the first-family
       wording, `annotate` flags, `run.log`, bundle columns. Edit only what is restated, and check
       that every edited code cell parses with IPython's `TransformerManager().transform_cell`.
       Record "nothing restated" if so.
-- [ ] 4.10 Run the gates and confirm each is clean:
+      Nothing restated: no notebook mentions the first-family wording, `annotate` flags,
+      `run.log` or the bundle's internal columns. The preparation notebook reaches annotations
+      through `ReductionPipeline._fetch_annotations`, whose signature is unchanged, and its
+      "annotations are cached in output/tmp" text still holds.
+- [x] 4.10 Run the gates and confirm each is clean:
   - `uv run ruff check apps/protspace`;
   - `uv run ruff format --check apps/protspace`;
   - `uv run pytest apps/protspace/tests -q -m "not slow"`;
   - `uv run pytest apps/prep/tests -q`, because prep shells out to `annotate`;
   - `pnpm install`, then `pnpm test:contract`, `pnpm format:check` and `pnpm precommit`;
   - `openspec validate annotation-retrieval-robustness --strict`.
-- [ ] 4.11 Optional live smoke run (network, not CI): `annotate --cache-dir` on P00561, P04191,
+
+  All clean, except that the two ruff commands, run on `apps/protspace` from the root, also reach
+  the three notebooks. They fail identically on `origin/main` (5 lint errors, 3 files to
+  reformat), and this change does not touch them. The paths CI lints, `src/`, `packages/` and
+  `tests/`, are clean.
+
+- [x] 4.11 Optional live smoke run (network, not CI): `annotate --cache-dir` on P00561, P04191,
       P27708 plus two accessions sharing a sequence, with `-a protein_families,pfam,ted`. Kill
       the run during TED, rerun it, then check the families, the shared-sequence Pfam and the
       cache's release stamp.
+      Run on 2026-09-29 with P62805/P62806 (human and mouse histone H4, identical sequences):
+      InterPro got 4 sequences for 5 proteins and both H4 entries got `PF15511`; P00561 gave
+      two families, P27708 four, and P04191 kept `(TC 3.A.3)` whole. A SIGINT during TED left
+      a cache with the UniProt and InterPro columns, stamped version 2 and `2026_03`; the rerun
+      fetched only TED, and its output matched an uninterrupted run.
 - [ ] 4.12 After review, archive the change (`openspec archive annotation-retrieval-robustness`)
       as the last commit on the branch before merge. Merge with a merge commit, because the
       branch touches `apps/protspace/`.
