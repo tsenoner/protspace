@@ -65,39 +65,22 @@ class UniProtTransformer:
     @staticmethod
     def transform_protein_families(value: str) -> str:
         """
-        Extract first family (before comma/semicolon).
+        Pass protein families through unchanged.
 
-        Preserves inline evidence codes: "Insulin family, Subfamily 1|ISS"
-        → "Insulin family|ISS".
+        The parser already emits the final form: every family ``;``-joined,
+        each with its evidence code (``"CarA family|IC;CarB family|IC"``).
+        Cutting here would drop the families of multi-section entries and,
+        since cached values are re-transformed on every resumed run, a
+        transform must accept its own output unchanged. Commas are part of
+        names (``inositol 1,4,5-trisphosphate 5-phosphatase family``).
 
         Args:
-            value: Protein families string (may contain multiple families),
-                   optionally with evidence code suffix
+            value: ``;``-joined families, each optionally with ``|EVIDENCE``
 
         Returns:
-            First family only, with evidence preserved if present
+            The same value
         """
-        if not value:
-            return value
-
-        protein_families_value = str(value)
-
-        # Split off evidence code if present
-        if "|" in protein_families_value:
-            main, evidence = protein_families_value.rsplit("|", 1)
-        else:
-            main, evidence = protein_families_value, ""
-
-        if "," in main:
-            first = main.split(",")[0].strip()
-        elif ";" in main:
-            first = main.split(";")[0].strip()
-        else:
-            first = main
-
-        if evidence:
-            return f"{first}|{evidence}"
-        return first
+        return value
 
     @staticmethod
     def transform_xref_pdb(value: str, uniprot_kb_id: str | None = None) -> str:
