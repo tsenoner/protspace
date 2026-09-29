@@ -276,16 +276,16 @@ Measured against the live APIs (design.md, "Lookups share one session"): at Swis
 took about 23 hours and InterPro about 4, because of the clients. The InterPro Matches API also
 returns AI-predicted InterPro-N matches, which leaked into the member-database columns.
 
-- [ ] 6.1 Failing tests in `test_interpro_annotation_retriever.py`, using two results captured
+- [x] 6.1 Failing tests in `test_interpro_annotation_retriever.py`, using two results captured
       from the live Matches API:
   - a signature that only InterPro-N predicts is not emitted, in `pfam` and `prosite`;
   - a member-database match keeps its value and score next to its InterPro-N twin;
   - the `source` is compared without regard to case;
   - a match without a `source` field is kept.
-- [ ] 6.2 Skip InterPro-N matches in `_parse_interpro_results`, and note it in the version-2
+- [x] 6.2 Skip InterPro-N matches in `_parse_interpro_results`, and note it in the version-2
       comment of `encoding.py`. Commit:
       `fix(protspace): keep InterPro-N predictions out of InterPro columns`.
-- [ ] 6.3 Failing tests in `test_http_retry.py`:
+- [x] 6.3 Failing tests in `test_http_retry.py`:
   - `get_with_retry`, `post_with_retry` and `paginated_get` send through a given session, and
     through `requests.get`/`requests.post` without one;
   - a `Retry-After` received by one request delays the next attempt of every request on the
@@ -293,41 +293,46 @@ returns AI-predicted InterPro-N matches, which leaked into the member-database c
   - `map_in_order` yields in input order under jittered delays, never runs more than `workers`
     calls at once, never submits more than `2 × workers` ahead, runs inline with one worker, and
     once closed early starts no further call and leaves none running.
-- [ ] 6.4 Add `pooled_session`, the session-wide `Retry-After` pause, `map_in_order` and the
+- [x] 6.4 Add `pooled_session`, the session-wide `Retry-After` pause, `map_in_order` and the
       `session` parameters to `http_utils.py`. Commit:
       `refactor(protspace): let the retry helpers share a session`.
-- [ ] 6.5 Failing tests in `test_ted_retriever.py`:
+- [x] 6.5 Failing tests in `test_ted_retriever.py`:
   - 300 accessions with jittered delays, first-pass failures, final-pass recoveries and 404s give
     the same rows and `failed_lookup_count` at 1, 8 and 16 concurrent requests;
   - at most `MAX_CONCURRENT_REQUESTS` (8) lookups run at once by default, all over one session;
   - with a service that stays down, the final pass stops after 10 failures in a row at any
     concurrency and makes at most `10 + 2 × workers` lookups;
   - the CATH names load once when parallel lookups need them.
-- [ ] 6.6 Run both TED passes through `map_in_order` on one `pooled_session`, with lookups that
+- [x] 6.6 Run both TED passes through `map_in_order` on one `pooled_session`, with lookups that
       return their error instead of raising, and load the CATH names under a lock. Commit:
       `perf(protspace): look up TED domains 8 at a time over one session`.
-- [ ] 6.7 Failing tests in `test_interpro_annotation_retriever.py`:
+- [x] 6.7 Failing tests in `test_interpro_annotation_retriever.py`:
   - 40 batches with jittered delays, lost batches and duplicate sequences give the same rows and
     `failed_batch_count` at 1, 4 and 8 concurrent requests;
   - at most 4 batches are in flight by default, all over one session;
   - the outage breaker trips after 10 lost batches in a row in input order at any concurrency,
     and requests at most `10 + 2 × workers` batches;
   - the existing ordering-sensitive retry and breaker tests pin one worker.
-- [ ] 6.8 Send InterPro match batches through `map_in_order` on one `pooled_session`. Commit:
+- [x] 6.8 Send InterPro match batches through `map_in_order` on one `pooled_session`. Commit:
       `perf(protspace): send 4 InterPro match batches at a time`.
-- [ ] 6.9 Failing tests in `test_uniprot_annotation_retriever.py`: the batches, the inactive-entry
+- [x] 6.9 Failing tests in `test_uniprot_annotation_retriever.py`: the batches, the inactive-entry
       lookups, UniParc and the secondary-accession search all go through one session, and
       `releases` still collects every `X-UniProt-Release`. Move the fake servers of
       `test_uniprot_annotation_retriever.py` and `test_annotation_retrieval_e2e.py` to
       `requests.Session`.
-- [ ] 6.10 Give `UniProtRetriever.fetch_annotations` one `pooled_session` and pass it to every
+- [x] 6.10 Give `UniProtRetriever.fetch_annotations` one `pooled_session` and pass it to every
       request helper, keeping one request at a time. Commit:
       `perf(protspace): reuse one connection for UniProt requests`.
-- [ ] 6.11 Docs: in `docs/guide/fetching-and-caching.md`, the parallel lookups, the shared
+- [x] 6.11 Docs: in `docs/guide/fetching-and-caching.md`, the parallel lookups, the shared
       `Retry-After` pause, the new durations and the InterPro-N filter; in the InterPro source
       text of `docs/scripts/annotation-details.ts`, that InterPro-N matches are left out, then
       `pnpm docs:annotations` and `pnpm docs:annotations:check`; and `apps/protspace/CLAUDE.md`
       if it restates the retrieval behaviour. Commit as `docs(protspace): …`.
-- [ ] 6.12 Gates, all clean: `uv run pytest apps/protspace/tests -q`; from `apps/protspace`,
+- [x] 6.12 Gates, all clean: `uv run pytest apps/protspace/tests -q`; from `apps/protspace`,
       `uv run ruff check src tests` and `uv run ruff format --check src tests`; and
       `openspec validate annotation-retrieval-robustness --strict`.
+- [x] 6.13 Optional live smoke run (network, not CI), 2026-09-29: 240 random Swiss-Prot
+      accessions through `TedRetriever` gave identical rows at 1 and 8 concurrent requests, at
+      14.4 and 120.2 lookups a second; 1,200 Swiss-Prot sequences through `InterProRetriever`
+      (`pfam`, `cdd`, `prosite`, `prints`) gave identical rows at 1 and 4, at 51 and 223
+      sequences a second, with no lost batch and no unscored `pfam` hit.
