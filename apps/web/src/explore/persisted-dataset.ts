@@ -6,6 +6,7 @@ import {
   formatMegabytes,
   type ExampleDataset,
 } from './example-datasets';
+import { fetchExampleBundle } from './example-fetch';
 import {
   StoredDatasetCorruptError,
   clearLastImportedFile,
@@ -220,7 +221,7 @@ export function createPersistedDatasetController({
     }
 
     try {
-      const response = await fetch(entry.url, { signal: download.signal });
+      const response = await fetchExampleBundle(entry, download.signal);
       if (!isCurrentRequest(requestId)) {
         return 'superseded';
       }

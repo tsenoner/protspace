@@ -22,6 +22,7 @@
  */
 
 import type { ExampleDatasetSummary } from '@protspace/core';
+import { URLS } from '../../../../config/urls';
 import { EXAMPLE_MANIFEST } from './example-manifest';
 
 /**
@@ -46,6 +47,12 @@ export interface ExampleDataset {
   insight: string;
   /** Same-origin: `./<file>` for a repo-hosted bundle, `./examples/<file>` for a release-hosted one. */
   url: string;
+  /**
+   * Where a development build fetches a release-hosted bundle that is missing
+   * locally: the same file on protspace.app. Never used by a production build
+   * (see `fetchExampleBundle`).
+   */
+  devFallbackUrl?: string;
   /** Decoded size of the bundle file in bytes, from the manifest. */
   sizeBytes: number;
   /** The entry's section of the Example datasets documentation page. */
@@ -89,7 +96,10 @@ export function formatProteinCount(count: number): string {
 }
 
 /** What a catalog entry states by hand; the rest comes from its manifest record. */
-type ExampleSpec = Omit<ExampleDataset, 'label' | 'url' | 'sizeBytes' | 'docsUrl'> & {
+type ExampleSpec = Omit<
+  ExampleDataset,
+  'label' | 'url' | 'devFallbackUrl' | 'sizeBytes' | 'docsUrl'
+> & {
   /** Menu name; the label adds the protein count and size from the manifest. */
   name: string;
 };
@@ -99,12 +109,15 @@ function defineExample({ name, ...spec }: ExampleSpec): ExampleDataset {
   if (!record) {
     throw new Error(`Example "${spec.id}" has no record in example-manifest.ts.`);
   }
+  const label = `${name} · ${formatProteinCount(record.proteins)} · ${formatMegabytes(record.bytes)}`;
+  const common = { ...spec, label, sizeBytes: record.bytes, docsUrl: docsUrlFor(spec.id) };
+  if (record.hosting === 'repo') {
+    return { ...common, url: `./${record.file}` };
+  }
   return {
-    ...spec,
-    label: `${name} · ${formatProteinCount(record.proteins)} · ${formatMegabytes(record.bytes)}`,
-    url: record.hosting === 'repo' ? `./${record.file}` : `./examples/${record.file}`,
-    sizeBytes: record.bytes,
-    docsUrl: docsUrlFor(spec.id),
+    ...common,
+    url: `./examples/${record.file}`,
+    devFallbackUrl: `${URLS.production.base}/examples/${record.file}`,
   };
 }
 

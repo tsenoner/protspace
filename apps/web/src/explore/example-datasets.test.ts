@@ -54,9 +54,13 @@ describe('example datasets catalog', () => {
 
   it.each(EXAMPLE_DATASETS)('serves "$id" from where its manifest record says', (entry) => {
     const record = EXAMPLE_MANIFEST.examples[entry.id];
-    expect(entry.url).toBe(
-      record.hosting === 'repo' ? `./${record.file}` : `./examples/${record.file}`,
-    );
+    if (record.hosting === 'repo') {
+      expect(entry.url).toBe(`./${record.file}`);
+      expect(entry.devFallbackUrl).toBeUndefined();
+    } else {
+      expect(entry.url).toBe(`./examples/${record.file}`);
+      expect(entry.devFallbackUrl).toBe(`https://protspace.app/examples/${record.file}`);
+    }
   });
 
   it.each(EXAMPLE_DATASETS)(

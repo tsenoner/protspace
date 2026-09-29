@@ -129,7 +129,7 @@ Before every commit:
   - Add `apps/web/public/examples/` and `perf/datasets/` to `.gitignore`.
 - [ ] 4.4 `deploy.yml`: after `pnpm build`, run `pnpm examples:fetch --out apps/web/dist/examples --with-retained`; the deploy fails on any mismatch.
   - `ci.yml`: a job on PRs that touch `example-manifest.ts` runs the same fetch into a temporary directory.
-- [ ] 4.5 Development fallback: in `import.meta.env.DEV`, when a release-hosted file's same-origin fetch is not OK or returns HTML, retry from `https://protspace.app/examples/<file>`. Unit test with mocked `fetch`: a production build never leaves the origin.
+- [x] 4.5 Development fallback: in `import.meta.env.DEV`, when a release-hosted file's same-origin fetch is not OK or returns HTML, retry from `https://protspace.app/examples/<file>`. Unit test with mocked `fetch`: a production build never leaves the origin.
 - [ ] 4.6 Fixtures: add byte-identical copies (the same blobs) in `apps/web/tests/fixtures/`:
   - `demo_toxprot_7831` (from `public/data.parquetbundle`);
   - `toxprot_5181_pca3d` (5K);
