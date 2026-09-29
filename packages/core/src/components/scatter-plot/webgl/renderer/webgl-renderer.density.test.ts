@@ -262,6 +262,28 @@ describe('density layer, contour', () => {
     on.renderer.destroy();
   });
 
+  it('only composites on a re-render that changes none of the field inputs', () => {
+    let transform = d3.zoomIdentity;
+    const on = setup(contour, {}, () => transform);
+    const pd = plotData(50);
+    on.renderer.render(pd);
+    const calls = recordCalls(on.glRecord);
+
+    on.renderer.render(pd);
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+    // The composite and the gamma pass.
+    expect(quadDraws(calls)).toHaveLength(2);
+
+    transform = d3.zoomIdentity.translate(40, 20);
+    on.renderer.render(pd);
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
+
+    on.renderer.invalidateStyleCache();
+    on.renderer.render(pd);
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(2);
+    on.renderer.destroy();
+  });
+
   it('drops a hidden colour from the palette on the next restage', () => {
     let hideRed = false;
     const { pd, style } = categories(['#e6194b', '#3cb44b'], (i) => hideRed && i % 2 === 0);

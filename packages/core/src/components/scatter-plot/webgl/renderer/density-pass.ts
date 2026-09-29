@@ -67,6 +67,8 @@ export interface DensityResources {
   accum: ColorTarget | null;
   ping: ColorTarget | null;
   fields: ColorTarget[];
+  /** The caller's key for the inputs `fields` were last built from; null when they hold nothing. */
+  fieldsKey: string | null;
 }
 
 export interface DensityFrame {
@@ -248,6 +250,7 @@ export function createDensityResources(
     accum: null,
     ping: null,
     fields: [],
+    fieldsKey: null,
   };
 }
 
@@ -291,6 +294,7 @@ function destroyDensityTargets(gl: WebGL2RenderingContext, res: DensityResources
   res.accum = null;
   res.ping = null;
   res.fields = [];
+  res.fieldsKey = null;
 }
 
 export function destroyDensityResources(gl: WebGL2RenderingContext, res: DensityResources): void {

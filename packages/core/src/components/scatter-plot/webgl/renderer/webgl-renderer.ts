@@ -145,6 +145,12 @@ export class WebGLRenderer {
   private densityDisabled = false;
   private contourPalette: SlotPalette | null = null;
   /**
+   * Bumped by every `populateBuffers`, the only writer of the position and
+   * colour buffers and the only place `contourPalette` is invalidated, so it
+   * keys the density fields built from them.
+   */
+  private bufferGeneration = 0;
+  /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
    * truth for the RENDER pass: `syncLabelAtlas` allocates against it, and a
@@ -573,7 +579,23 @@ export class WebGLRenderer {
 
     const density = this.densityFrame(transform);
     if (density) {
-      accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
+      // The fields persist between frames, so a re-render that changes none of
+      // their inputs (hover, tooltip) only composites them.
+      const { width, height, dpr, transform: t } = density.camera;
+      const key = [
+        this.bufferGeneration,
+        this.currentPointCount,
+        width,
+        height,
+        dpr,
+        t.x,
+        t.y,
+        t.k,
+      ].join();
+      if (density.res.fieldsKey !== key) {
+        accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
+        density.res.fieldsKey = key;
+      }
     }
 
     // Pass 1: Render to linear RGB framebuffer.
@@ -1086,6 +1108,7 @@ export class WebGLRenderer {
   ) {
     if (!this.gl) return;
     const gl = this.gl;
+    this.bufferGeneration++;
 
     const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
 

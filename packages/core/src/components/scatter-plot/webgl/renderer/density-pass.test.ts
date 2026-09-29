@@ -136,6 +136,7 @@ function resources(fieldCount = 4): DensityResources {
     accum: target('accum', 400, 300),
     ping: target('ping', 400, 300),
     fields: Array.from({ length: fieldCount }, (_, g) => target(`field${g}`, 400, 300)),
+    fieldsKey: null,
   };
 }
 
