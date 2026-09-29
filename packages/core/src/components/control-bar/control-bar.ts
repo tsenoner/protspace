@@ -17,6 +17,7 @@ import {
 import {
   DEFAULT_EAT_RELIABILITY,
   DENSITY_DEFAULT,
+  DENSITY_LAYER_MODES,
   isEatConfidenceAnnotation,
   isSameReliability,
   NEUTRAL_BOUND,
@@ -56,11 +57,13 @@ const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
-const DENSITY_MODES: ReadonlyArray<{ mode: DensityLayerMode; label: string; hint: string }> = [
-  { mode: 'off', label: 'Off', hint: 'Points only' },
-  { mode: 'auto', label: 'Auto', hint: 'Shows when points overlap, fades as you zoom in' },
-  { mode: 'on', label: 'On', hint: 'Always shown, one ring set per legend colour' },
-];
+const DENSITY_MODE_LABELS: Record<DensityLayerMode, { label: string; hint: string }> = {
+  off: { label: 'Off', hint: 'Points only' },
+  auto: { label: 'Auto', hint: 'Shows when points overlap, fades as you zoom in' },
+  on: { label: 'On', hint: 'Always shown, one ring set per legend colour' },
+};
+
+const DENSITY_MODES = DENSITY_LAYER_MODES.map((mode) => ({ mode, ...DENSITY_MODE_LABELS[mode] }));
 
 @customElement('protspace-control-bar')
 export class ProtspaceControlBar extends LitElement {

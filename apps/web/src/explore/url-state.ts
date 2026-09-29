@@ -1,4 +1,4 @@
-import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
+import { DENSITY_DEFAULT, isValidDensityLayerMode, type DensityLayerMode } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -68,8 +68,6 @@ function parseTooltipParam(searchParams: URLSearchParams): ParsedTooltipParam {
   };
 }
 
-const DENSITY_MODES: readonly DensityLayerMode[] = ['off', 'auto', 'on'];
-
 function parseDensityParam(searchParams: URLSearchParams): {
   mode: DensityLayerMode | undefined;
   present: boolean;
@@ -79,8 +77,8 @@ function parseDensityParam(searchParams: URLSearchParams): {
     return { mode: undefined, present: false, normalize: false };
   }
   const all = searchParams.getAll('density');
-  const raw = (all[0] ?? '').trim() as DensityLayerMode;
-  const valid = DENSITY_MODES.includes(raw);
+  const raw = (all[0] ?? '').trim();
+  const valid = isValidDensityLayerMode(raw);
   return {
     mode: valid ? raw : undefined,
     present: true,

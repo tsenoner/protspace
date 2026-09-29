@@ -234,9 +234,16 @@ export interface ScatterplotConfig {
   densityLayer?: DensityLayerMode;
 }
 
-export type DensityLayerMode = 'off' | 'auto' | 'on';
+/** Every density-layer mode, in the order the control bar lists them. */
+export const DENSITY_LAYER_MODES = ['off', 'auto', 'on'] as const;
+
+export type DensityLayerMode = (typeof DENSITY_LAYER_MODES)[number];
 
 export const DENSITY_DEFAULT: DensityLayerMode = 'off';
+
+export function isValidDensityLayerMode(value: unknown): value is DensityLayerMode {
+  return typeof value === 'string' && DENSITY_LAYER_MODES.includes(value as DensityLayerMode);
+}
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
 
