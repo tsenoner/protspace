@@ -103,8 +103,9 @@ const Hero = () => {
               <span className="block text-primary">Protein Universe</span>
             </h1>
             <p className="mt-6 max-w-md text-pretty text-lg leading-relaxed text-muted-foreground">
-              Explore protein language model embeddings through their biological context. Prepare a
-              dataset in Python, then explore it interactively in the browser.
+              Explore protein language model embeddings overlaid with biology, and see what sequence
+              similarity can't. Prepare a dataset in Python, then explore it interactively in the
+              browser.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
