@@ -364,7 +364,7 @@ class ProteinAnnotationManager:
             df = df[~df[df.columns[0]].astype(str).isin(new)].reset_index(drop=True)
         if df.empty:
             return
-        self._cache_frame(df)
+        self._cache_frame(df, checkpoint=True)
 
     def _with_retained_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         """Append cached rows for identifiers outside this run, when they fit.
@@ -438,7 +438,7 @@ class ProteinAnnotationManager:
             self._cache_frame(df)
         return df
 
-    def _cache_frame(self, df: pd.DataFrame) -> None:
+    def _cache_frame(self, df: pd.DataFrame, checkpoint: bool = False) -> None:
         """Write *df* to the cache under the rules :meth:`_write_cache_and_frame` sets.
 
         Shared by the final write and every checkpoint, so a checkpoint can never
@@ -457,6 +457,10 @@ class ProteinAnnotationManager:
         # run fetches that source instead of reading stale ones.
         shadowed = bool(self._cached_columns() & drop)
         if self._protect_cached_columns and (not remaining or shadowed):
+            if checkpoint and not shadowed:
+                # Nothing to cache yet, but a later source may still finish:
+                # the final write decides, and warns if nothing else did.
+                return
             reason = (
                 "the cache already holds those columns"
                 if shadowed

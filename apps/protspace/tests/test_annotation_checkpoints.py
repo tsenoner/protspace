@@ -362,6 +362,9 @@ class TestCacheWarnings:
         ).to_pd()
 
         assert caplog.text.count("Caching annotations at") == 1
+        # UniProt failing first left nothing to cache at that checkpoint, but
+        # later sources did finish, so "not caching" would be untrue.
+        assert "Not caching" not in caplog.text
         cached = pd.read_parquet(tmp_path / CACHE_NAME)
         assert cached["ted_domains"].tolist() == ["-|90"]
         assert "gene_name" not in cached.columns
