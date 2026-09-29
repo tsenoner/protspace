@@ -160,9 +160,9 @@ UniProt assigns one of five protein-existence (PE) levels in decreasing order of
 
 **Protein family**
 
-Protein family membership (first family), with evidence code.
+Protein family membership, one family per UniProt family statement, each with its evidence code.
 
-This records the protein's family or superfamily classification as curated by UniProt, capturing evolutionary and functional relatedness. ProtSpace keeps the first family listed, with its evidence code appended after a pipe, e.g. `Protein kinase superfamily|ISS` (ISS = inferred from sequence or structural similarity); evidence codes follow a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences). Because pLM embeddings often cluster by family, this column is a natural reference for checking how well an embedding recovers known family structure. See [UniProt: Family and domains section](https://www.uniprot.org/help/family_and_domains_section).
+This records the protein's family or superfamily classification as curated by UniProt, capturing evolutionary and functional relatedness. ProtSpace keeps the first (broadest) level of each family statement, with its evidence code appended after a pipe, e.g. `Protein kinase superfamily|ISS` (ISS = inferred from sequence or structural similarity); evidence codes follow a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences). Names are kept whole, including transporter classifications such as `(TC 3.A.3)`. A multi-domain protein whose entry assigns a family to each section (`In the N-terminal section; belongs to the …`) lists every family in UniProt order, like other multi-valued columns, e.g. `aspartokinase family|IC;homoserine dehydrogenase family|IC`. Because pLM embeddings often cluster by family, this column is a natural reference for checking how well an embedding recovers known family structure. See [UniProt: Family and domains section](https://www.uniprot.org/help/family_and_domains_section).
 
 ### `reviewed` {#reviewed}
 

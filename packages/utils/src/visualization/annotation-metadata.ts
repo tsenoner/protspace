@@ -160,7 +160,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Protein family',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Protein family membership (first family), with evidence code.',
+    description:
+      'Protein family membership, one family per UniProt family statement, each with its evidence code.',
     docsUrl: docs('protein_families'),
   },
   reviewed: {
