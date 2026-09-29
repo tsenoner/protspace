@@ -252,8 +252,11 @@ Click **Import** to open the menu:
   size limits, and privacy implications. You can also drag & drop either file type directly onto
   the scatterplot.
 - **Examples** lists the startup demo plus every bundle that ships with the app. Each item's label
-  gives the protein count and download size; hover it for a one-line description of what's in the
-  bundle. The example currently loaded is disabled. Choosing an example loads it and replaces the
+  gives the protein count and download size, and its **ⓘ** icon says what the example is and what
+  its curated view shows, with a link to its documentation; **About these examples** above the list
+  links to all of them. Large examples carry a **Large** badge, and their ⓘ also gives the download
+  size and the memory and time they take to open. The example currently loaded is disabled, and
+  its ⓘ also appears next to the current dataset's name. Choosing an example loads it and replaces the
   dataset stored in your browser — see
   [Data & Settings Persistence](/explore/importing-data#data-settings-persistence). As the note
   under the heading says, examples open in a curated view and changes you make to one aren't
@@ -290,7 +293,10 @@ parameters don't carry over; **Back** still returns to them. An unknown id
 shows a warning and the app starts up normally. If an example fails to download, whether you chose
 it from the menu or went **Back** or **Forward** to it, ProtSpace shows an error with a **Retry**
 button and leaves the current plot and the URL as they were. Only a link opened on an empty page
-falls back to the startup load.
+falls back to the startup load. While an example downloads, the loading screen shows how much of it
+has arrived and offers **Cancel download** until decoding starts. Cancelling leaves the current
+plot and the URL as they were, with no message; on an empty page (a link opened fresh) it removes
+the `dataset` parameter and runs the startup load instead.
 
 ## Tips
 
