@@ -357,9 +357,10 @@ def _ted(headers, fake, **kwargs):
 
 
 class TestFinalRetryPass:
-    """TED is one request per accession, 18-40 h at Swiss-Prot scale. A lookup
-    that failed its small first-pass budget used to discard the whole source;
-    now failed lookups get one more try after every other accession."""
+    """TED is one request per accession, over half a million at Swiss-Prot
+    scale. A lookup that failed its small first-pass budget used to discard
+    the whole source; now failed lookups get one more try after every other
+    accession."""
 
     def test_a_lookup_recovered_in_the_final_pass_is_used(self, caplog):
         fake = _AlphaFoldDomains({"Q9FAIL": ["fail", "ok"]})

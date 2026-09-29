@@ -103,7 +103,7 @@ ProtSpace therefore **caches only the sources that completed**:
 
 - A source that failed is left out of the cache, so the next run fetches it again.
 - Sources that succeeded are still cached, so one flaky API does not throw away an expensive UniProt
-  fetch or a day of TED lookups.
+  fetch or an hour or more of TED lookups.
 - If the cache already held values for the failed source, those values are kept as they were, next
   to the sources that completed. Proteins it held no value for are left out and fetched by the next
   run. When nothing else completed, the cache is left untouched.
@@ -155,12 +155,15 @@ At Swiss-Prot scale TED is over half a million requests, one per protein, and In
 batches. Both reuse their connections and keep a few requests in flight at once: TED up to 8
 lookups, InterPro up to 4 batches. UniProt reuses its connection too, but sends one request at a
 time. The results are exactly those of one request at a time, in the same order, and failures are
-counted the same way; the "10 in a row" cut-offs above count in input order.
+counted the same way; the "10 in a row" cut-offs above count in input order. A slow request, such as
+a lookup that times out, holds up only itself: the other requests keep going while it runs.
 
 The limits are deliberately modest, because these are shared public services, and they are not a
-command-line option. When a service answers any request with `Retry-After`, every request to that
-service waits, not only the one that received it. Interrupting a run stops it once the requests
-already in flight have finished.
+command-line option. When TED, InterPro or UniProt answers any request with `Retry-After`, every
+request of that source waits until then, not only the one that received it. When a "10 in a row"
+cut-off trips, or you interrupt the run, requests still in flight make no further attempt, so the
+run stops once their current attempts end: at most one request timeout (10 s for TED, 30 s for
+InterPro), usually far less.
 
 ## Embeddings belong to one backend and model
 
