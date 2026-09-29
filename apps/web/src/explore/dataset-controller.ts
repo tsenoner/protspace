@@ -71,6 +71,12 @@ export interface DatasetController {
   beginUserRequest(): number;
   /** The request epoch an app-initiated flow starting now runs under. */
   currentRequestEpoch(): number;
+  /**
+   * Cancels the example load in flight (only one started from `source`, when
+   * given): supersedes it as a user request, aborts its download and
+   * dismisses its overlay. Returns whether one was cancelled.
+   */
+  cancelPendingExampleLoad(options?: { source?: DatasetChangeSource }): boolean;
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
@@ -422,6 +428,17 @@ export function createDatasetController({
     }
   };
 
+  // An example load superseded while it decodes (a newer user request, or a
+  // cancel) still reports decode progress. It must not put the overlay back
+  // up: a cancel has dismissed it, and a newer request owns it.
+  const isRunningLoadSuperseded = (): boolean => {
+    const running = loadQueue.getRunningLoadMeta();
+    return (
+      running?.example != null &&
+      !persistedDatasetController.isCurrentRequest(running.example.requestId)
+    );
+  };
+
   const handleDataError = async (event: Event) => {
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
@@ -505,6 +522,7 @@ export function createDatasetController({
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
     beginUserRequest: persistedDatasetController.beginUserRequest,
     currentRequestEpoch: persistedDatasetController.currentRequestEpoch,
+    cancelPendingExampleLoad: persistedDatasetController.cancelPendingExampleLoad,
     subscribeToDatasetChanges(callback) {
       datasetChangeSubscribers.add(callback);
       return () => {
@@ -512,10 +530,16 @@ export function createDatasetController({
       };
     },
     handleLoadingStart() {
+      if (isRunningLoadSuperseded()) {
+        return;
+      }
       console.log('Data loading started');
       overlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
     },
     handleLoadingProgress(event: Event) {
+      if (isRunningLoadSuperseded()) {
+        return;
+      }
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));

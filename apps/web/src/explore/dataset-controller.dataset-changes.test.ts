@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     recoverFromCorruptedPersistedDataset: vi.fn(),
     beginUserRequest: vi.fn(() => 1),
     currentRequestEpoch: vi.fn(() => 0),
+    cancelPendingExampleLoad: vi.fn(() => false),
     // Defaults to "still current" so existing tests, which don't exercise
     // the superseded-during-decode path, render as before.
     isCurrentRequest: vi.fn(() => true),
@@ -264,6 +265,35 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     expect(controller.beginUserRequest()).toBe(1);
     expect(controller.currentRequestEpoch()).toBe(0);
     expect(mocks.persisted.beginUserRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancelPendingExampleLoad delegates to the persisted controller', () => {
+    mocks.persisted.cancelPendingExampleLoad.mockReturnValue(true);
+    const { controller } = createController();
+
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(true);
+    expect(mocks.persisted.cancelPendingExampleLoad).toHaveBeenCalledWith({ source: 'menu' });
+  });
+
+  it('decode progress of a superseded (e.g. cancelled) example never brings the overlay back', () => {
+    const loadMeta = {
+      sequence: 1,
+      kind: 'default' as const,
+      example: { entry: OTHER, source: 'menu' as const, requestId: 1 },
+    };
+    const { controller, overlayController } = createController({
+      getRunningLoadMeta: () => loadMeta,
+    });
+    mocks.persisted.isCurrentRequest.mockReturnValue(false);
+
+    controller.handleLoadingStart();
+    controller.handleLoadingProgress({ detail: { percentage: 50 } } as unknown as Event);
+    expect(overlayController.update).not.toHaveBeenCalled();
+
+    mocks.persisted.isCurrentRequest.mockReturnValue(true);
+    controller.handleLoadingStart();
+    controller.handleLoadingProgress({ detail: { percentage: 50 } } as unknown as Event);
+    expect(overlayController.update).toHaveBeenCalledTimes(2);
   });
 
   it('an OPFS restore that fails to parse recovers under the epoch it began with', async () => {

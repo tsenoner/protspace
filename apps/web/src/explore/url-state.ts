@@ -64,6 +64,34 @@ export function getDatasetSearchParamsUpdate(
   return next.toString() === searchParams.toString() ? null : { next, replace: source !== 'menu' };
 }
 
+/**
+ * How the URL sync hook handles a URL change it did not write itself
+ * (Back/Forward):
+ *
+ * - `'switch-dataset'`: `dataset` names another dataset than the app reflects,
+ *   so load it; the view parameters are recorded for that load to apply.
+ * - `'record-view'`: the same dataset as a URL-driven switch still loading (a
+ *   second quick Back onto another entry of the dataset being fetched). Only
+ *   record the view; the pending load applies the latest one once its data is
+ *   in. Resolving it now would run against the dataset still on screen and
+ *   could write that dataset's fallback over the entry.
+ * - `'apply-view'`: the same dataset, already on screen; apply the view.
+ */
+export function decideUrlChange({
+  datasetParam,
+  currentDatasetId,
+  switchPending,
+}: {
+  datasetParam: string | null;
+  currentDatasetId: string | null;
+  switchPending: boolean;
+}): 'switch-dataset' | 'record-view' | 'apply-view' {
+  if (datasetParam !== currentDatasetId) {
+    return 'switch-dataset';
+  }
+  return switchPending ? 'record-view' : 'apply-view';
+}
+
 function getRequestedValue(searchParams: URLSearchParams, key: 'annotation' | 'projection') {
   if (!searchParams.has(key)) {
     return undefined;

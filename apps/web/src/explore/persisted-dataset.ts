@@ -66,6 +66,9 @@ export function createPersistedDatasetController({
   // requests the newest wins.
   let requestEpoch = 0;
   let pendingDownload: AbortController | null = null;
+  // The example load in flight (download and decode), for
+  // `cancelPendingExampleLoad`.
+  let pendingExample: { epoch: number; source: DatasetChangeSource } | null = null;
   const beginUserRequest = (): number => {
     requestEpoch += 1;
     pendingDownload?.abort();
@@ -108,6 +111,8 @@ export function createPersistedDatasetController({
     overlayController.update(true, 0, `Downloading ${entry.label}…`);
     const download = new AbortController();
     pendingDownload = download;
+    const pending = { epoch: requestId, source };
+    pendingExample = pending;
 
     try {
       const response = await fetch(entry.url, { signal: download.signal });
@@ -166,7 +171,30 @@ export function createPersistedDatasetController({
       if (pendingDownload === download) {
         pendingDownload = null;
       }
+      if (pendingExample === pending) {
+        pendingExample = null;
+      }
     }
+  };
+
+  /**
+   * Cancels the example load still in flight, if it is current and, with
+   * `source`, was started that way: a new user epoch supersedes it and aborts
+   * its download, and the overlay it put up is dismissed. The load then
+   * settles as `'superseded'`, with no notification, fallback, emit or URL
+   * write. Resolves whether a load was cancelled.
+   */
+  const cancelPendingExampleLoad = ({ source }: { source?: DatasetChangeSource } = {}): boolean => {
+    const pending = pendingExample;
+    if (!pending || !isCurrentRequest(pending.epoch)) {
+      return false;
+    }
+    if (source !== undefined && pending.source !== source) {
+      return false;
+    }
+    beginUserRequest();
+    overlayController.update(false);
+    return true;
   };
 
   /**
@@ -290,6 +318,7 @@ export function createPersistedDatasetController({
   return {
     /** Takes a new request epoch for a user request (see `requestEpoch` above). */
     beginUserRequest,
+    cancelPendingExampleLoad,
     clearCorruptedPersistedDataset,
     currentRequestEpoch,
     /**

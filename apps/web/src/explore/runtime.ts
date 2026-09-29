@@ -426,21 +426,33 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
     setRequestedDataset(exampleId) {
       if (lifecycle.isDisposed()) {
-        return;
+        return Promise.resolve();
       }
 
+      let request: Promise<void>;
       if (!hasStartedInitialDatasetLoad) {
         hasStartedInitialDatasetLoad = true;
-        void startInitialExploreLoad({
+        request = startInitialExploreLoad({
           dataLoader,
           datasetController,
           plotElement,
           requestedExampleId: exampleId,
         });
+      } else {
+        request = loadDatasetAfterNavigation(datasetController, exampleId);
+      }
+      // The URL sync hook only waits for this to settle; a failure has
+      // already been reported to the user by the load itself.
+      return request.catch((error: unknown) => {
+        console.error('Dataset request failed:', error);
+      });
+    },
+    cancelPendingMenuLoad() {
+      if (lifecycle.isDisposed()) {
         return;
       }
 
-      void loadDatasetAfterNavigation(datasetController, exampleId);
+      datasetController.cancelPendingExampleLoad({ source: 'menu' });
     },
     subscribeToDatasetChanges(callback) {
       return datasetController.subscribeToDatasetChanges(callback);

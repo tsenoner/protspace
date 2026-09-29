@@ -518,3 +518,63 @@ describe('request precedence: a user request beats a startup load that began ear
     );
   });
 });
+
+describe('cancelPendingExampleLoad', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('cancels a pending menu load: aborts the download, hides the overlay, and never registers a load', async () => {
+    const response = deferred<ReturnType<typeof okResponse>>();
+    const fetchMock = vi.fn().mockReturnValue(response.promise);
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, overlayController, loadQueue } = createController();
+
+    const pending = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    overlayController.update.mockClear();
+
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(true);
+    expect(fetchSignal(fetchMock).aborted).toBe(true);
+    expect(overlayController.update).toHaveBeenCalledWith(false);
+    response.resolve(okResponse());
+
+    expect(await pending).toBe('superseded');
+    expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
+    expect(notifyMock.error).not.toHaveBeenCalled();
+  });
+
+  it('leaves a pending URL-driven load alone when asked to cancel only a menu load', async () => {
+    const response = deferred<ReturnType<typeof okResponse>>();
+    const fetchMock = vi.fn().mockReturnValue(response.promise);
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, overlayController } = createController();
+
+    void controller.loadExampleDataset(OTHER, 'url');
+    overlayController.update.mockClear();
+
+    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(false);
+    expect(fetchSignal(fetchMock).aborted).toBe(false);
+    expect(overlayController.update).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when nothing is loading, or once the load has settled', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+    );
+    const { controller, overlayController } = createController();
+
+    expect(controller.cancelPendingExampleLoad()).toBe(false);
+    expect(await controller.loadExampleDataset(OTHER, 'menu')).toBe('failed');
+    overlayController.update.mockClear();
+    const epoch = controller.currentRequestEpoch();
+
+    expect(controller.cancelPendingExampleLoad()).toBe(false);
+    expect(controller.currentRequestEpoch()).toBe(epoch);
+    expect(overlayController.update).not.toHaveBeenCalled();
+  });
+});

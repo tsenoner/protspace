@@ -116,6 +116,39 @@ function collectDefaultViewDriftWarnings(page: Page): string[] {
   return warnings;
 }
 
+async function getUrlParam(page: Page, key: string): Promise<string | null> {
+  return page.evaluate((name) => new URL(window.location.href).searchParams.get(name), key);
+}
+
+/** Picks `annotation` in the control bar's annotation dropdown (a user change, so a push). */
+async function pickAnnotation(page: Page, annotation: string): Promise<void> {
+  const controlBar = page.locator('protspace-control-bar');
+  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
+  await controlBar.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
+  await expect.poll(() => getSelectedAnnotation(page)).toBe(annotation);
+}
+
+/**
+ * Holds the next request matching `glob` until the returned function is
+ * called. The page may abort the held request meanwhile (a cancelled or
+ * superseded download), so continuing it is allowed to fail.
+ */
+async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    glob,
+    async (route) => {
+      await gate;
+      await route.continue().catch(() => {});
+    },
+    { times: 1 },
+  );
+  return release;
+}
+
 async function importUserFile(page: Page, filePath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
@@ -551,5 +584,73 @@ test.describe('Example datasets: curated default view', () => {
     await expect
       .poll(() => page.evaluate(() => new URL(window.location.href).searchParams.get('annotation')))
       .toBe(curated.annotation);
+  });
+});
+
+test.describe('Example datasets: history steps while a load is pending', () => {
+  test("a second quick Back onto another entry of the dataset still loading keeps that entry's view (b1)", async ({
+    page,
+  }) => {
+    // History: [5K+length_quantile, 5K+length_fixed, phosphatase]. Back twice
+    // while 5K is still downloading: the second Back lands on another entry
+    // of the same dataset. Its `length_quantile` must be applied by the 5K
+    // load, not resolved against phosphatase (which lacks it), whose fallback
+    // would otherwise be written over that entry.
+    await page.goto('/explore?dataset=5K&annotation=length_quantile');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('length_quantile');
+
+    await pickAnnotation(page, 'length_fixed');
+    await expect.poll(() => getUrlParam(page, 'annotation')).toBe('length_fixed');
+
+    await chooseExampleFromMenu(page, 'phosphatase');
+    await waitForProteinCount(page, PHOSPHATASE_COUNT);
+    await expectDatasetParam(page, 'phosphatase');
+
+    const release5K = await holdNextRequest(page, '**/data/5K.parquetbundle');
+    await page.goBack();
+    await expect.poll(() => getUrlParam(page, 'annotation')).toBe('length_fixed');
+    await page.goBack();
+    await expect.poll(() => getUrlParam(page, 'annotation')).toBe('length_quantile');
+    release5K();
+
+    await waitForProteinCount(page, FIVE_K_COUNT);
+    await expectDatasetParam(page, '5K');
+    await expect.poll(() => getSelectedAnnotation(page)).toBe('length_quantile');
+    expect(await getUrlParam(page, 'annotation')).toBe('length_quantile');
+  });
+
+  test('Back while an example chosen from the menu is still loading cancels it (b1)', async ({
+    page,
+  }) => {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await pickAnnotation(page, 'ec');
+    await expect.poll(() => getUrlParam(page, 'annotation')).toBe('ec');
+
+    const failedRequests: string[] = [];
+    page.on('requestfailed', (request) => failedRequests.push(request.url()));
+    const releasePhosphatase = await holdNextRequest(page, '**/data/phosphatase.parquetbundle');
+    await chooseExampleFromMenu(page, 'phosphatase');
+    await expect(page.locator('#progressive-loading')).toBeVisible();
+
+    await page.goBack(); // -> the bare demo entry, while phosphatase is still downloading
+    await expect.poll(() => getSearch(page)).toBe('');
+    // The download is aborted and its overlay dismissed.
+    await expect
+      .poll(() => failedRequests.some((url) => url.endsWith('/data/phosphatase.parquetbundle')))
+      .toBe(true);
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    releasePhosphatase();
+
+    // Nothing lands later and pushes a `dataset=phosphatase` entry.
+    await page.waitForTimeout(1_000);
+    expect(await getProteinCount(page)).toBe(DEMO_COUNT);
+    expect(await getSearch(page)).toBe('');
+    expect(await isExampleDisabled(page, 'demo')).toBe(true);
   });
 });

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { SetURLSearchParams } from 'react-router';
+import { useNavigationType, type SetURLSearchParams } from 'react-router';
 import type { DatasetChangeSource, ExploreController, ExploreViewChange } from './types';
 import {
+  decideUrlChange,
   getDatasetParam,
   getDatasetSearchParamsUpdate,
   getExploreViewSearchParamsUpdate,
@@ -24,6 +25,13 @@ export function useExploreUrlStateSync(
   // Back/Forward (or a hand-edited URL) apart from a param change this hook's
   // own write produced, which must not re-trigger a load.
   const currentDatasetIdRef = useRef(datasetParam);
+  // 'POP' for Back/Forward (and the initial entry); 'PUSH'/'REPLACE' for
+  // this hook's own writes.
+  const navigationType = useNavigationType();
+  // Token of the URL-driven dataset switch still loading, or null. Settled by
+  // the promise `setRequestedDataset` returns.
+  const pendingSwitchRef = useRef<number | null>(null);
+  const switchTokenRef = useRef(0);
 
   useEffect(() => {
     setSearchParamsRef.current = setSearchParams;
@@ -67,6 +75,17 @@ export function useExploreUrlStateSync(
     [],
   );
 
+  const startDatasetSwitch = useCallback((controller: ExploreController, id: string | null) => {
+    switchTokenRef.current += 1;
+    const token = switchTokenRef.current;
+    pendingSwitchRef.current = token;
+    void controller.setRequestedDataset(id).finally(() => {
+      if (pendingSwitchRef.current === token) {
+        pendingSwitchRef.current = null;
+      }
+    });
+  }, []);
+
   const attachController = useCallback(
     (controller: ExploreController) => {
       controllerRef.current = controller;
@@ -77,7 +96,7 @@ export function useExploreUrlStateSync(
       // requested example instead of loading the demo/stored import first.
       const initialDatasetParam = getDatasetParam(searchParamsRef.current);
       currentDatasetIdRef.current = initialDatasetParam;
-      controller.setRequestedDataset(initialDatasetParam);
+      startDatasetSwitch(controller, initialDatasetParam);
 
       return () => {
         if (controllerRef.current === controller) {
@@ -88,7 +107,7 @@ export function useExploreUrlStateSync(
         controller.dispose();
       };
     },
-    [handleDatasetChange, handleViewChange],
+    [handleDatasetChange, handleViewChange, startDatasetSwitch],
   );
 
   // One effect, not two, and in this order: when Back/Forward (or a
@@ -98,30 +117,48 @@ export function useExploreUrlStateSync(
   // projections, and write the normalization over the URL entry the switch
   // is headed to (e.g. Back from `?dataset=A&annotation=x` to
   // `?dataset=B&annotation=y` would resolve `y` against A).
-  // So when a dataset switch is pending, only record the requested view
-  // (`recordRequestedView`, no resolve/apply/URL write) and let the dataset
-  // load apply it once the new data is in, via
+  // So when a dataset switch starts, or is still loading, only record the
+  // requested view (`recordRequestedView`, no resolve/apply/URL write) and let
+  // the dataset load apply the latest one once the new data is in, via
   // `applyLatestViewForDatasetLoad` (dataset-controller.ts).
   useEffect(() => {
-    if (!controllerRef.current) {
+    const controller = controllerRef.current;
+    if (!controller) {
       return;
     }
 
     // A change this hook itself wrote already updated currentDatasetIdRef to
-    // match, so `datasetChanged` is only true for Back/Forward or a
-    // hand-edited URL.
-    const datasetChanged = datasetParam !== currentDatasetIdRef.current;
+    // match, so a switch is only decided for Back/Forward or a hand-edited
+    // URL.
+    const action = decideUrlChange({
+      datasetParam,
+      currentDatasetId: currentDatasetIdRef.current,
+      switchPending: pendingSwitchRef.current !== null,
+    });
 
-    if (datasetChanged) {
-      controllerRef.current.recordRequestedView(requestState);
+    if (action === 'switch-dataset') {
+      // Itself a user request, which supersedes any load still in flight.
+      controller.recordRequestedView(requestState);
       currentDatasetIdRef.current = datasetParam;
-      controllerRef.current.setRequestedDataset(datasetParam);
+      startDatasetSwitch(controller, datasetParam);
+      return;
+    }
+
+    if (navigationType === 'POP') {
+      // Back/Forward while an example chosen from the menu is still loading:
+      // the user went elsewhere, so that load must not land and push its
+      // entry over the one they went to.
+      controller.cancelPendingMenuLoad();
+    }
+
+    if (action === 'record-view') {
+      controller.recordRequestedView(requestState);
       return;
     }
 
     pendingUrlRequestRef.current = true;
-    controllerRef.current.setRequestedView(requestState);
-  }, [datasetParam, requestState]);
+    controller.setRequestedView(requestState);
+  }, [datasetParam, navigationType, requestState, startDatasetSwitch]);
 
   return { attachController };
 }

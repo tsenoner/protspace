@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSearchParamsWithExploreView,
+  decideUrlChange,
   getDatasetParam,
   getDatasetSearchParamsUpdate,
   getResolvedExploreViewNormalization,
@@ -571,5 +572,38 @@ describe('explore url state', () => {
         ).toBeNull();
       });
     });
+  });
+});
+
+describe('decideUrlChange', () => {
+  it('switches when the URL names another dataset than the app reflects', () => {
+    expect(
+      decideUrlChange({ datasetParam: 'A', currentDatasetId: 'B', switchPending: false }),
+    ).toBe('switch-dataset');
+    // Also while a switch is pending: the newer dataset wins.
+    expect(decideUrlChange({ datasetParam: 'A', currentDatasetId: 'B', switchPending: true })).toBe(
+      'switch-dataset',
+    );
+    // Back to an entry without `dataset=`.
+    expect(
+      decideUrlChange({ datasetParam: null, currentDatasetId: 'B', switchPending: false }),
+    ).toBe('switch-dataset');
+  });
+
+  it('only records the view for the same dataset while its switch is still loading', () => {
+    // The second of two quick Backs lands on another entry of the dataset
+    // being fetched: the pending load applies it, not the dataset on screen.
+    expect(decideUrlChange({ datasetParam: 'A', currentDatasetId: 'A', switchPending: true })).toBe(
+      'record-view',
+    );
+  });
+
+  it('applies the view to the dataset on screen when no switch is pending', () => {
+    expect(
+      decideUrlChange({ datasetParam: 'A', currentDatasetId: 'A', switchPending: false }),
+    ).toBe('apply-view');
+    expect(
+      decideUrlChange({ datasetParam: null, currentDatasetId: null, switchPending: false }),
+    ).toBe('apply-view');
   });
 });

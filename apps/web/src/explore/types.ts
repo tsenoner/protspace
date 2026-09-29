@@ -87,7 +87,17 @@ export interface ExploreController {
   /** See `ViewController.recordRequestedView` (view-controller.ts). */
   recordRequestedView(requested: ExploreViewRequestState): void;
   subscribeToViewChanges(callback: (change: ExploreViewChange) => void): () => void;
-  setRequestedDataset(exampleId: string | null): void;
+  /**
+   * Loads the dataset `?dataset=` names (the first call runs the startup
+   * load). Settles once that request has loaded, failed or been superseded;
+   * never rejects.
+   */
+  setRequestedDataset(exampleId: string | null): Promise<void>;
+  /**
+   * Cancels an example chosen from the Import menu that is still loading
+   * (Back/Forward away from it); a no-op otherwise.
+   */
+  cancelPendingMenuLoad(): void;
   subscribeToDatasetChanges(
     callback: (exampleId: string | null, source: DatasetChangeSource) => void,
   ): () => void;
@@ -100,7 +110,10 @@ export const NOOP_CONTROLLER: ExploreController = {
   subscribeToViewChanges() {
     return () => {};
   },
-  setRequestedDataset() {},
+  setRequestedDataset() {
+    return Promise.resolve();
+  },
+  cancelPendingMenuLoad() {},
   subscribeToDatasetChanges() {
     return () => {};
   },

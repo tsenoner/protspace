@@ -59,9 +59,9 @@ Before every commit:
 - [ ] 2.4 (a, G11) After a failed Back/Forward, re-record the displayed view in the view controller unless the user retries.
   - The hook tracks the displayed dataset id, so the next app-written entry for a user view change names the displayed dataset.
   - Unit tests: `startup.test.ts` (no fallback with the flag; fallback without it), and `dataset-controller.dataset-changes.test.ts` (`hasDisplayedDataset()` flips only on success, and stays unchanged after a `data-error`).
-- [ ] 2.5 (b1) Add the pure `decideUrlChange({ datasetParam, currentDatasetId, switchPending })` to `url-state.ts`, with unit tests.
+- [x] 2.5 (b1) Add the pure `decideUrlChange({ datasetParam, currentDatasetId, switchPending })` to `url-state.ts`, with unit tests.
   - `use-url-state-sync.ts` keeps a switch token settled by `setRequestedDataset`'s promise; while it is pending, a view-only change is recorded, not applied.
-- [ ] 2.6 (b1) Add `cancelPendingExampleLoad()` (supersede, abort the fetch through an `AbortController`, hide the overlay). A POP navigation (`useNavigationType()`) while a menu load is pending calls it.
+- [x] 2.6 (b1) Add `cancelPendingExampleLoad()` (supersede, abort the fetch through an `AbortController`, hide the overlay). A POP navigation (`useNavigationType()`) while a menu load is pending calls it.
 - [x] 2.7 (b2) Request epoch in `persisted-dataset.ts`:
   - add `beginUserRequest()`/`isCurrentRequest(epoch)`;
   - user requests take a new epoch: menu, Back/Forward (including to an entry without `dataset=`), file import (`runtime.ts`), recovery-banner buttons, Retry and Cancel;
