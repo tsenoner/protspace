@@ -57,11 +57,11 @@ function makeLegend() {
 describe('legend shape size', () => {
   beforeEach(() => localStorage.clear());
 
-  it('starts a fresh dataset at 5, drawn as point size 40', () => {
+  it('starts a fresh dataset at 10, drawn as point size 80', () => {
     const { el, pointSizes, switchTo } = makeLegend();
     switchTo('a');
-    expect(el.shapeSize).toBe(5);
-    expect(pointSizes.at(-1)).toBe(40);
+    expect(el.shapeSize).toBe(10);
+    expect(pointSizes.at(-1)).toBe(80);
   });
 
   it('shows the new default for a legacy 30 record and keeps any other stored size', () => {
@@ -69,7 +69,7 @@ describe('legend shape size', () => {
     store('a', 30);
     store('b', 50);
     switchTo('a');
-    expect(el.shapeSize).toBe(5);
+    expect(el.shapeSize).toBe(10);
     switchTo('b');
     expect(el.shapeSize).toBe(50);
   });
@@ -90,15 +90,15 @@ describe('legend shape size', () => {
     expect(next.el.shapeSize).toBe(12);
   });
 
-  it('resets the whole dataset to 5', () => {
+  it('resets the whole dataset to 10', () => {
     const { el, switchTo, pick } = makeLegend();
     switchTo('a');
     pick(12);
     switchTo('b');
     el._handleSettingsReset();
-    expect(el.shapeSize).toBe(5);
+    expect(el.shapeSize).toBe(10);
     switchTo('a');
-    expect(el.shapeSize).toBe(5);
+    expect(el.shapeSize).toBe(10);
   });
 
   it('takes a bundle size as picked, including 30', () => {

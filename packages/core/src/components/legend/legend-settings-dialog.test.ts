@@ -170,10 +170,10 @@ describe('shape size input', () => {
     return { input, callbacks };
   }
 
-  it('accepts sizes down to 1 and suggests the default 5', () => {
+  it('accepts sizes down to 1 and suggests the default 10', () => {
     const { input, callbacks } = typeSize('1');
     expect(input.min).toBe('1');
-    expect(input.placeholder).toBe('5');
+    expect(input.placeholder).toBe('10');
     expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
   });
 
