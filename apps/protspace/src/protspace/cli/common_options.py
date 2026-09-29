@@ -77,6 +77,9 @@ REFETCH_SHORTHANDS: dict[str, frozenset[str]] = {
     "all": REFETCH_STAGES,
     "annotations": ANNOTATION_SOURCES,
 }
+ANNOTATION_REFETCH_SHORTHANDS: dict[str, frozenset[str]] = {
+    "annotations": ANNOTATION_SOURCES,
+}
 
 
 def parse_refetch(
