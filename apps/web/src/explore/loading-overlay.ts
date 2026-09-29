@@ -16,6 +16,20 @@ interface LoadingOverlayController {
   dispose(): void;
 }
 
+/**
+ * The share of the loading bar, in percent, that an example's download fills
+ * (persisted-dataset.ts). Decoding and rendering report progress on a 0–100
+ * scale of their own, which `progressAfterExampleDownload` maps onto the rest,
+ * so the bar never runs backwards.
+ */
+export const EXAMPLE_DOWNLOAD_SHARE = 40;
+
+/** Maps a decode or render phase's 0–100 progress onto the bar left after an example's download. */
+export function progressAfterExampleDownload(progress: number): number {
+  const clamped = Math.min(100, Math.max(0, progress));
+  return EXAMPLE_DOWNLOAD_SHARE + (clamped * (100 - EXAMPLE_DOWNLOAD_SHARE)) / 100;
+}
+
 const CANCEL_BUTTON_ID = 'progressive-loading-cancel';
 const CANCEL_DEFAULT_LABEL = 'Cancel';
 

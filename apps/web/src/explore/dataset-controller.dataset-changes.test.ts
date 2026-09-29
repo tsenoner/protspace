@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import { EXAMPLE_DATASETS } from './example-datasets';
+import { progressAfterExampleDownload } from './loading-overlay';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
@@ -319,6 +320,29 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
 
     expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe(true);
     expect(mocks.persisted.cancelPendingExampleLoad).toHaveBeenCalledWith({ source: 'menu' });
+  });
+
+  it("maps an example's decode progress onto the bar left after its download", () => {
+    const exampleMeta = {
+      sequence: 1,
+      kind: 'default' as const,
+      example: { entry: OTHER, source: 'menu' as const, requestId: 1 },
+    };
+    const example = createController({ getRunningLoadMeta: () => exampleMeta });
+    example.controller.handleLoadingStart();
+    example.controller.handleLoadingProgress({ detail: { percentage: 100 } } as unknown as Event);
+    expect(vi.mocked(example.overlayController.update).mock.calls.map((call) => call[1])).toEqual([
+      progressAfterExampleDownload(5),
+      progressAfterExampleDownload(20),
+    ]);
+
+    // A user import has no download phase: its bar keeps the loader's own scale.
+    const user = createController();
+    user.controller.handleLoadingStart();
+    user.controller.handleLoadingProgress({ detail: { percentage: 100 } } as unknown as Event);
+    expect(vi.mocked(user.overlayController.update).mock.calls.map((call) => call[1])).toEqual([
+      5, 20,
+    ]);
   });
 
   it('decode progress of a superseded (e.g. cancelled) example never brings the overlay back', () => {

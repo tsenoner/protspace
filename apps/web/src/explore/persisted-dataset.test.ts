@@ -28,6 +28,7 @@ import {
   markLastLoadStatus,
   readLastLoadStatus,
 } from './opfs-dataset-store';
+import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
 
 const DEMO = EXAMPLE_DATASETS[0];
@@ -104,7 +105,12 @@ describe('loadExampleDataset', () => {
 
     const resultPromise = controller.loadExampleDataset(DEMO, 'menu');
     // The overlay must appear before the fetch resolves, not after.
-    expect(overlayController.update).toHaveBeenCalledWith(true, 0, `Downloading ${DEMO.label}…`);
+    expect(overlayController.update).toHaveBeenCalledWith(
+      true,
+      0,
+      `Downloading ${DEMO.label}…`,
+      `0.0 / ${(DEMO.sizeBytes / 1e6).toFixed(1)} MB`,
+    );
 
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
     loadQueue.resolveOutcome(1, true);
@@ -258,6 +264,93 @@ describe('loadExampleDataset', () => {
 
     expect(notifyMock.error).not.toHaveBeenCalled();
     expect(overlayController.update).not.toHaveBeenCalled();
+  });
+});
+
+/** A streamed response whose body yields `chunkSizes` bytes, chunk by chunk, each filled with its index. */
+function streamedResponse(chunkSizes: number[], headers: Record<string, string> = {}): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(streamController) {
+      chunkSizes.forEach((size, index) =>
+        streamController.enqueue(new Uint8Array(size).fill(index)),
+      );
+      streamController.close();
+    },
+  });
+  return new Response(stream, { headers });
+}
+
+/** The download phase's overlay updates: `[progress, sub-message]`, while it downloads. */
+function downloadUpdates(update: ReturnType<typeof vi.fn>): Array<[number, string]> {
+  return update.mock.calls
+    .filter(([show, , message]) => show === true && String(message).startsWith('Downloading '))
+    .map(([, progress, , subMessage]) => [progress as number, subMessage as string]);
+}
+
+describe('example download progress', () => {
+  const MB = 1_000_000;
+  const DOWNLOAD_SHARE = EXAMPLE_DOWNLOAD_SHARE;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rises with the decoded bytes over the decoded size, never past it, despite a gzip-sized Content-Length', async () => {
+    const entry = { ...OTHER, sizeBytes: 3 * MB };
+    // Pages serves gzip: the header states the compressed size, well below
+    // the 3 MB the stream yields. Measured against it, progress would pass 100 %.
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(streamedResponse([MB, MB, MB], { 'content-length': String(2 * MB) })),
+    );
+    const { controller, dataLoader, overlayController, loadQueue } = createController();
+
+    const result = controller.loadExampleDataset(entry, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+    loadQueue.resolveOutcome(1, true);
+    expect(await result).toBe('loaded');
+
+    expect(downloadUpdates(overlayController.update)).toEqual([
+      [0, '0.0 / 3.0 MB'],
+      [(1 / 3) * DOWNLOAD_SHARE, '1.0 / 3.0 MB'],
+      [(2 / 3) * DOWNLOAD_SHARE, '2.0 / 3.0 MB'],
+      [DOWNLOAD_SHARE, '3.0 / 3.0 MB'],
+    ]);
+  });
+
+  it('stays capped when the body outgrows the recorded size', async () => {
+    const entry = { ...OTHER, sizeBytes: 2 * MB };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamedResponse([MB, MB, MB])));
+    const { controller, dataLoader, overlayController, loadQueue } = createController();
+
+    const result = controller.loadExampleDataset(entry, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+    loadQueue.resolveOutcome(1, true);
+    await result;
+
+    const updates = downloadUpdates(overlayController.update);
+    expect(Math.max(...updates.map(([progress]) => progress))).toBe(DOWNLOAD_SHARE);
+    expect(updates[updates.length - 1]).toEqual([DOWNLOAD_SHARE, '2.0 / 2.0 MB']);
+  });
+
+  it('loads a File built from every streamed chunk', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamedResponse([3, 2])));
+    const { controller, dataLoader, loadQueue } = createController();
+
+    const result = controller.loadExampleDataset(OTHER, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+    loadQueue.resolveOutcome(1, true);
+    await result;
+
+    const file = dataLoader.loadFromFile.mock.calls[0]?.[0] as File;
+    expect(file.name).toBe(OTHER.url.split('/').pop());
+    expect([...new Uint8Array(await file.arrayBuffer())]).toEqual([0, 0, 0, 1, 1]);
   });
 });
 

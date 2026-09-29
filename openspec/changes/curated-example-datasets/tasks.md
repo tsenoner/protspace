@@ -100,10 +100,10 @@ Before every commit:
   - the Large badge renders for `large: true`.
 - [x] 3.3 Web wiring: pass `insight`, `docsUrl` and `large` through `runtime.ts` (`toExampleDatasetSummary` in `example-datasets.ts`), and set `examplesDocsUrl` to `/docs/explore/example-datasets` (`EXAMPLES_DOCS_URL`).
   - The catalog's `large` becomes `{ memory, loadTime }`, which the summary appends to a large entry's description with its download size.
-- [ ] 3.4 Streamed download in `loadExampleDataset`:
+- [x] 3.4 Streamed download in `loadExampleDataset`:
   - read `response.body`, report received ÷ `entry.sizeBytes` (capped) with "x / y MB" on the overlay;
   - build the `File` from a `Blob` of the chunks;
-  - re-map the overlay ranges so the download gets a real share.
+  - re-map the overlay ranges so the download gets a real share (0–40 %; `progressAfterExampleDownload` in `loading-overlay.ts` maps an example's decode and render phases onto 40–100 %).
   - Unit test: progress stays capped when a gzip-sized `Content-Length` is present.
 - [ ] 3.5 Cancel:
   - `overlayController.setCancelHandler(…, 'Cancel download')` during the download; it takes a user epoch and calls `cancelPendingExampleLoad()`;

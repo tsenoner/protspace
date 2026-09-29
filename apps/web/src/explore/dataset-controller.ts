@@ -24,6 +24,7 @@ import { DEFAULT_EXAMPLE_DATASET, findExampleDataset } from './example-datasets'
 import type { ExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
+import { progressAfterExampleDownload } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
@@ -131,12 +132,28 @@ export function createDatasetController({
   structureViewer,
   viewController,
 }: DatasetControllerOptions): DatasetController {
+  // An example's download fills the first part of the loading bar
+  // (persisted-dataset.ts). Its decode and render phases report 0–100 of
+  // their own, mapped onto the rest, so the bar never runs backwards.
+  const phaseOverlayController: DatasetControllerOptions['overlayController'] = {
+    update(show, progress, message, subMessage) {
+      const afterDownload =
+        show && progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
+      overlayController.update(
+        show,
+        afterDownload ? progressAfterExampleDownload(progress) : progress,
+        message,
+        subMessage,
+      );
+    },
+  };
+
   const loadData = createDataRenderer({
     controlBar,
     getIsDisposed,
     interactionController,
     legendElement,
-    overlayController,
+    overlayController: phaseOverlayController,
     plotElement,
     resolveInitialView: viewController.resolveLatestView,
     structureViewer,
@@ -552,7 +569,7 @@ export function createDatasetController({
         return;
       }
       console.log('Data loading started');
-      overlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
+      phaseOverlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
     },
     handleLoadingProgress(event: Event) {
       if (isRunningLoadSuperseded()) {
@@ -561,7 +578,12 @@ export function createDatasetController({
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));
-      overlayController.update(true, visualProgress, 'Reading protein data...', 'Uploading...');
+      phaseOverlayController.update(
+        true,
+        visualProgress,
+        'Reading protein data...',
+        'Uploading...',
+      );
     },
     handleDataLoaded,
     handleDataError,

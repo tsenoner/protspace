@@ -148,7 +148,8 @@ Rejected:
   - `loadExampleDataset` streams `response.body`, and the overlay shows received ÷ `entry.sizeBytes`, capped at 100 %, plus "12.3 / 44.9 MB".
   - `Content-Length` is **not** used: Pages serves gzip, so it is the compressed size (36.8 MB for a 44.9 MB file), while the stream yields decoded bytes.
   - The `File` is built from a `Blob` of the chunks, which also drops the extra `arrayBuffer` copy.
-  - The overlay ranges are re-mapped so the download gets a real share of the bar.
+  - The overlay ranges are re-mapped so the download gets a real share of the bar: it fills the first 40 %, and for an example load the decode and render phases' own 0–100 scale is mapped onto the remaining 60 % (`progressAfterExampleDownload`, `loading-overlay.ts`), so the bar never runs backwards. User imports and OPFS restores keep today's scale.
+  - The overlay is updated only when the "x / y MB" text changes (every 0.1 MB), not on every chunk.
 - **Cancel.**
   - During the download, the overlay offers Cancel (`setCancelHandler`), backed by an `AbortController`. Cancel is a user request: it takes a new epoch and calls `cancelPendingExampleLoad()`.
   - When a dataset is displayed, Cancel leaves it and the URL unchanged and shows no toast. `registerFileLoad` is never called.

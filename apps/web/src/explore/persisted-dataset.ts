@@ -3,6 +3,7 @@ import { notify } from '../lib/notify';
 import {
   DEFAULT_EXAMPLE_DATASET,
   findExampleDataset,
+  formatMegabytes,
   type ExampleDataset,
 } from './example-datasets';
 import {
@@ -17,7 +18,49 @@ import {
   getExampleLoadFailureNotification,
 } from './notifications';
 import type { LoadQueue } from './load-queue';
+import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
 import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
+
+/**
+ * Reads a download's body chunk by chunk and reports the bytes received so
+ * far. The stream yields decoded bytes, so callers measure them against the
+ * decoded file size, never against `Content-Length`, which is the compressed
+ * size when the response is gzip-encoded. The chunks become one `Blob`, with
+ * no intermediate `ArrayBuffer` copy. Resolves `null`, having cancelled the
+ * stream, as soon as `isCurrent` turns false.
+ */
+async function readDownload(
+  response: Response,
+  onProgress: (received: number) => void,
+  isCurrent: () => boolean,
+): Promise<Blob | null> {
+  if (!response.body) {
+    const buffer = await response.arrayBuffer();
+    if (!isCurrent()) {
+      return null;
+    }
+    onProgress(buffer.byteLength);
+    return new Blob([buffer]);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (!isCurrent()) {
+      void reader.cancel().catch(() => {});
+      return null;
+    }
+    if (done) {
+      break;
+    }
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress(received);
+  }
+  return new Blob(chunks);
+}
 
 export type PersistedLoadOutcome =
   | { kind: 'auto-loaded' }
@@ -115,7 +158,24 @@ export function createPersistedDatasetController({
     if (!isCurrentRequest(requestId)) {
       return 'superseded';
     }
-    overlayController.update(true, 0, `Downloading ${entry.label}…`);
+    // Progress is the decoded bytes received over the entry's decoded size
+    // (see `readDownload`), capped, with "12.3 / 44.9 MB" as the overlay's
+    // sub-message. Only a change of that text updates the overlay, not every
+    // chunk.
+    const downloadMessage = `Downloading ${entry.label}…`;
+    const totalLabel = formatMegabytes(entry.sizeBytes);
+    let shownAmount = '';
+    const showDownloadProgress = (received: number) => {
+      const shown = Math.min(received, entry.sizeBytes);
+      const amount = `${(shown / 1e6).toFixed(1)} / ${totalLabel}`;
+      if (amount === shownAmount) {
+        return;
+      }
+      shownAmount = amount;
+      const fraction = entry.sizeBytes > 0 ? shown / entry.sizeBytes : 1;
+      overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, downloadMessage, amount);
+    };
+    showDownloadProgress(0);
     const download = new AbortController();
     pendingDownload = download;
     const pending = { epoch: requestId, source };
@@ -130,13 +190,15 @@ export function createPersistedDatasetController({
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      if (!isCurrentRequest(requestId)) {
+      const body = await readDownload(response, showDownloadProgress, () =>
+        isCurrentRequest(requestId),
+      );
+      if (!body || !isCurrentRequest(requestId)) {
         return 'superseded';
       }
 
       const fileName = entry.url.split('/').pop() ?? entry.id;
-      const file = new File([arrayBuffer], fileName, {
+      const file = new File([body], fileName, {
         type: 'application/octet-stream',
       });
 
