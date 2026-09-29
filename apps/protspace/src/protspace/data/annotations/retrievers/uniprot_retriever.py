@@ -16,6 +16,7 @@ from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationR
 from protspace.data.annotations.retrievers.http_utils import (
     API_TIMEOUT,
     PooledSession,
+    get_with_retry,
     paginated_get,
 )
 from protspace.data.parsers.uniprot_parser import UniProtEntry
@@ -60,10 +61,13 @@ def _fetch_one_with_timeout(
     on_response: OnResponse | None = None,
     session: requests.Session | None = None,
 ) -> dict:
-    """Fetch a single UniProt entry by accession with timeout protection."""
+    """Fetch a single UniProt entry by accession with timeout protection.
+
+    One attempt, sent through the retry helper so that on a session it waits
+    out a ``Retry-After`` the session received, and passes on one it gets.
+    """
     url = f"https://rest.uniprot.org/uniprotkb/{accession}.json"
-    resp = (requests if session is None else session).get(url, timeout=timeout)
-    resp.raise_for_status()
+    resp = get_with_retry(url, timeout=timeout, attempts=1, session=session)
     if on_response is not None:
         on_response(resp)
     return resp.json()
@@ -76,11 +80,13 @@ def _fetch_uniparc_sequence(
     on_response: OnResponse | None = None,
     session: requests.Session | None = None,
 ) -> tuple[str, int]:
-    """Fetch sequence and length from UniParc for deleted entries."""
+    """Fetch sequence and length from UniParc for deleted entries.
+
+    One attempt, sent like :func:`_fetch_one_with_timeout`.
+    """
     url = f"https://rest.uniprot.org/uniparc/{uniparc_id}.json"
     try:
-        resp = (requests if session is None else session).get(url, timeout=timeout)
-        resp.raise_for_status()
+        resp = get_with_retry(url, timeout=timeout, attempts=1, session=session)
         if on_response is not None:
             on_response(resp)
         data = resp.json()
