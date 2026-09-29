@@ -216,7 +216,7 @@ Per-dataset recipes and gates live in the build script (tasks §6 and §7):
 
 - `example_id`;
 - `protspace_version` plus the git SHA when that is a dev version;
-- `uniprot_release` **per column group** (the EAT examples mix paper-era and 2026_03 columns: G10);
+- `uniprot_release` **per column group** (the EAT examples mix paper-era and 2026_03 columns: G10), as JSON `{group: {release, columns}}` with a null release for computed columns; `write_manifest.py` keeps each group's release, leaves out groups with none, and still reads the flat `{group: release}` form of older bundles;
 - `membership_release`;
 - `built_at`;
 - `command`;

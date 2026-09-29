@@ -80,10 +80,12 @@ META_EXAMPLE_ID = "example_id"
 META_PROTSPACE_VERSION = "protspace_version"
 META_GIT_SHA = "git_sha"
 META_MEMBERSHIP_RELEASE = "membership_release"
-# A JSON object mapping a column group to the release its values come from
-# (e.g. {"uniprot": "2026_03", "eat": "2026_02"}), or a single release string. A
-# group's value may also be an object with a "release" key (and its "columns"),
-# as older showcase builds wrote it; a group whose release is unknown is left out.
+# A JSON object mapping each column group to the release its values come from.
+# The showcase build (build_showcase.py `release_groups`) writes one object per
+# group, {"refreshed": {"release": "2026_03", "columns": [...]}, ...}, with a null
+# release for groups that have none (computed columns); those are left out.
+# Bundles built before it hold a flat {group: release} object or a single
+# release string, which are still read.
 META_UNIPROT_RELEASE = "uniprot_release"
 META_BUILT_AT = "built_at"
 META_COMMAND = "command"
@@ -164,7 +166,7 @@ def _decode_metadata(raw: dict[bytes, bytes] | None) -> dict[str, str]:
 
 
 def _group_release(value: object) -> str | None:
-    """A column group's release: a string, or the ``release`` of a group object."""
+    """A column group's release: its object's ``release``, or a plain string (older bundles)."""
     if isinstance(value, dict):
         value = value.get("release")
     if value is None or isinstance(value, (dict, list)):

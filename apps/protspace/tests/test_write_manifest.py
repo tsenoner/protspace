@@ -137,6 +137,8 @@ def test_record_reads_provenance_metadata(tmp_path):
             "protspace_version": "4.14.0",
             "git_sha": "abc123",
             "membership_release": "2025_04",
+            # The flat {group: release} form of bundles built before the
+            # showcase build's group objects.
             "uniprot_release": json.dumps({"uniprot": "2026_03", "ted": "2026_03"}),
             "built_at": "2026-10-01T12:00:00Z",
             "command": "protspace annotate ...",
@@ -346,21 +348,51 @@ def test_check_reports_a_stale_manifest(tmp_path, capsys):
     assert manifest["examples"]["demo"]["proteins"] == 2
 
 
-def test_group_objects_contribute_their_release_and_unknown_groups_are_left_out(
-    tmp_path,
-):
-    # The shape an earlier showcase build wrote: {group: {"release", "columns"}}.
+def test_the_showcase_builds_group_objects_give_each_groups_release(tmp_path):
+    # What build_showcase.py stamps (release_groups, stored by set_provenance as
+    # sorted JSON): {group: {"release", "columns"}}, with a null release for the
+    # computed columns. Those carry no UniProt release, so they are left out.
+    groups = {
+        "computed": {"columns": ["cluster_leiden"], "release": None},
+        "paper": {"columns": ["family"], "release": "2025_03"},
+        "refreshed": {"columns": ["ec", "pfam"], "release": "2026_03"},
+        "withheld-truth": {"columns": ["ec_truth"], "release": "2026_03"},
+    }
     bundle = _write_bundle(
         tmp_path / "b.parquetbundle",
         ids=["P1"],
-        annotations={"ec": ["1"], "cluster_leiden": ["3"]},
+        annotations={
+            "ec": ["1"],
+            "pfam": ["PF1"],
+            "family": ["f"],
+            "ec_truth": ["1"],
+            "cluster_leiden": ["3"],
+        },
+        projections=["UMAP_2"],
+        metadata={"uniprot_release": json.dumps(groups, sort_keys=True)},
+    )
+    record = write_manifest.read_bundle_record(
+        bundle, example_id="x", file="b", hosting="repo"
+    )
+    assert record["releases"]["annotations"] == {
+        "paper": "2025_03",
+        "refreshed": "2026_03",
+        "withheld-truth": "2026_03",
+    }
+
+
+def test_group_objects_and_plain_releases_can_be_mixed(tmp_path):
+    bundle = _write_bundle(
+        tmp_path / "b.parquetbundle",
+        ids=["P1"],
+        annotations={"ec": ["1"]},
         projections=["UMAP_2"],
         metadata={
             "uniprot_release": json.dumps(
                 {
-                    "computed": {"columns": ["cluster_leiden"], "release": None},
                     "refreshed": {"columns": ["ec"], "release": "2026_03"},
                     "paper": "2025_03",
+                    "eat": {"columns": ["ec_eat"]},
                 }
             )
         },

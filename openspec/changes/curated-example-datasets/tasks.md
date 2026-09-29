@@ -171,7 +171,7 @@ Before every commit:
 - [x] 4.15 Review fixes to hosting:
   - `write_manifest.py` refuses a retained file named like a new one with other bytes and drops an identical one; `examples:fetch` fails before downloading when two pinned files share a name with other bytes, re-verifies every file once all are in place, and rejects a perf manifest that is not `{ release, datasets }`;
   - `--zenodo-doi` records the deposit's DOI after the build, and later runs keep it while the bytes are unchanged;
-  - `_annotation_releases` also reads `{ group: { release, columns } }` objects, leaving out groups with no release;
+  - `_annotation_releases` reads the build's `{ group: { release, columns } }` objects (the agreed provenance format), leaving out groups with no release, and still the flat `{ group: release }` form of older bundles; a test stamps a bundle exactly as `set_provenance` does;
   - the E2E web server stops with the run (`gracefulShutdown`), and the docs captures refuse an app whose startup load is the E2E fixture.
 
 ## 5. Docs tooling and prose
