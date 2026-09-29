@@ -103,6 +103,11 @@ export class GLResources {
       destroyFramebuffer(gl, this.linearFramebuffer);
       this.linearFramebuffer = null;
     }
+    this.destroyDensity(gl);
+  }
+
+  /** Delete the density programs, VAO and targets, if any, and null the field. */
+  destroyDensity(gl: WebGL2RenderingContext): void {
     if (this.density) {
       destroyDensityResources(gl, this.density);
       this.density = null;

@@ -36,8 +36,8 @@ export function setPointBlendState(gl: WebGL2RenderingContext): void {
   gl.depthMask(false);
 }
 
-/** Per-draw inputs for {@link bindPointDrawState}. */
-interface PointDrawStateParams {
+/** The camera inputs of `CAMERA_TO_CLIP_GLSL`, shared by the point and density draws. */
+export interface CameraParams {
   /** Physical target dimensions in device pixels (u_resolution). */
   width: number;
   height: number;
@@ -45,6 +45,25 @@ interface PointDrawStateParams {
   transform: { x: number; y: number; k: number };
   /** Device pixel ratio (u_dpr). */
   dpr: number;
+}
+
+export type CameraUniformLocations = Pick<
+  PointUniformLocations,
+  'resolution' | 'transform' | 'dpr'
+>;
+
+export function setCameraUniforms(
+  gl: WebGL2RenderingContext,
+  loc: CameraUniformLocations,
+  cam: CameraParams,
+): void {
+  gl.uniform2f(loc.resolution, cam.width, cam.height);
+  gl.uniform3f(loc.transform, cam.transform.x, cam.transform.y, cam.transform.k);
+  gl.uniform1f(loc.dpr, cam.dpr);
+}
+
+/** Per-draw inputs for {@link bindPointDrawState}. */
+interface PointDrawStateParams extends CameraParams {
   pointScale: number;
   /** Effective gamma (u_gamma); 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
@@ -90,9 +109,7 @@ export function bindPointDrawState(
   // blend, depth test/mask off. Idempotent GL-state setup.
   setPointBlendState(gl);
 
-  gl.uniform2f(uniforms.resolution, params.width, params.height);
-  gl.uniform3f(uniforms.transform, params.transform.x, params.transform.y, params.transform.k);
-  gl.uniform1f(uniforms.dpr, params.dpr);
+  setCameraUniforms(gl, uniforms, params);
   gl.uniform1f(uniforms.pointScale, params.pointScale);
   gl.uniform1f(uniforms.gamma, params.gamma);
   gl.uniform3f(uniforms.knockoutColor, ...params.knockoutColor);

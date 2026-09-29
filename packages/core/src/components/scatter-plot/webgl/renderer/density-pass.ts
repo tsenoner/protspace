@@ -2,7 +2,6 @@ import { NEUTRAL_VALUE_COLOR } from '../../config';
 import { createProgramFromSources } from '../shader-utils';
 import {
   DENSITY_ACCUM_FRAGMENT_SHADER,
-  DENSITY_QUAD_VERTEX_SHADER,
   DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
   DENSITY_CATEGORY_ACCUM_VERTEX_SHADER,
   DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
@@ -12,6 +11,13 @@ import {
   DENSITY_CONTOUR_LIGHTEN,
   DENSITY_FIELD_UNITS,
 } from './density-shaders';
+import { GAMMA_VERTEX_SHADER } from './export-shaders';
+import {
+  bindAndClearTarget,
+  setCameraUniforms,
+  type CameraParams,
+  type CameraUniformLocations,
+} from './render-target';
 
 const DENSITY_PIXEL_RATIO = 2;
 const DENSITY_MAX_GRID_SIDE = 1024;
@@ -32,12 +38,6 @@ interface BlurLocations {
   direction: WebGLUniformLocation | null;
 }
 
-interface CameraLocations {
-  resolution: WebGLUniformLocation | null;
-  transform: WebGLUniformLocation | null;
-  dpr: WebGLUniformLocation | null;
-}
-
 export interface SlotPalette {
   readonly keys: Float32Array;
   readonly colors: Float32Array;
@@ -50,7 +50,7 @@ export interface DensityResources {
   categoryAccumProgram: WebGLProgram;
   categoryCompositeProgram: WebGLProgram;
   contourBlurLoc: BlurLocations;
-  categoryAccumLoc: CameraLocations & {
+  categoryAccumLoc: CameraUniformLocations & {
     slotKeys: WebGLUniformLocation | null;
     slotCount: WebGLUniformLocation | null;
     tailSlot: WebGLUniformLocation | null;
@@ -71,7 +71,7 @@ export interface DensityResources {
 
 export interface DensityFrame {
   res: DensityResources;
-  camera: DensityCamera;
+  camera: CameraParams;
   alpha: number;
   palette: SlotPalette;
 }
@@ -85,8 +85,6 @@ export function computeDensityGrid(
   const s = Math.min(1, DENSITY_MAX_GRID_SIDE / Math.max(w, h)) / DENSITY_CONTOUR_GRID_DIVISOR;
   return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) };
 }
-
-const FIELD_COUNT = DENSITY_CATEGORY_CAP / 4;
 
 export function buildSlotPalette(colors: Float32Array, count: number, gamma: number): SlotPalette {
   const entries = new Map<number, { n: number; first: number }>();
@@ -187,7 +185,7 @@ export function createDensityResources(
   const quadBindings = { a_position: QUAD_ATTRIB_INDEX };
   const contourBlurProgram = createProgramFromSources(
     gl,
-    DENSITY_QUAD_VERTEX_SHADER,
+    GAMMA_VERTEX_SHADER,
     DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
     quadBindings,
   );
@@ -199,7 +197,7 @@ export function createDensityResources(
   );
   const categoryCompositeProgram = createProgramFromSources(
     gl,
-    DENSITY_QUAD_VERTEX_SHADER,
+    GAMMA_VERTEX_SHADER,
     DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
     quadBindings,
   );
@@ -219,7 +217,7 @@ export function createDensityResources(
   gl.bindVertexArray(null);
 
   const loc = (p: WebGLProgram, name: string) => gl.getUniformLocation(p, name);
-  const camera = (p: WebGLProgram): CameraLocations => ({
+  const camera = (p: WebGLProgram): CameraUniformLocations => ({
     resolution: loc(p, 'u_resolution'),
     transform: loc(p, 'u_transform'),
     dpr: loc(p, 'u_dpr'),
@@ -260,11 +258,10 @@ export function resizeDensityTargets(
   canvasHeight: number,
 ): boolean {
   const { width, height } = computeDensityGrid(canvasWidth, canvasHeight);
-  const want = FIELD_COUNT;
   if (
     res.accum &&
     res.ping &&
-    res.fields.length === want &&
+    res.fields.length === DENSITY_FIELD_UNITS.length &&
     res.accum.width === width &&
     res.accum.height === height
   ) {
@@ -277,7 +274,7 @@ export function resizeDensityTargets(
   const accum = createColorTarget(gl, width, height, gl.RGBA32F, gl.FLOAT, gl.NEAREST);
   const blurred = () => createColorTarget(gl, width, height, gl.RGBA16F, gl.HALF_FLOAT, gl.LINEAR);
   const ping = blurred();
-  const fields = Array.from({ length: want }, blurred);
+  const fields = Array.from({ length: DENSITY_FIELD_UNITS.length }, blurred);
   const made = [accum, ping, ...fields];
   if (made.some((t) => !t)) {
     for (const t of made) if (t) destroyColorTarget(gl, t);
@@ -304,33 +301,17 @@ export function destroyDensityResources(gl: WebGL2RenderingContext, res: Density
   gl.deleteProgram(res.categoryCompositeProgram);
 }
 
-export interface DensityCamera {
-  width: number;
-  height: number;
-  transform: { x: number; y: number; k: number };
-  dpr: number;
-}
-
-function setCamera(gl: WebGL2RenderingContext, loc: CameraLocations, camera: DensityCamera) {
-  gl.uniform2f(loc.resolution, camera.width, camera.height);
-  gl.uniform3f(loc.transform, camera.transform.x, camera.transform.y, camera.transform.k);
-  gl.uniform1f(loc.dpr, camera.dpr);
-}
-
 function accumulate(
   gl: WebGL2RenderingContext,
+  res: DensityResources,
   accum: ColorTarget,
-  program: WebGLProgram,
   pointVao: WebGLVertexArrayObject | null,
   pointCount: number,
-  setUniforms: () => void,
+  group: number,
 ) {
-  gl.bindFramebuffer(gl.FRAMEBUFFER, accum.framebuffer);
-  gl.viewport(0, 0, accum.width, accum.height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.useProgram(program);
-  setUniforms();
+  bindAndClearTarget(gl, accum.framebuffer, accum.width, accum.height);
+  gl.useProgram(res.categoryAccumProgram);
+  gl.uniform1i(res.categoryAccumLoc.group, group);
   gl.enable(gl.BLEND);
   gl.blendEquation(gl.FUNC_ADD);
   gl.blendFunc(gl.ONE, gl.ONE);
@@ -343,14 +324,13 @@ function accumulate(
 function blur(
   gl: WebGL2RenderingContext,
   res: DensityResources,
-  program: WebGLProgram,
-  loc: BlurLocations,
   accum: ColorTarget,
   ping: ColorTarget,
   out: ColorTarget,
 ) {
+  const loc = res.contourBlurLoc;
   gl.disable(gl.BLEND);
-  gl.useProgram(program);
+  gl.useProgram(res.contourBlurProgram);
   gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(loc.source, 0);
   gl.bindVertexArray(res.quadVao);
@@ -381,19 +361,18 @@ export function accumulateAndBlurDensity(
   const { accum, ping, fields } = res;
   if (!accum || !ping) return;
 
+  // Uniforms are per-program state, so these survive each blur's program switch.
   const loc = res.categoryAccumLoc;
+  gl.useProgram(res.categoryAccumProgram);
+  setCameraUniforms(gl, loc, camera);
+  gl.uniform3fv(loc.slotKeys, palette.keys);
+  gl.uniform1i(loc.slotCount, palette.count);
+  gl.uniform1i(loc.tailSlot, palette.tailSlot);
+
   const groups = Math.ceil(palette.count / 4);
   for (let g = 0; g < groups && fields[g]; g++) {
-    accumulate(gl, accum, res.categoryAccumProgram, pointVao, pointCount, () => {
-      if (g === 0) {
-        setCamera(gl, loc, camera);
-        gl.uniform3fv(loc.slotKeys, palette.keys);
-        gl.uniform1i(loc.slotCount, palette.count);
-        gl.uniform1i(loc.tailSlot, palette.tailSlot);
-      }
-      gl.uniform1i(loc.group, g);
-    });
-    blur(gl, res, res.contourBlurProgram, res.contourBlurLoc, accum, ping, fields[g]);
+    accumulate(gl, res, accum, pointVao, pointCount, g);
+    blur(gl, res, accum, ping, fields[g]);
   }
 }
 

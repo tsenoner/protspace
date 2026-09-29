@@ -35,7 +35,6 @@ import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
   createDensityResources,
   resizeDensityTargets,
-  destroyDensityResources,
   accumulateAndBlurDensity,
   compositeDensity,
   buildSlotPalette,
@@ -373,8 +372,6 @@ export class WebGLRenderer {
         const success = this.resizeLinearFramebuffer(physicalWidth, physicalHeight);
         if (!success) {
           this.handleGammaFallback('resize');
-        } else {
-          this.syncDensityTargets();
         }
       }
     }
@@ -421,25 +418,17 @@ export class WebGLRenderer {
         return null;
       }
     }
-    this.syncDensityTargets();
-    return this.resources.density;
-  }
-
-  private syncDensityTargets() {
-    const gl = this.gl;
-    const res = this.resources.density;
-    if (!gl || !res || this.densityDisabled) return;
-    if (!resizeDensityTargets(gl, res, this.canvas.width, this.canvas.height)) {
+    if (!resizeDensityTargets(gl, this.resources.density, this.canvas.width, this.canvas.height)) {
       this.disableDensity('density target incomplete');
+      return null;
     }
+    return this.resources.density;
   }
 
   private disableDensity(reason: string) {
     this.densityDisabled = true;
     console.warn(`WebGLRenderer: density layer disabled (${reason}).`);
-    if (this.gl && this.resources.density) {
-      destroyDensityResources(this.gl, this.resources.density);
-    }
+    if (this.gl) this.resources.destroyDensity(this.gl);
     this.resources.density = null;
   }
 
@@ -474,10 +463,7 @@ export class WebGLRenderer {
       this.resources.linearFramebuffer = null;
     }
 
-    if (this.resources.density) {
-      destroyDensityResources(gl, this.resources.density);
-      this.resources.density = null;
-    }
+    this.resources.destroyDensity(gl);
 
     this.gammaCorrectionUniformLocations = null;
   }
@@ -586,18 +572,12 @@ export class WebGLRenderer {
     const gl = this.gl;
 
     const density = this.densityFrame(transform);
-
-    // Pass 1: Render to linear RGB framebuffer.
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
-    gl.viewport(0, 0, framebuffer.width, framebuffer.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
     if (density) {
       accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
-      gl.viewport(0, 0, framebuffer.width, framebuffer.height);
     }
+
+    // Pass 1: Render to linear RGB framebuffer.
+    bindAndClearTarget(gl, framebuffer.framebuffer, framebuffer.width, framebuffer.height);
 
     this.renderPoints(transform, density ? () => compositeDensity(gl, density) : undefined);
 
@@ -612,9 +592,7 @@ export class WebGLRenderer {
     const mode = config.densityLayer;
     if (mode === 'off') return null;
 
-    if (this.densityDisabled || !this.shouldUseGammaPipeline() || this.currentPointCount === 0) {
-      return null;
-    }
+    if (this.densityDisabled || this.currentPointCount === 0) return null;
 
     const viewDimensionCss = Math.max(
       config.width ?? DEFAULT_VIEWPORT_WIDTH,
