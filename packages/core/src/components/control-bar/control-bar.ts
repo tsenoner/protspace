@@ -56,11 +56,11 @@ const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
-const DENSITY_LABELS: Record<DensityLayerMode, string> = {
-  off: 'Contour: off',
-  auto: 'Contour: auto',
-  on: 'Contour: on',
-};
+const DENSITY_MODES: ReadonlyArray<{ mode: DensityLayerMode; label: string; hint: string }> = [
+  { mode: 'off', label: 'Off', hint: 'Points only' },
+  { mode: 'auto', label: 'Auto', hint: 'Shows when points overlap, fades as you zoom in' },
+  { mode: 'on', label: 'On', hint: 'Always shown, one ring set per legend colour' },
+];
 
 @customElement('protspace-control-bar')
 export class ProtspaceControlBar extends LitElement {
@@ -109,6 +109,8 @@ export class ProtspaceControlBar extends LitElement {
   @state() private showImportMenu: boolean = false;
   @state() private showFilterMenu: boolean = false;
   @state() private showProjectionMenu: boolean = false;
+  @state() private showDensityMenu: boolean = false;
+  @state() private densityHighlightIndex: number = -1;
   @state() private filterQuery: FilterQuery = [];
   @state() private filterActive = false;
   // Last reliability state reflected across the control<->query mirror, PER
@@ -146,6 +148,7 @@ export class ProtspaceControlBar extends LitElement {
     this.showFilterMenu = false;
     this.showExportMenu = false;
     this.showImportMenu = false;
+    this.showDensityMenu = false;
     // Close search when annotation opens
     this.shadowRoot
       ?.querySelector('protspace-protein-search')
@@ -156,6 +159,7 @@ export class ProtspaceControlBar extends LitElement {
     this.showFilterMenu = false;
     this.showExportMenu = false;
     this.showImportMenu = false;
+    this.showDensityMenu = false;
     // Close annotation when search opens
     this.shadowRoot
       ?.querySelector('protspace-annotation-select')
@@ -167,11 +171,12 @@ export class ProtspaceControlBar extends LitElement {
   /**
    * Close all dropdowns except the specified one
    */
-  private closeOtherDropdowns(except: 'projection' | 'filter' | 'export' | 'import') {
+  private closeOtherDropdowns(except: 'projection' | 'filter' | 'export' | 'import' | 'density') {
     if (except !== 'projection') this.showProjectionMenu = false;
     if (except !== 'filter') this.showFilterMenu = false;
     if (except !== 'export') this.showExportMenu = false;
     if (except !== 'import') this.showImportMenu = false;
+    if (except !== 'density') this.showDensityMenu = false;
 
     // Close annotation dropdown via event
     this.shadowRoot
@@ -423,7 +428,43 @@ export class ProtspaceControlBar extends LitElement {
     );
   }
 
+  private toggleDensityMenu(event?: Event) {
+    event?.stopPropagation();
+    this.showDensityMenu = !this.showDensityMenu;
+    if (this.showDensityMenu) {
+      this.closeOtherDropdowns('density');
+      this.densityHighlightIndex = DENSITY_MODES.findIndex((m) => m.mode === this.densityLayer);
+    } else {
+      this.densityHighlightIndex = -1;
+    }
+  }
+
+  private handleDensityKeydown(event: KeyboardEvent) {
+    if (!this.showDensityMenu) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        this.toggleDensityMenu();
+      }
+      return;
+    }
+    this.handleDropdownKeydown(event, {
+      items: [...DENSITY_MODES],
+      highlightIndex: this.densityHighlightIndex,
+      onHighlightChange: (index) => {
+        this.densityHighlightIndex = index;
+      },
+      onSelect: (index) => this.handleDensityLayerChange(DENSITY_MODES[index].mode),
+      onClose: () => {
+        this.showDensityMenu = false;
+        this.densityHighlightIndex = -1;
+      },
+      supportHomeEnd: true,
+    });
+  }
+
   private handleDensityLayerChange(mode: DensityLayerMode) {
+    this.showDensityMenu = false;
+    this.densityHighlightIndex = -1;
     this.densityLayer = mode;
     if (this.autoSync && this._scatterplotElement) {
       const scatterplot = this._scatterplotElement as ScatterplotElementLike;
@@ -697,23 +738,66 @@ export class ProtspaceControlBar extends LitElement {
         <!-- Right side controls -->
         <div class="right-controls">
           <!-- Density contour mode -->
-          <div class="tool-toggle">
-            <select
-              id="density-layer-select"
-              aria-label="Density layer"
-              title="Density layer. Off: points only. Auto: fades in when points overplot, out as you zoom in. On: always shown. One set of contour lines per legend category, in its colour."
-              @change=${(e: Event) =>
-                this.handleDensityLayerChange(
-                  (e.target as HTMLSelectElement).value as DensityLayerMode,
-                )}
+          <div class="export-container density-container">
+            <button
+              id="density-layer-trigger"
+              class="dropdown-trigger ${this.showDensityMenu ? 'open' : ''} ${this.densityLayer ===
+              'off'
+                ? ''
+                : 'filter-active'}"
+              @click=${this.toggleDensityMenu}
+              @keydown=${this.handleDensityKeydown}
+              title="Contours: ${this.densityLayer}"
+              aria-haspopup="menu"
+              aria-expanded=${this.showDensityMenu}
             >
-              ${(Object.keys(DENSITY_LABELS) as DensityLayerMode[]).map(
-                (mode) =>
-                  html`<option value=${mode} .selected=${this.densityLayer === mode}>
-                    ${DENSITY_LABELS[mode]}
-                  </option>`,
-              )}
-            </select>
+              <svg class="icon" viewBox="0 0 24 24">
+                <path
+                  d="M12 3.5c4.8 0 8.5 3.4 8.5 7.8 0 4.6-3.9 9.2-8.8 9.2S3.5 16.4 3.5 12 7.2 3.5 12 3.5z"
+                />
+                <path
+                  d="M12.2 7.5c2.6 0 4.6 1.9 4.6 4.2 0 2.5-2.1 4.8-4.8 4.8S7.4 14.5 7.4 12s2.2-4.5 4.8-4.5z"
+                />
+                <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+              </svg>
+              <span class="dropdown-trigger-text">Contours</span>
+              <svg class="chevron-down" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            ${this.showDensityMenu
+              ? html`
+                  <div
+                    class="dropdown-menu align-right density-menu"
+                    role="menu"
+                    aria-label="Contours"
+                    @keydown=${this.handleDensityKeydown}
+                  >
+                    <div class="dropdown-list">
+                      ${DENSITY_MODES.map(
+                        ({ mode, label, hint }, index) => html`
+                          <div
+                            class="dropdown-item density-item ${mode === this.densityLayer
+                              ? 'selected'
+                              : ''} ${index === this.densityHighlightIndex ? 'highlighted' : ''}"
+                            role="menuitemradio"
+                            aria-checked=${mode === this.densityLayer}
+                            data-mode=${mode}
+                            @click=${() => this.handleDensityLayerChange(mode)}
+                            @mouseenter=${() => {
+                              this.densityHighlightIndex = index;
+                            }}
+                          >
+                            <span class="density-item-label">${label}</span>
+                            <span class="density-item-hint">${hint}</span>
+                          </div>
+                        `,
+                      )}
+                    </div>
+                  </div>
+                `
+              : ''}
           </div>
 
           <!-- Selection actions group -->
@@ -1203,6 +1287,7 @@ export class ProtspaceControlBar extends LitElement {
           projection: this.showProjectionMenu,
           export: this.showExportMenu,
           import: this.showImportMenu,
+          density: this.showDensityMenu,
         })
       ) {
         return;
@@ -1232,6 +1317,7 @@ export class ProtspaceControlBar extends LitElement {
       this.shadowRoot?.querySelector('.filter-menu'), // Filter
       this.shadowRoot?.querySelector('.export-menu'), // Export
       this.shadowRoot?.querySelector('.import-menu'), // Import
+      this.shadowRoot?.querySelector('.density-container'), // Contours
       // Get annotation-select element
       this.shadowRoot?.querySelector('protspace-annotation-select'),
       // Get search element
@@ -1252,6 +1338,8 @@ export class ProtspaceControlBar extends LitElement {
       this.showFilterMenu = false;
       this.showProjectionMenu = false;
       this.projectionHighlightIndex = -1;
+      this.showDensityMenu = false;
+      this.densityHighlightIndex = -1;
 
       // Close annotation dropdown via custom event
       const annotationSelect = this.shadowRoot?.querySelector('protspace-annotation-select');

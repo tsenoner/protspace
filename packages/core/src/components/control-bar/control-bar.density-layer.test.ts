@@ -12,7 +12,7 @@ type Bar = HTMLElement & {
   _scatterplotElement?: unknown;
 };
 
-describe('control-bar density layer select', () => {
+describe('control-bar contours menu', () => {
   let controlBar: Bar;
   let plot: HTMLElement & { config: Partial<ScatterplotConfig> };
 
@@ -27,58 +27,72 @@ describe('control-bar density layer select', () => {
     controlBar._scatterplotElement = plot;
   });
 
-  const select = () =>
-    controlBar.shadowRoot?.querySelector('#density-layer-select') as HTMLSelectElement | null;
+  const trigger = () =>
+    controlBar.shadowRoot?.querySelector('#density-layer-trigger') as HTMLButtonElement | null;
+  const items = () =>
+    [...(controlBar.shadowRoot?.querySelectorAll('.density-item') ?? [])] as HTMLElement[];
 
-  it('dispatches density-layer-change and mirrors the mode onto the plot config', async () => {
-    const handler = vi.fn();
-    controlBar.addEventListener('density-layer-change', handler);
-
-    const el = select();
-    expect(el).not.toBeNull();
-    expect(el?.getAttribute('aria-label')).toBe('Density layer');
-
-    el!.value = 'auto';
-    el!.dispatchEvent(new Event('change'));
+  const openMenu = async () => {
+    trigger()!.click();
     await controlBar.updateComplete;
+  };
 
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
-      densityLayer: 'auto',
-    });
-    expect(controlBar.densityLayer).toBe('auto');
-    expect(plot.config).toEqual({
-      pointSize: 42,
-      densityLayer: 'auto',
-    });
+  it('lists off, auto and on with the current mode checked', async () => {
+    controlBar.densityLayer = 'auto';
+    await controlBar.updateComplete;
+    expect(items()).toHaveLength(0);
+
+    await openMenu();
+
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
+    expect(items().map((i) => i.dataset.mode)).toEqual(['off', 'auto', 'on']);
+    expect(items().map((i) => i.querySelector('.density-item-label')?.textContent)).toEqual([
+      'Off',
+      'Auto',
+      'On',
+    ]);
+    expect(items().map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
   });
 
-  it('shows the current mode as the selected option', async () => {
+  it.each(['off', 'auto', 'on'] as const)(
+    'picking %s dispatches it, mirrors it onto the plot and closes the menu',
+    async (mode) => {
+      const handler = vi.fn();
+      controlBar.addEventListener('density-layer-change', handler);
+
+      await openMenu();
+      items()
+        .find((i) => i.dataset.mode === mode)!
+        .click();
+      await controlBar.updateComplete;
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: mode });
+      expect(controlBar.densityLayer).toBe(mode);
+      expect(plot.config).toEqual({ pointSize: 42, densityLayer: mode });
+      expect(items()).toHaveLength(0);
+    },
+  );
+
+  it('marks the trigger active only while contours can show', async () => {
+    expect(trigger()?.classList.contains('filter-active')).toBe(false);
     controlBar.densityLayer = 'on';
     await controlBar.updateComplete;
-
-    expect(select()?.value).toBe('on');
+    expect(trigger()?.classList.contains('filter-active')).toBe(true);
   });
 
-  it.each(['off', 'auto', 'on'] as const)('option %s writes mode %s', async (value) => {
+  it('supports arrow keys and Enter', async () => {
     const handler = vi.fn();
     controlBar.addEventListener('density-layer-change', handler);
 
-    const el = select();
-    expect([...el!.options].map((o) => o.value)).toEqual(['off', 'auto', 'on']);
-    expect([...el!.options].map((o) => o.textContent?.trim())).toEqual([
-      'Contour: off',
-      'Contour: auto',
-      'Contour: on',
-    ]);
-
-    el!.value = value;
-    el!.dispatchEvent(new Event('change'));
+    trigger()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await controlBar.updateComplete;
+    trigger()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    await controlBar.updateComplete;
+    trigger()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     await controlBar.updateComplete;
 
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: value });
-    expect(controlBar.densityLayer).toBe(value);
-    expect(plot.config).toMatchObject({ densityLayer: value });
-    expect(select()?.value).toBe(value);
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: 'auto' });
+    expect(items()).toHaveLength(0);
   });
 });
