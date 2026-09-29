@@ -14,7 +14,9 @@
  *
  * Any missing asset, size mismatch or checksum mismatch exits non-zero, which
  * is what fails the deploy (`.github/workflows/deploy.yml`) before anything
- * is published.
+ * is published. So do two pinned files that would land at the same path with
+ * different bytes (a retained file named like a current one), since one would
+ * overwrite the other, and every file is verified again once all are in place.
  *
  * Usage:
  *   pnpm examples:fetch                          # into apps/web/public/examples/ (gitignored)
@@ -134,7 +136,14 @@ interface PerfManifest {
 
 /** The perf datasets to fetch: every one, or those `only` names (unknown ids are errors). */
 function perfFiles(only: string | undefined, errors: string[]): PinnedFile[] {
-  const manifest = JSON.parse(readFileSync(PERF_MANIFEST, 'utf8')) as PerfManifest;
+  const manifest = JSON.parse(readFileSync(PERF_MANIFEST, 'utf8')) as Partial<PerfManifest>;
+  if (typeof manifest?.release !== 'string' || !Array.isArray(manifest.datasets)) {
+    errors.push(
+      `${relative(REPO_ROOT, PERF_MANIFEST)} is not { release, datasets: [...] }; ` +
+        'rewrite it with build_showcase.py stage-perf',
+    );
+    return [];
+  }
   const wanted = only
     ?.split(',')
     .map((id) => id.trim())
@@ -146,7 +155,30 @@ function perfFiles(only: string | undefined, errors: string[]): PinnedFile[] {
   }
   return manifest.datasets
     .filter((dataset) => !wanted || wanted.includes(dataset.id))
-    .map((dataset) => ({ label: dataset.id, release: manifest.release, ...dataset }));
+    .map((dataset) => ({ label: dataset.id, release: manifest.release as string, ...dataset }));
+}
+
+/**
+ * Every pinned file lands at `<out>/<file>`. Two with one name and different
+ * bytes (a retained file named like a current one) would overwrite each other,
+ * so a deploy could serve stale bytes under the current name: that is an
+ * error, raised before anything is downloaded. An identical duplicate is
+ * fetched once.
+ */
+function claimTargets(pinned: PinnedFile[], errors: string[]): PinnedFile[] {
+  const owners = new Map<string, PinnedFile>();
+  for (const file of pinned) {
+    const owner = owners.get(file.file);
+    if (!owner) {
+      owners.set(file.file, file);
+    } else if (owner.sha256 !== file.sha256 || owner.bytes !== file.bytes) {
+      errors.push(
+        `${file.label}: ${file.file} is also ${owner.label}'s file, with other bytes; ` +
+          'one would overwrite the other (rename the new file and rerun write_manifest.py)',
+      );
+    }
+  }
+  return [...owners.values()];
 }
 
 /** The example files to fetch; repo-hosted ones are verified in place instead. */
@@ -190,13 +222,29 @@ async function main(): Promise<number> {
   );
   const baseUrl = values['base-url'].replace(/\/$/, '');
   const errors: string[] = [];
-  const pinned = values.perf
-    ? perfFiles(values.only, errors)
-    : exampleFiles(values['with-retained'], errors);
+  const pinned = claimTargets(
+    values.perf ? perfFiles(values.only, errors) : exampleFiles(values['with-retained'], errors),
+    errors,
+  );
 
-  for (const file of pinned) {
-    const error = await fetchPinned(file, outDir, baseUrl);
-    if (error) errors.push(error);
+  if (errors.length === 0) {
+    for (const file of pinned) {
+      const error = await fetchPinned(file, outDir, baseUrl);
+      if (error) errors.push(error);
+    }
+  }
+  if (errors.length === 0) {
+    // Every file once more, now that all are in place: nothing fetched later
+    // may have replaced one fetched earlier.
+    for (const file of pinned) {
+      const target = join(outDir, file.file);
+      const problem = existsSync(target) ? mismatch(readFileSync(target), file) : 'missing';
+      if (problem) {
+        errors.push(
+          `${file.label}: ${relative(REPO_ROOT, target)} changed after it was verified (${problem})`,
+        );
+      }
+    }
   }
 
   if (errors.length > 0) {
