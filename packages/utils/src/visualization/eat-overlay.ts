@@ -1,17 +1,17 @@
 import type {
   AnnotationData,
   CsrAnnotationData,
-  CsrEvidence,
-  CsrScores,
   PredictedCell,
   VisualizationData,
 } from '../types.js';
 import {
   getFirstAnnotationIndex,
-  getProteinAnnotationIndices,
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
   isCsrAnnotationData,
   isSparseMultiValueAnnotationData,
 } from './annotation-data-access.js';
+import { gatherCsr, syntheticHit } from './csr.js';
 import { isNAValue } from './missing-values.js';
 import { clamp01 } from './numeric-binning.js';
 
@@ -220,85 +220,42 @@ function predictedReplacements(
 }
 
 /**
- * CSR rebuild for the overlay — codes AND the flat per-hit payloads, in one lockstep pass.
+ * CSR rebuild for the overlay.
  *
  * Rebuilt as CSR, never densified to `number[][]`: a 573K column would otherwise become one
  * array per protein. Predicted rows replace the source row's hits wholesale; a prediction
  * that resolves to nothing leaves the row alone, as the Int32Array and sparse-multi branches
  * do (CSR has no way to store the `-1` the dense branch falls back to).
  *
- * `annotation_scores_csr` / `annotation_evidence_csr` are numbered by GLOBAL hit, so a
- * predicted row whose hit count differs from the curated one renumbers every LATER hit.
- * Rebuilding the codes alone left those payloads addressing other proteins' hits, and
- * silently: the accessors read past the end of `hitEnd` / `codes` and return null instead of
- * throwing. So they are rebuilt here alongside the codes — a preserved row copies its hit
- * spans verbatim, a replaced row emits one empty score range and one `-1` evidence code per
- * predicted value (an EAT transfer carries no curated score or evidence of its own).
+ * Through {@link gatherCsr}, so a preserved row keeps its hits' scores and evidence and a
+ * predicted value gets none: an EAT transfer carries no curated score or evidence of its own.
  */
 function cloneCsrWithPredictions(
   source: CsrAnnotationData,
   predictedCells: readonly (PredictedCell | null)[],
   valueToIndex: ReadonlyMap<string, number>,
-  sourceScores: CsrScores | undefined,
-  sourceEvidence: CsrEvidence | undefined,
-): { rows: CsrAnnotationData; scores?: CsrScores; evidence?: CsrEvidence } {
+): CsrAnnotationData {
   const replacements = predictedReplacements(predictedCells, valueToIndex, source.length);
 
-  const end = new Int32Array(source.length);
-  let total = 0;
+  const offsets = new Int32Array(source.length + 1);
   for (let i = 0; i < source.length; i++) {
     const replacement = replacements.get(i);
-    total += replacement ? replacement.length : source.end[i] - (i === 0 ? 0 : source.end[i - 1]);
-    end[i] = total;
+    offsets[i + 1] =
+      offsets[i] + (replacement ? replacement.length : getProteinAnnotationCount(source, i));
   }
 
-  const codes = new Int32Array(total);
-  // The payloads can only shrink (a replaced row drops its own values), so the source
-  // length is a safe upper bound and the trailing slack is sliced off at the end.
-  const values = new Float64Array(sourceScores ? sourceScores.values.length : 0);
-  const hitEnd = new Int32Array(sourceScores ? total : 0);
-  const evidenceCodes = new Int32Array(sourceEvidence ? total : 0);
-
+  const hits = new Int32Array(offsets[source.length]);
   let dst = 0;
-  let written = 0;
   for (let i = 0; i < source.length; i++) {
-    const start = i === 0 ? 0 : source.end[i - 1];
-    const stop = source.end[i];
     const replacement = replacements.get(i);
     if (replacement) {
-      for (const index of replacement) {
-        codes[dst] = index;
-        // Repeating the running cursor is the empty range that says "no score".
-        if (sourceScores) hitEnd[dst] = written;
-        if (sourceEvidence) evidenceCodes[dst] = -1;
-        dst++;
-      }
-      continue;
-    }
-    if (!sourceScores && !sourceEvidence) {
-      // No payload to walk, so a preserved row is one bulk copy.
-      if (stop > start) codes.set(source.codes.subarray(start, stop), dst);
-      dst += stop - start;
-      continue;
-    }
-    for (let hit = start; hit < stop; hit++) {
-      codes[dst] = source.codes[hit];
-      if (sourceScores) {
-        const from = hit === 0 ? 0 : sourceScores.hitEnd[hit - 1];
-        const to = sourceScores.hitEnd[hit];
-        for (let v = from; v < to; v++) values[written++] = sourceScores.values[v];
-        hitEnd[dst] = written;
-      }
-      if (sourceEvidence) evidenceCodes[dst] = sourceEvidence.codes[hit];
-      dst++;
+      for (const index of replacement) hits[dst++] = syntheticHit(index);
+    } else {
+      for (let hit = source.offsets[i]; hit < source.offsets[i + 1]; hit++) hits[dst++] = hit;
     }
   }
 
-  return {
-    rows: { kind: 'csr', end, codes, length: source.length },
-    ...(sourceScores ? { scores: { hitEnd, values: values.slice(0, written) } } : {}),
-    ...(sourceEvidence ? { evidence: { codes: evidenceCodes, dict: sourceEvidence.dict } } : {}),
-  };
+  return gatherCsr(source, { offsets, hits });
 }
 
 function cloneWithPredictions(
@@ -383,45 +340,13 @@ export function materializeEatOverlay(
     if (value != null) valueToIndex.set(value, index);
   });
 
-  if (isCsrAnnotationData(source)) {
-    // The payloads come back from the same pass as the codes and are returned here rather
-    // than left to the `...data` spread: a stale `annotation_scores_csr` carried through by
-    // reference is numbered against the OLD hit layout, which shows one protein's score and
-    // evidence on the next protein's tooltip without any visible failure.
-    const rebuilt = cloneCsrWithPredictions(
-      source,
-      predictedCells,
-      valueToIndex,
-      data.annotation_scores_csr?.[annotationKey],
-      data.annotation_evidence_csr?.[annotationKey],
-    );
-    return {
-      ...data,
-      annotation_data: { ...data.annotation_data, [annotationKey]: rebuilt.rows },
-      ...(rebuilt.scores
-        ? {
-            annotation_scores_csr: {
-              ...data.annotation_scores_csr,
-              [annotationKey]: rebuilt.scores,
-            },
-          }
-        : {}),
-      ...(rebuilt.evidence
-        ? {
-            annotation_evidence_csr: {
-              ...data.annotation_evidence_csr,
-              [annotationKey]: rebuilt.evidence,
-            },
-          }
-        : {}),
-    };
-  }
-
   return {
     ...data,
     annotation_data: {
       ...data.annotation_data,
-      [annotationKey]: cloneWithPredictions(source, predictedCells, valueToIndex),
+      [annotationKey]: isCsrAnnotationData(source)
+        ? cloneCsrWithPredictions(source, predictedCells, valueToIndex)
+        : cloneWithPredictions(source, predictedCells, valueToIndex),
     },
   };
 }
@@ -435,12 +360,10 @@ export function isCuratedAnnotationMissing(
   const annotation = data.annotations[annotationKey];
   const rows = data.annotation_data[annotationKey];
   if (!annotation || !rows) return true;
-  const indices = getProteinAnnotationIndices(rows, proteinIdx);
-  return (
-    indices.length === 0 ||
-    indices.every((index) => {
-      const value = annotation.values[index];
-      return value == null || isNAValue(value);
-    })
-  );
+  const count = getProteinAnnotationCount(rows, proteinIdx);
+  for (let k = 0; k < count; k++) {
+    const value = annotation.values[getProteinAnnotationIndexAt(rows, proteinIdx, k)];
+    if (value != null && !isNAValue(value)) return false;
+  }
+  return true;
 }

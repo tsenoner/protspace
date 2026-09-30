@@ -745,13 +745,14 @@ describe('export from CSR storage (bundle format v3 in memory)', () => {
   const csr: VisualizationData = {
     ...shared,
     annotation_data: {
-      fam: { kind: 'csr', end: Int32Array.of(1, 1, 3), codes: Int32Array.of(0, 1, 0), length: 3 },
-    },
-    annotation_scores_csr: {
-      fam: { hitEnd: Int32Array.of(0, 2, 2), values: Float32Array.of(0.5, 0.25) },
-    },
-    annotation_evidence_csr: {
-      fam: { codes: Int32Array.of(0, -1, -1), dict: ['IDA'] },
+      fam: {
+        kind: 'csr',
+        offsets: Int32Array.of(0, 1, 1, 3),
+        codes: Int32Array.of(0, 1, 0),
+        length: 3,
+        scores: { offsets: Int32Array.of(0, 0, 2, 2), values: Float64Array.of(0.5, 0.25) },
+        evidence: { codes: Int32Array.of(0, -1, -1), dict: ['IDA'] },
+      },
     },
   };
 

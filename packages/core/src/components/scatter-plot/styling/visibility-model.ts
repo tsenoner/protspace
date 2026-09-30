@@ -152,18 +152,16 @@ function buildHiddenMask(
       mask[i] = everyHidden;
     }
   } else if (isCsrAnnotationData(annotationRows)) {
-    const { end, codes, length: len } = annotationRows;
+    const { offsets, codes, length: len } = annotationRows;
     for (let i = 0; i < n; i++) {
       if (i >= len) {
         mask[i] = 1;
         continue;
       }
-      // Hit range inlined rather than via `getCsrHitRange`: the tuple would be an
-      // allocation per point, and this pass runs on every legend hide.
-      const stop = end[i];
+      const stop = offsets[i + 1];
       let everyHidden = 1;
       // Empty row (start === stop) leaves this 1 — vacuously hidden, as `[].every()`.
-      for (let k = i === 0 ? 0 : end[i - 1]; k < stop; k++) {
+      for (let k = offsets[i]; k < stop; k++) {
         if (isBinHidden(codes[k]) === 0) {
           everyHidden = 0;
           break;

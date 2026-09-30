@@ -27,7 +27,11 @@ import { BUNDLE_DELIMITER_BYTES } from './constants';
 import { assertNoBundleDelimiter } from './delimiter-utils';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
-import { getProteinAnnotationIndices } from '../visualization/annotation-data-access.js';
+import {
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isCsrAnnotationData,
+} from '../visualization/annotation-data-access.js';
 import { getProteinEvidence, getProteinScores } from '../visualization/plot-data-accessors.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
@@ -141,12 +145,9 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
     // Hoisted out of the protein loop: both accessors allocate a fresh array on every
     // call, including the v1/v2 case where the dataset carries no scores or evidence at
     // all — 573K proteins x ~24 categorical columns of throwaway arrays per export.
-    const hasScores = Boolean(
-      data.annotation_scores?.[annotationName] ?? data.annotation_scores_csr?.[annotationName],
-    );
-    const hasEvidence = Boolean(
-      data.annotation_evidence?.[annotationName] ?? data.annotation_evidence_csr?.[annotationName],
-    );
+    const csr = isCsrAnnotationData(annotationIndices) ? annotationIndices : null;
+    const hasScores = Boolean(data.annotation_scores?.[annotationName] ?? csr?.scores);
+    const hasEvidence = Boolean(data.annotation_evidence?.[annotationName] ?? csr?.evidence);
 
     // Convert indices back to actual annotation values
     const values: (string | null)[] = new Array(data.protein_ids.length);
@@ -160,26 +161,30 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
       // export without structural semicolons/pipes being reinterpreted on reload.
       //
       // Read once per protein through the accessors rather than indexing the nested
-      // records: a v3 (CSR) dataset carries these flat per hit, and only the accessors
-      // know both layouts. Both return per-hit arrays in `getProteinAnnotationIndices`
+      // records: a v3 (CSR) dataset carries these per hit on the column, and only the
+      // accessors know both layouts. Both return per-hit arrays in the column's hit
       // order, so `cellIndex` still lines up.
       const proteinEvidence = hasEvidence ? getProteinEvidence(data, i, annotationName) : NO_HITS;
       const proteinScores = hasScores ? getProteinScores(data, i, annotationName) : NO_HITS;
-      const cellValues = getProteinAnnotationIndices(annotationIndices, i).flatMap(
-        (valueIndex, cellIndex) => {
-          const value = annotation.values[valueIndex];
-          // `__NA__` is the in-memory sentinel appendSyntheticNACategory materialises for a
-          // missing cell, never a value any bundle holds. Drop it so the cell round-trips as
-          // NULL — writing it verbatim would re-import as a real, frequency-sorted category
-          // (it is not a MISSING_VALUE_TOKEN) and leak into downstream `protspace` tooling.
-          // Mirrors the read side's readCategoricalStorageValues.
-          if (value == null || isNAValue(value)) return [];
-          const evidence = proteinEvidence[cellIndex];
-          const scores = proteinScores[cellIndex];
-          return [serializeCategoricalValue(value, evidence, scores)];
-        },
-      );
-      values[i] = cellValues.length > 0 ? cellValues.join(';') : null;
+      const count = getProteinAnnotationCount(annotationIndices, i);
+      let cell: string | null = null;
+      for (let cellIndex = 0; cellIndex < count; cellIndex++) {
+        const value =
+          annotation.values[getProteinAnnotationIndexAt(annotationIndices, i, cellIndex)];
+        // `__NA__` is the in-memory sentinel appendSyntheticNACategory materialises for a
+        // missing cell, never a value any bundle holds. Drop it so the cell round-trips as
+        // NULL — writing it verbatim would re-import as a real, frequency-sorted category
+        // (it is not a MISSING_VALUE_TOKEN) and leak into downstream `protspace` tooling.
+        // Mirrors the read side's readCategoricalStorageValues.
+        if (value == null || isNAValue(value)) continue;
+        const serialized = serializeCategoricalValue(
+          value,
+          proteinEvidence[cellIndex],
+          proteinScores[cellIndex],
+        );
+        cell = cell === null ? serialized : `${cell};${serialized}`;
+      }
+      values[i] = cell;
     }
 
     columnData.push({

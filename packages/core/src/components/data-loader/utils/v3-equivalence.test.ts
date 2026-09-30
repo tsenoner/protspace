@@ -313,7 +313,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
       },
       P3: { labels: [NA_VALUE], scores: [null], evidence: [null] },
       // P4 immediately follows the interior empty row: its score is what an off-by-one
-      // in the inserted-NA `hitEnd` would steal. It is also the one row that crosses a
+      // in the inserted-NA score offsets would steal. It is also the one row that crosses a
       // score and an evidence hit inside a single column, and it had a third hit
       // spelled `none` that the reader folded away (see below).
       P4: {

@@ -27,16 +27,12 @@ export function collectTransferables(data: VisualizationData): Transferable[] {
     if (value instanceof Int32Array) {
       push(value.buffer);
     } else if (isCsrAnnotationData(value)) {
-      push(value.end.buffer);
+      push(value.offsets.buffer);
       push(value.codes.buffer);
+      push(value.scores?.offsets.buffer);
+      push(value.scores?.values.buffer);
+      push(value.evidence?.codes.buffer);
     }
-  }
-  for (const scores of Object.values(data.annotation_scores_csr ?? {})) {
-    push(scores.hitEnd.buffer);
-    push(scores.values.buffer);
-  }
-  for (const evidence of Object.values(data.annotation_evidence_csr ?? {})) {
-    push(evidence.codes.buffer);
   }
 
   return [...buffers];

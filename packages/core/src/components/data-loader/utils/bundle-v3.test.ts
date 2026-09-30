@@ -126,7 +126,7 @@ const PAYLOADS: Record<string, Uint8Array> = {
   'dict:go_bp:len': i32(7, 9, 9),
   'csr:go_bp': i32(0, 1, 2, 0, 1, 2, 1, 0, 2),
   // Hit 3 is the first hit of P5, immediately after the empty interior row P4: its
-  // score is what an off-by-one in the inserted-NA `hitEnd` would steal.
+  // score is what an off-by-one in the inserted-NA score offsets would steal.
   'score_count:go_bp': i32(2, 0, 1, 1, 0, 0, 0, 3, 0),
   'scores:go_bp': f64(1.5, 2.5, 9.75, 4, 0.5, 0.25, 0.125),
   'evidence:go_bp': i32(-1, 0, 1, -1, -1, -1, 0, -1, -1),
@@ -157,14 +157,14 @@ const bulkViews = (data: VisualizationData): (Int32Array | Float32Array | Float6
     value instanceof Int32Array
       ? [value]
       : isCsrAnnotationData(value)
-        ? [value.end, value.codes]
+        ? [
+            value.offsets,
+            value.codes,
+            ...(value.scores ? [value.scores.offsets, value.scores.values] : []),
+            ...(value.evidence ? [value.evidence.codes] : []),
+          ]
         : [],
   ),
-  ...Object.values(data.annotation_scores_csr ?? {}).flatMap((scores) => [
-    scores.hitEnd,
-    scores.values,
-  ]),
-  ...Object.values(data.annotation_evidence_csr ?? {}).map((evidence) => evidence.codes),
 ];
 
 const labelsOf = (data: VisualizationData, key: string, protein: number) =>
@@ -210,7 +210,7 @@ describe('parquetbundle format v3', () => {
     expect(csr.length).toBe(8);
     // Counts [0,2,1,0,3,1,2,0] plus one inserted __NA__ hit for each of the three
     // empty rows (first, interior, last).
-    expect(Array.from(csr.end)).toEqual([1, 3, 4, 5, 8, 9, 11, 12]);
+    expect(Array.from(csr.offsets)).toEqual([0, 1, 3, 4, 5, 8, 9, 11, 12]);
     expect(Array.from(csr.codes)).toEqual([3, 0, 1, 2, 3, 0, 1, 2, 1, 0, 2, 3]);
   });
 
@@ -301,8 +301,8 @@ describe('parquetbundle format v3', () => {
     const { data } = await decodeParquetBundle(v3Bundle({ 5: payloadPart(payloads) }));
 
     expect(data.annotations.go_bp.values).toEqual(['binding', 'transport', NA_VALUE]);
-    expect(Array.from((data.annotation_data.go_bp as CsrAnnotationData).end)).toEqual([
-      1, 2, 3, 4, 6, 7, 9, 10,
+    expect(Array.from((data.annotation_data.go_bp as CsrAnnotationData).offsets)).toEqual([
+      0, 1, 2, 3, 4, 6, 7, 9, 10,
     ]);
     expect(labelsOf(data, 'go_bp', 1)).toEqual(['binding']);
     expect(labelsOf(data, 'go_bp', 4)).toEqual(['binding', 'transport']);
@@ -322,8 +322,9 @@ describe('parquetbundle format v3', () => {
 
     expect(labelsOf(data, 'keyword', 1)).toEqual(['alpha', 'beta', 'gamma']);
     expect(labelsOf(data, 'keyword', 4)).toEqual([NA_VALUE]);
-    expect(data.annotation_scores_csr?.keyword).toBeUndefined();
-    expect(data.annotation_evidence_csr?.keyword).toBeUndefined();
+    const keyword = data.annotation_data.keyword as CsrAnnotationData;
+    expect(keyword.scores).toBeUndefined();
+    expect(keyword.evidence).toBeUndefined();
     expect(getProteinScores(data, 1, 'keyword')).toEqual([]);
   });
 
@@ -688,7 +689,7 @@ describe('parquetbundle format v3', () => {
     const transfer = collectTransferables(data);
 
     expect(new Set(transfer).size).toBe(transfer.length);
-    // 2 projections + organism codes + 2 x 2 CSR (end + codes) + scores (hitEnd +
+    // 2 projections + organism codes + 2 x 2 CSR (offsets + codes) + scores (offsets +
     // values) + evidence codes.
     expect(transfer).toHaveLength(10);
 

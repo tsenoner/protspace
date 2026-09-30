@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import {
   createParquetBundle,
   getProteinAnnotationIndices,
+  getProteinEvidence,
+  getProteinScores,
   isCsrAnnotationData,
   materializeEatOverlay,
   materializeVisualizationData,
@@ -778,30 +780,26 @@ describe('normalizeEatCompanionColumns over CSR storage (bundle format v3)', () 
       annotation_data: {
         ec: {
           kind: 'csr',
-          end: Int32Array.of(0, 1, 2, 4),
+          offsets: Int32Array.of(0, 0, 1, 2, 4),
           codes: Int32Array.of(0, 2, 0, 2),
           length: 4,
         },
         ec__pred_value: {
           kind: 'csr',
-          end: Int32Array.of(1, 1, 1, 1),
+          offsets: Int32Array.of(0, 1, 1, 1, 1),
           codes: Int32Array.of(0),
           length: 4,
+          scores: { offsets: Int32Array.of(0, 2), values: Float64Array.of(0.5, 0.25) },
+          evidence: { codes: Int32Array.of(0), dict: ['IDA'] },
         },
         ec__pred_source: {
           kind: 'csr',
-          end: Int32Array.of(1, 1, 1, 1),
+          offsets: Int32Array.of(0, 1, 1, 1, 1),
           codes: Int32Array.of(0),
           length: 4,
         },
       },
       numeric_annotation_data: { ec__pred_confidence: [0.9, null, null, null] },
-      annotation_scores_csr: {
-        ec__pred_value: { hitEnd: Int32Array.of(2), values: Float32Array.of(0.5, 0.25) },
-      },
-      annotation_evidence_csr: {
-        ec__pred_value: { codes: Int32Array.of(0), dict: ['IDA'] },
-      },
     };
   }
 
@@ -821,29 +819,38 @@ describe('normalizeEatCompanionColumns over CSR storage (bundle format v3)', () 
     expect(getProteinAnnotationIndices(rows, 1)).toEqual([0]); // 'A'
     expect(getProteinAnnotationIndices(rows, 2)).toEqual([1]); // 'B', renumbered
     expect(getProteinAnnotationIndices(rows, 3)).toEqual([0, 1]);
-    expect(Array.from(rows.end)).toEqual([0, 1, 2, 4]);
+    expect(Array.from(rows.offsets)).toEqual([0, 0, 1, 2, 4]);
 
-    // Neither the worst-case buffer nor the source's is retained — `.slice(0, written)`
-    // hands back an exactly-sized fresh one.
+    // The source's buffer is not retained: the remap hands back an exactly-sized fresh one.
     expect(rows.codes.buffer.byteLength).toBe(4 * 4);
     expect(rows.codes.buffer).not.toBe(sourceRows.codes.buffer);
     expect(Array.from(sourceRows.codes)).toEqual([0, 2, 0, 2]);
   });
 
-  it('throws rather than silently renumbering the flat payloads when a hit drops', () => {
+  it('drops a hit with its score and evidence and keeps every later hit aligned', () => {
     const src = csrEatData();
-    // p1's hit now points at the null value slot, which the remap drops. Every later
-    // hit number would shift under the unchanged annotation_scores_csr / _evidence_csr.
+    // p1's hit now points at the null value slot, which the remap drops, renumbering
+    // every later hit.
     src.annotation_data.ec = {
       kind: 'csr',
-      end: Int32Array.of(0, 1, 2, 4),
+      offsets: Int32Array.of(0, 0, 1, 2, 4),
       codes: Int32Array.of(1, 2, 0, 2),
       length: 4,
+      scores: { offsets: Int32Array.of(0, 1, 2, 3, 4), values: Float64Array.of(1, 2, 3, 4) },
+      evidence: { codes: Int32Array.of(0, 1, 2, -1), dict: ['IDA', 'IEA', 'ISS'] },
     };
-    expect(() => normalizeEatCompanionColumns(src)).toThrow(/CSR remap dropped 1 of 4 hits/);
+    const out = normalizeEatCompanionColumns(src);
+
+    expect(getProteinAnnotationIndices(out.annotation_data.ec, 1)).toEqual([]);
+    expect(getProteinAnnotationIndices(out.annotation_data.ec, 2)).toEqual([1]); // 'B'
+    expect(getProteinAnnotationIndices(out.annotation_data.ec, 3)).toEqual([0, 1]);
+    expect(getProteinScores(out, 2, 'ec')).toEqual([[2]]);
+    expect(getProteinEvidence(out, 2, 'ec')).toEqual(['IEA']);
+    expect(getProteinScores(out, 3, 'ec')).toEqual([[3], [4]]);
+    expect(getProteinEvidence(out, 3, 'ec')).toEqual(['ISS', null]);
   });
 
-  it('reads the companion column scores/evidence from the flat v3 payloads', () => {
+  it('reads the companion column scores/evidence from the CSR payloads', () => {
     const cell = normalizeEatCompanionColumns(csrEatData()).annotation_predicted?.ec?.[0];
     expect(cell).toMatchObject({
       value: 'C',
@@ -854,19 +861,9 @@ describe('normalizeEatCompanionColumns over CSR storage (bundle format v3)', () 
     });
   });
 
-  it('drops the companion columns from the flat payload records too', () => {
+  it('drops the companion columns, payloads included', () => {
     const out = normalizeEatCompanionColumns(csrEatData());
-    expect(out.annotation_scores_csr).toEqual({});
-    expect(out.annotation_evidence_csr).toEqual({});
     expect(out.annotation_data.ec__pred_value).toBeUndefined();
-  });
-
-  it('does not grow the flat payload records on a dataset that has none', () => {
-    const src = csrEatData();
-    delete src.annotation_scores_csr;
-    delete src.annotation_evidence_csr;
-    const out = normalizeEatCompanionColumns(src);
-    expect('annotation_scores_csr' in out).toBe(false);
-    expect('annotation_evidence_csr' in out).toBe(false);
+    expect(getProteinScores(out, 0, 'ec__pred_value')).toEqual([]);
   });
 });

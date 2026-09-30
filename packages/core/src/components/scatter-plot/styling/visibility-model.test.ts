@@ -270,7 +270,7 @@ describe('computeVisibilityModel', () => {
     // p0 → [A, B], p1 → [C], p2 → [] (empty row), p3 → [A]
     const csr = (): AnnotationData => ({
       kind: 'csr',
-      end: Int32Array.of(2, 3, 3, 4),
+      offsets: Int32Array.of(0, 2, 3, 3, 4),
       codes: Int32Array.of(0, 1, 2, 0),
       length: 4,
     });

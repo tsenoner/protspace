@@ -417,28 +417,28 @@ describe('plot-data-accessors', () => {
 });
 
 describe('CSR score and evidence payloads', () => {
-  // species rows: p0 -> hits 0,1 ; p1 -> no hits ; p2 -> hit 2
-  const csrRows: CsrAnnotationData = {
-    kind: 'csr',
-    end: Int32Array.from([2, 2, 3]),
-    codes: Int32Array.from([0, 1, 2]),
-    length: 3,
-  };
   // hit 0 -> [1.5]; hit 1 -> no scores; hit 2 -> [0.25, 0.5]
   const csrScores: CsrScores = {
-    hitEnd: Int32Array.from([1, 1, 3]),
+    offsets: Int32Array.from([0, 1, 1, 3]),
     values: Float64Array.from([1.5, 0.25, 0.5]),
   };
   const csrEvidence: CsrEvidence = {
     codes: Int32Array.from([0, -1, 1]),
     dict: ['IDA', 'ECO:1'],
   };
+  // species rows: p0 -> hits 0,1 ; p1 -> no hits ; p2 -> hit 2
+  const csrRows: CsrAnnotationData = {
+    kind: 'csr',
+    offsets: Int32Array.from([0, 2, 2, 3]),
+    codes: Int32Array.from([0, 1, 2]),
+    length: 3,
+    scores: csrScores,
+    evidence: csrEvidence,
+  };
 
   const csrData = (): VisualizationData => {
     const data = baseData();
     data.annotation_data.species = csrRows;
-    data.annotation_scores_csr = { species: csrScores };
-    data.annotation_evidence_csr = { species: csrEvidence };
     return data;
   };
 
@@ -470,15 +470,6 @@ describe('CSR score and evidence payloads', () => {
     data.annotation_evidence = { species: [['NESTED'], [], []] };
     expect(getProteinScores(data, 0, 'species')).toEqual([[9]]);
     expect(getProteinEvidence(data, 0, 'species')).toEqual(['NESTED']);
-  });
-
-  it('ignores CSR payloads when the column storage is not CSR', () => {
-    // The flat payloads are numbered by CSR hit, so without CSR storage there is
-    // no hit range to index them by.
-    const data = csrData();
-    data.annotation_data.species = Int32Array.of(0, 1, 2);
-    expect(getProteinScores(data, 0, 'species')).toEqual([]);
-    expect(getProteinEvidence(data, 0, 'species')).toEqual([]);
   });
 
   it('resolves annotation values through CSR storage', () => {

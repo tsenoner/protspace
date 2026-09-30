@@ -126,7 +126,7 @@ describe('legend-data-processor', () => {
     };
     const csr = {
       kind: 'csr' as const,
-      end: new Int32Array([1, 3, 3, 4, 6, 7]),
+      offsets: new Int32Array([0, 1, 3, 3, 4, 6, 7]),
       codes: new Int32Array([0, 1, 2, 7, 0, 1, -1]),
       length: PROTEINS,
     };
@@ -143,7 +143,7 @@ describe('legend-data-processor', () => {
     };
     const alignedCsr = {
       kind: 'csr' as const,
-      end: new Int32Array([1, 2, 3, 4, 5, 6]),
+      offsets: new Int32Array([0, 1, 2, 3, 4, 5, 6]),
       codes: new Int32Array([0, 1, 2, 0, 1, 2]),
       length: PROTEINS,
     };

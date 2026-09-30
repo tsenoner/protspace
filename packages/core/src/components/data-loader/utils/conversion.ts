@@ -16,6 +16,7 @@ import {
   isCuratedAnnotationMissing,
   isNAValue,
   parseEatCompanionColumn,
+  remapCsr,
   sanitizeValue,
   sliceVisualizationDataByIndices,
   normalizeMissingValue,
@@ -227,32 +228,12 @@ function remapCategoricalStorage(
     return { kind: 'sparse-multi', base, overrides, length: base.length };
   }
   if (isCsrAnnotationData(source)) {
-    // Both arrays are rebuilt from scratch, and `codes` is trimmed to what was written so
-    // the worst-case buffer is neither retained nor shared.
-    const end = new Int32Array(source.length);
-    const codes = new Int32Array(source.codes.length);
-    let written = 0;
-    for (let i = 0; i < source.length; i++) {
-      const stop = source.end[i];
-      for (let hit = i === 0 ? 0 : source.end[i - 1]; hit < stop; hit++) {
-        const index = remap(source.codes[hit]);
-        if (index >= 0) codes[written++] = index;
-      }
-      end[i] = written;
-    }
-    if (written !== source.codes.length) {
-      // Dropping a hit renumbers every later one, and `annotation_scores_csr` /
-      // `annotation_evidence_csr` are numbered by GLOBAL hit — so a silent drop would
-      // show one protein's score and evidence on another's tooltip. No shipping producer
-      // can reach this (`values` is always built as `string[]`), so failing loudly beats
-      // implementing a renumbering pass nothing exercises.
-      throw new Error(
-        `CSR remap dropped ${source.codes.length - written} of ${source.codes.length} hits ` +
-          '(a null or unmapped annotation value). Renumbering the parallel ' +
-          'annotation_scores_csr / annotation_evidence_csr payloads is not implemented.',
-      );
-    }
-    return { kind: 'csr', end, codes, length: source.length };
+    // Codes index `oldValues`, so the remap is tabulated once per value rather than per
+    // hit; a dropped hit takes its score and evidence with it.
+    return remapCsr(
+      source,
+      Int32Array.from(oldValues, (_, index) => remap(index)),
+    ).column;
   }
   return source.map((indices) => indices.map(remap).filter((index) => index >= 0));
 }
@@ -280,10 +261,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
   const numeric_annotation_data = { ...data.numeric_annotation_data };
   const annotation_scores = { ...data.annotation_scores };
   const annotation_evidence = { ...data.annotation_evidence };
-  // v3 columns carry their scores/evidence flat instead of nested; a companion
-  // column must lose both forms or the dropped column's payload outlives it.
-  const annotation_scores_csr = { ...data.annotation_scores_csr };
-  const annotation_evidence_csr = { ...data.annotation_evidence_csr };
   const annotation_predicted = { ...data.annotation_predicted };
 
   for (const column of reservedColumns) {
@@ -292,8 +269,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
     delete numeric_annotation_data[column];
     delete annotation_scores[column];
     delete annotation_evidence[column];
-    delete annotation_scores_csr[column];
-    delete annotation_evidence_csr[column];
   }
 
   for (const [base, group] of groups) {
@@ -319,9 +294,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
       if (!isCuratedAnnotationMissing(data, base, i)) continue;
       const values = readCategoricalStorageValues(data, group.value, i);
       const value = values.length > 0 ? values.join(';') : null;
-      // Via the accessors so a CSR-stored companion column resolves too.
-      const scores = getProteinScores(data, i, group.value);
-      const evidence = getProteinEvidence(data, i, group.value);
       const source = readCategoricalStorageValue(data, group.source, i);
       const confidence = confidences[i];
       if (
@@ -335,6 +307,9 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
         if (value != null || source != null || confidence != null) invalidCount += 1;
         continue;
       }
+      // Via the accessors so a CSR-stored companion column resolves too.
+      const scores = getProteinScores(data, i, group.value);
+      const evidence = getProteinEvidence(data, i, group.value);
       cells[i] = {
         value,
         ...(values.length > 1 ? { values } : {}),
@@ -413,9 +388,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
     numeric_annotation_data,
     annotation_scores,
     annotation_evidence,
-    // Spread conditionally: a v1/v2 dataset never had these keys and must not grow them.
-    ...(data.annotation_scores_csr ? { annotation_scores_csr } : {}),
-    ...(data.annotation_evidence_csr ? { annotation_evidence_csr } : {}),
     annotation_predicted:
       Object.keys(annotation_predicted).length > 0 ? annotation_predicted : undefined,
   };
@@ -868,8 +840,6 @@ function restoreDeclaredNumericAnnotations(
     delete data.annotation_data[column];
     delete data.annotation_scores?.[column];
     delete data.annotation_evidence?.[column];
-    delete data.annotation_scores_csr?.[column];
-    delete data.annotation_evidence_csr?.[column];
   }
   return data;
 }

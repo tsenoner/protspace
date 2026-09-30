@@ -122,12 +122,12 @@ export class LegendDataProcessor {
         if (code >= 0) bins[code < valueCount ? code : naBin]++;
       }
     } else if (isCsrAnnotationData(colData)) {
-      const { end, codes } = colData;
+      const { offsets, codes } = colData;
       const limit = Math.min(proteinCount, colData.length);
       for (let i = 0; i < limit; i++) {
         if (filteredIndices !== null && !filteredIndices.has(i)) continue;
-        const stop = end[i];
-        for (let j = i === 0 ? 0 : end[i - 1]; j < stop; j++) {
+        const stop = offsets[i + 1];
+        for (let j = offsets[i]; j < stop; j++) {
           const code = codes[j];
           bins[code >= 0 && code < valueCount ? code : naBin]++;
         }
