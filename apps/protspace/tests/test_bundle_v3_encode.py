@@ -10,7 +10,6 @@ The assertions here pin the two contracts the encoder has to honour:
 """
 
 import io
-import json
 
 import numpy as np
 import pandas as pd
@@ -24,7 +23,8 @@ from protspace.data.annotations.encoding import (
     read_format_version,
     stamp_format_version,
 )
-from protspace.data.io.bundle_v3 import MANIFEST_KEY, encode_v3
+from protspace.data.io.bundle_v3 import encode_v3
+from tests.bundle_v3_helpers import labels_of, manifest_of, payloads_of, read
 
 
 def make_annotations(**columns: list) -> pa.Table:
@@ -65,33 +65,6 @@ def encode(annotations: pa.Table, names_dims=(("A", 2),)):
     ids = annotations.column("protein_id").to_pylist()
     meta, data = make_projections(names_dims, ids)
     return encode_v3(annotations, meta, data)
-
-
-def read(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
-
-
-def manifest_of(part1: bytes) -> dict:
-    return json.loads(read(part1).schema.metadata[MANIFEST_KEY])
-
-
-def payloads_of(part6: bytes) -> dict[str, bytes]:
-    table = read(part6)
-    return dict(
-        zip(
-            table.column("name").to_pylist(),
-            table.column("data").to_pylist(),
-            strict=True,
-        )
-    )
-
-
-def labels_of(payloads: dict[str, bytes], column: str) -> list[str]:
-    """Rebuild the labels the way the reader does: prefix-sum the byte lengths."""
-    blob = payloads[f"dict:{column}"]
-    ends = np.cumsum(np.frombuffer(payloads[f"dict:{column}:len"], "<i4"))
-    starts = np.concatenate(([0], ends[:-1])).astype(int)
-    return [blob[a:b].decode() for a, b in zip(starts, ends, strict=True)]
 
 
 # --------------------------------------------------------------------------- #

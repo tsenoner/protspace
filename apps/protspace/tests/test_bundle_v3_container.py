@@ -15,7 +15,6 @@ The three things that would break the browser if they regressed:
 * the delimiter guard has to cover part 6, where the labels now live.
 """
 
-import io
 import logging
 from pathlib import Path
 
@@ -39,7 +38,13 @@ from protspace.data.io.bundle import (
     replace_settings_in_bundle,
     write_bundle,
 )
-from tests.test_bundle_v3_decode import annotations_table, projection_tables
+from protspace.data.io.bundle_v3 import write_part
+from tests.bundle_v3_helpers import (
+    annotations_table,
+    parts_of,
+    projection_tables,
+    read,
+)
 
 
 def pipeline_tables(dimensions=(2, 3)):
@@ -75,24 +80,11 @@ def legacy_bundle(path: Path, *, stamp: bool = True, settings: bytes | None = No
         }
     )
 
-    def serialized(table):
-        buf = io.BytesIO()
-        pq.write_table(table, buf)
-        return buf.getvalue()
-
-    parts = [serialized(t) for t in (annotations, metadata, data)]
+    parts = [write_part(t) for t in (annotations, metadata, data)]
     if settings is not None:
         parts.append(settings)
     path.write_bytes(PARQUET_BUNDLE_DELIMITER.join(parts))
     return parts
-
-
-def parts_of(path: Path) -> list[bytes]:
-    return path.read_bytes().split(PARQUET_BUNDLE_DELIMITER)
-
-
-def read(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
 
 
 # --------------------------------------------------------------------------- #

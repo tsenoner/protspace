@@ -18,21 +18,19 @@ Regenerate with ``uv run python scripts/generate_v3_fixture.py``.
 
 import importlib.util
 import io
-import json
 import sys
 from pathlib import Path
 
 import numpy as np
-import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from protspace.data.io.bundle import (
-    PARQUET_BUNDLE_DELIMITER,
     read_settings_from_bundle,
     read_tables,
 )
-from protspace.data.io.bundle_v3 import MANIFEST_KEY, decode_v3, encode_v3
+from protspace.data.io.bundle_v3 import decode_v3, encode_v3
+from tests.bundle_v3_helpers import manifest_of, parts_of, payloads_of, read
 
 FIXTURE = (
     Path(__file__).resolve().parents[3]
@@ -69,32 +67,16 @@ pytestmark = pytest.mark.skipif(
 NON_ASCII_LABEL = generator.PFAM_NON_ASCII_LABEL
 
 
-def _table(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
-
-
-def _manifest(part: bytes) -> dict:
-    return json.loads(pq.read_metadata(io.BytesIO(part)).metadata[MANIFEST_KEY])
-
-
-def _payload_map(part: bytes) -> dict[str, bytes]:
-    """Part 6 as the ``name -> bytes`` map the browser builds from it."""
-    table = _table(part)
-    return dict(
-        zip(
-            table.column("name").to_pylist(),
-            table.column("data").to_pylist(),
-            strict=True,
-        )
-    )
-
-
 def _i32(payloads: dict[str, bytes], name: str) -> list[int]:
     return np.frombuffer(payloads[name], "<i4").tolist()
 
 
 def _labels(payloads: dict[str, bytes], name: str) -> list[str]:
-    """Decode one dictionary payload the way the browser does: by byte length."""
+    """Decode one dictionary payload the way the browser does: by byte length.
+
+    Deliberately not the production ``_read_labels``: this fixture is where the
+    two languages meet, so its labels get an oracle of their own.
+    """
     blob = payloads[f"dict:{name}"]
     ends = np.cumsum(_i32(payloads, f"dict:{name}:len"))
     return [
@@ -105,12 +87,12 @@ def _labels(payloads: dict[str, bytes], name: str) -> list[str]:
 
 @pytest.fixture(scope="module")
 def parts() -> list[bytes]:
-    return FIXTURE.read_bytes().split(PARQUET_BUNDLE_DELIMITER)
+    return parts_of(FIXTURE)
 
 
 @pytest.fixture(scope="module")
 def payloads(parts) -> dict[str, bytes]:
-    return _payload_map(parts[5])
+    return payloads_of(parts[5])
 
 
 @pytest.fixture(scope="module")
@@ -139,11 +121,11 @@ def test_fixture_is_a_six_part_v3_container(parts):
 
     footer = pq.read_metadata(io.BytesIO(parts[0])).metadata
     assert footer[b"protspace_format_version"] == b"3"
-    assert _table(parts[5]).column_names == ["name", "data"]
+    assert read(parts[5]).column_names == ["name", "data"]
 
 
 def test_manifest_declares_every_kind_the_reader_dispatches_on(parts):
-    manifest = _manifest(parts[0])
+    manifest = manifest_of(parts[0])
 
     assert manifest["idColumn"] == "protein_id"
     assert manifest["projections"] == [
@@ -210,7 +192,7 @@ def test_dictionaries_are_ordered_by_descending_frequency(parts, payloads):
     apart, and a decoded comparison never could: the decoder re-joins the same
     cells whichever order the codes are in.
     """
-    codes = _table(parts[0]).column("kingdom").to_pylist()
+    codes = read(parts[0]).column("kingdom").to_pylist()
 
     # Cells: Archaea, Bacteria, Bacteria, <blank>, Bacteria, Eukaryota.
     assert generator.ANNOTATION_CELLS["kingdom"][0] == "Archaea"
@@ -220,7 +202,7 @@ def test_dictionaries_are_ordered_by_descending_frequency(parts, payloads):
     # Cells: False, True, True, False, True, True.
     assert generator.ANNOTATION_CELLS["reviewed"][0] == "False"
     assert _labels(payloads, "reviewed") == ["True", "False"]
-    assert _table(parts[0]).column("reviewed").to_pylist() == [1, 0, 0, 1, 0, 0]
+    assert read(parts[0]).column("reviewed").to_pylist() == [1, 0, 0, 1, 0, 0]
 
 
 def test_dictionary_label_lengths_are_utf8_bytes(payloads):
@@ -349,7 +331,7 @@ def test_read_tables_rebuilds_both_projections_in_protein_order(tables):
 
 def test_a_protein_missing_from_a_projection_is_nan_in_part_three(parts):
     """NaN, never the origin: (0, 0, 0) would be drawn as a real point."""
-    wide = _table(parts[2]).to_pydict()
+    wide = read(parts[2]).to_pydict()
     assert all(np.isnan(wide[f"umap3__{axis}"][-1]) for axis in "xyz")
     assert wide["pca2__x"][-1] == -1.5  # P6 is still covered by pca2
 
@@ -375,15 +357,15 @@ def test_committed_fixture_still_matches_its_generator(parts, payloads):
     ):
         # ``DataFrame.equals`` rather than ``==``: the numeric columns carry NaN
         # for a missing cell, which never compares equal to itself.
-        first, second = _table(fresh).to_pandas(), _table(committed).to_pandas()
+        first, second = read(fresh).to_pandas(), read(committed).to_pandas()
         assert list(first.columns) == list(second.columns), what
         for column in first.columns:
             assert first[column].equals(second[column]), f"{what}: column '{column}'"
 
-    assert _manifest(fresh_part1) == _manifest(parts[0])
+    assert manifest_of(fresh_part1) == manifest_of(parts[0])
     # The payload map, not the part's row order: the browser builds a Map from it,
     # so the names and their bytes are the contract and their order is not.
-    assert _payload_map(fresh_part6) == payloads
+    assert payloads_of(fresh_part6) == payloads
 
     for fresh_table, committed in zip(
         decode_v3([fresh_part1, fresh_part2, fresh_part3, fresh_part6]),
