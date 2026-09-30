@@ -5,6 +5,7 @@ import {
   BUNDLE_DELIMITER_BYTES,
   concatenateBuffers,
   DataProcessor,
+  generateDatasetHash,
   getProteinAnnotationIndices,
   type VisualizationData,
 } from '@protspace/utils';
@@ -194,6 +195,101 @@ describe.each(cases)('missing coordinates in a %s bundle', (_label, build) => {
     const { data } = await decodeParquetBundle(build());
     expect(new Uint8Array(data.statistics!)).toEqual(STATISTICS);
     expect(data.statisticsRows!.length).toBeGreaterThan(0);
+  });
+});
+
+// ── a column's kind, decided by the unplaced protein ──────────────────────────────
+//
+// v2 inferred a column's kind over the proteins it placed. `size` is numeric there
+// (`unknown` is Q's), and `gap` is missing on every placed protein (the `7` is Q's). The
+// v3 encoder keeps Q's labels, so `size` is stored as labels marked `placedNumeric`
+// and `gap` as labels, which is what `protspace convert` writes for the same cells.
+
+function v2KindBundle(): ArrayBuffer {
+  const annotations = part(
+    [
+      { name: 'protein_id', data: ['P0', 'P1', 'Q', 'P2'] },
+      { name: 'size', data: ['10', 'NA', 'unknown', '30'] },
+      { name: 'gap', data: ['', '', '7', ''] },
+    ],
+    { protspace_format_version: '2' },
+  );
+  const metadata = part([
+    { name: 'projection_name', data: ['A'] },
+    { name: 'dimensions', data: new Int32Array([2]) },
+    { name: 'info_json', data: ['{}'] },
+  ]);
+  const projections = part([
+    { name: 'projection_name', data: ['A', 'A', 'A'] },
+    { name: 'identifier', data: ['P0', 'P1', 'P2'] },
+    { name: 'x', data: new Float32Array([1, 2, 3]) },
+    { name: 'y', data: new Float32Array([4, 5, 6]) },
+  ]);
+  return bundle([annotations, metadata, projections]);
+}
+
+function v3KindBundle(placedNumeric: boolean): ArrayBuffer {
+  const manifest = {
+    idColumn: 'protein_id',
+    columns: {
+      size: { kind: 'categorical', sourceType: 'string', ...(placedNumeric && { placedNumeric }) },
+      gap: { kind: 'categorical', sourceType: 'string' },
+    },
+    projections: [{ name: 'A', dimension: 2 }],
+  };
+  const annotations = part(
+    [
+      { name: 'protein_id', data: ['P0', 'P1', 'P2', 'Q'] },
+      // Labels ranked by the encoder over every row: 10, NA, 30, unknown.
+      { name: 'size', data: new Int32Array([0, 1, 2, 3]) },
+      { name: 'gap', data: new Int32Array([-1, -1, -1, 0]) },
+    ],
+    { protspace_container_version: '3', protspace_v3_manifest: JSON.stringify(manifest) },
+  );
+  const metadata = part([
+    { name: 'projection_name', data: ['A'] },
+    { name: 'dimensions', data: new Int32Array([2]) },
+    { name: 'info_json', data: ['{}'] },
+  ]);
+  const projections = part([
+    { name: 'A__x', data: new Float32Array([1, 2, 3, NaN]) },
+    { name: 'A__y', data: new Float32Array([4, 5, 6, NaN]) },
+  ]);
+  const payloads = part([
+    { name: 'name', data: ['dict:size', 'dict:size:len', 'dict:gap', 'dict:gap:len'] },
+    {
+      name: 'data',
+      data: [enc.encode('10NA30unknown'), i32(2, 2, 2, 7), enc.encode('7'), i32(1)],
+    },
+  ]);
+  return bundle([annotations, metadata, projections, EMPTY, EMPTY, payloads]);
+}
+
+describe('a column whose kind only an unplaced protein decides', () => {
+  it('reads a placedNumeric column as the numbers v2 inferred over the placed proteins', async () => {
+    const { data } = await decodeParquetBundle(v3KindBundle(true));
+    expect(data.annotations.size).toMatchObject({ kind: 'numeric', numericType: 'int' });
+    expect(data.annotations.size.sourceType).toBe('string');
+    expect(data.numeric_annotation_data?.size).toEqual(new Float64Array([10, NaN, 30]));
+    expect(data.annotation_data.size).toBeUndefined();
+  });
+
+  it('gives the dataset, and the hash saved legend settings key on, that v2 gave', async () => {
+    const legacy = (await decodeParquetBundle(v2KindBundle())).data;
+    const v3 = (await decodeParquetBundle(v3KindBundle(true))).data;
+
+    expect(v3.protein_ids).toEqual(legacy.protein_ids);
+    expect(v3.annotations.size.kind).toBe(legacy.annotations.size.kind);
+    expect(v3.numeric_annotation_data?.size).toEqual(legacy.numeric_annotation_data?.size);
+    expect(v3.annotations.gap).toMatchObject({ kind: 'categorical', values: ['__NA__'] });
+    expect(legacy.annotations.gap).toMatchObject({ kind: 'categorical', values: ['__NA__'] });
+    expect(generateDatasetHash(v3)).toBe(generateDatasetHash(legacy));
+  });
+
+  it('keeps an unmarked column of number labels categorical, as it is stored', async () => {
+    const { data } = await decodeParquetBundle(v3KindBundle(false));
+    expect(data.annotations.size).toMatchObject({ kind: 'categorical' });
+    expect(data.annotations.size.values).toEqual(['10', '30', '__NA__']);
   });
 });
 

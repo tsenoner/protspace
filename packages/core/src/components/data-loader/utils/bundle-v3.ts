@@ -86,6 +86,12 @@ interface V3ColumnManifest {
   evidence?: boolean;
   /** Python's Arrow type for the column; carried onto the annotation, never interpreted here. */
   sourceType?: string;
+  /**
+   * Only for `categorical` / `multi`: the placed proteins' cells are all numbers or
+   * missing, so the column is read as numbers once the unplaced proteins are dropped,
+   * as v2 inferred it over the proteins it placed (see {@link placedNumericValues}).
+   */
+  placedNumeric?: boolean;
 }
 
 interface V3Manifest {
@@ -206,6 +212,7 @@ function readManifest(metadata: FileMetaData): V3Manifest {
       ...(numericType != null ? { numericType } : {}),
       ...(entry.scores === true ? { scores: true } : {}),
       ...(entry.evidence === true ? { evidence: true } : {}),
+      ...(entry.placedNumeric === true && kind !== 'numeric' ? { placedNumeric: true } : {}),
       // Opaque to the browser, so only its shape is checked: a non-string is dropped.
       ...(typeof entry.sourceType === 'string' ? { sourceType: entry.sourceType } : {}),
     };
@@ -833,6 +840,53 @@ function foldCsrColumn(
 }
 
 /**
+ * A `placedNumeric` column's numbers over the proteins left after the unplaced drop,
+ * read as v2's `inferAnnotationType` read the same cells: a missing cell or
+ * missing-value spelling is NaN, and the type is `int` when every value is integral.
+ *
+ * The encoder keeps such a column as labels because an annotation-only protein holds a
+ * label that is not a number (`unknown` among lengths), and it must decode back in
+ * Python. A row with more than one hit, a scored or evidenced hit, or a label that is
+ * not a finite number is not what the mark promises; the column then stays categorical,
+ * as it is stored, and so does one with no number at all. Returns `null` for those.
+ */
+function placedNumericValues(
+  storage: Int32Array | CsrAnnotationData,
+  labels: readonly string[],
+): { values: Float64Array; numericType: 'int' | 'float' } | null {
+  const parsed = labels.map((label) =>
+    normalizeMissingValue(label) === null ? NaN : Number(label.trim()),
+  );
+  const csr = storage instanceof Int32Array ? null : storage;
+  const length = csr ? csr.length : storage.length;
+  const values = new Float64Array(length).fill(NaN);
+  let sawValue = false;
+  let integral = true;
+  for (let row = 0; row < length; row++) {
+    let code: number;
+    if (csr) {
+      const start = csr.offsets[row];
+      const hits = csr.offsets[row + 1] - start;
+      if (hits > 1) return null;
+      if (hits === 1) {
+        const scored = csr.scores && csr.scores.offsets[start + 1] > csr.scores.offsets[start];
+        if (scored || (csr.evidence && csr.evidence.codes[start] >= 0)) return null;
+      }
+      code = hits === 1 ? csr.codes[start] : -1;
+    } else {
+      code = (storage as Int32Array)[row];
+    }
+    if (code < 0 || normalizeMissingValue(labels[code]) === null) continue;
+    const value = parsed[code];
+    if (!Number.isFinite(value)) return null;
+    values[row] = value;
+    sawValue = true;
+    if (!Number.isInteger(value)) integral = false;
+  }
+  return sawValue ? { values, numericType: integral ? 'int' : 'float' } : null;
+}
+
+/**
  * Read a format v3 bundle into `VisualizationData`.
  *
  * `parts` comes from `splitBundleParts`, which has already checked the three core parts;
@@ -953,6 +1007,13 @@ export async function readV3Bundle(
 
   for (const { name, column, labels } of dictionaries) {
     const storage = data.annotation_data[name] as Int32Array | CsrAnnotationData;
+    const numeric = column.placedNumeric ? placedNumericValues(storage, labels) : null;
+    if (numeric) {
+      delete data.annotation_data[name];
+      (data.numeric_annotation_data ??= {})[name] = numeric.values;
+      annotations[name] = withSourceType(createNumericAnnotation(numeric.numericType), column);
+      continue;
+    }
     const keep = storage instanceof Int32Array ? null : splitQualifiedMissingHits(storage, labels);
     const drop = missingLabels(labels, keep);
     const remap =
