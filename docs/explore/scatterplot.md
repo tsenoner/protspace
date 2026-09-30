@@ -9,6 +9,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 | Zoom in/out         | Mouse wheel or pinch gesture             |
 | Pan                 | Click + drag on background               |
 | Reset view          | Double-click on background               |
+| Focus a category    | Hold **Shift** and hover a point         |
 | Select one          | Click a point                            |
 | Add to selection    | **⌘/Ctrl** + click another point         |
 | Deselect one        | Click it again, or use the search box    |
@@ -84,6 +85,14 @@ Hover over a point to see a tooltip with details about that protein:
 - **Scores** (for InterPro domain annotations, e.g., E-values) or **evidence codes** (for GO terms, subcellular location, etc., e.g., EXP, IDA)
 
 Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in the [Annotation dropdown](/explore/control-bar#_2-annotation-selector).
+
+### Focusing a Category
+
+Hold **Shift** while hovering a point to see where its category sits: every protein sharing one of its values in the current annotation stays bright, everything else fades. Move to another point to switch category; release **Shift** or move off the point to go back.
+
+- Hovering a point in the legend's **Other** group focuses the whole group
+- Hidden legend values stay hidden, and the tooltip is hidden while focusing
+- Focus is only a preview: it does not change the selection, and it is off while proteins are selected
 
 ### Duplicate Points
 

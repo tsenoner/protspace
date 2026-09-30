@@ -35,7 +35,8 @@
     "knip": "knip",
     "knip:fix": "knip --fix",
     "precommit": "pnpm lint-staged && pnpm quality && pnpm docs:annotations:check && pnpm docs:build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "landing:data": "tsx scripts/landing-data/build-landing-data.mts"
   },
   "keywords": [],
   "author": "",
@@ -57,6 +58,7 @@
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
+    "hyparquet": "^1.26.0",
     "knip": "^5.87.0",
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.4",
