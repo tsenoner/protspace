@@ -88,7 +88,7 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     lookAt:
       'Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, 552 toxins mostly sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, 107, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for 101 of them (94 %), and for all 95 that EAT transferred at a reliability of 0.5 or more. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible.',
     tryNext:
-      'Drag the reliability filter to 0.5: the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.',
+      'Drag the reliability filter to 50 % (a reliability of 0.5): the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.',
     source:
       'UniProtKB query `(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)`: the three-finger toxins of snakes, reviewed and unreviewed. `toxin_class` groups the subfamily and sub-subfamily that UniProt curators record for each reviewed toxin into functional classes such as the type I, II and III α-neurotoxins, the cytotoxins and the κ-neurotoxins. The held-out fifth was drawn within each class with a recorded seed, and `eat_split` records the draw.',
     embedding:
@@ -100,6 +100,7 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     builtToShow: '[annotation transfer (EAT)](/explore/eat) on a real case',
     notes: [
       "The classes are the curators' subfamilies, assigned from sequence similarity, not measured activities.",
+      'One reviewed toxin, the muscarinic toxin Mlalpha (P0DJB0), has no curated subfamily and so no `toxin_class`; it is the single N/A in the legend.',
       'A random hold-out leaves most held-out toxins with relatives from their own genus among the references. Annotating a genus EAT has never seen is harder: in a pilot on full-length sequences that held out whole genera, the transferred class was right for about 70 % of the toxins, and for about 85 % above reliability 0.5.',
       '_Naja_ (the cobras) supplies 183 of the 537 reviewed toxins, about a third, so the references lean towards cobra toxins.',
       '116 of the 552 unreviewed toxins, about a fifth, are fragments.',
