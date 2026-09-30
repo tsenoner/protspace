@@ -74,7 +74,7 @@ The first time you load a dataset, ProtSpace plays a short guided tour highlight
 To replay the tour later, click the **?** icon in the top-right of the scatterplot to open the Tips popover, then click **Take a Tour**.
 
 ::: tip Tips & Shortcuts
-The same Tips popover is a one-screen cheat sheet for the basics: pan, zoom, hover for details, toggle a legend category, and **⌘/Ctrl + K** to search. Worth a glance even if you skip the tour.
+The same Tips popover is a one-screen cheat sheet for the basics: pan, zoom, hover for details, **Shift** + hover to focus a category, toggle a legend category, and **⌘/Ctrl + K** to search. Worth a glance even if you skip the tour.
 :::
 
 ## Next Steps
