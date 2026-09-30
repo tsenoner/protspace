@@ -33,8 +33,8 @@ importers:
         specifier: ^9.1.7
         version: 9.1.7
       hyparquet:
-        specifier: ^1.26.0
-        version: 1.26.0
+        specifier: ^1.31.1
+        version: 1.31.1
       knip:
         specifier: ^5.87.0
         version: 5.88.0(@types/node@22.18.10)(typescript@6.0.3)
@@ -153,8 +153,8 @@ importers:
         specifier: ^7.9.0
         version: 7.9.0
       hyparquet:
-        specifier: ^1.26.0
-        version: 1.26.0
+        specifier: ^1.31.1
+        version: 1.31.1
       lit:
         specifier: ^3.3.3
         version: 3.3.3
@@ -172,8 +172,8 @@ importers:
         specifier: ^10.5.0
         version: 10.5.0(jiti@2.7.0)
       hyparquet-writer:
-        specifier: ^0.7.0
-        version: 0.7.0
+        specifier: ^0.16.10
+        version: 0.16.10
       jsdom:
         specifier: ^27.4.0
         version: 27.4.0
@@ -2872,15 +2872,6 @@ packages:
 
   hyparquet-writer@0.16.10:
     resolution: {integrity: sha512-53fpiA57kdJ2V7X97/VSAzHr8rb8Z2cr126T1pTL9TapZNOP/wNJqFh+jc7dRwwg9TpVMYeRNDMb+r5oiLqwjg==}
-
-  hyparquet-writer@0.7.0:
-    resolution: {integrity: sha512-TgEOkLE87J+cNKlf9mQhCv7FuzIzJV4/LsGeUsVDiFRIz9tTwjLk2Z5JAsUrGblfPEJeejc6ej/X1u1YEJHfrg==}
-
-  hyparquet@1.20.0:
-    resolution: {integrity: sha512-XJaQQeVrIpKoJBhbTaQuaMmm9kUUbLFL45SyTPDCI2p5fUwwWE3QEMw191pT2eUHk6A3mmll6DzB08sRX1nw6A==}
-
-  hyparquet@1.26.0:
-    resolution: {integrity: sha512-yxUiViPZ+z5h+xdX4rA1G+k30jXoEsG9I2xEpjaM84imGznbKjZzxuZFsdzqg6C4LxNnnAlDFvzpk4uxQWTbTQ==}
 
   hyparquet@1.31.1:
     resolution: {integrity: sha512-tF9580Xb+41+Eb+mH0av1k7m1PWl+PSKrX66Yd7UOZ760cwEXP9/enwHRMSCeVncaubRI8XPb3v580/ujYKK5w==}
@@ -6636,14 +6627,6 @@ snapshots:
   hyparquet-writer@0.16.10:
     dependencies:
       hyparquet: 1.31.1
-
-  hyparquet-writer@0.7.0:
-    dependencies:
-      hyparquet: 1.20.0
-
-  hyparquet@1.20.0: {}
-
-  hyparquet@1.26.0: {}
 
   hyparquet@1.31.1: {}
 
