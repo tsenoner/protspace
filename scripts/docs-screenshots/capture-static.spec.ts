@@ -224,9 +224,10 @@ test.describe('Control Bar Screenshots', () => {
         { selector: '.projection-container', label: '1', offset: { x: -15, y: -40 } },
         { selector: '#annotation-select', label: '2', offset: { x: -15, y: -40 } },
         { selector: '.search-group', label: '3', offset: { x: -15, y: -40 } },
-        { selector: 'button:has(.icon)', label: '4', offset: { x: -15, y: -40 }, nth: 0 }, // Select
-        { selector: 'button:has(.icon)', label: '5', offset: { x: -15, y: -40 }, nth: 1 }, // Clear
-        { selector: 'button:has(.icon)', label: '6', offset: { x: -15, y: -40 }, nth: 2 }, // Isolate
+        // By class, not position: the Contours trigger is the first icon button now.
+        { selector: '.right-controls-select', label: '4', offset: { x: -15, y: -40 } },
+        { selector: '.right-controls-clear', label: '5', offset: { x: -15, y: -40 } },
+        { selector: '.right-controls-split', label: '6', offset: { x: -15, y: -40 } }, // Isolate
         { selector: '.filter-container', label: '7', offset: { x: -15, y: -40 } },
         {
           selector: '.export-container.right-controls-export',
@@ -234,17 +235,12 @@ test.describe('Control Bar Screenshots', () => {
           offset: { x: -15, y: -40 },
         },
         { selector: '.right-controls-data', label: '9', offset: { x: -15, y: -40 } },
+        // Numbered after Import so the docs' section anchors (#_9-import, ...) stay put.
+        { selector: '#density-layer-trigger', label: '10', offset: { x: -15, y: -40 } },
       ];
 
-      annotations.forEach(({ selector, label, offset, nth }) => {
-        let element: Element | null;
-        if (nth !== undefined) {
-          const elements = shadowRoot.querySelectorAll(selector);
-          element = elements[nth] || null;
-        } else {
-          element = shadowRoot.querySelector(selector);
-        }
-
+      annotations.forEach(({ selector, label, offset }) => {
+        const element: Element | null = shadowRoot.querySelector(selector);
         if (!element) return;
 
         const rect = element.getBoundingClientRect();
