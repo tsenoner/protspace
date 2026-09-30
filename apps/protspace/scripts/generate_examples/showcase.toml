@@ -519,7 +519,12 @@ stages = [
   { groups = ["domain", "uniprot", "taxonomy"] },   # about 1 h
   { groups = ["interpro"] },                        # about 5 h (2-20 h)
   { groups = ["ted"] },                             # 18-40 h: the critical path, run it alone
-  { groups = ["biocentral"], enabled = false, name = "biocentral" },  # needs the Rostlab operators' OK: --enable-stage biocentral
+  # Skipped (D4, W11): LightAttention and TMbed read the per-residue ProtT5
+  # matrix, which UniProt's mean-pooled vectors cannot give back, so Biocentral
+  # would embed all 573,649 proteins itself, several times the 10-25 h of the
+  # other two sets on the public server. The card says so. --enable-stage
+  # biocentral after an operator batch run.
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },
 ]
 stats = true
 stats_annotations = ["domain", "kingdom", "protein_existence", "signal_peptide", "protein_families", "xref_pdb"]  # W22: reviewed is one value here; the paper scores xref_pdb
