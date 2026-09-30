@@ -74,16 +74,28 @@ type ColumnEntry =
   | { kind: 'numeric'; numericType: 'int' | 'float'; sourceType: string };
 
 /** Arrow's integer types, by the name `sourceType` records, with the range Python casts into. */
-const ARROW_INTEGER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
-  int8: [-(2 ** 7), 2 ** 7 - 1],
-  int16: [-(2 ** 15), 2 ** 15 - 1],
-  int32: [-(2 ** 31), 2 ** 31 - 1],
-  int64: [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
-  uint8: [0, 2 ** 8 - 1],
-  uint16: [0, 2 ** 16 - 1],
-  uint32: [0, 2 ** 32 - 1],
-  uint64: [0, Number.MAX_SAFE_INTEGER],
+const ARROW_INTEGER_RANGES: Readonly<Record<string, readonly [bigint, bigint]>> = {
+  int8: [-(2n ** 7n), 2n ** 7n - 1n],
+  int16: [-(2n ** 15n), 2n ** 15n - 1n],
+  int32: [-(2n ** 31n), 2n ** 31n - 1n],
+  int64: [-(2n ** 63n), 2n ** 63n - 1n],
+  uint8: [0n, 2n ** 8n - 1n],
+  uint16: [0n, 2n ** 16n - 1n],
+  uint32: [0n, 2n ** 32n - 1n],
+  uint64: [0n, 2n ** 64n - 1n],
 };
+/**
+ * The largest magnitude up to which every integer is exact as a float64. Python keeps an
+ * integer column numeric up to it, inclusive (`_FLOAT64_EXACT_INT`), and stores one past it
+ * as exact decimal labels.
+ */
+const FLOAT64_EXACT_INT = 2 ** 53;
+/** A label as Python spells an integer: the canonical decimal `str(int)` gives. */
+const DECIMAL_INTEGER_RE = /^-?(?:0|[1-9]\d*)$/;
+
+/** Whether `value` is an integer a float64 holds exactly, so Python can cast it to an int. */
+const isExactInteger = (value: number): boolean =>
+  Number.isInteger(value) && Math.abs(value) <= FLOAT64_EXACT_INT;
 /** Arrow type Python writes an EAT `__pred_confidence` column as (float32). */
 const EAT_CONFIDENCE_SOURCE_TYPE = 'float';
 const ARROW_FLOAT_TYPES: ReadonlySet<string> = new Set(['halffloat', 'float', 'double']);
@@ -409,8 +421,7 @@ function addNumericColumn(
   // Python casts to int64 safely, so an integer past 2^53 is restored as float64 there;
   // the manifest still calls the column int for the browser.
   const int =
-    numericType === 'int' &&
-    values.every((value) => Number.isNaN(value) || Number.isSafeInteger(value));
+    numericType === 'int' && values.every((value) => Number.isNaN(value) || isExactInteger(value));
   addColumn(
     parts,
     name,
@@ -421,8 +432,10 @@ function addNumericColumn(
 
 /**
  * Whether the column `entry` describes still fits the `sourceType` a v3 load carried in, so
- * Python can restore that type from it. A numeric type needs a numeric column whose values it
- * holds, `bool` a categorical column of `true` / `false` labels. Any other type (`string`, a
+ * Python can restore that type from it. An integer type needs a numeric column whose values
+ * it holds exactly, or a categorical column of decimal labels in its range (how Python stores
+ * an integer column past ±2^53, and casts back); a float type needs a numeric column; `bool`
+ * needs a categorical column of `true` / `false` labels. Any other type (`string`, a
  * timestamp, `?`) is one Python only ever renders as v2 text, which fits every column.
  */
 function fitsSourceType(
@@ -434,12 +447,22 @@ function fitsSourceType(
   const range = ARROW_INTEGER_RANGES[sourceType];
   if (range) {
     const [low, high] = range;
+    const inRange = (value: bigint) => value >= low && value <= high;
+    if (entry.kind === 'numeric') {
+      return (
+        numeric !== undefined &&
+        numeric.every(
+          (value) => Number.isNaN(value) || (isExactInteger(value) && inRange(BigInt(value))),
+        )
+      );
+    }
     return (
-      entry.kind === 'numeric' &&
-      numeric !== undefined &&
-      numeric.every(
-        (value) =>
-          Number.isNaN(value) || (Number.isInteger(value) && value >= low && value <= high),
+      entry.kind === 'categorical' &&
+      labels.every(
+        (label) =>
+          label == null ||
+          isNAValue(label) ||
+          (DECIMAL_INTEGER_RE.test(label) && inRange(BigInt(label))),
       )
     );
   }

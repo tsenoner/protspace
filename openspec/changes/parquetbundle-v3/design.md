@@ -195,7 +195,9 @@ Python-written boolean column exported from the app decoded in Python as the str
 The browser reader now keeps the manifest's `sourceType` on the loaded `Annotation` (an optional
 field, set once per column at load and never read by rendering), and the exporter writes it back
 when the column as written still fits it: an integer type when every value is a whole number in
-its range, `bool` when the column is categorical with only `true`/`false` labels, a float type when
+its range that a float64 holds exactly (up to ±2^53 inclusive, where Python's encoder draws the
+same line), or when the column is categorical and every label is a decimal integer in its range
+(the exact labels described below), `bool` when the column is categorical with only `true`/`false` labels, a float type when
 it is numeric, and anything else (`string`, a timestamp, `?`), which Python only renders as text,
 always. A column the app changed so that it no longer fits, and every column of a legacy load, gets
 the exporter's own choice. The alternative, re-deriving the type in the writer, cannot tell a

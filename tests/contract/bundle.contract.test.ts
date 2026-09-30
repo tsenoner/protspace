@@ -513,7 +513,12 @@ describe('bundles the web app exports, read by the Python tooling', () => {
       // sourceType, so Python reads the BOOLEAN column as bool and a float64 column of
       // whole numbers as double, exactly as from the file it wrote itself.
       expect(reexported.types).toEqual(written.types);
-      if (variant === 'coverage') expect(written.types.reviewed).toBe('bool');
+      if (variant === 'coverage') {
+        expect(written.types.reviewed).toBe('bool');
+        // A hash past 2^53 (stored as exact labels) and the ±2^53 edge (stored as numbers).
+        expect(written.types.hash).toBe('int64');
+        expect(written.types.edge).toBe('int64');
+      }
       expect(reexported.annotations).toEqual(written.annotations);
       expect(reexported.projections).toEqual(written.projections);
       expect(reexported.statistics).toBe(written.statistics);

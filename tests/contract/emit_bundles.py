@@ -88,6 +88,12 @@ PROJECTION_ONLY_ID = "PROJECTION_ONLY"
 # variant; the browser has always shown it as 'true'/'false', a null as N/A.
 BOOLEAN_VALUES = [True, False, None, True, False, True]
 
+# Two int64 columns the web writer must hand back as int64: a 64-bit hash past
+# float64's exact range, which Python stores as exact decimal labels, and the
+# ±2**53 edge, which it still stores as numbers.
+HASH_VALUES = [2**60 + 1, 5, None, 2**62, -(2**61), 7]
+EDGE_VALUES = [2**53, 1, None, -(2**53), 2, 3]
+
 
 def protein_ids(count: int) -> list[str]:
     return [f"P{i:05d}" for i in range(1, count + 1)]
@@ -296,7 +302,8 @@ def build_statistics_table() -> pa.Table:
 
 def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
     """The coverage variant's annotations: every projected protein but
-    ``PROJECTION_ONLY_ID``, plus ``ANNOTATION_ONLY_ID``, with a BOOLEAN column."""
+    ``PROJECTION_ONLY_ID``, plus ``ANNOTATION_ONLY_ID``, with a BOOLEAN column
+    and the two int64 columns a web re-export must keep int64."""
     annotated = [i for i in ids if i != PROJECTION_ONLY_ID] + [ANNOTATION_ONLY_ID]
     return stamp_format_version(
         pa.table(
@@ -304,6 +311,8 @@ def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
                 "identifier": pa.array(annotated, pa.string()),
                 "family": pa.array([encode_field("Hydrolase")] * len(annotated)),
                 "reviewed": pa.array(BOOLEAN_VALUES, pa.bool_()),
+                "hash": pa.array(HASH_VALUES, pa.int64()),
+                "edge": pa.array(EDGE_VALUES, pa.int64()),
             }
         )
     )

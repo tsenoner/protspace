@@ -298,6 +298,48 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     });
   });
 
+  it('keeps an integer column holding exactly ±2^53 int64, as Python classifies it', () => {
+    // Python keeps |v| <= 2^53 numeric (every such integer is exact as a float64), so
+    // 2^53 itself must not fall back to double on a re-export.
+    const original = handBuilt();
+    original.numeric_annotation_data!.length = Float64Array.of(2 ** 53, 1, NaN, -(2 ** 53));
+    original.numeric_annotation_data!.ratio = Float64Array.of(0, 2 ** 53, NaN, 1);
+    original.annotations.ratio = { ...numeric('int'), sourceType: 'uint64' };
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.length.sourceType).toBe('int64'); // the writer's own choice
+    expect(columns.ratio.sourceType).toBe('uint64'); // the carried type still fits
+  });
+
+  it('echoes an integer sourceType on a column Python stored as exact decimal labels', () => {
+    // A 64-bit hash or ID past 2^53 is written by Python as a categorical column of its
+    // exact labels; decode_v3 casts them back only while the manifest says int64.
+    const original = handBuilt();
+    const labelled = (sourceType: string, values: (string | null)[]) => {
+      const name = `h_${Object.keys(original.annotations).length}`;
+      original.annotations[name] = { ...categorical(values), sourceType };
+      original.annotation_data[name] = Int32Array.of(0, 1, values.length - 1, -1);
+      return name;
+    };
+    const hash = labelled('int64', ['1152921504606846977', '-5', '__NA__']);
+    const top = labelled('int64', ['9223372036854775807', '-9223372036854775808', null]);
+    const unsigned = labelled('uint64', ['18446744073709551615', '0', '7']);
+    const pastInt64 = labelled('int64', ['9223372036854775808', '1', '2']);
+    const negativeUnsigned = labelled('uint64', ['-1', '1', '2']);
+    const text = labelled('int64', ['12', 'abc', '3']);
+    const spelled = labelled('int32', ['+1', '2', '3']);
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns[hash].sourceType).toBe('int64');
+    expect(columns[top].sourceType).toBe('int64');
+    expect(columns[unsigned].sourceType).toBe('uint64');
+    expect(columns[pastInt64].sourceType).toBe('string');
+    expect(columns[negativeUnsigned].sourceType).toBe('string');
+    expect(columns[text].sourceType).toBe('string');
+    // Python casts back only the decimal spelling it wrote.
+    expect(columns[spelled].sourceType).toBe('string');
+  });
+
   it('echoes a carried sourceType for a column that still fits it', () => {
     const original = handBuilt();
     original.annotations.reviewed = {

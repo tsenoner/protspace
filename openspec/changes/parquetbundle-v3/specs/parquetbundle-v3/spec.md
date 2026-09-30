@@ -239,6 +239,19 @@ inferred type.
 - **THEN** Python decodes the export's `<col>__pred_confidence` as `float`, not `double`, and its
   `__pred_value` and `__pred_source` columns as `string`
 
+#### Scenario: A 64-bit hash column round-trips through the web app
+
+- **WHEN** a bundle written by Python with an `int64` column holding a value beyond ±2^53, which
+  the encoder stores as exact decimal labels, is loaded in the web app and exported
+- **THEN** Python decodes that column of the export as `int64`, with the same values and nulls as
+  the original
+
+#### Scenario: An integer column at the ±2^53 edge round-trips through the web app
+
+- **WHEN** a bundle written by Python with an `int64` column holding `2^53` and `-2^53` is loaded
+  in the web app and exported
+- **THEN** Python decodes that column of the export as `int64`, not `double`
+
 #### Scenario: A column that no longer fits its recorded type
 
 - **WHEN** a column recorded as `int32` holds a value outside the `int32` range when it is exported
