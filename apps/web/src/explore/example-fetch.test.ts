@@ -25,6 +25,7 @@ describe('fetchExampleBundle', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -68,6 +69,17 @@ describe('fetchExampleBundle', () => {
     await fetchExampleBundle(REPO_HOSTED, signal, false);
 
     expect(fetchMock).toHaveBeenCalledWith('/data.parquetbundle', { signal });
+  });
+
+  // The E2E suite pins the startup demo to an absolute URL, so this is the
+  // only check that the demo's relative path is rooted at the app base.
+  it('roots a repo-hosted bundle at a non-root app base', async () => {
+    vi.stubEnv('BASE_URL', '/protspace/');
+    fetchMock.mockResolvedValueOnce(response(200));
+
+    await fetchExampleBundle(REPO_HOSTED, signal, false);
+
+    expect(fetchMock).toHaveBeenCalledWith('/protspace/data.parquetbundle', { signal });
   });
 
   it('has no fallback for a repo-hosted bundle', async () => {

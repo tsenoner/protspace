@@ -244,16 +244,24 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await waitForProteinCount(page, USER_IMPORT_COUNT);
   });
 
-  test('the demo and a deep link still load under a trailing-slash /explore/', async ({ page }) => {
+  test('a deep link fetches its bundle from the app base under a trailing-slash /explore/', async ({
+    page,
+  }) => {
+    // The app boots on the route. This says nothing about relative catalog
+    // URLs: the web server pins the startup demo to an absolute `/@fs/…` URL,
+    // which `resolveExampleUrl` passes through unchanged. The demo's own
+    // `./data.parquetbundle` is covered by `example-fetch.test.ts` and
+    // `example-url.test.ts`.
     await page.goto('/explore/');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await waitForProteinCount(page, DEMO_COUNT);
 
-    // Catalog URLs are relative (`./examples/…`); resolved against this route
-    // they would hit /explore/examples/…, which the SPA fallback answers with
-    // HTML. The fixture route's `**/` glob matches either path, so the request
-    // itself must show the bundle was asked for at the app base.
+    // Catalog URLs are relative (`./data/…` or `./examples/…`); resolved
+    // against this route they would hit /explore/…, which the SPA fallback
+    // answers with HTML. The fixture route's `**/` glob matches either path,
+    // so the request itself must show the bundle was asked for at the app
+    // base.
     const request = page.waitForRequest(SMALL.glob);
     await page.goto(`/explore/?dataset=${SMALL.id}`);
     expect(new URL((await request).url()).pathname).toBe(
