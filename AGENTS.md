@@ -114,6 +114,29 @@ Angular-style `type(scope): description`, subject under 72 characters; types are
 `fix`, `refactor`, `docs`, `test`, `chore`. No hook or CI job lints commit messages — the
 type you write is what semantic-release parses for `apps/protspace/` releases (see below).
 
+## Writing issues
+
+An issue is read by whoever picks it up weeks later, often without the context it was written
+in. Write for that person, not for the reviewer who just saw the code.
+
+- **Title**: one plain line saying what is wrong or what should change. No stack traces, no
+  symbol names where a plain word works. "Retries only cover one of our HTTP calls" beats
+  "`get_with_retry` under-adopted across retriever call sites".
+- **Body**: aim for under 20 lines, in three parts — what the problem is, why it matters (who
+  is affected and how), and what a fix looks like. Say "the run silently loses annotations",
+  not just the mechanism that causes it.
+- **Detail goes at the end, if at all.** File and line references belong in a short pointer
+  near the bottom, not woven through the prose. Skip the measurement tables, the call-graph
+  traces and the long code blocks: link a commit or a file instead.
+- **No unexplained jargon.** Internal names (`incomplete_sources`, `paginated_get`) are fine
+  once the plain-English version has been given.
+
+A reader should be able to decide whether to pick the issue up from the title and first
+paragraph alone. If they need the whole body to work out what it is about, it is too long.
+
+Add every issue and PR to the ProtSpace Development board:
+`gh project item-add 2 --owner tsenoner --url <url>`
+
 ## Referring to issues from before the monorepo merge
 
 Bare `#N` resolves against **this** repo, which inherited the frontend's numbering. The

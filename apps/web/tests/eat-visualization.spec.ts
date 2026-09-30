@@ -120,39 +120,15 @@ async function getProteinScreenPosition(
 ): Promise<{ x: number; y: number }> {
   return page.evaluate((id) => {
     const plot = document.querySelector('protspace-scatterplot') as
-      | (HTMLElement & {
-          _plotData?: {
-            length: number;
-            xs: Float32Array;
-            ys: Float32Array;
-            originalIndices: Int32Array | null;
-            proteinIds: string[];
-          };
-          _scales?: { x(value: number): number; y(value: number): number };
-          _transform?: { x: number; y: number; k: number };
+      | (Element & {
+          getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
         })
       | null;
-    const canvas = plot?.shadowRoot?.querySelector('canvas');
-    const data = plot?._plotData;
-    const scales = plot?._scales;
-    const transform = plot?._transform;
-    if (!plot || !canvas || !data || !scales || !transform) {
-      throw new Error('Scatter plot geometry is not ready');
+    const position = plot?.getProteinClientPosition(id);
+    if (!position) {
+      throw new Error(`Protein ${id} is not plotted, or the scatter plot has no geometry yet`);
     }
-
-    const proteinIndex = data.proteinIds.indexOf(id);
-    const slot = data.originalIndices
-      ? Array.from(data.originalIndices).findIndex((value) => value === proteinIndex)
-      : proteinIndex;
-    if (proteinIndex < 0 || slot < 0) {
-      throw new Error(`Protein ${id} is not in the rendered view`);
-    }
-
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: rect.left + scales.x(data.xs[slot]) * transform.k + transform.x,
-      y: rect.top + scales.y(data.ys[slot]) * transform.k + transform.y,
-    };
+    return position;
   }, proteinId);
 }
 

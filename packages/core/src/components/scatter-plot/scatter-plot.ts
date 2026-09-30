@@ -77,6 +77,20 @@ export type {
 const HIT_TEST_SEARCH_RADIUS_PX = 15;
 const POINT_RADIUS_SIZE_DIVISOR = 3;
 
+// D3 wheel zoom accumulates scale multiplicatively, so a symmetric round trip
+// can finish a few ULPs above identity even though the view is visually reset.
+const ZOOM_IDENTITY_EPSILON = 1e-6;
+
+// Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
+// affect only the template or are rendered by the selection block. Zoom
+// transforms already redraw through the interaction controller's RAF.
+const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
+  'selectedProteinIds',
+  'highlightedProteinIds',
+  '_focusedValues',
+  '_isZoomedIn',
+]);
+
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
 const DEFAULT_NUMERIC_BIN_COUNT = 10;
@@ -156,6 +170,7 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _canvasKey = 0;
   @state() private _numericRecomputeRunning = false;
   @state() private _connectorStatus: ProvenanceConnectorStatus | null = null;
+  @state() private _isZoomedIn = false;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -886,12 +901,10 @@ export class ProtspaceScatterplot extends LitElement {
       this._webglRenderer?.invalidateStyleCache();
       this._renderPlot();
     }
-    // Render for other changes
-    const selectionKeys = ['selectedProteinIds', 'highlightedProteinIds', '_focusedValues'];
-    const changedKeys = Array.from(changedProperties.keys()).map(String);
-    const onlySelectionChanged =
-      changedKeys.length > 0 && changedKeys.every((k) => selectionKeys.includes(k));
-    if (!onlySelectionChanged) {
+    const changedKeys = Array.from(changedProperties.keys(), String);
+    const canSkipRender =
+      changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
+    if (!canSkipRender) {
       this._renderPlot();
       this._updateSelectionOverlays();
     }
@@ -1235,6 +1248,7 @@ export class ProtspaceScatterplot extends LitElement {
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
+        this._isZoomedIn = t.k > 1 + ZOOM_IDENTITY_EPSILON;
         this._connectorOverlay.updateZoomScale(t.k);
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
@@ -2046,7 +2060,11 @@ export class ProtspaceScatterplot extends LitElement {
             `
           : ''}
         ${this.data
-          ? html` <div class="plot-indicator">${this._getVisiblePointCount()} points</div> `
+          ? html`
+              <div class="plot-indicator" role="status" aria-live="polite">
+                ${`${this._getVisiblePointCount()} points${this._isZoomedIn ? ' · Zoomed in' : ''}`}
+              </div>
+            `
           : ''}
         ${this._numericRecomputeRunning
           ? html`
@@ -2233,6 +2251,62 @@ export class ProtspaceScatterplot extends LitElement {
   /** Collapse the currently-open duplicate-badge spider, if any. */
   closeExpandedDuplicateStack(): void {
     this._dupOverlay.closeExpanded();
+  }
+
+  /** Key of the currently-open duplicate-badge spider, or null. */
+  getExpandedDuplicateStackKey(): string | null {
+    return this._dupOverlay.getExpandedKey();
+  }
+
+  /**
+   * The duplicate stacks in the current viewport: key, data-space centre and member count.
+   * Rebuilt on every pan and zoom, so a key can drop out and come back.
+   */
+  getDuplicateStacks(): { key: string; x: number; y: number; count: number }[] {
+    return this._dupOverlay
+      .getStacks()
+      .map((stack) => ({ key: stack.key, x: stack.x, y: stack.y, count: stack.points.length }));
+  }
+
+  /**
+   * Viewport (client) coordinates of a data-space point under the current zoom, or null before
+   * the plot has data to scale. The exact inverse of the pointer hit-test, which reads
+   * `d3.pointer` against the interaction SVG — through that SVG's screen matrix, `viewBox`
+   * scaling included — so hovering or clicking the returned position lands on the point.
+   * Automation (e2e tests, the docs captures) uses this instead of re-deriving it from private
+   * fields.
+   */
+  dataToClient(x: number, y: number): { x: number; y: number } | null {
+    const scales = this._scales;
+    if (!scales || this._plotData.length === 0) return null;
+    const t = this._transform;
+    const svgX = scales.x(x) * t.k + t.x;
+    const svgY = scales.y(y) * t.k + t.y;
+    const ctm = this._svg?.getScreenCTM?.();
+    if (ctm) {
+      return {
+        x: ctm.a * svgX + ctm.c * svgY + ctm.e,
+        y: ctm.b * svgX + ctm.d * svgY + ctm.f,
+      };
+    }
+    // No layout to ask (jsdom, or not yet rendered): approximate the SVG's origin by the host's.
+    const rect = this.getBoundingClientRect();
+    return { x: rect.left + svgX, y: rect.top + svgY };
+  }
+
+  /**
+   * Viewport coordinates of a protein's marker, or null when the protein is not plotted (unknown,
+   * or isolated away) or the plot has nothing to scale yet. Linear in the number of proteins.
+   */
+  getProteinClientPosition(proteinId: string): { x: number; y: number } | null {
+    const plotData = this._plotData;
+    const proteinIndex = plotData.proteinIds.indexOf(proteinId);
+    if (proteinIndex < 0) return null;
+    const slot = plotData.originalIndices
+      ? plotData.originalIndices.indexOf(proteinIndex)
+      : proteinIndex;
+    if (slot < 0 || slot >= plotData.length) return null;
+    return this.dataToClient(plotData.xs[slot], plotData.ys[slot]);
   }
 
   /**

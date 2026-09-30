@@ -57,6 +57,7 @@ docs/superpowers/
 
 # playwright
 **/test-results
+**/tests/__screens__
 /temp-videos
 **/playwright-report
 .playwright-mcp

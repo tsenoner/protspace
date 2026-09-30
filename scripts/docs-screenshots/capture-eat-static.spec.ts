@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import * as path from 'path';
-import { IMAGES_DIR, createSharedCapturePage, selectAnnotation } from './helpers';
+import { createSharedCapturePage, selectAnnotation } from './helpers';
+import { IMAGES_DIR } from './paths';
 import { DEMO_ANNOTATION, loadVenomEatBundle } from './eat-helpers';
 
 /**

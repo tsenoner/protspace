@@ -132,24 +132,6 @@ export const annotationSelectStyles = [
       background: var(--primary);
     }
 
-    .dropdown-item-label {
-      flex: 1 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .predicted-badge {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      font-size: 0.8rem;
-      line-height: 1;
-      cursor: default;
-      user-select: none;
-    }
-
     .eat-badge,
     .stats-badge {
       flex: 0 0 auto;

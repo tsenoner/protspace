@@ -45,7 +45,7 @@ export async function loadVenomEatBundle(page: Page): Promise<void> {
   await waitForDataLoad(page, { expectedProteinCount: VENOM_PROTEIN_COUNT });
 }
 
-export interface ProvenanceDemoPair {
+interface ProvenanceDemoPair {
   /** A reference protein other proteins borrowed from. */
   source: string;
   /** One protein that borrowed from `source`. */

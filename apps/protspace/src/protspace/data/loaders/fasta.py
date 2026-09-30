@@ -6,7 +6,8 @@ Extracted from LocalProcessor._embed_fasta_to_h5.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,20 @@ if TYPE_CHECKING:
     from protspace.data.embedding.local import LocalEmbedConfig
 
 logger = logging.getLogger(__name__)
+
+
+def parse_fasta_normalized(fasta_path: Path) -> dict[str, str]:
+    """Parse *fasta_path* into ``{normalized identifier: sequence}``.
+
+    Header identifiers are remapped the same way H5 keys are
+    (``sp|P12345|NAME`` -> ``P12345``) so the two always agree.
+    """
+    from protspace.data.io.fasta import parse_fasta
+
+    return {
+        parse_identifier(header): sequence
+        for header, sequence in parse_fasta(fasta_path).items()
+    }
 
 
 def embed_fasta(
@@ -44,14 +59,11 @@ def embed_fasta(
         raise ValueError(f"Unknown backend {backend!r}; use 'local' or 'biocentral'.")
 
     from protspace.data.embedding.biocentral import derive_h5_cache_path
-    from protspace.data.io.fasta import parse_fasta
 
-    raw_sequences = parse_fasta(fasta_path)
-    if not raw_sequences:
+    # Keys are remapped: sp|P12345|NAME → P12345 (shared by both backends).
+    sequences = parse_fasta_normalized(fasta_path)
+    if not sequences:
         raise ValueError(f"No sequences found in {fasta_path}")
-
-    # Remap keys: sp|P12345|NAME → P12345 (shared by both backends).
-    sequences = {parse_identifier(header): seq for header, seq in raw_sequences.items()}
 
     if backend == "local":
         from protspace.data.embedding.local import embed_sequences
@@ -86,7 +98,43 @@ def embed_fasta(
     with h5py.File(h5_path, "a") as f:
         f.attrs["model_name"] = embedder
 
-    return load_h5([h5_path], name_override=embedder)
+    return _restrict_to(load_h5([h5_path], name_override=embedder), sequences)
+
+
+def _restrict_to(embedding_set: EmbeddingSet, wanted: Collection[str]) -> EmbeddingSet:
+    """Drop rows for proteins outside *wanted*, keeping the loaded row order.
+
+    The embedding cache legitimately accumulates proteins across inputs — that is
+    what makes resume work — so what a run is about is decided by the FASTA in
+    hand rather than by everything the cache has ever held. Returning the
+    accumulation unions unrelated datasets into one bundle.
+
+    Identifiers go through ``parse_identifier`` because a cache written elsewhere
+    may be keyed ``sp|P12345|NAME`` while the FASTA-derived keys are parsed.
+    """
+    requested = set(wanted)
+    keep = [
+        i
+        for i, header in enumerate(embedding_set.headers)
+        if parse_identifier(header) in requested
+    ]
+    if len(keep) == len(embedding_set.headers):
+        return embedding_set
+
+    logger.info(
+        "Returning %d of %d cached protein(s): the rest belong to other inputs "
+        "sharing this embedding cache.",
+        len(keep),
+        len(embedding_set.headers),
+    )
+    # A new set rather than an edit in place: "restrict to" reads as a query,
+    # and a caller still holding the loaded set would otherwise find its rows
+    # silently gone.
+    return replace(
+        embedding_set,
+        data=embedding_set.data[keep],
+        headers=[embedding_set.headers[i] for i in keep],
+    )
 
 
 def check_fasta_coverage(

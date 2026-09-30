@@ -1,30 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getBaseAccession,
   buildAlphaFoldUrl,
   buildUniProtUrl,
   buildInterProUrl,
+  buildTedUrl,
+  RESOURCE_LINKS,
 } from './header-links';
 
 describe('header-links', () => {
-  describe('getBaseAccession', () => {
-    it('returns the ID unchanged when there is no dot', () => {
-      expect(getBaseAccession('P0DQE9')).toBe('P0DQE9');
-    });
-
-    it('strips the version suffix after the first dot', () => {
-      expect(getBaseAccession('P0DQE9.2')).toBe('P0DQE9');
-    });
-
-    it('handles multiple dots by splitting on the first one', () => {
-      expect(getBaseAccession('A0A.1.2')).toBe('A0A');
-    });
-
-    it('handles an empty string', () => {
-      expect(getBaseAccession('')).toBe('');
-    });
-  });
-
   describe('buildAlphaFoldUrl', () => {
     it('builds the correct AlphaFold DB URL', () => {
       expect(buildAlphaFoldUrl('P0DQE9')).toBe('https://alphafold.ebi.ac.uk/entry/P0DQE9');
@@ -74,6 +57,29 @@ describe('header-links', () => {
       expect(buildInterProUrl('A0A0C5B5G6')).toBe(
         'https://www.ebi.ac.uk/interpro/protein/UniProt/A0A0C5B5G6/',
       );
+    });
+  });
+
+  describe('buildTedUrl', () => {
+    it('builds a TED URL from the base accession', () => {
+      expect(buildTedUrl('W6JQJ9.2')).toBe('https://ted.cathdb.info/uniprot/W6JQJ9');
+    });
+
+    it('encodes special characters in the accession', () => {
+      expect(buildTedUrl('A B')).toBe('https://ted.cathdb.info/uniprot/A%20B');
+    });
+  });
+
+  describe('RESOURCE_LINKS', () => {
+    it('renders the whole row, in order, from the matching builders', () => {
+      expect(
+        RESOURCE_LINKS.map((resource) => [resource.label, resource.build('W6JQJ9.2')]),
+      ).toEqual([
+        ['AlphaFold', 'https://alphafold.ebi.ac.uk/entry/W6JQJ9'],
+        ['UniProt', 'https://www.uniprot.org/uniprotkb/W6JQJ9/entry'],
+        ['InterPro', 'https://www.ebi.ac.uk/interpro/protein/UniProt/W6JQJ9/'],
+        ['TED', 'https://ted.cathdb.info/uniprot/W6JQJ9'],
+      ]);
     });
   });
 });

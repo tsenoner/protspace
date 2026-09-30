@@ -2,7 +2,7 @@
 
 The ProtSpace Explore page provides an interactive environment for visualizing and analyzing protein embeddings.
 
-![Interface Overview - Full page layout showing scatterplot, legend, and control bar](./images/interface-overview.png)
+<img src="./images/interface-overview.png" alt="Interface Overview - Full page layout showing scatterplot, legend, and control bar" width="1536" height="864" loading="eager" fetchpriority="high" />
 
 ## Page Layout
 
@@ -63,7 +63,7 @@ The legend shows the current coloring scheme:
 
 ## Structure Viewer
 
-When you select a protein, the 3D viewer appears and fetches its structure from AlphaFold (if available). The viewer includes direct links to the [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), and [InterPro](https://www.interpro.org/) entries for the selected protein.
+When you select a protein, the 3D viewer appears and fetches its structure from AlphaFold (if available). Beneath the title, a row of external links takes you to the selected protein's [AlphaFold Database](https://alphafold.ebi.ac.uk/), [UniProt](https://www.uniprot.org/), [InterPro](https://www.interpro.org/), and [TED](https://ted.cathdb.info/) entries. Each opens in a new tab.
 
 <img src="./images/structure-viewer.png" alt="Structure Viewer - showing 3D protein structure" style="max-width: 50%; display: block; margin: 1em 0;" />
 

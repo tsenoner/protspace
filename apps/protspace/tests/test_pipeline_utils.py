@@ -1,5 +1,6 @@
 """Tests for pipeline utility functions."""
 
+import logging
 from collections import Counter
 from unittest.mock import patch
 
@@ -359,6 +360,57 @@ def _cache_pipeline(tmp_path, **overrides):
             **overrides,
         )
     )
+
+
+class TestUniProtFailureCacheWriteThroughPipeline:
+    """The guard has to hold on the paths a user actually runs.
+
+    The manager-level tests pin the decision; these pin the wiring, because the
+    pipeline change is a *deletion* of an explicit argument and a future call
+    site could silently reinstate the old behavior.
+    """
+
+    @staticmethod
+    def _fail_one_batch(monkeypatch):
+        from protspace.data.annotations.retrievers import uniprot_retriever
+
+        def fail_batch(_accessions):
+            raise RuntimeError("temporary UniProt failure")
+
+        monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
+
+    def test_a_lost_batch_does_not_create_the_cache(self, tmp_path, monkeypatch):
+        """The first --keep-tmp run is the one that would bake the empties in."""
+        self._fail_one_batch(monkeypatch)
+        pipeline = _cache_pipeline(tmp_path, annotations=["length"])
+
+        pipeline._fetch_annotations(["P01308"])
+
+        assert not (tmp_path / "all_annotations.parquet").exists()
+
+    def test_refetch_rewrites_the_cache_even_when_a_batch_is_lost(
+        self, tmp_path, monkeypatch
+    ):
+        """--refetch is the documented repair, so it must beat the guard.
+
+        Declining here would strand a cache poisoned by an earlier run and throw
+        away the good data the repair recovered.
+        """
+        self._fail_one_batch(monkeypatch)
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame({"identifier": ["P01308"], "length": ["POISONED"]}).to_parquet(
+            cache_path, index=False
+        )
+        pipeline = _cache_pipeline(
+            tmp_path, annotations=["length"], refetch_stages={"uniprot"}
+        )
+
+        pipeline._fetch_annotations(["P01308"])
+
+        # The repair could not refetch the column, so it removes it instead of
+        # stranding the bad values: the next run then sees `length` missing and
+        # fetches it, rather than reading "POISONED" as cached truth.
+        assert "length" not in pd.read_parquet(cache_path).columns
 
 
 class TestAnnotationCacheMigration:
@@ -753,6 +805,87 @@ class TestLegacyTedLabelMigration:
 
 
 # ---------------------------------------------------------------------------
+# complete annotation cache
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteAnnotationCache:
+    def test_fills_only_missing_cached_lengths_from_fasta(self, tmp_path):
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n>cached_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        cached = pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                },
+                {
+                    "identifier": "cached_protein",
+                    "length": "110",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                },
+            ]
+        )
+        cached.to_parquet(cache_path, index=False)
+        embedding_set = _make_es(
+            "test", ["custom_protein", "cached_protein"], fasta_path=fasta_path
+        )
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8", "110"]
+        assert pd.read_parquet(cache_path)["length"].tolist() == ["", "110"]
+
+    def test_still_warns_when_every_cached_annotation_is_empty(self, tmp_path, caplog):
+        """The FASTA length fallback must not mask a wholly empty cache."""
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                }
+            ]
+        ).to_parquet(cache_path, index=False)
+        embedding_set = _make_es("test", ["custom_protein"], fasta_path=fasta_path)
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8"]
+        assert "All cached annotations are empty" in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # _validate_headers
 # ---------------------------------------------------------------------------
 
@@ -1053,3 +1186,266 @@ class TestPrecomputedMDSConfigIsolation:
         assert id(pipeline.base.config) == original_config_id, (
             "base.config reference should be the original dict, not a replacement"
         )
+
+
+# ---------------------------------------------------------------------------
+# Annotation cache identity
+# ---------------------------------------------------------------------------
+
+
+def _write_annotation_cache(cache_dir, identifiers, value):
+    cached = pd.DataFrame(
+        {
+            "identifier": identifiers,
+            "protein_name": [value] * len(identifiers),
+            "gene_name": [value] * len(identifiers),
+            "uniprot_kb_id": [value] * len(identifiers),
+        }
+    )
+    cached.to_parquet(cache_dir / "all_annotations.parquet")
+    return cached
+
+
+def test_a_cache_missing_identifiers_is_filled_in_not_discarded(tmp_path, monkeypatch):
+    """The cache still reaches the manager, which fetches only what it lacks.
+
+    Discarding it instead refetches every source for every identifier, which is
+    hours at Swiss-Prot scale for one added protein.
+    """
+    from protspace.data.annotations.manager import ProteinAnnotationManager
+
+    _write_annotation_cache(tmp_path, ["P1", "P2"], "cached")
+    captured = {}
+
+    def fill_in(manager):
+        captured["headers"] = manager.headers
+        captured["cached_data"] = manager.cached_data
+        return pd.DataFrame(
+            {
+                "identifier": ["P1", "P2", "P3"],
+                "protein_name": ["cached", "cached", "new"],
+            }
+        )
+
+    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", fill_in)
+
+    result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
+        ["P1", "P2", "P3"]
+    )
+
+    assert captured["headers"] == ["P1", "P2", "P3"]
+    assert captured["cached_data"]["identifier"].tolist() == ["P1", "P2"]
+    assert result["identifier"].tolist() == ["P1", "P2", "P3"]
+
+
+def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monkeypatch):
+    """A source that failed for the new identifiers must not reach the cache.
+
+    Its columns would be empty for them and indistinguishable from a real
+    absence. Leaving the cache untouched is cheap now that the next run fills in
+    only the identifiers it lacks rather than rebuilding everything.
+    """
+    from protspace.data.annotations.retrievers.interpro_retriever import (
+        InterProRetriever,
+    )
+    from protspace.data.annotations.retrievers.uniprot_retriever import (
+        ProteinAnnotations,
+        UniProtRetriever,
+    )
+
+    cache_path = tmp_path / "all_annotations.parquet"
+    pd.DataFrame(
+        {"identifier": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001"]}
+    ).to_parquet(cache_path, index=False)
+
+    monkeypatch.setattr(
+        UniProtRetriever,
+        "fetch_annotations",
+        lambda _self: [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={"gene_name": "INS", "organism_id": "9606"},
+            )
+        ],
+    )
+
+    def interpro_down(_self):
+        raise RuntimeError("InterPro unavailable")
+
+    monkeypatch.setattr(InterProRetriever, "fetch_annotations", interpro_down)
+
+    result = _cache_pipeline(
+        tmp_path, annotations=["gene_name", "pfam"]
+    )._fetch_annotations(["P01308"])
+
+    assert result.set_index("identifier").loc["P01308", "gene_name"] == "INS"
+    assert pd.read_parquet(cache_path)["identifier"].tolist() == ["OLD1"]
+
+
+@pytest.mark.parametrize(
+    "cached_ids", [["P1", "P2"], ["P1", "P2", "P3"]], ids=["exact", "superset"]
+)
+def test_annotation_cache_covering_the_request_is_reused(
+    tmp_path, monkeypatch, cached_ids
+):
+    from protspace.data.annotations.manager import ProteinAnnotationManager
+
+    cached = _write_annotation_cache(tmp_path, cached_ids, "cached")
+
+    def unexpected_fetch(_manager):
+        pytest.fail("a cache covering every requested identifier should be reused")
+
+    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", unexpected_fetch)
+
+    result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
+        ["P2", "P1"]
+    )
+
+    assert result["identifier"].tolist() == cached_ids
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(tmp_path / "all_annotations.parquet"), cached
+    )
+
+
+# ---------------------------------------------------------------------------
+# Projection cache identity
+# ---------------------------------------------------------------------------
+
+
+def _recording_pipeline(tmp_path, **overrides):
+    """A pipeline whose reducer records what it was handed and slices it."""
+    pipeline = ReductionPipeline(
+        PipelineConfig(
+            methods=parse_methods_arg(["umap2"]),
+            output_path=None,
+            keep_tmp=True,
+            intermediate_dir=tmp_path,
+            **overrides,
+        )
+    )
+    reduced = []
+
+    def record_input(data, method, dims):
+        reduced.append(data.copy())
+        return {
+            "name": f"{method}{dims}",
+            "dimensions": dims,
+            "info": {},
+            "data": data[:, :dims].copy(),
+        }
+
+    pipeline.base.process_reduction = record_input
+    return pipeline, reduced
+
+
+def test_projection_cache_misses_a_changed_matrix_under_one_name(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+
+    pipeline._run_reductions(
+        [_make_es("prot_t5", headers, data=np.zeros((3, 3), dtype=np.float32))]
+    )
+    changed = pipeline._run_reductions(
+        [_make_es("prot_t5", headers, data=np.full((3, 3), 7.0, dtype=np.float32))]
+    )[0]
+
+    assert len(reduced) == 2
+    np.testing.assert_array_equal(
+        changed["data"], np.full((3, 2), 7.0, dtype=np.float32)
+    )
+
+
+def test_projection_cache_misses_reordered_identifiers(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+    data = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float32)
+
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+    reordered = pipeline._run_reductions(
+        [_make_es("prot_t5", headers[::-1], data=data[::-1])]
+    )[0]
+
+    assert len(reduced) == 2
+    # Coordinates are paired positionally with the current identifiers, so a
+    # cache hit here would put P3's row on P1.
+    np.testing.assert_array_equal(reordered["data"], data[::-1][:, :2])
+
+
+def test_projection_cache_misses_a_grown_input(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    rng = np.random.default_rng(0)
+
+    pipeline._run_reductions(
+        [
+            _make_es(
+                "prot_t5",
+                [f"P{i}" for i in range(3)],
+                data=rng.normal(size=(3, 4)).astype(np.float32),
+            )
+        ]
+    )
+    grown = pipeline._run_reductions(
+        [
+            _make_es(
+                "prot_t5",
+                [f"P{i}" for i in range(5)],
+                data=rng.normal(size=(5, 4)).astype(np.float32),
+            )
+        ]
+    )[0]
+
+    assert len(reduced) == 2
+    assert grown["data"].shape[0] == 5
+
+
+def test_projection_cache_hits_an_unchanged_rerun(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+    data = np.full((3, 3), 4.0, dtype=np.float32)
+
+    first = pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])[0]
+    second = pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])[0]
+
+    assert len(reduced) == 1
+    np.testing.assert_array_equal(second["data"], first["data"])
+
+
+def test_projection_refetch_recomputes_an_unchanged_rerun(tmp_path):
+    pipeline, reduced = _recording_pipeline(
+        tmp_path, refetch_stages=frozenset({"projections"})
+    )
+    headers = ["P1", "P2", "P3"]
+    data = np.full((3, 3), 4.0, dtype=np.float32)
+
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+
+    assert len(reduced) == 2
+
+
+def test_precomputed_projection_cache_misses_a_changed_matrix(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+
+    pipeline._run_reductions(
+        [
+            _make_es(
+                "MMseqs2", headers, data=np.zeros((3, 3), np.float32), precomputed=True
+            )
+        ]
+    )
+    changed = pipeline._run_reductions(
+        [
+            _make_es(
+                "MMseqs2",
+                headers,
+                data=np.full((3, 3), 9.0, np.float32),
+                precomputed=True,
+            )
+        ]
+    )[0]
+
+    assert len(reduced) == 2
+    np.testing.assert_array_equal(
+        changed["data"], np.full((3, 2), 9.0, dtype=np.float32)
+    )

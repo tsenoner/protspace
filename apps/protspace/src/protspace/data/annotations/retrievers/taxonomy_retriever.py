@@ -32,6 +32,9 @@ class TaxonomyRetriever(BaseAnnotationRetriever):
         # Don't call super().__init__() as we use taxon_ids instead of headers
         self.taxon_ids = self._validate_taxon_ids(taxon_ids)
         self.annotations = annotations
+        # Batches that fell back to empty values, so the caller can tell
+        # "no taxonomy" apart from "taxonomy could not be retrieved".
+        self.failed_batch_count = 0
 
     def fetch_annotations(self) -> dict[int, dict[str, Any]]:
         result = {}
@@ -87,6 +90,7 @@ class TaxonomyRetriever(BaseAnnotationRetriever):
                     result[taxon_id] = self._extract_taxonomy(entry)
 
         except Exception as e:
+            self.failed_batch_count += 1
             logger.error(f"Failed to fetch taxonomy batch: {e}")
             for tid in taxon_ids:
                 if tid not in result:

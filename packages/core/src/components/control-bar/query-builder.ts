@@ -1,11 +1,11 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import type { FilterQuery, FilterCondition, FilterGroup, LogicalOp } from './query-types';
 import { clearLeadingOpInList, createCondition, createGroup, isFilterGroup } from './query-types';
 import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
-import { queryBuilderStyles } from './query-builder.styles';
+import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styles';
 import { renderCloseIcon } from '../legend/legend-other-dialog';
 import './query-condition-row';
 
@@ -19,15 +19,7 @@ import './query-condition-row';
  */
 @customElement('protspace-query-builder')
 class ProtspaceQueryBuilder extends LitElement {
-  static styles = [
-    queryBuilderStyles,
-    css`
-      :host {
-        width: 100%;
-        height: 100%;
-      }
-    `,
-  ];
+  static styles = [queryBuilderStyles, queryBuilderHostStyles];
 
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;

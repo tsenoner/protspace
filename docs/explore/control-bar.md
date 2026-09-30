@@ -2,7 +2,7 @@
 
 The control bar at the top provides tools for data management, selection, export, and import.
 
-![Control bar overview](./images/control-bar-annotated.png)
+<img src="./images/control-bar-annotated.png" alt="Control bar overview" width="1536" height="88" loading="eager" fetchpriority="high" />
 
 ## 1. Projection Selector
 
@@ -134,7 +134,7 @@ Isolate is useful for examining relationships within a specific protein subset -
 
 ## 7. Filter Button
 
-![Filter Query modal with a single condition: protein_families equal to "phospholipase A2 family" or "three-finger toxin family", a live counter shows 1082 of 7831 proteins matched](./images/filter-query-builder.png)
+![Filter Query modal with a single condition: Protein family equal to "phospholipase A2 family" or "three-finger toxin family", a live counter shows 1082 of 7831 proteins matched](./images/filter-query-builder.png)
 
 **Filter** opens a query builder modal for building complex annotation-based filters:
 
