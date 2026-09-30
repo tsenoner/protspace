@@ -693,3 +693,114 @@ class TestVersion3:
 
         assert _sources(calls) == ["biocentral"]
         assert again["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+
+    def test_the_biocentral_refresh_fetches_the_sequence_the_cache_lacks(
+        self, tmp_path, monkeypatch
+    ):
+        """Biocentral predicts from the sequence; without one it predicts nothing.
+
+        A cache first written for columns that need no sequence has no
+        `sequence` column. Refreshed from it without a FASTA, Biocentral would
+        be handed no sequence, return empty predictions without failing, and
+        the empties would be stamped current in place of the cached values.
+        """
+        _write_v2_cache(tmp_path, drop=["sequence"])
+        calls: list = []
+        _serve_fly_uniprot(monkeypatch, calls)
+        _forbid(monkeypatch, InterProRetriever, "InterPro")
+        _forbid(monkeypatch, TedRetriever, "TED")
+        _serve_biocentral(monkeypatch, calls)
+        annotations = ["predicted_membrane", "predicted_transmembrane"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == ["uniprot", ("biocentral", {"P02299": "MARTKQTARK"})]
+        assert result["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+        assert result["predicted_membrane"].tolist() == ["Soluble"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+        assert cache["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+        assert cache["sequence"].tolist() == ["MARTKQTARK"]
+
+    def test_a_fasta_spares_the_biocentral_refresh_the_uniprot_pass(
+        self, tmp_path, monkeypatch
+    ):
+        from protspace.data.annotations.cache import fetch_annotations
+        from protspace.data.annotations.configuration import AnnotationConfiguration
+
+        _write_v2_cache(tmp_path, drop=["sequence"])
+        calls: list = []
+        _forbid(monkeypatch, UniProtRetriever, "UniProt")
+        _forbid(monkeypatch, InterProRetriever, "InterPro")
+        _forbid(monkeypatch, TedRetriever, "TED")
+        _serve_biocentral(monkeypatch, calls)
+        annotations = AnnotationConfiguration(
+            ["predicted_membrane", "predicted_transmembrane"]
+        ).user_annotations
+
+        fetched = fetch_annotations(
+            ["P02299"],
+            annotations,
+            sequences={"P02299": "MARTKQTARKS"},
+            cache_path=tmp_path / CACHE_NAME,
+        )
+
+        assert calls == [("biocentral", {"P02299": "MARTKQTARKS"})]
+        assert fetched.frame["predicted_transmembrane"].tolist() == [
+            "non-transmembrane"
+        ]
+
+
+class TestBiocentralNeedsASequence:
+    """Biocentral is looked up by sequence, like InterPro, on any run.
+
+    A cache first written without InterPro or Biocentral columns holds no
+    `sequence`. A later run adding a Biocentral column without a FASTA used to
+    reuse that cache's UniProt values, hand Biocentral no sequence, and cache
+    the empty predictions it returned as current.
+    """
+
+    def test_a_cache_without_sequences_fetches_them_from_uniprot(
+        self, tmp_path, monkeypatch
+    ):
+        _write_v2_cache(
+            tmp_path,
+            drop=["sequence", "predicted_membrane", "predicted_transmembrane"],
+            version=ANNOTATION_CACHE_VERSION,
+        )
+        calls: list = []
+        _serve_fly_uniprot(monkeypatch, calls)
+        _forbid(monkeypatch, InterProRetriever, "InterPro")
+        _forbid(monkeypatch, TedRetriever, "TED")
+        _serve_biocentral(monkeypatch, calls)
+
+        result = _pipeline(tmp_path, ["predicted_membrane"])._fetch_annotations(
+            ["P02299"]
+        )
+
+        assert calls == ["uniprot", ("biocentral", {"P02299": "MARTKQTARK"})]
+        assert result["predicted_membrane"].tolist() == ["Soluble"]
+        assert _read_cache(tmp_path)["predicted_membrane"].tolist() == ["Soluble"]
+
+    def test_a_fasta_with_every_sequence_needs_no_uniprot(self, tmp_path, monkeypatch):
+        from protspace.data.annotations.cache import fetch_annotations
+        from protspace.data.annotations.configuration import AnnotationConfiguration
+
+        _write_v2_cache(
+            tmp_path,
+            drop=["sequence", "predicted_membrane", "predicted_transmembrane"],
+            version=ANNOTATION_CACHE_VERSION,
+        )
+        calls: list = []
+        _forbid(monkeypatch, UniProtRetriever, "UniProt")
+        _serve_biocentral(monkeypatch, calls)
+
+        fetched = fetch_annotations(
+            ["P02299"],
+            AnnotationConfiguration(["predicted_membrane"]).user_annotations,
+            sequences={"P02299": "MARTKQTARKS"},
+            cache_path=tmp_path / CACHE_NAME,
+        )
+
+        assert calls == [("biocentral", {"P02299": "MARTKQTARKS"})]
+        assert fetched.frame["predicted_membrane"].tolist() == ["Soluble"]

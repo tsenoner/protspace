@@ -253,8 +253,9 @@ def fetch_annotations(
 
         return AnnotationFetch(api_df, uniprot_releases=read_release_stamp(cached_df))
 
+    sequences_supplied = all(sequences.get(h) for h in headers)
     sources = AnnotationConfiguration.determine_sources_to_fetch(
-        cached_annotations, required
+        cached_annotations, required, sequences_supplied=sequences_supplied
     )
 
     if refetching_annotations:
@@ -266,11 +267,14 @@ def fetch_annotations(
     migration_sources = set()
     if refresh_columns:
         # Fetched as though the cache lacked them, so a source looked up by a
-        # key the cache has no column for (InterPro by `sequence`, taxonomy by
-        # `organism_id`) also fetches that key from UniProt. Without it the
-        # refresh would find nothing and stamp that as current.
+        # key the cache has no column for (InterPro and Biocentral by
+        # `sequence`, taxonomy by `organism_id`) also fetches that key from
+        # UniProt. Without it the refresh would find nothing and stamp that as
+        # current.
         needed = AnnotationConfiguration.determine_sources_to_fetch(
-            cached_annotations - refresh_columns, refresh_columns
+            cached_annotations - refresh_columns,
+            refresh_columns,
+            sequences_supplied=sequences_supplied,
         )
         migration_sources = {source for source, fetch in needed.items() if fetch}
         for source in migration_sources:

@@ -110,6 +110,9 @@ ProtSpace therefore **caches only the sources that completed**:
 - InterPro and Biocentral look proteins up by sequence, which comes from your FASTA or else from
   UniProt. If UniProt lost a batch and one of them had no sequence for a protein, that source counts
   as incomplete too, so its empty value is not cached as "no match". Supplying `-f` avoids this.
+  A cache written for columns that need no sequence holds none, so a later run that asks for an
+  InterPro or Biocentral column fetches the sequences from UniProt first; for Biocentral, a FASTA
+  holding every sequence makes that unnecessary.
 
 Either way the run still returns everything it did retrieve — your bundle is built, and the message
 says which source was short.
