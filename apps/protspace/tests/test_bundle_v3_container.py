@@ -44,6 +44,7 @@ from protspace.data.io.bundle import (
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION_KEY, write_part
 from tests.bundle_v3_helpers import (
     annotations_table,
+    manifest_of,
     parts_of,
     projection_tables,
     read,
@@ -340,6 +341,45 @@ def test_replace_annotations_re_encodes_the_payloads(tmp_path):
     )
     assert b"Fungi" in payload_blob
     assert b"Bacteria" not in payload_blob  # no stale dictionary left behind
+
+
+def test_replace_annotations_keeps_label_columns_labels(tmp_path):
+    """``protspace transfer`` decodes a bundle, adds its prediction columns and
+    hands the whole table back.  A column stored as labels whose decoded cells
+    all look numeric (a list of one number per cell, or ``1;`` whose blank hit
+    was dropped) must stay labels: re-inferring it from the decoded strings
+    would turn a categorical legend into a gradient, and drop its colours."""
+    src = tmp_path / "b.parquetbundle"
+    out = tmp_path / "out.parquetbundle"
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2"],
+                "cluster": pa.array([[1], [2], [3]], type=pa.list_(pa.int64())),
+                "semi": ["1;", "2", "3"],
+                "length": ["10", "20", "30"],
+            }
+        )
+    )
+    metadata, data = projection_tables(3, (2,))
+    write_bundle([annotations, metadata, data], src)
+    before = manifest_of(parts_of(src)[0])["columns"]
+    assert before["cluster"]["kind"] == before["semi"]["kind"] == "categorical"
+    assert before["length"]["kind"] == "numeric"
+
+    decoded = read_tables(src)[0]
+    replace_annotations_in_bundle(
+        src, out, decoded.append_column("new", pa.array(["a", "b", "c"]))
+    )
+
+    after = manifest_of(parts_of(out)[0])["columns"]
+    assert {name: entry["kind"] for name, entry in after.items()} == {
+        "cluster": "categorical",
+        "semi": "categorical",
+        "length": "numeric",
+        "new": "categorical",
+    }
+    assert read_tables(out)[0].column("cluster").to_pylist() == ["1", "2", "3"]
 
 
 def test_replace_annotations_refuses_an_unstamped_table(tmp_path):

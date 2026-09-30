@@ -253,6 +253,13 @@ the column.
 - **THEN** the column is written with the labels `1`, `2` and `3`, one hit per protein, and not
   as a numeric column
 
+#### Scenario: That list column through `protspace transfer`
+
+- **WHEN** `protspace transfer` rewrites a bundle holding that `cluster` column, which it hands
+  back decoded as the text cells `1`, `2` and `3`
+- **THEN** `cluster` is still written with the labels `1`, `2` and `3`, and not as a numeric
+  column
+
 #### Scenario: A struct column
 
 - **WHEN** `protspace bundle -a` is given a table with a struct column

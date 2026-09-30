@@ -585,6 +585,12 @@ is a label too: a list column is never read as numeric, even when every cell hol
 Python decodes it as `;`-joined v2 cells. A column with no text form, such as a struct, a map or a
 list of lists, is refused with an error that names it.
 
+Those decoded cells are text, and some label columns decode to cells that all look like numbers:
+a list of one number per cell, or `1;`, whose blank hit was dropped. Rewriting a bundle's
+annotations from its decoded table, which is what `protspace transfer` does, therefore keeps
+every column the bundle stored as `categorical` or `multi` as labels instead of re-inferring it
+from those cells, so an EAT run never turns an untouched legend into a gradient.
+
 ### Scores are float64
 
 `scores:<col>` is the one wide payload in an otherwise narrow format. float32 cannot carry an

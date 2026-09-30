@@ -338,12 +338,15 @@ def _encode_annotation_column(
     name: str,
     num_rows: int,
     evidence_dict: dict[str, int],
+    labels_only: bool = False,
 ) -> tuple[dict[str, Any], pa.Array, list[tuple[str, bytes]]]:
     """Encode one annotation column.
 
     Returns ``(manifest_entry, part1_array, payloads)``.  ``part1_array`` is the
     ``<col>`` codes / values or the ``<col>__count`` per-row CSR hit counts; the
     caller picks the physical column name from ``manifest_entry["kind"]``.
+    ``labels_only`` skips numeric inference on a text column, for one a bundle
+    already stored as labels (:func:`replace_annotations_v3`).
     """
     source_type = _source_type(column.type)
     arr = _flat(column)
@@ -379,7 +382,12 @@ def _encode_annotation_column(
     # list cell as ``String(array)``, which ``parseNumericAnnotationValue``
     # never takes for a number).
     missing = _missing_mask(trimmed)
-    if not exact_labels and not _is_list(arr.type) and not missing.all():
+    if (
+        not exact_labels
+        and not labels_only
+        and not _is_list(arr.type)
+        and not missing.all()
+    ):
         numeric_ok = _regex_ok(trimmed, JS_NUMBER_RE) | missing
         if numeric_ok.all():
             values = _parse_floats(trimmed, ~missing)
@@ -742,8 +750,12 @@ def _encode_part1(
     id_column: str,
     ids: pa.Array,
     projection_manifest: list[dict[str, Any]],
+    labels_only: frozenset[str] = frozenset(),
 ) -> tuple[bytes, bytes]:
-    """Encode the annotation columns as part 1 (manifest in its footer) and part 6."""
+    """Encode the annotation columns as part 1 (manifest in its footer) and part 6.
+
+    A text column named in ``labels_only`` is never inferred numeric.
+    """
     num_rows = annotations.num_rows
     existing = set(annotations.column_names)
     evidence_dict: dict[str, int] = {}
@@ -755,7 +767,11 @@ def _encode_part1(
         if name == id_column:
             continue
         entry, array, column_payloads = _encode_annotation_column(
-            annotations.column(name), name, num_rows, evidence_dict
+            annotations.column(name),
+            name,
+            num_rows,
+            evidence_dict,
+            labels_only=name in labels_only,
         )
         physical = f"{name}__count" if entry["kind"] == "multi" else name
         if physical != name and physical in existing:
@@ -1195,6 +1211,13 @@ def replace_annotations_v3(
     columns are decoded.  The result is what the decode-then-encode round trip
     writes: a protein with finite coordinates the new table lacks is added back
     as an all-missing row, and a new protein gets NaN.
+
+    A column the old part 1 stores as labels (``categorical`` or ``multi``)
+    stays labels.  Its decoded cells are text, and some label columns decode to
+    cells that all look numeric -- a list of one number per cell, or ``1;``
+    whose blank hit was dropped -- which numeric inference would turn into a
+    gradient.  ``protspace transfer`` hands every column back this way, not
+    only the ones it adds.
     """
     manifest, _metadata = _read_manifest(parts[0])
     projections = manifest["projections"]
@@ -1226,5 +1249,12 @@ def replace_annotations_v3(
             )[old[keep]]
             columns[column] = pa.array(values, type=pa.float32())
 
-    part1, payloads = _encode_part1(annotations, id_column, ids, projections)
+    labels_only = frozenset(
+        name
+        for name, entry in manifest["columns"].items()
+        if entry["kind"] in ("categorical", "multi")
+    )
+    part1, payloads = _encode_part1(
+        annotations, id_column, ids, projections, labels_only
+    )
     return part1, parts[1], _write(_required_table(columns)), payloads

@@ -60,7 +60,9 @@
       the id column is keyed before the v1 migration, so an id is never escaped as a label
 - [x] 2.19 The encoder writes part 1 in the v2 browser's protein order (first appearance in the
       projection rows, then the unprojected proteins), so label frequency ties break as in v2
-- [x] 2.20 A list annotation column is never inferred numeric, even with one number per cell
+- [x] 2.20 A list annotation column is never inferred numeric, even with one number per cell,
+      and `replace_annotations_v3` keeps a column the old part 1 stores as labels as labels, so a
+      `transfer` round trip of its decoded text does not infer it numeric either
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
