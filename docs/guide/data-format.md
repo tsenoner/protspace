@@ -415,7 +415,11 @@ keep their string-cell logic.
 ### Part 1: annotations
 
 One row per protein, the identifier column first and then the annotation columns in their
-original order. The manifest says how to read each one:
+original order. The rows are in the order the v2 web reader listed the proteins: by first
+appearance in the projection rows, then the proteins no projection covers. Row order breaks the
+ties in every label dictionary's frequency order (see [Part 6](#part-6-payloads)), so this keeps
+the legend order and colours of an annotations table sorted differently from its projections.
+The manifest says how to read each one:
 
 | Manifest kind | Part 1 column                | Physical type | Holds                                              | Missing        |
 | ------------- | ---------------------------- | ------------- | -------------------------------------------------- | -------------- |

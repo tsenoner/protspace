@@ -693,6 +693,14 @@ def _prepare_annotations(
 ) -> tuple[pa.Table, str, pa.Array]:
     """Check the grammar stamp, add the ``projected`` rows it lacks, validate ids.
 
+    The rows come back in the protein order the v2 browser built: ``projected``
+    (the projection identifiers in order of first appearance) first, then the
+    proteins no projection names, in their own order.  Part 1's row order is
+    what breaks frequency ties in every label dictionary, here and in the
+    browser's re-rank, so an annotations table sorted differently from its
+    projections (a user's table given to ``bundle -a``, say) still gets the
+    legend order, colours and dataset hash v2 gave it.
+
     Returns ``(annotations, id_column, ids)`` with ``ids`` as a string array.
     """
     _require_v2_grammar(annotations)
@@ -716,6 +724,16 @@ def _prepare_annotations(
             f"annotations column '{id_column}' contains {duplicated} duplicated value(s); "
             "protein identifiers must be unique"
         )
+
+    if projected is not None and len(projected):
+        # Every projected id is a row by now (``_add_unannotated_rows``).
+        placed = np.asarray(pc.index_in(_as_string(projected), value_set=ids))
+        order = np.concatenate(
+            [placed, np.setdiff1d(np.arange(len(ids)), placed, assume_unique=True)]
+        )
+        if (order != np.arange(len(ids))).any():
+            indices = pa.array(order)
+            annotations, ids = annotations.take(indices), ids.take(indices)
     return annotations, id_column, ids
 
 
@@ -1097,8 +1115,11 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
       a bundle no reader agrees on;
     * a ``bool`` column comes back ``bool``, but it is *stored* as the labels
       ``true``/``false`` (what the browser always displayed for it);
+    * the rows come back in the order the v2 browser listed the proteins: by
+      first appearance in the projection rows, then the proteins no projection
+      covers, in the order the table gave them;
     * a projected identifier the annotations table lacked comes back as a row
-      whose every annotation is missing, appended after the others;
+      whose every annotation is missing;
     * a projection's dimension comes from its data (non-null ``z`` means 3D),
       whatever the metadata's ``dimensions`` said, and the returned metadata's
       ``dimensions`` column says the same (the encoder already rewrote part 2;

@@ -142,6 +142,20 @@ SHALL still store annotation-only proteins in part 1, so Python decodes them bac
 - **WHEN** protein `P` has coordinates in projection `A` only
 - **THEN** `P` is in `protein_ids` and is shown in `A`
 
+### Requirement: Part 1 SHALL list the proteins in the v2 browser's order
+
+The v3 encoder SHALL write part 1's rows in the order the v2 browser listed the proteins: by first
+appearance of their identifier in the projection rows, then the proteins no projection covers in
+the annotations table's order, so that frequency ties in every label dictionary break as they did
+in v2.
+
+#### Scenario: Annotations sorted differently from the projections
+
+- **WHEN** a bundle is written from annotations in the order `P4, P3, P2, P1`, with `kingdom`
+  `y, y, x, x`, and projection rows in the order `P1, P2, P3, P4`
+- **THEN** part 1 lists `P1, P2, P3, P4`, the `kingdom` dictionary is `x, y`, and the browser
+  shows the colours and dataset hash the same data gave in v2
+
 ### Requirement: The encoder SHALL add projection identifiers missing from the annotations
 
 The v3 encoder SHALL add an identifier that the projections data names but the annotations table

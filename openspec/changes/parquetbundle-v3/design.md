@@ -164,6 +164,13 @@ that keys saved legend settings is the one v2 gave the same data.
 A protein with coordinates in one projection but not another stays in the set and is culled per
 projection by the rule above.
 
+"Ties by first occurrence" is only v2's order if part 1 is in v2's protein order, and v2 built
+that order from the projection rows (first appearance, across projections), not from the
+annotations table. The encoder therefore writes part 1 in that order, with the proteins no
+projection covers after them. Every shipped dataset already listed its annotations in projection
+order, but a user's table given to `protspace bundle -a` sorted by accession, say, would otherwise
+change the default colours of tied labels and the dataset hash that keys saved legend settings.
+
 In the other direction, a projection identifier missing from the annotations table was an error in
 the PR's encoder. v2 accepted it and showed the protein with N/A annotations. The encoder now adds
 such identifiers as rows whose annotations are all missing.

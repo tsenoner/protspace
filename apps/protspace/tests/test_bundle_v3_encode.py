@@ -23,7 +23,7 @@ from protspace.data.annotations.encoding import (
     read_format_version,
     stamp_format_version,
 )
-from protspace.data.io.bundle_v3 import CONTAINER_VERSION_KEY, encode_v3
+from protspace.data.io.bundle_v3 import CONTAINER_VERSION_KEY, decode_v3, encode_v3
 from tests.bundle_v3_helpers import labels_of, manifest_of, payloads_of, read
 
 
@@ -386,12 +386,44 @@ def test_projection_rows_align_to_part_one_and_missing_is_nan():
     meta, data = make_projections((("A", 3),), ["p2", "p0"])
     parts = encode_v3(annotations, meta, data)
     projections = read(parts[2]).to_pydict()
-    assert projections["A__x"][0] == 1.0  # p0 is the second row of the long table
-    assert projections["A__x"][2] == 0.0  # p2 is the first, and really at 0.0
+    # Part 1 follows the projection rows (p2, p0), then the unprojected p1.
+    assert read(parts[0]).column("protein_id").to_pylist() == ["p2", "p0", "p1"]
+    assert projections["A__x"][0] == 0.0  # p2 is the first row, and really at 0.0
+    assert projections["A__x"][1] == 1.0  # p0 is the second row of the long table
     # p1 is absent from the projection, and so is every one of its axes.
-    assert all(np.isnan(projections[f"A__{axis}"][1]) for axis in "xyz")
-    # Still one row per protein: the annotation-only protein stays in part 1.
-    assert read(parts[0]).column("protein_id").to_pylist() == ["p0", "p1", "p2"]
+    assert all(np.isnan(projections[f"A__{axis}"][2]) for axis in "xyz")
+    # Still one row per protein: the annotation-only protein stays in part 1,
+    # and its annotations moved with it.
+    assert labels_of(payloads_of(parts[3]), "col") == ["C", "A", "B"]
+    assert read(parts[0]).column("col").to_pylist() == [0, 1, 2]
+
+
+def test_part_one_rows_follow_the_projection_rows_as_the_v2_browser_did():
+    """The v2 browser listed proteins in order of first appearance in the
+    projection rows, and broke every frequency tie in that order.  Part 1's row
+    order breaks the ties in v3, so an annotations table sorted otherwise must
+    not change the legend order, the default colours or the dataset hash."""
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["P4", "P3", "P2", "P1"],
+                "family": ["D", "C", "B", "A"],
+                "kingdom": ["y", "y", "x", "x"],
+            }
+        )
+    )
+    meta, data = make_projections((("A", 2), ("B", 2)), ["P1", "P2", "P3", "P4"])
+    parts = encode_v3(annotations, meta, data)
+
+    part1 = read(parts[0])
+    assert part1.column("protein_id").to_pylist() == ["P1", "P2", "P3", "P4"]
+    payloads = payloads_of(parts[3])
+    assert labels_of(payloads, "family") == ["A", "B", "C", "D"]
+    assert labels_of(payloads, "kingdom") == ["x", "y"]
+    assert part1.column("kingdom").to_pylist() == [0, 0, 1, 1]
+    assert read(parts[2]).column("A__x").to_pylist() == [0.0, 1.0, 2.0, 3.0]
+    # The metadata survives the reorder, so the table stays declared v2.
+    assert read_format_version(decode_v3(list(parts))[0]) == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -543,11 +575,13 @@ def test_a_projected_identifier_without_annotations_is_added(caplog):
     parts = encode_v3(annotations, meta, data)
 
     part1 = read(parts[0])
-    assert part1.column("protein_id").to_pylist() == ["p0", "ghost", "ghost2"]
-    assert part1.column("col").to_pylist() == [0, -1, -1]
-    assert part1.column("score").to_pylist()[0] == 1.5
-    assert all(np.isnan(v) for v in part1.column("score").to_pylist()[1:])
-    assert read(parts[2]).column("A__x").to_pylist() == [1.0, 0.0, 2.0]
+    # In projection order, as the browser lists them.
+    assert part1.column("protein_id").to_pylist() == ["ghost", "p0", "ghost2"]
+    assert part1.column("col").to_pylist() == [-1, 0, -1]
+    scores = part1.column("score").to_pylist()
+    assert scores[1] == 1.5
+    assert np.isnan(scores[0]) and np.isnan(scores[2])
+    assert read(parts[2]).column("A__x").to_pylist() == [0.0, 1.0, 2.0]
     assert "2 projected identifier(s) have no annotations row" in caplog.text
 
 
