@@ -1,5 +1,6 @@
 /**
- * Build the landing-page visualization assets from the example bundles that ship with the app.
+ * Build the landing-page visualization assets from the startup demo the app ships and the venom
+ * EAT test fixture.
  *
  * The landing page shows real ProtSpace data without loading the explorer or parsing Parquet in
  * the browser, so this script pre-extracts what the page needs into small static files:
@@ -40,7 +41,11 @@ import type { Category } from '../../apps/web/src/landing/landing-data.ts';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = resolve(ROOT, 'apps/web/public/landing');
 const DEMO_BUNDLE = 'apps/web/public/data.parquetbundle';
-const VENOM_BUNDLE = 'apps/web/public/data/venom_eat_stats.parquetbundle';
+/**
+ * The 811-protein venom EAT set: the bytes the app once served as `data/venom_eat_stats`, kept as a
+ * test fixture (and a `perf-datasets` asset) since it left the example catalog.
+ */
+const VENOM_BUNDLE = 'apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle';
 
 /** Mirrors `LEGEND_DEFAULTS.maxVisibleValues` in packages/core/src/components/legend/config.ts. */
 const DEFAULT_MAX_VISIBLE = 10;

@@ -12,16 +12,16 @@
  * `example-manifest.ts`, which `write_manifest.py` reads from the file itself,
  * and a unit test checks every `defaultView` name against that record.
  *
- * Two catalogs live here until the catalog swap (`curated-example-datasets`
- * task 7.7), and `FINAL_CATALOG_IS_LIVE` picks the one the app serves:
- *   - the interim catalog, served today: the startup demo plus the test and
- *     perf bundles still shipped under `apps/web/public/data/`, each opening on
- *     a provisional view that names columns its current bundle really has;
- *   - the final catalog: the startup demo, the ProtSpace manuscript's datasets
- *     and one curated EAT showcase, served from the rebuilt showcase bundles.
- *     It has no manifest records until those bundles are published, so it
- *     cannot be served before the swap; the docs page and the tests read it
- *     meanwhile.
+ * Two catalogs live here until the cleanup after the catalog swap
+ * (`curated-example-datasets` tasks 7.7 and 7.9), and `FINAL_CATALOG_IS_LIVE`
+ * picks the one the app serves:
+ *   - the final catalog, served since the swap: the startup demo, the ProtSpace
+ *     manuscript's datasets and one curated EAT showcase, from the showcase
+ *     bundles of the `showcase-2026_03` release;
+ *   - the interim catalog, served before the swap: the startup demo plus the
+ *     test and perf bundles the app shipped under `apps/web/public/data/`. The
+ *     swap removed that directory and their manifest records, so it can no
+ *     longer be served; the cleanup deletes it.
  *
  * Order matters: the demo is first, then the rest ascend by protein count, to
  * match the Import menu's "Examples" section.
@@ -140,15 +140,15 @@ function defineExample({ name, ...spec }: ExampleSpec, index: number): ExampleDa
 /**
  * The catalog swap switch (`curated-example-datasets` task 7.7).
  *
- * `false` serves the interim catalog. The swap sets it to `true` in the commit
- * that writes the final entries' manifest records (`stage-release`) and removes
+ * `true` serves the final catalog. The swap set it in the commit that wrote
+ * the final entries' manifest records (`stage-release`) and removed
  * `apps/web/public/data/`: an entry without a record throws at import, and the
- * interim entries' files live in that directory, so the three land together.
+ * interim entries' files lived in that directory, so the three landed together.
  * A later cleanup deletes the interim catalog and this switch.
  */
-export const FINAL_CATALOG_IS_LIVE: boolean = false;
+export const FINAL_CATALOG_IS_LIVE: boolean = true;
 
-/** The interim catalog: the test and perf bundles under `apps/web/public/data/`. */
+/** The interim catalog: the test and perf bundles the app served from `apps/web/public/data/`. */
 const INTERIM_EXAMPLE_SPECS: readonly ExampleSpec[] = [
   {
     id: 'demo',
@@ -267,8 +267,9 @@ const INTERIM_EXAMPLE_SPECS: readonly ExampleSpec[] = [
  * and 3) and one curated EAT showcase, `three-finger-toxins`, which is not a
  * manuscript dataset: the paper's own EAT sets are benchmarks and test
  * fixtures, not showcases. Every one carries a UMAP, which it opens on, and a
- * PCA. Values in ‹angle quotes› come from the rebuilt bundles and are filled
- * in at the swap; `pnpm docs:examples:check` refuses any left over.
+ * PCA. The values only a built bundle can give (the hold-out accuracy,
+ * Swiss-Prot's memory and load time) are read from the `showcase-2026_03`
+ * build: its `verify.json` and the D2 gate's `d2_measurement.json`.
  */
 export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
   {
@@ -290,7 +291,7 @@ export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
     description:
       'Snake three-finger toxins: reviewed ones with a curated toxin class, and unreviewed ones, mostly sequenced from venom glands, that have none.',
     insight:
-      'Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back ‹about 95 %› of the time.',
+      'Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back 94 % of the time.',
     defaultView: {
       projection: 'ProtT5 — UMAP 2',
       annotation: 'toxin_class',
@@ -330,8 +331,10 @@ export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
     insight:
       'Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.',
     figure: 'Fig. 2A',
-    // Measured by the D2 gate (task 7.2) on the rebuilt file, which adds the PCA.
-    large: { memory: '‹about 1.2 GB›', loadTime: '‹about 35 s›' },
+    // The D2 gate on the rebuilt file with its PCA (task 7.2): 30.1 s from the
+    // file input until every point is drawn, and a peak JS heap of 1,139 MiB
+    // (1.19 GB), in headless Chromium on an Apple M4 Pro, download not included.
+    large: { memory: 'about 1.2 GB', loadTime: 'about 30 s' },
     defaultView: {
       projection: 'ProtT5 — UMAP 2',
       annotation: 'domain',
