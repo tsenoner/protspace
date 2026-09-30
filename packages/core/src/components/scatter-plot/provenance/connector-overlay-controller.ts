@@ -88,11 +88,11 @@ export class ConnectorOverlayController {
   }
 
   /**
-   * Keep endpoint halos at a constant screen-space diameter, and connector lines trimmed to the
-   * halo boundary by a constant screen-space margin, while their parent SVG group carries the
-   * data-space zoom transform. This mutates existing circle/line attributes in place from the
-   * `data-c*` anchors each line already carries; it does not rebuild the connector join or
-   * resolve protein ids during a zoom gesture.
+   * Resize endpoint halos and connector strokes to the drawn dot radius, which grows with zoom,
+   * and re-trim lines to the halo boundary; every size is divided by `scale` because the parent
+   * SVG group carries the data-space zoom transform. This mutates existing circle/line attributes
+   * in place from the `data-c*` anchors each line already carries; it does not rebuild the
+   * connector join or resolve protein ids during a zoom gesture.
    */
   updateZoomScale(scale: number): void {
     this.zoomScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
