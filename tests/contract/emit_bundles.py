@@ -42,7 +42,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from protspace.data.annotations.encoding import encode_field
+from protspace.data.annotations.encoding import encode_field, stamp_format_version
+from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER, create_settings_parquet
 from protspace.stats.base import STATS_SCHEMA
 
 # Small enough to eyeball a failure, big enough for a category to have members.
@@ -62,6 +63,21 @@ NULL_LENGTH_INDEX = 3
 # The category on the statistics part's per-category row. Published in the
 # manifest so the reader asserts against what was written, not a copy of it.
 STATISTICS_CATEGORY = "Hydrolase"
+
+
+# The coverage variant: one protein each for the three ways annotations and
+# projections can disagree. Missing coordinates mean "not drawn", never (0, 0).
+# GAP_ID has no PCA_3 row; ANNOTATION_ONLY_ID has no projection row at all, so it
+# stays in the file but not in the browser's protein set; PROJECTION_ONLY_ID has
+# no annotations row, so the encoder adds one with every annotation missing.
+COVERAGE_PROTEIN_COUNT = 6
+GAP_ID = "P00002"
+ANNOTATION_ONLY_ID = "ANNOTATION_ONLY"
+PROJECTION_ONLY_ID = "PROJECTION_ONLY"
+
+# An Arrow BOOLEAN column, one value per annotated protein of the coverage
+# variant; the browser has always shown it as 'true'/'false', a null as N/A.
+BOOLEAN_VALUES = [True, False, None, True, False, True]
 
 
 def protein_ids(count: int) -> list[str]:
@@ -110,13 +126,17 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     )
 
 
-def build_projection_tables(ids: list[str]) -> tuple[pa.Table, pa.Table]:
+def build_projection_tables(
+    ids: list[str], *, gaps: dict[str, str] | None = None
+) -> tuple[pa.Table, pa.Table]:
     """Mimic ``protspace project`` output: one 2D and one 3D projection.
 
     Column names and types mirror ``base_processor``: ``dimensions`` is int64
     (so it reaches the reader as a BigInt), x/y are float32, and z is a nullable
-    double that is null for every row of a 2D projection.
+    double that is null for every row of a 2D projection. ``gaps`` maps a
+    projection name to the one protein it does not cover.
     """
+    gaps = gaps or {}
     projections = PROJECTIONS
 
     metadata = pa.table(
@@ -138,6 +158,8 @@ def build_projection_tables(ids: list[str]) -> tuple[pa.Table, pa.Table]:
     zs: list[float | None] = []
     for name, dims in projections:
         for i, protein_id in enumerate(ids):
+            if gaps.get(name) == protein_id:
+                continue
             names.append(name)
             identifiers.append(protein_id)
             xs.append(float(i))
@@ -231,34 +253,81 @@ def build_statistics_table() -> pa.Table:
     )
 
 
-def run_bundle(args: list[str], *, variant: str) -> None:
-    """Invoke ``protspace bundle``, surfacing stderr on failure.
+def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
+    """The coverage variant's annotations: every projected protein but
+    ``PROJECTION_ONLY_ID``, plus ``ANNOTATION_ONLY_ID``, with a BOOLEAN column."""
+    annotated = [i for i in ids if i != PROJECTION_ONLY_ID] + [ANNOTATION_ONLY_ID]
+    return pa.table(
+        {
+            "identifier": pa.array(annotated, pa.string()),
+            "family": pa.array([encode_field("Hydrolase")] * len(annotated)),
+            "reviewed": pa.array(BOOLEAN_VALUES, pa.bool_()),
+        }
+    )
+
+
+def write_legacy_v2_bundle(path: Path, ids: list[str]) -> None:
+    """Write the five-part v2 container an older release produced, by hand.
+
+    No current writer emits v2 any more, so this is the stand-in for a file a
+    user still has on disk: the same annotations, settings and statistics as
+    the v3 variants, and one projection gap, for ``protspace convert`` to
+    upgrade. The annotations table is stamped v2 after the ``protein_id``
+    rename, exactly as ``protspace bundle`` did.
+    """
+    annotations = build_annotations_table(ids).rename_columns(
+        ["protein_id", "family", "domains", "length"]
+    )
+    metadata, data = build_projection_tables(ids, gaps={"PCA_3": GAP_ID})
+    parts = []
+    for table in (stamp_format_version(annotations), metadata, data):
+        buffer = pa.BufferOutputStream()
+        pq.write_table(table, buffer)
+        parts.append(buffer.getvalue().to_pybytes())
+    statistics = pa.BufferOutputStream()
+    pq.write_table(build_statistics_table(), statistics)
+    parts += [
+        create_settings_parquet(build_settings()),
+        statistics.getvalue().to_pybytes(),
+    ]
+    path.write_bytes(PARQUET_BUNDLE_DELIMITER.join(parts))
+
+
+def run_cli(command: str, args: list[str], *, variant: str) -> None:
+    """Invoke a ``protspace`` subcommand, surfacing stderr on failure.
 
     Without this the suite would fail later with an unhelpful missing-file
     error, hiding the actual producer-side traceback.
     """
     result = subprocess.run(
-        ["protspace", "bundle", *args],
+        ["protspace", command, *args],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         raise SystemExit(
-            f"`protspace bundle` failed for variant {variant!r} "
+            f"`protspace {command}` failed for variant {variant!r} "
             f"(exit {result.returncode})\n"
             f"--- stdout ---\n{result.stdout}\n"
             f"--- stderr ---\n{result.stderr}"
         )
 
 
-def write_inputs(inputs: Path, ids: list[str]) -> tuple[Path, Path]:
+def write_inputs(
+    inputs: Path,
+    ids: list[str],
+    annotations: pa.Table | None = None,
+    gaps: dict[str, str] | None = None,
+) -> tuple[Path, Path]:
     """Write the annotate/project stand-in parquets. Returns (annotations, projections dir)."""
     projections_dir = inputs / "projections"
     projections_dir.mkdir(parents=True, exist_ok=True)
 
     annotations_path = inputs / "annotations.parquet"
-    metadata_table, data_table = build_projection_tables(ids)
-    pq.write_table(build_annotations_table(ids), annotations_path)
+    metadata_table, data_table = build_projection_tables(ids, gaps=gaps)
+    if annotations is None:
+        annotations = build_annotations_table(ids)
+    pq.write_table(annotations, annotations_path)
     pq.write_table(metadata_table, projections_dir / "projections_metadata.parquet")
     pq.write_table(data_table, projections_dir / "projections_data.parquet")
 
@@ -281,6 +350,13 @@ def main(out_dir: Path) -> None:
             out_dir / "inputs-large", protein_ids(LARGE_PROTEIN_COUNT)
         ),
     }
+    coverage_ids = protein_ids(COVERAGE_PROTEIN_COUNT - 1) + [PROJECTION_ONLY_ID]
+    inputs_by_count[COVERAGE_PROTEIN_COUNT] = write_inputs(
+        out_dir / "inputs-coverage",
+        coverage_ids,
+        annotations=build_coverage_annotations_table(coverage_ids),
+        gaps={"PCA_3": GAP_ID},
+    )
 
     # Every layout the producer can write. `stats_no_settings` is the sneaky one:
     # the producer emits a zero-byte settings slot so the parts keep fixed positions.
@@ -294,13 +370,16 @@ def main(out_dir: Path) -> None:
         "stats_no_settings": (PROTEIN_COUNT, ["-s", str(statistics_path)]),
         # Same layout as `minimal`, at a size where per-row shortcuts would show.
         "large": (LARGE_PROTEIN_COUNT, []),
+        # Annotations and projections that disagree, plus a BOOLEAN column.
+        "coverage": (COVERAGE_PROTEIN_COUNT, []),
     }
 
     def emit(item: tuple[str, tuple[int, list[str]]]) -> None:
         variant, (count, extra) = item
         annotations_path, projections_dir = inputs_by_count[count]
         output = out_dir / f"{variant}.parquetbundle"
-        run_bundle(
+        run_cli(
+            "bundle",
             [
                 "-a",
                 str(annotations_path),
@@ -317,19 +396,33 @@ def main(out_dir: Path) -> None:
                 f"variant {variant!r} reported success but wrote no bundle"
             )
 
-    # Each `protspace bundle` call costs ~0.33s, of which ~0.26s is interpreter +
+    # The legacy variant runs beside the others: a v2 file written the way an older
+    # release did, then upgraded by `protspace convert`. Reading both lets the
+    # consumer check the converted file means what the legacy one did.
+    def convert_legacy() -> None:
+        legacy = out_dir / "legacy_v2.parquetbundle"
+        write_legacy_v2_bundle(legacy, protein_ids(PROTEIN_COUNT))
+        run_cli(
+            "convert",
+            [str(legacy), str(out_dir / "converted.parquetbundle")],
+            variant="converted",
+        )
+
+    # Each `protspace` call costs ~0.33s, of which ~0.26s is interpreter +
     # typer/rich/pyarrow import startup and only ~0.07s is real work (measured;
-    # unchanged from 10 to 20_000 proteins). Running the five sequentially pays
-    # that startup five times over. The variants share read-only inputs, write
+    # unchanged from 10 to 20_000 proteins). Running the calls sequentially pays
+    # that startup once per call. The variants share read-only inputs, write
     # disjoint outputs, and `_atomic_write_bytes` stages through
     # `tempfile.mkstemp`, so there is no ordering or collision hazard.
     #
     # Threads rather than processes: every call is a `subprocess.run`, so the GIL
     # is released for the whole wait and the fan-out is bounded by runner cores,
     # not by Python. Draining the map iterator re-raises whatever a worker raised,
-    # including the SystemExit from `run_bundle`.
-    with ThreadPoolExecutor(max_workers=len(variants)) as pool:
+    # including the SystemExit from `run_cli`.
+    with ThreadPoolExecutor(max_workers=len(variants) + 1) as pool:
+        legacy = pool.submit(convert_legacy)
         list(pool.map(emit, variants.items()))
+        legacy.result()
 
     # The consumer reads its expectations from here rather than restating them.
     # A hand-mirrored constant fails in the reader when the generator is what
@@ -344,12 +437,24 @@ def main(out_dir: Path) -> None:
                 "nullLengthIndex": NULL_LENGTH_INDEX,
                 "statisticsColumns": STATS_SCHEMA.names,
                 "statisticsCategory": STATISTICS_CATEGORY,
+                "gapId": GAP_ID,
+                "annotationOnlyId": ANNOTATION_ONLY_ID,
+                "projectionOnlyId": PROJECTION_ONLY_ID,
+                "booleanById": dict(
+                    zip(
+                        build_coverage_annotations_table(coverage_ids)
+                        .column("identifier")
+                        .to_pylist(),
+                        BOOLEAN_VALUES,
+                        strict=True,
+                    )
+                ),
             }
         ),
         encoding="utf-8",
     )
 
-    print(f"wrote {len(variants)} bundles to {out_dir}")
+    print(f"wrote {len(variants) + 2} bundles to {out_dir}")
 
 
 if __name__ == "__main__":

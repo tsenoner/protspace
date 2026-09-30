@@ -5,17 +5,20 @@
  * `beforeAll` (see emit_bundles.py) and read by the real web reader. Nothing is
  * committed: a fixture that cannot go stale is the whole point of the suite.
  *
- * This is the Python -> TypeScript direction, the path every dataset produced by
+ * The main direction is Python -> TypeScript, the path every dataset produced by
  * apps/prep takes. Every read goes through `decodeParquetBundle`, the single entry
  * point the decode worker and data-loader use, so the suite follows whatever format
- * version the producer currently writes (v3 since the columnar container landed). The reverse direction (bundles exported by
- * packages/utils/bundle-writer.ts and reopened in the Python tooling) is a
- * documented non-goal of the add-bundle-contract-test change.
+ * version the producer currently writes (v3 since the columnar container landed).
+ *
+ * Two more paths cross the seam since v3 became the only written format: a legacy
+ * v2 file upgraded by `protspace convert`, and the reverse direction, a bundle the
+ * web app exports (packages/utils/src/parquet/bundle-writer.ts) reopened by the
+ * Python tooling (read_bundles.py). Both are generated here too, never committed.
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -27,6 +30,14 @@ import { decodeParquetBundle } from '../../packages/core/src/components/data-loa
 // `@protspace/utils` — packages/core's own sources import it that way.)
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants';
 import { findBundleDelimiterPositions } from '../../packages/utils/src/parquet/delimiter-utils';
+import { createParquetBundle } from '../../packages/utils/src/parquet/bundle-writer';
+import { DataProcessor } from '../../packages/utils/src/visualization/data-processor';
+import {
+  getProteinAnnotationValues,
+  getProteinScores,
+} from '../../packages/utils/src/visualization/plot-data-accessors';
+import { NA_VALUE } from '../../packages/utils/src/visualization/missing-values';
+import type { VisualizationData } from '../../packages/utils/src/types';
 
 const REPO_ROOT = resolve(__dirname, '../..');
 
@@ -43,6 +54,10 @@ interface Manifest {
   nullLengthIndex: number;
   statisticsColumns: string[];
   statisticsCategory: string;
+  gapId: string;
+  annotationOnlyId: string;
+  projectionOnlyId: string;
+  booleanById: Record<string, boolean | null>;
 }
 
 /** The format the producer writes today: six slots, payloads last. */
@@ -65,6 +80,40 @@ function inspectContainer(bundle: ArrayBuffer): { partCount: number; formatVersi
   return { partCount: positions.length + 1, formatVersion: Number(version ?? 1) };
 }
 
+/** Run one of this suite's Python scripts in the protspace environment; returns stdout. */
+function runPython(script: string, args: string[]): string {
+  // --no-dev: `uv run` re-syncs the environment before executing, and without
+  // this it syncs to the DEFAULT group set — silently undoing the workflow's
+  // `uv sync --no-dev` one step later and pulling torch + the CUDA wheels back
+  // in. Measured in CI: the teardown prune reported "Removed 47247 files
+  // (5.9GiB)" for a job whose install step had reported 58 packages.
+  // --locked: fail if uv.lock has drifted from pyproject rather than silently
+  // re-resolving, so the contract runs against the versions we pinned.
+  const result = spawnSync(
+    'uv',
+    ['run', '--package', 'protspace', '--no-dev', '--locked', 'python', script, ...args],
+    // vitest's hookTimeout cannot fire while the main thread is blocked in
+    // spawnSync, and the workflow's job timeout is the only other backstop —
+    // so bound the child itself. maxBuffer: the 1 MiB default truncates the
+    // producer traceback in exactly the failure you need to read.
+    { cwd: REPO_ROOT, encoding: 'utf-8', timeout: 240_000, maxBuffer: 16 * 1024 * 1024 },
+  );
+
+  // Without this the suite would fail later on a missing file, hiding the real
+  // producer-side traceback. The script is also never allowed to be skipped:
+  // an absent Python toolchain must fail the job, not quietly pass it.
+  if (result.error) {
+    throw new Error(`Could not run ${script}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `${script} exited with ${result.status}\n` +
+        `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+    );
+  }
+  return result.stdout;
+}
+
 beforeAll(() => {
   outDir = mkdtempSync(join(tmpdir(), 'protspace-contract-'));
 
@@ -72,44 +121,7 @@ beforeAll(() => {
   // below is only *returned* — so without this the dir leaks on exactly the runs
   // you repeat most while debugging a producer-side break.
   try {
-    // --no-dev: `uv run` re-syncs the environment before executing, and without
-    // this it syncs to the DEFAULT group set — silently undoing the workflow's
-    // `uv sync --no-dev` one step later and pulling torch + the CUDA wheels back
-    // in. Measured in CI: the teardown prune reported "Removed 47247 files
-    // (5.9GiB)" for a job whose install step had reported 58 packages.
-    // --locked: fail if uv.lock has drifted from pyproject rather than silently
-    // re-resolving, so the contract runs against the versions we pinned.
-    const result = spawnSync(
-      'uv',
-      [
-        'run',
-        '--package',
-        'protspace',
-        '--no-dev',
-        '--locked',
-        'python',
-        'tests/contract/emit_bundles.py',
-        outDir,
-      ],
-      // vitest's hookTimeout cannot fire while the main thread is blocked in
-      // spawnSync, and the workflow's job timeout is the only other backstop —
-      // so bound the child itself. maxBuffer: the 1 MiB default truncates the
-      // producer traceback in exactly the failure you need to read.
-      { cwd: REPO_ROOT, encoding: 'utf-8', timeout: 240_000, maxBuffer: 16 * 1024 * 1024 },
-    );
-
-    // Without this the suite would fail later on a missing file, hiding the real
-    // producer-side traceback. The generator is also never allowed to be skipped:
-    // an absent Python toolchain must fail the job, not quietly pass it.
-    if (result.error) {
-      throw new Error(`Could not run the bundle generator: ${result.error.message}`);
-    }
-    if (result.status !== 0) {
-      throw new Error(
-        `Bundle generator exited with ${result.status}\n` +
-          `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
-      );
-    }
+    runPython('tests/contract/emit_bundles.py', [outDir]);
     manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
   } catch (error) {
     rmSync(outDir, { recursive: true, force: true });
@@ -271,4 +283,149 @@ describe('annotation encoding across the language boundary', () => {
     expect(data.protein_ids).toHaveLength(manifest.largeProteinCount);
     expectAnnotationContract(data, manifest.largeProteinCount);
   });
+});
+
+/** The finite points the scatter plot would draw for a projection, by protein id. */
+function drawnIds(data: VisualizationData, projectionName: string): string[] {
+  const index = data.projections.findIndex((p) => p.name === projectionName);
+  const plot = DataProcessor.processVisualizationData(data, index);
+  return Array.from({ length: plot.length }, (_, slot) => {
+    const protein = plot.originalIndices ? plot.originalIndices[slot] : slot;
+    return data.protein_ids[protein];
+  });
+}
+
+describe('proteins the annotations and projections disagree on', () => {
+  it('keeps a protein one projection misses, with NaN there and not drawn there', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('coverage'));
+    const row = data.protein_ids.indexOf(manifest.gapId);
+    expect(row).toBeGreaterThanOrEqual(0);
+
+    // NaN, never (0, 0): the origin is a real coordinate.
+    const pca3 = data.projections.find((p) => p.name === 'PCA_3')!;
+    expect(Array.from(pca3.data.subarray(row * 3, row * 3 + 3))).toEqual([NaN, NaN, NaN]);
+    expect(drawnIds(data, 'PCA_3')).not.toContain(manifest.gapId);
+    expect(drawnIds(data, 'PCA_2')).toContain(manifest.gapId);
+  });
+
+  it('leaves out a protein no projection covers', async () => {
+    // The file keeps it in part 1 (lossless); the browser shows only placed proteins.
+    const { data } = await decodeParquetBundle(loadBundle('coverage'));
+    expect(data.protein_ids).not.toContain(manifest.annotationOnlyId);
+    expect(data.protein_ids).toHaveLength(Object.keys(manifest.booleanById).length);
+  });
+
+  it('shows a projected protein without an annotations row as N/A', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('coverage'));
+    const row = data.protein_ids.indexOf(manifest.projectionOnlyId);
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(getProteinAnnotationValues(data, row, 'family')).toEqual([NA_VALUE]);
+    expect(getProteinAnnotationValues(data, row, 'reviewed')).toEqual([NA_VALUE]);
+    expect(drawnIds(data, 'PCA_2')).toContain(manifest.projectionOnlyId);
+  });
+
+  it('shows an Arrow BOOLEAN column as true / false', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('coverage'));
+    for (const [id, value] of Object.entries(manifest.booleanById)) {
+      const row = data.protein_ids.indexOf(id);
+      if (row < 0) continue; // the annotation-only protein, asserted absent above
+      expect(getProteinAnnotationValues(data, row, 'reviewed')).toEqual([
+        value == null ? NA_VALUE : String(value),
+      ]);
+    }
+  });
+});
+
+/**
+ * What a decoded dataset means, independent of the storage a reader chose (a legacy
+ * load and a v3 load hold the same hits in different shapes): per protein, the
+ * values and scores of every categorical annotation and the value of every numeric one.
+ */
+function meaning(data: VisualizationData) {
+  const annotations: Record<string, unknown> = {};
+  for (const [key, annotation] of Object.entries(data.annotations)) {
+    annotations[key] =
+      annotation.kind === 'numeric'
+        ? Array.from(data.numeric_annotation_data?.[key] ?? [])
+        : data.protein_ids.map((_, row) => ({
+            values: getProteinAnnotationValues(data, row, key),
+            scores: getProteinScores(data, row, key),
+          }));
+  }
+  return {
+    protein_ids: data.protein_ids,
+    projections: data.projections.map(({ name, dimension, data: coordinates, metadata }) => ({
+      name,
+      dimension,
+      coordinates: Array.from(coordinates),
+      metadata,
+    })),
+    annotations,
+  };
+}
+
+describe('protspace convert', () => {
+  it('upgrades a v2 bundle to v3 that reads back as the same dataset', async () => {
+    // Fails if convert drops a part, re-spells a cell, or loses the projection gap.
+    const legacy = await decodeParquetBundle(loadBundle('legacy_v2'));
+    const converted = await decodeParquetBundle(loadBundle('converted'));
+
+    expect(legacy.formatVersion).toBe(2);
+    expect(inspectContainer(loadBundle('converted'))).toEqual({
+      partCount: PRODUCER_PART_COUNT,
+      formatVersion: PRODUCER_FORMAT_VERSION,
+    });
+    expect(converted.formatVersion).toBe(PRODUCER_FORMAT_VERSION);
+
+    expect(meaning(converted.data)).toEqual(meaning(legacy.data));
+    expect(converted.data.protein_ids).toContain(manifest.gapId);
+    expect(converted.settings).toEqual(legacy.settings);
+    expect(new Uint8Array(converted.data.statistics!)).toEqual(
+      new Uint8Array(legacy.data.statistics!),
+    );
+  });
+});
+
+type PythonSummary = {
+  annotations: Record<string, Record<string, unknown>>;
+  projections: Record<string, Record<string, number[]>>;
+  statistics: string | null;
+  hasSettings: boolean;
+};
+
+describe('bundles the web app exports, read by the Python tooling', () => {
+  it.each(['coverage', 'with_stats'])(
+    'reads a web re-export of %s as the dataset Python wrote',
+    async (variant) => {
+      // The web writer re-encodes every part but the statistics from memory, so this
+      // catches a TS writer that Python cannot decode, or decodes to other values.
+      const { data, settings } = await decodeParquetBundle(loadBundle(variant));
+      const exported = join(outDir, `web_${variant}.parquetbundle`);
+      writeFileSync(
+        exported,
+        new Uint8Array(
+          createParquetBundle(data, {
+            includeSettings: !!settings,
+            settings: settings ?? undefined,
+          }),
+        ),
+      );
+      const original = join(outDir, `${variant}.parquetbundle`);
+      const summaries: Record<string, PythonSummary> = JSON.parse(
+        runPython('tests/contract/read_bundles.py', [original, exported]),
+      );
+      const [written, reexported] = [summaries[original], summaries[exported]];
+
+      expect(inspectContainer(loadBundle(`web_${variant}`)).formatVersion).toBe(
+        PRODUCER_FORMAT_VERSION,
+      );
+      // The only intended difference: a protein no projection places is not in the
+      // browser's dataset, so it is not in what the browser exports.
+      delete written.annotations[manifest.annotationOnlyId];
+      expect(reexported.annotations).toEqual(written.annotations);
+      expect(reexported.projections).toEqual(written.projections);
+      expect(reexported.statistics).toBe(written.statistics);
+      expect(reexported.hasSettings).toBe(written.hasSettings);
+    },
+  );
 });
