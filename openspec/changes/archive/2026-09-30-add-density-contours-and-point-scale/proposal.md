@@ -4,11 +4,13 @@ PR #478 shipped density contours and a new dot-size model without an OpenSpec ch
 `openspec/specs/` describes either. Two existing specs became false in the process:
 
 - `eat-provenance-connectors` promises endpoint halos and connector strokes of constant screen size.
-  They now track the drawn dot radius, which grows with zoom (commit 2687c6f3).
+  They now track the drawn dot radius, which grows with zoom ("fix(scatter): hit-test and EAT halo
+  use the drawn dot radius").
 - `eat-annotation-overlay` promises a visible hollow interior at the minimum supported shape size.
   The minimum dropped from 6 to 1, where a dot is about 1 CSS px across. The same scenario promises
   identical live and exported rendering, but the Figure Editor now renders dots at their zoom-1 size
-  while the live view grows them with zoom (commit 87a56058).
+  while the live view grows them with zoom ("feat(export): exported dots use the live point scale at the
+  export zoom").
 
 This change records what the PR ships, including five fixes that landed in it during review, and
 corrects the two specs.
@@ -51,7 +53,8 @@ corrects the two specs.
   tied to the live view first, or the figure's rings would quietly differ from the screen, which is
   worse in a publication figure than no rings. Tracked in #498.
 - **The heatmap style.** An earlier revision of the PR had a colour-mixing heatmap alongside the
-  contours. It was removed (ab89a380); the layer always draws contours.
+  contours. It was removed ("feat(density): drop the heatmap style"); the layer always draws
+  contours.
 
 ### Decisions recorded
 
