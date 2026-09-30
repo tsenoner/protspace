@@ -1,10 +1,8 @@
 import DecodeWorker from './decode.worker?worker&inline';
 import type { VisualizationData, BundleSettings } from '@protspace/utils';
+import type { DecodedParquetBundle } from './utils/bundle';
 
-export interface WorkerDecodeResult {
-  data: VisualizationData;
-  settings: BundleSettings | null;
-}
+export type WorkerDecodeResult = DecodedParquetBundle;
 
 export function isWorkerDecodeSupported(): boolean {
   return typeof Worker !== 'undefined';
@@ -36,11 +34,16 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
         ok: boolean;
         data?: VisualizationData;
         settings?: BundleSettings | null;
+        formatVersion?: number;
         error?: string;
       };
       cleanup();
       if (d?.ok) {
-        resolve({ data: d.data as VisualizationData, settings: d.settings ?? null });
+        resolve({
+          data: d.data as VisualizationData,
+          settings: d.settings ?? null,
+          formatVersion: d.formatVersion ?? 1,
+        });
       } else {
         reject(new Error(d?.error || 'worker decode failed'));
       }

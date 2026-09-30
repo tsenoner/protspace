@@ -173,6 +173,11 @@ function readPart1Metadata(part1: ArrayBuffer | null): FileMetaData | null {
 
 /**
  * Extract rows and optional settings from a parquetbundle (formats 1 and 2).
+ *
+ * Throws on a format 3 bundle, which has no row objects to return.
+ *
+ * @deprecated Reads only the v1/v2 bundle formats, whose support ends in protspace 5.0.0.
+ * Use {@link decodeParquetBundle}, which reads every format version.
  */
 export async function extractRowsFromParquetBundle(
   arrayBuffer: ArrayBuffer,
@@ -379,6 +384,17 @@ export async function extractSettings(settingsBuffer: ArrayBuffer): Promise<Bund
   }
 }
 
+/** What {@link decodeParquetBundle} returns. */
+export interface DecodedParquetBundle {
+  data: VisualizationData;
+  settings: BundleSettings | null;
+  /**
+   * Container format version the bundle was read as: 3 for the columnar format, else the
+   * legacy annotation format (1 or 2), whose support ends in protspace 5.0.0.
+   */
+  formatVersion: number;
+}
+
 /**
  * Read a parquetbundle into visualization data, whichever format version it carries.
  *
@@ -387,14 +403,13 @@ export async function extractSettings(settingsBuffer: ArrayBuffer): Promise<Bund
  * Format 3 and above take the columnar reader in `bundle-v3.ts`; anything older takes
  * the row-object path unchanged.
  */
-export async function decodeParquetBundle(
-  arrayBuffer: ArrayBuffer,
-): Promise<{ data: VisualizationData; settings: BundleSettings | null }> {
+export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle> {
   const parts = splitBundleParts(arrayBuffer);
   const part1Metadata = readPart1Metadata(parts[0]);
+  const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
 
-  if (part1Metadata && readFormatVersion(part1Metadata) >= 3) {
-    return readV3Bundle(parts, part1Metadata);
+  if (part1Metadata && formatVersion >= 3) {
+    return { ...(await readV3Bundle(parts, part1Metadata)), formatVersion };
   }
 
   const extraction = await extractRowsFromParts(parts, part1Metadata);
@@ -402,6 +417,7 @@ export async function decodeParquetBundle(
   return {
     data: await convertParquetToVisualizationDataOptimized(extraction),
     settings: extraction.settings,
+    formatVersion: extraction.formatVersion,
   };
 }
 
