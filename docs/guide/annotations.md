@@ -274,7 +274,7 @@ The nine taxonomy columns trace the source organism up the standard Linnaean / N
 
 Cellular / acellular classification at the root of the taxonomy.
 
-The root sits above the three-domain system and separates cellular life (organisms with a cell: Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
+The root is the top node of the organism's lineage. It sits above the three-domain system and separates cellular life (organisms with a cell: Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. Values are `cellular organisms` or `Viruses`, and, for sequences with no organism of origin, `other entries` (such as synthetic constructs) or `unclassified entries` (such as metagenomes). In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
 
 ### `domain` {#domain}
 
