@@ -14,6 +14,7 @@ positionally isolated after ``|`` and parens are display sugar, so leaving them
 literal keeps names maximally readable.
 """
 
+import json
 import re
 
 import pandas as pd
@@ -114,6 +115,25 @@ def read_annotation_cache_version(df: pd.DataFrame) -> int:
 def annotation_cache_version_attrs() -> dict[str, int]:
     """Return the ``DataFrame.attrs`` marking a cache as current."""
     return {ANNOTATION_CACHE_VERSION_ATTR: ANNOTATION_CACHE_VERSION}
+
+
+def is_annotation_cache(table: pa.Table | pa.Schema) -> bool:
+    """Whether a parquet table is the pipeline's own ``all_annotations.parquet``.
+
+    Recognised by the cache-version attribute pandas stores in the footer's
+    ``PANDAS_ATTRS``.  The emit sites have percent-encoded every cache cell since
+    before that attribute existed, so a table that carries it holds v2 cells even
+    when it predates the cache's :data:`FORMAT_VERSION_KEY` stamp.
+    """
+    schema = table if isinstance(table, pa.Schema) else table.schema
+    raw = (schema.metadata or {}).get(b"PANDAS_ATTRS")
+    if raw is None:
+        return False
+    try:
+        attrs = json.loads(raw)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(attrs, dict) and ANNOTATION_CACHE_VERSION_ATTR in attrs
 
 
 def stale_cache_columns(df: pd.DataFrame) -> set[str]:

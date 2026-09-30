@@ -29,9 +29,10 @@ def bundle(
             "-a",
             "--annotations",
             help=(
-                "Annotations parquet file. Output of `protspace annotate` is used "
-                "as is; a table without a protspace_format_version stamp is read "
-                "as plain text (legacy v1 cells) and encoded."
+                "Annotations parquet file. Output of `protspace annotate` and "
+                "the prepare cache (tmp/all_annotations.parquet) is used as is; "
+                "any other table without a protspace_format_version stamp is "
+                "read as plain text (legacy v1 cells) and encoded."
             ),
             exists=True,
         ),
@@ -67,8 +68,9 @@ def bundle(
     single .parquetbundle file.
 
     The annotations' cell grammar comes from their protspace_format_version
-    stamp. `protspace annotate` stamps its output v2 (percent-encoded), so it
-    passes through; an unstamped table, such as one written by hand, is read as
+    stamp. `protspace annotate` and the prepare annotation cache
+    (tmp/all_annotations.parquet) hold v2 (percent-encoded) cells, so they pass
+    through; any other unstamped table, such as one written by hand, is read as
     legacy v1 plain text and encoded for the bundle.
     """
     setup_logging(verbose)
@@ -78,7 +80,9 @@ def bundle(
     import pyarrow.parquet as pq
 
     from protspace.data.annotations.encoding import (
+        BUNDLE_FORMAT_VERSION,
         has_format_version,
+        is_annotation_cache,
         read_format_version,
         upgrade_cell_grammar,
     )
@@ -99,10 +103,21 @@ def bundle(
     data_table = pq.read_table(str(data_path))
 
     # Trust boundary: the grammar is decided here, from the input's own stamp, and
-    # before the rename below drops it. `annotate` stamps v2; an unstamped table
-    # is user input in plain text, i.e. legacy v1, and is migrated explicitly.
-    grammar = read_format_version(annotations_table)
-    if not has_format_version(annotations_table):
+    # before the rename below drops it. `annotate` and the pipeline's annotation
+    # cache stamp v2, and a cache written before it carried the stamp is still
+    # recognised as the pipeline's own v2 output; any other unstamped table is
+    # user input in plain text, i.e. legacy v1, and is migrated explicitly.
+    if has_format_version(annotations_table):
+        grammar = read_format_version(annotations_table)
+    elif is_annotation_cache(annotations_table):
+        grammar = BUNDLE_FORMAT_VERSION
+        logger.info(
+            "%s is a protspace annotation cache without a protspace_format_version "
+            "stamp; reading its cells as v2 (percent-encoded)",
+            annotations,
+        )
+    else:
+        grammar = 1
         logger.info(
             "%s has no protspace_format_version stamp; reading its cells as plain "
             "(v1) text",

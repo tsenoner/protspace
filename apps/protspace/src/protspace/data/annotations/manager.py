@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.configuration import (
@@ -17,7 +18,11 @@ from protspace.data.annotations.configuration import (
     TAXONOMY_LOOKUP_ANNOTATION,
     AnnotationConfiguration,
 )
-from protspace.data.annotations.encoding import annotation_cache_version_attrs
+from protspace.data.annotations.encoding import (
+    BUNDLE_FORMAT_VERSION,
+    FORMAT_VERSION_KEY,
+    annotation_cache_version_attrs,
+)
 from protspace.data.annotations.merging import AnnotationMerger
 from protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
@@ -403,14 +408,26 @@ class ProteinAnnotationManager:
         return df
 
     def _write_cache(self, df: pd.DataFrame) -> None:
-        """Persist *df* as the annotation cache, stamped with the current semantics."""
+        """Persist *df* as the annotation cache, stamped with the current semantics.
+
+        The cells are already percent-encoded (the emit sites encode them), so
+        the file also declares the v2 cell grammar: ``protspace bundle -a`` on
+        the cache then passes the cells through instead of migrating them again.
+        """
         df = df.copy()
         df.attrs.update(annotation_cache_version_attrs())
+        schema = pa.Schema.from_pandas(df, preserve_index=False)
+        schema = schema.with_metadata(
+            {
+                **(schema.metadata or {}),
+                FORMAT_VERSION_KEY: str(BUNDLE_FORMAT_VERSION).encode(),
+            }
+        )
         # Staged: with retained rows folded in, this frame is a superset holding
         # rows for identifiers no other file has, so a half-written cache loses
         # data rather than costing one refetch.
         with staged_write(self.output_path) as staged:
-            df.to_parquet(staged, index=False)
+            df.to_parquet(staged, index=False, schema=schema)
 
     def _fill_missing_fasta_lengths(
         self, proteins: list[ProteinAnnotations]

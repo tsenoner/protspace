@@ -200,6 +200,12 @@ class ArrowReader:
         # Save protein annotations
         protein_annotations_path = output_path / "protein_annotations.parquet"
         protein_annotations_table = pa.Table.from_pandas(self._protein_annotations_df)
+        if self.should_decode():
+            # The cells are written back as they were read, so they keep the
+            # grammar stamp that says so; unstamped they would read as v1.
+            from protspace.data.annotations.encoding import stamp_format_version
+
+            protein_annotations_table = stamp_format_version(protein_annotations_table)
         pq.write_table(protein_annotations_table, str(protein_annotations_path))
 
         # Save projections metadata

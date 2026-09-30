@@ -247,7 +247,8 @@ legacy, and SHALL reject a file whose part count disagrees with that key.
 The Python v3 encoder SHALL refuse an annotations table that is not stamped with
 `protspace_format_version` `2`, rather than migrating it as v1. A caller that holds v1 cells
 SHALL migrate them explicitly before encoding. `protspace bundle -a` SHALL take the grammar from
-its input's stamp, read before any operation drops it, and SHALL treat an unstamped input table as
+its input's stamp, read before any operation drops it, SHALL read the pipeline's own annotation
+cache as v2 whether or not it is stamped, and SHALL treat any other unstamped input table as
 legacy v1 plain text.
 
 #### Scenario: An already-v2 table that lost its stamp
@@ -261,6 +262,12 @@ legacy v1 plain text.
 - **WHEN** `protspace bundle -a` is given `protspace annotate` output, stamped v2, whose id column
   is `identifier`
 - **THEN** the cells in the bundle are the input's cells, not migrated again
+
+#### Scenario: The prepare annotation cache is bundled
+
+- **WHEN** `protspace bundle -a` is given the `tmp/all_annotations.parquet` cache `prepare` kept,
+  whose cells hold `Membrane%3B single-pass`, stamped or written before the cache was stamped
+- **THEN** the bundle shows the label `Membrane; single-pass`, not `Membrane%3B single-pass`
 
 #### Scenario: A hand-made annotations table is bundled
 

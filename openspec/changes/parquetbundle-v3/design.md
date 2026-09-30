@@ -223,9 +223,13 @@ so its wire format can still change, and the two meanings get two keys:
   `convert` from the legacy part's own stamp, `transfer` from the version it read off the bundle
   before its renames dropped the stamp (`upgrade_cell_grammar(table, version)`), and
   `bundle -a`, which reads the input's stamp before its `identifier` rename. `annotate` stamps its
-  output v2, so pipeline output passes through. An unstamped table given to `bundle -a` is user
-  input, a table written by hand, and the CLI treats it as legacy v1 plain text and migrates it,
-  so a literal `%` or a `;` inside parentheses keeps the meaning the user gave it.
+  output v2, and so does the annotation cache `prepare` keeps (`tmp/all_annotations.parquet`,
+  whose cells the emit sites percent-encode), so pipeline output passes through. A cache written
+  before it carried the stamp is recognised by the cache-version attribute in its pandas footer,
+  which only ever marked v2 cells, and read as v2 too; `ArrowReader.save_data` writes the stamp it
+  read. Any other unstamped table given to `bundle -a` is user input, a table written by hand, and
+  the CLI treats it as legacy v1 plain text and migrates it, so a literal `%` or a `;` inside
+  parentheses keeps the meaning the user gave it.
   `replace_annotations_in_bundle` used to stamp every table v2, which was the opposite guess and
   would have mislabelled v1 cells; it stamps nothing now. The warning and the prose that guarded
   the old guess are gone.

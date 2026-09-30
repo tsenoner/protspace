@@ -43,6 +43,9 @@
 - [x] 2.13 `protspace style` writes a legacy input as v3 through `convert`'s encoding (one warning
       naming the input version), keeps a v3 input's parts byte for byte; tests, the CLI guide's
       `style` section and the data-format writer table updated
+- [x] 2.14 `bundle -a` reads the `prepare` annotation cache as v2: the cache is stamped when
+      written, a cache from before the stamp is recognised by its cache-version attribute, and
+      `ArrowReader.save_data` keeps the stamp it read
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

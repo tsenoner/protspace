@@ -578,9 +578,11 @@ protspace bundle -p projections/ -a annotations.parquet \
 A bundle written with `-s` has five parts and the web app renders that table, see
 [Separation Scores](/explore/separation-scores).
 
-The annotations parquet can be the output of `protspace annotate` or a table of your own. `annotate`
-stamps its output as percent-encoded v2 cells (`protspace_format_version` = `2`), and those pass
-through unchanged. A table without that stamp, for example one you built with pandas, is read as
+The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`
+keeps (`tmp/all_annotations.parquet`), or a table of your own. `annotate` and the cache hold
+percent-encoded v2 cells, stamped `protspace_format_version` = `2`, and those pass through
+unchanged; a cache written before the cache carried that stamp is recognised as one and read the
+same way. Any other table without the stamp, for example one you built with pandas, is read as
 plain text (the legacy v1 cell grammar): a literal `%` stays a percent sign, and a `;` inside
 parentheses, as in `Membrane (single-pass; type I)`, stays part of one label. Separate several
 values in one cell with `;` outside parentheses.

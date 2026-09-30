@@ -72,7 +72,11 @@ def test_prepare_pipeline_bundle_carries_format_version(sample_data):
 
 
 def _bundle_via_cli(tmp_path, annotations_table):
-    """Run `protspace bundle -a` on ``annotations_table``; return the bundle path."""
+    """Run `protspace bundle -a` on ``annotations_table``; return the bundle path.
+
+    ``annotations_table`` is a table to write, or the path of a parquet already
+    written (by the pipeline's own writers).
+    """
     import pyarrow as pa
     from typer.testing import CliRunner
 
@@ -106,8 +110,11 @@ def _bundle_via_cli(tmp_path, annotations_table):
     )
     pq.write_table(pa.Table.from_pandas(data_df), proj_dir / "projections_data.parquet")
 
-    annotations_path = tmp_path / "annotations.parquet"
-    pq.write_table(annotations_table, annotations_path)
+    if isinstance(annotations_table, Path):
+        annotations_path = annotations_table
+    else:
+        annotations_path = tmp_path / "annotations.parquet"
+        pq.write_table(annotations_table, annotations_path)
 
     output_path = tmp_path / "out.parquetbundle"
 
@@ -181,6 +188,74 @@ def test_cli_bundle_reads_an_unstamped_table_as_plain_v1_text(tmp_path):
         "50%25 identity",
         "Membrane (single-pass%3B type I)",
     ]
+
+
+def _cache_cells():
+    """v2 cells as the annotation emit sites write them into the cache."""
+    from protspace.data.annotations.encoding import encode_field
+
+    return [encode_field("Membrane; single-pass"), encode_field("50% x")]
+
+
+def _display_labels(bundle_path, column):
+    from protspace.data.annotations.encoding import decode_field
+
+    cells = read_tables(bundle_path)[0].column(column).to_pylist()
+    return [decode_field(cell) for cell in cells]
+
+
+def test_cli_bundle_passes_the_pipeline_cache_through(tmp_path):
+    """`prepare` keeps ``tmp/all_annotations.parquet``, whose cells the emit sites
+    already percent-encode. The cache declares that grammar, so `bundle -a`
+    does not migrate it a second time (``%3B`` must not become ``%253B``)."""
+    from protspace.data.annotations.manager import ProteinAnnotationManager
+
+    cache_path = tmp_path / "all_annotations.parquet"
+    manager = ProteinAnnotationManager.__new__(ProteinAnnotationManager)
+    manager.output_path = cache_path
+    manager._write_cache(
+        pd.DataFrame({"identifier": ["P1", "P2"], "note": _cache_cells()})
+    )
+
+    assert pq.read_metadata(cache_path).metadata[FORMAT_VERSION_KEY] == b"2"
+    output_path = _bundle_via_cli(tmp_path, cache_path)
+    assert _display_labels(output_path, "note") == ["Membrane; single-pass", "50% x"]
+
+
+def test_cli_bundle_reads_an_unstamped_pipeline_cache_as_v2(tmp_path):
+    """A cache written before the cache carried the grammar stamp is still the
+    pipeline's own v2 output; its cache-version attribute says so."""
+    from protspace.data.annotations.encoding import annotation_cache_version_attrs
+
+    cache_path = tmp_path / "all_annotations.parquet"
+    df = pd.DataFrame({"identifier": ["P1", "P2"], "note": _cache_cells()})
+    df.attrs.update(annotation_cache_version_attrs())
+    df.to_parquet(cache_path, index=False)  # as `_write_cache` did, unstamped
+    assert FORMAT_VERSION_KEY not in pq.read_metadata(cache_path).metadata
+
+    output_path = _bundle_via_cli(tmp_path, cache_path)
+    assert _display_labels(output_path, "note") == ["Membrane; single-pass", "50% x"]
+
+
+def test_arrow_reader_save_data_keeps_the_grammar_stamp(tmp_path):
+    """`save_data` writes the annotations it read; v2 cells stay declared v2, so
+    a later `bundle -a` on them does not migrate them again."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.utils.arrow_reader import ArrowReader
+
+    source = tmp_path / "in"
+    source.mkdir()
+    pq.write_table(
+        stamp_format_version(pa.table({"protein_id": ["P1"], "note": ["a%3Bb"]})),
+        source / "selected_annotations.parquet",
+    )
+    out = tmp_path / "out"
+    ArrowReader(source).save_data(out)
+
+    saved = pq.read_metadata(out / "protein_annotations.parquet").metadata
+    assert saved[FORMAT_VERSION_KEY] == b"2"
 
 
 def test_annotate_command_stamps_format_version(tmp_path, monkeypatch):
