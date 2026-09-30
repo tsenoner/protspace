@@ -586,6 +586,19 @@ def test_v1_annotations_migrated_first_keep_their_hits():
     assert read(parts[0]).column("col__count").to_pylist() == [1]
 
 
+def test_a_v1_hit_splits_at_its_last_pipe():
+    """The browser's v1 reader takes the score after a hit's last ``|``; an
+    earlier one is part of the label (a real ``phosphatase`` CATH cell)."""
+    cell = "3.30.70.1020 (TPP;3.40.50.1000 (HAD)|40.1,172.1;domain 2)|172.1"
+    v1 = pa.table({"protein_id": ["p0"], "col": [cell]})
+    parts = encode(migrate_legacy_annotation_table(v1))
+    payloads = payloads_of(parts[3])
+    assert labels_of(payloads, "col") == [
+        "3.30.70.1020 (TPP;3.40.50.1000 (HAD)|40.1,172.1;domain 2)"
+    ]
+    assert np.frombuffer(payloads["scores:col"], "<f8").tolist() == [172.1]
+
+
 def test_migrating_a_v1_table_twice_is_a_no_op():
     """The migration output must not read back as v1, or it gets re-escaped.
 

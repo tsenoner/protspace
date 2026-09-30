@@ -149,10 +149,18 @@ def _split_legacy_hits(value: str) -> list[str]:
 
 
 def encode_legacy_cell(value: str) -> str:
-    """Migrate one legacy categorical cell without changing its parsed hit structure."""
+    """Migrate one legacy categorical cell without changing its parsed hit structure.
+
+    A hit splits at its *last* ``|``, as the browser's v1 reader
+    (``parseAnnotationValueImpl`` in ``conversion.ts``) reads it: in
+    ``"A (x|1;y)|0.5"`` the label is ``A (x|1;y)`` and the score ``0.5``.  Every
+    earlier ``|`` belongs to the label and is escaped with it.
+    """
     encoded_hits: list[str] = []
     for hit in _split_legacy_hits(value):
-        label, separator, suffix = hit.partition("|")
+        label, separator, suffix = hit.rpartition("|")
+        if not separator:
+            label = suffix
         encoded = encode_field(label)
         if separator:
             encoded = f"{encoded}|{encode_field(suffix)}"
