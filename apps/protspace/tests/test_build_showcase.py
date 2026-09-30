@@ -990,8 +990,22 @@ def test_root_and_literal_none_gates():
             "predicted_transmembrane": ["alpha-helical", "none", "None|0.9", ""],
         }
     )
-    assert bs.taxonomy_root_gate(table).status == "fail"  # 4 values
-    assert bs.taxonomy_root_gate(table.slice(0, 3)).status == "pass"
+    gate = bs.taxonomy_root_gate(table)
+    assert gate.status == "fail" and gate.data["unexpected"] == 2
+    assert bs.taxonomy_root_gate(table.slice(0, 2)).status == "pass"
+    # β-lactamase at 2026_03: all four top-level nodes, each a real root.
+    tops = pa.table(
+        {
+            "protein_id": ["C", "V", "O", "U"],
+            "root": [
+                "cellular organisms",
+                "Viruses",
+                "other entries",
+                "unclassified entries",
+            ],
+        }
+    )
+    assert bs.taxonomy_root_gate(tops).status == "pass"
     fly = pa.table(
         {
             "protein_id": ["H", "F"],
@@ -999,7 +1013,7 @@ def test_root_and_literal_none_gates():
         }
     )
     gate = bs.taxonomy_root_gate(fly)  # two values, but one is a deep clade
-    assert gate.status == "fail" and gate.data["deep_clades"] == 1
+    assert gate.status == "fail" and gate.data["unexpected"] == 1
     gate = bs.literal_none_gate(table, "predicted_transmembrane")
     # "none" is N/A in the web; "None|0.9" is a category "None" there.
     assert gate.status == "fail" and gate.data["count"] == 1

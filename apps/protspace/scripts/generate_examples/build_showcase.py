@@ -1433,9 +1433,13 @@ BUNDLE_GATE_TYPES = {"neighbourhood": gate_neighbourhood}
 #: Columns whose one value marks the rows it is on (``fragment`` is ``yes`` or
 #: empty by design), so one value next to empty rows is informative.
 PRESENCE_FLAG_COLUMNS = frozenset({"fragment"})
-#: The most ``root`` values a fixed CLI writes (cellular / acellular root and
-#: the odd unclassified lineage); the deepest-"no rank" bug gave hundreds (G2).
-MAX_ROOT_VALUES = 3
+#: The only ``root`` values a fixed CLI writes: the top-level nodes of UniProt's
+#: taxonomy, the cellular and acellular roots and the two that hold synthetic
+#: and metagenomic sequences. The deepest-"no rank" bug wrote deeper clades
+#: ("melanogaster subgroup", "Bacillus cereus group"), hundreds of them (G2).
+TAXONOMY_ROOTS = frozenset(
+    {"cellular organisms", "Viruses", "other entries", "unclassified entries"}
+)
 
 
 def uninformative_columns(table: pa.Table) -> dict[str, str]:
@@ -1493,33 +1497,28 @@ def informative_gate(table: pa.Table, dataset: dict, view: dict) -> Gate:
     )
 
 
-#: Names of the deep unranked clades the root bug wrote ("melanogaster
-#: subgroup", "Bacillus cereus group", "Fungi incertae sedis", …); a root
-#: never has one.
-DEEP_CLADE = re.compile(
-    r"\b(?:group|subgroup|complex|incertae sedis|unclassified)\b", re.IGNORECASE
-)
-
-
 def taxonomy_root_gate(table: pa.Table) -> Gate | None:
-    """``root`` is the cellular/acellular split, not the deepest "no rank" (G2).
+    """``root`` is a top-level taxonomy node, not the deepest "no rank" (G2).
 
-    At most :data:`MAX_ROOT_VALUES` values, none of them a deep clade: human +
-    fly had only two, but one was "melanogaster subgroup".
+    Every value is one of :data:`TAXONOMY_ROOTS`: human + fly had only two
+    values, but one was "melanogaster subgroup"; the β-lactamases have all four.
     """
     if "root" not in table.column_names:
         return None
     counts = label_counts(table, "root")
-    deep = sorted(value for value in counts if DEEP_CLADE.search(value))
-    ok = len(counts) <= MAX_ROOT_VALUES and not deep
+    unexpected = sorted(value for value in counts if value not in TAXONOMY_ROOTS)
     shown = dict(counts.most_common(5))
     return Gate(
         "root-values",
-        "pass" if ok else "fail",
-        f"{len(counts)} distinct values (max {MAX_ROOT_VALUES}): {shown}"
-        + (f"; deep clades {deep[:5]}" if deep else "")
-        + ("" if ok else "; rebuild on a CLI with the root fix"),
-        {"distinct": len(counts), "deep_clades": len(deep)},
+        "fail" if unexpected else "pass",
+        f"{len(counts)} distinct values: {shown}"
+        + (
+            f"; not a top-level node: {unexpected[:5]}; rebuild on a CLI with "
+            "the root fix"
+            if unexpected
+            else ""
+        ),
+        {"distinct": len(counts), "unexpected": len(unexpected)},
     )
 
 

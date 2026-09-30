@@ -235,7 +235,7 @@ Readers ignore unknown keys. The same fields go into the manifest.
 - Q02940 still class C, and Fig. 3 counts within 2 %, for `beta-lactamase`;
 - Fig. 2A domain counts within 1 % for `swissprot`;
 - the gates of Decision 17 for `three-finger-toxins`;
-- after the rebuild, `root` has at most three values and `predicted_transmembrane` holds no literal `none`, so a stale cache cannot pass.
+- after the rebuild, every `root` value is a top-level taxonomy node (cellular organisms, Viruses, other entries or unclassified entries) and `predicted_transmembrane` holds no literal `none`, so a stale cache cannot pass.
 
 If a story gate fails, that dataset ships frozen (strategy F) and is labelled so.
 

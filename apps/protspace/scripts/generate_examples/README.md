@@ -278,7 +278,8 @@ come). Pending blocks the release like a failure.
   leaves them out of its fetch or keeps them in `keep_uninformative` (a documented
   column whose one value is the fact, such as "all Swiss-Prot"). The default view's
   annotation and tooltip are kept implicitly; `fragment` (`yes` or empty) is a flag;
-- `root` has at most three values and no deep clade ("… group", "… subgroup"), and
+- every `root` value is a top-level taxonomy node (cellular organisms, Viruses, other
+  entries, unclassified entries), never a deeper clade ("… group", "… subgroup"), and
   `predicted_transmembrane` holds no literal `none`, which the web shows as N/A (G2).
   Both fail on bundles built before the CLI fixes, so a rebuild on a cache that kept the
   old values cannot pass;
