@@ -26,6 +26,11 @@ type Internals = HTMLElement & {
   selectedProjectionIndex: number;
   _plotData: PlotData;
   _processData(): void;
+  _buildQuadtree(): void;
+  _quadtreeIndex: {
+    queryByPixels(minX: number, minY: number, maxX: number, maxY: number): number[];
+    queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
+  };
   readonly _scales: ScalePair | null;
   getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
 };
@@ -73,6 +78,27 @@ describe('scatter plot: missing coordinates', () => {
     expect(Array.from(sp._plotData.xs)).toEqual([40, 60]);
     expect(Array.from(sp._plotData.ys)).toEqual([40, 60]);
     expect(sp.getProteinClientPosition('p1')).toBeNull();
+  });
+
+  it('never indexes the missing point for hover, click, brush or lasso', () => {
+    const sp = scatter();
+    sp.selectedProjectionIndex = 1;
+    sp._processData();
+    sp._buildQuadtree();
+
+    const idsOf = (slots: number[]) => slots.map((slot) => plottedIds(sp._plotData)[slot]).sort();
+    const far = 1e9;
+    expect(idsOf(sp._quadtreeIndex.queryByPixels(-far, -far, far, far))).toEqual(['p0', 'p2']);
+    expect(
+      idsOf(
+        sp._quadtreeIndex.queryByPolygon([
+          [-far, -far],
+          [far, -far],
+          [far, far],
+          [-far, far],
+        ]),
+      ),
+    ).toEqual(['p0', 'p2']);
   });
 
   it('computes the scale domains from the placed points only', () => {
