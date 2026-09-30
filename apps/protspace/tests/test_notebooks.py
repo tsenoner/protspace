@@ -364,3 +364,44 @@ def test_preparation_eat_cell_writes_a_transferred_bundle(tmp_path, monkeypatch)
     assert transferred.column("loc__pred_value").to_pylist() == ["", label, ""]
     assert transferred.column("loc__pred_source").to_pylist() == ["", "p0", ""]
     assert transferred.column("loc").to_pylist() == [label, "", "Cytoplasm"]
+
+
+def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
+    """Cell 4 promises the rows that received a label. A v3 read hands a missing
+    categorical cell back as "", not null, so the filter cannot test the value
+    column for null; the confidence is NaN exactly where nothing was predicted."""
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2"],
+                "fam": ["a", "", "b"],
+                "fam__pred_value": [None, "a", None],
+                "fam__pred_confidence": pa.array([None, 0.9, None], pa.float32()),
+                "fam__pred_source": [None, "p0", None],
+            }
+        )
+    )
+    monkeypatch.chdir(tmp_path)
+    write_bundle(
+        [annotations, *projection_tables(3, (2,))], tmp_path / "results.parquetbundle"
+    )
+
+    shown = []
+    (source,) = [
+        source
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Transfer.ipynb")
+        if "Read predictions back" in source
+    ]
+    exec(
+        compile(source, "ProtSpace_Transfer.ipynb:4", "exec"), {"display": shown.append}
+    )
+
+    (frame,) = shown
+    assert frame["fam__pred_value"].tolist() == ["a"]
+    assert frame["fam__pred_source"].tolist() == ["p0"]
