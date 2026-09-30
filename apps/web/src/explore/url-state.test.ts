@@ -19,16 +19,19 @@ describe('explore url state', () => {
     expect(parsed).toEqual({
       requested: {
         tooltip: undefined,
+        density: undefined,
       },
       present: {
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
       normalize: {
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
   });
@@ -43,16 +46,19 @@ describe('explore url state', () => {
         annotation: 'ec',
         projection: 'UMAP',
         tooltip: undefined,
+        density: undefined,
       },
       present: {
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       },
       normalize: {
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       },
     });
   });
@@ -64,16 +70,19 @@ describe('explore url state', () => {
     expect(parsed).toEqual({
       requested: {
         tooltip: undefined,
+        density: undefined,
       },
       present: {
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       },
       normalize: {
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       },
     });
     expect(resolved).toEqual({
@@ -81,17 +90,20 @@ describe('explore url state', () => {
         annotation: 'ec',
         projection: 'UMAP',
         tooltip: [],
+        density: 'off',
       },
       matchesRequested: {
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
       annotation: true,
       projection: true,
       tooltip: false,
+      density: false,
     });
   });
 
@@ -104,17 +116,20 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'PCA',
         tooltip: [],
+        density: 'off',
       },
       matchesRequested: {
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
       annotation: false,
       projection: false,
       tooltip: false,
+      density: false,
     });
   });
 
@@ -129,17 +144,20 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'PCA',
         tooltip: [],
+        density: 'off',
       },
       matchesRequested: {
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
       annotation: true,
       projection: true,
       tooltip: false,
+      density: false,
     });
   });
 
@@ -154,17 +172,20 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'UMAP',
         tooltip: [],
+        density: 'off',
       },
       matchesRequested: {
         annotation: true,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
       annotation: false,
       projection: true,
       tooltip: false,
+      density: false,
     });
   });
 
@@ -179,17 +200,20 @@ describe('explore url state', () => {
         annotation: 'ec',
         projection: 'UMAP',
         tooltip: [],
+        density: 'off',
       },
       matchesRequested: {
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
       annotation: true,
       projection: true,
       tooltip: false,
+      density: false,
     });
   });
 
@@ -207,6 +231,7 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'PCA',
         tooltip: [],
+        density: 'off',
       },
       { mode: 'user' },
     );
@@ -221,6 +246,7 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'UMAP',
         tooltip: [],
+        density: 'off',
       },
       {
         mode: 'normalize',
@@ -228,6 +254,7 @@ describe('explore url state', () => {
           annotation: false,
           projection: true,
           tooltip: false,
+          density: false,
         },
       },
     );
@@ -248,11 +275,13 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'UMAP 2',
         tooltip: ['species', 'ec'],
+        density: 'off',
       });
       expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       });
     });
 
@@ -265,11 +294,17 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'UMAP 2',
         tooltip: [],
+        density: 'off',
       });
       // The empty parameter is dropped from the URL; the curated tooltip is
       // never written into it.
       const normalize = getResolvedExploreViewNormalization(emptyTooltip, resolvedTooltip!);
-      expect(normalize).toEqual({ annotation: false, projection: false, tooltip: true });
+      expect(normalize).toEqual({
+        annotation: false,
+        projection: false,
+        tooltip: true,
+        density: false,
+      });
       expect(
         buildSearchParamsWithExploreView(
           new URLSearchParams('dataset=phosphatase&tooltip='),
@@ -283,18 +318,24 @@ describe('explore url state', () => {
       );
       expect(
         resolveExploreView(emptyAnnotation, annotations, projections, defaults)?.effective,
-      ).toEqual({ annotation: 'pfam', projection: 'UMAP 2', tooltip: [] });
+      ).toEqual({ annotation: 'pfam', projection: 'UMAP 2', tooltip: [], density: 'off' });
     });
 
     it('fills only the missing field of a partial request, with no tooltip', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams('annotation=ec'));
       const resolved = resolveExploreView(parsed, annotations, projections, defaults);
 
-      expect(resolved?.effective).toEqual({ annotation: 'ec', projection: 'UMAP 2', tooltip: [] });
+      expect(resolved?.effective).toEqual({
+        annotation: 'ec',
+        projection: 'UMAP 2',
+        tooltip: [],
+        density: 'off',
+      });
       expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       });
     });
 
@@ -308,6 +349,7 @@ describe('explore url state', () => {
         annotation: 'ec',
         projection: 'PCA 2',
         tooltip: ['gene_name'],
+        density: 'off',
       });
     });
 
@@ -321,11 +363,13 @@ describe('explore url state', () => {
         annotation: 'pfam',
         projection: 'UMAP 2',
         tooltip: [],
+        density: 'off',
       });
       expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
         annotation: true,
         projection: true,
         tooltip: false,
+        density: false,
       });
     });
 
@@ -341,11 +385,13 @@ describe('explore url state', () => {
         annotation: 'annotation_score',
         projection: 'PCA 2',
         tooltip: ['species'],
+        density: 'off',
       });
       expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       });
     });
 
@@ -360,6 +406,7 @@ describe('explore url state', () => {
         annotation: 'ec',
         projection: 'PCA 2',
         tooltip: ['species'],
+        density: 'off',
       });
     });
 
@@ -375,6 +422,7 @@ describe('explore url state', () => {
         annotation: 'annotation_score',
         projection: 'PCA 2',
         tooltip: [],
+        density: 'off',
       });
     });
   });
@@ -454,6 +502,7 @@ describe('explore url state', () => {
           annotation: 'pfam',
           projection: 'UMAP',
           tooltip: ['ec', 'go'],
+          density: 'off',
         },
         { mode: 'user' },
       );
@@ -468,6 +517,7 @@ describe('explore url state', () => {
           annotation: 'pfam',
           projection: 'UMAP',
           tooltip: [],
+          density: 'off',
         },
         { mode: 'user' },
       );
@@ -482,6 +532,7 @@ describe('explore url state', () => {
           annotation: 'pfam',
           projection: 'UMAP',
           tooltip: ['ec'],
+          density: 'off',
         },
         {
           mode: 'normalize',
@@ -489,6 +540,7 @@ describe('explore url state', () => {
             annotation: false,
             projection: false,
             tooltip: true,
+            density: false,
           },
         },
       );
@@ -605,6 +657,83 @@ describe('explore url state', () => {
       });
     });
   });
+
+  describe('density param', () => {
+    it('parses a valid density mode', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams('density=auto'));
+
+      expect(parsed.requested.density).toBe('auto');
+      expect(parsed.present.density).toBe(true);
+      expect(parsed.normalize.density).toBe(false);
+    });
+
+    it('rejects a value outside the three modes and marks it for normalization', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams('density=bogus'));
+
+      expect(parsed.requested.density).toBeUndefined();
+      expect(parsed.normalize.density).toBe(true);
+    });
+
+    it('flags duplicate density keys for normalization', () => {
+      const parsed = parseExploreViewRequest(new URLSearchParams('density=auto&density=on'));
+
+      expect(parsed.requested.density).toBe('auto');
+      expect(parsed.normalize.density).toBe(true);
+    });
+
+    it('resolves a requested mode and falls back to off', () => {
+      const on = resolveExploreView(
+        parseExploreViewRequest(new URLSearchParams('density=on')),
+        ['ec'],
+        ['UMAP'],
+      );
+      expect(on?.effective.density).toBe('on');
+      expect(on?.matchesRequested.density).toBe(true);
+
+      const bare = resolveExploreView(
+        parseExploreViewRequest(new URLSearchParams('')),
+        ['ec'],
+        ['UMAP'],
+      );
+      expect(bare?.effective.density).toBe('off');
+      expect(bare?.matchesRequested.density).toBe(false);
+    });
+
+    it('keeps the default out of the URL and writes every other mode', () => {
+      const base = { annotation: 'pfam', projection: 'PCA', tooltip: [] };
+
+      const off = buildSearchParamsWithExploreView(
+        new URLSearchParams('density=on'),
+        { ...base, density: 'off' },
+        { mode: 'user' },
+      );
+      expect(off.has('density')).toBe(false);
+
+      const auto = buildSearchParamsWithExploreView(
+        new URLSearchParams(''),
+        {
+          ...base,
+          density: 'auto',
+        },
+        { mode: 'user' },
+      );
+      expect(auto.get('density')).toBe('auto');
+    });
+
+    it.each(['off', 'auto', 'on'])('parses %s', (token) => {
+      const parsed = parseExploreViewRequest(new URLSearchParams(`density=${token}`));
+
+      expect(parsed.requested.density).toBe(token);
+      expect(parsed.normalize.density).toBe(false);
+    });
+
+    it.each(['contour-on', 'contour-bogus'])('normalizes the invalid token %s', (token) => {
+      const parsed = parseExploreViewRequest(new URLSearchParams(`density=${token}`));
+
+      expect(parsed.requested.density).toBeUndefined();
+      expect(parsed.normalize.density).toBe(true);
+    });
+  });
 });
 
 describe('decideUrlChange', () => {
@@ -641,11 +770,16 @@ describe('decideUrlChange', () => {
 });
 
 describe('after a failed Back/Forward', () => {
-  const effective = { annotation: 'pfam', projection: 'PCA', tooltip: ['go'] };
+  const effective = {
+    annotation: 'pfam',
+    projection: 'PCA',
+    tooltip: ['go'],
+    density: 'off' as const,
+  };
   const userChange = {
     effective,
     source: 'user' as const,
-    normalize: { annotation: false, projection: false, tooltip: false },
+    normalize: { annotation: false, projection: false, tooltip: false, density: false },
   };
 
   it('a user change names the displayed dataset in its new entry', () => {
@@ -685,7 +819,7 @@ describe('after a failed Back/Forward', () => {
       {
         effective,
         source: 'url',
-        normalize: { annotation: true, projection: false, tooltip: false },
+        normalize: { annotation: true, projection: false, tooltip: false, density: false },
       },
       { pendingUrlRequest: true, displayedDatasetId: 'B' },
     );
@@ -698,7 +832,12 @@ describe('after a failed Back/Forward', () => {
       parseExploreViewRequest(new URLSearchParams('annotation=pfam&projection=PCA&tooltip=go')),
     );
     const withoutTooltip = createExploreViewRequestFromView({ ...effective, tooltip: [] });
-    expect(withoutTooltip.present).toEqual({ annotation: true, projection: true, tooltip: false });
+    expect(withoutTooltip.present).toEqual({
+      annotation: true,
+      projection: true,
+      tooltip: false,
+      density: false,
+    });
     expect(withoutTooltip.requested.tooltip).toBeUndefined();
   });
 });

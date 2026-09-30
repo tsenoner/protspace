@@ -32,7 +32,8 @@ PERF_ITERATIONS=5 pnpm perf      # override iteration count
 
 This launches headed browsers (Chrome, Firefox, Safari), loads every dataset
 the manifest marks `"default": true` (the ten of the former
-`apps/web/public/data/datasets.json`), and runs four scenarios per dataset.
+`apps/web/public/data/datasets.json`), and runs the scenarios in the
+table below against each one.
 The spec serves the in-page suite's `/data/datasets.json` and
 `/data/<id>.parquetbundle` requests from the manifest and `perf/datasets/`; a
 dataset that was never fetched is recorded under `failures`, naming
@@ -54,14 +55,29 @@ include in every full suite run:
 
 ```sh
 # Benchmark only the 573K SwissProt dataset, Chrome only
-PERF_DATASETS=573K_swissprot pnpm perf -- --project=chrome
+PERF_DATASETS=573K_swissprot pnpm perf --project=chrome
 
 # Multiple datasets
-PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf -- --project=chrome
+PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf --project=chrome
 ```
+
+Pass `--project=chrome` directly, with no `--` in front of it. pnpm 10 forwards a
+`--` to the script verbatim, so `pnpm perf -- --project=chrome` reaches Playwright
+as a positional test filter instead of a project filter and every browser project
+runs.
+
+A dataset ID is a **file name**: the in-page suite loads
+`/data/${datasetId}.parquetbundle` (`apps/web/src/perf/webgl-perf-suite.ts`), and
+the spec answers it with the manifest entry of that `file`. So
+`PERF_DATASETS=573K_swissprot` measures `perf/datasets/573K_swissprot.parquetbundle`;
+an id the manifest does not list, such as the ParquetBundle v3 `573K_swissprot_v3`,
+answers 404 and is recorded under `failures`.
 
 The spec passes the IDs to the in-page suite via the `webglPerfDatasets` URL
 parameter, which overrides the default list.
+
+Dated copies of runs worth comparing against live in `perf/baselines/`; see the
+README there.
 
 #### Budgets
 
@@ -78,12 +94,29 @@ the two cannot drift; the defaults above apply only to a hand-typed
 `?webglPerf=1` in a browser. Raise both, and `SUITE_TIMEOUT_MS` in
 `perf/webgl-perf.spec.ts`, if a legitimately slow sweep needs longer.
 
-| Scenario           | What it measures                      |
-| ------------------ | ------------------------------------- |
-| `annotationChange` | Re-render after switching annotations |
-| `zoomInOut`        | Zoom-in / zoom-out cycle              |
-| `dragCanvas`       | Pan / drag across the canvas          |
-| `clickPoint`       | Select a point by clicking            |
+| Scenario           | What it measures                                                      |
+| ------------------ | --------------------------------------------------------------------- |
+| `annotationChange` | Re-render after switching annotations                                 |
+| `zoomInOut`        | Zoom-in / zoom-out cycle                                              |
+| `zoomFarOut`       | Zoom to the low end of the zoom extent (k = 0.1) and back             |
+| `dragCanvas`       | Pan / drag across the canvas, settling after every step               |
+| `dragContinuous`   | Sustained drag: one pan per animation frame, never waiting for settle |
+| `densityZoom`      | The `zoomInOut` cycle with `densityLayer: 'on'` forced on the plot    |
+| `contourDrag`      | `dragContinuous` with `densityLayer: 'on'`                            |
+| `clickPoint`       | Select a point by clicking                                            |
+
+Every pass records `durationMs` (CPU submission time: the window around
+`render()`, which returns as soon as the commands are queued) and `gpuSyncedMs`
+(the same window extended until the GPU has finished, via a one-pixel
+`readPixels`). A shader that costs the GPU tens of milliseconds is invisible in
+the first and visible in the second. The sync is perf-only: it sits behind the
+recording token, so production frames never make the call.
+
+The camera scenarios (`zoomInOut`, `zoomFarOut`, `dragCanvas`, `dragContinuous`,
+`densityZoom`, `contourDrag`)
+are asserted to upload zero bytes per pass and to draw every point handed to the
+renderer. That is the #456 regression gate, and it is machine-independent: the
+camera is a shader uniform, so moving it cannot require an upload.
 
 Each browser produces a JSON file under its own directory in
 `perf/test-results/` (Playwright names the inner directory after the test, so

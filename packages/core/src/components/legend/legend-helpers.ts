@@ -87,6 +87,12 @@ export function calculatePointSize(shapeSize: number): number {
   return Math.max(10, Math.round(shapeSize * LEGEND_DEFAULTS.symbolSizeMultiplier));
 }
 
+const LEGACY_DEFAULT_SHAPE_SIZE = 30;
+
+export function seedShapeSize(persisted: number): number {
+  return persisted === LEGACY_DEFAULT_SHAPE_SIZE ? LEGEND_DEFAULTS.symbolSize : persisted;
+}
+
 /**
  * Creates default persisted settings for an annotation.
  */

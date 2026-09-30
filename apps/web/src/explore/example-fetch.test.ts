@@ -36,7 +36,8 @@ describe('fetchExampleBundle', () => {
     await expect(fetchExampleBundle(RELEASE_HOSTED, signal, false)).resolves.toBe(notFound);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(RELEASE_HOSTED.url, { signal });
+    // Rooted at the app base so /explore/ (trailing slash) still finds it.
+    expect(fetchMock).toHaveBeenCalledWith('/examples/swissprot_2026_03.parquetbundle', { signal });
   });
 
   it('uses the local file in development when it is there', async () => {
@@ -59,6 +60,14 @@ describe('fetchExampleBundle', () => {
 
     expect(fetchMock).toHaveBeenLastCalledWith(RELEASE_HOSTED.devFallbackUrl, { signal });
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('pnpm examples:fetch'));
+  });
+
+  it('fetches a repo-hosted bundle from the app base too', async () => {
+    fetchMock.mockResolvedValueOnce(response(200));
+
+    await fetchExampleBundle(REPO_HOSTED, signal, false);
+
+    expect(fetchMock).toHaveBeenCalledWith('/data.parquetbundle', { signal });
   });
 
   it('has no fallback for a repo-hosted bundle', async () => {

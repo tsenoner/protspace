@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TEST_DEMO, TEST_EXAMPLE } from './example-catalog.fixtures';
+import { resolveExampleUrl } from './example-url';
 
 const notifyMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -136,7 +137,10 @@ describe('loadExampleDataset', () => {
     const result = await resultPromise;
 
     expect(result).toBe('loaded');
-    expect(fetchMock).toHaveBeenCalledWith(DEMO.url, { signal: expect.any(AbortSignal) });
+    // Rooted at the app base so /explore/ (trailing slash) still finds it.
+    expect(fetchMock).toHaveBeenCalledWith('/data.parquetbundle', {
+      signal: expect.any(AbortSignal),
+    });
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: DEMO,
       source: 'menu',
@@ -219,7 +223,7 @@ describe('loadExampleDataset', () => {
       arrayBuffer: () => Promise<ArrayBuffer>;
     }) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === DEMO.url) {
+      if (url === resolveExampleUrl(DEMO.url)) {
         return new Promise((resolve) => {
           resolveA = resolve;
         });
@@ -270,7 +274,7 @@ describe('loadExampleDataset', () => {
       arrayBuffer: () => Promise<ArrayBuffer>;
     }) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === DEMO.url) {
+      if (url === resolveExampleUrl(DEMO.url)) {
         return new Promise((resolve) => {
           resolveA = resolve;
         });
@@ -509,7 +513,7 @@ describe('request precedence: a user request beats a startup load that began ear
     loadQueue.resolveOutcome(1, true);
 
     expect(await startup).toEqual({ kind: 'default-loaded' });
-    expect(fetchMock).toHaveBeenCalledWith(DEMO.url, expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(resolveExampleUrl(DEMO.url), expect.anything());
   });
 
   it('a menu choice made while startup reads the stored import wins, and the import is not restored', async () => {
@@ -554,7 +558,7 @@ describe('request precedence: a user request beats a startup load that began ear
     loadQueue.resolveOutcome(1, true);
     expect(await click).toBe('loaded');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(OTHER.url, expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(resolveExampleUrl(OTHER.url), expect.anything());
   });
 
   it('a click during the stored-status read preempts the recovery banner', async () => {
@@ -591,7 +595,7 @@ describe('request precedence: a user request beats a startup load that began ear
     // No "loaded the default demo instead" notice for a load that never runs.
     expect(notifyMock.warning).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(OTHER.url, expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(resolveExampleUrl(OTHER.url), expect.anything());
   });
 
   it('recovery under a stale epoch only clears the store', async () => {
@@ -622,7 +626,7 @@ describe('request precedence: a user request beats a startup load that began ear
     expect(await recovery).toBe(true);
     expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
     expect(notifyMock.warning).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(DEMO.url, expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(resolveExampleUrl(DEMO.url), expect.anything());
   });
 
   it("the recovery banner's retry is a user request: it supersedes a pending example", async () => {
@@ -761,7 +765,9 @@ describe('the Cancel button of an example download', () => {
     const { controller, overlayController } = createController();
 
     void controller.loadPersistedOrDefaultDataset();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(DEMO.url, expect.anything()));
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(resolveExampleUrl(DEMO.url), expect.anything()),
+    );
 
     expect(overlayController.setCancelHandler).not.toHaveBeenCalled();
   });
@@ -1125,5 +1131,43 @@ describe('the startup restore and the requests that supersede it', () => {
     expect(await controller.loadPersistedOrDefaultDataset()).toEqual({ kind: 'default-failed' });
     errorSpy.mockRestore();
     expect(notifyMock.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Ported from main's (#478) `loadDefaultDataset` test: the startup demo is now
+// `loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup')`, reached through
+// `loadPersistedOrDefaultDataset` when there is no stored import.
+describe('startup demo when its bundle cannot be fetched', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, statusText: 'Not Found' })),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves the current dataset as it was and tells the user', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller, dataLoader, loadQueue, setCurrentExampleId, setCurrentDatasetName } =
+      createController();
+
+    const outcome = await controller.loadPersistedOrDefaultDataset();
+
+    expect(outcome).toEqual({ kind: 'default-failed' });
+    expect(setCurrentExampleId).not.toHaveBeenCalled();
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+    expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith('/data.parquetbundle', expect.anything());
+    expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
+    expect(notifyMock.error).toHaveBeenCalledTimes(1);
+    expect(notifyMock.error.mock.calls[0]?.[0]).toMatchObject({
+      title: `Couldn't load "${DEMO.label}".`,
+      description: expect.stringContaining('404'),
+    });
+    errorSpy.mockRestore();
   });
 });

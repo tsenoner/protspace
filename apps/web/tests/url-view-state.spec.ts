@@ -281,7 +281,7 @@ async function dropBundleOnScatterplot(
 /** Assert a single URL query param decodes to `expected` (robust to +/%20/em-dash encoding). */
 async function expectUrlParam(
   page: Page,
-  key: 'annotation' | 'projection' | 'foo',
+  key: 'annotation' | 'projection' | 'foo' | 'density',
   expected: string,
 ): Promise<void> {
   await expect
@@ -688,6 +688,32 @@ test.describe('URL-backed explore view state', () => {
     await expect(page).toHaveURL(/foo=1/);
     await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
     await expectUrlParam(page, 'projection', currentView.projection ?? '');
+  });
+
+  test('applies ?density= and keeps it across an annotation change', async ({ page }) => {
+    await page.goto('/explore?density=on');
+    await dismissTourIfPresent(page);
+    await waitForExploreDataLoad(page);
+
+    const bar = page.locator('protspace-control-bar');
+    const densityTrigger = bar.locator('#density-layer-trigger');
+    await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Always');
+
+    await densityTrigger.click();
+    await bar.locator('.density-item[data-mode="auto"]').click();
+    await expectUrlParam(page, 'density', 'auto');
+
+    const initialView = await getCurrentView(page);
+    const nextAnnotation = initialView.annotations.find(
+      (annotation) => annotation !== initialView.annotation,
+    );
+    expect(nextAnnotation).toBeTruthy();
+
+    await selectAnnotation(page, nextAnnotation!);
+    await waitForView(page, { annotation: nextAnnotation! });
+
+    await expectUrlParam(page, 'density', 'auto');
+    await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Auto');
   });
 
   test('annotation changes update history without reloading the page instance', async ({

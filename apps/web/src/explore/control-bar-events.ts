@@ -35,6 +35,10 @@ export function bindControlBarEvents({
     viewController.handleUserTooltipAnnotationsChange();
   });
 
+  addControlBarListener('density-layer-change', () => {
+    viewController.handleUserDensityLayerChange();
+  });
+
   addControlBarListener('selection-disabled-notification', (event: Event) => {
     const customEvent = event as CustomEvent<SelectionDisabledNotificationDetail>;
     notify.warning(getSelectionDisabledNotification(customEvent.detail));

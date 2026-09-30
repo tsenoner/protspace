@@ -9,7 +9,12 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
+import {
+  DENSITY_DEFAULT,
+  type PlotData,
+  type PlotDataPoint,
+  type ScatterplotConfig,
+} from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -32,8 +37,20 @@ import {
   bindPointDrawState,
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
+import {
+  createDensityResources,
+  resizeDensityTargets,
+  accumulateAndBlurDensity,
+  compositeDensity,
+  buildSlotPalette,
+  type DensityFrame,
+  type DensityResources,
+  type SlotPalette,
+} from './density-pass';
+import { densityFrameAlpha } from './density-crossfade';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
+import { computePointScale } from './point-scale';
 import {
   planLabelAtlas,
   MAX_LABELS,
@@ -91,6 +108,7 @@ export class WebGLRenderer {
   private gammaCorrectionUniformLocations: {
     linearTexture: WebGLUniformLocation | null;
     gamma: WebGLUniformLocation | null;
+    position: number;
   } | null = null;
 
   private gamma = DEFAULT_GAMMA;
@@ -129,6 +147,14 @@ export class WebGLRenderer {
   private atlas: { plan: LabelAtlasPlan; texels: Uint8Array } | null = null;
   /** Latched after an allocation failure, so we do not retry it every populate. */
   private labelAtlasDisabled = false;
+  private densityDisabled = false;
+  private contourPalette: SlotPalette | null = null;
+  /**
+   * Bumped by every `populateBuffers`, the only writer of the position and
+   * colour buffers and the only place `contourPalette` is invalidated, so it
+   * keys the density fields built from them.
+   */
+  private bufferGeneration = 0;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -144,6 +170,7 @@ export class WebGLRenderer {
   private readonly degradeReported = new Set<RendererDegradedReason>();
 
   private currentPointCount = 0;
+  private visibleCount = 0;
   private positionsDirty = true;
   private stylesDirty = true;
   // Depth-order dirtiness is tracked separately from positionsDirty so callers
@@ -186,6 +213,8 @@ export class WebGLRenderer {
   private styleSignature: string | null = null;
   private gammaPipelineAvailable = true;
   private warnedGammaFallback = false;
+  /** The float extension this context lacks, which is why the gamma pipeline never ran. */
+  private missingFloatExtension: string | null = null;
 
   // Context-loss lifecycle (listener + idempotent "lost" flag) lives in the
   // controller; `markContextLost`/`isContextLost` delegate to it.
@@ -269,6 +298,10 @@ export class WebGLRenderer {
     return this.currentPointCount;
   }
 
+  get visiblePointCount(): number {
+    return this.visibleCount;
+  }
+
   /**
    * Monotonic total of bytes pushed to the GPU — every buffer upload and every
    * atlas upload — since this renderer was constructed.
@@ -281,6 +314,18 @@ export class WebGLRenderer {
   get uploadedBytesTotal(): number {
     return this.uploadedBytes;
   }
+
+  /**
+   * `readPixels` cannot return until the commands ahead of it have executed,
+   * which makes it the portable WebGL way to wait for the GPU.
+   */
+  syncGpu(): void {
+    const gl = this.gl;
+    if (!gl || this.isContextLost()) return;
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.syncScratch);
+  }
+
+  private readonly syncScratch = new Uint8Array(4);
 
   invalidatePositionCache() {
     this.positionsDirty = true;
@@ -310,6 +355,15 @@ export class WebGLRenderer {
   releaseDataReferences() {
     this.lastRenderedData = null;
     this.sortedDataRef = null;
+  }
+
+  pointScale(): number {
+    const config = this.getConfig();
+    return computePointScale(
+      this.getTransform().k,
+      config.width ?? DEFAULT_VIEWPORT_WIDTH,
+      config.height ?? DEFAULT_VIEWPORT_HEIGHT,
+    );
   }
 
   resize(width: number, height: number) {
@@ -362,6 +416,47 @@ export class WebGLRenderer {
     return true;
   }
 
+  private ensureDensityResources(): DensityResources | null {
+    const gl = this.gl;
+    if (!gl || this.densityDisabled) return null;
+    if (!this.resources.density) {
+      if (!this.resources.quadBuffer || !this.pointAttribLocations) return null;
+
+      this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
+        dataPosition: this.pointAttribLocations.dataPosition,
+        color: this.pointAttribLocations.color,
+      });
+      if (!this.resources.density) {
+        this.disableDensity('density shaders failed to compile');
+        return null;
+      }
+    }
+    if (!resizeDensityTargets(gl, this.resources.density, this.canvas.width, this.canvas.height)) {
+      this.disableDensity('density target incomplete');
+      return null;
+    }
+    return this.resources.density;
+  }
+
+  private disableDensity(reason: string) {
+    this.densityDisabled = true;
+    console.warn(`WebGLRenderer: density layer disabled (${reason}).`);
+    if (this.gl) this.resources.destroyDensity(this.gl);
+    this.resources.density = null;
+    this.reportDensityUnavailable(reason);
+  }
+
+  /**
+   * Contours were asked for but cannot draw on this context. Without this the
+   * Contours menu reads as on while the plot never changes. It waits for points,
+   * so a `?density=on` link does not toast over the loading screen.
+   */
+  private reportDensityUnavailable(cause: string) {
+    if ((this.getConfig().densityLayer ?? DENSITY_DEFAULT) === 'off') return;
+    if (this.currentPointCount === 0) return;
+    this.reportDegraded('density-unavailable', cause);
+  }
+
   private handleGammaFallback(reason?: string) {
     if (!this.gammaPipelineAvailable) return;
 
@@ -393,6 +488,8 @@ export class WebGLRenderer {
       this.resources.linearFramebuffer = null;
     }
 
+    this.resources.destroyDensity(gl);
+
     this.gammaCorrectionUniformLocations = null;
   }
 
@@ -400,6 +497,7 @@ export class WebGLRenderer {
     this.resources.gammaCorrectionProgram = null;
     this.gammaCorrectionUniformLocations = null;
     this.resources.linearFramebuffer = null;
+    this.resources.density = null;
   }
 
   private shouldUseGammaPipeline(): boolean {
@@ -421,6 +519,7 @@ export class WebGLRenderer {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.currentPointCount = 0;
+    this.visibleCount = 0;
   }
 
   render(pd: PlotData) {
@@ -485,6 +584,11 @@ export class WebGLRenderer {
       if (this.gammaPipelineAvailable) {
         this.handleGammaFallback('gamma pipeline unavailable during render');
       }
+      // The density layer draws only in the linear-light pass.
+      const missing = this.missingFloatExtension;
+      this.reportDensityUnavailable(
+        missing ? `${missing} missing` : 'linear-light pipeline unavailable',
+      );
       this.renderDirect(transform);
       return;
     }
@@ -497,25 +601,75 @@ export class WebGLRenderer {
 
     const gl = this.gl;
 
-    // Pass 1: Render to linear RGB framebuffer
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer.framebuffer);
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-      this.handleGammaFallback('framebuffer incomplete during render');
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      this.renderDirect(transform);
-      return;
+    const density = this.densityFrame(transform);
+    if (density) {
+      // The fields persist between frames, so a re-render that changes none of
+      // their inputs (hover, tooltip) only composites them.
+      const { width, height, dpr, transform: t } = density.camera;
+      const key = [
+        this.bufferGeneration,
+        this.currentPointCount,
+        width,
+        height,
+        dpr,
+        t.x,
+        t.y,
+        t.k,
+      ].join();
+      if (density.res.fieldsKey !== key) {
+        accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
+        density.res.fieldsKey = key;
+      }
     }
-    gl.viewport(0, 0, framebuffer.width, framebuffer.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    this.renderPoints(transform);
+    // Pass 1: Render to linear RGB framebuffer.
+    bindAndClearTarget(gl, framebuffer.framebuffer, framebuffer.width, framebuffer.height);
+
+    this.renderPoints(transform, density ? () => compositeDensity(gl, density) : undefined);
 
     // Pass 2: Gamma correction to canvas
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
 
     this.renderGammaCorrection();
+  }
+
+  private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
+    const config = this.getConfig();
+    // Missing means Off here too, as in reportDensityUnavailable and the menu.
+    const mode = config.densityLayer ?? DENSITY_DEFAULT;
+    if (mode === 'off') return null;
+
+    if (this.densityDisabled || this.currentPointCount === 0) return null;
+
+    const viewDimensionCss = Math.max(
+      config.width ?? DEFAULT_VIEWPORT_WIDTH,
+      config.height ?? DEFAULT_VIEWPORT_HEIGHT,
+    );
+    const alpha = densityFrameAlpha(
+      this.visibleCount,
+      transform.k,
+      viewDimensionCss,
+      mode === 'on',
+    );
+    if (alpha <= 0) return null;
+
+    this.contourPalette ??= buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
+    if (this.contourPalette.count === 0) return null;
+
+    const res = this.ensureDensityResources();
+    if (!res || !res.accum) return null;
+
+    return {
+      res,
+      camera: {
+        width: this.canvas.width,
+        height: this.canvas.height,
+        transform: { x: transform.x, y: transform.y, k: transform.k },
+        dpr: this.dpr,
+      },
+      alpha,
+      palette: this.contourPalette,
+    };
   }
 
   private renderGammaCorrection() {
@@ -730,6 +884,9 @@ export class WebGLRenderer {
 
     this.gammaPipelineAvailable = !!colorBufferFloatExt && !!floatBlendExt;
     if (!this.gammaPipelineAvailable) {
+      this.missingFloatExtension = colorBufferFloatExt
+        ? 'EXT_float_blend'
+        : 'EXT_color_buffer_float';
       this.handleGammaFallback('required extensions missing');
     }
 
@@ -792,11 +949,14 @@ export class WebGLRenderer {
     this.atlas = null;
     this.labelAtlasDisabled = false;
     this.labelAtlasActive = false;
+    this.densityDisabled = false;
     this.degradeReported.clear();
     this.gammaPipelineAvailable = true;
     this.warnedGammaFallback = false;
+    this.missingFloatExtension = null;
     this.buffersInitialized = false;
     this.currentPointCount = 0;
+    this.visibleCount = 0;
     this.positionsDirty = true;
     this.stylesDirty = true;
     this.lastDataSignature = null;
@@ -834,6 +994,7 @@ export class WebGLRenderer {
         'u_linearTexture',
       ),
       gamma: gl.getUniformLocation(this.resources.gammaCorrectionProgram, 'u_gamma'),
+      position: gl.getAttribLocation(this.resources.gammaCorrectionProgram, 'a_position'),
     };
 
     return true;
@@ -879,7 +1040,7 @@ export class WebGLRenderer {
   // Rendering
   // ============================================================================
 
-  private renderPoints(transform: d3.ZoomTransform) {
+  private renderPoints(transform: d3.ZoomTransform, afterBasePass?: () => void) {
     if (
       !this.gl ||
       this.currentPointCount === 0 ||
@@ -902,6 +1063,7 @@ export class WebGLRenderer {
         height: this.canvas.height,
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
+        pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
         // Null when no atlas is allocated, which makes the shader's pie branch
@@ -910,7 +1072,18 @@ export class WebGLRenderer {
       },
     );
 
-    drawPoints(gl, this.currentPointCount, this.selectionActive, this.selectedStartIndex);
+    drawPoints(
+      gl,
+      this.currentPointCount,
+      this.selectionActive,
+      this.selectedStartIndex,
+      afterBasePass && {
+        run: afterBasePass,
+        program: this.resources.pointProgram,
+        vao: this.resources.pointVao,
+        labelTexture: this.resources.labelColorTexture,
+      },
+    );
 
     gl.bindVertexArray(null);
   }
@@ -964,6 +1137,7 @@ export class WebGLRenderer {
   ) {
     if (!this.gl) return;
     const gl = this.gl;
+    this.bufferGeneration++;
 
     const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
 
@@ -1041,6 +1215,7 @@ export class WebGLRenderer {
     let idx = 0;
 
     if (needsReorder) {
+      this.visibleCount = 0;
       const count = maxPoints;
       const order = this.sortOrder;
       const depthScratch = this.sortDepths;
@@ -1077,6 +1252,7 @@ export class WebGLRenderer {
           sp.y = ys[srcSlot];
           sp.originalIndex = origIdx;
           const opacity = this.style.getOpacity(sp);
+          if (opacity > 0) this.visibleCount++;
 
           if (this.trackRenderedPointIds && opacity > 0) {
             this.renderedPointIds.add(sp.id);
@@ -1084,7 +1260,7 @@ export class WebGLRenderer {
 
           // updatePositions is always true here (see above). Positions are
           // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
-          // original slot), NOT depthScratch[k]. sizeScaleFactor=1 for the live path.
+          // original slot), NOT depthScratch[k].
           stagePoint(
             this.stageArrays,
             k,
@@ -1094,8 +1270,6 @@ export class WebGLRenderer {
             opacity,
             depthScratch[srcSlot],
             this.style,
-            this.dpr,
-            1,
           );
 
           return opacity;
@@ -1107,6 +1281,7 @@ export class WebGLRenderer {
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
     } else if (updateStyles) {
+      this.visibleCount = 0;
       // Color-only update: no reordering needed, just update color/shape buffers.
       // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
       const order = this.sortOrder;
@@ -1123,6 +1298,7 @@ export class WebGLRenderer {
           sp.y = srcYs[slot];
           sp.originalIndex = origIdx;
           const opacity = this.style.getOpacity(sp);
+          if (opacity > 0) this.visibleCount++;
 
           if (this.trackRenderedPointIds && opacity > 0) {
             this.renderedPointIds.add(sp.id);
@@ -1132,7 +1308,7 @@ export class WebGLRenderer {
           // positions and depths are unchanged from the last rebuild. Shares the
           // exact packing the full-rebuild path uses via stagePoint (stageArrays
           // aliases this.colors/this.sizes/... so this writes the same buffers).
-          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style, this.dpr);
+          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style);
 
           idx++;
         }
@@ -1194,6 +1370,7 @@ export class WebGLRenderer {
     if (updateStyles || needsReorder) {
       this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
       this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
+      this.contourPalette = null;
       this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
       this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
       this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);

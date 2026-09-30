@@ -3,12 +3,14 @@ import { createEmptyExploreViewRequest } from './url-state';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
+import type { DensityLayerMode } from '@protspace/utils';
 
 function createMockElements() {
   const plotElement = {
     selectedProjectionIndex: 0,
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
+    config: { pointSize: 240 } as Record<string, unknown>,
     getCurrentData: () => ({
       annotations: { ec: {}, pfam: {}, go: {} },
       projections: [{ name: 'UMAP' }, { name: 'PCA' }, { name: 't-SNE' }],
@@ -20,6 +22,7 @@ function createMockElements() {
     selectedProjection: 'UMAP',
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
+    densityLayer: 'off' as DensityLayerMode,
     applyProjectionSelection: vi.fn((projection: string) => {
       controlBar.selectedProjection = projection;
       // Simulate the real control-bar updating the plot
@@ -45,15 +48,17 @@ function makeRequest(
   annotation?: string,
   projection?: string,
   tooltip?: string[],
+  density?: DensityLayerMode,
 ): ExploreViewRequestState {
   return {
-    requested: { annotation, projection, tooltip },
+    requested: { annotation, projection, tooltip, density },
     present: {
       annotation: annotation !== undefined,
       projection: projection !== undefined,
       tooltip: tooltip !== undefined,
+      density: density !== undefined,
     },
-    normalize: { annotation: false, projection: false, tooltip: false },
+    normalize: { annotation: false, projection: false, tooltip: false, density: false },
   };
 }
 
@@ -71,7 +76,12 @@ describe('createViewController', () => {
     const { viewController } = setup();
     const view = viewController.getCurrentEffectiveView();
 
-    expect(view).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(view).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('returns null when no data is available', () => {
@@ -93,7 +103,12 @@ describe('createViewController', () => {
     const request = makeRequest('pfam', 'PCA');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(result).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+    });
     expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
     expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
   });
@@ -103,7 +118,12 @@ describe('createViewController', () => {
     const request = makeRequest('NONEXISTENT', 'UNKNOWN');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(result).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('returns null from applyViewSelection when dataset has no options', () => {
@@ -129,7 +149,12 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'user');
 
     expect(changes).toHaveLength(1);
-    expect(changes[0].effective).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(changes[0].effective).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+    });
     expect(changes[0].source).toBe('user');
   });
 
@@ -161,7 +186,12 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('pfam', 'PCA'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(resolved).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('resolveLatestView falls back for invalid requests', () => {
@@ -169,7 +199,12 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('NONEXISTENT', 'UNKNOWN'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(resolved).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('applyLatestViewForDatasetLoad uses dataset-load source', () => {
@@ -253,11 +288,13 @@ describe('createViewController', () => {
         annotation: 'pfam',
         projection: 'PCA',
         tooltip: ['go'],
+        density: 'off',
       });
       expect(changes[0].normalize).toEqual({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       });
     });
 
@@ -270,6 +307,7 @@ describe('createViewController', () => {
         annotation: 'pfam',
         projection: 'PCA',
         tooltip: ['go'],
+        density: 'off',
       });
     });
 
@@ -279,7 +317,7 @@ describe('createViewController', () => {
 
       const result = viewController.applyViewSelection(makeRequest('go'), 'url');
 
-      expect(result).toEqual({ annotation: 'go', projection: 'PCA', tooltip: [] });
+      expect(result).toEqual({ annotation: 'go', projection: 'PCA', tooltip: [], density: 'off' });
     });
 
     it('null restores the first-available fallback', () => {
@@ -289,7 +327,7 @@ describe('createViewController', () => {
 
       const result = viewController.applyViewSelection(createEmptyExploreViewRequest(), 'url');
 
-      expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+      expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [], density: 'off' });
     });
 
     it('keeps its own copy of the defaults', () => {
@@ -320,6 +358,7 @@ describe('createViewController', () => {
       annotation: 'ec',
       projection: 'UMAP',
       tooltip: [],
+      density: 'off',
     });
     expect(controlBar.applyAnnotationSelection).not.toHaveBeenCalled();
   });
@@ -333,5 +372,28 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'url');
 
     expect(changes).toHaveLength(0);
+  });
+
+  it('applies a requested density mode to the plot config and the control bar', () => {
+    const { plotElement, controlBar, viewController } = setup();
+
+    const effective = viewController.applyViewSelection(
+      makeRequest('ec', 'UMAP', [], 'auto'),
+      'url',
+    );
+
+    expect(effective?.density).toBe('auto');
+    expect(controlBar.densityLayer).toBe('auto');
+    expect(plotElement.config).toEqual({
+      pointSize: 240,
+      densityLayer: 'auto',
+    });
+  });
+
+  it('reads the current density mode back off the plot config', () => {
+    const { plotElement, viewController } = setup();
+    plotElement.config = { densityLayer: 'on' };
+
+    expect(viewController.getCurrentEffectiveView()?.density).toBe('on');
   });
 });

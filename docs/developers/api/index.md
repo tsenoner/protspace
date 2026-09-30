@@ -79,19 +79,26 @@ the object and array properties from JavaScript.
 
 ### Configuration
 
-Point size, opacity and zoom limits live inside the `config` object, not as attributes:
+Point size, opacity, zoom limits and density contours live inside the `config` object, not as
+attributes:
 
 ```javascript
 plot.config = {
-  pointSize: 240,
+  pointSize: 80,
   baseOpacity: 0.9,
   selectedOpacity: 1.0,
   fadedOpacity: 0.15,
   zoomExtent: [0.1, 1000],
+  densityLayer: 'off',
 };
 ```
 
-Any key you omit keeps its default.
+Any key you omit keeps its default. `densityLayer` sets the density contours: `'off'` (default)
+draws points only, `'auto'` sets their strength from the visible-point count, the plot size and the
+zoom (not from actual overlap), so they fade out as the user zooms in and start faint or hidden when
+few points are visible, and `'on'` draws them at full strength at every zoom. The control bar labels
+`'on'` as Always. When the context cannot draw them, the plot emits `renderer-degraded` once, with
+`context.reason` set to `density-unavailable`, and keeps drawing the points.
 
 ### Methods
 
@@ -123,6 +130,7 @@ All scatterplot events bubble.
 | `data-isolation-reset`   | `{ isolationHistory, isolationMode, dataSize? }` | Isolation cleared                   |
 | `auto-disable-selection` | `{ reason, dataSize }`                           | Selection mode turned itself off    |
 | `file-dropped`           | `{ file }`                                       | A file was dropped on the plot      |
+| `renderer-degraded`      | `{ message, severity, source, context }`         | A rendering capability was reduced  |
 | `tour-start`             | none                                             | The guided-tour button was pressed  |
 
 `modifierKeys` on `protein-click` is `{ ctrl, meta, shift, alt }`. `view` is the tooltip-friendly
@@ -179,11 +187,23 @@ Category filtering and color mapping with automatic settings persistence.
 | `legend-download`            | none                                                      | Download requested                    |
 | `legend-error`               | `{ message, severity, source, context?, originalError? }` | Host-consumed error event             |
 
+### Methods
+
+| Member                               | Returns               | Description                                                                          |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------ |
+| `applyShapeSize(size, datasetHash?)` | `void`                | Apply a dataset-wide shape size, e.g. a bundle's top-level `shapeSize`, and store it |
+| `pickedShapeSize` (getter)           | `number \| undefined` | The dataset-wide shape size, or `undefined` while none was picked or applied         |
+
+Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new dataset's hash yet.
+A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
+`shapeSize` may only be seeded from the current annotation.
+
 ### Persistence
 
 User customizations (visibility, colors, ordering, settings) are saved to `localStorage` per dataset
 and annotation. Per-category state is not persisted for numeric annotations, whose legend entries
-are generated bin IDs.
+are generated bin IDs. The shape size is stored per dataset instead: once picked, it applies to
+every annotation.
 
 ### Example
 
@@ -200,7 +220,7 @@ legend.addEventListener('legend-zorder-change', (e) => {
 
 ## Control Bar
 
-Projection, annotation, selection, filter and export controls.
+Projection, annotation, contours, selection, filter and export controls.
 
 ### Properties
 
@@ -213,6 +233,7 @@ Projection, annotation, selection, filter and export controls.
 | `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip                        |
 | `selectionMode`         | `boolean`                 | Selection mode toggle state                                     |
 | `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                                           |
+| `densityLayer`          | `'off' \| 'auto' \| 'on'` | Contours mode, default `'off'`                                  |
 | `selectedProteinsCount` | `number`                  | Count shown in the selection controls                           |
 | `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot                          |
 | `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot                          |
@@ -222,7 +243,7 @@ Projection, annotation, selection, filter and export controls.
 
 ### HTML attributes
 
-`selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`,
+`selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`, `density-layer`,
 `selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
 `current-dataset-name`, `current-example-id`, `examples-docs-url`, `scatterplot-selector`,
 `auto-sync`. `exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary`
@@ -249,6 +270,7 @@ When `currentExampleId` names an entry, the same info popover sits next to the c
 | `protein-selection-change`        | `{ proteinIds }`                         | Selection changed (search, chips, clear)   |
 | `toggle-selection-mode`           | `{ selectionMode }`                      | Selection mode toggled                     |
 | `selection-tool-change`           | `{ selectionTool }`                      | Selection tool changed                     |
+| `density-layer-change`            | `{ densityLayer }`                       | Contours mode changed                      |
 | `clear-selections`                | `{}`                                     | Clear button pressed                       |
 | `isolate-data`                    | `{}`                                     | Isolate button pressed                     |
 | `reset-isolation`                 | `{}`                                     | Reset-isolation button pressed             |

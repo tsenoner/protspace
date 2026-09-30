@@ -1,5 +1,6 @@
 import type { FramebufferResources } from '../types';
 import { destroyFramebuffer } from './framebuffer';
+import { destroyDensityResources, type DensityResources } from './density-pass';
 
 /**
  * Holder for the GPU handles a WebGLRenderer owns. Centralizes the resource
@@ -28,6 +29,7 @@ export class GLResources {
 
   labelColorTexture: WebGLTexture | null = null;
   linearFramebuffer: FramebufferResources | null = null;
+  density: DensityResources | null = null;
 
   /** The 6 attribute buffers + quad buffer, in VAO-binding order. */
   private get vertexBuffers(): WebGLBuffer[] {
@@ -101,6 +103,15 @@ export class GLResources {
       destroyFramebuffer(gl, this.linearFramebuffer);
       this.linearFramebuffer = null;
     }
+    this.destroyDensity(gl);
+  }
+
+  /** Delete the density programs, VAO and targets, if any, and null the field. */
+  destroyDensity(gl: WebGL2RenderingContext): void {
+    if (this.density) {
+      destroyDensityResources(gl, this.density);
+      this.density = null;
+    }
   }
 
   /** Null every handle without touching gl (context-loss path). */
@@ -118,5 +129,6 @@ export class GLResources {
     this.quadBuffer = null;
     this.labelColorTexture = null;
     this.linearFramebuffer = null;
+    this.density = null;
   }
 }

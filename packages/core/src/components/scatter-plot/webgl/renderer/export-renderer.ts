@@ -49,6 +49,7 @@ import {
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
 import { stagePoint, type StagePointArrays } from './stage-point';
+import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
   readMaxTextureSize,
@@ -349,8 +350,8 @@ export class ExportRenderer {
    */
   private initializeOffscreenContext(
     gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
+    physicalWidth: number,
+    physicalHeight: number,
     pd: PlotData,
     scales: ScalePair,
     dpr: number,
@@ -366,20 +367,16 @@ export class ExportRenderer {
     // Shared with the badge capture path (#302): see computeSizeScaleFactor.
     const displayWidth = config.width ?? DEFAULT_VIEWPORT_WIDTH;
     const displayHeight = config.height ?? DEFAULT_VIEWPORT_HEIGHT;
-    // `width`/`height` here are PHYSICAL (logical × dpr), whereas
-    // pointSizeReference and the display dims are LOGICAL (CSS px). Feed
-    // sizeScaleFactor logical reference dims: the physical dims carry a factor
-    // of dpr that would otherwise double-count against the explicit `* dpr` in
-    // stagePoint, scaling point size by dpr² at dpr ≠ 1. At dpr = 1 logical ===
-    // physical, so this leaves current (dpr = 1) exports byte-identical.
-    const logicalWidth = width / dpr;
-    const logicalHeight = height / dpr;
+    const logicalWidth = physicalWidth / dpr;
+    const logicalHeight = physicalHeight / dpr;
     const sizeScaleFactor = computeSizeScaleFactor(
       pointSizeReference?.width ?? logicalWidth,
       pointSizeReference?.height ?? logicalHeight,
       config.width,
       config.height,
     );
+    const pointScale =
+      sizeScaleFactor * computePointScale(options.transform.k, displayWidth, displayHeight);
     // Enable extensions for float textures (needed for gamma pipeline)
     const colorBufferFloatExt = gl.getExtension('EXT_color_buffer_float');
     const floatBlendExt = gl.getExtension('EXT_float_blend');
@@ -432,10 +429,8 @@ export class ExportRenderer {
       pd,
       scales,
       maxPoints,
-      dpr,
       style,
       options.selectionActive,
-      sizeScaleFactor,
       labelAtlas,
     );
 
@@ -483,7 +478,7 @@ export class ExportRenderer {
     if (gl.getError() !== gl.NO_ERROR) {
       throw new Error(
         `The graphics driver could not allocate memory for ${pointCount.toLocaleString()} points ` +
-          `at ${width}×${height}. Export at smaller dimensions, or with fewer points visible.`,
+          `at ${physicalWidth}×${physicalHeight}. Export at smaller dimensions, or with fewer points visible.`,
       );
     }
 
@@ -530,8 +525,8 @@ export class ExportRenderer {
     // Get current transform and scale it for export dimensions
     const displayTransform = options.transform;
     // Scale transform's translation to export dimensions
-    const scaleFactorX = width / displayWidth;
-    const scaleFactorY = height / displayHeight;
+    const scaleFactorX = physicalWidth / displayWidth;
+    const scaleFactorY = physicalHeight / displayHeight;
     // Create a scaled transform that preserves the current view at export resolution
     const exportTransform = {
       x: displayTransform.x * scaleFactorX,
@@ -543,13 +538,13 @@ export class ExportRenderer {
     // Setup linear framebuffer if using gamma pipeline
     let linearFramebuffer: FramebufferResources | null = null;
     if (useGammaPipeline && gammaCorrectionProgram) {
-      linearFramebuffer = createLinearFramebuffer(gl, width, height);
+      linearFramebuffer = createLinearFramebuffer(gl, physicalWidth, physicalHeight);
     }
 
     // Render
     if (linearFramebuffer && gammaCorrectionProgram) {
       // Gamma-correct pipeline
-      bindAndClearTarget(gl, linearFramebuffer.framebuffer, width, height);
+      bindAndClearTarget(gl, linearFramebuffer.framebuffer, physicalWidth, physicalHeight);
       setPointBlendState(gl);
 
       this.renderOffscreenPoints(
@@ -557,9 +552,10 @@ export class ExportRenderer {
         pointProgram,
         pointVao,
         uniforms,
-        width,
-        height,
+        physicalWidth,
+        physicalHeight,
         dpr,
+        pointScale,
         gamma,
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
@@ -571,21 +567,21 @@ export class ExportRenderer {
       );
 
       // Apply gamma correction
-      bindAndClearTarget(gl, null, width, height);
+      bindAndClearTarget(gl, null, physicalWidth, physicalHeight);
       gl.disable(gl.BLEND);
 
       const quadBuffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, QUAD_VERTICES, gl.STATIC_DRAW);
-      // One-shot export pass: resolve the gamma uniforms inline (no per-frame cost here).
       drawGammaQuad(gl, gammaCorrectionProgram, linearFramebuffer.texture, gamma, quadBuffer, {
         linearTexture: gl.getUniformLocation(gammaCorrectionProgram, 'u_linearTexture'),
         gamma: gl.getUniformLocation(gammaCorrectionProgram, 'u_gamma'),
+        position: gl.getAttribLocation(gammaCorrectionProgram, 'a_position'),
       });
       gl.deleteBuffer(quadBuffer);
     } else {
       // Direct rendering
-      bindAndClearTarget(gl, null, width, height);
+      bindAndClearTarget(gl, null, physicalWidth, physicalHeight);
       setPointBlendState(gl);
 
       this.renderOffscreenPoints(
@@ -593,9 +589,10 @@ export class ExportRenderer {
         pointProgram,
         pointVao,
         uniforms,
-        width,
-        height,
+        physicalWidth,
+        physicalHeight,
         dpr,
+        pointScale,
         gamma,
         options.knockoutColor ?? [1, 1, 1],
         exportTransform,
@@ -631,10 +628,8 @@ export class ExportRenderer {
     pd: PlotData,
     scales: ScalePair,
     maxPoints: number,
-    dpr: number,
     style: WebGLStyleGetters,
     selectionActive: boolean,
-    sizeScaleFactor: number = 1,
     labelAtlas: LabelAtlasPlan | null = null,
   ): {
     dataPositions: Float32Array;
@@ -724,8 +719,6 @@ export class ExportRenderer {
           opacity,
           depthScratch[srcSlot],
           style,
-          dpr,
-          sizeScaleFactor,
         );
 
         return opacity;
@@ -757,6 +750,7 @@ export class ExportRenderer {
     width: number,
     height: number,
     dpr: number,
+    pointScale: number,
     gamma: number,
     knockoutColor: readonly [number, number, number],
     transform: d3.ZoomTransform,
@@ -772,6 +766,7 @@ export class ExportRenderer {
       height,
       transform: { x: transform.x, y: transform.y, k: transform.k },
       dpr,
+      pointScale,
       gamma,
       knockoutColor,
       labelAtlas,

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   DataErrorEventDetail,
   LegendErrorEventDetail,
+  RendererDegradedDetail,
+  RendererDegradedReason,
   SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
@@ -14,6 +16,7 @@ import {
   getExportFailureNotification,
   getExportSuccessNotification,
   getLegendErrorNotification,
+  getRendererDegradedNotification,
   getSelectionDisabledNotification,
 } from './notifications';
 import { TEST_EXAMPLE } from './example-catalog.fixtures';
@@ -262,5 +265,34 @@ describe('explore notifications', () => {
     expect(action?.label).toBe('Report this');
     expect(hrefOf(action)).toMatch(/^mailto:hello@protspace\.app\?/);
     expect(hrefOf(action)).toContain('subject=%5BBug%5D%20Export%20failed');
+  });
+});
+
+describe('getRendererDegradedNotification', () => {
+  const degraded = (reason: RendererDegradedReason, detail?: string): RendererDegradedDetail => ({
+    message: `${reason} message`,
+    severity: 'warning',
+    source: 'scatter-plot',
+    context: { reason, maxTextureSize: 8192, stride: 8, pointCount: 50, detail },
+  });
+
+  it('names contours in the title when they cannot run, and dedupes per reason', () => {
+    const n = getRendererDegradedNotification(
+      degraded('density-unavailable', 'EXT_float_blend missing'),
+    );
+
+    expect(n.title).toBe('Contours unavailable.');
+    expect(n.description).toBe('density-unavailable message');
+    expect(n.dedupeKey).toBe('renderer-degraded:density-unavailable');
+    expect(decodeURIComponent(hrefOf(n.action) ?? '')).toContain(
+      'density-unavailable (maxTextureSize=8192, stride=8, points=50, cause=EXT_float_blend missing)',
+    );
+  });
+
+  it('keeps the quality title for every other reduction', () => {
+    const n = getRendererDegradedNotification(degraded('gamma-pipeline-unavailable'));
+
+    expect(n.title).toBe('Rendering quality reduced.');
+    expect(n.dedupeKey).toBe('renderer-degraded:gamma-pipeline-unavailable');
   });
 });

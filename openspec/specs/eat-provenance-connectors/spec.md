@@ -86,14 +86,19 @@ counts.
 Connector endpoints SHALL be resolved from the current plot's id-index mapping and plane-mapped
 projection coordinates. Projection, plane, data, filter, isolation, or scale changes SHALL rerender
 geometry. Pan and zoom SHALL move connectors through the existing SVG group transform without
-rebuilding their data join.
+rebuilding their data join. Halo radius and stroke width SHALL be sized from the drawn dot radius
+`r` in CSS px, which includes the zoom and plot-area point scale: a halo radius of `max(4, r + 2)`
+and a stroke width of `max(1, 0.3 r)`, updated in place on every zoom.
 
 #### Scenario: Pan and zoom
 
 - **WHEN** the user pans or zooms with connectors active
-- **THEN** lines remain attached to both endpoints and retain a constant screen-space stroke width
-- **AND** endpoint halos retain a constant screen-space diameter while their centres track the
-  transformed source and target coordinates
+- **THEN** lines remain attached to both endpoints, and their stroke width tracks the drawn dot
+  radius rather than the zoom factor, keeping a constant screen-space dash cadence
+- **AND** endpoint halos keep 2 px of clearance around the drawn dot, at least a 4 px radius, while
+  their centres track the transformed source and target coordinates
+- **AND** at 16× zoom, where dots are twice their zoom-1 radius, halos and strokes have grown with
+  them without rebuilding the connector join
 
 #### Scenario: Projection or 3-D plane change
 
@@ -124,8 +129,8 @@ depend on color alone. Empty-space click, deselection, annotation change, overla
 replacement, Escape, and an accessible close control SHALL clear connectors and connector-owned
 highlights.
 
-Endpoint emphasis SHALL use an unfilled, constant-screen-space halo so it localizes the termini
-without covering the encoded protein markers or growing with zoom.
+Endpoint emphasis SHALL use an unfilled halo sized from the drawn dot radius, so it localizes the
+termini without covering the encoded protein markers and grows only as the dots themselves do.
 
 #### Scenario: Empty-space dismissal
 

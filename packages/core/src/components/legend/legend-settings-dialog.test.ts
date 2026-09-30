@@ -161,6 +161,29 @@ describe('renderSettingsDialog', () => {
   });
 });
 
+describe('shape size input', () => {
+  function typeSize(value: string) {
+    const { container, callbacks } = renderSettingsDialogToContainer();
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    return { input, callbacks };
+  }
+
+  it('accepts sizes down to 1 and suggests the default 10', () => {
+    const { input, callbacks } = typeSize('1');
+    expect(input.min).toBe('1');
+    expect(input.placeholder).toBe('10');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
+  });
+
+  it('caps typed sizes at 64', () => {
+    const { input, callbacks } = typeSize('100');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(64);
+    expect(input.value).toBe('64');
+  });
+});
+
 describe('ProtspaceLegend settings dialog numeric inference integration', () => {
   function createLegend(): LegendTestElement {
     return document.createElement('protspace-legend') as LegendTestElement;

@@ -235,6 +235,26 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await waitForProteinCount(page, USER_IMPORT_COUNT);
   });
 
+  test('the demo and a deep link still load under a trailing-slash /explore/', async ({ page }) => {
+    await page.goto('/explore/');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+
+    // Catalog URLs are relative (`./examples/…`); resolved against this route
+    // they would hit /explore/examples/…, which the SPA fallback answers with
+    // HTML. The fixture route's `**/` glob matches either path, so the request
+    // itself must show the bundle was asked for at the app base.
+    const request = page.waitForRequest(SMALL.glob);
+    await page.goto(`/explore/?dataset=${SMALL.id}`);
+    expect(new URL((await request).url()).pathname).toBe(
+      `/${SMALL.entry.url.replace(/^\.\//, '')}`,
+    );
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, SMALL.count);
+  });
+
   test('menu choices push dataset= and Back/Forward walk through them', async ({ page }) => {
     await page.goto('/explore');
     await waitForExploreDataLoad(page);

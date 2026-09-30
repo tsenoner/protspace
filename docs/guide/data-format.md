@@ -27,6 +27,13 @@ This bundled format allows efficient loading in the browser while keeping everyt
 
 The optional settings section is stored as `settings.parquet`, a one-row Parquet table with a `settings_json` column. It stores legend customizations (colors, shapes, ordering, visibility, palette, numeric binning settings) and export options (image dimensions, legend sizing) per annotation. When present, these settings are applied automatically on load so the visualization renders exactly as it was exported.
 
+The Python CLI writes `settings_json` as a map keyed by annotation name, and keeps the web app's
+envelope when it restyles a bundle that has one. The web app wraps that map as `legendSettings` in
+an envelope, next to `exportOptions` and the optional `publishState` (Figure Editor state),
+`eatOverlayEnabled`, `eatConfidenceThreshold` and `shapeSize`. `shapeSize` is the dataset-wide shape
+size, written only once the user picked one or loaded one from a bundle; on load it overrides every
+annotation's own `shapeSize`. The web app caps either value at 64. Both readers accept both shapes.
+
 ## Tables
 
 ### 1. Annotations Table

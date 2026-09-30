@@ -69,6 +69,7 @@ describe('resolveRenderableView eat-confidence exclusion', () => {
       annotation: 'pfam__eat_confidence',
       projection: 'umap',
       tooltip: [],
+      density: 'off',
     };
 
     const result = resolveRenderableView(data, initialView);

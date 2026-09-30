@@ -1,4 +1,5 @@
 import type { ExampleDataset } from './example-datasets';
+import { resolveExampleUrl } from './example-url';
 
 /**
  * A response that holds the bundle: OK, and not the HTML page a dev or
@@ -10,7 +11,9 @@ function holdsBundle(response: Response): boolean {
 
 /**
  * Starts the download of an example's bundle, always from the app's own
- * origin (`entry.url`).
+ * origin (`entry.url`, rooted at the app base by `resolveExampleUrl` so a
+ * trailing-slash `/explore/` route cannot turn it into a request for the
+ * route's own HTML).
  *
  * A development build is the one exception. Release-hosted bundles are not in
  * the repository, and the dev server only has them after `pnpm
@@ -24,13 +27,15 @@ export async function fetchExampleBundle(
   signal: AbortSignal,
   development: boolean = import.meta.env.DEV,
 ): Promise<Response> {
-  const response = await fetch(entry.url, { signal });
+  const url = resolveExampleUrl(entry.url);
+  const response = await fetch(url, { signal });
   if (!development || !entry.devFallbackUrl || holdsBundle(response)) {
     return response;
   }
   void response.body?.cancel().catch(() => {});
+  const fallbackUrl = resolveExampleUrl(entry.devFallbackUrl);
   console.warn(
-    `${entry.url} is not served locally (run \`pnpm examples:fetch\`); fetching ${entry.devFallbackUrl} instead.`,
+    `${url} is not served locally (run \`pnpm examples:fetch\`); fetching ${fallbackUrl} instead.`,
   );
-  return fetch(entry.devFallbackUrl, { signal });
+  return fetch(fallbackUrl, { signal });
 }

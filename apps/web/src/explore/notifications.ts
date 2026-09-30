@@ -218,7 +218,9 @@ export function getRendererDegradedNotification(detail: RendererDegradedDetail):
   const context = detail.context;
   const reason = context?.reason ?? 'unknown';
   return {
-    title: 'Rendering quality reduced.',
+    // Contours are a feature the user switched on, not a quality level.
+    title:
+      reason === 'density-unavailable' ? 'Contours unavailable.' : 'Rendering quality reduced.',
     description: detail.message,
     durationMs: 10_000,
     dedupeKey: `renderer-degraded:${reason}`,

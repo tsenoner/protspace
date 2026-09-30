@@ -9,6 +9,7 @@ The scatterplot is the main visualization area where proteins appear as points. 
 | Zoom in/out         | Mouse wheel or pinch gesture             |
 | Pan                 | Click + drag on background               |
 | Reset view          | Double-click on background               |
+| Focus a category    | Hold **Shift** and hover a point         |
 | Select one          | Click a point                            |
 | Add to selection    | **⌘/Ctrl** + click another point         |
 | Deselect one        | Click it again, or use the search box    |
@@ -25,6 +26,16 @@ The scatterplot is the main visualization area where proteins appear as points. 
 - **Zoom**: Scroll wheel or pinch gesture
 - **Pan**: Click and drag on the background
 - **Reset**: Double-click the scatterplot to fit all proteins
+
+Dots grow as you zoom in, so single proteins stay easy to see and to hover: a dot's radius is ×1.4
+at 4× zoom, ×2 at 16×, and never more than ×4. Zooming out never shrinks them below their unzoomed
+size, which you set with the shape size in the [legend](/explore/legend#shared-settings). Dots are
+also a little larger on a big plot and a little smaller on a small one (×0.8 to ×1.5 against a
+1000 × 700 px plot), and the same size on every pixel density. Hovering picks a dot anywhere within
+its drawn radius, or within 4 px of its centre when it is smaller than that.
+
+To see where categories concentrate when their points overlap, turn on
+[Contours](/explore/control-bar#_10-contours).
 
 ## Selection
 
@@ -84,6 +95,14 @@ Hover over a point to see a tooltip with details about that protein:
 - **Scores** (for InterPro domain annotations, e.g., E-values) or **evidence codes** (for GO terms, subcellular location, etc., e.g., EXP, IDA)
 
 Protein name, gene name, and UniProtKB ID are tooltip-only and don't appear in the [Annotation dropdown](/explore/control-bar#_2-annotation-selector).
+
+### Focusing a Category
+
+Hold **Shift** while hovering a point to see where its category sits: every protein sharing one of its values in the current annotation stays bright, everything else fades. Move to another point to switch category; release **Shift** or move off the point to go back.
+
+- Hovering a point in the legend's **Other** group focuses the whole group
+- Hidden legend values stay hidden, and the tooltip is hidden while focusing
+- Focus is only a preview: it does not change the selection, and it is off while proteins are selected
 
 ### Duplicate Points
 

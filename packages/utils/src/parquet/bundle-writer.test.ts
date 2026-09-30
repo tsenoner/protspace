@@ -170,6 +170,14 @@ describe('bundle-writer', () => {
       });
       expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(3);
     });
+
+    it('writes a settings part when the shape size is the only persisted state', () => {
+      const buffer = createParquetBundle(createMockVisualizationData(), {
+        includeSettings: true,
+        settings: { legendSettings: {}, exportOptions: {}, shapeSize: 12 },
+      });
+      expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(3);
+    });
   });
 
   describe('generateBundleFilename', () => {
