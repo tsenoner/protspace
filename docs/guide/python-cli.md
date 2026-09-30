@@ -629,7 +629,8 @@ values in one cell with `;` outside parentheses.
 A bundle never carries the internal `organism_id` and `sequence` columns, which ProtSpace fetches
 only to look up taxonomy and sequence-based annotations. `bundle` drops them even when the
 annotations parquet has them (for example from `annotate -a sequence`, whose own parquet keeps
-them), and `transfer` drops them from an older bundle that still carries them.
+them), and `transfer`, `convert` and `style` drop them from an older bundle that still carries
+them.
 
 ## `protspace transfer`
 
@@ -754,7 +755,8 @@ protspace convert old.parquetbundle --in-place
 Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
 (legend colors, shapes, order) and projection statistics are kept as they are, and the file is
 written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
-is reported as current and nothing is written.
+is reported as current and nothing is written. The internal `organism_id` and `sequence`
+columns an older bundle may carry are dropped, as from every bundle ProtSpace writes.
 
 The converted bundle holds the proteins the web app showed for the old file. Older web builds
 were lenient about the protein ID column, and `convert` reads it the way they did, with a

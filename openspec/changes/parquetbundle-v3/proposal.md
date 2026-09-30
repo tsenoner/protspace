@@ -86,7 +86,8 @@ planned for protspace 5.0.0."
 
 - `bundle-format-contract`: the producer now writes six-part v3 bundles, the reader accepts both
   layouts, and the scale scenario targets the columnar reader instead of the legacy
-  threshold-routed conversion.
+  threshold-routed conversion. The internal lookup columns that `main` keeps out of every
+  bundle write are dropped by `convert` and by `style` on a legacy input as well.
 - `point-visibility`: points without finite coordinates are culled when plot data is built, a third
   kind of culling next to query filter and isolation. The requirements that named the picking
   quadtree now name the point grid that replaced it (#477's grid picking).

@@ -67,6 +67,9 @@
 - [x] 2.21 Numeric inference is over the placed proteins, as in v2: a column missing on every
       placed protein is written as labels, and one numeric only over them as labels marked
       `placedNumeric`, keeping the annotation-only protein's label for Python
+- [x] 2.22 `convert` and `style` drop the internal lookup columns (`organism_id`, `sequence`)
+      when they rewrite a v1/v2 input, as `main`'s `write_bundle` and
+      `replace_annotations_in_bundle` (#495) drop them from every other bundle write
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

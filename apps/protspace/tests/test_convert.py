@@ -361,6 +361,37 @@ def test_a_v1_id_column_is_not_migrated_as_a_label(tmp_path, id_column, command)
 
 
 @pytest.mark.parametrize("command", ["convert", "style"])
+def test_the_internal_lookup_columns_are_dropped(tmp_path, command):
+    """A legacy bundle written before ``organism_id`` and ``sequence`` were kept
+    out of bundles still carries them; rewriting its annotations part as v3
+    drops them, as every other write of that part does."""
+    src, out = tmp_path / "old.parquetbundle", tmp_path / "new.parquetbundle"
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["P1", "P2"],
+                "organism_id": ["562", "10036"],
+                "sequence": ["MRVL", "MAAL"],
+                "cat": ["a", "b"],
+            }
+        )
+    )
+    parts = _legacy_bundle(src, cells=["a", "b"], ids=["P1", "P2"])
+    parts[0] = _serialized(annotations)
+    src.write_bytes(PARQUET_BUNDLE_DELIMITER.join(parts))
+
+    if command == "convert":
+        result = _convert(str(src), str(out))
+    else:
+        result = _style(str(src), str(out), "--annotation-styles", STYLES)
+
+    assert result.exit_code == 0, result.output
+    converted = read_tables(out)[0]
+    assert converted.column_names == ["protein_id", "cat"]
+    assert converted.column("cat").to_pylist() == ["a", "b"]
+
+
+@pytest.mark.parametrize("command", ["convert", "style"])
 def test_a_repeated_or_null_legacy_id_keeps_the_last_row(tmp_path, command):
     """The v2 browser keyed annotation rows by id in a Map, so the last row for
     an id won and a null id was skipped; v3 refuses both, so the conversion

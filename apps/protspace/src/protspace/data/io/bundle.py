@@ -468,12 +468,17 @@ def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
     migration runs, which leaves those two alone: an id is a key, and escaping
     one (``sp|P1|A_HUMAN`` to ``sp%7CP1|A_HUMAN``) would detach it from its
     projection rows.
+
+    The internal lookup columns (``organism_id``, ``sequence``) a bundle written
+    before they were dropped still carries are dropped here too, as by every
+    other write of an annotations part.  That happens after the keying, which
+    may have taken ``organism_id`` as the id column and renamed it.
     """
     annotations, projections_metadata, projections_data = _core_tables(core, None)
     version = read_format_version(annotations)
     part1, part2, part3, payloads = encode_v3(
         migrate_legacy_annotation_table(
-            _keyed_as_the_legacy_reader_keyed_it(annotations)
+            _drop_internal_columns(_keyed_as_the_legacy_reader_keyed_it(annotations))
         ),
         projections_metadata,
         projections_data,
