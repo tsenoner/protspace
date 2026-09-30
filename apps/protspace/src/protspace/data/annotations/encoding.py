@@ -64,9 +64,10 @@ def decode_field(s: str) -> str:
     return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
 
 
-def read_format_version(table: pa.Table) -> int:
+def read_format_version(table: pa.Table | pa.Schema) -> int:
     """Return the annotations wire-format version, defaulting legacy tables to v1."""
-    metadata = table.schema.metadata or {}
+    schema = table if isinstance(table, pa.Schema) else table.schema
+    metadata = schema.metadata or {}
     try:
         return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
     except (TypeError, ValueError):

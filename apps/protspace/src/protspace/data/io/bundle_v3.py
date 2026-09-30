@@ -143,11 +143,24 @@ def _counts_i32(counts: np.ndarray, what: str) -> np.ndarray:
     return counts.astype("<i4")
 
 
+def _flat(column: pa.ChunkedArray | pa.Array) -> pa.Array:
+    """One contiguous Arrow array (``ListArray.from_arrays`` refuses chunks).
+
+    Every v3 part is one row group, so the single-chunk branch is what actually
+    runs (a zero-row part still reads back as one empty chunk).  The concat stays
+    because pyarrow splits a column past the 2 GB BinaryArray limit into several
+    chunks, and taking chunk 0 there would silently truncate the column.
+    """
+    if not isinstance(column, pa.ChunkedArray):
+        return column
+    if column.num_chunks == 1:
+        return column.chunk(0)
+    return pa.concat_arrays(column.chunks)
+
+
 def _as_string(column: pa.ChunkedArray | pa.Array) -> pa.Array:
     """Flatten to a single ``string`` array, rendering bools as ``True``/``False``."""
-    arr = column.combine_chunks() if isinstance(column, pa.ChunkedArray) else column
-    if isinstance(arr, pa.ChunkedArray):  # combine_chunks keeps the wrapper
-        arr = arr.combine_chunks()
+    arr = _flat(column)
     if pa.types.is_boolean(arr.type):
         return pc.if_else(arr, pa.scalar("True"), pa.scalar("False"))
     if pa.types.is_string(arr.type):
@@ -234,7 +247,7 @@ def _encode_annotation_column(
     caller picks the physical column name from ``manifest_entry["kind"]``.
     """
     source_type = _source_type(column.type)
-    arr = column.combine_chunks() if isinstance(column, pa.ChunkedArray) else column
+    arr = _flat(column)
 
     # Arrow-numeric source columns stay numeric regardless of content.  The
     # browser would call an all-null column categorical, but keeping the kind
@@ -596,21 +609,6 @@ def encode_v3(
 
 def _read(part: bytes) -> pa.Table:
     return pq.read_table(io.BytesIO(part))
-
-
-def _flat(column: pa.ChunkedArray | pa.Array) -> pa.Array:
-    """One contiguous Arrow array (``ListArray.from_arrays`` refuses chunks).
-
-    Every v3 part is one row group, so the single-chunk branch is what actually
-    runs (a zero-row part still reads back as one empty chunk).  The concat stays
-    because pyarrow splits a column past the 2 GB BinaryArray limit into several
-    chunks, and taking chunk 0 there would silently truncate the column.
-    """
-    if not isinstance(column, pa.ChunkedArray):
-        return column
-    if column.num_chunks == 1:
-        return column.chunk(0)
-    return pa.concat_arrays(column.chunks)
 
 
 def _read_payloads(part: bytes) -> dict[str, bytes]:

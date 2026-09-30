@@ -30,7 +30,10 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from protspace.data.annotations.encoding import FORMAT_VERSION_KEY, stamp_format_version
+from protspace.data.annotations.encoding import (
+    read_format_version,
+    stamp_format_version,
+)
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION, decode_v3, encode_v3
 
@@ -57,15 +60,12 @@ def _part_container_version(part: bytes) -> int:
     ``protspace style --dump-settings``.
     """
     try:
-        metadata = pq.read_metadata(io.BytesIO(part)).metadata or {}
+        schema = pq.read_schema(io.BytesIO(part))
     except pa.ArrowInvalid as exc:
         raise ValueError(
             f"parquetbundle part 1 is not readable as parquet: {exc}"
         ) from exc
-    try:
-        return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
-    except (TypeError, ValueError):
-        return 1
+    return read_format_version(schema)
 
 
 def _split(data: bytes) -> tuple[list[bytes], bytes | None, bytes | None, bytes | None]:
