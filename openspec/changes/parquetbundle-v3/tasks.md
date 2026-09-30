@@ -40,6 +40,10 @@
       disagrees (integer type kept, `int64` otherwise), and `decode_v3` returns the manifest's
       dimension in the metadata it decodes
 
+- [x] 2.13 `protspace style` writes a legacy input as v3 through `convert`'s encoding (one warning
+      naming the input version), keeps a v3 input's parts byte for byte; tests, the CLI guide's
+      `style` section and the data-format writer table updated
+
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
 - [x] 3.1 v3 reader keeps NaN for missing coordinates; legacy reader fills coordinate arrays with

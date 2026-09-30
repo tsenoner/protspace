@@ -20,7 +20,8 @@ v1/v2 files.
   settings; statistics; payloads (label dictionaries and CSR buffers). The physical schema is
   documented in `docs/guide/data-format.md` and not repeated here.
 - **v3 is the only format written.** The Python writer already emits v3. The web exporter
-  (`packages/utils/src/parquet/bundle-writer.ts`) switches from v2 to v3.
+  (`packages/utils/src/parquet/bundle-writer.ts`) switches from v2 to v3. `protspace style`,
+  which used to keep a legacy bundle legacy, writes a v1/v2 input as v3 too.
 - **v1/v2 stay readable but are deprecated.** Removal is planned for protspace 5.0.0. Python logs
   one warning per legacy read, naming `protspace convert` and 5.0.0. The web app shows a
   non-blocking notice when a user loads a v1/v2 bundle, suggesting a re-export or
@@ -91,7 +92,7 @@ planned for protspace 5.0.0."
 
 - Python (`apps/protspace`): `data/io/bundle_v3.py` (NaN coordinates, added identifier rows,
   dimension from data, boolean spelling, finite-only decode, container-version key, grammar
-  refusal), `data/io/bundle.py` (deprecation warning, container-key detection),
+  refusal), `data/io/bundle.py` (deprecation warning, container-key detection, `style` upgrading a legacy input),
   `data/annotations/encoding.py` (`upgrade_cell_grammar`), `cli/bundle.py` and `cli/transfer.py`
   (explicit grammar), a new `cli/convert.py`, the CLI docs and the Colab notebook where they list
   commands.

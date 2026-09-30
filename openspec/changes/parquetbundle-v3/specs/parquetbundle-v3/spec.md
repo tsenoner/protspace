@@ -5,8 +5,8 @@
 A written bundle SHALL be a six-part container whose first part carries
 `protspace_container_version` `"3"` and a `protspace_v3_manifest` in its Parquet key-value
 metadata, with the physical layout documented in `docs/guide/data-format.md`. This applies to every bundle written by the Python
-package (`prepare`, `bundle`, `transfer`, `convert` and any other command that writes a bundle
-rather than editing settings in place) and by the web app's bundle export.
+package (`prepare`, `bundle`, `transfer`, `style`, `convert` and any other command that writes a
+bundle) and by the web app's bundle export.
 
 #### Scenario: The Python pipeline writes a bundle
 

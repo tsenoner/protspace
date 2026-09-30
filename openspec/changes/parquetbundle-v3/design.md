@@ -78,6 +78,22 @@ reported as already current, and nothing is written, not even to a separate `OUT
 In the browser, loading a legacy bundle and exporting it writes v3. That is the converter for users
 without Python, and it needs no extra UI.
 
+### `protspace style` upgrades a legacy input
+
+`style` replaces the settings part (`replace_settings_in_bundle`). On a v3 input it keeps every
+other part byte for byte, as before. On a v1/v2 input it used to do the same, so a styled legacy
+bundle stayed legacy. That made `style` the one command whose output format depended on its input,
+and it kept producing files in a format that is deprecated. It now encodes a legacy input's core
+exactly as `convert` does (the same helper, v1 grammar migrated from the part's own stamp),
+carries the statistics part over, writes the new settings, and logs one warning naming the input's
+version and saying the output is v3, since builds from before v3 cannot open it. The input is never
+written, so `style old.parquetbundle old.parquetbundle` is the only way it replaces a legacy file,
+as for `convert`.
+
+The alternative, keeping `style` a pure settings edit and leaving `convert` as the only upgrade
+path, was the first version of this change. It was dropped because "every write emits v3" is the
+rule users can rely on, and the cost is a re-encode that `transfer` already pays.
+
 ### Missing coordinates are NaN, culled in one place
 
 v2's long-format projections simply had no row for a protein a projection did not cover. The v2
@@ -239,8 +255,5 @@ reads v3, which is why the reader lands in the same release as the writer.
 
 ## Open Questions
 
-- `protspace style` edits settings in place and keeps a legacy bundle legacy
-  (`replace_settings_in_bundle` preserves every other part byte for byte). "v3 on every write"
-  would have it upgrade instead. This change leaves `style` as it is, since it is a settings edit
-  and not a re-encode, and `convert` is the upgrade path. Revisit if users expect `style` to
-  modernise the file.
+None. `protspace style` on a legacy bundle, the one open question of the first version, is settled
+above: it writes v3.

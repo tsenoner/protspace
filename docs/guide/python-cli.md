@@ -684,6 +684,11 @@ protspace style data.parquetbundle --dump-settings
 The output path is only required when you are writing styles, not for `--dump-settings` or
 `--generate-template`.
 
+The output is always a format v3 bundle. A v3 input keeps its data parts byte for byte and only
+its settings change. A v1 or v2 input is upgraded on the way, exactly as
+[`protspace convert`](#protspace-convert) would write it, and `style` logs a warning saying so,
+because builds from before format v3 cannot open the result.
+
 ## `protspace convert`
 
 Rewrite a bundle written in format v1 or v2 as format v3. Reading v1/v2 bundles is deprecated:

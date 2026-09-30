@@ -12,10 +12,10 @@ There are two container layouts. Which one a file uses is recorded in the Parque
 metadata of its first part: a v3 file carries `protspace_container_version`, a legacy one does not
 (see [Version detection](#version-detection)):
 
-| Layout                    | Parts    | Written by                                                                                                        |
-| ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| Columnar (format v3)      | always 6 | every export from the web app; `protspace prepare`, `bundle`, `transfer` and `convert`                            |
-| Legacy (format v1 and v2) | 3 to 5   | older releases; `protspace style`, which edits settings in place and keeps the layout of the bundle it was handed |
+| Layout                    | Parts    | Written by                                                                                      |
+| ------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| Columnar (format v3)      | always 6 | every export from the web app; `protspace prepare`, `bundle`, `transfer`, `style` and `convert` |
+| Legacy (format v1 and v2) | 3 to 5   | older releases                                                                                  |
 
 v3 is the current format. v1 and v2 files still load, but reading them is deprecated and ends in
 protspace 5.0.0; see [Legacy formats](#legacy-formats-v1-and-v2) for how to convert them.

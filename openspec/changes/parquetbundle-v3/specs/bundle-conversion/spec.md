@@ -81,6 +81,33 @@ interrupted conversion leaves the destination as it was.
 - **THEN** the command exits non-zero, the input file is byte-identical to before, and no temporary
   file is left next to it
 
+### Requirement: `protspace style` SHALL write a v1 or v2 input as v3
+
+`protspace style` SHALL write its output as a v3 container whatever the input's format. A v1 or v2
+input SHALL be encoded as `protspace convert` would encode it, with its statistics part kept and the
+new settings written, and the command SHALL log one warning that names the input's format version
+and says the output is v3. A v3 input SHALL keep every part other than the settings byte for byte.
+
+#### Scenario: Styling a v2 bundle
+
+- **WHEN** `protspace style old.parquetbundle styled.parquetbundle --annotation-styles styles.json`
+  runs on a v2 bundle
+- **THEN** `styled.parquetbundle` is a v3 container whose core and payload parts equal those
+  `protspace convert` writes for `old.parquetbundle`, it carries the new settings, one warning
+  says the output is v3, and `old.parquetbundle` is unchanged
+
+#### Scenario: Styling a v1 bundle
+
+- **WHEN** `protspace style` runs on a v1 bundle
+- **THEN** its cells are migrated to the v2 grammar once, as by `protspace convert`, and the output
+  is v3
+
+#### Scenario: Styling a v3 bundle
+
+- **WHEN** `protspace style` runs on a v3 bundle
+- **THEN** the output's parts other than the settings are byte-identical to the input's, and no
+  format warning is logged
+
 ### Requirement: Exporting a loaded v1 or v2 bundle from the web app SHALL write v3
 
 The web app SHALL write a v3 bundle when a user exports a dataset that was loaded from a v1 or v2

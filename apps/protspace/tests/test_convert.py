@@ -352,14 +352,16 @@ def test_style_warns_once_per_run(tmp_path, caplog):
     src = tmp_path / "old.parquetbundle"
     _legacy_bundle(src, cells=["a", "b"], settings=create_settings_parquet(SETTINGS))
 
+    out = tmp_path / "styled.parquetbundle"
     with caplog.at_level(logging.WARNING, logger=BUNDLE_LOGGER):
-        add_annotation_styles(
-            str(src),
-            {"cat": {"colors": {"a": "#00FF00"}}},
-            str(tmp_path / "styled.parquetbundle"),
-        )
+        add_annotation_styles(str(src), {"cat": {"colors": {"a": "#00FF00"}}}, str(out))
 
     assert len(_legacy_warnings(caplog)) == 1
+    # ...and the styled output is v3, which it says once.
+    upgrades = [r for r in caplog.records if "writing" in r.getMessage()]
+    assert len(upgrades) == 1
+    assert len(out.read_bytes().split(PARQUET_BUNDLE_DELIMITER)) == 6
+    assert read_tables(out)[0].column("cat").to_pylist() == ["a", "b"]
 
 
 def test_convert_does_not_warn(tmp_path):

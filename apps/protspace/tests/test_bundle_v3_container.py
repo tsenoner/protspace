@@ -31,6 +31,8 @@ from protspace.data.annotations.encoding import (
 from protspace.data.io.bundle import (
     PARQUET_BUNDLE_DELIMITER,
     _write_parts,
+    convert_bundle,
+    create_settings_parquet,
     extract_bundle_to_dir,
     read_bundle,
     read_settings_from_bundle,
@@ -263,28 +265,48 @@ def test_legacy_v1_bundle_is_not_migrated_by_a_read(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_replace_settings_keeps_a_legacy_bundle_legacy(tmp_path):
+@pytest.mark.parametrize("stamp", [True, False], ids=["v2", "v1"])
+def test_replace_settings_upgrades_a_legacy_bundle(tmp_path, caplog, stamp):
+    """Every write emits v3, so styling a legacy bundle upgrades it: to exactly
+    what ``convert`` writes, v1 cell grammar migrated, and it says so once."""
     src = tmp_path / "legacy.parquetbundle"
     out = tmp_path / "styled.parquetbundle"
-    parts = legacy_bundle(src)
+    converted = tmp_path / "converted.parquetbundle"
+    legacy_bundle(src, stamp=stamp, settings=create_settings_parquet({"old": 1}))
+    before = src.read_bytes()
 
-    replace_settings_in_bundle(src, out, {"new": 2})
+    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle"):
+        replace_settings_in_bundle(src, out, {"new": 2})
 
+    assert src.read_bytes() == before
     out_parts = parts_of(out)
-    assert len(out_parts) == 4  # no payload slot invented
-    assert out_parts[:3] == parts[:3]  # core preserved byte-for-byte
+    assert len(out_parts) == 6
+    assert (
+        CONTAINER_VERSION_KEY in pq.read_schema(pa.BufferReader(out_parts[0])).metadata
+    )
     assert read_bundle(out)[1] == {"new": 2}
 
+    convert_bundle(src, converted)
+    assert out_parts[:3] == parts_of(converted)[:3]
+    assert out_parts[5] == parts_of(converted)[5]
 
-def test_replace_settings_keeps_the_payloads_of_a_v3_bundle(tmp_path):
+    upgrades = [r for r in caplog.records if "writing" in r.getMessage()]
+    assert len(upgrades) == 1
+    assert f"v{2 if stamp else 1} parquetbundle" in upgrades[0].getMessage()
+
+
+def test_replace_settings_keeps_the_payloads_of_a_v3_bundle(tmp_path, caplog):
     src = tmp_path / "b.parquetbundle"
     out = tmp_path / "styled.parquetbundle"
     write_bundle(pipeline_tables(), src, settings={"old": 1})
 
-    replace_settings_in_bundle(src, out, {"new": 2})
+    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle"):
+        replace_settings_in_bundle(src, out, {"new": 2})
 
+    assert caplog.records == []  # nothing to upgrade, nothing to say
     in_parts, out_parts = parts_of(src), parts_of(out)
     assert len(out_parts) == 6
+    assert out_parts[:3] == in_parts[:3]  # the core is kept byte for byte
     assert out_parts[5] == in_parts[5]
     assert read_bundle(out)[1] == {"new": 2}
     assert read_tables(out)[0].equals(pipeline_tables()[0])

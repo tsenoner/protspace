@@ -28,8 +28,9 @@ back v2-shaped tables again, so nothing above this module has to know.  See
 Reading a legacy container is deprecated: every public *read* of one logs a
 single warning pointing at ``protspace convert`` (:func:`convert_bundle`), and
 support is removed in protspace 5.0.0.  The writers here read their input
-silently -- they emit v3, or (``replace_settings_in_bundle``) keep the parts
-byte for byte -- so a command that reads and then rewrites a bundle warns once.
+silently and always emit v3 (``replace_settings_in_bundle`` keeps a v3 input's
+parts byte for byte and upgrades a legacy one), so a command that reads and
+then rewrites a bundle warns once.
 """
 
 import io
@@ -356,11 +357,22 @@ def replace_settings_in_bundle(
 ) -> None:
     """Append or replace the settings (4th) part in a bundle.
 
-    Every other part is preserved byte-for-byte, so a legacy bundle stays legacy
-    and a v3 bundle keeps its payloads; an existing statistics part survives, so
-    styling a statistics-bearing bundle is non-lossy.
+    A v3 input keeps every other part byte for byte.  A legacy (v1/v2) input is
+    upgraded to v3 on the way, exactly as :func:`convert_bundle` would write it,
+    because every write emits v3; that is logged once.  An existing statistics
+    part survives either way, so styling a statistics-bearing bundle is
+    non-lossy.
     """
     core, _settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
+    if payloads is None:
+        core, payloads, version = _legacy_core_as_v3(core)
+        logger.warning(
+            "%s is a v%d parquetbundle; writing %s as v3, which protspace builds "
+            "from before format v3 cannot open.",
+            input_path,
+            version,
+            output_path,
+        )
     _write_parts(
         output_path, core, create_settings_parquet(settings), statistics, payloads
     )
@@ -411,6 +423,18 @@ def convert_bundle(input_path: Path, output_path: Path) -> int:
     if payloads is not None:
         return CONTAINER_VERSION
 
+    core, payloads, version = _legacy_core_as_v3(core)
+    _write_parts(output_path, core, settings, statistics, payloads)
+    return version
+
+
+def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
+    """Encode a legacy container's three core parts as v3.
+
+    Returns ``(core_parts, payloads, cell_grammar_version)``.  The annotations
+    part is read with its stamp intact, so a v1 table is migrated to the v2 cell
+    grammar here, explicitly, and a v2 one passes through.
+    """
     annotations, projections_metadata, projections_data = _core_tables(core, None)
     version = read_format_version(annotations)
     part1, part2, part3, payloads = encode_v3(
@@ -418,8 +442,7 @@ def convert_bundle(input_path: Path, output_path: Path) -> int:
         projections_metadata,
         projections_data,
     )
-    _write_parts(output_path, [part1, part2, part3], settings, statistics, payloads)
-    return version
+    return [part1, part2, part3], payloads, version
 
 
 def create_settings_parquet(settings_dict: dict) -> bytes:
