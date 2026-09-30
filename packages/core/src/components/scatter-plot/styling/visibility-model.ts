@@ -40,7 +40,7 @@ import type {
   PlotDataPoint,
   VisualizationData,
 } from '@protspace/utils';
-import { isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
+import { NA_VALUE, isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
 
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
@@ -274,7 +274,7 @@ export function computeVisibilityModel(
   if (focusedValues && data && annotation && annotationRows && Array.isArray(annotation.values)) {
     const focused = new Set(focusedValues);
     const others = annotation.values.map((v) => toInternalValue(v)).filter((k) => !focused.has(k));
-    if (!focused.has('__NA__')) others.push('__NA__');
+    if (!focused.has(NA_VALUE)) others.push(NA_VALUE);
     unfocusedMask = buildHiddenMask(data, annotation, annotationRows, others);
   }
 

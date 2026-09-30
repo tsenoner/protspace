@@ -643,6 +643,12 @@ export class ProtspaceScatterplot extends LitElement {
     }
   };
 
+  willUpdate(changedProperties: Map<string, unknown>) {
+    // Before `updated()` rebuilds the style getters, so this render already uses the re-derived
+    // focus (a change here joins the current update instead of scheduling another one).
+    this._reconcileFocus(changedProperties);
+  }
+
   updated(changedProperties: Map<string, unknown>) {
     this._reconcileSelectionDefaults(changedProperties);
     this._reconcileFilterOnDataSwap(changedProperties);
@@ -661,7 +667,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._refreshStyleGettersCache(changedProperties);
     this._reconcileSelectionOverlays(changedProperties);
     this._reconcileTooltipMeasurement(changedProperties);
-    this._reconcileFocus(changedProperties);
     if (this.data && changedProperties.has('eatOverlayEnabled')) {
       this.dispatchEvent(
         new CustomEvent('data-change', {
@@ -1753,6 +1758,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (!this._scales) return;
     // d3.pointer must be read synchronously: event.currentTarget is null after dispatch.
     const [mouseX, mouseY] = d3.pointer(event);
+    // Mouse events carry the real modifier state: resync in case a Shift keyup never reached us.
+    this._shiftDown = event.shiftKey;
     this._pendingHover = { event, mouseX, mouseY };
     // Coalesce rapid mousemoves to at most one hover computation per frame (uses latest position).
     if (this._hoverRaf !== null) return;
@@ -1882,12 +1889,15 @@ export class ProtspaceScatterplot extends LitElement {
   /** Shift+hover focus: keep the hovered point's category, fade everything else. */
   private _updateFocus(shift: boolean): void {
     const point = this._hoveredPoint;
-    // The materialized data is what the visibility model reads: numeric bins and EAT
-    // predictions exist only there, not in the raw `this.data`.
-    const data = this._getMaterializedData() ?? this.data;
     let next: string[] | null = null;
     // A selection outranks focus, so skip the O(N) focus mask while one is active.
-    if (shift && point && data && this.selectedAnnotation && !this.selectedProteinIds.length) {
+    // The materialized data is what the visibility model reads: numeric bins and EAT
+    // predictions exist only there, not in the raw `this.data`.
+    const data =
+      shift && point && this.selectedAnnotation && !this.selectedProteinIds.length
+        ? (this._getMaterializedData() ?? this.data)
+        : null;
+    if (point && data) {
       const values = getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation);
       if (values.length > 0) {
         // A point in the "Other" bucket focuses the whole bucket, as the legend shows it.
