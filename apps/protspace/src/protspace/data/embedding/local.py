@@ -34,8 +34,8 @@ import numpy as np
 from tqdm import tqdm
 
 from protspace.data.embedding.store import (
+    begin_run,
     finish_run,
-    load_existing_ids,
     save_embeddings,
     validate_headers,
 )
@@ -283,10 +283,9 @@ def embed_sequences(
         )
 
     h5_path = Path(h5_path)
-    existing = load_existing_ids(h5_path)
-    remaining = {k: v for k, v in sequences.items() if k not in existing}
-    if existing:
-        logger.info("Resuming: %d already embedded in %s", len(existing), h5_path)
+    # Claims the file for this backend and model, and drops the proteins it
+    # already holds a current vector for (see store.begin_run).
+    remaining = begin_run(h5_path, sequences, backend="local", model=embedder)
 
     # Sequences a capability limit puts out of reach: recorded as skipped rather
     # than failed, so they are reported and named but do not fail the run.
@@ -322,7 +321,13 @@ def embed_sequences(
                     vecs = _embed_batch(
                         processed, mod_type, model, tokenizer, device, cfg.max_length
                     )
-                    save_embeddings(h5_path, dict(zip(batch_ids, vecs, strict=True)))
+                    save_embeddings(
+                        h5_path,
+                        dict(zip(batch_ids, vecs, strict=True)),
+                        sequences=remaining,
+                        backend="local",
+                        model=embedder,
+                    )
                     i += bs
                     pbar.update(len(batch_ids))
                 except torch.cuda.OutOfMemoryError:
@@ -352,6 +357,11 @@ def embed_sequences(
         h5_path,
         outstanding,
         skipped=skipped,
+        # Only this run's own work needs its digests checked, and at Swiss-Prot
+        # scale that is the difference between one scan and two: everything else
+        # was proven current by begin_run, and a skipped sequence is on disk only
+        # under residues that are no longer this protein's.
+        sequences=remaining,
         retry_hint=(
             f"Raise --max-length (currently {cfg.max_length}) or use "
             f"--backend biocentral, which has no length cap."

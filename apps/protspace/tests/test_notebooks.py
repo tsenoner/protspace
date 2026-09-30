@@ -200,6 +200,67 @@ def test_notebook_fallback_sets_match_the_package(path: Path):
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
+def test_no_notebook_imports_a_private_protspace_name(path: Path):
+    """Cell 1 installs the *released* protspace while this notebook is main's.
+
+    A name added this release does not exist in the release the cell installs,
+    so importing one breaks setup for every reader until the next release — and
+    the failure surfaces as "restart the session", which cannot fix it. Public
+    names are the contract that survives the lag; private ones are not, and a
+    duplicated fallback copy is a second source of truth that drifts.
+    """
+    transform = pytest.importorskip(
+        "IPython.core.inputtransformer2",
+        reason="IPython is a dev-group dependency (via jupyter)",
+    ).TransformerManager()
+
+    private = []
+    for index, source in _code_cells(path):
+        for node in ast.walk(ast.parse(transform.transform_cell(source))):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            if not node.module.startswith("protspace"):
+                continue
+            private += [
+                f"cell {index}: {node.module}.{alias.name}"
+                for alias in node.names
+                if alias.name.startswith("_")
+            ]
+    assert not private, (
+        f"{path.name} imports private protspace names: {', '.join(private)}. "
+        "Use a public name, or inline the few lines the notebook needs."
+    )
+
+
+def test_preparation_names_each_bundle_distinctly():
+    """A fixed download name is what issue #338 reads as a stale projection.
+
+    Two Generate actions land as `data.parquetbundle` and `data (1).parquetbundle`,
+    and opening the first shows the first run's coordinates. Structural rather
+    than a substring match: the point is that the name carries something from
+    this run, not that it is spelled any particular way.
+    """
+    transform = pytest.importorskip(
+        "IPython.core.inputtransformer2",
+        reason="IPython is a dev-group dependency (via jupyter)",
+    ).TransformerManager()
+
+    values = [
+        value
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
+        for node in ast.walk(ast.parse(transform.transform_cell(source)))
+        for name, value in _assignments(node)
+        if name == "output_path"
+    ]
+
+    assert values, "the Generate callback assigns no output_path"
+    assert all(
+        any(isinstance(part, ast.FormattedValue) for part in ast.walk(value))
+        for value in values
+    ), "every bundle name is a constant, so two runs download the same file name"
+
+
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
 def test_cells_carry_ids_when_the_format_requires_them(path: Path):
     """nbformat >= 4.5 requires cell ids.
 

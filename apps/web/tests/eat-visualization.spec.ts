@@ -120,39 +120,15 @@ async function getProteinScreenPosition(
 ): Promise<{ x: number; y: number }> {
   return page.evaluate((id) => {
     const plot = document.querySelector('protspace-scatterplot') as
-      | (HTMLElement & {
-          _plotData?: {
-            length: number;
-            xs: Float32Array;
-            ys: Float32Array;
-            originalIndices: Int32Array | null;
-            proteinIds: string[];
-          };
-          _scales?: { x(value: number): number; y(value: number): number };
-          _transform?: { x: number; y: number; k: number };
+      | (Element & {
+          getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
         })
       | null;
-    const canvas = plot?.shadowRoot?.querySelector('canvas');
-    const data = plot?._plotData;
-    const scales = plot?._scales;
-    const transform = plot?._transform;
-    if (!plot || !canvas || !data || !scales || !transform) {
-      throw new Error('Scatter plot geometry is not ready');
+    const position = plot?.getProteinClientPosition(id);
+    if (!position) {
+      throw new Error(`Protein ${id} is not plotted, or the scatter plot has no geometry yet`);
     }
-
-    const proteinIndex = data.proteinIds.indexOf(id);
-    const slot = data.originalIndices
-      ? Array.from(data.originalIndices).findIndex((value) => value === proteinIndex)
-      : proteinIndex;
-    if (proteinIndex < 0 || slot < 0) {
-      throw new Error(`Protein ${id} is not in the rendered view`);
-    }
-
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: rect.left + scales.x(data.xs[slot]) * transform.k + transform.x,
-      y: rect.top + scales.y(data.ys[slot]) * transform.k + transform.y,
-    };
+    return position;
   }, proteinId);
 }
 
@@ -206,6 +182,8 @@ async function sampleEncodedExportMarkers(
             } | null;
             config?: Record<string, unknown>;
             updateComplete?: Promise<unknown>;
+            _webglRenderer?: { pointScale(): number };
+            _mergedConfig?: { width: number; height: number };
           })
         | null;
       const plotData = plot?._plotData;
@@ -283,11 +261,12 @@ async function sampleEncodedExportMarkers(
         const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
         return Array.from(rgba);
       };
-      // At 0.75 * radius (sqrt(pointSize)/4 vs. the sqrt(pointSize)/3 sprite radius, see
-      // stage-point.ts POINT_SIZE_DIVISOR) this offset lands well inside the ring band for both
-      // the pre-Task-3 ringWidth clamp(aa*1.75, 0.22, 0.42) and the thicker
-      // clamp(aa*1.75, 0.30, 0.55) — the wider ring only grows margin, it never shrinks it.
-      const ringOffset = Math.max(1, Math.round(Math.sqrt(pointSize) / 4));
+      const live = plot._mergedConfig!;
+      const exportRadius =
+        (Math.sqrt(pointSize) / 3) *
+        plot._webglRenderer!.pointScale() *
+        Math.sqrt((width * height) / (live.width * live.height));
+      const ringOffset = Math.max(1, Math.round(0.75 * exportRadius));
       const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
       const predictedRingOffsets = [
         [-ringOffset, 0],
@@ -634,7 +613,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('.connector-status')).not.toBeVisible();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const endpoint = plot.locator('circle.eat-provenance-endpoint').first();
+  const haloRadius = () =>
+    plot.evaluate((el) => {
+      const p = el as unknown as { _drawnPointRadiusCss(): number };
+      return Math.max(4, p._drawnPointRadiusCss() + 2);
+    });
   const endpointBeforeZoom = await endpoint.boundingBox();
+  const haloBeforeZoom = await haloRadius();
   const plotBounds = await plot.boundingBox();
   expect(endpointBeforeZoom).not.toBeNull();
   expect(plotBounds).not.toBeNull();
@@ -643,9 +628,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     plotBounds!.y + plotBounds!.height / 2,
   );
   await page.mouse.wheel(0, -500);
+  await expect.poll(haloRadius).toBeGreaterThan(haloBeforeZoom);
   await expect
-    .poll(async () => (await endpoint.boundingBox())?.width ?? 0)
-    .toBeCloseTo(endpointBeforeZoom!.width, 0);
+    .poll(async () => {
+      const grownBy = 2 * ((await haloRadius()) - haloBeforeZoom);
+      return ((await endpoint.boundingBox())?.width ?? 0) - endpointBeforeZoom!.width - grownBy;
+    })
+    .toBeCloseTo(0, 0);
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const firstConnectorX = await plot
     .locator('line.eat-provenance-connector')

@@ -434,13 +434,53 @@ class TestEmbedSequencesCompleteness:
         real_save = bc.save_embeddings
         dropped = sorted(seqs)[0]
 
-        def lossy_save(path, embeddings):
-            real_save(path, {k: v for k, v in embeddings.items() if k != dropped})
+        def lossy_save(path, embeddings, **kwargs):
+            real_save(
+                path, {k: v for k, v in embeddings.items() if k != dropped}, **kwargs
+            )
 
         monkeypatch.setattr(bc, "save_embeddings", lossy_save)
 
         with pytest.raises(ValueError, match="Embedding incomplete"):
             bc_mod.embed_sequences(seqs, "m", h5_path, embed_config=bc.EmbedConfig(2))
+
+    def test_a_run_stamps_its_producer(self, monkeypatch, tmp_path):
+        """Both backends stamp through the same shared store, so the file records
+        the model this backend was handed -- the resolved name, not a short key."""
+        import h5py
+
+        seqs, h5_path, _, bc = self._run(
+            monkeypatch, tmp_path, to_dict=lambda s: self._embeddings(s)
+        )
+        bc.embed_sequences(seqs, "m", h5_path, embed_config=bc.EmbedConfig(2))
+
+        with h5py.File(h5_path, "r") as f:
+            assert f.attrs["protspace_backend"] == "biocentral"
+            assert f.attrs["protspace_model"] == "m"
+
+    def test_a_local_cache_is_refused_before_any_api_call(self, monkeypatch, tmp_path):
+        """A Local-written vector satisfies this backend's resume check, so
+        without ownership the two models are silently mixed in one dataset."""
+        from src.protspace.data.embedding import biocentral as bc
+        from src.protspace.data.embedding import store
+
+        h5_path = tmp_path / "out.h5"
+        store.save_embeddings(
+            h5_path,
+            {"P0000": np.zeros(3, dtype=np.float32)},
+            sequences={"P0000": "AAAA"},
+            backend="local",
+            model="prot_t5",
+        )
+        called = []
+        monkeypatch.setattr(
+            bc, "BiocentralAPI", lambda **kw: called.append(1) or self._fake_api()
+        )
+
+        with pytest.raises(ValueError, match="--refetch embed"):
+            bc.embed_sequences({"P0000": "AAAA"}, "m", h5_path)
+
+        assert not called, "must refuse before connecting to the API"
 
     def test_rerun_embeds_only_what_is_missing(self, monkeypatch, tmp_path):
         """A failed run must leave the pipeline able to converge on a retry."""

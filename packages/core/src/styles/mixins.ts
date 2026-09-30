@@ -394,6 +394,26 @@ export const dropdownMixin = css`
     background: var(--primary-light);
   }
 
+  /* An annotation's name inside a row (renderAnnotationName): the label truncates,
+     the predicted badge beside it does not. */
+  .dropdown-item-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .predicted-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: default;
+    user-select: none;
+  }
+
   /* List wrapper for dropdown items */
   .dropdown-list {
     list-style: none;

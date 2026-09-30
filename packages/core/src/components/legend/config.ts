@@ -16,6 +16,9 @@ export const LEGEND_DEFAULTS = {
   maxVisibleValues: 10,
   symbolSize: DEFAULT_CONFIG.pointSize / SYMBOL_SIZE_MULTIPLIER,
   symbolSizeMultiplier: SYMBOL_SIZE_MULTIPLIER,
+  // A UX bound from the original spinner, not a GPU limit: with zoom (<=4x) and plot-area (<=1.5x)
+  // growth the largest live sprite at dpr 3 is ~340 device px, inside ANGLE/Metal's 511 px limit.
+  maxSymbolSize: 64,
   dragTimeout: 100,
   scatterplotSelector: 'protspace-scatterplot',
   autoSyncDelay: 100,

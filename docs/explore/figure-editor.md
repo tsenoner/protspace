@@ -2,7 +2,7 @@
 
 The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
 
-![Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom](./images/figure-editor-overview.png)
+<img src="./images/figure-editor-overview.png" alt="Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom" width="1536" height="864" loading="eager" fetchpriority="high" />
 
 ## Opening the Figure Editor
 
@@ -11,7 +11,13 @@ The Figure Editor is a full-screen tool for creating publication-ready figures f
 
 The editor opens as a full-screen modal with a **preview canvas** on the left and a **settings sidebar** on the right.
 
-To export immediately with the last-used settings, use **Quick Export** instead, it skips the editor.
+To download immediately without opening the editor, use **Quick Export**. It always exports your
+current view at 2048 × 1024 px and does not use the editor's settings.
+
+The editor always renders the full view, what a double-click on the plot shows, not your current
+zoom. Its dots are therefore drawn at their unzoomed size, while Quick Export keeps the zoom and the
+larger dots that come with it. [Contours](/explore/control-bar#_10-contours) are not drawn in the
+preview or the exported figure yet; see [Exporting Results](/explore/exporting#dot-size-in-images).
 
 ## Journal Presets
 
@@ -195,7 +201,7 @@ While you drag-resize an inset, redraws are throttled to the browser's animation
 
 Each inset has its own **Dot size** slider (0.5×–20×, default **2×**) that scales the rendered dot size inside the zoomed view, relative to the main plot:
 
-- **1×**, dots match the main plot's pixel size
+- **1×**, dots match the figure's main plot, which draws them at their unzoomed size
 - **>1×**, dots are larger, useful when you've zoomed deep into a sparse region
 - **<1×**, dots are smaller
 

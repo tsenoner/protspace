@@ -10,56 +10,50 @@ How cached annotation results stay correct across format and schema changes: ref
 
 ProtSpace SHALL NOT reuse an annotation cache containing `xref_pdb` as authoritative
 when that cache lacks the current annotation-semantics marker. It SHALL refetch the
-UniProt source because persisted positive values are ambiguous, preserve cached values
-from unaffected sources, and mark the transformed replacement cache as current.
+UniProt source once and reuse cached values from other sources.
 
 #### Scenario: Complete legacy PDB cache is reused
 
-- **WHEN** `all_annotations.parquet` contains every requested annotation including
-  `xref_pdb` but lacks the current annotation-cache version
-- **THEN** ProtSpace refetches the UniProt annotations instead of returning the cache
-  fast path
-- **AND** the rewritten cache carries the current annotation-cache version
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and every requested
+  annotation
+- **THEN** ProtSpace refetches the UniProt source and stamps the rewritten cache as
+  current
 
 #### Scenario: Legacy cache has unaffected source data
 
-- **WHEN** a legacy PDB cache also contains cached annotations from another source
-- **THEN** ProtSpace preserves those unaffected source columns while refreshing the
-  UniProt columns
+- **WHEN** an unversioned annotation cache contains `xref_pdb` alongside cached
+  InterPro values
+- **THEN** ProtSpace refetches only the UniProt source and reuses the cached InterPro
+  values
 
 #### Scenario: Legacy cache is missing a newly requested source
 
-- **WHEN** a legacy PDB cache lacks a requested annotation owned by a non-UniProt source
-- **THEN** ProtSpace fetches that missing source in addition to refreshing UniProt
-- **AND** the requested annotation is present in the current run's output
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and a run requests an
+  annotation from a source the cache lacks
+- **THEN** ProtSpace fetches that source in addition to refreshing UniProt
 
 #### Scenario: Cached taxonomy depends on the UniProt organism identifier
 
-- **WHEN** a legacy PDB cache contains taxonomy annotations and their cached
-  `organism_id` lookup key, and taxonomy is not being refetched
-- **THEN** ProtSpace retains the lookup key long enough to rehydrate the cached taxonomy
-- **AND** merges that taxonomy against the freshly fetched UniProt annotations
-- **AND** subsequent reuse of the migrated cache preserves the taxonomy without another
-  migration refresh
+- **WHEN** an unversioned annotation cache contains `xref_pdb` and cached taxonomy
+  values, and the run requests taxonomy
+- **THEN** ProtSpace keeps the cached organism identifier available to the taxonomy
+  lookup
 
 #### Scenario: An unresolved protein precedes a taxonomy-bearing protein
 
-- **WHEN** an unresolved protein without taxonomy keys is the first migrated record and
-  a later resolved protein has a cached taxonomy annotation
-- **THEN** the rewritten Parquet schema includes that later taxonomy annotation
-- **AND** subsequent reuse of the migrated cache preserves its values
+- **WHEN** the first cached row has no taxonomy values and a later row does
+- **THEN** ProtSpace still reuses the cached taxonomy for the rows that carry it
 
 #### Scenario: Legacy cache has no PDB annotation
 
 - **WHEN** an unversioned annotation cache does not contain `xref_pdb`
-- **THEN** ProtSpace applies the existing incremental-cache rules without forcing a
-  UniProt refresh for this migration
+- **THEN** ProtSpace reuses it without a forced UniProt refresh
 
 #### Scenario: A UniProt batch fails during migration
 
 - **WHEN** a migration-triggered UniProt refresh cannot retrieve one or more batches
-- **THEN** ProtSpace does not replace the legacy cache or mark it as current
-- **AND** a subsequent run retries the migration
+- **THEN** ProtSpace does not mark the legacy cache as current, so a subsequent run
+  retries the migration
 
 ### Requirement: Cached signal-peptide booleans are idempotent
 
@@ -71,3 +65,87 @@ cached InterPro annotations pass through the shared transformer again.
 - **WHEN** a run refetches UniProt while retaining cached `signal_peptide` values
   containing `True` and `False`
 - **THEN** ProtSpace emits the same `True` and `False` values unchanged
+
+### Requirement: An incomplete annotation retrieval never overwrites the cache
+
+ProtSpace SHALL NOT cache annotations from a source whose retrieval did not
+complete, unless the run explicitly asked to refetch. Such a source emits empty
+values that are indistinguishable from a real absence, so persisting them would
+make a later run's column-based completeness check read the cache as current and
+serve the gaps instead of refetching. Sources that did complete are still
+cached, so one unavailable source does not discard the others' work. An explicit
+refetch is the documented repair for a cache already holding such values, so it
+writes regardless.
+
+#### Scenario: A UniProt batch fails while creating the cache
+
+- **WHEN** a run with `--keep-tmp` and no existing cache loses one or more
+  UniProt batches, and every requested annotation comes from UniProt
+- **THEN** ProtSpace does not create the annotation cache
+- **AND** the run still returns every annotation it did retrieve
+
+#### Scenario: One source fails while another completes
+
+- **WHEN** a run requests annotations from two sources and only one of them
+  completes
+- **THEN** ProtSpace caches the completed source's columns
+- **AND** omits the incomplete source's columns, so the next run fetches only
+  that source
+
+#### Scenario: A source other than UniProt does not complete
+
+- **WHEN** a taxonomy batch, a TED lookup or a Biocentral prediction fails
+- **THEN** ProtSpace treats that source as incomplete for caching, exactly as it
+  treats an incomplete UniProt retrieval
+
+#### Scenario: The standalone annotate command reports an incomplete source
+
+- **WHEN** `protspace annotate` finishes with a source that did not complete
+- **THEN** it still writes the requested output file
+- **AND** it warns which source was incomplete and that the affected values
+  cannot be told apart from a genuine absence
+
+#### Scenario: A UniProt batch fails with a cache already present
+
+- **WHEN** a run with `--keep-tmp` loses one or more UniProt batches and an
+  annotation cache already exists
+- **THEN** ProtSpace leaves the existing cache unchanged
+- **AND** a subsequent run retries the retrieval
+
+#### Scenario: UniProt is unreachable entirely
+
+- **WHEN** a UniProt retrieval raises before producing any rows
+- **THEN** ProtSpace does not write the annotation cache
+
+#### Scenario: Declining to write is reported
+
+- **WHEN** ProtSpace skips an annotation cache write because UniProt retrieval
+  failed
+- **THEN** it warns and names the cache path it left alone
+
+#### Scenario: A complete UniProt retrieval still writes the cache
+
+- **WHEN** a run with `--keep-tmp` retrieves every requested UniProt batch
+- **THEN** ProtSpace writes the annotation cache as before
+
+#### Scenario: An explicit refetch clears what it could not replace
+
+- **WHEN** `--refetch annotations` is requested and the retrieval loses batches
+- **THEN** ProtSpace rewrites the annotation cache without the failed source's
+  columns, rather than leaving the cached values in place
+- **AND** the next run fetches that source instead of reading the values the
+  refetch was asked to replace
+
+#### Scenario: A source fetched one request per protein is retried sparingly
+
+- **WHEN** a source is fetched with one request per protein rather than in
+  batches
+- **THEN** ProtSpace retries each request with a smaller budget, so a full
+  outage does not pay the default backoff once per protein
+
+#### Scenario: A transient HTTP failure is retried before it counts as a loss
+
+- **WHEN** a request to an annotation API times out, cannot connect, or returns
+  a retryable status
+- **THEN** ProtSpace retries it with backoff up to a bounded number of attempts
+- **AND** only a request still failing after those attempts counts as lost data

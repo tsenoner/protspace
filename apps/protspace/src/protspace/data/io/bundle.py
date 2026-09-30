@@ -24,7 +24,6 @@ back v2-shaped tables again, so nothing above this module has to know.  See
 import io
 import json
 import logging
-import os
 import tempfile
 from pathlib import Path
 
@@ -32,6 +31,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import FORMAT_VERSION_KEY, stamp_format_version
+from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION, decode_v3, encode_v3
 
 logger = logging.getLogger(__name__)
@@ -110,28 +110,6 @@ def _table_to_parquet_bytes(table: pa.Table) -> bytes:
     return buf.getvalue()
 
 
-def _atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path`` atomically (temp file + ``os.replace``).
-
-    The destination is never left truncated or partial on interrupt — it keeps
-    the old bytes until the rename completes, then atomically becomes the full
-    new bytes.  Critical for the in-place overwrite workflow that ``transfer``
-    documents (``-b results.parquetbundle -o results.parquetbundle``): a Ctrl+C
-    or crash mid-write can no longer destroy the user's bundle.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-
-
 def _check_no_delimiter(part_bytes: bytes) -> None:
     """Guard: a serialized part must not contain the bundle delimiter.
 
@@ -179,7 +157,7 @@ def _write_parts(
     for part in parts:
         _check_no_delimiter(part)
 
-    _atomic_write_bytes(path, PARQUET_BUNDLE_DELIMITER.join(parts))
+    atomic_write_bytes(path, PARQUET_BUNDLE_DELIMITER.join(parts))
 
 
 def read_tables(

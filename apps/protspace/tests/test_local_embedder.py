@@ -10,7 +10,7 @@ import h5py
 import numpy as np
 import pytest
 
-from protspace.data.embedding import biocentral, local
+from protspace.data.embedding import biocentral, local, store
 from protspace.data.embedding.biocentral import ALL_SHORT_KEYS
 
 # ---------------------------------------------------------------------------
@@ -219,17 +219,22 @@ def test_embed_sequences_resumes_and_skips_existing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _stub_model(monkeypatch, *, oom_ids=()):
+def _stub_model(monkeypatch, *, oom_ids=(), fill=0.0, loaded=None):
     """Replace model loading and inference so the contract can be tested without
     downloading a checkpoint."""
     import torch
 
-    monkeypatch.setattr(local, "setup_model", lambda ckpt, mt: (None, None, "cpu"))
+    def setup(ckpt, mt):
+        if loaded is not None:
+            loaded.append(ckpt)
+        return (None, None, "cpu")
+
+    monkeypatch.setattr(local, "setup_model", setup)
 
     def fake_embed_batch(processed, mod_type, model, tokenizer, device, max_length):
         if len(processed) == 1 and processed[0] in oom_ids:
             raise torch.cuda.OutOfMemoryError("stub OOM")
-        return [np.zeros(4, dtype=np.float32) for _ in processed]
+        return [np.full(4, fill, dtype=np.float32) for _ in processed]
 
     monkeypatch.setattr(local, "_embed_batch", fake_embed_batch)
 
@@ -282,6 +287,62 @@ def test_oom_at_batch_size_one_is_skipped(tmp_path, monkeypatch):
         assert set(f.keys()) == {"ok"}
 
 
+# ---------------------------------------------------------------------------
+# Cache ownership: the shared store's contract reached through this backend
+# ---------------------------------------------------------------------------
+
+
+def test_local_run_stamps_its_producer_and_digests(tmp_path, monkeypatch):
+    """The stamps have to be written by the run, not by a caller that remembers
+    to -- `protspace embed -o mine.h5` gets the same protection as a cache."""
+    _stub_model(monkeypatch)
+    out = tmp_path / "emb.h5"
+
+    local.embed_sequences({"a": "MKVL"}, "esm2_8m", out)
+
+    with h5py.File(out, "r") as f:
+        assert f.attrs["protspace_backend"] == "local"
+        assert f.attrs["protspace_model"] == "esm2_8m"  # the id this backend takes
+        assert f["a"].attrs["protspace_sequence_sha256"] == store.sequence_digest(
+            "MKVL"
+        )
+
+
+def test_local_run_refuses_a_biocentral_cache_before_loading_a_model(
+    tmp_path, monkeypatch
+):
+    out = tmp_path / "emb.h5"
+    store.save_embeddings(
+        out,
+        {"a": np.zeros(4, dtype=np.float32)},
+        sequences={"a": "MKVL"},
+        backend="biocentral",
+        model="facebook/esm2_t6_8M_UR50D",
+    )
+    loaded: list[str] = []
+    _stub_model(monkeypatch, loaded=loaded)
+
+    with pytest.raises(ValueError, match="--refetch embed"):
+        local.embed_sequences({"a": "MKVL"}, "esm2_8m", out)
+
+    assert not loaded, "must refuse before paying to load a checkpoint"
+
+
+def test_local_run_re_embeds_a_changed_sequence(tmp_path, monkeypatch):
+    """Resume matches on identifier alone, so an edited sequence otherwise keeps
+    the vector of the residues it used to have."""
+    out = tmp_path / "emb.h5"
+    _stub_model(monkeypatch, fill=1.0)
+    local.embed_sequences({"a": "MKVL", "b": "MKVA"}, "esm2_8m", out)
+
+    _stub_model(monkeypatch, fill=2.0)
+    local.embed_sequences({"a": "MKVL", "b": "EDITED"}, "esm2_8m", out)
+
+    with h5py.File(out, "r") as f:
+        assert f["a"][:].tolist() == [1.0] * 4  # untouched
+        assert f["b"][:].tolist() == [2.0] * 4  # re-embedded
+
+
 def test_shortfall_that_is_not_a_skip_still_fails(tmp_path, monkeypatch):
     """Everything absent from the .h5 that was NOT deliberately skipped is a
     failure -- this is what the local backend used to miss entirely."""
@@ -290,7 +351,9 @@ def test_shortfall_that_is_not_a_skip_still_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(
         local,
         "save_embeddings",
-        lambda p, e: real_save(p, {k: v for k, v in e.items() if k != "dropped"}),
+        lambda p, e, **kw: real_save(
+            p, {k: v for k, v in e.items() if k != "dropped"}, **kw
+        ),
     )
 
     with pytest.raises(ValueError, match="Embedding incomplete"):

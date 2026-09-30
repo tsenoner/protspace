@@ -68,6 +68,7 @@ import { LegendRenderer } from './legend-renderer';
 import {
   valueToKey,
   calculatePointSize,
+  seedShapeSize,
   getDefaultSortMode,
   getItemClasses,
   isItemSelected,
@@ -1229,6 +1230,26 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
+   * Apply a bundle's dataset-level shape size. `datasetHash` is for when the
+   * component's own hash is not computed from the new data yet.
+   */
+  public applyShapeSize(shapeSize: number, datasetHash?: string): void {
+    const size = Math.min(shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+    this._persistenceController.saveShapeSize(size, datasetHash);
+    this.shapeSize = size;
+    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(size) });
+  }
+
+  /**
+   * The dataset-level shape size, or undefined while none has been picked (nor
+   * applied from a bundle). A bundle writes only this, so a size merely seeded
+   * from one annotation's settings is never promoted to every annotation.
+   */
+  public get pickedShapeSize(): number | undefined {
+    return this._persistenceController.loadShapeSize() ?? undefined;
+  }
+
+  /**
    * Bundle restore: the saved overlay switch plus the saved reliability position.
    *
    * A bundle stores the LOWER bound only, so restoring it means "hide below x" — the
@@ -1979,7 +2000,10 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this.shapeSize = settings.shapeSize;
+      this.shapeSize = Math.min(
+        this._persistenceController.loadShapeSize() ?? seedShapeSize(settings.shapeSize),
+        LEGEND_DEFAULTS.maxSymbolSize,
+      );
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
       if (isNumericAnnotation) {
@@ -2353,7 +2377,8 @@ export class ProtspaceLegend extends LitElement {
       : this._normalizeCategoricalPaletteId(this._selectedPaletteId);
     this._dialogSettings = {
       maxVisibleValues: this.maxVisibleValues,
-      shapeSize: this.shapeSize,
+      // `shapeSize` is a public property, so a host can set it past the dialog's bound.
+      shapeSize: Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize),
       annotationSortModes: this._annotationSortModes,
       enableDuplicateStackUI: Boolean(
         scatterplot &&
@@ -2417,6 +2442,9 @@ export class ProtspaceLegend extends LitElement {
     };
 
     this.maxVisibleValues = this._dialogSettings.maxVisibleValues;
+    if (this._dialogSettings.shapeSize !== this.shapeSize) {
+      this._persistenceController.saveShapeSize(this._dialogSettings.shapeSize);
+    }
     this.shapeSize = this._dialogSettings.shapeSize;
     this._annotationSortModes = nextAnnotationSortModes;
     if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
@@ -2559,6 +2587,7 @@ export class ProtspaceLegend extends LitElement {
     // Reset all settings to defaults
     this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
     this.shapeSize = LEGEND_DEFAULTS.symbolSize;
+    this._persistenceController.saveShapeSize(LEGEND_DEFAULTS.symbolSize);
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
     this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';

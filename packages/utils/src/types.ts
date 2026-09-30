@@ -271,6 +271,29 @@ export interface ScatterplotConfig {
    * Default: false (kept off to avoid O(n) duplicate stack computation on large datasets).
    */
   enableDuplicateStackUI?: boolean;
+  /**
+   * GPU density contours composited over the base points and under the selected
+   * ones, one ring set per legend colour. `off` renders the points alone. `auto`
+   * fades the layer by the visible-point count, the plot size and the zoom, not by
+   * actual overlap: half strength at a mean of 1 visible point per 32x32 CSS px
+   * (spread over the plot's longer side at the current zoom), fading out as the
+   * user zooms in, so small subsets start faint or hidden. `on` (labelled
+   * "Always" in the control bar) keeps full strength at every zoom level.
+   *
+   * Default: 'off'.
+   */
+  densityLayer?: DensityLayerMode;
+}
+
+/** Every density-layer mode, in the order the control bar lists them. */
+export const DENSITY_LAYER_MODES = ['off', 'auto', 'on'] as const;
+
+export type DensityLayerMode = (typeof DENSITY_LAYER_MODES)[number];
+
+export const DENSITY_DEFAULT: DensityLayerMode = 'off';
+
+export function isValidDensityLayerMode(value: unknown): value is DensityLayerMode {
+  return typeof value === 'string' && DENSITY_LAYER_MODES.includes(value as DensityLayerMode);
 }
 
 export type PointShape = 'circle' | 'square' | 'diamond' | 'triangle-up' | 'triangle-down' | 'plus';
@@ -354,6 +377,8 @@ export interface BundleSettings {
    * above 0 — so an absent or `0` value means no reliability filter (#6b).
    */
   eatConfidenceThreshold?: number;
+  /** The dataset-level legend shape size; per-annotation `shapeSize` is kept for old readers. */
+  shapeSize?: number;
 }
 
 /**

@@ -4,13 +4,16 @@
  * Single source of truth for all navigation items across the app and docs.
  * This ensures consistent navigation structure in both React app and VitePress docs.
  */
-import { getUrls, buildUrl, type Environment } from './urls';
+import { getUrls, type Environment } from './urls';
 import { PUBLICATION_WEB, PUBLICATION_JMB, doiUrl } from './citations';
 
 interface NavItem {
   text: string;
   link?: string;
-  /** Whether this link is internal (uses React Router) or external (uses <a> tag) */
+  /**
+   * Whether this link is internal (uses React Router) or external (uses <a> tag). Internal links
+   * are app-relative paths, so they stay on whatever origin and port the app is served from.
+   */
   internal?: boolean;
   /** Target attribute for external links */
   target?: string;
@@ -29,7 +32,7 @@ export const getNavigation = (mode: Environment): NavItem[] => {
   return [
     {
       text: 'Home',
-      link: urls.base,
+      link: '/',
       internal: true,
     },
     {
@@ -39,7 +42,7 @@ export const getNavigation = (mode: Environment): NavItem[] => {
     },
     {
       text: 'Explore',
-      link: buildUrl(mode, 'explore'),
+      link: urls.explore,
       internal: true,
     },
     {

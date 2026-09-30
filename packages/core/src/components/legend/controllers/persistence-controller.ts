@@ -1,5 +1,7 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import {
+  buildStorageKey,
+  getStorageItem,
   setStorageItem,
   removeStorageItem,
   hasStorageItem,
@@ -74,12 +76,25 @@ export class PersistenceController
   override getAllSettingsForExport(annotationNames: string[]): LegendSettingsMap {
     const settings = super.getAllSettingsForExport(annotationNames);
     const sanitized: LegendSettingsMap = {};
+    const picked = this.loadShapeSize();
 
     for (const [annotation, annotationSettings] of Object.entries(settings)) {
-      sanitized[annotation] = this._stripLegacyFields(annotationSettings);
+      sanitized[annotation] = this._stripLegacyFields(
+        picked === null ? annotationSettings : { ...annotationSettings, shapeSize: picked },
+      );
     }
 
     return sanitized;
+  }
+
+  loadShapeSize(): number | null {
+    if (!this._datasetHash) return null;
+    const size = getStorageItem<unknown>(buildStorageKey('point-size', this._datasetHash), null);
+    return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
+  }
+
+  saveShapeSize(size: number, datasetHash: string = this._datasetHash): void {
+    if (datasetHash) setStorageItem(buildStorageKey('point-size', datasetHash), size);
   }
 
   private _stripLegacyFields(settings: LegendPersistedSettings): LegendPersistedSettings {

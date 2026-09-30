@@ -7,7 +7,7 @@
  */
 import type { vi } from 'vitest';
 import * as d3 from 'd3';
-import type { PlotData } from '@protspace/utils';
+import type { PlotData, ScatterplotConfig } from '@protspace/utils';
 import type { ScalePair, WebGLStyleGetters } from '../../types';
 import type { RendererDegradedDetail } from '../../../scatter-plot.events';
 import { WebGLRenderer } from '../webgl-renderer';
@@ -60,22 +60,27 @@ type MockGL = Record<string, ReturnType<typeof vi.fn>>;
 
 /**
  * A renderer over a mock GL context, with the style getters supplied by the
- * caller — for suites whose getters change mid-session.
+ * caller — for suites whose getters change mid-session. `overrides` swaps in a
+ * live config or camera.
  */
-export function makeRendererWithStyle(styleGetters: WebGLStyleGetters, opts: MockGLOptions = {}) {
-  const { canvas, gl } = createMockCanvas(opts);
+export function makeRendererWithStyle(
+  styleGetters: WebGLStyleGetters,
+  opts: MockGLOptions = {},
+  overrides: { getConfig?: () => ScatterplotConfig; getTransform?: () => d3.ZoomTransform } = {},
+) {
+  const { canvas, gl, setContextLost } = createMockCanvas(opts);
   const degraded: RendererDegradedDetail[] = [];
   const renderer = new WebGLRenderer(
     canvas,
     scales,
-    () => d3.zoomIdentity,
-    () => ({ width: 800, height: 600 }),
+    overrides.getTransform ?? (() => d3.zoomIdentity),
+    overrides.getConfig ?? (() => ({ width: 800, height: 600 })),
     styleGetters,
     undefined,
     () => [1, 1, 1],
     (detail) => degraded.push(detail),
   );
-  return { renderer, gl: gl as unknown as MockGL, degraded };
+  return { renderer, gl: gl as unknown as MockGL, degraded, setContextLost };
 }
 
 export function makeRenderer(opts: MockGLOptions = {}, colors?: string[]) {

@@ -146,7 +146,7 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Sequence length',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Length of the protein sequence in amino acids.',
+    description: 'UniProt sequence length, or a matching local FASTA length when missing.',
     docsUrl: docs('length'),
   },
   protein_existence: {
@@ -417,6 +417,24 @@ export function isPredictedAnnotation(column: string): boolean {
 /** Friendly display label for an annotation (registry label, else prettified column name). */
 export function annotationLabel(column: string, annotation?: Pick<Annotation, 'runtime'>): string {
   return getAnnotationMeta(column, annotation).label;
+}
+
+/**
+ * Whether an annotation should be offered for a search query: the query, trimmed and
+ * case-insensitive, is a substring of the label the picker displays.
+ *
+ * Only that label is searched, never the column name behind it, so every match is on text the
+ * reader can see. `predicted` finds nothing among the Biocentral columns, which read "Membrane",
+ * "Signal peptide" and so on. A column with no registry entry is labelled by its prettified name,
+ * so it stays findable by the words of that name.
+ */
+export function annotationMatchesQuery(
+  column: string,
+  query: string,
+  annotation?: Pick<Annotation, 'runtime'>,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  return !needle || annotationLabel(column, annotation).toLowerCase().includes(needle);
 }
 
 /** Source/group for an annotation (registry source, else `Other`). */

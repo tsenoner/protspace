@@ -38,12 +38,3 @@ export type Environment = keyof typeof URLS;
  * Get URLs for the specified environment
  */
 export const getUrls = (mode: Environment) => URLS[mode];
-
-/**
- * Construct full URL from base + path
- */
-export const buildUrl = (mode: Environment, path: keyof typeof URLS.production) => {
-  const urls = URLS[mode];
-  if (path === 'base') return urls.base;
-  return `${urls.base}${urls[path]}`;
-};

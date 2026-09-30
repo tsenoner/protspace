@@ -6,7 +6,7 @@ The legend panel lets you filter, customize, and explore protein annotations. Mo
 
 Click any legend row to toggle its visibility:
 
-![Toggle visibility](./images/legend-toggle.gif)
+<img src="./images/legend-toggle.gif" alt="Toggle visibility" width="1000" height="563" loading="eager" fetchpriority="high" />
 
 - Click once to hide that value.
 - Click again to show it.
@@ -55,12 +55,12 @@ Click the cog icon in the top-right corner of the legend for advanced options.
 
 ### Shared Settings
 
-| Setting                     | What it does                                                                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins. |
-| **Shape size / Point size** | Adjusts marker size in the scatterplot. Numeric annotations use the label `Point size` because numeric legends always render circles.       |
-| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                           |
-| **Color palette**           | Picks the active palette for the selected annotation.                                                                                       |
+| Setting                     | What it does                                                                                                                                                                                                                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins.                                                                                                                                                       |
+| **Shape size / Point size** | Adjusts marker size in the scatterplot (default 10, range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
+| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                 |
+| **Color palette**           | Picks the active palette for the selected annotation.                                                                                                                                                                                                                                             |
 
 ### Sorting
 
@@ -202,7 +202,10 @@ Legend settings are saved per dataset and per annotation in the browser.
 - Saved examples: visibility, palette, ordering, numeric binning settings, and duplicate-count preferences
 - Numeric binning settings such as palette, gradient direction, strategy, and target bin count are restored on reload/import
 - Numeric hidden values and manual order are only restored when the current numeric topology still matches the saved one
-- Use `Reset` in the settings dialog to clear saved preferences for the selected annotation
+- The shape size is the exception: it is saved once per dataset, applies to every annotation, and
+  travels in exported bundles with **Include legend settings**
+- Use `Reset` in the settings dialog to clear saved preferences for the selected annotation; it also
+  sets the dataset's shape size back to 10
 
 ## Styling From The Python CLI
 

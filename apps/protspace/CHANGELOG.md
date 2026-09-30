@@ -1,6 +1,122 @@
 # CHANGELOG
 
 
+## v4.14.0 (2026-09-30)
+
+### Features
+
+- **protspace**: Write shape size 10 as the per-annotation filler
+  ([`298bb53`](https://github.com/tsenoner/protspace/commit/298bb538fb6a8d1b812356249c607e9bac9773e4))
+
+
+## v4.13.1 (2026-09-30)
+
+### Bug Fixes
+
+- **stats**: Drop the faithfulness ceiling that suppressed cheap results
+  ([`02cb403`](https://github.com/tsenoner/protspace/commit/02cb403d0af4786d9be3fabe785416a2235ed962))
+
+- **stats**: Reject faithfulness inputs whose rows do not align
+  ([`a904336`](https://github.com/tsenoner/protspace/commit/a90433612eab8780787d89fb4c6ed9f4fa180937))
+
+
+## v4.13.0 (2026-09-18)
+
+### Bug Fixes
+
+- **notebook**: Let the shared layer own the caches, and name each bundle
+  ([`4fc7df7`](https://github.com/tsenoner/protspace/commit/4fc7df7219f2c8cf45966bdd96f06bdbf50e2f86))
+
+- **protspace**: Apply the code review findings
+  ([`7eef362`](https://github.com/tsenoner/protspace/commit/7eef362904a3313240188652cf05fe009102b042))
+
+- **protspace**: Own cached projections, query FASTA and annotation rows by their data
+  ([`c72f0fb`](https://github.com/tsenoner/protspace/commit/c72f0fba3e338c0488bf4b3a5e21acc6eeb89b91))
+
+- **protspace**: Repair the cache-ownership work's own gaps
+  ([`d6a16f3`](https://github.com/tsenoner/protspace/commit/d6a16f324a1ead8c759e3e443cc258378b7dad1e))
+
+### Documentation
+
+- Describe cache ownership as the code now decides it
+  ([`07cedb8`](https://github.com/tsenoner/protspace/commit/07cedb80f662dc3dd5b1023c36a8e753102dac33))
+
+- Record the embedding-identity tests and tick the change tasks
+  ([`840a896`](https://github.com/tsenoner/protspace/commit/840a896b6c1b23a6e049e33cb3c2409b0e37fd83))
+
+### Features
+
+- **embed**: Stamp embedding identity into the HDF5
+  ([`825e3a1`](https://github.com/tsenoner/protspace/commit/825e3a1b02ae04ec790c2f6ac6c424b060668fb4))
+
+### Refactoring
+
+- **io**: Publish every staged file through one helper
+  ([`8985eff`](https://github.com/tsenoner/protspace/commit/8985eff22d79a64069ab0c96640a46b49355e454))
+
+- **protspace**: Simplify the notebook cache-ownership changes
+  ([`3eda58f`](https://github.com/tsenoner/protspace/commit/3eda58f3892b1603b4d0d8591e801d79ceed811f))
+
+
+## v4.12.2 (2026-09-15)
+
+### Bug Fixes
+
+- **annotations**: Cache per source, so one unavailable API costs only its own columns
+  ([`780ff26`](https://github.com/tsenoner/protspace/commit/780ff26ec08e32c825fad1c30e4775cfbff1a24c))
+
+- **annotations**: Close the gaps the per-source cache design opened
+  ([`f0f30c9`](https://github.com/tsenoner/protspace/commit/f0f30c98bb45252aae0072a6d59e88e7f4b25152))
+
+- **annotations**: Never cache a UniProt fetch that lost batches
+  ([`513cdaf`](https://github.com/tsenoner/protspace/commit/513cdaf5b6c8e014d6bbebb4316aaa32dc683230))
+
+- **annotations**: Retry transient HTTP failures before treating them as data loss
+  ([`063ed62`](https://github.com/tsenoner/protspace/commit/063ed62882c13dff927e45eb1b9a78a75e556437))
+
+
+## v4.12.1 (2026-09-15)
+
+### Bug Fixes
+
+- **annotate**: Pass fasta sequences to annotation manager
+  ([`5cab319`](https://github.com/tsenoner/protspace/commit/5cab3198d6ee059a65502879437b5d1bbc546c91))
+
+- **annotations**: Enrich complete cache lengths from fasta
+  ([`0e000cb`](https://github.com/tsenoner/protspace/commit/0e000cbf764cff159f2e7e62cffa4c3f9835f942))
+
+- **annotations**: Handle fasta length edge cases
+  ([`5826d8d`](https://github.com/tsenoner/protspace/commit/5826d8d9c9512af8660bec3ac2e853b52da995f6))
+
+- **annotations**: Harden fasta length fallback and cut per-protein cost
+  ([`eb66f22`](https://github.com/tsenoner/protspace/commit/eb66f22f6d341a8c0a378e5f162b757a9382f220))
+
+- **notebook**: Isolate backends and publish fasta atomically
+  ([`82b6dbb`](https://github.com/tsenoner/protspace/commit/82b6dbb25c93cf3eff1ed1234491ff4331985c92))
+
+- **notebook**: Isolate retained caches by input
+  ([`3c4b9f4`](https://github.com/tsenoner/protspace/commit/3c4b9f4cdc325c651fc6917f9e666653f7c75f5d))
+
+- **notebook**: Recompute projections on every generate
+  ([`7d80a0d`](https://github.com/tsenoner/protspace/commit/7d80a0d2a654ceea4e6c6b4b2a39ed18352b664b))
+
+- **protspace**: Derive missing length from fasta
+  ([`b02521f`](https://github.com/tsenoner/protspace/commit/b02521f6dff1af198eb9156d68b12b967aa83624))
+
+- **protspace**: Preserve cache compatibility
+  ([`5583733`](https://github.com/tsenoner/protspace/commit/55837338ca191db09bd497c3c69f8eff193503dd))
+
+### Refactoring
+
+- **query**: Drop dead short-write guard, narrow test patch
+  ([`af4ffca`](https://github.com/tsenoner/protspace/commit/af4ffcaf8d807a2877228364c0dfceec0378602a))
+
+### Testing
+
+- **annotate**: Hoist UniProtRetriever import to module level
+  ([`b584582`](https://github.com/tsenoner/protspace/commit/b5845824d737ad627a0d3cf87e93be16feb7df7e))
+
+
 ## v4.12.0 (2026-08-19)
 
 

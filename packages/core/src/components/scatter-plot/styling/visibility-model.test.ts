@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { VisualizationData, PlotDataPoint, AnnotationData } from '@protspace/utils';
+import { NA_VALUE } from '@protspace/utils';
 import type { VisibilityInputs, VisibilityModel } from './visibility-model';
 import { computeVisibilityModel } from './visibility-model';
 
@@ -60,6 +61,81 @@ function baseInputs(overrides: Partial<VisibilityInputs> = {}): VisibilityInputs
 }
 
 describe('computeVisibilityModel', () => {
+  describe('focusedValues (Shift+hover)', () => {
+    it('keeps focused and multi-label points in focus; highlight wins; zero-value base fades', () => {
+      const data = makeData(['A', 'B', null], [[0], [1], [0, 1], []]);
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(model.baseOpacityOf(point('p3', 3))).toBe(OPACITIES.faded);
+    });
+
+    it('a plain out-of-focus point fades; a focused one renders at selected opacity', () => {
+      const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2));
+      const model = computeVisibilityModel(baseInputs({ data, focusedValues: ['A'] }));
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.faded);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+      expect(model.isInteractive(point('p1', 1))).toBe(true);
+    });
+
+    it('a non-empty selection outranks focus: points follow selection fading', () => {
+      const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2));
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], selectedProteinIds: ['p1'] }),
+      );
+      // Selected but out of focus → selected opacity.
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      // In focus but not selected → faded by the selection, not lifted by focus.
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+    });
+
+    it('a highlighted out-of-focus point keeps full (selected) opacity', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(model.baseOpacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+    });
+
+    it('hidden beats focus: a legend-hidden value stays at opacity 0', () => {
+      const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2));
+      // The focused value itself is hidden.
+      const focusedHidden = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], hiddenAnnotationValues: ['A'] }),
+      );
+      expect(focusedHidden.opacityOf(point('p0', 0))).toBe(0);
+      expect(focusedHidden.isInteractive(point('p0', 0))).toBe(false);
+      // An out-of-focus hidden value stays at 0, not the faded tier.
+      const otherHidden = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], hiddenAnnotationValues: ['B'] }),
+      );
+      expect(otherHidden.opacityOf(point('p1', 1))).toBe(0);
+      expect(otherHidden.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+    });
+
+    it('focusing N/A keeps null and literal __NA__ points in focus', () => {
+      // p0 → null, p1 → literal "__NA__", p2 → 'A', p3 → out-of-range bin (resolves to N/A).
+      const data = makeData([null, NA_VALUE, 'A'], Int32Array.of(0, 1, 2, 7));
+      const naFocus = computeVisibilityModel(baseInputs({ data, focusedValues: [NA_VALUE] }));
+      expect(naFocus.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(naFocus.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(naFocus.opacityOf(point('p3', 3))).toBe(OPACITIES.selected);
+      expect(naFocus.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+      // Focusing a real value fades the N/A points.
+      const aFocus = computeVisibilityModel(baseInputs({ data, focusedValues: ['A'] }));
+      expect(aFocus.opacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+      expect(aFocus.opacityOf(point('p1', 1))).toBe(OPACITIES.faded);
+      expect(aFocus.opacityOf(point('p3', 3))).toBe(OPACITIES.faded);
+      expect(aFocus.opacityOf(point('p2', 2))).toBe(OPACITIES.selected);
+    });
+  });
+
   // ── #6a: reliability dimming removed — predicted points render at base
   // opacity, identical to observed points, distinguished only by the hollow
   // ring glyph (drawn elsewhere). Confidence no longer feeds opacity at all.
