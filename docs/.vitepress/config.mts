@@ -42,8 +42,14 @@ export default defineConfig({
       .filter((item) => item.icon !== 'github') // Exclude GitHub icon (it's in socialLinks)
       .map((item) => {
         // When in VitePress (base is /docs/), map "Docs" link to root '/'
-        // to avoid /docs/docs/ issue
-        const link = item.text === 'Docs' ? '/' : item.link || '';
+        // to avoid /docs/docs/ issue. App links are relative paths, which VitePress would
+        // prefix with its base, so point them at the app's origin instead.
+        const link =
+          item.text === 'Docs'
+            ? '/'
+            : item.internal && item.link
+              ? `${urls.base}${item.link}`
+              : item.link || '';
 
         // Handle items with dropdown menus
         if (item.items) {
