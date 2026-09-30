@@ -11,7 +11,6 @@
       "Other short-chain",
       "Type II α-neurotoxin (long)",
       "κ-neurotoxin",
-      "Other long-chain",
       "Ancestral / non-conventional",
       ""
     ],
@@ -23,7 +22,6 @@
       "Other short-chain": "#C2B280",
       "Type II α-neurotoxin (long)": "#875692",
       "κ-neurotoxin": "#E68FAC",
-      "Other long-chain": "#604E97",
       "Ancestral / non-conventional": "#0067A5",
       "": "#DDDDDD"
     }

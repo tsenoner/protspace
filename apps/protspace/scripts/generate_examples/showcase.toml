@@ -184,7 +184,6 @@ rules = [
   ["mambalgin", "Aminergic / muscarinic"],
   ["ancestral", "Ancestral / non-conventional"],
   ["short-chain", "Other short-chain"],
-  ["long-chain", "Other long-chain"],
 ]
 
 [[datasets.three-finger-toxins.labels.columns]]
@@ -370,7 +369,9 @@ type = "label_split"   # conserved: kinases sit in the shared region
 column = "protein_families"
 by = "species"
 label = "protein kinase superfamily"
-expected_total = 2001  # 2026_03 with whole multi-section families; the paper counted 1,703
+# 2026_03. The paper counted 1,703: 278 of the 302 rows gained had no family in
+# the paper bundle and now carry UniProt's automatic (|SAM) annotation (G11).
+expected_total = 2001
 rel_tol = 0.15
 min_per_group = { "Homo sapiens" = 100, "Drosophila melanogaster" = 100 }
 
