@@ -42,7 +42,7 @@
 - [x] 3.5 Tests: nothing non-finite reaches drawing, picking, brush, lasso, contours, scale domains,
       depth sort, duplicate stacks or export; projection switching between complete and incomplete
       projections
-- [ ] 3.6 Web exporter (`packages/utils/src/parquet/bundle-writer.ts`) writes v3, with `true` /
+- [x] 3.6 Web exporter (`packages/utils/src/parquet/bundle-writer.ts`) writes v3, with `true` /
       `false` for booleans and NaN for missing coordinates; round-trip tests for v1, v2 and v3
       inputs, with and without settings and statistics
 - [x] 3.7 `decodeParquetBundle` reports the container format version; the web app shows a
