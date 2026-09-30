@@ -17,7 +17,15 @@ import {
   parseAnnotationValue,
   splitCategoricalAnnotationValues,
 } from './conversion';
-import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
+import {
+  decodeParquetBundle,
+  extractRowsFromParquetBundle,
+  type BundleExtractionResult,
+} from './bundle';
+
+/** Export `data` and read it back, as a user re-importing their own export would. */
+const reimport = async (data: VisualizationData): Promise<VisualizationData> =>
+  (await decodeParquetBundle(createParquetBundle(data))).data;
 
 function makeCollisionExtraction(
   formatVersion: number,
@@ -496,11 +504,9 @@ describe('EAT companion normalization', () => {
       const original = convertParquetToVisualizationData(
         makeCollisionExtraction(formatVersion, { withEat: false }),
       );
-      const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-      const reloaded = convertParquetToVisualizationData(extraction);
+      const reloaded = await reimport(original);
 
       expect(original.annotations.ec__eat_confidence.runtime).toBeUndefined();
-      expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
       expect(reloaded.annotations.ec__eat_confidence.runtime).toBeUndefined();
       expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual(
         new Float64Array([0.125, 0.875]),
@@ -524,14 +530,11 @@ describe('EAT companion normalization', () => {
       expect(runtimeConfidence?.[0]).toBe('ec__eat_confidence__runtime_2');
       expect(runtimeConfidence?.[1].runtime?.baseAnnotation).toBe('ec');
 
-      const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-      const reloaded = convertParquetToVisualizationData(extraction);
+      const reloaded = await reimport(original);
       const reloadedRuntime = Object.entries(reloaded.annotations).filter(
         ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
       );
 
-      expect(extraction.formatVersion).toBe(2);
-      expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
       expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual(
         new Float64Array([0.125, 0.875]),
       );
@@ -577,16 +580,7 @@ describe('EAT companion normalization', () => {
     expect(selectedView.annotations[confidenceKey].kind).toBe('categorical');
     expect(selectedView.annotations[confidenceKey].runtime).toEqual(confidenceAnnotation.runtime);
 
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(selectedView));
-    expect(extraction.annotationsById.get('P2')).not.toHaveProperty(confidenceKey);
-    expect(extraction.annotationsById.get('P2')).toMatchObject({
-      ec: null,
-      ec__pred_value: '2.2.2.2',
-      ec__pred_source: 'P1',
-    });
-    expect(extraction.annotationsById.get('P2')?.ec__pred_confidence).toBeCloseTo(0.8, 5);
-
-    const reloaded = convertParquetToVisualizationData(extraction);
+    const reloaded = await reimport(selectedView);
     const reloadedRuntime = Object.entries(reloaded.annotations).filter(
       ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
     );
@@ -634,9 +628,7 @@ describe('EAT companion normalization', () => {
         (index) => displayed.annotations.ec.values[index],
       ),
     ).toEqual(['1.1.1.1', '2.2.2.2']);
-    const extracted = await extractRowsFromParquetBundle(createParquetBundle(displayed));
-    expect(extracted.annotationsById.get('P1')?.ec).toBe('1.1.1.1;2.2.2.2');
-    const reloaded = convertParquetToVisualizationData(extracted);
+    const reloaded = await reimport(displayed);
 
     expect(reloaded.annotation_predicted?.ec[1]).toMatchObject({
       value: '1.1.1.1',
@@ -649,8 +641,9 @@ describe('EAT companion normalization', () => {
     expect(
       getProteinAnnotationIndices(reloaded.annotation_data.ec, 0).map((index) => ecValues[index]),
     ).toEqual(['1.1.1.1', '2.2.2.2']);
-    const p2Index = (reloaded.annotation_data.ec as Int32Array)[1];
-    expect(ecValues[p2Index]).toBe('__NA__');
+    expect(
+      getProteinAnnotationIndices(reloaded.annotation_data.ec, 1).map((index) => ecValues[index]),
+    ).toEqual(['__NA__']);
   });
 
   it('normalizes EAT in the optimized merged-row path', async () => {

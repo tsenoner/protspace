@@ -58,31 +58,6 @@ const CATH_ENCODED_SEMICOLON = 'G3DSA:1.10.10.10 (Ribosomal Protein L15; Chain: 
  */
 const PFAM_NON_ASCII = 'PF00004 (β-lactamase, Nébuline)';
 
-/**
- * Which flat per-hit payload families each multi column actually carries. This is what
- * an inserted-`__NA__` hit reports `null` for (see the round-trip suite below); a column
- * that carries neither reports an empty array on every row.
- */
-const PAYLOADS: Readonly<Record<string, { scores: boolean; evidence: boolean }>> = {
-  cath: { scores: true, evidence: false },
-  go_bp: { scores: false, evidence: true },
-  pfam: { scores: true, evidence: true },
-  kingdom: { scores: false, evidence: false },
-  reviewed: { scores: false, evidence: false },
-  predicted_tm: { scores: false, evidence: false },
-};
-
-/**
- * Rows whose only "hit" is the synthetic `__NA__` the reader inserts for an empty CSR
- * row. These are exactly the rows where CSR and nested storage legitimately disagree
- * (see the round-trip suite).
- */
-const NA_ONLY_ROWS: Readonly<Record<string, readonly string[]>> = {
-  cath: ['P4'],
-  go_bp: ['P2', 'P5'],
-  pfam: ['P1', 'P3', 'P6'],
-};
-
 function fixture(name: string): ArrayBuffer {
   const file = readFileSync(new URL(`./__fixtures__/${name}`, import.meta.url));
   return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
@@ -438,164 +413,29 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
   });
 });
 
-describe('v3 -> v2 export round trip: CSR storage is interchangeable with nested', () => {
-  it('re-exports every categorical cell the encoder wrote, NA spellings excepted', async () => {
-    const { data } = await loadV3();
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(data));
+describe('v3 -> v3 export round trip', () => {
+  it('re-exports the fixture to a dataset equal to it, storage included', async () => {
+    const { data: v3 } = await loadV3();
+    const exported = await decodeParquetBundle(createParquetBundle(v3));
 
-    // The writer still stamps v2, so this proves the v2 cell grammar can be rebuilt from
-    // CSR storage: the reserved ';' and '|' inside labels go back out percent-encoded,
-    // scores rejoin with ',', evidence with '|'.
-    expect(extraction.formatVersion).toBe(2);
-    const cells = Object.fromEntries(
-      [...extraction.annotationsById].map(([id, row]) => [
-        id,
-        Object.fromEntries(CATEGORICAL.map((key) => [key, row[key] ?? null])),
-      ]),
-    );
-    const cathSemicolon = 'G3DSA:1.10.10.10 (Ribosomal Protein L15%3B Chain: K%3B domain 2)';
-    expect(cells).toEqual({
-      P1: {
-        cath: `${cathSemicolon}|50.2;G3DSA:6.20.10.10|60.5`,
-        go_bp: 'apoptotic process|IDA',
-        pfam: null,
-        kingdom: 'Archaea',
-        reviewed: 'False',
-        // Documented non-identity: `none` is a MISSING_VALUE_TOKEN, so it was folded to
-        // `__NA__` on read and goes back out as NULL, not as the literal word.
-        predicted_tm: null,
-      },
-      P2: {
-        cath: '6.20.10.10',
-        go_bp: null,
-        pfam: 'PF00001 (7tm%3B1)|1e-10,2.5;PF00002|0.5',
-        kingdom: 'Bacteria',
-        reviewed: 'True',
-        predicted_tm: null,
-      },
-      P3: {
-        cath: 'G3DSA:6.20.10.10|123456789',
-        go_bp: 'apoptotic process|IDA;protein folding|ECO:0000269',
-        pfam: null,
-        kingdom: 'Bacteria',
-        reviewed: 'True',
-        predicted_tm: 'TM helix',
-      },
-      P4: {
-        cath: null,
-        go_bp: 'protein folding|IEA',
-        // A score and an evidence code side by side in one cell, and the third hit -
-        // the one spelled `none` - gone, the same way the browser drops a folded label
-        // out of a v2 cell.
-        pfam: `PF00001 (7tm%3B1)|0.25;${PFAM_NON_ASCII}|IDA`,
-        // P4's curated cell was blank and now carries a prediction, so the base column
-        // goes back out NULL and the label rides in the companion trio instead.
-        kingdom: null,
-        reviewed: 'False',
-        predicted_tm: null,
-      },
-      P5: {
-        cath: `${cathSemicolon}|1e-200`,
-        go_bp: null,
-        // Both documented score re-spellings. `62.0` loses its trailing `.0` on both
-        // sides; `2.3e-5` is where the two languages genuinely differ - Python's
-        // `read_tables` writes `2.3e-05`, `String(2.3e-5)` here writes `0.000023`. The
-        // double is identical, only the spelling is not.
-        pfam: 'PF00003 (a%7Cb)|3;PF00002|62;PF00001 (7tm%3B1)|0.000023',
-        kingdom: 'Bacteria',
-        reviewed: 'True',
-        // The other missing-value spelling in the same column, same treatment.
-        predicted_tm: null,
-      },
-      P6: {
-        cath: '6.20.10.10',
-        go_bp: 'apoptotic process|EXP',
-        pfam: null,
-        kingdom: 'Eukaryota',
-        reviewed: 'True',
-        predicted_tm: 'TM helix',
-      },
-    });
-    // The prediction survives the export as the companion trio it arrived in.
-    expect([...extraction.annotationsById.values()].map((row) => row.kingdom__pred_value)).toEqual([
-      null,
-      null,
-      null,
-      'Viruses',
-      null,
-      null,
-    ]);
-    // The in-memory sentinel is never written as a literal 6-char category.
-    for (const row of extraction.annotationsById.values()) {
-      expect(Object.values(row)).not.toContain(NA_VALUE);
-    }
+    expect(exported.formatVersion).toBe(3);
+    // Same dictionaries in the same order, so the same palette, and the same CSR hits with
+    // their scores, evidence and inserted NA hits: the web export writes back what the
+    // Python encoder wrote, less only what the reader folded on the way in.
+    expect(exported.data).toEqual(v3);
   });
 
-  it('reloads into the same legend, the same numerics and the same projections', async () => {
+  it('writes back neither the folded missing-value spellings nor the __NA__ sentinel', async () => {
     const { data: v3 } = await loadV3();
-    const reloaded = await loadLegacy(createParquetBundle(v3));
-
-    expect(reloaded.protein_ids).toEqual(v3.protein_ids);
-    // Values, colours and shapes are what the legend and the palette are built from, so
-    // they have to survive a shape change that reorders nothing.
-    expect(reloaded.annotations).toEqual(v3.annotations);
-    expect(reloaded.numeric_annotation_data).toEqual(v3.numeric_annotation_data);
-    expect(reloaded.annotation_predicted).toEqual(v3.annotation_predicted);
-    expect(
-      reloaded.projections.map(({ name, dimension, data }) => ({
-        name,
-        dimension,
-        data: Array.from(data),
-      })),
-    ).toEqual(
-      v3.projections.map(({ name, dimension, data }) => ({
-        name,
-        dimension,
-        data: Array.from(data),
-      })),
-    );
-  });
-
-  it('reloads into nested storage that reads back identically through the accessors', async () => {
-    const { data: v3 } = await loadV3();
-    const reloaded = await loadLegacy(createParquetBundle(v3));
-
-    // Precondition: the two datasets really are stored differently, otherwise the
-    // comparison below proves nothing about CSR at all.
-    expect(isCsrAnnotationData(v3.annotation_data.cath)).toBe(true);
-    expect(isCsrAnnotationData(reloaded.annotation_data.cath)).toBe(false);
-    expect(v3.annotation_data.kingdom).toBeInstanceOf(Int32Array);
-    expect(reloaded.annotation_data.kingdom).not.toBeInstanceOf(Int32Array);
+    const { data: reloaded } = await decodeParquetBundle(createParquetBundle(v3));
 
     for (const key of CATEGORICAL) {
+      expect(
+        reloaded.annotations[key].values.filter((value) => value === NA_VALUE).length,
+        key,
+      ).toBeLessThanOrEqual(1);
       for (const [index, id] of v3.protein_ids.entries()) {
-        const from3 = hitsOf(v3, key, index);
-        const from2 = hitsOf(reloaded, key, index);
-        const where = `${key}/${id}`;
-
-        expect(from2.labels, where).toEqual(from3.labels);
-
-        // The documented non-identity, and it applies to BOTH payload families. An empty
-        // CSR row owns no hit slot, so the reader inserts a synthetic `__NA__` hit for it
-        // - and the flat score and evidence payloads are numbered by hit, so that
-        // inserted hit reports itself as `null` in whichever families the column carries.
-        // Nested storage has no hit there at all and reports nothing. Left as it is on
-        // purpose: none of the four consumers (tooltip, export, legend, statistics
-        // popover) distinguishes `[null]` from `[]`, and the flat shape is what keeps the
-        // score and evidence indices aligned with `getProteinAnnotationIndices`. Asserted
-        // as the exact rows it applies to rather than by relaxing the comparison.
-        if (NA_ONLY_ROWS[key]?.includes(id)) {
-          const { scores, evidence } = PAYLOADS[key];
-          expect(from3.labels, where).toEqual([NA_VALUE]);
-          expect(from3.scores, where).toEqual(scores ? [null] : []);
-          expect(from3.evidence, where).toEqual(evidence ? [null] : []);
-          expect(from2.scores, where).toEqual([]);
-          expect(from2.evidence, where).toEqual([]);
-          continue;
-        }
-
-        expect(from2.scores, where).toEqual(from3.scores);
-        expect(from2.evidence, where).toEqual(from3.evidence);
+        expect(hitsOf(reloaded, key, index), `${key}/${id}`).toEqual(hitsOf(v3, key, index));
       }
     }
   });

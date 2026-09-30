@@ -5,10 +5,12 @@ import {
   NA_VALUE,
   createParquetBundle,
   getProteinAnnotationIndices,
+  getProteinEvidence,
+  getProteinScores,
   isNAValue,
   type VisualizationData,
 } from '@protspace/utils';
-import { extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
 
 async function loadGoldenBundle(): Promise<VisualizationData> {
@@ -121,7 +123,7 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
     expect(goBpEvidence![p1Idx]).toEqual(['IDA']);
   });
 
-  it('writes and reloads golden v2 categorical structure plus every EAT companion', async () => {
+  it('exports and reloads golden v2 categorical structure plus every EAT companion', async () => {
     const golden = await loadGoldenBundle();
     const p2Index = golden.protein_ids.indexOf('P2');
     golden.annotation_predicted = {
@@ -141,21 +143,29 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
 
     const annotationNames = ['cath', 'go_bp'] as const;
     const expectedAnnotationSets = perProteinAnnotationSets(golden, annotationNames);
-    const expectedEvidence = structuredClone(golden.annotation_evidence);
-    const expectedScores = structuredClone(golden.annotation_scores);
+    // Scores and evidence per real hit. A missing cell has no hit in nested storage and a
+    // synthetic `__NA__` one in CSR storage, so NA hits are left out on both sides.
+    const hitsOf = (data: VisualizationData) =>
+      data.protein_ids.map((_, proteinIndex) =>
+        annotationNames.map((name) => {
+          const scores = getProteinScores(data, proteinIndex, name);
+          const evidence = getProteinEvidence(data, proteinIndex, name);
+          return getProteinAnnotationIndices(data.annotation_data[name], proteinIndex).flatMap(
+            (valueIndex, hit) =>
+              isNAValue(data.annotations[name].values[valueIndex] ?? NA_VALUE)
+                ? []
+                : [{ scores: scores[hit] ?? null, evidence: evidence[hit] ?? null }],
+          );
+        }),
+      );
+    const expectedHits = hitsOf(golden);
 
-    const written = createParquetBundle(golden);
-    const extraction = await extractRowsFromParquetBundle(written);
-    expect(extraction.formatVersion).toBe(2);
-    expect(extraction.annotationsById.get('P2')).toMatchObject({
-      go_bp__pred_value: 'transferred%3Blabel%7Cliteral%25|0.91;second hit|EXP',
-      go_bp__pred_source: 'P1%7Creference%3Bliteral%25',
-    });
-
-    const reloaded = await convertParquetToVisualizationDataOptimized(extraction);
+    // The export is v3, so the reload is CSR-stored: compare through the accessors.
+    const exported = await decodeParquetBundle(createParquetBundle(golden));
+    expect(exported.formatVersion).toBe(3);
+    const reloaded = exported.data;
     expect(perProteinAnnotationSets(reloaded, annotationNames)).toEqual(expectedAnnotationSets);
-    expect(reloaded.annotation_evidence).toEqual(expectedEvidence);
-    expect(reloaded.annotation_scores).toEqual(expectedScores);
+    expect(hitsOf(reloaded)).toEqual(expectedHits);
     expect(reloaded.annotation_predicted?.go_bp?.[p2Index]).toMatchObject({
       value: 'transferred;label|literal%;second hit',
       values: ['transferred;label|literal%', 'second hit'],
@@ -172,7 +182,7 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
    * A missing categorical cell is materialised on import as the synthetic
    * `__NA__` category (`appendSyntheticNACategory`), which is an in-memory
    * sentinel, not a value that exists in any bundle. The writer must map it
-   * back to NULL, exactly as `readCategoricalStorageValues` already does on the
+   * back to a missing cell, exactly as `readCategoricalStorageValues` already does on the
    * read side — otherwise `__NA__` is written as a literal 6-char string,
    * re-imports as a genuine frequency-sorted category (it is not in
    * `MISSING_VALUE_TOKENS`), steals a palette slot from `NA_DEFAULT_COLOR`, and
@@ -183,23 +193,15 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
    * the test above forces the writer down its `annotation_predicted` null
    * branch, which is why that test cannot catch this.
    */
-  it('writes a missing categorical cell as NULL, not the internal __NA__ sentinel', async () => {
+  it('writes a missing categorical cell as missing, not the internal __NA__ sentinel', async () => {
     const golden = await loadGoldenBundle();
 
     // Precondition: import really did synthesise the sentinel for P2's empty cell.
     expect(golden.annotations.go_bp.values).toContain(NA_VALUE);
 
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(golden));
-
-    // The exported cell is absent/NULL — never the literal sentinel text.
-    expect(extraction.annotationsById.get('P2')?.go_bp ?? null).toBeNull();
-    for (const row of extraction.annotationsById.values()) {
-      expect(Object.values(row)).not.toContain(NA_VALUE);
-    }
-
     // On reload the sentinel is re-synthesised, so it stays in its locked last
     // slot with the NA colour instead of being frequency-sorted into the palette.
-    const reloaded = await convertParquetToVisualizationDataOptimized(extraction);
+    const { data: reloaded } = await decodeParquetBundle(createParquetBundle(golden));
     expect(reloaded.annotations.go_bp.values.filter(isNAValue)).toHaveLength(1);
     expect(reloaded.annotations.go_bp.values).toEqual(golden.annotations.go_bp.values);
     expect(reloaded.annotations.go_bp.colors).toEqual(golden.annotations.go_bp.colors);
