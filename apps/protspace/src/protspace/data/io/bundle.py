@@ -166,6 +166,27 @@ def _core_tables(
     return annotations, metadata, projections
 
 
+def _drop_internal_columns(annotations: pa.Table) -> pa.Table:
+    """Remove the internal lookup columns from a bundle's annotations table.
+
+    ``organism_id`` and ``sequence`` are fetched only to drive the taxonomy and
+    sequence-based lookups; no bundle reader uses them, and in the web app they
+    show up as meaningless near-unique categories. Schema metadata (the format
+    stamp) is kept.
+    """
+    # Imported at call time: configuration imports every retriever, and the
+    # annotation package imports data/io (manager), so a module-level import
+    # would tie this module into that chain and break on the first retriever
+    # that reads a bundle helper.
+    from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+
+    internal = [c for c in INTERNAL_ANNOTATIONS if c in annotations.column_names]
+    if not internal:
+        return annotations
+    logger.debug(f"Dropping internal columns from the bundle: {internal}")
+    return annotations.drop_columns(internal)
+
+
 def _check_no_delimiter(part_bytes: bytes) -> None:
     """Guard: a serialized part must not contain the bundle delimiter.
 
@@ -324,7 +345,8 @@ def write_bundle(
 
     Args:
         tables: List of 3 Arrow tables (annotations, projections_metadata,
-            projections_data).
+            projections_data). The internal lookup columns (``organism_id``,
+            ``sequence``) are dropped from the annotations table.
         bundle_path: Output file path.
         settings: Optional settings dict to include as 4th part.
         statistics: Optional projection-statistics Arrow table to include as the
@@ -338,6 +360,7 @@ def write_bundle(
         )
 
     annotations, projections_metadata, projections_data = tables
+    annotations = _drop_internal_columns(annotations)
     part1, part2, part3, payloads = encode_v3(
         annotations, projections_metadata, projections_data
     )
@@ -398,8 +421,13 @@ def replace_annotations_in_bundle(
     :func:`write_bundle`: a caller whose operations dropped the stamp restores
     it from the version it read before
     (:func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`).
+
+    The internal lookup columns (``organism_id``, ``sequence``) are dropped from
+    the new annotations, so a bundle that carried them loses them here.
     """
     core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
+
+    annotations_table = _drop_internal_columns(annotations_table)
 
     if payloads is not None:
         parts = replace_annotations_v3(annotations_table, [*core, payloads])

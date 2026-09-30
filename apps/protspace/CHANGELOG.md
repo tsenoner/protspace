@@ -1,6 +1,159 @@
 # CHANGELOG
 
 
+## v4.15.0 (2026-09-30)
+
+### Bug Fixes
+
+- **protspace**: Batch Biocentral predictions
+  ([`1f3bcd5`](https://github.com/tsenoner/protspace/commit/1f3bcd58a4a453ead6690bc1325dea2e8cd161e9))
+
+- **protspace**: Bound Biocentral requests by residues, split on failure
+  ([`07faa0b`](https://github.com/tsenoner/protspace/commit/07faa0b56b6ca40d8ab55a19275cccbd789b35f5))
+
+- **protspace**: Don't cache lookups a lost UniProt batch left empty
+  ([`d53be6b`](https://github.com/tsenoner/protspace/commit/d53be6baafa31aec26e1fefde2a5b5a0041a2709))
+
+- **protspace**: Fetch sequences for Biocentral the cache lacks
+  ([`ab712e1`](https://github.com/tsenoner/protspace/commit/ab712e1b46efe4e4774c57c19ba96f534136fb77))
+
+- **protspace**: Give InterPro matches to all proteins sharing a sequence
+  ([`07be62b`](https://github.com/tsenoner/protspace/commit/07be62b70b4de0765c627bd3ec22a99aa5877ecd))
+
+- **protspace**: Keep a failed source's cached values, save the rest
+  ([`b6f6b27`](https://github.com/tsenoner/protspace/commit/b6f6b27bb3ed1bb0bf33a8a34fcd54c8470958b5))
+
+- **protspace**: Keep an empty TMbed payload missing, not negative
+  ([`622f6ae`](https://github.com/tsenoner/protspace/commit/622f6ae59913bcd4252dc4aa6c96367a8ef8858d))
+
+- **protspace**: Keep InterPro-N predictions out of InterPro columns
+  ([`22f17ed`](https://github.com/tsenoner/protspace/commit/22f17edc147515ff6e18ba0614947d70c25b70c9))
+
+- **protspace**: Keep UniProt family names whole
+  ([`59545d3`](https://github.com/tsenoner/protspace/commit/59545d3e0a95b4f6d70e55a45e4af8c9b4e8f2de))
+
+- **protspace**: Label TMbed negatives 'non-transmembrane', not 'none'
+  ([`c05ac8d`](https://github.com/tsenoner/protspace/commit/c05ac8dc1056e1d1d7d2fc2d9f147e327e889891))
+
+- **protspace**: Let UniProt entry lookups honour Retry-After
+  ([`b314e50`](https://github.com/tsenoner/protspace/commit/b314e501e354ed19b39bc847f940fe5c9aaa3c45))
+
+- **protspace**: Never cache empty values for proteins outside a run
+  ([`870e346`](https://github.com/tsenoner/protspace/commit/870e3468ad0f4abdc530d4e9a72eeae1b2fb8ca0))
+
+- **protspace**: Never write internal columns into a bundle
+  ([`de9b746`](https://github.com/tsenoner/protspace/commit/de9b74641919562bf96b7a0ebb0c476abe15d893))
+
+- **protspace**: Persist each annotation source as it finishes
+  ([`e0963d8`](https://github.com/tsenoner/protspace/commit/e0963d85edc72a07a670bc42166cf4da071d286b))
+
+- **protspace**: Refresh cached root and TMbed values (cache v3)
+  ([`17daa30`](https://github.com/tsenoner/protspace/commit/17daa3063abe743dd9f48a2eff97fa91ce60e816))
+
+- **protspace**: Refresh caches from before the family/InterPro fixes
+  ([`b8c0e7c`](https://github.com/tsenoner/protspace/commit/b8c0e7cada0ee7d11f3b14269173799f2fa854b3))
+
+- **protspace**: Refresh every cached column of a refetched source
+  ([`b3c1a39`](https://github.com/tsenoner/protspace/commit/b3c1a390d4807b360c32f2f8af88212e71fd8a37))
+
+- **protspace**: Retry failed TED lookups after the first pass
+  ([`08fa265`](https://github.com/tsenoner/protspace/commit/08fa265fbc5d9c7325adcc0165ec77c3fb55a2d4))
+
+- **protspace**: Retry InterPro match requests before counting them lost
+  ([`832d4fb`](https://github.com/tsenoner/protspace/commit/832d4fb4b008a1847f6934b4c0773171fa515c46))
+
+- **protspace**: Skip sequences Biocentral refuses instead of the batch
+  ([`c49da81`](https://github.com/tsenoner/protspace/commit/c49da81b07a56b6a401315e00a560a1f4190cc39))
+
+- **protspace**: Stop retrying once a fetch is abandoned
+  ([`58e9917`](https://github.com/tsenoner/protspace/commit/58e9917351a192036fa85ccc43aa60041eeb9cb5))
+
+- **protspace**: Take the taxonomy root from the top of the lineage
+  ([`cae6f14`](https://github.com/tsenoner/protspace/commit/cae6f141ba3104af86808bd4168a4db5ac71c84e))
+
+- **protspace**: Wait out a Retry-After extended during the wait
+  ([`84c333d`](https://github.com/tsenoner/protspace/commit/84c333ddce6c53121a98444e259b3bd8609b068c))
+
+### Documentation
+
+- **openspec**: Reconcile the Biocentral length and request bounds
+  ([`3b3f9b0`](https://github.com/tsenoner/protspace/commit/3b3f9b06180708cd4ef75bbdb0333d814f2a4aa8))
+
+- **protspace**: Describe kept cache values, retries and rollback
+  ([`213325e`](https://github.com/tsenoner/protspace/commit/213325edc21cc2dca5cb503abf53b83d023dfc9a))
+
+- **protspace**: Describe parallel lookups and the InterPro-N filter
+  ([`977413e`](https://github.com/tsenoner/protspace/commit/977413e9ddc276c578dff1e0bca0ddc1171b41f4))
+
+- **protspace**: Describe slow requests, stops and current TED times
+  ([`eba6e3c`](https://github.com/tsenoner/protspace/commit/eba6e3c4a7097453ce9d35677ee9c1b832cb6307))
+
+- **protspace**: Describe the retrieval and cache fixes
+  ([`47a11a8`](https://github.com/tsenoner/protspace/commit/47a11a874306386b4d6b1a5ed10817ec0c0dc78b))
+
+- **protspace**: Note cache version 3 in the agent guide
+  ([`cbd960f`](https://github.com/tsenoner/protspace/commit/cbd960f465c818d0dc72d07f27ec688205d444fe))
+
+### Features
+
+- **protspace**: Record the UniProt release in run.log
+  ([`93f6f96`](https://github.com/tsenoner/protspace/commit/93f6f96376e67e5ae09c8bb81015e4e063937404))
+
+- **protspace**: Resume annotate from a cache directory
+  ([`5d41776`](https://github.com/tsenoner/protspace/commit/5d417761fa67d5eb09d969c76ae3a1a695517136))
+
+### Performance Improvements
+
+- **protspace**: Keep workers busy while one lookup is slow
+  ([`2f843c6`](https://github.com/tsenoner/protspace/commit/2f843c6e0f189e64f422f7779522241cb7e30f18))
+
+- **protspace**: Look up TED domains 8 at a time over one session
+  ([`1a334e3`](https://github.com/tsenoner/protspace/commit/1a334e35b1e1bfcecf0c6759c9c4379ce9f560e6))
+
+- **protspace**: Reuse one connection for UniProt requests
+  ([`4fa7a0b`](https://github.com/tsenoner/protspace/commit/4fa7a0b956bf3915f81e8bf67cb3458cb92f1588))
+
+- **protspace**: Send 4 InterPro match batches at a time
+  ([`923cae4`](https://github.com/tsenoner/protspace/commit/923cae468b65bae5a75221fdd9cf47254f7d8202))
+
+### Refactoring
+
+- **protspace**: Let the retry helpers share a session
+  ([`404a9cc`](https://github.com/tsenoner/protspace/commit/404a9cc593ff4e491fbd697c0956dfff8e3fdc14))
+
+- **protspace**: Record the UniProt release each response reports
+  ([`e879922`](https://github.com/tsenoner/protspace/commit/e879922b586581d5df6f8b74a025e27c754cec5f))
+
+- **protspace**: Report no UniProt release for non-UniProt IDs
+  ([`8dc26b1`](https://github.com/tsenoner/protspace/commit/8dc26b18c22c010782a9f66fe9958f6bf200962a))
+
+- **protspace**: Share the annotation cache logic
+  ([`53c7664`](https://github.com/tsenoner/protspace/commit/53c7664608f6e6b3698debf823a98c5ce0f8be19))
+
+- **protspace**: Stop asking InterPro for matches once it is down
+  ([`35bf3e2`](https://github.com/tsenoner/protspace/commit/35bf3e2aa3b0ad4c432ff1a28f926d4b25357437))
+
+- **protspace**: Warn of an uncached source only when it stays so
+  ([`27a5d1a`](https://github.com/tsenoner/protspace/commit/27a5d1aebc4d0d3e8008478619c50b6046a0a981))
+
+### Testing
+
+- **protspace**: Check the retrieval fixes meet in one prepare run
+  ([`4647050`](https://github.com/tsenoner/protspace/commit/4647050ed3d0cdc8e43dea8a84290e6d18d6719f))
+
+- **protspace**: Check the v3 drop on a run that writes the cache
+  ([`b5894e4`](https://github.com/tsenoner/protspace/commit/b5894e463d65d97d128978a7bb6ec6d63ecc79c9))
+
+- **protspace**: Let the failing UniProt fakes accept on_response
+  ([`c02ed84`](https://github.com/tsenoner/protspace/commit/c02ed84720d0e7044e7feda74e6335241406d055))
+
+- **protspace**: Pin which sources a legacy PDB refresh reuses
+  ([`ea32b94`](https://github.com/tsenoner/protspace/commit/ea32b94167bd97ef98ef4d35209fd8a0c95c7560))
+
+- **protspace**: Strip ANSI codes before matching annotate usage errors
+  ([`58423e7`](https://github.com/tsenoner/protspace/commit/58423e79cd34dc761acbcda43bec117e24acd6d3))
+
+
 ## v4.14.0 (2026-09-30)
 
 ### Features

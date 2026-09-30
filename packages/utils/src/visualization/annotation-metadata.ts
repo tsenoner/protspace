@@ -160,7 +160,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Protein family',
     source: 'UniProt',
     isPredicted: false,
-    description: 'Protein family membership (first family), with evidence code.',
+    description:
+      'Protein family membership, one family per UniProt family statement, each with its evidence code.',
     docsUrl: docs('protein_families'),
   },
   reviewed: {
@@ -354,7 +355,8 @@ export const ANNOTATION_METADATA: Record<string, AnnotationMeta> = {
     label: 'Transmembrane',
     source: 'Biocentral',
     isPredicted: true,
-    description: 'Transmembrane type (none / alpha-helical / beta-barrel) predicted by TMbed.',
+    description:
+      'Transmembrane type (non-transmembrane / alpha-helical / beta-barrel) predicted by TMbed.',
     docsUrl: docs('predicted_transmembrane'),
   },
 };

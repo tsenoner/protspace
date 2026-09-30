@@ -157,7 +157,10 @@ class AnnotationConfiguration:
 
     @staticmethod
     def determine_sources_to_fetch(
-        cached_annotations: set[str], required_annotations: set[str]
+        cached_annotations: set[str],
+        required_annotations: set[str],
+        *,
+        sequences_supplied: bool = False,
     ) -> dict[str, bool]:
         """
         Determine which API sources need querying based on cache.
@@ -165,6 +168,8 @@ class AnnotationConfiguration:
         Args:
             cached_annotations: Set of annotations already in cache
             required_annotations: Set of annotations needed for current request
+            sequences_supplied: A local FASTA holds a sequence for every
+                protein of the run
 
         Returns:
             Dictionary mapping source names to boolean indicating if fetch is needed
@@ -189,6 +194,17 @@ class AnnotationConfiguration:
 
         # Handle dependencies: interpro needs sequence from UniProt
         if sources_needed["interpro"] and "sequence" not in cached_annotations:
+            sources_needed["uniprot"] = True
+
+        # Biocentral predicts from the sequence alone, which comes from the
+        # FASTA or else from UniProt. Handed none, it predicts nothing and
+        # reports success, so its empty values would be cached as current. A
+        # FASTA covering the run spares the UniProt pass, as it always has.
+        if (
+            sources_needed["biocentral"]
+            and "sequence" not in cached_annotations
+            and not sequences_supplied
+        ):
             sources_needed["uniprot"] = True
 
         return sources_needed
