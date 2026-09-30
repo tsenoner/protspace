@@ -88,7 +88,8 @@ planned for protspace 5.0.0."
   layouts, and the scale scenario targets the columnar reader instead of the legacy
   threshold-routed conversion.
 - `point-visibility`: points without finite coordinates are culled when plot data is built, a third
-  kind of culling next to query filter and isolation.
+  kind of culling next to query filter and isolation. The requirements that named the picking
+  quadtree now name the point grid that replaced it (#477's grid picking).
 
 ## Impact
 

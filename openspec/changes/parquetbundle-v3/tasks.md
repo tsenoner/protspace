@@ -77,6 +77,8 @@
 - [x] 3.12 The v3 reader keeps the manifest's `sourceType` on the loaded `Annotation`; the web
       exporter echoes it for a column that still fits it (integer range, `bool` labels, numeric
       kind), and falls back to its inferred type otherwise; round-trip tests
+- [x] 3.13 The point-visibility requirements that named the picking quadtree name the point grid
+      (`PointGridIndex`) that replaced it
 
 ## 4. Contract suite (`tests/contract`)
 

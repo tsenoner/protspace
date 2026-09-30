@@ -36,3 +36,53 @@ dataset (`protein_ids`, annotation arrays, legend counts, search).
 
 - **WHEN** `P` is culled from the selected projection but has coordinates in another
 - **THEN** `P` is still counted in its legend category and can be found by search
+
+## MODIFIED Requirements
+
+### Requirement: Single source of truth for display state
+
+The system SHALL compute per-point display state (tier `hidden | faded | base |
+selected`, numeric opacity, base opacity, interactivity) in exactly one pure module, and
+every consumer (style getters, point grid construction, hover, click, brush, lasso) SHALL
+read that module rather than re-deriving visibility. Category focus (Shift + hover) SHALL
+be an input to that module, not a separate opacity path.
+
+#### Scenario: All consumers agree
+
+- **WHEN** any combination of legend-hide, selection, highlight, and category-focus state
+  is active
+- **THEN** the opacity used for rendering, the points indexed by the point grid, and the
+  points accepted by hover/click/brush/lasso hit-tests are all derived from the same
+  model and can never disagree
+
+### Requirement: Hidden points have exactly zero opacity
+
+The system SHALL assign opacity exactly `0` (not merely a small value) to
+annotation-hidden points: consumers gate with a mix of comparisons (`=== 0` at export
+culling and hover/click, `> 0` at tracking and the point grid, `< 0.001` at the shader
+discard) that agree on "invisible and non-interactive" only at exactly `0`.
+
+#### Scenario: Hidden value yields exact zero
+
+- **WHEN** every annotation value of a point is in the hidden set (after normalization)
+  and not all values of the selected annotation are hidden
+- **THEN** the model's opacity for that point is exactly `0`
+
+### Requirement: Interactivity is numeric opacity, evaluated at event time
+
+The system SHALL define interactivity as `opacity > 0` using the configured opacity
+values (a `fadedOpacity` of `0` makes faded points non-interactive), and SHALL evaluate
+it against current inputs at event time so hit-testing is correct even while the
+point grid rebuild is rAF-deferred. The renderer-capacity gate (`isPointRendered`) remains
+a separate check outside the model.
+
+#### Scenario: Faded points are clickable under default config
+
+- **WHEN** a selection is active and `fadedOpacity` is the default `0.15`
+- **THEN** faded points respond to hover, click, brush, and lasso
+
+#### Scenario: Hidden points are not clickable
+
+- **WHEN** a point's opacity is `0`
+- **THEN** it is excluded from the point grid and rejected by hover/click/brush/lasso even
+  during the one-frame point grid staleness window
