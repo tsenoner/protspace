@@ -657,6 +657,25 @@ describe('legacy import, v3 export', () => {
     }
   });
 
+  it('keeps a bool column bool when a prediction adds a label the column never holds', () => {
+    // `protspace transfer` spells a predicted bool `str(value)`, so the overlay appends
+    // `False` to the base column's labels. The curated column is written without the
+    // predicted rows, so its dictionary is still `true` / `false`, and Python can
+    // restore it as bool.
+    const original = handBuilt();
+    original.annotations.reviewed = {
+      ...categorical(['true', 'false', 'False', '__NA__']),
+      sourceType: 'bool',
+    };
+    original.annotation_data.reviewed = Int32Array.of(0, 1, 2, 3);
+    original.annotation_predicted = {
+      reviewed: [null, null, { value: 'False', confidence: 0.9, source: 'P1' }, null],
+    };
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.reviewed.sourceType).toBe('bool');
+  });
+
   it("carries the golden fixture's sourceType through a re-export", async () => {
     const file = fixture('v3-sample.parquetbundle').slice().buffer as ArrayBuffer;
     const written = manifestOf(file).columns;

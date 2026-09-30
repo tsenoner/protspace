@@ -114,6 +114,8 @@ interface AnnotationParts {
   payloads: Map<string, Uint8Array>;
   /** The one evidence dictionary every column indexes into, in first-use order. */
   evidence: Map<string, number>;
+  /** Each `dict:<name>` as written, which is what a carried `sourceType` has to fit. */
+  dictionaries: Map<string, readonly string[]>;
 }
 
 /** Index of `key` in `map`, appended when absent. */
@@ -186,6 +188,7 @@ function addDictionary(parts: AnnotationParts, name: string, labels: readonly st
   }
   addPayload(parts, `dict:${name}`, blob);
   addPayload(parts, `dict:${name}:len`, bytesOf(lengths));
+  parts.dictionaries.set(name, labels);
 }
 
 /**
@@ -489,6 +492,11 @@ function fitsSourceType(
  * Record the `sourceType` the annotation carried in from a v3 load, when the column as written
  * still fits it. That keeps a Python-written `bool` or `int32` column that type through a web
  * re-export; a column the app changed into something else keeps the writer's default.
+ *
+ * The fit is judged on the dictionary written for the column, not on `annotation.values`: an
+ * EAT prediction appends its labels there (`protspace transfer` spells a bool `False`), but
+ * the predicted rows are written as missing in the curated column and their labels travel in
+ * the companion columns.
  */
 function echoSourceType(
   parts: AnnotationParts,
@@ -501,7 +509,7 @@ function echoSourceType(
   if (
     entry &&
     carried !== undefined &&
-    fitsSourceType(carried, entry, annotation.values, numeric)
+    fitsSourceType(carried, entry, parts.dictionaries.get(name) ?? annotation.values, numeric)
   ) {
     entry.sourceType = carried;
   }
@@ -528,6 +536,7 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
     manifest: {},
     payloads: new Map(),
     evidence: new Map(),
+    dictionaries: new Map(),
   };
 
   for (const [name, annotation] of Object.entries(data.annotations)) {

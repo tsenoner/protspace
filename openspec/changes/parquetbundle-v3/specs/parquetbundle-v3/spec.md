@@ -253,6 +253,13 @@ inferred type.
   and exported
 - **THEN** Python decodes that column of the export as `bool`, with the same values as the original
 
+#### Scenario: A boolean column with EAT predictions round-trips through the web app
+
+- **WHEN** a bundle whose `BOOLEAN` column `protspace transfer` predicted (the prediction labels
+  spelled `True` / `False`) is loaded in the web app and exported
+- **THEN** Python decodes that column of the export as `bool`: the fit is judged on the labels
+  written to the column, and the predicted rows travel in the companion columns
+
 #### Scenario: A float column of whole numbers round-trips through the web app
 
 - **WHEN** a bundle written by Python with a `double` column whose values are all whole numbers is

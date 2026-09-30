@@ -115,6 +115,9 @@
       re-ranks them over the placed proteins' hits, so a label, rank, palette slot or N/A entry
       only an unplaced protein had is not left behind; the contract coverage variant gives its
       annotation-only protein a family no placed protein has
+- [x] 3.22 The web exporter judges a carried `sourceType` on the dictionary it writes for the
+      column, not on the annotation's values, so an EAT prediction's labels do not turn a `bool`
+      column into `string`
 
 ## 4. Contract suite (`tests/contract`)
 

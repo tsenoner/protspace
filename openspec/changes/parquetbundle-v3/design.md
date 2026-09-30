@@ -225,8 +225,10 @@ its range that a float64 holds exactly (up to ±2^53 inclusive, where Python's e
 same line), or when the column is categorical and every label is a decimal integer in its range
 (the exact labels described below), `bool` when the column is categorical with only `true`/`false` labels, a float type when
 it is numeric, and anything else (`string`, a timestamp, `?`), which Python only renders as text,
-always. A column the app changed so that it no longer fits, and every column of a legacy load, gets
-the exporter's own choice. The alternative, re-deriving the type in the writer, cannot tell a
+always. The fit is judged on the labels written to the column, not on the loaded annotation's
+values, which also hold the labels an EAT prediction added (`protspace transfer` spells a
+predicted bool `False`) while the predicted rows are written as missing. A column the app changed
+so that it no longer fits, and every column of a legacy load, gets the exporter's own choice. The alternative, re-deriving the type in the writer, cannot tell a
 float64 column of whole numbers from an integer one or a string column the browser reads as numbers
 from a numeric one.
 
