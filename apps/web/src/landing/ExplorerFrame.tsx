@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { Category } from './landing-data';
+import { NEUTRAL_COLOR } from './ScatterCanvas';
 
 /** Surface tokens copied from packages/core/src/styles/tokens.ts. */
 const UI = {
@@ -15,7 +16,6 @@ const UI = {
   text: '#334155',
   muted: '#5b6b7a',
 };
-const NEUTRAL_SWATCH = '#c4cad3';
 
 /** "12 of 294" when named categories were collapsed into Other, else the category count. */
 function categorySummary(categories: Category[]): string {
@@ -25,19 +25,18 @@ function categorySummary(categories: Category[]): string {
 }
 
 interface ExplorerFrameProps {
-  /** Toolbar content, normally `ToolbarChip`s and the section's own control. */
+  /** Toolbar content: the section's own controls. */
   toolbar: ReactNode;
   /** The plot, usually a `ScatterCanvas`; it fills the plot panel. */
   children: ReactNode;
   legendTitle: string;
   categories: Category[];
   /** Show only the first N named rows; Other and N/A are always appended. */
-  legendRows?: number;
+  legendRows: number;
   /** Legend swatches stay neutral until the section has revealed its colors. */
-  colored?: boolean;
+  colored: boolean;
   count?: number;
   busy?: boolean;
-  className?: string;
   /** Sizes the plot panel, e.g. `aspect-[4/3] lg:aspect-auto lg:h-[600px]`. */
   plotClassName?: string;
 }
@@ -48,23 +47,16 @@ export function ExplorerFrame({
   legendTitle,
   categories,
   legendRows,
-  colored = true,
+  colored,
   count,
   busy,
-  className,
   plotClassName,
 }: ExplorerFrameProps) {
   const named = categories.filter((category) => !category.kind);
-  const rows = [
-    ...(legendRows === undefined ? named : named.slice(0, legendRows)),
-    ...categories.filter((category) => category.kind),
-  ];
+  const rows = [...named.slice(0, legendRows), ...categories.filter((category) => category.kind)];
 
   return (
-    <div
-      className={cn('rounded-2xl border border-border/70 p-2 sm:p-3', className)}
-      style={{ background: UI.page }}
-    >
+    <div className="rounded-2xl border border-border/70 p-2 sm:p-3" style={{ background: UI.page }}>
       <div
         className="flex flex-wrap items-center rounded-md border bg-white gap-x-5 gap-y-2 px-3 py-2"
         style={{ borderColor: UI.border }}
@@ -118,7 +110,7 @@ export function ExplorerFrame({
                   aria-hidden="true"
                   className="inline-block shrink-0 rounded-full ring-1 ring-inset ring-black/25 h-3.5 w-3.5"
                   style={{
-                    background: colored ? category.color : NEUTRAL_SWATCH,
+                    background: colored ? category.color : NEUTRAL_COLOR,
                     transition: 'background 550ms ease',
                   }}
                 />

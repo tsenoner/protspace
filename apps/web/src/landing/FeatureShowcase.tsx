@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { DOCS_URL } from '@/config';
 import { cn } from '@/lib/utils';
+import { DemoScatter } from './DemoScatter';
 import { ExplorerFrame } from './ExplorerFrame';
-import { ProteinTooltip, useHoverLabels } from './ProteinTooltip';
-import { ScatterCanvas } from './ScatterCanvas';
-import { Section, SectionHeading } from './Section';
+import { Section, SectionHeading, linkClass } from './Section';
 import { loadDemoData, loadVenomData, useLandingData, type VenomData } from './landing-data';
 import { prefersReducedMotion } from './motion';
 
-const DEFAULT_ANNOTATION = 'protein_families';
 /** Auto-cycle cadence until the visitor picks a projection or an annotation themselves. */
 const CYCLE_MS = 2600;
 const LEGEND_ROWS = 7;
@@ -24,9 +22,6 @@ const SOURCE_ID = 'P20005';
  */
 const STRUCTURE = { id: 'A4FS04', src: 'structure-A4FS04.webp' };
 
-const linkClass =
-  'text-sm font-medium text-primary underline decoration-primary/35 underline-offset-4 transition-colors hover:decoration-primary';
-
 /**
  * What the explorer does, on one map: a live explorer frame where the projection and the
  * annotation can be switched (points move or recolor, never swap), beside three tiles for
@@ -36,45 +31,50 @@ export function FeatureShowcase() {
   const demo = useLandingData(loadDemoData);
   const venom = useLandingData(loadVenomData);
   const [projection, setProjection] = useState(0);
-  const [column, setColumn] = useState(DEFAULT_ANNOTATION);
+  /** Index into `demo.annotations`; the first is the explorer's default coloring. */
+  const [annotationIndex, setAnnotationIndex] = useState(0);
+  /** Latched once the frame has been seen: its colors are revealed on first view. */
   const [inView, setInView] = useState(false);
+  /** Whether the frame is on screen in a visible tab right now; the auto-cycle runs only then. */
+  const [onScreen, setOnScreen] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
   /** A click on any chip stops the auto-cycle; a reload starts it again. */
   const [pinned, setPinned] = useState(false);
-  const { labels, onHover } = useHoverLabels();
   const frameRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const element = frameRef.current;
-    if (!element || inView) return;
+    if (!element) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
+        setOnScreen(entry.isIntersecting);
         if (entry.isIntersecting) setInView(true);
       },
       { threshold: 0.3 },
     );
     observer.observe(element);
-    return () => observer.disconnect();
-  }, [inView]);
+    const onVisibility = () => setPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   // Alternate a new projection and a new annotation so visitors see both controls at work.
   useEffect(() => {
-    if (!demo || !inView || pinned || prefersReducedMotion()) return;
-    const columns = demo.annotations.map((entry) => entry.column);
+    if (!demo || !onScreen || !pageVisible || pinned || prefersReducedMotion()) return;
     let step = 0;
     const timer = setInterval(() => {
       step += 1;
       if (step % 2) setProjection((current) => (current + 1) % demo.projections.length);
-      else setColumn((current) => columns[(columns.indexOf(current) + 1) % columns.length]);
+      else setAnnotationIndex((current) => (current + 1) % demo.annotations.length);
     }, CYCLE_MS);
     return () => clearInterval(timer);
-  }, [demo, inView, pinned]);
+  }, [demo, onScreen, pageVisible, pinned]);
 
   const shown = demo?.projections[projection];
-  const annotation =
-    demo?.annotations.find((entry) => entry.column === column) ?? demo?.annotations[0];
-  const palette = annotation?.categories.map((category) => category.color) ?? [];
-  const baseCategories =
-    annotation?.categories.flatMap((category, i) => (category.kind ? [i] : [])) ?? [];
+  const annotation = demo?.annotations[annotationIndex];
 
   return (
     <Section id="features">
@@ -103,10 +103,10 @@ export function FeatureShowcase() {
                 <ChipGroup
                   label="Annotation"
                   items={demo?.annotations.map((entry) => entry.label) ?? []}
-                  active={demo?.annotations.findIndex((entry) => entry.column === column) ?? 0}
+                  active={annotationIndex}
                   onSelect={(i) => {
                     setPinned(true);
-                    if (demo) setColumn(demo.annotations[i].column);
+                    setAnnotationIndex(i);
                   }}
                 />
               </>
@@ -120,23 +120,12 @@ export function FeatureShowcase() {
             plotClassName="aspect-[4/3] sm:aspect-auto sm:h-[400px] xl:h-[452px]"
           >
             {demo && shown && annotation ? (
-              <ScatterCanvas
+              <DemoScatter
                 x={shown.x}
                 y={shown.y}
-                categories={annotation.index}
-                palette={palette}
-                baseCategories={baseCategories}
+                annotation={annotation}
                 pointRadius={2.4}
                 neutral={!inView}
-                interactive
-                onHover={onHover}
-                renderTooltip={(index) => (
-                  <ProteinTooltip
-                    index={index}
-                    labels={labels}
-                    category={annotation.categories[annotation.index[index]]}
-                  />
-                )}
                 aria-label={`${shown.name} of ${demo.count.toLocaleString()} venom proteins colored by ${annotation.label.toLowerCase()}`}
               />
             ) : null}
@@ -281,10 +270,10 @@ function TransferSketch({ venom }: { venom: VenomData }) {
     return {
       query: ids[transfer.point],
       source: ids[transfer.source],
-      color: eat.categories[transfer.category].color,
+      color: eat.categories[transfer.category]?.color ?? '#94a3b8',
       sourceColor: eat.categories[sourceClass]?.color ?? '#94a3b8',
       others: others.slice(0, 2).map((c) => eat.categories[c].color),
-      label: eat.categories[transfer.category].label,
+      label: eat.categories[transfer.category]?.label ?? 'a transferred value',
       confidence: transfer.confidence,
     };
   }, [venom]);
@@ -326,8 +315,6 @@ function TransferSketch({ venom }: { venom: VenomData }) {
   );
 }
 
-/** Mirrors `OTHER_COLOR` in the landing data script: the collapsed Other bucket. */
-const OTHER_GREY = '#888888';
 const signed = (value: number) => (value < 0 ? '−' : '') + Math.abs(value).toFixed(2);
 
 /** Where a silhouette value sits on the strip, in percent of its width; [-1, 1] with a margin. */
@@ -340,7 +327,7 @@ const stripX = (value: number) => `${5 + ((value + 1) / 2) * 90}%`;
 function SeparationSketch({ venom }: { venom: VenomData }) {
   const { label, projection, overall, categories } = venom.separation;
   const ordered = [...categories].sort(
-    (a, b) => Number(b.color === OTHER_GREY) - Number(a.color === OTHER_GREY),
+    (a, b) => Number(b.kind === 'other') - Number(a.kind === 'other'),
   );
   const rows = [
     { name: '2D map', value: overall.map, key: 'map' as const },

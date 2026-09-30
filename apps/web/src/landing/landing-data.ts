@@ -14,7 +14,7 @@ export interface Category {
   collapsed?: number;
 }
 
-interface DemoAnnotation {
+export interface DemoAnnotation {
   column: string;
   label: string;
   categories: Category[];
@@ -31,10 +31,7 @@ interface DemoProjection {
 
 interface DemoData {
   count: number;
-  /** The projection /explore opens by default, the first of `projections`. */
-  projection: { name: string };
-  x: Float32Array;
-  y: Float32Array;
+  /** The first is the projection /explore opens by default. */
   projections: DemoProjection[];
   annotations: DemoAnnotation[];
 }
@@ -52,11 +49,8 @@ export interface VenomTransfer {
 }
 
 export interface VenomData {
-  count: number;
   ids: string[];
   eat: {
-    column: string;
-    label: string;
     categories: Category[];
     /** Per-point curated category index, -1 when the curated value is missing. */
     curated: number[];
@@ -68,18 +62,24 @@ export interface VenomData {
     label: string;
     projection: string;
     overall: { map: number; embedding: number };
-    categories: { label: string; color: string; map: number; embedding: number }[];
+    categories: {
+      label: string;
+      color: string;
+      /** Set for categories the legend collapses into Other. */
+      kind?: 'other';
+      map: number;
+      embedding: number;
+    }[];
   };
 }
 
 interface DemoManifest {
   count: number;
-  projections: { name: string; xMin: number; xMax: number; yMin: number; yMax: number }[];
+  projections: { name: string }[];
   bin: {
     file: string;
-    layout: { field: string; type: 'Uint16' | 'Uint8'; offset: number; length: number }[];
+    layout: { field: string; offset: number; length: number }[];
   };
-  labels: { file: string };
   annotations: { column: string; label: string; categories: Category[] }[];
 }
 
@@ -133,15 +133,7 @@ export const loadDemoData = once(async (): Promise<DemoData> => {
     if (!slot) throw new Error(`Missing binary layout for ${annotation.column}`);
     return { ...annotation, index: new Uint8Array(buffer, slot.offset, slot.length) };
   });
-  const [initial] = projections;
-  return {
-    count: n,
-    projection: { name: initial.name },
-    x: initial.x,
-    y: initial.y,
-    projections,
-    annotations,
-  };
+  return { count: n, projections, annotations };
 });
 
 export const loadDemoLabels = once(() => fetchJson<DemoLabels>('demo-labels.json'));

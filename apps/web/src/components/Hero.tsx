@@ -3,8 +3,8 @@ import { Link } from 'react-router';
 import { ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DOCS_URL } from '@/config';
-import { ScatterCanvas, toPercent } from '@/landing/ScatterCanvas';
-import { ProteinTooltip, useHoverLabels } from '@/landing/ProteinTooltip';
+import { DemoScatter } from '@/landing/DemoScatter';
+import { toPercent } from '@/landing/ScatterCanvas';
 import { loadDemoData, useLandingData } from '@/landing/landing-data';
 import { prefersReducedMotion } from '@/landing/motion';
 import { cn } from '@/lib/utils';
@@ -72,19 +72,17 @@ function familyLabels(
 
 const Hero = () => {
   const demo = useLandingData(loadDemoData);
-  const { labels, onHover } = useHoverLabels();
   const [lit, setLit] = useState(prefersReducedMotion);
 
+  /** The projection /explore opens by default. */
+  const shown = demo?.projections[0];
   const annotation = demo?.annotations.find((entry) => entry.column === HERO_ANNOTATION);
-  const palette = annotation?.categories.map((category) => category.color) ?? [];
-  const baseCategories =
-    annotation?.categories.flatMap((category, i) => (category.kind ? [i] : [])) ?? [];
   const mapLabels = useMemo(
     () =>
-      demo && annotation
-        ? familyLabels(demo.x, demo.y, annotation.index, annotation.categories)
+      shown && annotation
+        ? familyLabels(shown.x, shown.y, annotation.index, annotation.categories)
         : [],
-    [demo, annotation],
+    [shown, annotation],
   );
 
   // The map appears in neutral grey and lights up once: the page's one entrance.
@@ -141,26 +139,15 @@ const Hero = () => {
             className="relative -mx-4 aspect-[4/3] sm:mx-0 lg:col-span-6 lg:mx-0 lg:aspect-auto lg:h-[min(72vh,640px)] xl:col-span-7"
             aria-busy={demo === undefined}
           >
-            {demo && annotation ? (
-              <ScatterCanvas
-                x={demo.x}
-                y={demo.y}
-                categories={annotation.index}
-                palette={palette}
-                baseCategories={baseCategories}
+            {demo && shown && annotation ? (
+              <DemoScatter
+                x={shown.x}
+                y={shown.y}
+                annotation={annotation}
                 pointRadius={3}
                 neutral={!lit}
                 transitionMs={REVEAL_MS}
-                interactive
-                onHover={onHover}
-                renderTooltip={(index) => (
-                  <ProteinTooltip
-                    index={index}
-                    labels={labels}
-                    category={annotation.categories[annotation.index[index]]}
-                  />
-                )}
-                aria-label={`${demo.projection.name} of ${demo.count.toLocaleString()} venom proteins, colored by ${annotation.label.toLowerCase()}`}
+                aria-label={`${shown.name} of ${demo.count.toLocaleString()} venom proteins, colored by ${annotation.label.toLowerCase()}`}
               />
             ) : null}
 

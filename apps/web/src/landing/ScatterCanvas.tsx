@@ -7,33 +7,30 @@
  * coordinates for the same points (another projection) move each point to its new place.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Category } from './landing-data';
 import { prefersReducedMotion } from './motion';
 
-interface ScatterCanvasProps {
+export interface ScatterCanvasProps {
   /** Normalized coordinates in [0, 1]; y grows upward like the explorer. */
   x: Float32Array;
   y: Float32Array;
-  /** Per-point category index into `palette`. */
-  categories: ArrayLike<number>;
-  /** Category index → CSS color. */
-  palette: readonly string[];
-  /** Categories drawn underneath everything else (Other, N/A). */
-  baseCategories?: readonly number[];
+  /** Per-point index into `categories`. */
+  index: ArrayLike<number>;
+  /** Legend categories; those with a `kind` (Other, N/A) are drawn underneath the rest. */
+  categories: readonly Pick<Category, 'color' | 'kind'>[];
   /** Point radius in CSS px on a 600px-wide canvas; scales with the rendered width. */
   pointRadius?: number;
   /** Draw every point in neutral grey (the pre-annotation entry state). */
   neutral?: boolean;
   /** Crossfade length when colors change. */
   transitionMs?: number;
-  /** Enable hover emphasis and tooltips. */
-  interactive?: boolean;
   onHover?: (index: number | null) => void;
   renderTooltip?: (index: number) => ReactNode;
-  className?: string;
   'aria-label'?: string;
 }
 
-const NEUTRAL_COLOR = '#c4cad3';
+/** The grey of points and legend swatches before a section reveals its colors. */
+export const NEUTRAL_COLOR = '#c4cad3';
 const BASE_OPACITY = 0.9;
 const FADED_OPACITY = 0.18;
 const HIT_RADIUS_PX = 9;
@@ -72,19 +69,14 @@ interface Layout {
   radius: number;
 }
 
-function toScreen(layout: Layout, nx: number, ny: number): [number, number] {
-  const { width, height } = layout;
-  const span = 1 - 2 * PAD_FRACTION;
-  return [(PAD_FRACTION + nx * span) * width, (PAD_FRACTION + (1 - ny) * span) * height];
-}
+const SPAN = 1 - 2 * PAD_FRACTION;
+/** Normalized x → fraction of the width, and normalized y (upward) → fraction of the height. */
+const toFractionX = (nx: number) => PAD_FRACTION + nx * SPAN;
+const toFractionY = (ny: number) => PAD_FRACTION + (1 - ny) * SPAN;
 
 /** CSS `left`/`top` percentages of the point at normalized (nx, ny), for HTML overlays. */
 export function toPercent(nx: number, ny: number): { left: string; top: string } {
-  const span = 1 - 2 * PAD_FRACTION;
-  return {
-    left: `${(PAD_FRACTION + nx * span) * 100}%`,
-    top: `${(PAD_FRACTION + (1 - ny) * span) * 100}%`,
-  };
+  return { left: `${toFractionX(nx) * 100}%`, top: `${toFractionY(ny) * 100}%` };
 }
 
 function drawPoints(
@@ -94,26 +86,28 @@ function drawPoints(
   neutral: boolean,
   only?: number,
 ) {
-  const { x, y, categories, palette, baseCategories = [] } = props;
-  const { radius } = layout;
-  const order = [
-    ...baseCategories,
-    ...palette.map((_, i) => i).filter((i) => !baseCategories.includes(i)),
-  ];
+  const { x, y, index, categories } = props;
+  const { radius, width, height } = layout;
+  // Other and N/A first, so the named categories draw on top of them.
+  const order = categories
+    .map((category, i) => ({ i, base: category.kind !== undefined }))
+    .sort((a, b) => Number(b.base) - Number(a.base))
+    .map(({ i }) => i);
   // Rim: the outer ~10% of the radius (at least one device pixel, at most a quarter), inside
   // the disc so the point does not grow.
   const rim = Math.min(Math.max(radius * 0.1, 1 / layout.dpr), radius * 0.25);
   ctx.lineJoin = 'round';
   for (const category of order) {
     if (only !== undefined && category !== only) continue;
-    const color = neutral ? NEUTRAL_COLOR : palette[category];
+    const color = neutral ? NEUTRAL_COLOR : categories[category]?.color;
     if (!color) continue;
 
     ctx.beginPath();
     let count = 0;
     for (let i = 0; i < x.length; i++) {
-      if (categories[i] !== category) continue;
-      const [sx, sy] = toScreen(layout, x[i], y[i]);
+      if (index[i] !== category) continue;
+      const sx = toFractionX(x[i]) * width;
+      const sy = toFractionY(y[i]) * height;
       ctx.moveTo(sx + radius, sy);
       ctx.arc(sx, sy, radius, 0, Math.PI * 2);
       count++;
@@ -125,8 +119,9 @@ function drawPoints(
     ctx.beginPath();
     const r = radius - rim / 2;
     for (let i = 0; i < x.length; i++) {
-      if (categories[i] !== category) continue;
-      const [sx, sy] = toScreen(layout, x[i], y[i]);
+      if (index[i] !== category) continue;
+      const sx = toFractionX(x[i]) * width;
+      const sy = toFractionY(y[i]) * height;
       ctx.moveTo(sx + r, sy);
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
     }
@@ -152,16 +147,13 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
   const {
     x,
     y,
+    index,
     categories,
-    palette,
-    baseCategories,
     pointRadius = 2.6,
     neutral = false,
     transitionMs = 550,
-    interactive = false,
     onHover,
     renderTooltip,
-    className,
   } = props;
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -170,6 +162,9 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
 
   const propsRef = useRef(props);
   propsRef.current = props;
+  // Read by `composite` through a ref so a hover change only recomposites, never re-rasterizes.
+  const hoveredRef = useRef<number | undefined>(undefined);
+  hoveredRef.current = hover?.index;
   const layers = useRef<{
     current: HTMLCanvasElement | null;
     previous: HTMLCanvasElement | null;
@@ -188,11 +183,6 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
   };
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-
-  // Callers rebuild these arrays per render; compare by content so a parent re-render does not
-  // re-rasterize 7,831 points or restart an in-flight crossfade.
-  const paletteKey = palette.join('|');
-  const baseKey = (baseCategories ?? []).join(',');
 
   useEffect(() => {
     const host = hostRef.current;
@@ -237,14 +227,19 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
         layoutRef.current,
         current.neutral ?? false,
       );
-      if (t < 1) state.frame = requestAnimationFrame(composite);
-      else state.morph = null;
+      if (t < 1) {
+        state.frame = requestAnimationFrame(composite);
+      } else {
+        state.morph = null;
+        // The morph loop draws no hover emphasis; restore it once the points have landed.
+        if (hoveredRef.current !== undefined) state.frame = requestAnimationFrame(composite);
+      }
       return;
     }
 
     const elapsed = performance.now() - state.start;
     const t = state.previous ? Math.min(1, elapsed / transitionMs) : 1;
-    const hovered = hover?.index;
+    const hovered = hoveredRef.current;
 
     if (hovered !== undefined) {
       ctx.globalAlpha = FADED_OPACITY / BASE_OPACITY;
@@ -252,17 +247,17 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
       ctx.globalAlpha = BASE_OPACITY;
       ctx.scale(dpr, dpr);
       const current = propsRef.current;
-      drawPoints(
-        ctx,
-        current,
-        layoutRef.current,
-        current.neutral ?? false,
-        current.categories[hovered],
-      );
+      drawPoints(ctx, current, layoutRef.current, current.neutral ?? false, current.index[hovered]);
       ctx.globalAlpha = 1;
-      const [sx, sy] = toScreen(layoutRef.current, current.x[hovered], current.y[hovered]);
+      const { width, height, radius } = layoutRef.current;
       ctx.beginPath();
-      ctx.arc(sx, sy, layoutRef.current.radius + 3, 0, Math.PI * 2);
+      ctx.arc(
+        toFractionX(current.x[hovered]) * width,
+        toFractionY(current.y[hovered]) * height,
+        radius + 3,
+        0,
+        Math.PI * 2,
+      );
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = '#0f172a';
       ctx.stroke();
@@ -279,7 +274,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
     } else {
       state.previous = null;
     }
-  }, [hover, transitionMs]);
+  }, [transitionMs]);
 
   // Re-render the state bitmap when data, colors or size change, then crossfade to it.
   useEffect(() => {
@@ -312,22 +307,30 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
     cancelAnimationFrame(state.frame);
     state.frame = requestAnimationFrame(composite);
     return () => cancelAnimationFrame(state.frame);
-  }, [x, y, categories, paletteKey, baseKey, pointRadius, neutral, box, composite]);
+  }, [x, y, index, categories, pointRadius, neutral, box, composite]);
+
+  // Hover emphasis is drawn from the cached layer: recomposite only.
+  useEffect(() => {
+    const state = layers.current;
+    if (!state.current) return;
+    cancelAnimationFrame(state.frame);
+    state.frame = requestAnimationFrame(composite);
+  }, [hover?.index, composite]);
 
   useEffect(() => {
     onHover?.(hover?.index ?? null);
   }, [hover?.index, onHover]);
 
   const handleMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!interactive || event.pointerType === 'touch') return;
+    if (event.pointerType === 'touch') return;
     const rect = event.currentTarget.getBoundingClientRect();
     const px = event.clientX - rect.left;
     const py = event.clientY - rect.top;
+    const { width, height } = layoutRef.current;
     let best = -1;
     let bestDistance = HIT_RADIUS_PX * HIT_RADIUS_PX;
     for (let i = 0; i < x.length; i++) {
-      const [sx, sy] = toScreen(layoutRef.current, x[i], y[i]);
-      const d = (sx - px) ** 2 + (sy - py) ** 2;
+      const d = (toFractionX(x[i]) * width - px) ** 2 + (toFractionY(y[i]) * height - py) ** 2;
       if (d < bestDistance) {
         bestDistance = d;
         best = i;
@@ -347,7 +350,7 @@ export function ScatterCanvas(props: ScatterCanvasProps) {
   return (
     <div
       ref={hostRef}
-      className={`relative h-full w-full ${interactive ? 'cursor-crosshair' : ''} ${className ?? ''}`}
+      className="relative h-full w-full cursor-crosshair"
       onPointerMove={handleMove}
       onPointerLeave={() => setHover(null)}
     >

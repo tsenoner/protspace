@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { cn } from '@/lib/utils';
-import { Eyebrow, Section, SectionHeading } from './Section';
+import { Eyebrow, Section, SectionHeading, linkClass } from './Section';
 
 /** The real minimal preparation session (docs: `protspace prepare`), wrapped to fit the column. */
 const TERMINAL: { text: string; prompt?: boolean; muted?: boolean }[] = [
@@ -78,10 +78,7 @@ export function WorkflowOverview() {
               Drop the bundle into the explorer. It opens bundles up to Swiss-Prot scale: 573,649
               proteins.
             </p>
-            <Link
-              to="/explore"
-              className="inline-block text-sm font-medium text-primary underline decoration-primary/35 underline-offset-4 transition-colors hover:decoration-primary"
-            >
+            <Link to="/explore" className={cn('inline-block', linkClass)}>
               Open the explorer
             </Link>
           </Step>

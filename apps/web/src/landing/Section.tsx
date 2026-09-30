@@ -27,13 +27,12 @@ interface SectionHeadingProps {
   lede?: ReactNode;
   /** A smaller title for the supporting sections below the features. */
   compact?: boolean;
-  className?: string;
 }
 
 /** Section heading: mono eyebrow like an explorer chip, editorial title, one lede paragraph. */
-export function SectionHeading({ eyebrow, title, lede, compact, className }: SectionHeadingProps) {
+export function SectionHeading({ eyebrow, title, lede, compact }: SectionHeadingProps) {
   return (
-    <div className={cn('max-w-2xl', className)}>
+    <div className="max-w-2xl">
       {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
       <h2
         className={cn(
@@ -56,6 +55,10 @@ export function SectionHeading({ eyebrow, title, lede, compact, className }: Sec
     </div>
   );
 }
+
+/** The accent text link used under landing-page features and steps. */
+export const linkClass =
+  'text-sm font-medium text-primary underline decoration-primary/35 underline-offset-4 transition-colors hover:decoration-primary';
 
 export function Eyebrow({ children }: { children: string }) {
   return (
