@@ -176,7 +176,7 @@ Before every commit:
 
 ## 5. Docs tooling and prose
 
-- [x] 5.1 `docs/scripts/example-details.ts` holds docs-only prose for the six final ids: title, tagline, how to read the default view, what to try next, source and query, embedding, projection parameters, paper figure and notes (the membership release comes from the manifest, and the thumbnail path is `images/examples/<id>.png` by convention). Use journal-neutral citation text (preprint DOI `10.64898/2026.05.04.722720` plus the FAQ citation anchor) and credit UniProt under CC BY 4.0.
+- [x] 5.1 (Superseded by 10.5, the five-entry lineup.) `docs/scripts/example-details.ts` holds docs-only prose for the six final ids: title, tagline, how to read the default view, what to try next, source and query, embedding, projection parameters, paper figure and notes (the membership release comes from the manifest, and the thumbnail path is `images/examples/<id>.png` by convention). Use journal-neutral citation text (preprint DOI `10.64898/2026.05.04.722720` plus the FAQ citation anchor) and credit UniProt under CC BY 4.0.
   - Until the swap it also holds the interim lists (design Decision 14): `INTERIM_CATALOG_IDS`, `beforeSwap` (insight and provisional `defaultView` for the five final ids not yet in the catalog) and `THUMBNAILS_PENDING`. Author facts still to come are written as `‹…›`.
 - [x] 5.2 `docs/scripts/generate-examples.mts` writes `docs/explore/example-datasets.md` (formatted with prettier):
   - `## Title {#id}` cards;
@@ -199,7 +199,7 @@ Before every commit:
   - the demo name ("the startup demo, a small set of venom toxins", linked to its card, so it reads right before and after the relabel);
   - drop "eleven";
   - replace the Venom EAT sentence with a pointer to the new page.
-- [x] 5.8 `docs/explore/eat.md` "Trying It": `venom-eat` (threshold 0, strips visible, and "drag to 0.5 → 244 of 384"), the `?dataset=venom-eat` link, a link to its card, and a fix for "nearly half the dataset is a ring". Keep the venom numbers in `separation-scores.md` and `scatterplot.md`, since the frozen statistics part keeps them valid.
+- [x] 5.8 (Superseded by 10.5, which points "Trying It" at `three-finger-toxins`.) `docs/explore/eat.md` "Trying It": `venom-eat` (threshold 0, strips visible, and "drag to 0.5 → 244 of 384"), the `?dataset=venom-eat` link, a link to its card, and a fix for "nearly half the dataset is a ring". Keep the venom numbers in `separation-scores.md` and `scatterplot.md`, since the frozen statistics part keeps them valid.
 - [x] 5.9 `docs/index.md` (drop "eleven", link the page), `docs/explore/index.md`, `docs/guide/index.md` (link `#swissprot`), `docs/guide/faq.md` (optional Swiss-Prot link), `docs/explore/images/README.md` (the venom fixture path).
   - The FAQ link was left out: its load-time sentence describes the 44.9 MB paper bundle, and the refreshed Swiss-Prot example may load more slowly (the D2 gate allows up to about 35 s). The images README got the fixture path with §4.
 - [x] 5.11 `docs:examples:check`, once `INTERIM_CATALOG_IDS` is empty, also fails while `THUMBNAILS_PENDING` lists anything and when a stated release (membership or a column group) is not `YYYY_MM`, which the `‹…›` check alone would miss for a note stamped by the build.
@@ -251,7 +251,7 @@ Before every commit:
 - [ ] 7.1 Prerequisites:
   - `fix/annotation-retrieval` (PR #495) merged with a merge commit and released as protspace 4.14.0 (InterPro fan-out plus retry, the family parser, Biocentral batching, the per-source cache and `annotate --cache-dir`, the `run.log` release line, `root` and TMbed's "no TM segment", and the cache-semantics bump that makes a rebuild refetch them);
   - PR #452 (the faithfulness statistics) merged (done, released in 4.13.1);
-  - author facts collected: the Swiss-Prot and human + fly membership releases (2025_04 is inferred from the data); how the 113,015 were selected.
+  - author facts collected: the Swiss-Prot and human + fly membership releases (2025_04 is inferred from the data); how the 113,015 were selected. These are a hard prerequisite of the swap commit (7.7): the docs check refuses any `‹…›` once the switch is flipped.
 - [ ] 7.2 Rebuild every example on the released CLI (R2-D2), `swissprot` first (the critical path; run alone). Gates: N = 573,649, no `(TC n`/"In the … section", the Pfam empty rate on duplicate-sequence rows ≈ unique rows, domain counts within ±1 % of Fig. 2A, and the paper's PCA present. Then apply the **D2 gate** again on the rebuilt file with its PCA (≤ ~35 s, ≤ ~1.5 GB heap, `record-load`, reference laptop), or produce the GO/TED-free web copy.
 - [ ] 7.3 Build `beta-lactamase`, then `human-fly`, staggered after Swiss-Prot's TED run:
   - `beta-lactamase`: Q02940 still class C; the Fig. 3 legend counts within 2 %; `xref_pdb` has both values;
@@ -259,13 +259,15 @@ Before every commit:
 - [ ] 7.4 Build `three-finger-toxins` (task 6.10; the Decision 17 gates) and `demo` (7,831; coordinates unchanged; `pfam` coverage checked; all four projections).
 - [ ] 7.5 Final `defaultView` picks: score the candidates by the stated criterion (kNN label agreement, or the per-category silhouette of the story's categories); capture the `examples-live` thumbnails; **the author reviews them**; set each final pick in one catalog line. Where figure fidelity wins over the criterion, the card explains why. (The owner's picks are in `FINAL_EXAMPLE_SPECS`, task 10.3; the thumbnail review is left.)
 - [ ] 7.6 `build_showcase.py stage-release` for `showcase-2026_03`, writing the manifest with `release: 'showcase-2026_03'` and `hosting: 'release'` for the four release-hosted entries and `'repo'` for the demo. Record the release per column group.
-- [ ] 7.7 Catalog swap, in one commit with 7.6's manifest and 7.8:
+- [ ] 7.7 Catalog swap, in **one commit** with 7.6's manifest, 7.8 and 7.10 (design Decision 15: `docs:examples:check` runs in precommit, the commit hook and CI, and refuses the flipped catalog until all of this is in place):
   - set `FINAL_CATALOG_IS_LIVE` to `true` (the final entries, names, descriptions, insights and relabelled demo are already in `FINAL_EXAMPLE_SPECS`);
   - fill their `‹…›` values from the built files: the three-finger toxins' hold-out accuracy, and `swissprot`'s `large` memory and load time from the D2 gate;
-  - fill the `‹…›` counts in `docs/explore/eat.md` ("Trying It") and the three-finger toxins card from the built file (the docs check refuses any left after the swap).
+  - fill the `‹…›` counts in `docs/explore/eat.md` ("Trying It") and the three-finger toxins card from the built file, and the author facts of 7.1 in the prose;
+  - capture the five thumbnails with the `examples-live` project from the flipped working tree, the staged release files copied into `apps/web/public/examples/`, before committing;
+  - before the real swap, dry-run the E2E suite once on a scratch flip (uncommitted: `FINAL_CATALOG_IS_LIVE` true and a scratch manifest whose four release records point at any files), `CI=1 pnpm test:e2e --project=example-datasets --workers=1`, since the release-hosted entries take the development fallback path the interim catalog never exercised (a first dry run on 2026-09-30, with the four release records pointing at the role fixtures' sizes, passed 32 of 32; repeat it on the real manifest).
 - [ ] 7.8 Remove `apps/web/public/data/` entirely (including `datasets.json`); this makes the four non-demo fixtures `git mv`s in the branch diff. Replace `apps/web/public/data.parquetbundle` with the new demo. The "only the demo under `public/`" assertion runs from the flipped switch on.
 - [ ] 7.9 `apps/web/tests/helpers/example-fixtures.ts` switches to the final ids with the flag (task 10.4); run the E2E suite on the flipped catalog. A later cleanup drops the roles' `interimId`, the interim view names from `derive-example-role-fixtures.py` and its fixtures, `INTERIM_EXAMPLE_SPECS` and the switch.
-- [ ] 7.10 Empty `INTERIM_CATALOG_IDS` in `docs/scripts/example-details.ts`, fill in the remaining `‹…›` author facts and counts, add the thumbnails (emptying `THUMBNAILS_PENDING`), and regenerate `docs/explore/example-datasets.md`. (The page, the retargeted pin test and the CI/precommit wiring landed with §5; the final cards with task 10.5.)
+- [ ] 7.10 Part of the 7.7 commit: empty `INTERIM_CATALOG_IDS` in `docs/scripts/example-details.ts`, fill in the remaining `‹…›` author facts and counts, add the thumbnails (emptying `THUMBNAILS_PENDING`), and regenerate `docs/explore/example-datasets.md`. (The page, the retargeted pin test and the CI/precommit wiring landed with §5; the final cards with task 10.5.)
 - [ ] 7.11 Re-run `pnpm docs:images` against the new demo; check the PLD/Kunitz overlay coordinates and the demo-dependent alt texts. Move the EAT captures (`scripts/docs-screenshots/eat-helpers.ts`) to the `three-finger-toxins` bundle, `toxin_class`, as its note says, re-capture the four EAT images and check the `eat.md` alt texts.
 - [ ] 7.12 Full verification:
   - `pnpm test:ci`, `pnpm format:check`, `pnpm precommit`;
@@ -290,7 +292,7 @@ Before every commit:
 
 - [ ] 9.1 Sweep the roughly 38 lines coupled to the shipped bundles ("eleven datasets distributed with ProtSpace", `public/data`, "across all eleven shipped bundles") across the front matter, results, methods and extended data, and point them at the Zenodo and `perf-datasets` copies.
 - [ ] 9.2 Add `https://protspace.app/explore?dataset=<id>` links per figure, and fill in the Zenodo DOI in the end matter.
-- [ ] 9.3 Name `phosphatase-eat` (with its 91.5 % / 98.1 % gate) as the NM code checklist's "demo dataset with expected output".
+- [ ] 9.3 Name the `phosphatase_eat` fixture (the `perf-datasets` asset and Zenodo file of that name, no longer a catalog entry), with its 91.5 % / 98.1 % gate, as the NM code checklist's "demo dataset with expected output".
 - [ ] 9.4 Before submission, re-check the Swiss-Prot Pfam statistics that the InterPro duplicate-sequence bug affected (the multi-family share, and the Pfam cardinality in the size model).
 - [ ] 9.5 Numbers the linked examples no longer show: 1,703 shared protein kinases (the example has about 2,000, mostly new automatic TrEMBL family annotations); class C's +0.32 silhouette (about +0.17 refreshed); Fig. 2A's Monodnaviria (now Floreoviria). Footnote or update them, and point the manuscript scripts that read `apps/web/public/data` at the `perf-datasets` release before 7.8. Optionally redraw Fig. 4 d–f from the three-finger toxins bundle.
 
