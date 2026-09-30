@@ -98,6 +98,15 @@ Top-level keys are annotation names. Each annotation accepts the keys below.
 consumed during generation, only their effects (the resulting categories with `zOrder`, `color`,
 `shape`) are written.
 
+::: warning A size picked in the web app overrides `shapeSize`
+The web app's legend accepts shape sizes from 1 to 64, and the web app caps a larger `shapeSize`
+from a bundle, top-level or per-annotation, at 64. A bundle exported from the web app after the
+user picked a size carries it as a top-level `shapeSize` in its settings, next to the per-annotation
+ones. On import, that top-level value overrides every annotation's `shapeSize`, and
+`protspace style` keeps it when it rewrites the settings, so editing the per-annotation `shapeSize`
+of such a bundle has no visible effect.
+:::
+
 > **Value keys are display values.** In `colors`/`shapes`/`pinnedValues`/`hiddenValues`, a _value_ is
 > the human-readable category as `--generate-template` lists it and the legend shows it: the
 > percent-decoded name with any `|score` suffix trimmed, not the raw wire cell. A template therefore

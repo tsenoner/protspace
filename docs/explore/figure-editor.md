@@ -13,6 +13,11 @@ The editor opens as a full-screen modal with a **preview canvas** on the left an
 
 To export immediately with the last-used settings, use **Quick Export** instead, it skips the editor.
 
+The editor always renders the full view, what a double-click on the plot shows, not your current
+zoom. Its dots are therefore drawn at their unzoomed size, while Quick Export keeps the zoom and the
+larger dots that come with it. [Contours](/explore/control-bar#_10-contours) are not drawn in the
+preview or the exported figure yet; see [Exporting Results](/explore/exporting#dot-size-in-images).
+
 ## Journal Presets
 
 ![Journal preset grid in the Figure Editor sidebar, Nature, Science, Cell, PNAS, PLOS, Slide and Flexible options with their column widths](./images/figure-editor-presets.png)
@@ -195,7 +200,7 @@ While you drag-resize an inset, redraws are throttled to the browser's animation
 
 Each inset has its own **Dot size** slider (0.5×–20×, default **2×**) that scales the rendered dot size inside the zoomed view, relative to the main plot:
 
-- **1×**, dots match the main plot's pixel size
+- **1×**, dots match the figure's main plot, which draws them at their unzoomed size
 - **>1×**, dots are larger, useful when you've zoomed deep into a sparse region
 - **<1×**, dots are smaller
 
