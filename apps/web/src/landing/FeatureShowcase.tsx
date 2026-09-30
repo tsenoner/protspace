@@ -80,7 +80,7 @@ export function FeatureShowcase() {
 
   return (
     <Section id="features">
-      <ShowcaseHeading count={demo?.count ?? 7831} />
+      <ShowcaseHeading />
 
       <div className="mt-10 grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div ref={frameRef} className="min-w-0">

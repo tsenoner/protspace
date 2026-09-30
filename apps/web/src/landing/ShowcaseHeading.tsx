@@ -16,7 +16,7 @@ const CAPABILITIES: [LucideIcon, string][] = [
  * the capabilities sit on the title's baseline with the caption right under them, so the two read
  * as one statement.
  */
-export function ShowcaseHeading({ count }: { count: number }) {
+export function ShowcaseHeading() {
   return (
     <div>
       <Eyebrow>In the explorer</Eyebrow>
@@ -39,7 +39,7 @@ export function ShowcaseHeading({ count }: { count: number }) {
           ))}
         </ul>
         <p className="mt-3 text-sm text-muted-foreground xl:col-start-2 xl:mt-1 xl:text-right">
-          All on the same {count.toLocaleString()} venom proteins.
+          All on the same protein dataset.
         </p>
       </div>
     </div>
