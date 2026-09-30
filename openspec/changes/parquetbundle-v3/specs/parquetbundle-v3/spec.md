@@ -192,6 +192,26 @@ the spelling the v2 browser reader displayed, by both the Python and the web enc
   converted to v3
 - **THEN** the converted bundle's legend applies the same colours to the same proteins
 
+### Requirement: A list annotation column SHALL be encoded as a multi-valued column
+
+The Python v3 encoder SHALL write an annotation column of an Arrow list type as a multi-valued
+column with one hit per non-empty element, each element taken literally as its label, and SHALL
+refuse a column that has no text form (a struct, a map, a list of lists) with an error that names
+the column.
+
+#### Scenario: GO terms kept as a list column
+
+- **WHEN** `protspace bundle -a` is given a table whose `go_terms` column is `list<string>` with
+  the cells `[GO:1, GO:2]` and `[GO:3]`
+- **THEN** the bundle is written, the first protein has the two hits `GO:1` and `GO:2`, and Python
+  decodes the column as the cells `GO:1;GO:2` and `GO:3`
+
+#### Scenario: A struct column
+
+- **WHEN** `protspace bundle -a` is given a table with a struct column
+- **THEN** it exits with a usage error that names the column, without a traceback, and writes no
+  bundle
+
 ### Requirement: A web re-export SHALL keep the column types Python wrote
 
 The browser reader SHALL keep each v3 manifest column's `sourceType` on the loaded annotation, and

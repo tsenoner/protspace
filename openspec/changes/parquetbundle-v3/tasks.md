@@ -50,6 +50,9 @@
       (no lossy or refused float64 cast) and decoded back to its integer type
 - [x] 2.16 The Preparation notebook's EAT cell restores the cell grammar it read before its
       id-column renames, as `protspace transfer` does, so the write accepts its table
+- [x] 2.17 A list annotation column is encoded as a multi-valued column (one literal hit per
+      element), a struct, map or list-of-lists column is refused by name, and `protspace bundle`
+      reports the encoder's input errors as a usage error
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

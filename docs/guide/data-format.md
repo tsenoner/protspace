@@ -571,6 +571,12 @@ number, and its integer `sourceType` casts those labels back on decode. Otherwis
 consulted only when decoding a `numeric` column, so on a `categorical` or `multi` column it is
 recorded but inert.
 
+A list column, such as GO terms kept as a pandas list column, is written as a `multi` column: each
+non-empty element of a cell is one hit, taken literally, so a `;` or `|` inside an element stays
+part of its label, and a null or empty list is a missing cell. Its `sourceType` is `"?"`, so
+Python decodes it as `;`-joined v2 cells. A column with no text form, such as a struct, a map or a
+list of lists, is refused with an error that names it.
+
 ### Scores are float64
 
 `scores:<col>` is the one wide payload in an otherwise narrow format. float32 cannot carry an

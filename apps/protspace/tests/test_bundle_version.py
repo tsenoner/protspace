@@ -315,3 +315,75 @@ def test_arrow_reader_reads_stamp_and_defaults_to_v1(tmp_path):
 
     # dict input without the marker also defaults to v1
     assert ArrowReader({"protein_data": {}}).get_format_version() == 1
+
+
+def test_cli_bundle_stores_a_list_column_as_hits(tmp_path):
+    """A list column (GO terms as a pandas list) bundled on `main`; it must still
+    bundle, one hit per element."""
+    import pyarrow as pa
+
+    output_path = _bundle_via_cli(
+        tmp_path,
+        pa.table(
+            {
+                "identifier": ["P1", "P2"],
+                "go_terms": pa.array([["GO:1", "GO:2"], ["GO:3"]]),
+            }
+        ),
+    )
+
+    assert read_tables(output_path)[0].column("go_terms").to_pylist() == [
+        "GO:1;GO:2",
+        "GO:3",
+    ]
+
+
+def test_cli_bundle_reports_an_unstorable_column_without_a_traceback(tmp_path):
+    import pyarrow as pa
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    proj_dir = tmp_path / "projections"
+    proj_dir.mkdir()
+    pq.write_table(
+        pa.table(
+            {"projection_name": ["PCA_2"], "dimensions": [2], "info_json": ["{}"]}
+        ),
+        proj_dir / "projections_metadata.parquet",
+    )
+    pq.write_table(
+        pa.table(
+            {
+                "projection_name": ["PCA_2"],
+                "identifier": ["P1"],
+                "x": [0.1],
+                "y": [0.2],
+            }
+        ),
+        proj_dir / "projections_data.parquet",
+    )
+    annotations_path = tmp_path / "annotations.parquet"
+    pq.write_table(
+        pa.table({"identifier": ["P1"], "odd": pa.array([{"a": 1}])}),
+        annotations_path,
+    )
+    output_path = tmp_path / "out.parquetbundle"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "bundle",
+            "-p",
+            str(proj_dir),
+            "-a",
+            str(annotations_path),
+            "-o",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "'odd'" in result.output
+    assert not output_path.exists()

@@ -141,11 +141,16 @@ def bundle(
     )
 
     output_path = output.with_suffix(".parquetbundle")
-    write_bundle(
-        [annotations_table, metadata_table, data_table],
-        output_path,
-        settings=settings_obj,
-        statistics=statistics_table,
-    )
+    try:
+        write_bundle(
+            [annotations_table, metadata_table, data_table],
+            output_path,
+            settings=settings_obj,
+            statistics=statistics_table,
+        )
+    except ValueError as exc:
+        # The encoder validates the inputs (ids, projections, column types) and
+        # says what is wrong with them; that is a usage error, not a crash.
+        raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(f"Saved: {output_path}")

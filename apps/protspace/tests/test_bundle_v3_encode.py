@@ -669,3 +669,62 @@ def test_all_null_arrow_numeric_column_stays_numeric():
         "sourceType": "float",
     }
     assert all(np.isnan(v) for v in read(parts[0]).column("conf").to_pylist())
+
+
+# --------------------------------------------------------------------------- #
+# nested (list / struct) columns
+# --------------------------------------------------------------------------- #
+
+
+def test_a_list_column_is_stored_as_one_hit_per_element():
+    """A ``list<string>`` column (GO terms kept as a pandas list column) is a
+    multi-valued column: each element is one hit, taken literally, so a ``;`` or
+    ``|`` inside an element stays part of its label."""
+    table = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2", "p3"],
+                "go": pa.array(
+                    [["GO:1", "GO:2"], ["GO:3"], None, ["a;b", "x|IDA", "", None]],
+                    type=pa.list_(pa.string()),
+                ),
+            }
+        )
+    )
+    parts = encode(table)
+    entry = manifest_of(parts[0])["columns"]["go"]
+    assert entry == {"kind": "multi", "sourceType": "?"}
+    payloads = payloads_of(parts[3])
+    labels = labels_of(payloads, "go")
+    hits = np.frombuffer(payloads["csr:go"], "<i4")
+    assert [labels[code] for code in hits] == ["GO:1", "GO:2", "GO:3", "a;b", "x|IDA"]
+    assert read(parts[0]).column("go__count").to_pylist() == [2, 1, 0, 2]
+
+
+def test_a_list_column_of_non_strings_uses_the_scalar_spelling():
+    table = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1"],
+                "flags": pa.array([[True, False], [True]]),
+                "sizes": pa.array([[1, 2], []], type=pa.large_list(pa.int32())),
+            }
+        )
+    )
+    payloads = payloads_of(encode(table)[3])
+    assert labels_of(payloads, "flags") == ["true", "false"]
+    assert labels_of(payloads, "sizes") == ["1", "2"]
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        pa.array([{"a": 1}, {"a": 2}]),
+        pa.array([[["x"]], [["y"]]]),
+    ],
+    ids=["struct", "list-of-lists"],
+)
+def test_a_column_that_has_no_text_form_is_refused_by_name(column):
+    table = stamp_format_version(pa.table({"protein_id": ["p0", "p1"], "odd": column}))
+    with pytest.raises(ValueError, match="'odd'"):
+        encode(table)

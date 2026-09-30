@@ -191,14 +191,47 @@ def _flat(column: pa.ChunkedArray | pa.Array) -> pa.Array:
     return pa.concat_arrays(column.chunks)
 
 
+def _is_list(type_: pa.DataType) -> bool:
+    return (
+        pa.types.is_list(type_)
+        or pa.types.is_large_list(type_)
+        or pa.types.is_fixed_size_list(type_)
+    )
+
+
+def _join_list_cells(arr: pa.Array) -> pa.Array:
+    """Each list cell as v2 hits: its elements percent-encoded and ``;``-joined.
+
+    An element is one hit taken literally, so a ``;`` or ``|`` inside it stays
+    part of its label.  A null or empty element is no hit, and a null or empty
+    list is a missing cell.
+    """
+    if pa.types.is_nested(arr.type.value_type):
+        raise pa.ArrowNotImplementedError(f"nested list type {arr.type}")
+    elements = _as_string(pc.list_flatten(arr)).to_pylist()
+    parents = np.asarray(pc.list_parent_indices(arr))
+    hits: list[list[str]] = [[] for _ in range(len(arr))]
+    for row, element in zip(parents, elements, strict=True):
+        if element:
+            hits[row].append(encode_field(element))
+    return pa.array([";".join(row) or None for row in hits], type=pa.string())
+
+
 def _as_string(column: pa.ChunkedArray | pa.Array) -> pa.Array:
-    """Flatten to a single ``string`` array, bools as ``ARROW_BOOLEAN_LABELS``."""
+    """Flatten to a single ``string`` array, bools as ``ARROW_BOOLEAN_LABELS``.
+
+    A list column becomes ``;``-joined hits (:func:`_join_list_cells`); a type
+    with no text form (a struct, a map, a list of lists) raises
+    ``pa.ArrowNotImplementedError``.
+    """
     arr = _flat(column)
     if pa.types.is_boolean(arr.type):
         false, true = ARROW_BOOLEAN_LABELS
         return pc.if_else(arr, pa.scalar(true), pa.scalar(false))
     if pa.types.is_string(arr.type):
         return arr
+    if _is_list(arr.type):
+        return _join_list_cells(arr)
     return pc.cast(arr, pa.string())
 
 
@@ -329,7 +362,13 @@ def _encode_annotation_column(
         values = np.where(np.isfinite(values), values, np.nan)
         return _numeric_entry(values, source_type, pa.types.is_integer(arr.type))
 
-    strings = _as_string(arr)
+    try:
+        strings = _as_string(arr)
+    except pa.ArrowNotImplementedError:
+        raise ValueError(
+            f"annotation column '{name}' has Arrow type {arr.type}, which a bundle "
+            "cannot store: an annotation must be a scalar or a list of scalars"
+        ) from None
     trimmed = pc.utf8_trim_whitespace(strings)
     blank = _blank_mask(trimmed)
 

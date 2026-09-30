@@ -172,6 +172,18 @@ spelling. The v3 encoder flattened it with Python's `str()`, which gives `True`/
 entries, colour assignments keyed by label and saved legend settings stopped matching. Both
 encoders spell booleans `true`/`false`.
 
+### List columns are multi-valued
+
+A user's annotations table can hold a list column, GO terms kept as a pandas list column for
+instance. The v2 writer stored it as a Parquet list, and the v2 browser reader showed each cell
+as its elements joined by commas, one label per cell (JavaScript's `String` of an array). The v3
+encoder casts every non-numeric column to text and had no rule for a list, so such a table could
+no longer be bundled at all. A list is what a v2 multi-valued cell means, so the encoder writes
+each non-empty element of a cell as one hit, percent-encoding it first so a `;` or `|` inside an
+element stays part of its label, and records `sourceType` `"?"`. A column with no text form (a
+struct, a map, a list of lists) is refused with an error that names it, and `protspace bundle`
+reports the encoder's input errors as a usage error rather than a traceback.
+
 ### Column types survive a web re-export
 
 The manifest's `sourceType` is the Arrow type a column had in Python (`bool`, `int32`, `string`,
