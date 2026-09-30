@@ -37,6 +37,7 @@ import {
   getProteinScores,
 } from '../../packages/utils/src/visualization/plot-data-accessors';
 import { NA_VALUE } from '../../packages/utils/src/visualization/missing-values';
+import { generateDatasetHash } from '../../packages/utils/src/storage/data-hash';
 import type { VisualizationData } from '../../packages/utils/src/types';
 
 const REPO_ROOT = resolve(__dirname, '../..');
@@ -469,6 +470,11 @@ describe('protspace convert', () => {
 
     expect(meaning(converted.data)).toEqual(meaning(legacy.data));
     expect(converted.data.protein_ids).toContain(manifest.gapId);
+    // The annotation-only protein decides neither the protein set nor `size`'s kind.
+    expect(legacy.data.protein_ids).not.toContain('UNPLACED');
+    expect(legacy.data.annotations.size.kind).toBe('numeric');
+    expect(converted.data.annotations.size.kind).toBe('numeric');
+    expect(generateDatasetHash(converted.data)).toBe(generateDatasetHash(legacy.data));
     expect(converted.settings).toEqual(legacy.settings);
     expect(new Uint8Array(converted.data.statistics!)).toEqual(
       new Uint8Array(legacy.data.statistics!),

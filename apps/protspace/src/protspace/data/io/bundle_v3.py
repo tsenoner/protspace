@@ -338,15 +338,21 @@ def _encode_annotation_column(
     name: str,
     num_rows: int,
     evidence_dict: dict[str, int],
-    labels_only: bool = False,
+    placed: np.ndarray | None = None,
+    numeric: str = "infer",
 ) -> tuple[dict[str, Any], pa.Array, list[tuple[str, bytes]]]:
     """Encode one annotation column.
 
     Returns ``(manifest_entry, part1_array, payloads)``.  ``part1_array`` is the
     ``<col>`` codes / values or the ``<col>__count`` per-row CSR hit counts; the
     caller picks the physical column name from ``manifest_entry["kind"]``.
-    ``labels_only`` skips numeric inference on a text column, for one a bundle
-    already stored as labels (:func:`replace_annotations_v3`).
+
+    ``placed`` marks the rows the browser shows (a finite coordinate in some
+    projection), ``None`` for all of them.  ``numeric`` is ``"infer"`` for
+    numeric inference on a text column, ``"placed"`` to only mark the column
+    ``placedNumeric``, never to write it numeric, and ``"never"`` for neither;
+    the last two are for a column a bundle already stores as labels
+    (:func:`replace_annotations_v3`).
     """
     source_type = _source_type(column.type)
     arr = _flat(column)
@@ -381,19 +387,32 @@ def _encode_annotation_column(
     # literally, even when every cell holds one number (the v2 browser read a
     # list cell as ``String(array)``, which ``parseNumericAnnotationValue``
     # never takes for a number).
+    #
+    # The browser infers over the proteins it shows, the ``placed`` ones, and
+    # the file over every row.  They disagree only when an annotation-only
+    # protein decides it: a column numeric over every row but missing on every
+    # placed protein is written as labels, as v2 showed it; one numeric over
+    # the placed proteins only (an unplaced ``unknown`` among numbers) must
+    # keep that label, so it is written as labels too, marked ``placedNumeric``
+    # for the browser to read as numbers once it has dropped the unplaced rows.
     missing = _missing_mask(trimmed)
-    if (
-        not exact_labels
-        and not labels_only
-        and not _is_list(arr.type)
-        and not missing.all()
-    ):
+    extra: dict[str, Any] = {}
+    if not exact_labels and not _is_list(arr.type) and numeric != "never":
+        shown = placed if placed is not None and placed.any() else slice(None)
         numeric_ok = _regex_ok(trimmed, JS_NUMBER_RE) | missing
-        if numeric_ok.all():
-            values = _parse_floats(trimmed, ~missing)
-            if np.isfinite(values[~missing]).all():
-                values = np.where(missing, np.nan, values)
-                return _numeric_entry(values, source_type)
+        if numeric_ok[shown].all():
+            present = ~missing
+            values = _parse_floats(trimmed, numeric_ok & present)
+            usable = numeric_ok & (missing | np.isfinite(values))
+
+            def numeric_over(rows) -> bool:
+                return bool(present[rows].any() and usable[rows].all())
+
+            if numeric_over(shown):
+                if numeric == "infer" and numeric_over(slice(None)):
+                    values = np.where(missing, np.nan, values)
+                    return _numeric_entry(values, source_type)
+                extra["placedNumeric"] = True
 
     # --- categorical: split cells into hits --------------------------------- #
     # ``_blank_mask``, not ``_missing_mask``: v3 is a container encoding and must
@@ -473,7 +492,7 @@ def _encode_annotation_column(
     if max_hits <= 1 and not has_scores and not has_evidence:
         row_codes = np.full(num_rows, -1, dtype=np.int32)
         row_codes[row_of_hit] = codes
-        entry = {"kind": "categorical", "sourceType": source_type}
+        entry = {"kind": "categorical", "sourceType": source_type, **extra}
         return entry, pa.array(row_codes, type=pa.int32()), payloads
 
     row_counts = _counts_i32(per_row, f"column '{name}' hits")
@@ -497,7 +516,7 @@ def _encode_annotation_column(
         ev_codes[idx] = global_ids[np.asarray(local.indices)]
         payloads.append((f"evidence:{name}", ev_codes.astype("<i4").tobytes()))
 
-    entry = {"kind": "multi", "sourceType": source_type}
+    entry = {"kind": "multi", "sourceType": source_type, **extra}
     if has_scores:
         entry["scores"] = True
     if has_evidence:
@@ -762,11 +781,13 @@ def _encode_part1(
     id_column: str,
     ids: pa.Array,
     projection_manifest: list[dict[str, Any]],
-    labels_only: frozenset[str] = frozenset(),
+    placed: np.ndarray | None = None,
+    numeric: dict[str, str] | None = None,
 ) -> tuple[bytes, bytes]:
     """Encode the annotation columns as part 1 (manifest in its footer) and part 6.
 
-    A text column named in ``labels_only`` is never inferred numeric.
+    ``placed`` and ``numeric`` (per column, ``"infer"`` when absent) are as for
+    :func:`_encode_annotation_column`.
     """
     num_rows = annotations.num_rows
     existing = set(annotations.column_names)
@@ -783,7 +804,8 @@ def _encode_part1(
             name,
             num_rows,
             evidence_dict,
-            labels_only=name in labels_only,
+            placed=placed,
+            numeric=(numeric or {}).get(name, "infer"),
         )
         physical = f"{name}__count" if entry["kind"] == "multi" else name
         if physical != name and physical in existing:
@@ -852,7 +874,13 @@ def encode_v3(
     projections_table, projection_manifest = _encode_projections(
         projections_metadata, projections_data, ids
     )
-    part1, payloads = _encode_part1(annotations, id_column, ids, projection_manifest)
+    part1, payloads = _encode_part1(
+        annotations,
+        id_column,
+        ids,
+        projection_manifest,
+        _placed_rows(projections_table, projection_manifest),
+    )
     part2 = _write(_with_manifest_dimensions(projections_metadata, projection_manifest))
     return part1, part2, _write(projections_table), payloads
 
@@ -894,6 +922,14 @@ def _finite_rows(wide: pa.Table, projection: dict[str, Any]) -> np.ndarray:
             for axis in _axes(projection)
         ]
     )
+
+
+def _placed_rows(wide: pa.Table, projections: list[dict[str, Any]]) -> np.ndarray:
+    """Rows some projection covers: the proteins the browser shows."""
+    placed = np.zeros(wide.num_rows, dtype=bool)
+    for projection in projections:
+        placed |= _finite_rows(wide, projection)
+    return placed
 
 
 def _read_payloads(part: bytes) -> dict[str, bytes]:
@@ -1229,7 +1265,8 @@ def replace_annotations_v3(
     cells that all look numeric -- a list of one number per cell, or ``1;``
     whose blank hit was dropped -- which numeric inference would turn into a
     gradient.  ``protspace transfer`` hands every column back this way, not
-    only the ones it adds.
+    only the ones it adds.  One marked ``placedNumeric`` keeps that mark while
+    its placed proteins' cells are still numbers.
     """
     manifest, _metadata = _read_manifest(parts[0])
     projections = manifest["projections"]
@@ -1261,12 +1298,18 @@ def replace_annotations_v3(
             )[old[keep]]
             columns[column] = pa.array(values, type=pa.float32())
 
-    labels_only = frozenset(
-        name
+    realigned = _required_table(columns)
+    numeric = {
+        name: "placed" if entry.get("placedNumeric") else "never"
         for name, entry in manifest["columns"].items()
         if entry["kind"] in ("categorical", "multi")
-    )
+    }
     part1, payloads = _encode_part1(
-        annotations, id_column, ids, projections, labels_only
+        annotations,
+        id_column,
+        ids,
+        projections,
+        _placed_rows(realigned, projections),
+        numeric,
     )
-    return part1, parts[1], _write(_required_table(columns)), payloads
+    return part1, parts[1], _write(realigned), payloads

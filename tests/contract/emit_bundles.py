@@ -342,10 +342,28 @@ def write_legacy_v2_bundle(path: Path, ids: list[str]) -> None:
     the v3 variants, and one projection gap, for ``protspace convert`` to
     upgrade. The annotations table is stamped v2 after the ``protein_id``
     rename, exactly as ``protspace bundle`` did.
+
+    It also holds an annotation-only protein, which no projection places, whose
+    ``size`` is ``unknown`` among the placed proteins' numbers: v2 showed
+    ``size`` as numeric, since it inferred over the placed proteins, and the
+    converted bundle has to as well, with the same dataset hash.
     """
     annotations = build_annotations_table(ids).rename_columns(
         ["protein_id", "family", "domains", "length"]
     )
+    annotations = annotations.append_column(
+        "size", pa.array([str(10 * i) if i % 3 else "NA" for i in range(len(ids))])
+    )
+    unplaced = pa.table(
+        {
+            "protein_id": ["UNPLACED"],
+            "family": [""],
+            "domains": [""],
+            "length": pa.array([None], pa.float64()),
+            "size": ["unknown"],
+        }
+    )
+    annotations = pa.concat_tables([annotations, unplaced])
     metadata, data = build_projection_tables(ids, gaps={"PCA_3": GAP_ID})
     parts = []
     for table in (stamp_format_version(annotations), metadata, data):

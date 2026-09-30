@@ -382,6 +382,25 @@ def test_replace_annotations_keeps_label_columns_labels(tmp_path):
     assert read_tables(out)[0].column("cluster").to_pylist() == ["1", "2", "3"]
 
 
+def test_replace_annotations_keeps_a_placed_numeric_mark(tmp_path):
+    """A column numeric over the placed proteins only is stored as labels and
+    marked ``placedNumeric``; rewriting the annotations keeps the mark, so the
+    browser still reads it as numbers, as v2 did."""
+    src = tmp_path / "b.parquetbundle"
+    out = tmp_path / "out.parquetbundle"
+    annotations = stamp_format_version(
+        pa.table({"protein_id": ["p0", "p1", "q"], "length": ["10", "20", "unknown"]})
+    )
+    metadata, data = projection_tables(2, (2,))
+    write_bundle([annotations, metadata, data], src)
+    assert manifest_of(parts_of(src)[0])["columns"]["length"]["placedNumeric"]
+
+    replace_annotations_in_bundle(src, out, read_tables(src)[0])
+
+    entry = manifest_of(parts_of(out)[0])["columns"]["length"]
+    assert entry["kind"] == "categorical" and entry["placedNumeric"] is True
+
+
 def test_replace_annotations_refuses_an_unstamped_table(tmp_path):
     """``transfer`` rebuilds the table with ``rename_columns``, which drops the
     grammar stamp, so what it holds is v2 cells that *read* as v1.  Migrating

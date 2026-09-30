@@ -535,15 +535,16 @@ the only description of what the integer columns mean. It does not carry
 }
 ```
 
-| Field                   | Meaning                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------ |
-| `idColumn`              | which part 1 column holds the protein IDs                                      |
-| `columns.*.kind`        | `categorical`, `multi` or `numeric`                                            |
-| `columns.*.numericType` | `int` or `float`; numeric columns only                                         |
-| `columns.*.scores`      | present and `true` when a `scores:<col>` payload exists; multi columns only    |
-| `columns.*.evidence`    | present and `true` when an `evidence:<col>` payload exists; multi columns only |
-| `columns.*.sourceType`  | the column's Arrow type in Python, see below                                   |
-| `projections`           | `{ name, dimension }` per projection, in part 3 column order (see below)       |
+| Field                     | Meaning                                                                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idColumn`                | which part 1 column holds the protein IDs                                                                                                                               |
+| `columns.*.kind`          | `categorical`, `multi` or `numeric`                                                                                                                                     |
+| `columns.*.numericType`   | `int` or `float`; numeric columns only                                                                                                                                  |
+| `columns.*.scores`        | present and `true` when a `scores:<col>` payload exists; multi columns only                                                                                             |
+| `columns.*.evidence`      | present and `true` when an `evidence:<col>` payload exists; multi columns only                                                                                          |
+| `columns.*.sourceType`    | the column's Arrow type in Python, see below                                                                                                                            |
+| `columns.*.placedNumeric` | present and `true` when the placed proteins' cells are all numbers; categorical and multi columns only, see [Missing values in a v3 file](#missing-values-in-a-v3-file) |
+| `projections`             | `{ name, dimension }` per projection, in part 3 column order (see below)                                                                                                |
 
 The browser validates the manifest against part 1's own schema before reading anything. An
 unknown kind, a declared column part 1 does not have, a kind whose physical type disagrees (a
@@ -618,6 +619,13 @@ Collapsing these spellings in the file broke `protspace style` on the shipped ph
 dataset, where 1383 of 1587 rows of `predicted_transmembrane` are literally the word `none`: the
 style command raised, and a 1383-protein legend entry came back blank. Folding them stays a
 display decision, made by the reader.
+
+The browser shows only the proteins some projection places, and v2 decided a column's kind over
+those alone. The writer does too: a text column missing on every placed protein is written as
+labels, whatever an annotation-only protein holds, and one whose placed proteins' cells are all
+numbers while an annotation-only protein holds a label that is not (`unknown` among lengths) is
+written as labels, so Python decodes that label back, and marked `placedNumeric`. The browser
+reads a marked column as numbers once it has dropped the unplaced proteins, as v2 did.
 
 Those spellings are consulted at write time in one place only, to decide whether a column is
 numeric, as the browser's numeric inference always has: a column of `NA` stays categorical

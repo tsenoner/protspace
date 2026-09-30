@@ -61,6 +61,9 @@
 - [x] 2.19 The encoder writes part 1 in the v2 browser's protein order (first appearance in the
       projection rows, then the unprojected proteins), so label frequency ties break as in v2,
       and lists the manifest's projections by first appearance in those rows, as v2 ordered them
+- [x] 2.21 Numeric inference is over the placed proteins, as in v2: a column missing on every
+      placed protein is written as labels, and one numeric only over them as labels marked
+      `placedNumeric`, keeping the annotation-only protein's label for Python
 - [x] 2.20 A list annotation column is never inferred numeric, even with one number per cell,
       and `replace_annotations_v3` keeps a column the old part 1 stores as labels as labels, so a
       `transfer` round trip of its decoded text does not infer it numeric either
@@ -129,6 +132,9 @@
       column actually decodes, and caps the cells it preallocates from it
 - [x] 3.25 The v3 reader folds a missing-value spelling per hit: a scored or evidenced hit keeps
       its label, score and evidence, as v2's whole-hit test kept it
+- [x] 3.26 The v3 reader reads a `placedNumeric` column as numbers over the placed proteins, as
+      v2 inferred it; the encoder infers a column's kind over the placed rows as well as all rows
+      and marks a column numeric only over the placed ones (2.21)
 
 ## 4. Contract suite (`tests/contract`)
 

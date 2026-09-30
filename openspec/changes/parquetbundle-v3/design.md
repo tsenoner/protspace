@@ -164,6 +164,18 @@ that keys saved legend settings is the one v2 gave the same data.
 A protein with coordinates in one projection but not another stays in the set and is culled per
 projection by the rule above.
 
+A column's kind is the other thing an unplaced protein must not decide. v2 inferred numeric over
+the proteins it placed, so a length column with an annotation-only `unknown` among its numbers
+was numeric there, and one missing on every placed protein was categorical (all N/A) whatever the
+unplaced rows held. The encoder infers over the rows some projection covers as well as over all
+of them. A column missing on every placed protein is written as labels. One numeric over the
+placed proteins only cannot be a `DOUBLE` column without losing the unplaced label, so it is
+written as labels too, marked `placedNumeric` in the manifest, and the browser reads it as
+numbers once it has dropped the unplaced proteins: a missing cell or spelling is NaN, and the type
+is `int` when every value is integral, as v2 read the same cells. The alternative, re-inferring
+in the browser without the mark, cannot tell a label `1` from a v2 cell `1;` whose blank hit the
+encoder dropped, which v2 showed as a category.
+
 "Ties by first occurrence" is only v2's order if part 1 is in v2's protein order, and v2 built
 that order from the projection rows (first appearance, across projections), not from the
 annotations table. The encoder therefore writes part 1 in that order, with the proteins no

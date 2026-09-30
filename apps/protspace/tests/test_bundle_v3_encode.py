@@ -454,6 +454,60 @@ def test_projections_follow_the_projection_rows_as_the_v2_browser_did():
     assert projections.column("projection_name").to_pylist()[0] == "PCA"
 
 
+def _with_unplaced_q(length: list[str]):
+    """``P1``..``P4`` placed by one projection, ``Q`` an annotation-only row."""
+    annotations = stamp_format_version(
+        pa.table({"protein_id": ["P1", "P2", "P3", "P4", "Q"], "length": length})
+    )
+    meta, data = make_projections((("A", 2),), ["P1", "P2", "P3", "P4"])
+    return encode_v3(annotations, meta, data)
+
+
+def test_numeric_inference_is_over_the_placed_proteins_as_in_v2():
+    """The v2 browser inferred a column's kind over the proteins it placed.  An
+    unplaced ``unknown`` among numbers cannot be stored as a number, so the
+    column is written as labels, which Python decodes back as they were, and
+    marked for the browser to read as numbers over the placed proteins."""
+    parts = _with_unplaced_q(["100", "200", "NA", "400", "unknown"])
+
+    entry = manifest_of(parts[0])["columns"]["length"]
+    assert entry == {
+        "kind": "categorical",
+        "sourceType": "string",
+        "placedNumeric": True,
+    }
+    assert decode_v3(list(parts))[0].column("length").to_pylist() == [
+        "100",
+        "200",
+        "NA",
+        "400",
+        "unknown",
+    ]
+
+
+def test_a_column_numeric_only_on_unplaced_proteins_is_labels_as_in_v2():
+    """The reverse: missing on every placed protein, v2 showed the column as
+    categorical (all N/A), whatever the annotation-only rows held."""
+    parts = _with_unplaced_q(["", "", "", "", "5"])
+
+    entry = manifest_of(parts[0])["columns"]["length"]
+    assert entry == {"kind": "categorical", "sourceType": "string"}
+    assert decode_v3(list(parts))[0].column("length").to_pylist() == [
+        "",
+        "",
+        "",
+        "",
+        "5",
+    ]
+
+
+def test_a_column_numeric_everywhere_is_numeric_without_the_mark():
+    parts = _with_unplaced_q(["100", "200", "300", "400", "500"])
+
+    entry = manifest_of(parts[0])["columns"]["length"]
+    assert entry == {"kind": "numeric", "numericType": "int", "sourceType": "string"}
+
+
 # --------------------------------------------------------------------------- #
 # guards
 # --------------------------------------------------------------------------- #

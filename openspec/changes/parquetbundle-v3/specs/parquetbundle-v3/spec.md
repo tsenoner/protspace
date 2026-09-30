@@ -143,6 +143,20 @@ SHALL still store annotation-only proteins in part 1, so Python decodes them bac
 - **THEN** the browser's labels for that column are `A` and `B` with the order, colours and
   dataset hash a bundle without the unplaced proteins gives, with no `C` and no N/A entry
 
+#### Scenario: A column numeric only over the placed proteins
+
+- **WHEN** a v2 bundle's text column `size` holds numbers for the placed proteins and `unknown`
+  for an annotation-only protein, and is converted to v3
+- **THEN** the browser shows `size` as a numeric column with the values and the dataset hash the
+  v2 file gave, and Python still decodes `unknown` for the annotation-only protein
+
+#### Scenario: A column numeric only on an unplaced protein
+
+- **WHEN** a v2 bundle's text column is missing on every placed protein and holds `5` for an
+  annotation-only protein, and is converted to v3
+- **THEN** the browser shows it as a categorical column whose every protein is N/A, as the v2
+  file gave it
+
 #### Scenario: A protein covered by one projection of two
 
 - **WHEN** protein `P` has coordinates in projection `A` only
