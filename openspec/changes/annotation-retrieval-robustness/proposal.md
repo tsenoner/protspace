@@ -62,10 +62,12 @@ Two more, found while preparing the rebuild, would reach every rebuilt bundle:
   reused connection pool; UniProt reuses one connection. Values, their order and the failure
   accounting are unchanged, and a `Retry-After` pauses every request of the source. The limits are
   module constants, not flags.
-- Biocentral sends predictions in batches of at most `_BATCH_SIZE` (1,000) unique sequences. A
-  failed batch loses only its own proteins, sequences of any length are still sent, and the
-  completeness messages keep the embed contract's rules (stderr, warning level, no substring the
-  prep service reads as an outage).
+- Biocentral sends predictions in batches of at most `_BATCH_SIZE` (1,000) unique sequences and
+  200,000 residues. It leaves out sequences outside the server's 7–5,000-residue limits, whose
+  predictions stay empty, because the server refuses a whole request that holds one. A failed
+  batch is split in half and resent, at most two levels deep, and loses only the proteins of the
+  parts that still fail. The completeness messages keep the embed contract's rules (stderr,
+  warning level, no substring the prep service reads as an outage).
 - A TED lookup that fails in the first pass is retried once more after every other accession, with
   the normal retry budget. Only a lookup that still fails then makes the source incomplete.
 - The family parser keeps names whole: only a `.` followed by whitespace or the end of the text

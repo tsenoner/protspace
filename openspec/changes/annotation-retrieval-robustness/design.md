@@ -97,16 +97,24 @@ gets through resets the count.
 ### Biocentral predicts in bounded batches
 
 After the existing dedupe, the unique sequences are cut into consecutive batches of at most
-`_BATCH_SIZE` (1,000):
+`_BATCH_SIZE` (1,000) sequences and `_MAX_BATCH_RESIDUES` (200,000) residues; a longer sequence
+gets a batch of its own:
 
 - One health check runs for the whole source, then one `api.predict(...)` per batch.
 - The batch results, which are keyed by sequence hash, are merged, and duplicates are fanned back
   out as today.
-- A batch that raises or returns nothing is counted in `failed_batch_count`, and the loop moves on.
+- Sequences shorter than 7 or longer than 5,000 residues, the server's limits, are left out before
+  batching: the server refuses a whole request that holds one. Their predictions stay empty, they
+  do not make the source incomplete, and one warning counts them. A 422 that still names a
+  sequence as too short or too long resends the batch without it.
+- A batch that raises for another reason, or returns nothing, is split in half and each half sent
+  again, at most `_MAX_SPLIT_DEPTH` (2) levels deep, so at most seven requests per batch. Only the
+  proteins of parts that still fail lack predictions; the batch counts as failed and the loop
+  moves on. The residue bound and the split come from the showcase demo build: 820 phosphatases (494,522
+  residues) failed as one request and succeeded as two halves.
 - `prediction_failed` stays the manager-facing signal. It is `True` when the health check failed
-  or any batch failed, so `manager.py` needs no change.
-- Sequences of any length are sent; the upstream "longer than the recommended" warning stays
-  suppressed.
+  or any batch lost proteins, so `manager.py` needs no change.
+- The upstream "longer than the recommended" warning stays suppressed.
 - One progress bar covers the source.
 
 When batches failed, one summary goes to stderr at warning level. It gives the proteins without
@@ -115,9 +123,10 @@ a prediction and the failed batches (for example `Biocentral predictions missing
 wording avoids every `_BIOCENTRAL_DOWN_PATTERNS` substring. The per-batch error line may name the
 exception, which can legitimately be an outage.
 
-_Alternative, retry each failed batch:_ deferred. `BiocentralServerTask` already polls a task
-with its own failure budget, and a batch that failed is refetched on the next run because the
-source stays uncached.
+_Alternative, resend a failed batch unchanged:_ rejected. `BiocentralServerTask` already polls a
+task with its own failure budget, and the failures seen live were a request too large for the
+models, which the same request fails again but its halves pass. What is still lost after the
+split is refetched on the next run, because the source stays uncached.
 
 ### TED retries failed lookups in a final pass
 
