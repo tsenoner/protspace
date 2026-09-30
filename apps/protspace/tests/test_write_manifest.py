@@ -162,6 +162,50 @@ def test_record_reads_provenance_metadata(tmp_path):
     assert record["zenodoDoi"] == "10.5281/zenodo.1"
 
 
+@pytest.mark.parametrize(
+    ("command", "shown"),
+    [
+        (
+            "build_showcase.py build --only demo --cli-root "
+            "/private/tmp/claude-501/x/scratchpad/wt/cli-build",
+            "build_showcase.py build --only demo --cli-root $CLI",
+        ),
+        (
+            "build_showcase.py build --only demo --cli-root=/tmp/cli "
+            "--out-root '/Users/someone/out dir'",
+            "build_showcase.py build --only demo --cli-root=$CLI --out-root $OUT",
+        ),
+        (
+            "build_showcase.py build --only demo --cli-root $CLI",
+            "build_showcase.py build --only demo --cli-root $CLI",
+        ),
+        (
+            "protspace embed -i /private/var/folders/ab/x.fasta -o /Users/me/out",
+            "protspace embed -i $TMP -o ~/out",
+        ),
+    ],
+)
+def test_the_command_never_shows_a_machine_path(command, shown):
+    assert write_manifest.redact_command(command) == shown
+
+
+def test_a_stamped_scratch_path_is_redacted_in_the_record(tmp_path):
+    bundle = _write_bundle(
+        tmp_path / "demo.parquetbundle",
+        ids=["P1"],
+        annotations={"domain": ["Bacteria"]},
+        projections=["ProtT5 — UMAP 2"],
+        metadata={
+            "example_id": "demo",
+            "command": "build_showcase.py build --only demo --cli-root /private/tmp/c",
+        },
+    )
+    record = write_manifest.read_bundle_record(
+        bundle, example_id="demo", file=bundle.name, hosting="release"
+    )
+    assert record["command"] == "build_showcase.py build --only demo --cli-root $CLI"
+
+
 def test_a_single_release_string_applies_to_every_column(tmp_path):
     bundle = _write_bundle(
         tmp_path / "b.parquetbundle",
