@@ -12,6 +12,7 @@ import { notify } from '../lib/notify';
 import {
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
+  getLegacyBundleFormatNotification,
 } from './notifications';
 import { markLastLoadStatus, saveLastImportedFile } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
@@ -97,7 +98,7 @@ export function createDatasetController({
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
-      const { data, settings, source, file } = customEvent.detail;
+      const { data, settings, source, file, bundleFormatVersion } = customEvent.detail;
       const runningLoadMeta = loadQueue.getRunningLoadMeta();
       const loadMeta = (file ? loadQueue.getLoadMetaForFile(file) : undefined) ??
         runningLoadMeta ?? {
@@ -238,6 +239,16 @@ export function createDatasetController({
       }
 
       viewController.applyLatestViewForDatasetLoad(data);
+
+      // Only for the user's own imports: the app's bundled datasets are still v1, and a
+      // visitor cannot convert those.
+      if (
+        loadMeta.kind === 'user' &&
+        bundleFormatVersion !== undefined &&
+        bundleFormatVersion < 3
+      ) {
+        notify.info(getLegacyBundleFormatNotification(bundleFormatVersion));
+      }
 
       try {
         if (loadMeta.kind === 'user' || loadMeta.kind === 'opfs') {

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   saveLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   warning: vi.fn(),
+  info: vi.fn(),
 }));
 
 vi.mock('./data-renderer', () => ({
@@ -35,7 +36,7 @@ vi.mock('./tooltip-annotations-store', () => ({
 }));
 
 vi.mock('../lib/notify', () => ({
-  notify: { warning: mocks.warning, error: vi.fn() },
+  notify: { warning: mocks.warning, info: mocks.info, error: vi.fn() },
 }));
 
 import { createDatasetController } from './dataset-controller';
@@ -51,7 +52,7 @@ const data: VisualizationData = {
 
 const file = new File(['bundle'], 'import.parquetbundle');
 
-function buildController() {
+function buildController(kind: 'user' | 'default' = 'user') {
   const options = {
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
     dataLoader: {},
@@ -65,8 +66,8 @@ function buildController() {
     },
     loadQueue: {
       registerFileLoad: vi.fn(),
-      getLoadMetaForFile: () => ({ sequence: 3, kind: 'user' as const }),
-      getRunningLoadMeta: () => ({ sequence: 3, kind: 'user' as const }),
+      getLoadMetaForFile: () => ({ sequence: 3, kind }),
+      getRunningLoadMeta: () => ({ sequence: 3, kind }),
       getLatestSequence: () => 3,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
     },
@@ -139,5 +140,49 @@ describe('dataset controller OPFS persistence', () => {
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
     consoleError.mockRestore();
+  });
+});
+
+describe('dataset controller legacy bundle notice', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+    mocks.saveLastImportedFile.mockResolvedValue(undefined);
+    mocks.loadData.mockResolvedValue(undefined);
+  });
+
+  const eventFor = (bundleFormatVersion: number | undefined) =>
+    ({
+      detail: { data, settings: null, source: 'user', file, bundleFormatVersion },
+    }) as unknown as Event;
+
+  it('points a user who imported a v2 bundle to re-export and protspace convert', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventFor(2));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).toHaveBeenCalledOnce();
+    const [notice] = mocks.info.mock.calls[0];
+    expect(notice.description).toMatch(/5\.0\.0/);
+    expect(notice.description).toMatch(/export it again/);
+    expect(notice.description).toMatch(/protspace convert/);
+  });
+
+  it.each([
+    ['a v3 bundle', 3],
+    ['a plain parquet file', undefined],
+  ])('stays quiet for %s', async (_label, version) => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventFor(version));
+
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for the bundled default dataset, which is still v1', async () => {
+    const { controller } = buildController('default');
+    await controller.handleDataLoaded(eventFor(1));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).not.toHaveBeenCalled();
   });
 });
