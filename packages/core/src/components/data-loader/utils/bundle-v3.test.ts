@@ -659,6 +659,125 @@ describe('parquetbundle format v3', () => {
     );
   });
 
+  describe('a footer row count its data does not back', () => {
+    /** Thrift compact i64: a zigzag varint. */
+    const zigzag = (value: number): number[] => {
+      let rest = BigInt(value) * 2n;
+      const bytes: number[] = [];
+      while (rest >= 0x80n) {
+        bytes.push(Number((rest & 0x7fn) | 0x80n));
+        rest >>= 7n;
+      }
+      return [...bytes, Number(rest)];
+    };
+
+    /**
+     * `part` with one i64 of its footer rewritten from `from` to `to` (field header `0x16`),
+     * at the first place where the rewrite reads back as `lands` says. Only the thrift bytes
+     * change: the pages still hold the rows they held.
+     */
+    const rewriteFooterI64 = (
+      part: Uint8Array,
+      from: number,
+      to: number,
+      lands: (metadata: ReturnType<typeof parquetMetadata>) => boolean,
+    ): Uint8Array => {
+      const end = part.length - 8;
+      const footerLength = new DataView(part.buffer, part.byteOffset).getUint32(end, true);
+      const footer = Array.from(part.subarray(end - footerLength, end));
+      const needle = [0x16, ...zigzag(from)];
+      for (let at = 0; at + needle.length <= footer.length; at++) {
+        if (needle.some((byte, k) => footer[at + k] !== byte)) continue;
+        const patched = [
+          ...footer.slice(0, at),
+          0x16,
+          ...zigzag(to),
+          ...footer.slice(at + needle.length),
+        ];
+        const length = new Uint8Array(4);
+        new DataView(length.buffer).setUint32(0, patched.length, true);
+        const candidate = Uint8Array.from([
+          ...part.subarray(0, end - footerLength),
+          ...patched,
+          ...length,
+          ...utf8('PAR1'),
+        ]);
+        try {
+          if (lands(parquetMetadata(candidate.slice().buffer))) return candidate;
+        } catch {
+          // Not this occurrence: the rewrite broke the thrift structure.
+        }
+      }
+      throw new Error(`no footer i64 ${from} rewrites as wanted`);
+    };
+
+    /** `part` whose footer, and with `rowGroups` its one row group too, declares `rows`. */
+    const declaring = (part: Uint8Array, rows: number, rowGroups: boolean): Uint8Array => {
+      const was = Number(parquetMetadata(part.slice().buffer).num_rows);
+      const fileLevel = rewriteFooterI64(
+        part,
+        was,
+        rows,
+        (m) => Number(m.num_rows) === rows && Number(m.row_groups[0].num_rows) === was,
+      );
+      if (!rowGroups) return fileLevel;
+      return rewriteFooterI64(
+        fileLevel,
+        was,
+        rows,
+        (m) => Number(m.num_rows) === rows && Number(m.row_groups[0].num_rows) === rows,
+      );
+    };
+
+    it('rejects a footer claiming more rows than its row groups hold', async () => {
+      // Parts 1 and 3 agree with each other, so only the row groups can tell: read as
+      // declared, P9 and P10 would be proteins named '' at (0, 0), labelled with code 0.
+      const bundle = v3Bundle({
+        0: declaring(annotationsPart(), 10, false),
+        2: declaring(PROJECTIONS, 10, false),
+      });
+      await expect(decodeParquetBundle(bundle)).rejects.toThrow(
+        /part 1 footer declares 10 rows but its row groups hold 8/,
+      );
+    });
+
+    it('rejects row groups claiming more rows than their pages hold', async () => {
+      const bundle = v3Bundle({
+        0: declaring(annotationsPart(), 10, true),
+        2: declaring(PROJECTIONS, 10, true),
+      });
+      await expect(decodeParquetBundle(bundle)).rejects.toThrow(
+        /holds 8 rows but its footer declares 10/,
+      );
+      const { data } = await decodeParquetBundle(v3Bundle());
+      expect(data.protein_ids).toEqual(PROTEIN_IDS);
+    });
+
+    it('caps the cells a footer can make the reader preallocate', async () => {
+      // A few KB claiming 2M rows of 500 float64 columns would preallocate 8 GB before
+      // a single row is read.
+      const names = Array.from({ length: 500 }, (_, i) => `n${i}`);
+      const wide = part(
+        [
+          { name: 'protein_id', data: PROTEIN_IDS },
+          ...names.map((name) => ({ name, data: new Float64Array(8) })),
+        ],
+        {
+          protspace_container_version: '3',
+          protspace_v3_manifest: JSON.stringify({
+            idColumn: 'protein_id',
+            columns: Object.fromEntries(names.map((name) => [name, { kind: 'numeric' }])),
+            projections: MANIFEST.projections,
+          }),
+        },
+      );
+      const rows = 2_000_000;
+      await expect(
+        decodeParquetBundle(v3Bundle({ 0: declaring(wide, rows, true) })),
+      ).rejects.toThrow(/past the 1000000000 cell limit/);
+    });
+  });
+
   it('rejects a projection column that was not written REQUIRED and PLAIN', async () => {
     const nullable = new Uint8Array(
       parquetWriteBuffer({

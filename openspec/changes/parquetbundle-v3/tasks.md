@@ -120,6 +120,8 @@
       column into `string`
 - [x] 3.23 The v3 reader refuses a null or repeated protein id, as the format and Python's
       encoder do
+- [x] 3.24 The v3 reader checks a footer's row count against its row groups and the rows each
+      column actually decodes, and caps the cells it preallocates from it
 
 ## 4. Contract suite (`tests/contract`)
 

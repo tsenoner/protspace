@@ -333,6 +333,65 @@ function assertUniqueIds(ids: readonly string[]): void {
   }
 }
 
+/**
+ * Check a part's footer row count before anything is allocated from it.
+ *
+ * `num_rows` is only a claim: hyparquet decodes whatever row groups there are, so a
+ * footer claiming more rows than its row groups hold would leave the difference as
+ * phantom proteins at the zeros a fresh typed array holds. And every column is
+ * preallocated from it, so the cells it implies are capped as the legacy path caps them.
+ */
+function assertFooterRows(metadata: FileMetaData, part: string, columns: number): void {
+  const inRowGroups = metadata.row_groups.reduce((sum, group) => sum + BigInt(group.num_rows), 0n);
+  if (inRowGroups !== BigInt(metadata.num_rows)) {
+    throw new Error(
+      `v3 ${part} footer declares ${String(metadata.num_rows)} rows but its row groups ` +
+        `hold ${String(inRowGroups)}`,
+    );
+  }
+  const cells = Number(metadata.num_rows) * columns;
+  if (cells > DEFAULT_VALIDATION_LIMITS.maxTotalCells) {
+    throw new Error(
+      `v3 ${part} declares ${String(metadata.num_rows)} rows of ${columns} columns, ` +
+        `past the ${DEFAULT_VALIDATION_LIMITS.maxTotalCells} cell limit`,
+    );
+  }
+}
+
+/**
+ * `readColumnChunks` that also refuses a column whose chunks do not fill exactly
+ * `numRows` rows, whatever the footer said: an unfilled row would be read as the zero
+ * (or `''`) it was preallocated with.
+ */
+async function readFullColumns(
+  file: ArrayBuffer,
+  metadata: FileMetaData,
+  part: string,
+  columns: string[],
+  numRows: number,
+  onChunk: (chunk: ColumnData) => void,
+): Promise<void> {
+  const filled = new Map<string, number>(columns.map((column) => [column, 0]));
+  await readColumnChunks(file, metadata, columns, (chunk) => {
+    const rows = filled.get(chunk.columnName);
+    if (rows === undefined) return;
+    if (chunk.rowStart < 0 || chunk.rowStart + chunk.columnData.length > numRows) {
+      throw new Error(
+        `v3 ${part} column "${chunk.columnName}" has rows past the ${numRows} its footer declares`,
+      );
+    }
+    filled.set(chunk.columnName, rows + chunk.columnData.length);
+    onChunk(chunk);
+  });
+  for (const [column, rows] of filled) {
+    if (rows !== numRows) {
+      throw new Error(
+        `v3 ${part} column "${column}" holds ${rows} rows but its footer declares ${numRows}`,
+      );
+    }
+  }
+}
+
 /** Preallocate one array per declared column and fill it chunk by chunk. */
 async function readAnnotationColumns(
   part: ArrayBuffer,
@@ -340,6 +399,7 @@ async function readAnnotationColumns(
   manifest: V3Manifest,
   numRows: number,
 ): Promise<Map<string, ColumnTarget>> {
+  assertFooterRows(metadata, 'part 1', 1 + Object.keys(manifest.columns).length);
   const targets = new Map<string, ColumnTarget>();
   targets.set(manifest.idColumn, new Array<string>(numRows).fill(''));
   for (const [name, column] of Object.entries(manifest.columns)) {
@@ -349,9 +409,9 @@ async function readAnnotationColumns(
     );
   }
 
-  await readColumnChunks(part, metadata, [...targets.keys()], (chunk) => {
-    const target = targets.get(chunk.columnName);
-    if (target) writeChunk(target, chunk.columnName, chunk.columnData, chunk.rowStart);
+  await readFullColumns(part, metadata, 'part 1', [...targets.keys()], numRows, (chunk) => {
+    const target = targets.get(chunk.columnName)!;
+    writeChunk(target, chunk.columnName, chunk.columnData, chunk.rowStart);
   });
 
   return targets;
@@ -382,6 +442,11 @@ async function readProjections(
       `v3 part 3 holds ${String(metadata.num_rows)} rows but part 1 holds ${numRows}`,
     );
   }
+  assertFooterRows(
+    metadata,
+    'part 3',
+    manifest.projections.reduce((sum, { dimension }) => sum + dimension, 0),
+  );
 
   const axisTargets = new Map<string, { data: Float32Array; dimension: number; axis: number }>();
   const projections: Projection[] = [];
@@ -406,13 +471,14 @@ async function readProjections(
   }
 
   if (axisTargets.size > 0) {
-    await readColumnChunks(
+    await readFullColumns(
       part,
       metadata,
+      'part 3',
       [...axisTargets.keys()],
+      numRows,
       ({ columnName, columnData, rowStart }) => {
-        const target = axisTargets.get(columnName);
-        if (!target) return;
+        const target = axisTargets.get(columnName)!;
         assertTypedChunk(columnName, columnData);
         const { data, dimension, axis } = target;
         for (let i = 0; i < columnData.length; i++) {

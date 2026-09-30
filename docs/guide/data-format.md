@@ -444,7 +444,8 @@ missing point is not drawn. A projection is 3D when any of its rows has a finite
 2D otherwise (a `z` of NaN counts as missing). A `dimensions` value in the input metadata that
 disagrees is ignored with a warning, and part 2 is written with the value the data gives, so it
 always agrees with the manifest. Both readers refuse a part 3 whose row count differs from part
-1's, rather than leaving the unread proteins at `(0, 0)` or dropping the extra rows.
+1's, rather than leaving the unread proteins at `(0, 0)` or dropping the extra rows. The web app
+also refuses a part whose footer row count its row groups and pages do not fill.
 
 Part 1 holds the union of the annotated and the projected proteins. A projected protein with no
 annotations row is added with every annotation missing, and a protein that no projection covers

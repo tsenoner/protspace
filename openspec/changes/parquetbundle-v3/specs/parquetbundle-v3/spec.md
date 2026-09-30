@@ -108,6 +108,12 @@ projection are finite.
 - **WHEN** the browser decodes a v3 bundle whose part 3 holds fewer rows than part 1
 - **THEN** it rejects the file, as Python does, rather than placing the unread proteins at `0`
 
+#### Scenario: A footer declaring rows its data does not hold
+
+- **WHEN** the browser decodes a v3 bundle whose part 1 and part 3 footers both declare more rows
+  than their row groups or pages hold
+- **THEN** it rejects the file rather than adding proteins with empty ids at `0`
+
 #### Scenario: The legacy reader reads the same gap
 
 - **WHEN** the browser decodes a v2 bundle whose projection `B` has no row for `P`
