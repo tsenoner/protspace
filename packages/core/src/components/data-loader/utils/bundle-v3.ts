@@ -148,10 +148,22 @@ function readManifest(metadata: FileMetaData): V3Manifest {
   if (typeof idColumn !== 'string' || !schemaColumns.has(idColumn)) {
     throw new Error(`v3 manifest idColumn "${String(idColumn)}" is not a column of part 1`);
   }
+  // The ids are read as strings; an INT32 id column would hand back numbers that no
+  // string lookup (search, selection, isolation) ever matches.
+  const idType = schemaColumns.get(idColumn);
+  if (idType !== 'BYTE_ARRAY') {
+    throw new Error(
+      `v3 manifest idColumn "${idColumn}" is stored as ${String(idType)}, not a string column`,
+    );
+  }
   if (!isRecord(columns)) throw new Error('v3 manifest has no "columns" object');
   if (!Array.isArray(projections)) throw new Error('v3 manifest has no "projections" array');
 
   const validated: Record<string, V3ColumnManifest> = {};
+  // Physical part-1 column -> the manifest column reading it. Two readers of one
+  // column would share one buffer, and the categorical pass rewrites its codes in
+  // place under the other; the Python encoder never writes such a layout.
+  const claimed = new Map<string, string>();
   for (const [name, entry] of Object.entries(columns)) {
     if (!isRecord(entry))
       throw new Error(`v3 manifest entry for column "${name}" is not an object`);
@@ -168,6 +180,13 @@ function readManifest(metadata: FileMetaData): V3Manifest {
       throw new Error(`v3 manifest declares idColumn "${name}" as an annotation column too`);
     }
     const physical = physicalColumn(name, kind);
+    const claimant = physical === idColumn ? `idColumn "${idColumn}"` : claimed.get(physical);
+    if (claimant !== undefined) {
+      throw new Error(
+        `v3 manifest column "${name}" reads part 1's "${physical}", which ${claimant} already reads`,
+      );
+    }
+    claimed.set(physical, `column "${name}"`);
     const physicalType = schemaColumns.get(physical);
     if (physicalType === undefined) {
       throw new Error(`v3 manifest declares column "${name}" but part 1 has no "${physical}"`);

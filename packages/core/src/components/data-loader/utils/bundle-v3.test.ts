@@ -424,9 +424,10 @@ describe('parquetbundle format v3', () => {
       ],
       [
         'a hit-count column the manifest calls numeric',
+        // go_bp itself is left out: it would read the same column, which is refused first.
         {
           ...MANIFEST,
-          columns: { ...MANIFEST.columns, go_bp__count: { kind: 'numeric' } },
+          columns: { organism: MANIFEST.columns.organism, go_bp__count: { kind: 'numeric' } },
         },
         /is kind "numeric", but part 1 stores "go_bp__count" as INT32, not DOUBLE/,
       ],
@@ -437,6 +438,24 @@ describe('parquetbundle format v3', () => {
           columns: { ...MANIFEST.columns, protein_id: { kind: 'numeric' } },
         },
         /declares idColumn "protein_id" as an annotation column too/,
+      ],
+      [
+        'an id column that is not a string column',
+        { ...MANIFEST, idColumn: 'go_bp__count' },
+        /idColumn "go_bp__count" is stored as INT32, not a string column/,
+      ],
+      [
+        'a column whose part 1 name another column already stores',
+        {
+          ...MANIFEST,
+          columns: { ...MANIFEST.columns, go_bp__count: { kind: 'categorical' } },
+        },
+        /column "go_bp__count" reads part 1's "go_bp__count", which column "go_bp" already reads/,
+      ],
+      [
+        'a multi column whose hit counts are the id column',
+        { idColumn: 'go_bp__count', columns: { go_bp: { kind: 'multi' } }, projections: [] },
+        /idColumn "go_bp__count" is stored as INT32, not a string column/,
       ],
       [
         'an unknown numericType',

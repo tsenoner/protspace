@@ -87,6 +87,8 @@
 - [x] 3.14 The v3 reader refuses a part 3 whose row count differs from part 1's
 - [x] 3.15 The v3 reader refuses hit or score counts whose prefix sum leaves the int32 offset
       range, instead of wrapping them back onto the payload length
+- [x] 3.16 The v3 reader refuses a manifest whose id column is not a string column or whose
+      columns share a physical part 1 column with each other or with the id column
 
 ## 4. Contract suite (`tests/contract`)
 
