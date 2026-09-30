@@ -778,23 +778,26 @@ def _decode_numeric(column: pa.ChunkedArray, entry: dict[str, Any]) -> pa.Array:
     if type_ is not None:
         return pc.cast(pa.array(values, mask=~present), type_)
 
-    finite = np.where(present, values, 0.0)
-    # ``str(2.0)`` is ``"2.0"`` but an int-typed v2 column spells it ``"2"``, and
-    # numpy's float repr is Python's, so int columns take the int64 detour.  The
-    # magnitude guard keeps a value past int64 out of an undefined cast, and it is
-    # per value: one 1e19 cell must not re-spell the whole column as floats.
+    # Only present cells are spelled.  ``str(2.0)`` is ``"2.0"`` but an int-typed
+    # v2 column spells it ``"2"``, so int columns take the int64 detour, where
+    # pyarrow's cast spells integers exactly as Python does.  Floats keep numpy's
+    # repr, which is Python's: pyarrow spells them differently (``1e-7`` for
+    # ``1e-07``, ``1e+15`` for ``1000000000000000.0``).  The magnitude guard keeps
+    # a value past int64 out of an undefined cast, and it is per value: one 1e19
+    # cell must not re-spell the whole column as floats.
+    kept = values[present]
     if entry.get("numericType") == "int":
-        small = np.abs(finite) < 2.0**63
-        text = np.where(
-            small,
-            np.where(small, finite, 0.0).astype(np.int64).astype(str),
-            finite.astype(str),
+        small = np.abs(kept) < 2.0**63
+        text = pc.cast(
+            pa.array(np.where(small, kept, 0.0).astype(np.int64)), pa.string()
         )
+        if not small.all():
+            text = pc.replace_with_mask(
+                text, pa.array(~small), pa.array(kept[~small].astype(str))
+            )
     else:
-        text = finite.astype(str)
-    return pc.if_else(
-        pa.array(present), pa.array(text, type=pa.string()), pa.scalar("")
-    )
+        text = pa.array(kept.astype(str), type=pa.string())
+    return pc.fill_null(text.take(pa.array(np.cumsum(present) - 1, mask=~present)), "")
 
 
 def _decode_categorical(
