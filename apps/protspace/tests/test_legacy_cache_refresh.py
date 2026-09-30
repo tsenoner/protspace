@@ -432,7 +432,7 @@ V3_ANNOTATIONS = [
 ]
 
 
-def _write_v2_cache(cache_dir, *, drop=()) -> None:
+def _write_v2_cache(cache_dir, *, drop=(), version=2, **extra) -> None:
     """A fly protein cached by the version before the root and TMbed fixes."""
     cached = pd.DataFrame(
         {
@@ -448,19 +448,54 @@ def _write_v2_cache(cache_dir, *, drop=()) -> None:
             "species": ["Drosophila melanogaster"],
             "predicted_membrane": ["Soluble"],
             "predicted_transmembrane": ["none"],
+            **{column: [value] for column, value in extra.items()},
         }
     ).drop(columns=list(drop))
-    cached.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 2}
+    cached.attrs = {ANNOTATION_CACHE_VERSION_ATTR: version}
     cached.to_parquet(cache_dir / CACHE_NAME, index=False)
 
 
-def _serve_taxonomy(monkeypatch, calls: list):
+FLY_UNIPROT = {
+    "gene_name": "His3",
+    "protein_name": "Histone H3",
+    "uniprot_kb_id": "H3_DROME",
+    "organism_id": "7227",
+    "sequence": "MARTKQTARK",
+    "keyword": "Nucleosome core",
+}
+
+
+def _serve_fly_uniprot(monkeypatch, calls: list, requested: list | None = None):
+    """UniProt answers for the fly protein, with whatever fields it is asked for."""
+
+    def fetch(retriever):
+        calls.append("uniprot")
+        if requested is not None:
+            requested.append(set(retriever.annotations))
+        return [
+            ProteinAnnotations(
+                identifier=h,
+                annotations={
+                    a: FLY_UNIPROT.get(a, "")
+                    for a in retriever.annotations
+                    if a != "accession"  # the identifier, not a column
+                },
+            )
+            for h in retriever.headers
+        ]
+
+    monkeypatch.setattr(UniProtRetriever, "fetch_annotations", fetch)
+
+
+def _serve_taxonomy(monkeypatch, calls: list, requested: list | None = None):
     from protspace.data.annotations.retrievers.taxonomy_retriever import (
         TaxonomyRetriever,
     )
 
     def fetch(retriever):
         calls.append(("taxonomy", list(retriever.taxon_ids)))
+        if requested is not None:
+            requested.append(set(retriever.annotations))
         return {
             tid: {"annotations": {a: FLY[a] for a in retriever.annotations}}
             for tid in retriever.taxon_ids
@@ -469,13 +504,17 @@ def _serve_taxonomy(monkeypatch, calls: list):
     monkeypatch.setattr(TaxonomyRetriever, "fetch_annotations", fetch)
 
 
-def _serve_biocentral(monkeypatch, calls: list, *, fail: bool = False):
+def _serve_biocentral(
+    monkeypatch, calls: list, *, fail: bool = False, requested: list | None = None
+):
     from protspace.data.annotations.retrievers.biocentral_retriever import (
         BiocentralPredictionRetriever,
     )
 
     def fetch(retriever):
         calls.append(("biocentral", dict(retriever.sequences)))
+        if requested is not None:
+            requested.append(set(retriever.annotations))
         if fail:
             raise RuntimeError("Biocentral is down")
         return [
@@ -565,9 +604,7 @@ class TestVersion3:
 
         assert _sources(calls) == [source]
 
-    def test_a_run_without_them_drops_them_and_fetches_nothing(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_run_without_them_fetches_nothing(self, tmp_path, monkeypatch):
         _write_v2_cache(tmp_path)
         calls: list = []
         _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
@@ -580,8 +617,36 @@ class TestVersion3:
         assert calls == []
         assert result["species"].tolist() == ["Drosophila melanogaster"]
         assert result["predicted_membrane"].tolist() == ["Soluble"]
-        assert "root" not in result.columns
-        assert "predicted_transmembrane" not in result.columns
+
+    def test_a_run_without_them_leaves_them_out_of_the_cache_it_writes(
+        self, tmp_path, monkeypatch
+    ):
+        """The drop itself, which only a run that writes the cache exercises.
+
+        `keyword` is not cached, so UniProt is fetched and the cache rewritten;
+        taxonomy and Biocentral ride along from the cache, and without the
+        version-3 entry their stale columns would ride along as current.
+        """
+        _write_v2_cache(tmp_path)
+        calls: list = []
+        _serve_fly_uniprot(monkeypatch, calls)
+        _forbid(monkeypatch, InterProRetriever, "InterPro")
+        _forbid(monkeypatch, TedRetriever, "TED")
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+        annotations = ["keyword", "species", "predicted_membrane"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == ["uniprot"]
+        assert result["keyword"].tolist() == ["Nucleosome core"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+        assert "root" not in cache.columns
+        assert "predicted_transmembrane" not in cache.columns
+        # The columns the fix did not touch are cached as they were.
+        assert cache["species"].tolist() == ["Drosophila melanogaster"]
+        assert cache["predicted_membrane"].tolist() == ["Soluble"]
 
     def test_the_root_refresh_fetches_the_organism_the_cache_lacks(
         self, tmp_path, monkeypatch
