@@ -380,7 +380,9 @@ describe('EAT companion normalization', () => {
       null,
     ]);
     expect(data.annotations.ec.values).toEqual(['1.1.1.1', '2.2.2.2', '__NA__']);
-    expect(data.numeric_annotation_data?.ec__eat_confidence).toEqual([null, 0.8, 0.35, null]);
+    expect(data.numeric_annotation_data?.ec__eat_confidence).toEqual(
+      new Float64Array([NaN, 0.8, 0.35, NaN]),
+    );
   });
 
   it('retains ordered multi-valued transfers with aligned score and evidence metadata', () => {
@@ -500,7 +502,9 @@ describe('EAT companion normalization', () => {
       expect(original.annotations.ec__eat_confidence.runtime).toBeUndefined();
       expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
       expect(reloaded.annotations.ec__eat_confidence.runtime).toBeUndefined();
-      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual(
+        new Float64Array([0.125, 0.875]),
+      );
     },
   );
 
@@ -514,7 +518,9 @@ describe('EAT companion normalization', () => {
         ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
       );
 
-      expect(original.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(original.numeric_annotation_data?.ec__eat_confidence).toEqual(
+        new Float64Array([0.125, 0.875]),
+      );
       expect(runtimeConfidence?.[0]).toBe('ec__eat_confidence__runtime_2');
       expect(runtimeConfidence?.[1].runtime?.baseAnnotation).toBe('ec');
 
@@ -526,7 +532,9 @@ describe('EAT companion normalization', () => {
 
       expect(extraction.formatVersion).toBe(2);
       expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
-      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual(
+        new Float64Array([0.125, 0.875]),
+      );
       expect(reloaded.annotation_predicted?.ec).toEqual([
         null,
         { value: '2.2.2.2', confidence: expect.closeTo(0.8, 5), source: 'P1' },
@@ -799,7 +807,7 @@ describe('normalizeEatCompanionColumns over CSR storage (bundle format v3)', () 
           length: 4,
         },
       },
-      numeric_annotation_data: { ec__pred_confidence: [0.9, null, null, null] },
+      numeric_annotation_data: { ec__pred_confidence: new Float64Array([0.9, NaN, NaN, NaN]) },
     };
   }
 

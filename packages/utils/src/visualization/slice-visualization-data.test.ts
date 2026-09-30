@@ -19,7 +19,7 @@ function baseViz(): VisualizationData {
     ],
     annotations: { fam: famAnnotation },
     annotation_data: { fam: new Int32Array([0, 1, 0, 1]) },
-    numeric_annotation_data: { plddt: [10, 20, 30, 40] },
+    numeric_annotation_data: { plddt: new Float64Array([10, 20, 30, 40]) },
     annotation_scores: { fam: [[[0.1]], [[0.2]], [[0.3]], [[0.4]]] },
     annotation_evidence: { fam: [['x'], ['y'], ['z'], ['w']] },
     annotation_predicted: {
@@ -53,7 +53,7 @@ describe('sliceVisualizationDataByIndices', () => {
 
   it('reslices numeric_annotation_data to kept indices', () => {
     const out = sliceVisualizationDataByIndices(baseViz(), [1, 3]);
-    expect(out.numeric_annotation_data!.plddt).toEqual([20, 40]);
+    expect(out.numeric_annotation_data!.plddt).toEqual(new Float64Array([20, 40]));
   });
 
   it('reslices EAT cells in the same protein order', () => {

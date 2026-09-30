@@ -25,7 +25,9 @@ function csrDataset(): { data: VisualizationData; shared: ArrayBuffer } {
       annotations: {
         go_bp: { kind: 'categorical', values: ['a', 'b'], colors: [], shapes: [] },
         organism: { kind: 'categorical', values: ['x'], colors: [], shapes: [] },
+        length: { kind: 'numeric', values: [], colors: [], shapes: [] },
       },
+      numeric_annotation_data: { length: new Float64Array([100, NaN, 300]) },
       annotation_data: {
         go_bp: {
           kind: 'csr',
@@ -44,6 +46,7 @@ function csrDataset(): { data: VisualizationData; shared: ArrayBuffer } {
 /** Every typed array `collectTransferables` names a buffer for, in a stable order. */
 const bulkViews = (data: VisualizationData): (Int32Array | Float32Array | Float64Array)[] => [
   ...data.projections.map((projection) => projection.data as Float32Array),
+  ...Object.values(data.numeric_annotation_data ?? {}),
   ...Object.values(data.annotation_data).flatMap((value) =>
     value instanceof Int32Array
       ? [value]
@@ -65,10 +68,10 @@ describe('collectTransferables', () => {
 
     expect(new Set(transfer).size).toBe(transfer.length);
     expect(transfer).toContain(shared);
-    // 2 projections + the shared CSR buffer + score offsets + score values + evidence
-    // codes + organism codes. Without deduplication this would be 8: `offsets` and
-    // `codes` would each name `shared`.
-    expect(transfer).toHaveLength(7);
+    // 2 projections + the numeric column + the shared CSR buffer + score offsets + score
+    // values + evidence codes + organism codes. Without deduplication this would be 9:
+    // `offsets` and `codes` would each name `shared`.
+    expect(transfer).toHaveLength(8);
   });
 
   it('actually transfers: the clone holds the bytes and every source is detached', () => {
@@ -87,6 +90,7 @@ describe('collectTransferables', () => {
     expect(before).toEqual([
       [0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [100, NaN, 300],
       [0, 1, 2, 3],
       [0, 1, 0],
       [0, 1, 1, 2],

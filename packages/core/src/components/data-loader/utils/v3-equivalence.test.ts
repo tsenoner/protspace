@@ -405,7 +405,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     expect(codes).toEqual([naIndex, naIndex, 0, naIndex, naIndex, 0]);
   });
 
-  it('reads numeric columns with their declared int/float type and null for blanks', async () => {
+  it('reads numeric columns with their declared int/float type and NaN for blanks', async () => {
     const { data } = await loadV3();
 
     expect(data.annotations.length).toEqual({
@@ -423,10 +423,10 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
       shapes: [],
     });
     expect(data.numeric_annotation_data).toEqual({
-      length: [120, null, 340, 0, -15, 1024],
-      hydrophobicity: [0.5, -1.25, null, 3, 0.001, 42],
+      length: new Float64Array([120, NaN, 340, 0, -15, 1024]),
+      hydrophobicity: new Float64Array([0.5, -1.25, NaN, 3, 0.001, 42]),
       // Not a wire column: synthesised from the EAT confidence companion.
-      kingdom__eat_confidence: [null, null, null, 0.5, null, null],
+      kingdom__eat_confidence: new Float64Array([NaN, NaN, NaN, 0.5, NaN, NaN]),
     });
     // A numeric column carries no categorical storage to bin by code. Spelled as the
     // whole key set so `annotation_data['length']` cannot be mistaken for an array length.

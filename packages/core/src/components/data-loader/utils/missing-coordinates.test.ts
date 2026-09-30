@@ -201,7 +201,7 @@ describe('the v3 protein-set cut', () => {
   it('slices numeric annotations and projections in step with the protein ids', async () => {
     const { data } = await decodeParquetBundle(v3Bundle());
     expect(data.protein_ids).toEqual(['P0', 'P1', 'P2']);
-    expect(data.numeric_annotation_data?.length).toEqual([100, 200, 400]);
+    expect(data.numeric_annotation_data?.length).toEqual(new Float64Array([100, 200, 400]));
     expect(coordinatesOf(data, 'A', 'P2')).toEqual([30, 31]);
     expect(coordinatesOf(data, 'B', 'P2')).toEqual([60, 61]);
   });

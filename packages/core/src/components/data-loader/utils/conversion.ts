@@ -16,6 +16,7 @@ import {
   isCuratedAnnotationMissing,
   isNAValue,
   parseEatCompanionColumn,
+  readNumericValue,
   remapCsr,
   sanitizeValue,
   sliceVisualizationDataByIndices,
@@ -65,12 +66,9 @@ const METADATA_EXCLUDED_KEYS = new Set(['projection_name', 'name', 'info_json'])
 /** Match GO/ECO evidence codes: 2–5 uppercase letters OR ECO:NNNNNNN */
 const EVIDENCE_CODE_RE = /^(?:[A-Z]{2,5}|ECO:\d+)$/;
 
-type InferredAnnotationType = 'int' | 'float' | 'string';
-
-interface AnnotationInferenceResult {
-  inferredType: InferredAnnotationType;
-  numericValues: (number | null)[];
-}
+type AnnotationInferenceResult =
+  | { inferredType: 'string' }
+  | { inferredType: 'int' | 'float'; numericValues: Float64Array };
 
 function parseNumericAnnotationValue(rawValue: unknown): number | null {
   if (typeof rawValue === 'number') {
@@ -96,7 +94,7 @@ function parseNumericAnnotationValue(rawValue: unknown): number | null {
 }
 
 function inferAnnotationType(values: Iterable<unknown>): AnnotationInferenceResult {
-  const numericValues: (number | null)[] = [];
+  const numericValues: number[] = [];
   let sawNumericValue = false;
   let sawNonIntegerValue = false;
 
@@ -105,17 +103,16 @@ function inferAnnotationType(values: Iterable<unknown>): AnnotationInferenceResu
     const normalized = normalizeMissingValue(rawValue);
 
     if (normalized == null) {
-      numericValues.push(null);
+      numericValues.push(NaN);
       continue;
     }
 
     const parsed = parseNumericAnnotationValue(normalized);
-    numericValues.push(parsed);
-
     if (parsed == null) {
       // Non-numeric, non-missing value — column is categorical.
-      return { inferredType: 'string', numericValues };
+      return { inferredType: 'string' };
     }
+    numericValues.push(parsed);
 
     sawNumericValue = true;
     if (!Number.isInteger(parsed)) {
@@ -124,10 +121,13 @@ function inferAnnotationType(values: Iterable<unknown>): AnnotationInferenceResu
   }
 
   if (!sawNumericValue) {
-    return { inferredType: 'string', numericValues };
+    return { inferredType: 'string' };
   }
 
-  return { inferredType: sawNonIntegerValue ? 'float' : 'int', numericValues };
+  return {
+    inferredType: sawNonIntegerValue ? 'float' : 'int',
+    numericValues: Float64Array.from(numericValues),
+  };
 }
 
 function* valuesForColumn(rows: Rows, column: string): Iterable<unknown> {
@@ -295,12 +295,11 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
       const values = readCategoricalStorageValues(data, group.value, i);
       const value = values.length > 0 ? values.join(';') : null;
       const source = readCategoricalStorageValue(data, group.source, i);
-      const confidence = confidences[i];
+      const confidence = readNumericValue(confidences, i);
       if (
         value == null ||
         source == null ||
-        typeof confidence !== 'number' ||
-        !Number.isFinite(confidence) ||
+        confidence == null ||
         confidence < 0 ||
         confidence > 1
       ) {
@@ -378,7 +377,10 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
       role: 'eat-confidence',
       baseAnnotation: base,
     });
-    numeric_annotation_data[confidenceKey] = cells.map((cell) => cell?.confidence ?? null);
+    numeric_annotation_data[confidenceKey] = Float64Array.from(
+      cells,
+      (cell) => cell?.confidence ?? NaN,
+    );
   }
 
   return {
@@ -834,9 +836,7 @@ function restoreDeclaredNumericAnnotations(
 
     data.annotations[column] = createNumericAnnotation(numericType, annotation.runtime);
     data.numeric_annotation_data ??= {};
-    data.numeric_annotation_data[column] = new Array<number | null>(data.protein_ids.length).fill(
-      null,
-    );
+    data.numeric_annotation_data[column] = new Float64Array(data.protein_ids.length).fill(NaN);
     delete data.annotation_data[column];
     delete data.annotation_scores?.[column];
     delete data.annotation_evidence?.[column];
@@ -1020,7 +1020,7 @@ function convertBundleFormatData(
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
   const annotation_scores: Record<string, (number[] | null)[][]> = {};
   const annotation_evidence: Record<string, (string | null)[][]> = {};
 
@@ -1033,12 +1033,12 @@ function convertBundleFormatData(
   for (const annotationCol of annotationColumns) {
     const inference = inferAnnotationType(valuesForColumn(baseProjectionData, annotationCol));
     if (inference.inferredType !== 'string') {
-      numeric_annotation_data[annotationCol] = uniqueProteinIds.map((proteinId) => {
+      numeric_annotation_data[annotationCol] = Float64Array.from(uniqueProteinIds, (proteinId) => {
         const row = baseRowsByProteinId.get(proteinId);
         const rawValue = row?.[annotationCol];
         const normalized = normalizeMissingValue(rawValue);
-        if (normalized == null) return null;
-        return parseNumericAnnotationValue(normalized);
+        if (normalized == null) return NaN;
+        return parseNumericAnnotationValue(normalized) ?? NaN;
       });
       annotations[annotationCol] = createNumericAnnotation(inference.inferredType);
       continue;
@@ -1320,7 +1320,7 @@ function convertLegacyFormatData(
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
   const annotation_scores: Record<string, (number[] | null)[][]> = {};
   const annotation_evidence: Record<string, (string | null)[][]> = {};
 
@@ -1516,7 +1516,7 @@ export function generateColorsAndShapes(
 interface ExtractedAnnotations {
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
-  numeric_annotation_data: Record<string, (number | null)[]>;
+  numeric_annotation_data: Record<string, Float64Array>;
   annotation_scores: Record<string, (number[] | null)[][]>;
   annotation_evidence: Record<string, (string | null)[][]>;
 }
@@ -1538,7 +1538,7 @@ async function extractAnnotationsByProtein(
 ): Promise<ExtractedAnnotations> {
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
   const annotation_scores: Record<string, (number[] | null)[][]> = {};
   const annotation_evidence: Record<string, (string | null)[][]> = {};
 

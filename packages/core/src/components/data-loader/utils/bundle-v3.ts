@@ -636,15 +636,16 @@ export async function readV3Bundle(
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
 
   for (const [name, column] of Object.entries(manifest.columns)) {
     const stored = columns.get(physicalColumn(name, column.kind))!;
 
     if (column.kind === 'numeric') {
-      const raw = stored as Float64Array;
-      const values = new Array<number | null>(numRows);
-      for (let i = 0; i < numRows; i++) values[i] = Number.isFinite(raw[i]) ? raw[i] : null;
+      // Kept as decoded, so the worker can transfer it. NaN is already the in-memory
+      // missing value; an infinity is folded into it, as it was never a real value.
+      const values = stored as Float64Array;
+      for (let i = 0; i < numRows; i++) if (!Number.isFinite(values[i])) values[i] = NaN;
       numeric_annotation_data[name] = values;
       annotations[name] = createNumericAnnotation(column.numericType ?? 'float');
       continue;

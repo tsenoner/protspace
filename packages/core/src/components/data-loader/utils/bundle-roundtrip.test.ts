@@ -204,7 +204,7 @@ describe('round-trip with real data files', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        length: [10, 50, 100],
+        length: new Float64Array([10, 50, 100]),
       },
       annotation_scores: {},
       annotation_evidence: {},
@@ -427,7 +427,7 @@ describe('numeric annotation round-trip', () => {
         family: [[0], [1], [0]],
       },
       numeric_annotation_data: {
-        length: [100, 250, null],
+        length: new Float64Array([100, 250, NaN]),
       },
       annotation_scores: {},
       annotation_evidence: {},
@@ -438,7 +438,7 @@ describe('numeric annotation round-trip', () => {
     const reimported = convertParquetToVisualizationData(reimportedExtraction);
 
     expect(reimported.annotations.length.kind).toBe('numeric');
-    expect(reimported.numeric_annotation_data?.length).toEqual([100, 250, null]);
+    expect(reimported.numeric_annotation_data?.length).toEqual(new Float64Array([100, 250, NaN]));
     expect(reimported.annotation_data.length).toBeUndefined();
     expect(reimported.annotations.family.kind).toBe('categorical');
     expect(reimported.annotation_data.family).toEqual([[0], [1], [0]]);
@@ -469,7 +469,13 @@ describe('numeric annotation type fidelity', () => {
     projections: [{ name: 'UMAP', data: Float32Array.of(0, 0, 1, 1, 2, 2), dimension: 2 as const }],
     annotations,
     annotation_data: {},
-    numeric_annotation_data: numericData,
+    // Spelled with null for readability; memory holds NaN.
+    numeric_annotation_data: Object.fromEntries(
+      Object.entries(numericData).map(([name, values]) => [
+        name,
+        Float64Array.from(values, (value) => value ?? NaN),
+      ]),
+    ),
     annotation_scores: {},
     annotation_evidence: {},
   });
@@ -497,7 +503,7 @@ describe('numeric annotation type fidelity', () => {
     );
     expect(reimported.annotations.residues.kind).toBe('numeric');
     expect(reimported.annotations.residues.numericType).toBe('int');
-    expect(reimported.numeric_annotation_data?.residues).toEqual([100, 250, null]);
+    expect(reimported.numeric_annotation_data?.residues).toEqual(new Float64Array([100, 250, NaN]));
   });
 
   it('widens to INT64 for an integer beyond the int32 range', async () => {
@@ -510,7 +516,7 @@ describe('numeric annotation type fidelity', () => {
       await extractRowsFromParquetBundle(exported),
     );
     expect(reimported.annotations.big.numericType).toBe('int');
-    expect(reimported.numeric_annotation_data?.big).toEqual([2 ** 40, 1, null]);
+    expect(reimported.numeric_annotation_data?.big).toEqual(new Float64Array([2 ** 40, 1, NaN]));
   });
 
   it('keeps a fractional annotation on DOUBLE', async () => {
@@ -521,7 +527,7 @@ describe('numeric annotation type fidelity', () => {
     const reimported = convertParquetToVisualizationData(
       await extractRowsFromParquetBundle(exported),
     );
-    expect(reimported.numeric_annotation_data?.score).toEqual([0.5, 1.25, null]);
+    expect(reimported.numeric_annotation_data?.score).toEqual(new Float64Array([0.5, 1.25, NaN]));
   });
 
   it('falls back to DOUBLE for an integral value too large to encode as INT64', async () => {
@@ -544,7 +550,7 @@ describe('numeric annotation type fidelity', () => {
 
     expect(reimported.annotations.length.kind).toBe('numeric');
     expect(reimported.annotations.length.numericType).toBe('int');
-    expect(reimported.numeric_annotation_data?.length).toEqual([null, null, null]);
+    expect(reimported.numeric_annotation_data?.length).toEqual(new Float64Array([NaN, NaN, NaN]));
     expect(reimported.annotation_data.length).toBeUndefined();
   });
 
@@ -701,7 +707,7 @@ describe('numeric annotation type fidelity', () => {
       projections: [{ name: 'UMAP', data: coords, dimension: 2 }],
       annotations: { length: numeric('int') },
       annotation_data: {},
-      numeric_annotation_data: { length: new Array<number | null>(count).fill(null) },
+      numeric_annotation_data: { length: new Float64Array(count).fill(NaN) },
       annotation_scores: {},
       annotation_evidence: {},
     };

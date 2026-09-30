@@ -106,7 +106,7 @@ function makeFamilyData(): VisualizationData {
       fam: families.map((v) => [families.indexOf(v)]),
     },
     numeric_annotation_data: {
-      score: families.map((_, i) => i),
+      score: Float64Array.from(families, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }

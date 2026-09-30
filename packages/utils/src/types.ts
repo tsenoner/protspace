@@ -193,7 +193,11 @@ export interface VisualizationData {
   projections: Projection[];
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  /**
+   * One value per protein, NaN where it is missing. A typed column so a v3 read hands its
+   * decoded array over as is and the decode worker can transfer it instead of cloning it.
+   */
+  numeric_annotation_data?: Record<string, Float64Array>;
   /** Display-independent EAT provenance, keyed by the curated base annotation. */
   annotation_predicted?: AnnotationPredictedData;
   /** Nested per-protein scores of a v1/v2 load; a CSR column carries its own instead. */

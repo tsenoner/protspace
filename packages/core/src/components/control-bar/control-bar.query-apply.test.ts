@@ -181,7 +181,7 @@ function makeEatData(): ProtspaceData {
       },
     },
     numeric_annotation_data: {
-      [EAT_KEY]: Array.from({ length: count }, (_, i) => (i < 5 ? null : i / 20)),
+      [EAT_KEY]: Float64Array.from({ length: count }, (_, i) => (i < 5 ? NaN : i / 20)),
     },
   };
 }
@@ -299,7 +299,7 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
         },
       },
       // All curated (null): a 0.5 filter against stale data would keep all 20 old ids.
-      numeric_annotation_data: { [EAT_KEY]: Array.from({ length: 20 }, () => null) },
+      numeric_annotation_data: { [EAT_KEY]: new Float64Array(20).fill(NaN) },
     };
     controlBar._currentData = staleData;
 
@@ -457,8 +457,8 @@ function makeMultiEatData(): ProtspaceData {
       },
     },
     numeric_annotation_data: {
-      [EC_KEY]: Array.from({ length: count }, (_, i) => (i < 5 ? null : i / 20)),
-      [GO_KEY]: Array.from({ length: count }, (_, i) => (i < 5 ? null : i / 20)),
+      [EC_KEY]: Float64Array.from({ length: count }, (_, i) => (i < 5 ? NaN : i / 20)),
+      [GO_KEY]: Float64Array.from({ length: count }, (_, i) => (i < 5 ? NaN : i / 20)),
     },
   };
 }

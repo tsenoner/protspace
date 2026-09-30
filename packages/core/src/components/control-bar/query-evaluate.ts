@@ -13,6 +13,7 @@ import {
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
   isNAValue,
+  readNumericValue,
 } from '@protspace/utils';
 
 /**
@@ -159,7 +160,7 @@ function proteinsWithAnyValue(
     const numericValues = data.numeric_annotation_data?.[annotation];
     if (numericValues) {
       for (let i = 0; i < numProteins; i++) {
-        if ((numericValues[i] ?? null) !== null) result.add(i);
+        if (readNumericValue(numericValues, i) !== null) result.add(i);
       }
       continue;
     }
@@ -218,7 +219,7 @@ function evaluateNumericCondition(
 
   const matches = new Set<number>();
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(values[i] ?? null, condition)) {
+    if (matchesNumericValue(readNumericValue(values, i), condition)) {
       matches.add(i);
     }
   }

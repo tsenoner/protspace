@@ -153,6 +153,7 @@ const v3Bundle = (overrides: Record<number, Uint8Array> = {}) =>
  */
 const bulkViews = (data: VisualizationData): (Int32Array | Float32Array | Float64Array)[] => [
   ...data.projections.map((projection) => projection.data as Float32Array),
+  ...Object.values(data.numeric_annotation_data ?? {}),
   ...Object.values(data.annotation_data).flatMap((value) =>
     value instanceof Int32Array
       ? [value]
@@ -333,8 +334,12 @@ describe('parquetbundle format v3', () => {
 
     expect(data.annotations.length).toMatchObject({ kind: 'numeric', numericType: 'int' });
     expect(data.annotations.score).toMatchObject({ kind: 'numeric', numericType: 'float' });
-    expect(data.numeric_annotation_data?.length).toEqual([100, 200, null, 300, 400, 500, 600, 700]);
-    expect(data.numeric_annotation_data?.score).toEqual([0.5, 1.5, 2.5, null, 4.5, 5.5, 6.5, 7.5]);
+    expect(data.numeric_annotation_data?.length).toEqual(
+      new Float64Array([100, 200, NaN, 300, 400, 500, 600, 700]),
+    );
+    expect(data.numeric_annotation_data?.score).toEqual(
+      new Float64Array([0.5, 1.5, 2.5, NaN, 4.5, 5.5, 6.5, 7.5]),
+    );
     // The manifest is authoritative: an int32 code column must never be read as numeric.
     expect(data.numeric_annotation_data?.organism).toBeUndefined();
     expect(data.numeric_annotation_data?.go_bp).toBeUndefined();
@@ -679,7 +684,9 @@ describe('parquetbundle format v3', () => {
       0, 1, 2, 4, 0, 1, 2, 3,
     ]);
     // A null in a column the manifest calls numeric reads as missing, not as 0.
-    expect(data.numeric_annotation_data?.length).toEqual([100, 200, null, 300, 400, 500, 600, 700]);
+    expect(data.numeric_annotation_data?.length).toEqual(
+      new Float64Array([100, 200, NaN, 300, 400, 500, 600, 700]),
+    );
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toMatch(/did not decode to a typed array/);
   });
@@ -689,9 +696,9 @@ describe('parquetbundle format v3', () => {
     const transfer = collectTransferables(data);
 
     expect(new Set(transfer).size).toBe(transfer.length);
-    // 2 projections + organism codes + 2 x 2 CSR (offsets + codes) + scores (offsets +
-    // values) + evidence codes.
-    expect(transfer).toHaveLength(10);
+    // 2 projections + 2 numeric columns + organism codes + 2 x 2 CSR (offsets + codes) +
+    // scores (offsets + values) + evidence codes.
+    expect(transfer).toHaveLength(12);
 
     const sources = bulkViews(data);
     const before = sources.map((view) => Array.from(view));

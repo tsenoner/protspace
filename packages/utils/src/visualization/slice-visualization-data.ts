@@ -58,7 +58,14 @@ export function sliceVisualizationDataByIndices(
         sliceAnnotationData(rows, keptIndices),
       ]),
     ),
-    numeric_annotation_data: sliceRecord(data.numeric_annotation_data),
+    numeric_annotation_data: data.numeric_annotation_data
+      ? Object.fromEntries(
+          Object.entries(data.numeric_annotation_data).map(([name, values]) => [
+            name,
+            Float64Array.from(keptIndices, (index) => values[index]),
+          ]),
+        )
+      : undefined,
     annotation_predicted: sliceRecord(data.annotation_predicted),
     annotation_scores: sliceRecord(data.annotation_scores),
     annotation_evidence: sliceRecord(data.annotation_evidence),

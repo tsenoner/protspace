@@ -302,7 +302,7 @@ export class ProtspaceScatterplot extends LitElement {
   // the old subset while the legend (fed from getCurrentData()) shows everything.
   private _plotDataWasCulled = false;
   private _lastMaterializedSource: VisualizationData | null = null;
-  private _lastMaterializedNumericValues: Array<number | null> | null = null;
+  private _lastMaterializedNumericValues: Float64Array | null = null;
   private _materializedDataCacheKey: string | null = null;
   private _materializedDataCache: VisualizationData | null = null;
   // F-40: memoize the filtered display-data rebuild. Keyed by reference on the

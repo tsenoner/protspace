@@ -132,7 +132,10 @@ function createAnnotationsParquet(data: VisualizationData): ArrayBuffer {
     if (annotation.runtime?.role === 'eat-confidence') continue;
 
     if (isNumericAnnotation(annotation)) {
-      const values = data.numeric_annotation_data?.[annotationName] ?? [];
+      // The wire marks a missing value with a parquet null, memory with NaN.
+      const values = Array.from(data.numeric_annotation_data?.[annotationName] ?? [], (value) =>
+        Number.isNaN(value) ? null : value,
+      );
       columnData.push(
         encodeNumericColumn(annotationName, values, annotation.numericType ?? 'float'),
       );

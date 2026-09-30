@@ -96,9 +96,11 @@ describe('plot-data-accessors', () => {
   describe('getProteinNumericValue', () => {
     it('returns the numeric value at the protein index', () => {
       const data = baseData();
-      data.numeric_annotation_data = { score: [3.14, 2.71, null] };
+      data.numeric_annotation_data = { score: new Float64Array([3.14, 2.71, NaN]) };
       expect(getProteinNumericValue(data, 0, 'score')).toBe(3.14);
       expect(getProteinNumericValue(data, 2, 'score')).toBeNull();
+      // Past the end of the column is missing too, not undefined.
+      expect(getProteinNumericValue(data, 3, 'score')).toBeNull();
     });
 
     it('returns null when the column is absent', () => {

@@ -48,7 +48,10 @@ interface NumericSummary {
   allIntegers: boolean;
 }
 
-const numericSummaryCache = new WeakMap<Array<number | null | undefined>, NumericSummary>();
+/** A numeric column as the binning reads it: NaN, null and undefined all mean missing. */
+type NumericValues = ArrayLike<number | null | undefined>;
+
+const numericSummaryCache = new WeakMap<NumericValues, NumericSummary>();
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -116,7 +119,7 @@ export function resolveNumericAnnotationDisplaySettings({
 }
 
 function createSummary(
-  values: Array<number | null | undefined>,
+  values: NumericValues,
   options: { includeSortedValues?: boolean } = {},
 ): NumericSummary {
   const includeSortedValues = options.includeSortedValues === true;
@@ -134,7 +137,8 @@ function createSummary(
   const distinctValues = new Set<number>();
   const finiteValues = includeSortedValues ? ([] as number[]) : null;
 
-  for (const value of values) {
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       continue;
     }
@@ -583,7 +587,7 @@ function createBinColors(
 }
 
 export function materializeNumericAnnotation(
-  values: Array<number | null | undefined>,
+  values: NumericValues,
   settings: NumericAnnotationDisplaySettings,
   numericType?: NumericAnnotationType,
 ): {
@@ -644,7 +648,8 @@ export function materializeNumericAnnotation(
     { length: counts.length },
     () => null,
   );
-  const rawBinIndices = values.map((value) => {
+  const rawBinIndices = Int32Array.from({ length: values.length }, (_, i) => {
+    const value = values[i];
     if (value == null || !Number.isFinite(value)) return -1;
     const binIndex = assignBinIndex(value, edges);
     counts[binIndex] += 1;

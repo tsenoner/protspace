@@ -54,12 +54,25 @@ export function getProteinDisplayValues(
   return values.map((v) => labelMap.get(v) ?? v);
 }
 
+/**
+ * A numeric column's value at `index`, or null where it is missing: the column's NaN, or
+ * an index past its end. The one place that turns the in-memory NaN back into the null
+ * every consumer tests for.
+ */
+export function readNumericValue(
+  values: ArrayLike<number> | undefined,
+  index: number,
+): number | null {
+  const value = values?.[index];
+  return value !== undefined && Number.isFinite(value) ? value : null;
+}
+
 export function getProteinNumericValue(
   data: VisualizationData,
   proteinIdx: number,
   annotationKey: string,
 ): number | null {
-  return data.numeric_annotation_data?.[annotationKey]?.[proteinIdx] ?? null;
+  return readNumericValue(data.numeric_annotation_data?.[annotationKey], proteinIdx);
 }
 
 export function getProteinNumericType(
