@@ -103,6 +103,11 @@ projection are finite.
 - **WHEN** the browser decodes it
 - **THEN** `P`'s coordinates in `B` are NaN, not `0`
 
+#### Scenario: A part 3 shorter than part 1
+
+- **WHEN** the browser decodes a v3 bundle whose part 3 holds fewer rows than part 1
+- **THEN** it rejects the file, as Python does, rather than placing the unread proteins at `0`
+
 #### Scenario: The legacy reader reads the same gap
 
 - **WHEN** the browser decodes a v2 bundle whose projection `B` has no row for `P`

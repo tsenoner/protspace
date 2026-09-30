@@ -569,6 +569,26 @@ describe('parquetbundle format v3', () => {
     );
   });
 
+  // A short part 3 left the unread proteins at the zero a fresh Float32Array holds, so
+  // they were drawn at (0,0); a long one silently lost its extra rows.
+  it.each([
+    ['fewer', 2],
+    ['more', 10],
+  ])('rejects a part 3 with %s rows than part 1', async (_label, rows) => {
+    const axis = (offset: number) => Float32Array.from({ length: rows }, (_, i) => offset + i);
+    const misaligned = part([
+      { name: 'pca2__x', data: axis(1) },
+      { name: 'pca2__y', data: axis(100) },
+      { name: 'umap3__x', data: axis(200) },
+      { name: 'umap3__y', data: axis(300) },
+      { name: 'umap3__z', data: axis(400) },
+    ]);
+
+    await expect(decodeParquetBundle(v3Bundle({ 2: misaligned }))).rejects.toThrow(
+      new RegExp(`part 3 holds ${rows} rows but part 1 holds 8`),
+    );
+  });
+
   it('rejects a projection column that was not written REQUIRED and PLAIN', async () => {
     const nullable = new Uint8Array(
       parquetWriteBuffer({

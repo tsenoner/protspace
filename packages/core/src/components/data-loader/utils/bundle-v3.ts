@@ -336,6 +336,15 @@ async function readProjections(
 ): Promise<Projection[]> {
   const metadata = parquetMetadata(part);
   const schemaColumns = leafColumnTypes(metadata);
+  // Part 3 is aligned row for row with part 1. A short part would leave the unread
+  // proteins at the zero a fresh Float32Array holds, i.e. drawn at (0,0), and a long
+  // one would drop its extra rows, so any disagreement is refused, as Python does.
+  const part3Rows = Number(metadata.num_rows);
+  if (part3Rows !== numRows) {
+    throw new Error(
+      `v3 part 3 holds ${String(metadata.num_rows)} rows but part 1 holds ${numRows}`,
+    );
+  }
 
   const axisTargets = new Map<string, { data: Float32Array; dimension: number; axis: number }>();
   const projections: Projection[] = [];

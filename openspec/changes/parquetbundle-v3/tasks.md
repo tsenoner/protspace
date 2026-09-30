@@ -84,6 +84,7 @@
       kind), and falls back to its inferred type otherwise; round-trip tests
 - [x] 3.13 The point-visibility requirements that named the picking quadtree name the point grid
       (`PointGridIndex`) that replaced it
+- [x] 3.14 The v3 reader refuses a part 3 whose row count differs from part 1's
 
 ## 4. Contract suite (`tests/contract`)
 
