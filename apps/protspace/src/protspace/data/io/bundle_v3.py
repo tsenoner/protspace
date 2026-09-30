@@ -159,10 +159,15 @@ def _flat(column: pa.ChunkedArray | pa.Array) -> pa.Array:
 
 
 def _as_string(column: pa.ChunkedArray | pa.Array) -> pa.Array:
-    """Flatten to a single ``string`` array, rendering bools as ``True``/``False``."""
+    """Flatten to a single ``string`` array, rendering bools as ``true``/``false``.
+
+    Lower case because that is what the v2 browser reader displayed for a
+    ``BOOLEAN`` column (``String(true)``), so legend colours saved against a v2
+    bundle keep matching once it is written as v3.
+    """
     arr = _flat(column)
     if pa.types.is_boolean(arr.type):
-        return pc.if_else(arr, pa.scalar("True"), pa.scalar("False"))
+        return pc.if_else(arr, pa.scalar("true"), pa.scalar("false"))
     if pa.types.is_string(arr.type):
         return arr
     return pc.cast(arr, pa.string())
@@ -707,10 +712,19 @@ def _decode_numeric(column: pa.ChunkedArray, entry: dict[str, Any]) -> pa.Array:
     )
 
 
-def _decode_categorical(column: pa.ChunkedArray, labels: pa.Array) -> pa.Array:
-    """int32 codes back to label cells; ``-1`` (missing) becomes ``""``."""
+def _decode_categorical(
+    column: pa.ChunkedArray, labels: pa.Array, entry: dict[str, Any]
+) -> pa.Array:
+    """int32 codes back to label cells; ``-1`` (missing) becomes ``""``.
+
+    A ``bool`` source column comes back as ``bool`` (missing as null) from its
+    ``true``/``false`` labels, as a v2 bundle's ``BOOLEAN`` column always read.
+    """
     codes = _flat(column).to_numpy(zero_copy_only=False)
-    return pc.fill_null(labels.take(pa.array(codes, mask=codes < 0)), "")
+    cells = labels.take(pa.array(codes, mask=codes < 0))
+    if entry.get("sourceType") == "bool":
+        return pc.equal(cells, pa.scalar("true"))
+    return pc.fill_null(cells, "")
 
 
 def _decode_multi(
@@ -878,7 +892,7 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
             type=pa.string(),
         )
         if kind == "categorical":
-            columns[name] = _decode_categorical(annotations.column(name), labels)
+            columns[name] = _decode_categorical(annotations.column(name), labels, entry)
         elif kind == "multi":
             columns[name] = _decode_multi(
                 annotations.column(f"{name}__count"),

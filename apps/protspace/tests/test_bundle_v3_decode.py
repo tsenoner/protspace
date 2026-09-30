@@ -359,14 +359,14 @@ def test_a_large_string_column_comes_back_as_its_v2_spelling():
     assert decoded.column("length").to_pylist() == ["100", "200"]
 
 
-def test_a_bool_column_comes_back_as_the_python_spelling():
-    """``sourceType`` restoration is numeric-only; a bool stays v2's ``True``/``False``."""
+def test_a_bool_column_comes_back_as_bool():
+    """Stored as ``true``/``false`` labels, restored from ``sourceType`` like v2 read."""
     source = stamp_format_version(
-        pa.table({"protein_id": ["p0", "p1"], "flag": [True, False]})
+        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, None]})
     )
     decoded = round_trip(source, (2,))[0]
-    assert decoded.schema.field("flag").type == pa.string()
-    assert decoded.column("flag").to_pylist() == ["True", "False"]
+    assert decoded.schema.field("flag").type == pa.bool_()
+    assert decoded.column("flag").to_pylist() == [True, False, None]
 
 
 # --------------------------------------------------------------------------- #

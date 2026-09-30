@@ -338,12 +338,18 @@ def test_label_is_trimmed_before_it_becomes_a_category():
     assert labels_of(payloads, "col") == ["Cytoplasm", "Cyto"]
 
 
-def test_bool_cells_use_the_python_spelling():
-    """v2 stringifies bools as ``True``/``False``; a bare cast would say ``true``."""
+def test_bool_cells_use_the_browser_spelling():
+    """The v2 browser reader displayed a ``BOOLEAN`` column as ``true``/``false``.
+
+    Legend colours saved against a v2 bundle are keyed on that spelling, so a
+    v3 write that said ``True``/``False`` would silently drop them.
+    """
     table = stamp_format_version(
-        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, False]})
+        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, None]})
     )
-    assert labels_of(payloads_of(encode(table)[3]), "flag") == ["False", "True"]
+    parts = encode(table)
+    assert labels_of(payloads_of(parts[3]), "flag") == ["true", "false"]
+    assert read(parts[0]).column("flag").to_pylist() == [0, 1, -1]
 
 
 # --------------------------------------------------------------------------- #
