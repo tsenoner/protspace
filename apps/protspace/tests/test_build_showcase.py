@@ -150,6 +150,9 @@ def test_display_values_and_cell_labels():
     assert bs.display_values("A|IC;B%3Bc|1.0") == ["A", "B;c"]
     assert bs.display_values(None) == ["None"]
     assert bs.cell_labels(" A |x; ;__NA__") == ["A"]
+    # N/A is tested on the hit with its suffix, as the web does: "None|0.9" is
+    # the category "None" in the legend, and an empty label is no category.
+    assert bs.cell_labels("None|0.9;none;|0.9;NA|EXP") == ["None", "NA"]
     assert bs.cell_labels(None) == []
     assert bs.cell_labels(42) == ["42"]
     assert bs.first_label("B|x;A") == "B"
@@ -900,7 +903,8 @@ def test_root_and_literal_none_gates():
     gate = bs.taxonomy_root_gate(fly)  # two values, but one is a deep clade
     assert gate.status == "fail" and gate.data["deep_clades"] == 1
     gate = bs.literal_none_gate(table, "predicted_transmembrane")
-    assert gate.status == "fail" and gate.data["count"] == 2
+    # "none" is N/A in the web; "None|0.9" is a category "None" there.
+    assert gate.status == "fail" and gate.data["count"] == 1
     assert (
         bs.literal_none_gate(table.slice(0, 1), "predicted_transmembrane").status
         == "pass"

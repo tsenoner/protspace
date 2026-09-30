@@ -248,15 +248,24 @@ def display_values(cell: Any) -> list[str]:
 
 
 def cell_labels(cell: Any) -> list[str]:
-    """Clean category labels of a cell for gates and reports (missing → [])."""
+    """Clean category labels of a cell for gates and reports (missing → []).
+
+    In the web's order (``splitCategoricalAnnotationValues`` in conversion.ts):
+    each ``;`` hit is tested for N/A as it stands, suffix included, and only then
+    loses its ``|score``/``|evidence`` suffix. So ``None|0.9`` is a category
+    ``None`` here as in the legend, while a hit whose label is empty after the
+    suffix goes (``|0.9``) is dropped.
+    """
     if cell is None:
         return []
     if not isinstance(cell, str):
         return [str(cell)]
     labels = []
     for hit in cell.split(";"):
+        if is_missing_label(hit):
+            continue
         label = decode_field(hit.split("|", 1)[0]).strip()
-        if not is_missing_label(label):
+        if label:
             labels.append(label)
     return labels
 
@@ -1484,7 +1493,8 @@ def literal_none_gate(table: pa.Table, column: str) -> Gate | None:
     """A literal ``none`` the web shows as N/A instead of a category (G2, W10).
 
     TMbed writes ``none`` for "no transmembrane segment"; the web's N/A tokens
-    include it, so the category the docs promise would vanish into N/A.
+    include it, so the category the docs promise would vanish into N/A. A hit is
+    tested as the web tests it, suffix included (:func:`cell_labels`).
     """
     if column not in table.column_names:
         return None
@@ -1492,10 +1502,7 @@ def literal_none_gate(table: pa.Table, column: str) -> Gate | None:
         1
         for cell in table.column(column).to_pylist()
         if cell is not None
-        and any(
-            decode_field(hit.split("|", 1)[0]).strip().lower() == "none"
-            for hit in str(cell).split(";")
-        )
+        and any(hit.strip().lower() == "none" for hit in str(cell).split(";"))
     )
     return Gate(
         f"literal-none:{column}",
