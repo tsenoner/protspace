@@ -164,13 +164,14 @@
 - [x] 5.1 Deprecation commits carry "Deprecates reading v1/v2 parquetbundles; removal planned for
       protspace 5.0.0." (`feat(cli)` convert, `feat(core)` decode export, `feat(web)` notice and
       their docs); no commit carries a `BREAKING CHANGE` footer
-- [ ] 5.2 Merge `main` again before landing, then merge the PR with a merge commit, never a squash
-      (it touches `apps/protspace/`)
+- [x] 5.2 Merge `main` again before landing (4.15.0, with #495's annotation retrieval; merge again
+      if `main` moves before the PR lands)
 - [x] 5.3 Convert `apps/web/public/data.parquetbundle` and the example datasets under
       `apps/web/public/data/` (the 573K Swiss-Prot bundle included) to v3 with `protspace convert`,
       each verified to decode to the same dataset; keep the e2e fixtures and `v2-sample` legacy as
       the legacy reader's test data; `scripts/landing-data` reads v3; `encode_legacy_cell` splits a
       hit at its last pipe
+- [ ] 5.4 Merge the PR with a merge commit, never a squash (it touches `apps/protspace/`)
 
 ## 6. Follow-ups for protspace 5.0.0 (not in this change)
 
