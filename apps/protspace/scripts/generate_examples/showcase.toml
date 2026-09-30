@@ -440,7 +440,7 @@ Archaea = 19814
 Riboviria = 6881
 Varidnaviria = 4297
 Duplodnaviria = 4018
-Monodnaviria = 1293
+Floreoviria = 1293  # Monodnaviria in the paper; the taxonomy renamed the realm by 2026_03
 Adnaviria = 254
 Ribozyviria = 35
 
