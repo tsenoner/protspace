@@ -343,11 +343,15 @@ def test_read_tables_rebuilds_both_projections_in_protein_order(tables):
 
     umap3 = frame[frame.projection_name == "umap3"]
     assert umap3[["x", "y", "z"]].values.tolist()[0] == [0.0, 0.25, 0.5]
-    # P6 has no umap3 row in the source table at all.  The wide encoding has no
-    # way to say "absent", so it fills 0.0 and the round trip fabricates a row at
-    # the origin -- the same place the browser renders it.  Pinned, not endorsed.
-    assert umap3.identifier.tolist() == generator.PROTEIN_IDS
-    assert umap3[["x", "y", "z"]].values.tolist()[-1] == [0.0, 0.0, 0.0]
+    # P6 has no umap3 row in the source table, so none comes back either.
+    assert umap3.identifier.tolist() == generator.PROTEIN_IDS[:-1]
+
+
+def test_a_protein_missing_from_a_projection_is_nan_in_part_three(parts):
+    """NaN, never the origin: (0, 0, 0) would be drawn as a real point."""
+    wide = _table(parts[2]).to_pydict()
+    assert all(np.isnan(wide[f"umap3__{axis}"][-1]) for axis in "xyz")
+    assert wide["pca2__x"][-1] == -1.5  # P6 is still covered by pca2
 
 
 def test_committed_fixture_still_matches_its_generator(parts, payloads):

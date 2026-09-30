@@ -428,7 +428,7 @@ def _encode_projections(
     name_column = projections_data.column("projection_name")
     # The browser derives the projection set, order and dimension from the data
     # rows alone (``conversion.ts:1163-1196``), so a metadata-only projection
-    # would be an all-zero one there and a data-only projection would silently
+    # would be an empty one there and a data-only projection would silently
     # vanish here.  All five shipped datasets agree; refuse the ones that do not.
     in_data = set(pc.unique(name_column).to_pylist())
     if in_data != set(names):
@@ -471,22 +471,28 @@ def _encode_projections(
         z_present = (
             z is not None and not pa.types.is_null(z.type) and z.null_count < len(z)
         )
-        try:  # parquet may hand the dimension back as "3" or a numpy int
-            declared_dim = int(declared)
-        except (TypeError, ValueError):
-            declared_dim = None
-        dimension = declared_dim if declared_dim in (2, 3) else (3 if z_present else 2)
+        # The data decides, as in the browser's legacy reader: metadata claiming
+        # 3D over null z would write an all-missing z axis, and metadata claiming
+        # 2D over real z would drop it.
+        dimension = 3 if z_present else 2
+        if declared is not None:
+            try:  # parquet may hand the dimension back as "3" or a numpy int
+                agrees = int(declared) == dimension
+            except (TypeError, ValueError):
+                agrees = False
+            if not agrees:
+                logger.warning(
+                    f"projection '{name}': metadata declares dimensions={declared!r} "
+                    f"but its data is {dimension}D; writing it as {dimension}D"
+                )
 
         for axis in ("x", "y", "z")[:dimension]:
-            # 0.0, not NaN, for a protein absent from this projection: the browser
-            # leaves its zero-initialised Float32Array untouched and guards the
-            # write (``conversion.ts:1198-1205``), so the protein renders at the
-            # origin.  Preserving that quirk is the contract, not an endorsement.
-            values = np.zeros(num_rows, dtype=np.float32)
-            if axis != "z" or z_present:
-                values[positions] = (
-                    rows.column(axis).to_numpy(zero_copy_only=False).astype(np.float32)
-                )
+            # NaN, never 0.0, for a protein absent from this projection: the
+            # origin is a real coordinate, and a missing point must not be drawn.
+            values = np.full(num_rows, np.nan, dtype=np.float32)
+            values[positions] = (
+                rows.column(axis).to_numpy(zero_copy_only=False).astype(np.float32)
+            )
             columns[f"{name}__{axis}"] = pa.array(values, type=pa.float32())
         manifest.append({"name": name, "dimension": dimension})
 
@@ -814,7 +820,11 @@ def _decode_multi(
 def _decode_projections(
     part: bytes, manifest: list[dict[str, Any]], identifiers: pa.Array
 ) -> pa.Table:
-    """Wide float32 projections back to the long v2 table, in manifest order."""
+    """Wide float32 projections back to the long v2 table, in manifest order.
+
+    Only proteins with finite coordinates get a row: NaN is how part 3 says a
+    projection does not cover a protein.
+    """
     wide = _read(part)
     num_rows = len(identifiers)
     row = pa.array(np.zeros(num_rows, dtype=np.int32))
@@ -831,22 +841,25 @@ def _decode_projections(
     tables = []
     for projection in manifest:
         name = projection["name"]
-        dimension = int(projection["dimension"])
-        tables.append(
-            pa.table(
-                {
-                    # ``take`` of a one-element array beats materialising N copies.
-                    "projection_name": pa.array([name], type=pa.string()).take(row),
-                    "identifier": identifiers,
-                    "x": _flat(wide.column(f"{name}__x")),
-                    "y": _flat(wide.column(f"{name}__y")),
-                    "z": _flat(wide.column(f"{name}__z"))
-                    if dimension == 3
-                    else pa.nulls(num_rows, pa.float32()),
-                },
-                schema=schema,
-            )
+        axes = {
+            axis: _flat(wide.column(f"{name}__{axis}"))
+            for axis in ("x", "y", "z")[: int(projection["dimension"])]
+        }
+        table = pa.table(
+            {
+                # ``take`` of a one-element array beats materialising N copies.
+                "projection_name": pa.array([name], type=pa.string()).take(row),
+                "identifier": identifiers,
+                "x": axes["x"],
+                "y": axes["y"],
+                "z": axes.get("z", pa.nulls(num_rows, pa.float32())),
+            },
+            schema=schema,
         )
+        finite = np.logical_and.reduce(
+            [np.isfinite(a.to_numpy(zero_copy_only=False)) for a in axes.values()]
+        )
+        tables.append(table if finite.all() else table.filter(pa.array(finite)))
     return pa.concat_tables(tables) if tables else schema.empty_table()
 
 
@@ -884,8 +897,16 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
       v2 anyway: the cell grammar's number rule rejects ``Infinity`` and the
       browser drops non-finite values on read, so preserving them would produce
       a bundle no reader agrees on;
-    * projection coordinates come back float32 (``z`` null for a 2D projection)
-      and a protein absent from a projection comes back at the origin;
+    * a ``bool`` column comes back ``bool``, but it is *stored* as the labels
+      ``true``/``false`` (what the browser always displayed for it);
+    * a projected identifier the annotations table lacked comes back as a row
+      whose every annotation is missing, appended after the others;
+    * a projection's dimension comes from its data (non-null ``z`` means 3D),
+      whatever the metadata's ``dimensions`` said;
+    * projection coordinates come back float32 (``z`` null for a 2D projection),
+      and only proteins with finite coordinates get a row: a protein absent from
+      a projection, or whose coordinates there were non-finite, has none (the
+      file stores NaN for it, never the origin);
     * the identifier column comes back first, wherever it sat before.
     """
     if len(parts) != 4:

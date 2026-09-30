@@ -36,8 +36,8 @@ paths a two-row two-column table cannot reach:
   ``none`` and ``NA`` — Python keeps them (v3 is a container encoding), the
   browser folds them into ``<NA>`` at read time;
 * a 2D (``pca2``, P1/P2 at the v2 fixture's coordinates) and a 3D (``umap3``)
-  projection, with P6 absent from ``umap3`` so the 0.0-at-origin fill for a
-  protein missing from a projection is exercised;
+  projection, with P6 absent from ``umap3`` so the NaN fill for a protein
+  missing from a projection is exercised;
 * the EAT companion trio on ``kingdom`` (``__pred_value`` string,
   ``__pred_confidence`` float32, ``__pred_source`` string), null for the
   proteins with no prediction.  Only P4's prediction survives the overlay's
@@ -206,9 +206,8 @@ def source_tables() -> list[pa.Table]:
     annotations = stamp_format_version(annotations)
 
     coordinates = processor._create_projections_data_table(PROJECTIONS, PROTEIN_IDS)
-    # P6 has no umap3 row at all: the encoder fills 0.0 for a protein missing
-    # from a projection and the browser leaves its zero-initialised slot alone,
-    # so both put P6 at the origin.  Pinned as a quirk, not endorsed.
+    # P6 has no umap3 row at all: the encoder writes NaN for it there, so it is
+    # not drawn in umap3 but still is in pca2.
     coordinates = coordinates.filter(
         pc.invert(
             pc.and_(

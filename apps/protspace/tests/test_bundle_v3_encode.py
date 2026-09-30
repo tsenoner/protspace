@@ -405,16 +405,18 @@ def test_payload_buffers_are_little_endian():
         assert len(blob) % 4 == 0, name
 
 
-def test_projection_rows_align_to_part_one_and_missing_is_zero():
-    """A protein absent from a projection sits at the origin, as in v2."""
+def test_projection_rows_align_to_part_one_and_missing_is_nan():
+    """A protein absent from a projection is NaN there, never the origin."""
     annotations = make_annotations(col=["A", "B", "C"])
-    meta, data = make_projections((("A", 2),), ["p2", "p0"])
+    meta, data = make_projections((("A", 3),), ["p2", "p0"])
     parts = encode_v3(annotations, meta, data)
     projections = read(parts[2]).to_pydict()
     assert projections["A__x"][0] == 1.0  # p0 is the second row of the long table
-    assert projections["A__x"][2] == 0.0  # p2 is the first
-    assert projections["A__x"][1] == 0.0  # p1 is absent from the projection
-    assert projections["A__y"][1] == 0.0
+    assert projections["A__x"][2] == 0.0  # p2 is the first, and really at 0.0
+    # p1 is absent from the projection, and so is every one of its axes.
+    assert all(np.isnan(projections[f"A__{axis}"][1]) for axis in "xyz")
+    # Still one row per protein: the annotation-only protein stays in part 1.
+    assert read(parts[0]).column("protein_id").to_pylist() == ["p0", "p1", "p2"]
 
 
 # --------------------------------------------------------------------------- #
@@ -466,16 +468,33 @@ def test_rejects_colliding_payload_names():
         encode(table)
 
 
-def test_declared_dimension_is_coerced_before_the_z_fallback():
-    """``dimensions`` can arrive as a string; ``"3"`` must not sniff its way to 2D."""
-    annotations = make_annotations(col=["A", "B"])
-    meta, data = make_projections((("A", 2),), ["p0", "p1"])
-    meta = meta.set_column(
-        meta.schema.get_field_index("dimensions"), "dimensions", pa.array(["3"])
+def _declare_dimensions(meta: pa.Table, value) -> pa.Table:
+    return meta.set_column(
+        meta.schema.get_field_index("dimensions"), "dimensions", pa.array([value])
     )
-    parts = encode_v3(annotations, meta, data)
-    assert read(parts[2]).column_names == ["A__x", "A__y", "A__z"]
+
+
+@pytest.mark.parametrize(("data_dim", "declared"), [(2, 3), (3, 2), (2, "abc")])
+def test_dimension_comes_from_the_data_not_the_metadata(data_dim, declared, caplog):
+    annotations = make_annotations(col=["A", "B"])
+    meta, data = make_projections((("A", data_dim),), ["p0", "p1"])
+    parts = encode_v3(annotations, _declare_dimensions(meta, declared), data)
+
+    assert read(parts[2]).column_names == ["A__x", "A__y", "A__z"][:data_dim]
+    assert manifest_of(parts[0])["projections"] == [
+        {"name": "A", "dimension": data_dim}
+    ]
+    assert f"'A': metadata declares dimensions={declared!r}" in caplog.text
+    assert f"data is {data_dim}D" in caplog.text
+
+
+def test_an_agreeing_declared_dimension_is_silent(caplog):
+    """``dimensions`` can arrive as a string; ``"3"`` agrees with 3D data."""
+    annotations = make_annotations(col=["A", "B"])
+    meta, data = make_projections((("A", 3),), ["p0", "p1"])
+    parts = encode_v3(annotations, _declare_dimensions(meta, "3"), data)
     assert manifest_of(parts[0])["projections"] == [{"name": "A", "dimension": 3}]
+    assert "declares dimensions" not in caplog.text
 
 
 def test_rejects_duplicate_protein_ids():
