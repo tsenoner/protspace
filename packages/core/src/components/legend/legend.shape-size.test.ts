@@ -10,6 +10,7 @@ type ShapeSizeLegend = HTMLElement & {
   selectedAnnotation: string;
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
   _dialogSettings: Record<string, unknown> & { shapeSize: number };
+  _handleCustomize: () => Promise<void>;
   _handleSettingsSave: () => void;
   _handleSettingsReset: () => void;
   _updateLegendItems: () => void;
@@ -109,6 +110,43 @@ describe('legend shape size', () => {
     expect(pointSizes.at(-1)).toBe(240);
     switchTo('b');
     expect(el.shapeSize).toBe(30);
+  });
+
+  it('caps a bundle size at 64 and saves the capped size', () => {
+    const { el, hash, pointSizes, switchTo } = makeLegend();
+    switchTo('a');
+    el.applyShapeSize(200, hash);
+    expect(el.shapeSize).toBe(64);
+    expect(pointSizes.at(-1)).toBe(512);
+    expect(el.pickedShapeSize).toBe(64);
+  });
+
+  it('caps a stored size at 64', () => {
+    const { el, hash, switchTo, store } = makeLegend();
+    store('a', 200);
+    switchTo('a');
+    expect(el.shapeSize).toBe(64);
+
+    localStorage.setItem(buildStorageKey('point-size', hash), '200');
+    switchTo('b');
+    expect(el.shapeSize).toBe(64);
+  });
+
+  it('caps a host-set size when the settings dialog is saved', async () => {
+    const { el, pointSizes, switchTo } = makeLegend();
+    switchTo('a');
+    el.shapeSize = 200;
+    // Opening the dialog awaits a render, which a detached element never does.
+    document.body.appendChild(el);
+    try {
+      await el._handleCustomize();
+      expect(el._dialogSettings.shapeSize).toBe(64);
+      el._handleSettingsSave();
+      expect(el.shapeSize).toBe(64);
+      expect(pointSizes.at(-1)).toBe(512);
+    } finally {
+      el.remove();
+    }
   });
 
   it('exports the picked size on every annotation', () => {

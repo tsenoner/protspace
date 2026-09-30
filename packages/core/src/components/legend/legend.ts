@@ -1211,9 +1211,10 @@ export class ProtspaceLegend extends LitElement {
    * component's own hash is not computed from the new data yet.
    */
   public applyShapeSize(shapeSize: number, datasetHash?: string): void {
-    this._persistenceController.saveShapeSize(shapeSize, datasetHash);
-    this.shapeSize = shapeSize;
-    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(shapeSize) });
+    const size = Math.min(shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+    this._persistenceController.saveShapeSize(size, datasetHash);
+    this.shapeSize = size;
+    this._scatterplotController.updateConfig({ pointSize: calculatePointSize(size) });
   }
 
   /**
@@ -1947,8 +1948,10 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this.shapeSize =
-        this._persistenceController.loadShapeSize() ?? seedShapeSize(settings.shapeSize);
+      this.shapeSize = Math.min(
+        this._persistenceController.loadShapeSize() ?? seedShapeSize(settings.shapeSize),
+        LEGEND_DEFAULTS.maxSymbolSize,
+      );
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
       if (isNumericAnnotation) {
@@ -2322,7 +2325,8 @@ export class ProtspaceLegend extends LitElement {
       : this._normalizeCategoricalPaletteId(this._selectedPaletteId);
     this._dialogSettings = {
       maxVisibleValues: this.maxVisibleValues,
-      shapeSize: this.shapeSize,
+      // `shapeSize` is a public property, so a host can set it past the dialog's bound.
+      shapeSize: Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize),
       annotationSortModes: this._annotationSortModes,
       enableDuplicateStackUI: Boolean(
         scatterplot &&

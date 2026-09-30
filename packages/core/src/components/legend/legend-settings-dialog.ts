@@ -49,8 +49,6 @@ export interface SettingsDialogCallbacks {
   onOverlayMouseUp: () => void;
 }
 
-const MAX_SHAPE_SIZE = 64;
-
 /**
  * Parses an input value as a positive integer
  */
@@ -139,7 +137,7 @@ function renderShapeSizeInput(
     const input = e.target as HTMLInputElement;
     const value = parsePositiveInt(input.value);
     if (value === null) return;
-    const capped = Math.min(value, MAX_SHAPE_SIZE);
+    const capped = Math.min(value, LEGEND_DEFAULTS.maxSymbolSize);
     // Lit skips `.value` when the capped size equals the last one it rendered, so
     // without this the field would keep showing e.g. 640 while 64 is applied.
     if (capped !== value) input.value = String(capped);
@@ -154,7 +152,7 @@ function renderShapeSizeInput(
         id="shape-size-input"
         type="number"
         min="1"
-        max=${MAX_SHAPE_SIZE}
+        max=${LEGEND_DEFAULTS.maxSymbolSize}
         .value=${String(state.shapeSize)}
         placeholder=${String(LEGEND_DEFAULTS.symbolSize)}
         @input=${onInput}
