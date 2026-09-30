@@ -19,6 +19,12 @@ tables the pipeline already builds and emits v3 parts, and every read here
 (:func:`read_tables`, :func:`read_bundle`, :func:`extract_bundle_to_dir`) hands
 back v2-shaped tables again, so nothing above this module has to know.  See
 :mod:`protspace.data.io.bundle_v3`.
+
+Reading a legacy container is deprecated: every public *read* of one logs a
+single warning pointing at ``protspace convert`` (:func:`convert_bundle`), and
+support is removed in protspace 5.0.0.  The writers here read their input
+silently -- they emit v3, or (``replace_settings_in_bundle``) keep the parts
+byte for byte -- so a command that reads and then rewrites a bundle warns once.
 """
 
 import io
@@ -31,6 +37,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import (
+    migrate_legacy_annotation_table,
     read_format_version,
     stamp_format_version,
 )
@@ -49,6 +56,9 @@ CORE_FILENAMES = [
 
 SETTINGS_FILENAME = "settings.parquet"
 STATISTICS_FILENAME = "statistics.parquet"
+
+#: The release that drops reading v1/v2 containers.
+LEGACY_REMOVAL_VERSION = "5.0.0"
 
 
 def _part_container_version(part: bytes) -> int:
@@ -97,10 +107,35 @@ def _split(data: bytes) -> tuple[list[bytes], bytes | None, bytes | None, bytes 
 
 
 def _parse_bundle(
-    bundle_path: Path,
+    source: Path | str | bytes, *, warn_legacy: bool = True
 ) -> tuple[list[bytes], bytes | None, bytes | None, bytes | None]:
-    """:func:`_split` over a file: the single place the on-disk layout is decoded."""
-    return _split(Path(bundle_path).read_bytes())
+    """:func:`_split` over a file or raw bytes: the single place a read is decoded.
+
+    Logs the legacy-format deprecation warning, once per call, unless
+    ``warn_legacy`` is false (the writers and :func:`convert_bundle`).
+    """
+    data = source if isinstance(source, bytes) else Path(source).read_bytes()
+    parsed = _split(data)
+    if warn_legacy and parsed[3] is None:
+        name = "This parquetbundle" if isinstance(source, bytes) else str(source)
+        logger.warning(
+            "%s uses the v1/v2 parquetbundle format. Reading v1/v2 bundles is "
+            "deprecated and will be removed in protspace %s; run `protspace convert` "
+            "to rewrite it as v3 (or re-export it from protspace.app).",
+            name,
+            LEGACY_REMOVAL_VERSION,
+        )
+    return parsed
+
+
+def _core_tables(
+    core: list[bytes], payloads: bytes | None
+) -> tuple[pa.Table, pa.Table, pa.Table]:
+    """The three core tables in their v2 shape, from :func:`_split`'s output."""
+    if payloads is not None:
+        return decode_v3([*core, payloads])
+    annotations, metadata, projections = (pq.read_table(io.BytesIO(p)) for p in core)
+    return annotations, metadata, projections
 
 
 def _table_to_parquet_bytes(table: pa.Table) -> bytes:
@@ -170,16 +205,8 @@ def read_tables(
     container's parts are read as they are, so a v1 bundle stays v1-stamped and
     is never silently migrated.
     """
-    data = (
-        path_or_bytes
-        if isinstance(path_or_bytes, bytes)
-        else Path(path_or_bytes).read_bytes()
-    )
-    core, _settings, _statistics, payloads = _split(data)
-    if payloads is not None:
-        return decode_v3([*core, payloads])
-    annotations, metadata, projections = (pq.read_table(io.BytesIO(p)) for p in core)
-    return annotations, metadata, projections
+    core, _settings, _statistics, payloads = _parse_bundle(path_or_bytes)
+    return _core_tables(core, payloads)
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
@@ -324,7 +351,7 @@ def replace_settings_in_bundle(
     and a v3 bundle keeps its payloads; an existing statistics part survives, so
     styling a statistics-bearing bundle is non-lossy.
     """
-    core, _settings, statistics, payloads = _parse_bundle(input_path)
+    core, _settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
     _write_parts(
         output_path, core, create_settings_parquet(settings), statistics, payloads
     )
@@ -343,8 +370,7 @@ def replace_annotations_in_bundle(
     statistics are carried over unchanged.  A legacy input container comes out as
     v3, which is correct — this is a write, and every write emits v3.
     """
-    data = Path(input_path).read_bytes()
-    _core, settings, statistics, _payloads = _split(data)
+    core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
 
     # Re-stamp the format version at this single annotations-write chokepoint.
     # pyarrow table ops (rename_columns, concat) drop schema metadata, and
@@ -355,7 +381,7 @@ def replace_annotations_in_bundle(
     # explicitly migrates legacy v1 categorical grammar before this boundary.
     annotations_table = stamp_format_version(annotations_table)
 
-    _annotations, projections_metadata, projections_data = read_tables(data)
+    _annotations, projections_metadata, projections_data = _core_tables(core, payloads)
     part1, part2, part3, payloads = encode_v3(
         annotations_table, projections_metadata, projections_data
     )
@@ -363,6 +389,30 @@ def replace_annotations_in_bundle(
     _write_parts(output_path, [part1, part2, part3], settings, statistics, payloads)
 
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
+
+
+def convert_bundle(input_path: Path, output_path: Path) -> int:
+    """Rewrite a v1/v2 bundle as v3 and return the input's format version.
+
+    A v1 annotations table is migrated to the v2 cell grammar first, exactly as
+    ``protspace transfer`` does, so it is not double-escaped and ``encode_v3``
+    does not warn about it.  Settings and statistics are carried over as stored
+    bytes.  A v3 input returns :data:`CONTAINER_VERSION` and nothing is written.
+    ``output_path`` may be ``input_path``: the write is atomic.
+    """
+    core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
+    if payloads is not None:
+        return CONTAINER_VERSION
+
+    annotations, projections_metadata, projections_data = _core_tables(core, None)
+    version = read_format_version(annotations)
+    part1, part2, part3, payloads = encode_v3(
+        migrate_legacy_annotation_table(annotations),
+        projections_metadata,
+        projections_data,
+    )
+    _write_parts(output_path, [part1, part2, part3], settings, statistics, payloads)
+    return version
 
 
 def create_settings_parquet(settings_dict: dict) -> bytes:

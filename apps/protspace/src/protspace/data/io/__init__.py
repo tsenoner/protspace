@@ -9,6 +9,7 @@ Input/Output operations for ProtSpace data.
 
 from protspace.data.io.bundle import (
     PARQUET_BUNDLE_DELIMITER,
+    convert_bundle,
     create_settings_parquet,
     extract_bundle_to_dir,
     read_bundle,
@@ -31,6 +32,7 @@ __all__ = [
     "AnnotationWriter",
     "DataFormatter",
     "PARQUET_BUNDLE_DELIMITER",
+    "convert_bundle",
     "extract_bundle_to_dir",
     "read_bundle",
     "read_settings_from_bundle",
