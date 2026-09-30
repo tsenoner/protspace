@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { isCsrAnnotationData, type VisualizationData } from '@protspace/utils';
+import type { VisualizationData } from '@protspace/utils';
 import { collectTransferables } from './decode-transferables';
+import { bulkViews } from './bulk-views.test-support';
 
 /**
  * Hand-built CSR dataset. `offsets` and `codes` deliberately share one ArrayBuffer, which
@@ -42,24 +43,6 @@ function csrDataset(): { data: VisualizationData; shared: ArrayBuffer } {
     },
   };
 }
-
-/** Every typed array `collectTransferables` names a buffer for, in a stable order. */
-const bulkViews = (data: VisualizationData): (Int32Array | Float32Array | Float64Array)[] => [
-  ...data.projections.map((projection) => projection.data as Float32Array),
-  ...Object.values(data.numeric_annotation_data ?? {}),
-  ...Object.values(data.annotation_data).flatMap((value) =>
-    value instanceof Int32Array
-      ? [value]
-      : isCsrAnnotationData(value)
-        ? [
-            value.offsets,
-            value.codes,
-            ...(value.scores ? [value.scores.offsets, value.scores.values] : []),
-            ...(value.evidence ? [value.evidence.codes] : []),
-          ]
-        : [],
-  ),
-];
 
 describe('collectTransferables', () => {
   it('names every bulk buffer exactly once, even when two views share one', () => {

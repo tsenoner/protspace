@@ -18,6 +18,7 @@ import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
 import { readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
+import { bulkViews } from '../bulk-views.test-support';
 
 /**
  * Format v3 reader tests.
@@ -147,27 +148,6 @@ const v3Bundle = (overrides: Record<number, Uint8Array> = {}) =>
       (fallback, index) => overrides[index] ?? fallback,
     ),
   );
-
-/**
- * Every typed array `collectTransferables` names a buffer for, in a stable order, so a
- * dataset and its structured clone can be compared element by element.
- */
-const bulkViews = (data: VisualizationData): (Int32Array | Float32Array | Float64Array)[] => [
-  ...data.projections.map((projection) => projection.data as Float32Array),
-  ...Object.values(data.numeric_annotation_data ?? {}),
-  ...Object.values(data.annotation_data).flatMap((value) =>
-    value instanceof Int32Array
-      ? [value]
-      : isCsrAnnotationData(value)
-        ? [
-            value.offsets,
-            value.codes,
-            ...(value.scores ? [value.scores.offsets, value.scores.values] : []),
-            ...(value.evidence ? [value.evidence.codes] : []),
-          ]
-        : [],
-  ),
-];
 
 const labelsOf = (data: VisualizationData, key: string, protein: number) =>
   getProteinAnnotationIndices(data.annotation_data[key], protein).map(
