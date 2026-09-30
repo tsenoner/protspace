@@ -194,7 +194,7 @@ The paper's protein set and published coordinates are kept, and every annotation
 - `root` as the first lineage element rather than the deepest unranked clade, and TMbed's "no TM segment" rather than `none`, which the app reads as missing;
 - a cache-semantics bump for those two columns, so a cache-assisted rebuild refetches them instead of reusing the wrong values.
 
-**Rebuild once, then publish (R2-D2).** All of it lands in PR #495, released as protspace 4.14.0, and every example is rebuilt on that release before the first publish. A release file name can never carry different bytes, so fixing a published file would mean new names; one rebuild also replaces provenance no public commit could reproduce (a local CLI commit, a scratch path in the build command).
+**Rebuild once, then publish (R2-D2).** All of it lands in PR #495, released as protspace 4.15.0, and every example is rebuilt on that release before the first publish. A release file name can never carry different bytes, so fixing a published file would mean new names; one rebuild also replaces provenance no public commit could reproduce (a local CLI commit, a scratch path in the build command).
 
 Statistics and clusters are recomputed on the paper coordinates with **explicit** `--stats-annotation` lists, because `auto` would also score EAT companions.
 
@@ -408,7 +408,7 @@ The Import menu shows annotation transfer with one example built for the purpose
 
 ## Risks / Trade-offs
 
-- **Swiss-Prot size and memory** (77–112 MB, over 1 GB of heap). Mitigations:
+- **Swiss-Prot size and memory** (135.9 MB; 30.1 s and a 1,139 MiB peak JS heap in the D2 measurement on an Apple M4 Pro, which leaves out ArrayBuffer and GPU memory). Mitigations:
   - the D2 gate and its GO/TED web-cut fallback;
   - streamed progress and Cancel;
   - the Large badge and the stated memory.
