@@ -998,11 +998,10 @@ export class ProtspaceScatterplot extends LitElement {
       !this.filtersActive &&
       !this._plotDataWasCulled;
 
-    if (onlyProjectionChanged) {
-      // Fast path: update coordinates in-place from the new projection data.
-      // No new object allocation — just overwrite x/y on existing PlotDataPoints.
-      this._updatePlotDataCoordinates(dataToUse);
-    } else {
+    // Fast path: update coordinates in-place from the new projection data. No new
+    // object allocation — just overwrite x/y on the existing PlotData. It bails out when
+    // the new projection is missing a point, which only a rebuild can cull.
+    if (!onlyProjectionChanged || !this._updatePlotDataCoordinates(dataToUse)) {
       // Release old data references before allocating the new dataset.
       // Without this, old and new PlotData coexist in memory during processing
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
@@ -1018,7 +1017,8 @@ export class ProtspaceScatterplot extends LitElement {
         this.projectionPlane,
         visibleProteinIds,
       );
-      this._plotDataWasCulled = this._isolationMode || visibleProteinIds !== null;
+      // Any cull — filter, isolation or a missing coordinate — leaves an index map.
+      this._plotDataWasCulled = this._plotData.originalIndices !== null;
     }
 
     this._lastDataRef = dataToUse;
@@ -1138,10 +1138,14 @@ export class ProtspaceScatterplot extends LitElement {
    * Update PlotData coordinates in-place from a new projection.
    * Reads directly from VisualizationData.projections — no intermediate allocation.
    * This avoids the ~700MB memory spike from rebuilding the full PlotData container.
+   *
+   * Returns false, leaving the PlotData half-written, when the projection has a
+   * non-finite coordinate: that point has to be culled, which only
+   * `DataProcessor.processVisualizationData` does, so the caller rebuilds.
    */
-  private _updatePlotDataCoordinates(data: VisualizationData) {
+  private _updatePlotDataCoordinates(data: VisualizationData): boolean {
     const projection = data.projections[this.selectedProjectionIndex];
-    if (!projection) return;
+    if (!projection) return true;
 
     const pd = this._plotData;
     // xs/ys/zs are readonly fields, but the Float32Array contents are mutable.
@@ -1154,12 +1158,13 @@ export class ProtspaceScatterplot extends LitElement {
       const base = origIdx * dim;
       const c0 = projection.data[base];
       const c1 = projection.data[base + 1];
+      const c2 = dim === 3 ? projection.data[base + 2] : 0;
+      if (!Number.isFinite(c0) || !Number.isFinite(c1) || !Number.isFinite(c2)) return false;
 
       let xVal = c0;
       let yVal = c1;
 
       if (dim === 3) {
-        const c2 = projection.data[base + 2];
         if (zs) zs[i] = c2;
         if (this.projectionPlane === 'xz') {
           yVal = c2;
@@ -1175,6 +1180,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     // New container ref so Lit detects the change and extent-cache invalidates.
     this._plotData = clonePlotData(this._plotData);
+    return true;
   }
 
   private _buildQuadtree() {
