@@ -52,9 +52,16 @@ from protspace.stats.base import STATS_SCHEMA
 PROTEIN_COUNT = 10
 
 # A dataset large enough that per-row shortcuts (a label dictionary built from
-# the first rows, a CSR payload sized from a sample) would show; the positional
-# payload is the same as the small variants', so both assert one contract.
-LARGE_PROTEIN_COUNT = 6_000
+# the first rows, a CSR payload sized from a sample) would show, and past the
+# 20,000 rows pyarrow puts in one data page, so the reader copies several chunks
+# per column at a non-zero row offset, as it does at production scale. The payload
+# follows the same per-row rule as the small variants', so both assert one
+# contract, and the large one is checked row by row (``largeExpected``).
+LARGE_PROTEIN_COUNT = 45_000
+
+# Coordinates are ``i * scale`` per axis for protein ``i``, so every row of every
+# projection is checkable from its index alone.
+AXIS_SCALE = (1.0, 2.0, 3.0)
 
 # One 2D and one 3D projection, so the reader's dimension handling is covered.
 PROJECTIONS = [("PCA_2", 2), ("PCA_3", 3)]
@@ -92,7 +99,35 @@ LABEL_WITH_RESERVED_CHAR = "Kinase (EC 2.7.11.1); regulatory subunit"
 
 # A two-hit cell with per-hit scores. A reader that splits on '|' before ';'
 # swallows the second hit, which is exactly the bug the grammar exists to avoid.
-MULTI_HIT_CELL = f"{encode_field('DomA')}|0.91;{encode_field('DomB')}|0.82"
+MULTI_HIT_HITS = [("DomA", 0.91), ("DomB", 0.82)]
+MULTI_HIT_CELL = ";".join(
+    f"{encode_field(label)}|{score}" for label, score in MULTI_HIT_HITS
+)
+
+# Every this-many rows the reserved-character label recurs, so it is also decoded
+# far past the first page.
+RESERVED_LABEL_PERIOD = 10_007
+
+
+def family_label(index: int) -> str:
+    """The decoded ``family`` label of protein ``index`` (row 0: the reserved one)."""
+    if index % RESERVED_LABEL_PERIOD == 0:
+        return LABEL_WITH_RESERVED_CHAR
+    return f"Family {index % 37}"
+
+
+def domain_hits(index: int) -> list[tuple[str, float]]:
+    """The decoded ``domains`` hits of protein ``index``: one to three, scored."""
+    if index == 0:
+        return MULTI_HIT_HITS
+    return [
+        (f"Dom{(index + k) % 11}", ((index * 7 + k) % 100) / 100)
+        for k in range(1 + index % 3)
+    ]
+
+
+def length_value(index: int) -> float | None:
+    return None if index == NULL_LENGTH_INDEX else float(100 + index * 10)
 
 
 def build_annotations_table(ids: list[str]) -> pa.Table:
@@ -103,22 +138,22 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     ``annotate``, the table is stamped as v2 cell grammar; an unstamped one
     would be read as plain v1 text and escaped again.
 
-    The payload is positional and identical at every size: protein 1 carries the
-    percent-encoded label and the multi-hit cell, protein 4 carries the null
-    length. The large variant therefore asserts exactly the same encoding
-    contract as the small one.
+    Every cell follows one per-row rule at every size (``family_label``,
+    ``domain_hits``, ``length_value``): protein 1 carries the percent-encoded
+    label and the multi-hit cell, protein 4 the null length, and every other row
+    its own labels, hit count and scores. The large variant therefore asserts
+    the same encoding contract as the small one, and can be checked row by row.
     """
-    rest = len(ids) - 1
-    family = [encode_field(LABEL_WITH_RESERVED_CHAR)] + [
-        encode_field("Hydrolase")
-    ] * rest
-    domains = [MULTI_HIT_CELL] + [f"{encode_field('DomB')}|0.75"] * rest
+    family = [encode_field(family_label(i)) for i in range(len(ids))]
+    domains = [
+        ";".join(f"{encode_field(label)}|{score}" for label, score in domain_hits(i))
+        for i in range(len(ids))
+    ]
 
     # A genuine double column with a null -- distinguishes "missing" from 0 and
     # from NaN across the language boundary. Real bundles carry both string-typed
     # and double-typed numeric annotations; the double form is the stricter case.
-    length = [float(100 + i * 10) for i in range(len(ids))]
-    length[NULL_LENGTH_INDEX] = None
+    length = [length_value(i) for i in range(len(ids))]
 
     return stamp_format_version(
         pa.table(
@@ -168,9 +203,9 @@ def build_projection_tables(
                 continue
             names.append(name)
             identifiers.append(protein_id)
-            xs.append(float(i))
-            ys.append(float(i) * 2.0)
-            zs.append(float(i) * 3.0 if dims == 3 else None)
+            xs.append(float(i) * AXIS_SCALE[0])
+            ys.append(float(i) * AXIS_SCALE[1])
+            zs.append(float(i) * AXIS_SCALE[2] if dims == 3 else None)
 
     data = pa.table(
         {
@@ -440,6 +475,21 @@ def main(out_dir: Path) -> None:
             {
                 "proteinCount": PROTEIN_COUNT,
                 "largeProteinCount": LARGE_PROTEIN_COUNT,
+                "axisScale": AXIS_SCALE,
+                # What the large bundle decodes to, row by row, so a reader that
+                # mishandles a payload only past its first rows or pages fails.
+                "largeExpected": {
+                    "family": [family_label(i) for i in range(LARGE_PROTEIN_COUNT)],
+                    "domains": [
+                        [label for label, _ in domain_hits(i)]
+                        for i in range(LARGE_PROTEIN_COUNT)
+                    ],
+                    "domainScores": [
+                        [score for _, score in domain_hits(i)]
+                        for i in range(LARGE_PROTEIN_COUNT)
+                    ],
+                    "length": [length_value(i) for i in range(LARGE_PROTEIN_COUNT)],
+                },
                 "projectionCount": len(PROJECTIONS),
                 "labelWithReservedChar": LABEL_WITH_RESERVED_CHAR,
                 "nullLengthIndex": NULL_LENGTH_INDEX,

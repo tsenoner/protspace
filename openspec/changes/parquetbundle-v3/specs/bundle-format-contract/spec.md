@@ -104,7 +104,7 @@ The generated bundle SHALL carry annotation and projection values that distingui
 
 ### Requirement: The contract covers the reader at production scale
 
-The contract SHALL read, besides the small bundles, a generated bundle large enough that shortcuts sized from the first rows (a label dictionary, a CSR payload, a hit count) would show, and SHALL assert the same annotation encoding contract on it as on the small bundles.
+The contract SHALL read, besides the small bundles, a generated bundle large enough that shortcuts sized from the first rows (a label dictionary, a CSR payload, a hit count) would show and that spans several data pages per column, SHALL assert the same annotation encoding contract on it as on the small bundles, and SHALL check its labels, hits, scores, numeric values and coordinates row by row.
 
 #### Scenario: A dataset of production scale is read
 
@@ -113,5 +113,6 @@ The contract SHALL read, besides the small bundles, a generated bundle large eno
 
 #### Scenario: Only large payloads regress
 
-- **WHEN** the reader mishandles a payload only past its first rows
+- **WHEN** the reader mishandles a payload only past its first rows, or a chunk that starts past
+  row 0
 - **THEN** the contract suite fails

@@ -112,6 +112,8 @@
 
 - [x] 4.5 The reverse-direction test compares the Arrow type of every annotation column Python
       decodes from a web re-export with the Python-written original (no boolean folding)
+- [x] 4.6 The large variant varies every row and spans several data pages per column; the suite
+      checks it row by row and asserts that its columns decode in more than one chunk
 
 ## 5. Release and follow-ups
 

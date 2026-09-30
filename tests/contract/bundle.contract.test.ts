@@ -22,7 +22,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { parquetMetadata } from 'hyparquet';
+import { parquetMetadata, parquetRead } from 'hyparquet';
 
 import { decodeParquetBundle } from '../../packages/core/src/components/data-loader/utils/bundle';
 // Imported by source path, like the core reader above: the suite tests the
@@ -49,6 +49,13 @@ const REPO_ROOT = resolve(__dirname, '../..');
 interface Manifest {
   proteinCount: number;
   largeProteinCount: number;
+  axisScale: [number, number, number];
+  largeExpected: {
+    family: string[];
+    domains: string[][];
+    domainScores: number[][];
+    length: (number | null)[];
+  };
   projectionCount: number;
   labelWithReservedChar: string;
   nullLengthIndex: number;
@@ -298,6 +305,68 @@ describe('annotation encoding across the language boundary', () => {
     const { data } = await decodeParquetBundle(loadBundle('large'));
     expect(data.protein_ids).toHaveLength(manifest.largeProteinCount);
     expectAnnotationContract(data, manifest.largeProteinCount);
+  });
+
+  it('spans several data pages per column, as a production-scale bundle does', async () => {
+    // The reader copies each decoded chunk at its row offset; a bundle that fits one
+    // page per column only ever exercises offset 0, so the large variant has to be
+    // past the page size, and this guards that it still is.
+    const bundle = loadBundle('large');
+    const positions = findBundleDelimiterPositions(new Uint8Array(bundle));
+    const part = (index: number) =>
+      bundle.slice(
+        index === 0 ? 0 : positions[index - 1] + BUNDLE_DELIMITER_BYTES.length,
+        positions[index],
+      );
+    for (const [index, column] of [
+      [0, 'family'],
+      [2, 'PCA_3__z'],
+    ] as const) {
+      const rowStarts: number[] = [];
+      await parquetRead({
+        file: part(index),
+        columns: [column],
+        onChunk: ({ rowStart }) => rowStarts.push(rowStart),
+      });
+      expect(Math.max(...rowStarts), column).toBeGreaterThan(0);
+    }
+  });
+
+  it('decodes every row of the large bundle, not just the first ones', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('large'));
+    const expected = manifest.largeExpected;
+    const n = manifest.largeProteinCount;
+    const lengths = data.numeric_annotation_data!.length;
+
+    // Compared as whole arrays, so a failure names the first row that differs
+    // instead of stopping at one assertion per row.
+    const decoded = {
+      family: [] as string[][],
+      domains: [] as string[][],
+      scores: [] as unknown[],
+    };
+    for (let row = 0; row < n; row++) {
+      decoded.family.push(getProteinAnnotationValues(data, row, 'family'));
+      decoded.domains.push(getProteinAnnotationValues(data, row, 'domains'));
+      decoded.scores.push(getProteinScores(data, row, 'domains'));
+    }
+    expect(decoded.family).toEqual(expected.family.map((label) => [label]));
+    expect(decoded.domains).toEqual(expected.domains);
+    expect(decoded.scores).toEqual(expected.domainScores.map((scores) => scores.map((s) => [s])));
+    expect(Array.from(lengths, (value) => (Number.isNaN(value) ? null : value))).toEqual(
+      expected.length,
+    );
+
+    for (const projection of data.projections) {
+      const { dimension } = projection;
+      const want = new Float32Array(n * dimension);
+      for (let row = 0; row < n; row++) {
+        for (let axis = 0; axis < dimension; axis++) {
+          want[row * dimension + axis] = row * manifest.axisScale[axis];
+        }
+      }
+      expect(projection.data, projection.name).toEqual(want);
+    }
   });
 });
 
