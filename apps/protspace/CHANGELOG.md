@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v4.13.1 (2026-09-30)
+
+### Bug Fixes
+
+- **stats**: Drop the faithfulness ceiling that suppressed cheap results
+  ([`02cb403`](https://github.com/tsenoner/protspace/commit/02cb403d0af4786d9be3fabe785416a2235ed962))
+
+- **stats**: Reject faithfulness inputs whose rows do not align
+  ([`a904336`](https://github.com/tsenoner/protspace/commit/a90433612eab8780787d89fb4c6ed9f4fa180937))
+
+
 ## v4.13.0 (2026-09-18)
 
 ### Bug Fixes

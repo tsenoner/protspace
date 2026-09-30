@@ -473,6 +473,75 @@ def test_faithfulness_skip_row_routes_to_projection_metadata():
     assert rows[0].destination == "projection_metadata"
 
 
+def _large_faithfulness_ctx(n, dim=4, sample_threshold=60, dtype=float):
+    rng = np.random.default_rng(7)
+    return StatContext(
+        "projection",
+        "P",
+        coords=rng.normal(size=(n, 2)),
+        ids=[f"p{i:06d}" for i in range(n)],
+        embedding=rng.normal(size=(n, dim)).astype(dtype),
+        embedding_name="e",
+        params={"sample_threshold": sample_threshold},
+    )
+
+
+def test_faithfulness_has_no_default_size_ceiling():
+    """Above the old 20,000-row default ceiling faithfulness still scores the
+    bounded subsample instead of emitting a single ``n_too_large`` skip row."""
+    rows = FaithfulnessStatistic().compute(_large_faithfulness_ctx(20_001))
+    by_metric = {r.metric: r for r in rows}
+    assert set(by_metric) == {
+        "knn_overlap",
+        "trustworthiness",
+        "continuity",
+        "random_triplet",
+        "spearman_distance",
+    }
+    for row in rows:
+        assert "skipped" not in row.extra, row.metric
+        assert row.extra["sampled"] is True
+        assert row.extra["sample_size"] == 60
+        assert np.isfinite(row.value), row.metric
+
+
+def test_faithfulness_upcasts_only_the_subsample():
+    """The float64 upcast happens after the subsample, so a large float32
+    embedding is never copied in full (a full float64 copy here is ~41 MB). n
+    stays under any plausible ceiling so the test isolates the gather order."""
+    import tracemalloc
+
+    stat = FaithfulnessStatistic()
+    stat.compute(_large_faithfulness_ctx(200))  # warm the function-local imports
+    ctx = _large_faithfulness_ctx(19_999, dim=256, dtype=np.float32)
+    tracemalloc.start()
+    try:
+        stat.compute(ctx)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < ctx.embedding.nbytes / 2, peak
+
+
+def test_faithfulness_rejects_misaligned_inputs():
+    """Only the subsampled rows are gathered, so a row-count mismatch between the
+    embedding and the coords/ids must be rejected explicitly rather than scoring
+    misaligned rows whenever the draw happens to stay in bounds."""
+    n = 200
+    rng = np.random.default_rng(0)
+    ctx = StatContext(
+        "projection",
+        "P",
+        coords=rng.normal(size=(n + 1, 2)),
+        ids=[f"p{i:04d}" for i in range(n + 1)],
+        embedding=rng.normal(size=(n, 4)),
+        embedding_name="e",
+        params={"sample_threshold": 60},
+    )
+    with pytest.raises(ValueError, match="not row-aligned"):
+        FaithfulnessStatistic().compute(ctx)
+
+
 # --------------------------------------------------------------------------- #
 # 4. driver: mapping, alignment, failure isolation
 # --------------------------------------------------------------------------- #
@@ -1181,7 +1250,7 @@ def test_align_positional_fallback_when_no_ids_and_rowcounts_match():
 def test_align_returns_views_on_identity_match_without_copy():
     """When every row matches in order (the common single-embedding path), `_align`
     must return the source arrays as-is — not a full fancy-index copy that would
-    waste ~GB at 570k scale when faithfulness then skips past its ceiling."""
+    waste ~GB at 570k scale when faithfulness reads only its bounded subsample."""
     from protspace.stats.driver import _align
 
     ids = [f"p{i}" for i in range(5)]
