@@ -49,7 +49,12 @@ describe('control-bar contours menu', () => {
     expect(items().map((i) => i.querySelector('.density-item-label')?.textContent)).toEqual([
       'Off',
       'Auto',
-      'On',
+      'Always',
+    ]);
+    expect(items().map((i) => i.querySelector('.density-item-hint')?.textContent)).toEqual([
+      'No contours',
+      'Fades out as you zoom in; faint or hidden when few points are shown',
+      'Full strength at every zoom level',
     ]);
     expect(items().map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
   });
@@ -79,6 +84,21 @@ describe('control-bar contours menu', () => {
     controlBar.densityLayer = 'on';
     await controlBar.updateComplete;
     expect(trigger()?.classList.contains('filter-active')).toBe(true);
+  });
+
+  it.each([
+    ['off', 'Contours', 'Off'],
+    ['auto', 'Contours: Auto', 'Auto'],
+    ['on', 'Contours: Always', 'Always'],
+  ] as const)('names %s on the trigger text, title and aria-label', async (mode, text, label) => {
+    controlBar.densityLayer = mode;
+    await controlBar.updateComplete;
+
+    expect(trigger()?.querySelector('.dropdown-trigger-text')?.textContent).toBe(text);
+    expect(trigger()?.getAttribute('aria-label')).toBe(`Contours: ${label}`);
+    expect(trigger()?.getAttribute('title')).toBe(
+      `Contours: ${label}. One ring set per legend colour; not included in exports.`,
+    );
   });
 
   it('supports arrow keys and Enter', async () => {

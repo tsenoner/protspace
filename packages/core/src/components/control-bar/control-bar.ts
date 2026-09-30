@@ -57,10 +57,14 @@ const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
 /** Annotations used only for tooltip display, hidden from the annotation dropdown */
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
+/** Menu copy per mode; the tokens stay off/auto/on (URL, config), only 'on' reads as 'Always'. */
 const DENSITY_MODE_LABELS: Record<DensityLayerMode, { label: string; hint: string }> = {
-  off: { label: 'Off', hint: 'Points only' },
-  auto: { label: 'Auto', hint: 'Shows when points overlap, fades as you zoom in' },
-  on: { label: 'On', hint: 'Always shown, one ring set per legend colour' },
+  off: { label: 'Off', hint: 'No contours' },
+  auto: {
+    label: 'Auto',
+    hint: 'Fades out as you zoom in; faint or hidden when few points are shown',
+  },
+  on: { label: 'Always', hint: 'Full strength at every zoom level' },
 };
 
 const DENSITY_MODES = DENSITY_LAYER_MODES.map((mode) => ({ mode, ...DENSITY_MODE_LABELS[mode] }));
@@ -650,6 +654,8 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   render() {
+    // `density-layer` is a plain attribute: show an unknown token as-is rather than throw.
+    const densityLabel = DENSITY_MODE_LABELS[this.densityLayer]?.label ?? this.densityLayer;
     return html`
       <div class="control-bar">
         <!-- Left side controls -->
@@ -750,7 +756,8 @@ export class ProtspaceControlBar extends LitElement {
                 : 'filter-active'}"
               @click=${this.toggleDensityMenu}
               @keydown=${this.handleDensityKeydown}
-              title="Contours: ${this.densityLayer}"
+              title="Contours: ${densityLabel}. One ring set per legend colour; not included in exports."
+              aria-label="Contours: ${densityLabel}"
               aria-haspopup="menu"
               aria-expanded=${this.showDensityMenu}
             >
@@ -763,7 +770,9 @@ export class ProtspaceControlBar extends LitElement {
                 />
                 <circle cx="12" cy="12" r="1.3" fill="currentColor" />
               </svg>
-              <span class="dropdown-trigger-text">Contours</span>
+              <span class="dropdown-trigger-text"
+                >Contours${this.densityLayer === 'off' ? '' : `: ${densityLabel}`}</span
+              >
               <svg class="chevron-down" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>

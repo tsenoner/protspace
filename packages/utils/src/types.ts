@@ -225,9 +225,12 @@ export interface ScatterplotConfig {
   enableDuplicateStackUI?: boolean;
   /**
    * GPU density contours composited over the base points and under the selected
-   * ones, one ring set per legend colour. `off` renders the points alone, `auto`
-   * cross-fades the layer in as the visible points overplot and out as the user
-   * zooms in, `on` pins it at full strength.
+   * ones, one ring set per legend colour. `off` renders the points alone. `auto`
+   * fades the layer by the visible-point count, the plot size and the zoom, not by
+   * actual overlap: half strength at a mean of 1 visible point per 32x32 CSS px
+   * (spread over the plot's longer side at the current zoom), fading out as the
+   * user zooms in, so small subsets start faint or hidden. `on` (labelled
+   * "Always" in the control bar) keeps full strength at every zoom level.
    *
    * Default: 'off'.
    */

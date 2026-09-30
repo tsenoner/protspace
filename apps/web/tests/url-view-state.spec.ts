@@ -696,7 +696,7 @@ test.describe('URL-backed explore view state', () => {
 
     const bar = page.locator('protspace-control-bar');
     const densityTrigger = bar.locator('#density-layer-trigger');
-    await expect(densityTrigger).toHaveAttribute('title', 'Contours: on');
+    await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Always');
 
     await densityTrigger.click();
     await bar.locator('.density-item[data-mode="auto"]').click();
@@ -712,7 +712,7 @@ test.describe('URL-backed explore view state', () => {
     await waitForView(page, { annotation: nextAnnotation! });
 
     await expectUrlParam(page, 'density', 'auto');
-    await expect(densityTrigger).toHaveAttribute('title', 'Contours: auto');
+    await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Auto');
   });
 
   test('annotation changes update history without reloading the page instance', async ({
