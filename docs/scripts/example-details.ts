@@ -82,13 +82,13 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     tagline:
       'Annotation transfer on a real case: toxin classes for snake venom toxins that UniProt has not classified.',
     lookAt:
-      'Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, ‹552› toxins sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for ‹about 95 %› of them. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible.',
+      'Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, ‹552› toxins mostly sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for ‹about 95 %› of them. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible.',
     tryNext:
       'Drag the reliability filter to 0.5: the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.',
     source:
       'UniProtKB query `(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)`: the three-finger toxins of snakes, reviewed and unreviewed. `toxin_class` groups the subfamily and sub-subfamily that UniProt curators record for each reviewed toxin into functional classes such as the type I, II and III α-neurotoxins, the cytotoxins and the κ-neurotoxins. The held-out fifth was drawn within each class with a recorded seed, and `eat_split` records the draw.',
     embedding:
-      'ProtT5-XL-U50, computed on the mature chains (signal peptides removed). Most unreviewed entries are precursors that still carry their signal peptide, while many reviewed ones are mature chains sequenced as protein; embedded as they are, the toxins would group by whether they carry a signal peptide rather than by class.',
+      'ProtT5-XL-U50, computed on the mature chains, cut by the same rule for reviewed and unreviewed toxins: signal peptides removed, and the propeptide the curators mark on some colubrid toxins removed from their unreviewed relatives too. Most unreviewed entries are precursors that still carry their signal peptide, while many reviewed ones are mature chains sequenced as protein; embedded as they are, the toxins would group by whether they carry a signal peptide rather than by class.',
     projections:
       'UMAP 2D (‹25› neighbours, minimum distance ‹0.1›, Euclidean, seed 42) and PCA 2D. Transfer: EAT with k = 1 and the Euclidean distance.',
     paper:
@@ -117,7 +117,7 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     notes: [
       'UniProt no longer publishes an embedding for 146 of these proteins; they keep their position from the paper.',
       'The paper counts 1,703 protein kinases; this build counts about 2,000, mostly because UniProt has since given unreviewed entries an automatic family annotation.',
-      "74 of the paper's accessions have no current UniProt entry, so their UniProt annotations are empty, and 139 current entries appear twice, under their own accession and under one since merged into them.",
+      "74 of the paper's accessions have no current UniProt entry, so their UniProt annotations are empty. Another 139 rows carry accessions that UniProt has since merged into another entry of the set, so 111 current entries appear more than once (one of them six times).",
       NO_BIOCENTRAL,
     ],
   },

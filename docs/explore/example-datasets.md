@@ -64,12 +64,12 @@ _Annotation transfer on a real case: toxin classes for snake venom toxins that U
 
 **Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back ‹about 95 %› of the time.**
 
-Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, ‹552› toxins sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for ‹about 95 %› of them. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible. Drag the reliability filter to 0.5: the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.
+Coloured by `toxin_class`, each colour is one functional class of three-finger toxin. The reviewed toxins carry the class UniProt curators give them. The unreviewed ones, ‹552› toxins mostly sequenced from venom glands, have none, and [EAT](/explore/eat) transferred one from the nearest reviewed toxin; they are drawn as hollow rings. A fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` in the tooltip shows the truth, so you can check each of those transfers yourself. The transferred class is right for ‹about 95 %› of them. The reliability filter starts at 0, so every transfer is shown and the [separation score](/explore/separation-scores) strips stay visible. Drag the reliability filter to 0.5: the least certain transfers, the rings between the islands, disappear first. Then colour by `eat_split` to see the references, the held-out toxins and the unreviewed queries.
 
 - **Opens on:** `ProtT5 — UMAP 2`, coloured by `toxin_class`; the tooltip adds `toxin_class_withheld`, `species` and `eat_split`.
 - **Source:** UniProtKB query `(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)`: the three-finger toxins of snakes, reviewed and unreviewed. `toxin_class` groups the subfamily and sub-subfamily that UniProt curators record for each reviewed toxin into functional classes such as the type I, II and III α-neurotoxins, the cytotoxins and the κ-neurotoxins. The held-out fifth was drawn within each class with a recorded seed, and `eat_split` records the draw.
 - **Proteins:** ‹pending build›, from UniProt release ‹pending build›.
-- **Embedding:** ProtT5-XL-U50, computed on the mature chains (signal peptides removed). Most unreviewed entries are precursors that still carry their signal peptide, while many reviewed ones are mature chains sequenced as protein; embedded as they are, the toxins would group by whether they carry a signal peptide rather than by class.
+- **Embedding:** ProtT5-XL-U50, computed on the mature chains, cut by the same rule for reviewed and unreviewed toxins: signal peptides removed, and the propeptide the curators mark on some colubrid toxins removed from their unreviewed relatives too. Most unreviewed entries are precursors that still carry their signal peptide, while many reviewed ones are mature chains sequenced as protein; embedded as they are, the toxins would group by whether they carry a signal peptide rather than by class.
 - **Projections:** UMAP 2D (‹25› neighbours, minimum distance ‹0.1›, Euclidean, seed 42) and PCA 2D. Transfer: EAT with k = 1 and the Euclidean distance.
 - **Annotations:** ‹pending build›
 - **Extras:** ‹pending build›
@@ -116,7 +116,7 @@ UniProt no longer publishes an embedding for 146 of these proteins; they keep th
 
 The paper counts 1,703 protein kinases; this build counts about 2,000, mostly because UniProt has since given unreviewed entries an automatic family annotation.
 
-74 of the paper's accessions have no current UniProt entry, so their UniProt annotations are empty, and 139 current entries appear twice, under their own accession and under one since merged into them.
+74 of the paper's accessions have no current UniProt entry, so their UniProt annotations are empty. Another 139 rows carry accessions that UniProt has since merged into another entry of the set, so 111 current entries appear more than once (one of them six times).
 
 This bundle has no Biocentral predictions (the `predicted_*` columns). Their models read per-residue ProtT5 embeddings, which UniProt does not publish, so they would have to be computed for every protein: 10 to 25 hours per 100,000 proteins on the public Biocentral server. Signal peptides are still covered, by the Phobius `signal_peptide` column.
 
@@ -164,7 +164,7 @@ Open in ProtSpace: ‹pending build› · Download: ‹pending build›
 
 _Every reviewed UniProtKB protein in one map._
 
-**Bacterial and eukaryotic proteins fill the two halves of the dense core, and archaeal proteins gather in a few small patches.**
+**Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.**
 
 The colours are `domain`: the domain of life, or the realm for viruses. Scored over the whole map the domains separate poorly, because bacterial and eukaryotic proteins each spread over large areas, and no domain scores well on its own. Colour by `pfam`: a protein with several Pfam families is drawn as a pie. Search for P12931 (SRC) to see one.
 

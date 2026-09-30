@@ -288,7 +288,7 @@ export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
     id: 'three-finger-toxins',
     name: 'Snake three-finger toxins (EAT)',
     description:
-      'Snake three-finger toxins: reviewed ones with a curated toxin class, and ones sequenced from venom glands that have none.',
+      'Snake three-finger toxins: reviewed ones with a curated toxin class, and unreviewed ones, mostly sequenced from venom glands, that have none.',
     insight:
       'Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back ‹about 95 %› of the time.',
     defaultView: {
@@ -328,7 +328,7 @@ export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
     name: 'Swiss-Prot',
     description: 'Every reviewed UniProtKB protein in one map.',
     insight:
-      'Bacterial and eukaryotic proteins fill the two halves of the dense core, and archaeal proteins gather in a few small patches.',
+      'Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.',
     figure: 'Fig. 2A',
     // Measured by the D2 gate (task 7.2) on the rebuilt file, which adds the PCA.
     large: { memory: '‹about 1.2 GB›', loadTime: '‹about 35 s›' },

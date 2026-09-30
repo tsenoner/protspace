@@ -131,7 +131,7 @@ Exporting a bundle with settings included stores the **Show** state and the lowe
 
 ## Trying It
 
-The **Snake three-finger toxins (EAT)** example holds ‹1,089› three-finger toxins from snakes. UniProt curators have classified the ‹537› reviewed ones. The ‹552› unreviewed ones, sequenced from venom glands, have no class, and EAT transferred one to each from the nearest reviewed toxin in the ProtT5 embedding. To make the transfers checkable, a fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` keeps the truth.
+The **Snake three-finger toxins (EAT)** example holds ‹1,089› three-finger toxins from snakes. UniProt curators have classified the ‹537› reviewed ones. The ‹552› unreviewed ones, mostly sequenced from venom glands, have no class, and EAT transferred one to each from the nearest reviewed toxin in the ProtT5 embedding. To make the transfers checkable, a fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` keeps the truth.
 
 Open the **Import** menu's **Examples** section and choose it, or visit `/explore?dataset=three-finger-toxins` directly. [Its section of Example Datasets](/explore/example-datasets#three-finger-toxins) says how it was built.
 
