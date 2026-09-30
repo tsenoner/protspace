@@ -272,3 +272,95 @@ def test_cells_carry_ids_when_the_format_requires_them(path: Path):
         pytest.skip(f"{path.name} predates cell ids")
     missing = [i for i, cell in enumerate(nb["cells"]) if not cell.get("id")]
     assert not missing, f"{path.name}: cells {missing} have no id"
+
+
+class _Widget:
+    """Just enough of an ipywidgets widget for a cell to build and read its panel."""
+
+    def __init__(self, *children, **kwargs):
+        self.value = kwargs.get("value", "")
+        self.options = kwargs.get("options", [])
+
+    def on_click(self, _callback):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _run_preparation_eat_cell(monkeypatch, bundle_path, emb_set, column):
+    """Run the Preparation notebook's EAT cell and click Transfer on ``column``.
+
+    The widgets, ``display`` and Colab's ``files`` are stubbed; the protspace
+    calls are the real ones, so the cell is exercised against this package.
+    """
+    import sys
+    import types
+
+    widgets = types.ModuleType("ipywidgets")
+    for name in ("Button", "Dropdown", "HBox", "HTML", "IntText", "Output", "Text"):
+        setattr(widgets, name, _Widget)
+    widgets.VBox = _Widget
+    monkeypatch.setitem(sys.modules, "ipywidgets", widgets)
+
+    downloads = []
+    namespace = {
+        "__name__": "__notebook__",
+        "Path": Path,
+        "display": lambda *_a, **_k: None,
+        "clear_output": lambda *_a, **_k: None,
+        "files": types.SimpleNamespace(download=downloads.append),
+        "_eat_bundle_path": str(bundle_path),
+        "_eat_emb_set": emb_set,
+    }
+    (source,) = [
+        source
+        for _, source in _code_cells(NOTEBOOK_DIR / "ProtSpace_Preparation.ipynb")
+        if "def _on_eat(" in source
+    ]
+    exec(compile(source, "ProtSpace_Preparation.ipynb:eat", "exec"), namespace)
+
+    namespace["eat_col"].value = column
+    namespace["eat_k"].value = 1
+    namespace["eat_metric"].value = "cosine"
+    namespace["_on_eat"](None)
+    return downloads
+
+
+def test_preparation_eat_cell_writes_a_transferred_bundle(tmp_path, monkeypatch):
+    """The EAT cell renames the id column before and after the transfer, which
+    drops the cell-grammar stamp; the write refuses an unstamped table, so the
+    cell has to restore the grammar it read, as `protspace transfer` does."""
+    import types
+
+    import numpy as np
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import encode_field, stamp_format_version
+    from protspace.data.io.bundle import read_tables, write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    label = encode_field("Membrane; single-pass")
+    annotations = stamp_format_version(
+        pa.table({"protein_id": ["p0", "p1", "p2"], "loc": [label, "", "Cytoplasm"]})
+    )
+    metadata, data = projection_tables(3, (2,))
+    bundle = tmp_path / "data.parquetbundle"
+    write_bundle([annotations, metadata, data], bundle)
+    emb_set = types.SimpleNamespace(
+        headers=["p0", "p1", "p2"],
+        data=np.array([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]], dtype=np.float32),
+    )
+
+    downloads = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, "loc")
+
+    out = tmp_path / "data.eat.parquetbundle"
+    assert downloads == [str(out)]
+    transferred = read_tables(out)[0]
+    # Encoded once, not twice; v3 hands a missing categorical cell back as "".
+    assert transferred.column("loc__pred_value").to_pylist() == ["", label, ""]
+    assert transferred.column("loc__pred_source").to_pylist() == ["", "p0", ""]
+    assert transferred.column("loc").to_pylist() == [label, "", "Cytoplasm"]

@@ -48,6 +48,8 @@
       `ArrowReader.save_data` keeps the stamp it read
 - [x] 2.15 An integer column with a value beyond ±2^53 is encoded as exact categorical labels
       (no lossy or refused float64 cast) and decoded back to its integer type
+- [x] 2.16 The Preparation notebook's EAT cell restores the cell grammar it read before its
+      id-column renames, as `protspace transfer` does, so the write accepts its table
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
