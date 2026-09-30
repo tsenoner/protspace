@@ -376,11 +376,15 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
     def _extract_transmembrane(predictions: list) -> str:
         """Derive transmembrane type from TMbed per-residue output.
 
-        Returns: 'alpha-helical', 'beta-barrel', or 'non-transmembrane'
+        Returns: 'alpha-helical', 'beta-barrel', or 'non-transmembrane', and
+        '' when TMbed predicted nothing
         """
         for pred in predictions:
             if pred.model_name == "TMbed":
                 topology = str(pred.value) if pred.value else ""
+                if not topology:
+                    # No topology is no prediction, not a negative one.
+                    return ""
                 has_helix = bool(re.search(r"[Hh]", topology))
                 has_beta = bool(re.search(r"[Bb]", topology))
                 if has_helix and has_beta:

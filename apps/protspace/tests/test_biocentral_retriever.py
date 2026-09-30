@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from protspace.core.constants import standardize_missing
 from src.protspace.data.annotations.retrievers.biocentral_retriever import (
@@ -87,6 +88,17 @@ class TestTransmembraneExtraction:
 
     def test_no_tmbed_prediction(self):
         preds = [_make_prediction("OtherModel", "something")]
+        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
+        assert result == ""
+
+    @pytest.mark.parametrize("value", ["", None], ids=["empty", "none"])
+    def test_an_empty_payload_is_missing_not_negative(self, value):
+        """A TMbed entry with no topology predicted nothing.
+
+        Before the negative got a name it came out as `none`, which displays as
+        N/A; `non-transmembrane` would turn it into a confident negative.
+        """
+        preds = [_make_prediction("TMbed", value)]
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == ""
 
