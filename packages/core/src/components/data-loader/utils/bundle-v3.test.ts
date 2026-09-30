@@ -695,37 +695,37 @@ describe('parquetbundle format v3', () => {
 
     /**
      * `part` with one i64 of its footer rewritten from `from` to `to` (field header `0x16`),
-     * at the first place where the rewrite reads back as `lands` says. Only the thrift bytes
-     * change: the pages still hold the rows they held.
+     * at the first place, scanning from the front or (`fromEnd`) the back, where the
+     * rewrite reads back as `lands` says. Only the thrift bytes change: the pages still
+     * hold the rows they held. The file-level `num_rows` precedes every column chunk's
+     * `num_values`, and the row group's `num_rows` follows them, hence the two directions.
      */
     const rewriteFooterI64 = (
       part: Uint8Array,
       from: number,
       to: number,
+      fromEnd: boolean,
       lands: (metadata: ReturnType<typeof parquetMetadata>) => boolean,
     ): Uint8Array => {
       const end = part.length - 8;
-      const footerLength = new DataView(part.buffer, part.byteOffset).getUint32(end, true);
-      const footer = Array.from(part.subarray(end - footerLength, end));
+      const footerStart = end - new DataView(part.buffer, part.byteOffset).getUint32(end, true);
       const needle = [0x16, ...zigzag(from)];
-      for (let at = 0; at + needle.length <= footer.length; at++) {
-        if (needle.some((byte, k) => footer[at + k] !== byte)) continue;
-        const patched = [
-          ...footer.slice(0, at),
-          0x16,
-          ...zigzag(to),
-          ...footer.slice(at + needle.length),
-        ];
-        const length = new Uint8Array(4);
-        new DataView(length.buffer).setUint32(0, patched.length, true);
-        const candidate = Uint8Array.from([
-          ...part.subarray(0, end - footerLength),
-          ...patched,
-          ...length,
-          ...utf8('PAR1'),
-        ]);
+      const replacement = Uint8Array.from([0x16, ...zigzag(to)]);
+      const matches = (at: number) => needle.every((byte, k) => part[at + k] === byte);
+      const last = end - needle.length;
+      for (let i = 0; i <= last - footerStart; i++) {
+        const at = fromEnd ? last - i : footerStart + i;
+        if (!matches(at)) continue;
+        const footerLength = end - footerStart - needle.length + replacement.length;
+        const candidate = new Uint8Array(footerStart + footerLength + 8);
+        candidate.set(part.subarray(0, at));
+        candidate.set(replacement, at);
+        candidate.set(part.subarray(at + needle.length, end), at + replacement.length);
+        const tail = new DataView(candidate.buffer, footerStart + footerLength);
+        tail.setUint32(0, footerLength, true);
+        candidate.set(utf8('PAR1'), footerStart + footerLength + 4);
         try {
-          if (lands(parquetMetadata(candidate.slice().buffer))) return candidate;
+          if (lands(parquetMetadata(candidate.buffer))) return candidate;
         } catch {
           // Not this occurrence: the rewrite broke the thrift structure.
         }
@@ -740,6 +740,7 @@ describe('parquetbundle format v3', () => {
         part,
         was,
         rows,
+        false,
         (m) => Number(m.num_rows) === rows && Number(m.row_groups[0].num_rows) === was,
       );
       if (!rowGroups) return fileLevel;
@@ -747,6 +748,7 @@ describe('parquetbundle format v3', () => {
         fileLevel,
         was,
         rows,
+        true,
         (m) => Number(m.num_rows) === rows && Number(m.row_groups[0].num_rows) === rows,
       );
     };
