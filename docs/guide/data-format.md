@@ -383,7 +383,13 @@ Part 2, the projections metadata, is unchanged from the legacy layout.
 
 One row per protein, aligned position by position with part 1, and one `FLOAT` column per axis:
 `<name>__x`, `<name>__y`, and `<name>__z` for a 3D projection. A protein with no coordinates in a
-projection is stored at `0.0`, which is where the legacy reader placed it too.
+projection is stored as `NaN` on every axis, never `0.0`: the origin is a real coordinate, and a
+missing point is not drawn. A projection is 3D when any of its rows has a `z` value and 2D
+otherwise; a `dimensions` value in part 2 that disagrees is ignored with a warning.
+
+Part 1 holds the union of the annotated and the projected proteins. A projected protein with no
+annotations row is added with every annotation missing, and a protein that no projection covers
+stays in part 1 with `NaN` coordinates.
 
 The projection name sets in parts 2 and 3 must be identical; the encoder refuses a bundle where
 either one names a projection the other does not, because the browser derives the projection set
@@ -481,14 +487,15 @@ everything else and falls back to the per-kind default:
 
 - a type whose alias cannot be parsed back at all, such as a dictionary, list or decimal column,
   is recorded as `"?"`
-- a type whose alias parses but is not an integer or a float is recorded verbatim and declined
-  anyway. A `bool` column records `sourceType` `"bool"` and a timestamp column records
-  `"timestamp[s]"`; neither is restored, and both come back as v2 string cells
+- a type whose alias parses but is not an integer, a float or a `bool` is recorded verbatim and
+  declined anyway. A timestamp column records `"timestamp[s]"` and comes back as v2 string cells
 - `"string"` and `"large_string"` are declined by design, because the v2 spelling of the column is
   what the encoder consumed, so rendering it back is the restoration
 
-`sourceType` is also consulted only when decoding a `numeric` column, so on a `categorical` or
-`multi` column it is recorded but completely inert.
+A `bool` column is the one categorical exception. It is written with the labels `true` and
+`false`, the spelling the v2 browser reader displayed, and its `sourceType` `"bool"` turns those
+labels back into a `bool` column on decode. Otherwise `sourceType` is consulted only when decoding
+a `numeric` column, so on a `categorical` or `multi` column it is recorded but inert.
 
 ### Scores are float64
 
@@ -537,8 +544,10 @@ they are worth knowing about, but they are cosmetic rather than corrupting: both
 re-parse to the same double, and a second round trip re-emits the same text.
 
 A cell spelled `none`, `NA` or `null` is an ordinary label and comes back unchanged. Projection
-coordinates come back as float32 with `z` null for a 2D projection, and the identifier column
-comes back first whatever position it held before.
+coordinates come back as float32 with `z` null for a 2D projection, and only a protein with finite
+coordinates gets a projection row, so a protein a projection does not cover has no row for it. A
+projected protein that had no annotations row comes back with one whose every annotation is
+missing, and the identifier column comes back first whatever position it held before.
 
 ## Creating Files
 
