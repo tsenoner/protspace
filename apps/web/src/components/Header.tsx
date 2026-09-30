@@ -38,7 +38,6 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
   const textClass = variant === 'light' ? 'text-slate-900' : 'text-foreground';
   const hoverTextClass = variant === 'light' ? 'hover:text-slate-700' : 'hover:text-primary';
   const mutedTextClass = variant === 'light' ? 'text-slate-700' : 'text-foreground/80';
-  const feedbackButtonClass = FEEDBACK_BUTTON_CLASS;
 
   const headerClasses = cn(
     'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-lg',
@@ -131,7 +130,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
             })}
 
             {/* Feedback CTA */}
-            <Button asChild variant="ghost" size="sm" className={feedbackButtonClass}>
+            <Button asChild variant="ghost" size="sm" className={FEEDBACK_BUTTON_CLASS}>
               <a href={FEEDBACK_HREF}>
                 <MessageSquareText />
                 Feedback
@@ -241,7 +240,7 @@ const Header = ({ variant = 'default', className }: HeaderProps) => {
               asChild
               variant="ghost"
               size="sm"
-              className={cn(feedbackButtonClass, 'w-full mt-2')}
+              className={cn(FEEDBACK_BUTTON_CLASS, 'w-full mt-2')}
             >
               <a href={FEEDBACK_HREF} onClick={() => setIsMenuOpen(false)}>
                 <MessageSquareText />

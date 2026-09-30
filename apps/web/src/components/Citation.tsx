@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { DOCS_URL } from '@/config';
 import { Section, SectionHeading } from '@/landing/Section';
 import { notify } from '@/lib/notify';
+import { GITHUB_REPO_URL } from '@/lib/support';
 import {
   PUBLICATION_WEB,
   PUBLICATION_JMB,
@@ -38,7 +39,7 @@ const resources = [
   {
     label: 'GitHub repository',
     note: 'Source code and issue tracker',
-    href: 'https://github.com/tsenoner/protspace',
+    href: GITHUB_REPO_URL,
     external: true,
   },
   {
@@ -56,7 +57,7 @@ const resources = [
   {
     label: 'CITATION.cff',
     note: 'Machine-readable citation metadata',
-    href: 'https://github.com/tsenoner/protspace/blob/main/CITATION.cff',
+    href: `${GITHUB_REPO_URL}/blob/main/CITATION.cff`,
     external: true,
   },
 ];
