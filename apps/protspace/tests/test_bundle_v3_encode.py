@@ -462,14 +462,36 @@ def test_dimension_comes_from_the_data_not_the_metadata(data_dim, declared, capl
     assert f"'A': metadata declares dimensions={declared!r}" in caplog.text
     assert f"data is {data_dim}D" in caplog.text
 
+    # Part 2 says what the manifest and part 3 say, not the stale declaration;
+    # a non-integer column comes out int64, and every other column is kept.
+    part2 = read(parts[1])
+    assert part2.column("dimensions").to_pylist() == [data_dim]
+    assert part2.schema.field("dimensions").type == pa.int64()
+    assert part2.column_names == meta.column_names
+
+
+def test_a_stale_dimension_keeps_the_column_type():
+    annotations = make_annotations(col=["A", "B"])
+    meta, data = make_projections((("A", 2), ("B", 3)), ["p0", "p1"])
+    stale = meta.set_column(
+        meta.schema.get_field_index("dimensions"),
+        "dimensions",
+        pa.array([3, 3], type=pa.int32()),
+    )
+    part2 = read(encode_v3(annotations, stale, data)[1])
+    assert part2.column("dimensions").to_pylist() == [2, 3]
+    assert part2.schema.field("dimensions").type == pa.int32()
+
 
 def test_an_agreeing_declared_dimension_is_silent(caplog):
     """``dimensions`` can arrive as a string; ``"3"`` agrees with 3D data."""
     annotations = make_annotations(col=["A", "B"])
     meta, data = make_projections((("A", 3),), ["p0", "p1"])
-    parts = encode_v3(annotations, _declare_dimensions(meta, "3"), data)
+    declared = _declare_dimensions(meta, "3")
+    parts = encode_v3(annotations, declared, data)
     assert manifest_of(parts[0])["projections"] == [{"name": "A", "dimension": 3}]
     assert "declares dimensions" not in caplog.text
+    assert read(parts[1]).equals(declared)  # agreeing metadata is written as given
 
 
 def test_rejects_duplicate_protein_ids():

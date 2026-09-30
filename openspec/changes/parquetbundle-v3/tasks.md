@@ -36,6 +36,9 @@
       `bundle -a` reads the input's stamp before its rename and treats an unstamped table as v1
       plain text; `transfer` restores the grammar it read; `replace_annotations_in_bundle` no
       longer stamps; the double-migration warning and its prose are removed
+- [x] 2.12 Part 2's `dimensions` is rewritten to the derived dimension when the input metadata
+      disagrees (integer type kept, `int64` otherwise), and `decode_v3` returns the manifest's
+      dimension in the metadata it decodes
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

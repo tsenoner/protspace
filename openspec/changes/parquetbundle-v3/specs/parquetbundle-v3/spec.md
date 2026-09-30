@@ -144,22 +144,26 @@ does not contain as an annotations row whose every annotation is missing, rather
 
 The v3 encoder SHALL record a projection as three-dimensional when any of its rows has a non-null
 `z`, and as two-dimensional otherwise. A `dimensions` value in the projection metadata that
-disagrees SHALL be ignored, with a warning naming the projection and both values.
+disagrees SHALL be ignored, with a warning naming the projection and both values, and part 2 SHALL
+be written with the derived value so the projection metadata agrees with the manifest and part 3.
+Python's `decode_v3` SHALL return the manifest's dimension in the metadata it decodes.
 
 #### Scenario: Metadata declares 2 for a projection with z values
 
 - **WHEN** a projection's rows carry non-null `z` and its metadata says `dimensions` 2
-- **THEN** the manifest records dimension 3, part 3 holds its `__z` column, and a warning is logged
+- **THEN** the manifest records dimension 3, part 3 holds its `__z` column, part 2's `dimensions`
+  is 3, and a warning is logged
 
 #### Scenario: Metadata declares 3 for a projection without z values
 
 - **WHEN** a projection's `z` is null in every row and its metadata says `dimensions` 3
-- **THEN** the manifest records dimension 2, part 3 has no `__z` column, and a warning is logged
+- **THEN** the manifest records dimension 2, part 3 has no `__z` column, part 2's `dimensions` is
+  2, and a warning is logged
 
 #### Scenario: Metadata agrees with the data
 
 - **WHEN** the metadata dimension matches the data
-- **THEN** no warning is logged
+- **THEN** no warning is logged and part 2 is written as given
 
 ### Requirement: Boolean annotations SHALL read as `true` and `false`
 

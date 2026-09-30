@@ -508,16 +508,11 @@ def _encode_projections(
         # 3D over null z would write an all-missing z axis, and metadata claiming
         # 2D over real z would drop it.
         dimension = 3 if z_present else 2
-        if declared is not None:
-            try:  # parquet may hand the dimension back as "3" or a numpy int
-                agrees = int(declared) == dimension
-            except (TypeError, ValueError):
-                agrees = False
-            if not agrees:
-                logger.warning(
-                    f"projection '{name}': metadata declares dimensions={declared!r} "
-                    f"but its data is {dimension}D; writing it as {dimension}D"
-                )
+        if declared is not None and _as_dimension(declared) != dimension:
+            logger.warning(
+                f"projection '{name}': metadata declares dimensions={declared!r} "
+                f"but its data is {dimension}D; writing it as {dimension}D"
+            )
 
         for axis in ("x", "y", "z")[:dimension]:
             # NaN, never 0.0, for a protein absent from this projection: the
@@ -530,6 +525,48 @@ def _encode_projections(
         manifest.append({"name": name, "dimension": dimension})
 
     return _required_table(columns), manifest
+
+
+def _as_dimension(value: Any) -> int | None:
+    """A declared ``dimensions`` value as an int, ``None`` if it is not one.
+
+    Parquet may hand the dimension back as ``"3"`` or a numpy int.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _with_manifest_dimensions(
+    projections_metadata: pa.Table, projections: list[dict[str, Any]]
+) -> pa.Table:
+    """Part 2 with its ``dimensions`` column agreeing with the manifest.
+
+    The manifest's dimension comes from the data (:func:`_encode_projections`),
+    so a stale declared value is rewritten rather than left for a reader of
+    part 2 to trip over.  A table that already agrees -- ``"3"`` agrees with
+    3 -- or has no ``dimensions`` column is returned as it is.  A rewritten
+    column keeps its integer type, and becomes ``int64`` when it was not one.
+    """
+    if "dimensions" not in projections_metadata.column_names:
+        return projections_metadata
+    derived = {p["name"]: int(p["dimension"]) for p in projections}
+    names = projections_metadata.column("projection_name").to_pylist()
+    declared = projections_metadata.column("dimensions").to_pylist()
+    wanted = [
+        derived.get(name, _as_dimension(value))
+        for name, value in zip(names, declared, strict=True)
+    ]
+    if all(_as_dimension(d) == w for d, w in zip(declared, wanted, strict=True)):
+        return projections_metadata
+
+    index = projections_metadata.schema.get_field_index("dimensions")
+    old_type = projections_metadata.schema.field(index).type
+    new_type = old_type if pa.types.is_integer(old_type) else pa.int64()
+    return projections_metadata.set_column(
+        index, pa.field("dimensions", new_type), pa.array(wanted, type=new_type)
+    )
 
 
 def _add_unannotated_rows(
@@ -705,7 +742,8 @@ def encode_v3(
         projections_metadata, projections_data, ids
     )
     part1, payloads = _encode_part1(annotations, id_column, ids, projection_manifest)
-    return part1, _write(projections_metadata), _write(projections_table), payloads
+    part2 = _write(_with_manifest_dimensions(projections_metadata, projection_manifest))
+    return part1, part2, _write(projections_table), payloads
 
 
 # --------------------------------------------------------------------------- #
@@ -991,7 +1029,9 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
     * a projected identifier the annotations table lacked comes back as a row
       whose every annotation is missing, appended after the others;
     * a projection's dimension comes from its data (non-null ``z`` means 3D),
-      whatever the metadata's ``dimensions`` said;
+      whatever the metadata's ``dimensions`` said, and the returned metadata's
+      ``dimensions`` column says the same (the encoder already rewrote part 2;
+      the manifest wins over a part 2 written by anything else);
     * projection coordinates come back float32 (``z`` null for a 2D projection),
       and only proteins with finite coordinates get a row: a protein absent from
       a projection, or whose coordinates there were non-finite, has none (the
@@ -1042,7 +1082,7 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
 
     return (
         stamp_format_version(pa.table(columns).replace_schema_metadata(metadata)),
-        read_part(parts[1]),
+        _with_manifest_dimensions(read_part(parts[1]), manifest["projections"]),
         _decode_projections(parts[2], manifest["projections"], columns[id_column]),
     )
 

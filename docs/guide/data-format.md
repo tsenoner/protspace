@@ -434,7 +434,8 @@ One row per protein, aligned position by position with part 1, and one `FLOAT` c
 `<name>__x`, `<name>__y`, and `<name>__z` for a 3D projection. A protein with no coordinates in a
 projection is stored as `NaN` on every axis, never `0.0`: the origin is a real coordinate, and a
 missing point is not drawn. A projection is 3D when any of its rows has a `z` value and 2D
-otherwise; a `dimensions` value in part 2 that disagrees is ignored with a warning.
+otherwise. A `dimensions` value in the input metadata that disagrees is ignored with a warning, and
+part 2 is written with the value the data gives, so it always agrees with the manifest.
 
 Part 1 holds the union of the annotated and the projected proteins. A projected protein with no
 annotations row is added with every annotation missing, and a protein that no projection covers

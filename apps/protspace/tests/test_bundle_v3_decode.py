@@ -201,6 +201,24 @@ def test_projections_are_long_manifest_ordered_and_protein_ordered():
     assert decoded_data.schema.field("z").type == pa.float32()
 
 
+def test_decoded_metadata_dimensions_follow_the_manifest():
+    """A part 2 whose ``dimensions`` disagrees with the manifest (written by
+    another tool; ``encode_v3`` no longer writes one) decodes to the manifest's
+    value, which is the one part 3 was laid out by."""
+    parts = encoded(kingdom=["A", "B"])
+    parts[1] = rewrite(
+        parts[1],
+        lambda t: t.set_column(
+            t.schema.get_field_index("dimensions"),
+            "dimensions",
+            pa.array([3], type=t.schema.field("dimensions").type),
+        ),
+    )
+    _, metadata, data = decode_v3(parts)
+    assert metadata.column("dimensions").to_pylist() == [2]
+    assert data.column("z").null_count == data.num_rows
+
+
 def test_a_protein_absent_from_a_projection_comes_back_without_a_row():
     """Part 3 stores NaN for it; the long table has no way to say that but absence."""
     source = annotations_table(kingdom=["A", "B", "C"])

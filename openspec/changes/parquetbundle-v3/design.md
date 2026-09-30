@@ -134,7 +134,11 @@ the data otherwise. Metadata written by hand or by an older tool can be wrong. A
 declared 2D then loses its `z`, and a 2D one declared 3D gets a NaN `z` column. The encoder now sets
 the dimension from the data (any non-null `z` means 3) and logs a warning when a `dimensions` value
 disagrees. The manifest records the derived value, and the browser reader keeps trusting the
-manifest.
+manifest. Part 2 is written with the derived value too: a stale `dimensions` left there would
+contradict the manifest and part 3 for anything that reads projection metadata on its own (the
+Python Dash viewer, `protspace stats`). An agreeing column is written as given, and a rewritten one
+keeps its integer type, or becomes `int64` when it was not an integer column. `decode_v3` applies
+the same rule, so a part 2 written by another tool still decodes to the manifest's dimension.
 
 ### Booleans are spelled `true` / `false`
 
