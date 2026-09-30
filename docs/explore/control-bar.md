@@ -1,6 +1,6 @@
 # Control Bar Features
 
-The control bar at the top provides tools for data management, selection, export, and import.
+The control bar at the top provides tools for data management, selection, density contours, export, and import.
 
 <img src="./images/control-bar-annotated.png" alt="Control bar overview" width="1536" height="88" loading="eager" fetchpriority="high" />
 
@@ -251,6 +251,72 @@ automatically. See [Importing Data](/explore/importing-data) for the full flow, 
 privacy implications.
 
 You can also drag & drop either file type directly onto the scatterplot.
+
+## 10. Contours
+
+**Contours**, the button just right of the search box, draws density rings over the points, so you
+can see where each category concentrates even where its points pile on top of each other. While
+Auto or Always is selected, the button is highlighted and names the mode: **Contours: Auto** or
+**Contours: Always**.
+
+![Contours menu open with Always selected, listing Off, Auto and Always](./images/control-bar-contours.png)
+
+| Mode              | What it does                                                        |
+| ----------------- | ------------------------------------------------------------------- |
+| **Off** (default) | No contours                                                         |
+| **Auto**          | Fades out as you zoom in; faint or hidden when few points are shown |
+| **Always**        | Full strength at every zoom level                                   |
+
+Auto and Always draw the same rings and fill; only their strength differs. Auto sets it from how
+many points are visible, how large the plot is and how far you have zoomed in. It does not check
+whether points actually overlap.
+
+![Demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours.png)
+
+How to read them:
+
+- Every legend colour gets its own set of rings in that colour. Each ring inward marks a doubling
+  of density, and a light fill deepens toward the densest core.
+- A spot needs more than 5 points of one colour close together (about 7 piled on one spot) before it
+  gets a ring, so scattered points get none.
+- Hidden categories are left out, and selected points are drawn on top of the contours.
+- Categories that share a colour share rings. Past 16 colours, the 15 largest keep their own rings
+  and the rest share one grey set. N/A rings are light grey, so they are faint on a light
+  background.
+- The rings are computed on a fixed grid across the plot, so they sit in the same place on every
+  screen and at every browser zoom, and lines are equally thick everywhere.
+
+The menu works from the keyboard: with the button focused, **Enter** or **Space** opens it, the
+arrow keys, **Home** and **End** move the highlight, **Enter** picks, and **Escape** closes it.
+
+::: tip Auto on small datasets
+Auto counts the visible points. In the full view of a plot about 1000 px wide it shows nothing below
+about 360 visible points and reaches full strength from about 2,700, and a wider plot needs more.
+Points you hide, filter out or isolate away do not count. For a small dataset, such as a FASTA
+upload, or a small subset, pick **Always**.
+:::
+
+::: info URL persistence
+The mode is kept in the page URL as `density=auto` for Auto or `density=on` for Always; Off leaves
+the parameter out. A shared link opens with the same mode.
+:::
+
+::: warning Not in exported images yet
+Contours are not drawn in exported images (Quick Export PNG and PDF, the
+[Figure Editor](/explore/figure-editor) and its zoom insets): the file shows the points only. The
+Figure Editor preview shows exactly what will be exported. Tracked in
+[#498](https://github.com/tsenoner/protspace/issues/498).
+:::
+
+::: info Devices without contour support
+Contours need floating-point render targets with float blending (`EXT_color_buffer_float` and
+`EXT_float_blend`), and many iPhone and iPad browsers lack `EXT_float_blend`. On such a device, or
+when the graphics driver refuses the contour shaders or buffers, choosing Auto or Always (or opening
+a link with `density=`) shows a one-time **Contours unavailable** notice: "Contours are unavailable
+on this device, so the Contours setting has no effect. Points are drawn as usual.", followed by the
+cause in brackets, such as `(EXT_float_blend missing)`. The link keeps its `density=` parameter, so
+it still shows contours on a device that supports them.
+:::
 
 ## Tips
 

@@ -40,7 +40,7 @@ import type {
   PlotDataPoint,
   VisualizationData,
 } from '@protspace/utils';
-import { isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
+import { NA_VALUE, isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
 
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
@@ -51,6 +51,8 @@ export interface VisibilityInputs {
   selectedProteinIds: string[];
   highlightedProteinIds: string[];
   opacities: { base: number; selected: number; faded: number };
+  /** Internal values to keep in focus (Shift+hover); every other point fades. */
+  focusedValues?: string[] | null;
 }
 
 export interface VisibilityModel {
@@ -213,6 +215,7 @@ export function computeVisibilityModel(
   const selectedIdsSet = new Set(selectedProteinIds);
   const highlightedIdsSet = new Set(highlightedProteinIds);
   const hasSelection = selectedProteinIds.length > 0;
+  const focusedValues = inputs.focusedValues ?? null;
 
   // Reuse the prior hidden mask iff the mask-relevant inputs are reference-equal.
   let allHidden: boolean;
@@ -263,11 +266,27 @@ export function computeVisibilityModel(
     return hiddenMask![idx] === 1; // hiddenMode === 'mask' guarantees non-null
   };
 
+  // Out-of-focus mask: the hidden-mask pass with every value except the focused
+  // ones treated as "hidden", so a point fades iff none of its values is focused.
+  let unfocusedMask: Uint8Array | null = null;
+  const annotation = data?.annotations[selectedAnnotation];
+  const annotationRows = data?.annotation_data?.[selectedAnnotation];
+  if (focusedValues && data && annotation && annotationRows && Array.isArray(annotation.values)) {
+    const focused = new Set(focusedValues);
+    const others = annotation.values.map((v) => toInternalValue(v)).filter((k) => !focused.has(k));
+    if (!focused.has(NA_VALUE)) others.push(NA_VALUE);
+    unfocusedMask = buildHiddenMask(data, annotation, annotationRows, others);
+  }
+
   const baseOpacityOf = (point: PlotDataPoint): number => {
     const isSelected = selectedIdsSet.has(point.id);
     const isHighlighted = highlightedIdsSet.has(point.id);
     if (isSelected || isHighlighted) return opacities.selected;
     if (hasSelection && !isSelected) return opacities.faded;
+    // Focus renders like a selection: focused points on top, the rest flat-faded.
+    if (unfocusedMask) {
+      return unfocusedMask[point.originalIndex] === 1 ? opacities.faded : opacities.selected;
+    }
     return opacities.base;
   };
 

@@ -213,6 +213,9 @@ export function createExportHandler({
             // The reliability slider position lives on the legend now (it drives
             // the query filter, not scatter-plot dimming), so persist it from there.
             eatConfidenceThreshold: legendElement.reliabilityThreshold,
+            // Only a picked size: the live one may be seeded from the current
+            // annotation, and as a top-level size it would override every other one.
+            shapeSize: legendElement.pickedShapeSize,
           };
         }
 

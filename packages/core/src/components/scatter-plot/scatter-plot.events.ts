@@ -18,7 +18,9 @@ export type RendererDegradedReason =
   /** An allocating vertex-buffer upload failed; the atlas is released to retry smaller. */
   | 'point-buffer-allocation-failed'
   /** The gamma-correct pipeline is unavailable, so blending happens in sRGB. */
-  | 'gamma-pipeline-unavailable';
+  | 'gamma-pipeline-unavailable'
+  /** Contours were requested, but the density layer cannot run on this context. */
+  | 'density-unavailable';
 
 export interface RendererDegradedContext {
   reason: RendererDegradedReason;
@@ -62,6 +64,9 @@ const MESSAGES: Record<RendererDegradedReason, (c: RendererDegradedContext) => s
     'Colour blending is running in sRGB rather than linear light, so overlapping points may look slightly darker than intended.' +
     // The cause is the only actionable part of this one — without it the message
     // says a pipeline is missing but not which capability the device lacks.
+    (c.detail ? ` (${c.detail})` : ''),
+  'density-unavailable': (c) =>
+    'Contours are unavailable on this device, so the Contours setting has no effect. Points are drawn as usual.' +
     (c.detail ? ` (${c.detail})` : ''),
 };
 

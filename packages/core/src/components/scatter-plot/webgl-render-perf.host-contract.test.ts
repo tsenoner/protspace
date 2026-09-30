@@ -61,11 +61,16 @@ type PerfRunnerInternals = {
     active?: boolean,
   ): PerfScenarioRun | null;
   _endScenario(): void;
+  _runDragContinuousScenario(iterations: number): Promise<void>;
+  _runDensityZoomScenario(iterations: number): Promise<void>;
+  _runContourDragScenario(iterations: number): Promise<void>;
 };
 
 type PerfHostInternals = ProtspaceScatterplot & {
   _webglRenderPerf: PerfRunnerInternals;
+  _mergedConfig: { densityLayer?: string; pointSize?: number };
   _interaction: PlotInteractionController | null;
+  _webglRenderer: { syncGpu: () => void } | null;
 };
 
 /**
@@ -218,7 +223,7 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     const runner = sp._webglRenderPerf;
     const scenario = beginRecordingScenario(runner, 'zoomInOut');
     try {
-      // `_runZoomInOutScenario` drives every zoom through this helper; when the
+      // `_runZoomCycleScenario` drives every zoom through this helper; when the
       // d3 zoom handle is unreachable it returns at its guard and the scenario
       // silently measures nothing. The `resetZoom()` that the first `data`
       // assignment triggers is a 750ms transition from identity to identity, so
@@ -259,4 +264,103 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
       endRecording(runner);
     }
   });
+
+  it('records gpuSyncedMs no earlier than the CPU end of the same pass', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    const scenario = beginRecordingScenario(runner, 'zoomInOut');
+    const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
+    try {
+      runner._applyZoomScale(3);
+      await nextFrame();
+
+      expect(scenario.passes.length).toBeGreaterThan(0);
+      expect(sync).toHaveBeenCalledTimes(scenario.passes.length);
+      const pass = scenario.passes.find((p) => p.trigger === 'zoom');
+      expect(pass).toBeTruthy();
+      expect(Number.isFinite(pass?.durationMs)).toBe(true);
+      expect(pass?.durationMs).toBeGreaterThan(0);
+      expect(Number.isFinite(pass?.gpuSyncedMs)).toBe(true);
+      expect(pass?.gpuSyncedMs).toBeGreaterThanOrEqual(pass!.durationMs);
+    } finally {
+      endRecording(runner);
+    }
+  });
+
+  it('never syncs the GPU outside a recording scenario', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
+
+    sp._webglRenderPerf._recorder = null;
+    sp._webglRenderPerf._applyZoomScale(3);
+    await nextFrame();
+
+    expect(sync).not.toHaveBeenCalled();
+  });
+
+  it('dragContinuous records passes and restores the transform', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    runner._recorder = {
+      runId: 'host-contract',
+      iterations: 1,
+      passSeq: 0,
+      lastRenderEndTs: 0,
+      activeScenario: null,
+      scenarios: [],
+    };
+    try {
+      await runner._runDragContinuousScenario(1);
+
+      const scenario = runner._recorder?.scenarios.find((s) => s.name === 'dragContinuous');
+      expect(scenario).toBeTruthy();
+      const zoomPasses = scenario?.passes.filter((p) => p.trigger === 'zoom') ?? [];
+      expect(zoomPasses.length).toBe(60);
+      expect(mainGroupTransform(sp)).toMatch(/translate\(0\s*,\s*0\)/);
+    } finally {
+      runner._recorder = null;
+    }
+  }, 20_000);
+
+  it('densityZoom restores the previous density mode after the scenario', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    runner._recorder = {
+      runId: 'host-contract',
+      iterations: 1,
+      passSeq: 0,
+      lastRenderEndTs: 0,
+      activeScenario: null,
+      scenarios: [],
+    };
+    try {
+      await runner._runDensityZoomScenario(1);
+    } finally {
+      runner._recorder = null;
+    }
+
+    expect(sp._mergedConfig.densityLayer).toBe('off');
+  }, 20_000);
+
+  it('contourDrag records its own passes and restores the density mode', async () => {
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    runner._recorder = {
+      runId: 'host-contract',
+      iterations: 1,
+      passSeq: 0,
+      lastRenderEndTs: 0,
+      activeScenario: null,
+      scenarios: [],
+    };
+    try {
+      await runner._runContourDragScenario(1);
+      const scenario = runner._recorder?.scenarios.find((s) => s.name === 'contourDrag');
+      expect(scenario?.passes.filter((p) => p.trigger === 'zoom').length).toBe(60);
+    } finally {
+      runner._recorder = null;
+    }
+
+    expect(sp._mergedConfig.densityLayer).toBe('off');
+  }, 20_000);
 });

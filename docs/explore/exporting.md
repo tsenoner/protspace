@@ -34,13 +34,28 @@ Key features:
 
 ### Quick Export
 
-Click **Quick Export** to download an image immediately using default or previously saved settings. No preview, useful when you've already configured the Figure Editor and want the same output again.
+Click **Quick Export** to download an image immediately, with no preview. It always uses fixed
+defaults, a 2048 × 1024 px image with the legend on the right, and keeps your current zoom and pan;
+it does not use Figure Editor settings. For another size or layout, or for the full plot, use the
+Figure Editor.
+
+### Dot size in images
+
+Dots [grow as you zoom in](/explore/scatterplot#navigation). Quick Export keeps your current zoom,
+so its dots match the size you see on screen. The Figure Editor always renders the full view, so its
+dots are drawn at their unzoomed size.
+
+::: warning Contours are not exported yet
+[Contours](/explore/control-bar#_10-contours) are not drawn in exported images: Quick Export PNG and
+PDF, the Figure Editor and its zoom insets show the points only. The Figure Editor preview shows
+exactly what will be exported. Tracked in [#498](https://github.com/tsenoner/protspace/issues/498).
+:::
 
 ## Parquet Export
 
 Export a `.parquetbundle` file that can be loaded back into ProtSpace or shared.
 
-- **Include legend settings**: Saves your current legend customizations (colors, shapes, ordering, visibility, palette) inside the file. Anyone who loads it will see the same visual configuration.
+- **Include legend settings**: Saves your current legend customizations (colors, shapes, ordering, visibility, palette, and the shape size if you picked one) inside the file. Anyone who loads it will see the same visual configuration. The Contours mode is not saved in the file; it lives in the page URL.
 - **Figure editor settings**: When legend settings are included, the Figure Editor state (dimensions, DPI, legend layout, overlays, insets) is also saved. This lets you reopen the Figure Editor exactly where you left off.
 
 If the bundle you loaded carried statistics (prepared with `protspace ... --stats`), the export

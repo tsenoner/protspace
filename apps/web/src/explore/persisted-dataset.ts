@@ -22,7 +22,6 @@ export type PersistedLoadOutcome =
 
 interface PersistedDatasetOptions {
   dataLoader: ProtspaceDataLoader;
-  defaultDatasetName: string;
   registerFileLoad(file: File, kind: DatasetLoadKind): void;
   setCurrentDatasetIsDemo(isDemo: boolean): void;
   setCurrentDatasetName(name: string): void;
@@ -30,7 +29,6 @@ interface PersistedDatasetOptions {
 
 export function createPersistedDatasetController({
   dataLoader,
-  defaultDatasetName,
   registerFileLoad,
   setCurrentDatasetIsDemo,
   setCurrentDatasetName,
@@ -46,11 +44,9 @@ export function createPersistedDatasetController({
 
   const loadDefaultDataset = async () => {
     try {
-      setCurrentDatasetName(defaultDatasetName);
-      setCurrentDatasetIsDemo(true);
       console.log('Loading data from data.parquetbundle...');
 
-      const response = await fetch('./data.parquetbundle');
+      const response = await fetch(`${import.meta.env.BASE_URL}data.parquetbundle`);
       if (!response.ok) {
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
@@ -65,17 +61,11 @@ export function createPersistedDatasetController({
       registerFileLoad(file, 'default');
       await dataLoader.loadFromFile(file, { source: 'auto' });
     } catch (error) {
-      console.error('Failed to load data from file:', error);
-      console.log('Make sure data.parquetbundle exists in the public directory');
-      console.log(
-        'Alternative: You can drag and drop the data.parquetbundle file onto the data loader component',
-      );
-
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.warn(`Auto-load failed: ${errorMessage}`);
-      console.log(
-        'The data loader is ready for drag-and-drop. Simply drag the data.parquetbundle file onto the component.',
-      );
+      console.error('Failed to load data.parquetbundle:', error);
+      notify.error({
+        title: 'Could not load the demo dataset',
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   };
 

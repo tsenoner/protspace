@@ -38,8 +38,7 @@ interface ConnectorOverlayDeps {
   getOverlayGroup: () => Selection<SVGGElement, unknown, null, undefined> | null;
   getPlotData: () => PlotData;
   getScales: () => ScalePair | null;
-  /** Current "Shape size" point-size config; defaults to 240 (the config default). */
-  getPointSize?: () => number;
+  getPointRadiusPx: () => number;
   onStatusChange: (status: ProvenanceConnectorStatus | null) => void;
 }
 
@@ -89,11 +88,11 @@ export class ConnectorOverlayController {
   }
 
   /**
-   * Keep endpoint halos at a constant screen-space diameter, and connector lines trimmed to the
-   * halo boundary by a constant screen-space margin, while their parent SVG group carries the
-   * data-space zoom transform. This mutates existing circle/line attributes in place from the
-   * `data-c*` anchors each line already carries; it does not rebuild the connector join or
-   * resolve protein ids during a zoom gesture.
+   * Resize endpoint halos and connector strokes to the drawn dot radius, which grows with zoom,
+   * and re-trim lines to the halo boundary; every size is divided by `scale` because the parent
+   * SVG group carries the data-space zoom transform. This mutates existing circle/line attributes
+   * in place from the `data-c*` anchors each line already carries; it does not rebuild the
+   * connector join or resolve protein ids during a zoom gesture.
    */
   updateZoomScale(scale: number): void {
     this.zoomScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
@@ -117,22 +116,12 @@ export class ConnectorOverlayController {
       });
   }
 
-  // Current "Shape size" point-size config; shared by endpointBaseRadiusPx and
-  // connectorStrokeWidthPx so both derive from a single read of the dep (with its default).
-  private pointSizePx(): number {
-    return this.deps.getPointSize?.() ?? 240;
-  }
-
-  // On-screen point radius ≈ sqrt(pointSize)/3 (matches the WebGL/hit-test formula;
-  // keep in sync with POINT_SIZE_DIVISOR in stage-point.ts). Halo sits just outside.
   private endpointBaseRadiusPx(): number {
-    const pointRadiusPx = Math.sqrt(Math.max(this.pointSizePx(), 1)) / 3;
-    return Math.max(4, pointRadiusPx + 2);
+    return Math.max(4, this.deps.getPointRadiusPx() + 2);
   }
 
-  // Screen-space line width scaled by point size (parallels endpointBaseRadiusPx).
   private connectorStrokeWidthPx(): number {
-    return Math.max(1, Math.sqrt(Math.max(this.pointSizePx(), 1)) / 10); // ≈1.55px at the default 240
+    return Math.max(1, 0.3 * this.deps.getPointRadiusPx());
   }
 
   // Base dash pattern "5 4" (formerly the CSS stroke-dasharray), zoom-compensated the same way
