@@ -5595,15 +5595,18 @@ def build_command(argv: Sequence[str]) -> str:
     """This invocation, for provenance, with machine paths replaced.
 
     Path options become placeholders (``--cli-root $CLI``), a ``--path
-    NAME=VALUE`` override keeps only its name, and any other path left is
-    shortened to ``$REPO`` / ``~``.
+    NAME=VALUE`` override (or ``--path=NAME=VALUE``) keeps only its name, and
+    any other path left is shortened to ``$REPO`` / ``~``, then by the manifest
+    writer's own redaction (scratch paths ``$TMP``, home directories ``~``).
+    The parsers refuse abbreviated options (``allow_abbrev=False``), so only
+    the spellings listed here can carry a path.
     """
     args = list(argv)
     words: list[str] = ["build_showcase.py"]  # already shell-quoted
     index = 0
     while index < len(args):
         arg = args[index]
-        option, sep, _ = arg.partition("=")
+        option, sep, value = arg.partition("=")
         if option in PATH_OPTIONS:
             placeholder = PATH_OPTIONS[option]
             if sep:
@@ -5613,17 +5616,20 @@ def build_command(argv: Sequence[str]) -> str:
                 if index + 1 < len(args):
                     words.append(placeholder)
                     index += 1
-        elif arg == "--path" and index + 1 < len(args):
-            name = args[index + 1].split("=", 1)[0]
-            words += [arg, f"{shlex.quote(name)}=${name.upper()}"]
-            index += 1
+        elif option == "--path" and (sep or index + 1 < len(args)):
+            if not sep:
+                index += 1
+                value = args[index]
+            name = value.split("=", 1)[0]
+            override = f"{shlex.quote(name)}=${name.upper()}"
+            words += [f"--path={override}"] if sep else ["--path", override]
         else:
             words.append(shlex.quote(arg))
         index += 1
     text = " ".join(words)
     for old, new in ((str(REPO_ROOT), "$REPO"), (str(Path.home()), "~")):
         text = text.replace(old, new)
-    return text
+    return manifest_writer().redact_command(text)
 
 
 def check_output_location(path: Path, config: Config, what: str) -> None:
@@ -5771,7 +5777,9 @@ def cmd_stage_perf(args: argparse.Namespace, config: Config) -> int:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    base = argparse.ArgumentParser(add_help=False)
+    # No abbreviated options: build_command() redacts the spellings it knows,
+    # so "--cli /private/…" must not be accepted as --cli-root.
+    base = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     base.add_argument(
         "--config",
         type=Path,
@@ -5787,7 +5795,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     base.add_argument("-v", "--verbose", action="store_true")
 
-    common = argparse.ArgumentParser(add_help=False, parents=[base])
+    common = argparse.ArgumentParser(add_help=False, parents=[base], allow_abbrev=False)
     common.add_argument(
         "--out-root", type=Path, help="output root (default: [build] out_root)"
     )
@@ -5803,11 +5811,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
 
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build", parents=[common], help="build or resume bundles")
+    build = sub.add_parser(
+        "build",
+        parents=[common],
+        allow_abbrev=False,
+        help="build or resume bundles",
+    )
     build.add_argument(
         "--cli-root", type=Path, help="checkout providing the fixed protspace CLI"
     )
@@ -5844,18 +5859,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     build.add_argument("--no-thumbnails", action="store_true")
 
     verify_ = sub.add_parser(
-        "verify", parents=[common], help="run the gates on built bundles"
+        "verify",
+        parents=[common],
+        allow_abbrev=False,
+        help="run the gates on built bundles",
     )
     verify_.set_defaults(verify_only=True, cli_root=None, dry_run=False)
 
     report_ = sub.add_parser(
-        "report", parents=[common], help="clustering report + thumbnails"
+        "report",
+        parents=[common],
+        allow_abbrev=False,
+        help="clustering report + thumbnails",
     )
     report_.add_argument("--no-thumbnails", action="store_true")
 
     load = sub.add_parser(
         "record-load",
         parents=[common],
+        allow_abbrev=False,
         help="record the D2 browser measurement of a built bundle",
     )
     load.add_argument("--seconds", type=float, required=True, help="load time")
@@ -5867,6 +5889,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage = sub.add_parser(
         "stage-release",
         parents=[common],
+        allow_abbrev=False,
         help="stage the verified showcase bundles and their manifest",
     )
     stage.add_argument(
@@ -5881,6 +5904,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     perf = sub.add_parser(
         "stage-perf",
         parents=[base],
+        allow_abbrev=False,
         help="stage the perf-datasets release assets",
     )
     perf.add_argument("--out", type=Path, required=True, help="staging directory")

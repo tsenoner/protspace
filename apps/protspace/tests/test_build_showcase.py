@@ -983,6 +983,24 @@ def test_the_build_command_never_shows_a_machine_path():
         "--out-root=$OUT --path nm_data=$NM_DATA --redo stats"
     )
     assert "/tmp" not in command and "/Users" not in command
+    # The joined --path form, and a scratch path in a value no option names.
+    command = bs.build_command(
+        [
+            "build",
+            "--path=nm_data=/private/tmp/x/nm",
+            "--only",
+            "/var/folders/ab/T/tmp1/x",
+            "--release",
+            "/Users/jane/r",
+        ]
+    )
+    assert command == (
+        "build_showcase.py build --path=nm_data=$NM_DATA --only $TMP --release ~/r"
+    )
+    # Abbreviated options would slip past the redaction: the parsers refuse them.
+    with pytest.raises(SystemExit):
+        bs.parse_args(["build", "--cli", "/private/tmp/cli"])
+    assert bs.parse_args(["build", "--cli-root", "/c"]).cli_root == Path("/c")
 
 
 # ---------------------------------------------------------------------------
