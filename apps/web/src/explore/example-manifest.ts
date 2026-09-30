@@ -188,8 +188,8 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
     "human-fly": {
       "file": "human-fly_2026_03.parquetbundle",
       "hosting": "release",
-      "bytes": 22677969,
-      "sha256": "f2eac93607fe82d88063c5fbb457c35183dc7d607f1a52451ebacf8389ca67b8",
+      "bytes": 22677971,
+      "sha256": "8c29273de6c4ba4677236ddfb04087fad4d36cc9637b89557c71c95a081bb38b",
       "proteins": 105562,
       "columns": [
         "species",
@@ -247,7 +247,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
       "protspaceVersion": "4.15.0",
       "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
       "command": "build_showcase.py build --only human-fly --cli-root $CLI",
-      "builtAt": "2026-09-30T16:45:36+00:00",
+      "builtAt": "2026-09-30T21:54:33+00:00",
       "zenodoDoi": null
     },
     "beta-lactamase": {
@@ -318,8 +318,8 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
     "swissprot": {
       "file": "swissprot_2026_03.parquetbundle",
       "hosting": "release",
-      "bytes": 135853395,
-      "sha256": "6a34d458ff07f19c65fe70f2ab4594f55579c1b9b61ed762e9655d345378164c",
+      "bytes": 135853411,
+      "sha256": "90e44a8cf13abbdac8e0991686ca95ca0500bdf21238948ba67025db65e211f2",
       "proteins": 573649,
       "columns": [
         "domain",
@@ -377,7 +377,7 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
       "protspaceVersion": "4.15.0",
       "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
       "command": "build_showcase.py build --only swissprot --cli-root $CLI",
-      "builtAt": "2026-09-30T16:42:10+00:00",
+      "builtAt": "2026-09-30T21:56:02+00:00",
       "zenodoDoi": null
     }
   }
