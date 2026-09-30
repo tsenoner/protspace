@@ -381,6 +381,14 @@ legacy v1 plain text.
 - **THEN** the bundle shows the labels `50% identity` and `Membrane (single-pass; type I)`, the
   second as one label
 
+#### Scenario: A hand-made table with a pandas category column
+
+- **WHEN** `protspace bundle -a` is given an unstamped table whose column, saved from a pandas
+  `category` column, reads back as a dictionary of strings holding
+  `Membrane (single-pass; type I)` and `x%41y`
+- **THEN** its cells are migrated as the plain string column's are, and the bundle shows those
+  two labels unchanged
+
 #### Scenario: Transfer on a v1 bundle
 
 - **WHEN** `protspace transfer` rewrites a v1 bundle

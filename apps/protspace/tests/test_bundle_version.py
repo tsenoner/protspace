@@ -190,6 +190,26 @@ def test_cli_bundle_reads_an_unstamped_table_as_plain_v1_text(tmp_path):
     ]
 
 
+def test_cli_bundle_migrates_a_pandas_category_column_as_text(tmp_path):
+    """A column saved from pandas with the ``category`` dtype reads back as
+    ``dictionary<values=string>``. Its cells are v1 plain text like any other
+    string column's, so the migration must reach them: otherwise the label
+    ``Membrane (single-pass; type I)`` is split into two hits and a literal
+    ``%41`` is percent-decoded to ``A``."""
+    import pyarrow as pa
+
+    cells = ["Membrane (single-pass; type I)", "x%41y"]
+    table = pa.Table.from_pandas(
+        pd.DataFrame({"identifier": ["P1", "P2"], "cat": pd.Categorical(cells)}),
+        preserve_index=False,
+    )
+    assert pa.types.is_dictionary(table.schema.field("cat").type)
+
+    output_path = _bundle_via_cli(tmp_path, table)
+
+    assert _display_labels(output_path, "cat") == cells
+
+
 def _cache_cells():
     """v2 cells as the annotation emit sites write them into the cache."""
     from protspace.data.annotations.encoding import encode_field

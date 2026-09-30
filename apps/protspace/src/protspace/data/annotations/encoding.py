@@ -188,13 +188,28 @@ def encode_legacy_cell(value: str) -> str:
     return ";".join(encoded_hits)
 
 
+def _text_type(type_: pa.DataType) -> pa.DataType | None:
+    """The string type a column's cells are text of, ``None`` for any other column.
+
+    A dictionary of strings (a pandas ``category`` column) holds text cells as
+    much as a plain string column does, and the encoder reads it as text.
+    """
+    if pa.types.is_dictionary(type_):
+        type_ = type_.value_type
+    if pa.types.is_string(type_) or pa.types.is_large_string(type_):
+        return type_
+    return None
+
+
 def _migrate_cells(table: pa.Table) -> pa.Table:
-    """Re-emit every string annotation of a v1 table in the v2 grammar, stamped."""
+    """Re-emit every text annotation of a v1 table in the v2 grammar, stamped.
+
+    A dictionary-of-strings column comes back as its plain string type.
+    """
     columns = []
     for name, column in zip(table.column_names, table.columns, strict=True):
-        if name in {"identifier", "protein_id"} or not (
-            pa.types.is_string(column.type) or pa.types.is_large_string(column.type)
-        ):
+        text_type = _text_type(column.type)
+        if name in {"identifier", "protein_id"} or text_type is None:
             columns.append(column)
             continue
         opaque_source = name.endswith("__pred_source")
@@ -206,7 +221,7 @@ def _migrate_cells(table: pa.Table) -> pa.Table:
             else encode_legacy_cell(value)
             for value in column.to_pylist()
         ]
-        columns.append(pa.array(migrated, type=column.type))
+        columns.append(pa.array(migrated, type=text_type))
     return stamp_format_version(pa.Table.from_arrays(columns, names=table.column_names))
 
 
