@@ -240,8 +240,8 @@ export function createDatasetController({
 
       viewController.applyLatestViewForDatasetLoad(data);
 
-      // Only for the user's own imports: the app's bundled datasets are still v1, and a
-      // visitor cannot convert those.
+      // Only for the user's own imports: a dataset the app serves itself never shows it,
+      // whatever its format, since a visitor cannot convert it (they are all v3 anyway).
       if (
         loadMeta.kind === 'user' &&
         bundleFormatVersion !== undefined &&

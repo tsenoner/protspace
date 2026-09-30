@@ -178,7 +178,7 @@ describe('dataset controller legacy bundle notice', () => {
     expect(mocks.info).not.toHaveBeenCalled();
   });
 
-  it('stays quiet for the bundled default dataset, which is still v1', async () => {
+  it('stays quiet for a dataset the app serves itself, even a legacy one', async () => {
     const { controller } = buildController('default');
     await controller.handleDataLoaded(eventFor(1));
 
