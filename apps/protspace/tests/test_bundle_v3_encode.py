@@ -217,7 +217,7 @@ def test_code_order_is_frequency_then_first_occurrence():
 def test_only_blank_cells_are_minus_one():
     """A cell literally spelled ``none`` is a category, not a missing value.
 
-    v3 is a container encoding: collapsing the six ``MISSING_TOKENS`` spellings
+    v3 is a container encoding: collapsing the ``BROWSER_MISSING_TOKENS`` spellings
     would rewrite the data (``phosphatase.predicted_transmembrane`` is 1383 of
     1587 rows of literal ``none``, and ``protspace style`` keys on that label).
     The browser still folds them into NA at read time, on v2 and v3 alike.
@@ -235,7 +235,7 @@ def test_only_blank_cells_are_minus_one():
 
 
 def test_missing_tokens_only_gate_numeric_inference():
-    """``MISSING_TOKENS`` survives for exactly one job: keeping ``NA`` non-numeric."""
+    """``BROWSER_MISSING_TOKENS`` has exactly one job: keeping ``NA`` non-numeric."""
     parts = encode(make_annotations(col=["1", "NA", "none"]))
     assert manifest_of(parts[0])["columns"]["col"]["kind"] == "numeric"
 

@@ -38,7 +38,9 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from protspace.core.constants import BROWSER_MISSING_TOKENS
 from protspace.data.annotations.encoding import (
+    ARROW_BOOLEAN_LABELS,
     FORMAT_VERSION_KEY,
     decode_field,
     encode_field,
@@ -51,18 +53,6 @@ logger = logging.getLogger(__name__)
 
 CONTAINER_VERSION = 3
 MANIFEST_KEY = b"protspace_v3_manifest"
-
-#: Cell spellings that block numeric inference, mirroring
-#: ``MISSING_VALUE_TOKENS`` in
-#: ``packages/utils/src/visualization/missing-values.ts``; compared against the
-#: lower-cased, whitespace-trimmed cell.  They are *only* consulted there: a
-#: column of ``NA`` stays categorical instead of becoming all-NaN numeric, but a
-#: cell literally spelled ``none`` keeps that label, because the file has to
-#: preserve the token it was given (``protspace style`` and the Dash legend key
-#: on it, and ``phosphatase.predicted_transmembrane`` is 1383 of 1587 rows of
-#: literal ``none``).  The browser re-applies ``normalizeMissingValue`` at read
-#: time, so folding these into NA stays *its* decision, on both v2 and v3.
-MISSING_TOKENS = frozenset({"na", "n/a", "nan", "null", "none", "__na__"})
 
 #: ``EVIDENCE_CODE_RE`` from ``conversion.ts``: the part after a hit's last
 #: ``|`` is an evidence code, not a score.
@@ -169,15 +159,11 @@ def _flat(column: pa.ChunkedArray | pa.Array) -> pa.Array:
 
 
 def _as_string(column: pa.ChunkedArray | pa.Array) -> pa.Array:
-    """Flatten to a single ``string`` array, rendering bools as ``true``/``false``.
-
-    Lower case because that is what the v2 browser reader displayed for a
-    ``BOOLEAN`` column (``String(true)``), so legend colours saved against a v2
-    bundle keep matching once it is written as v3.
-    """
+    """Flatten to a single ``string`` array, bools as ``ARROW_BOOLEAN_LABELS``."""
     arr = _flat(column)
     if pa.types.is_boolean(arr.type):
-        return pc.if_else(arr, pa.scalar("true"), pa.scalar("false"))
+        false, true = ARROW_BOOLEAN_LABELS
+        return pc.if_else(arr, pa.scalar(true), pa.scalar(false))
     if pa.types.is_string(arr.type):
         return arr
     return pc.cast(arr, pa.string())
@@ -190,8 +176,18 @@ def _blank_mask(trimmed: pa.Array) -> np.ndarray:
 
 
 def _missing_mask(trimmed: pa.Array) -> np.ndarray:
-    """``normalizeMissingValue``: null, blank, or a MISSING_TOKENS spelling."""
-    token = pc.is_in(pc.utf8_lower(trimmed), value_set=pa.array(sorted(MISSING_TOKENS)))
+    """``normalizeMissingValue``: null, blank, or a ``BROWSER_MISSING_TOKENS`` spelling.
+
+    Only numeric inference consults it: a column of ``NA`` stays categorical
+    instead of becoming all-NaN numeric, but a cell literally spelled ``none``
+    keeps that label, because the file has to preserve the token it was given
+    (``protspace style`` and the Dash legend key on it, and
+    ``phosphatase.predicted_transmembrane`` is 1383 of 1587 rows of literal
+    ``none``).  The browser re-applies ``normalizeMissingValue`` at read time, so
+    folding these into NA stays *its* decision, on both v2 and v3.
+    """
+    tokens = pa.array(sorted(BROWSER_MISSING_TOKENS))
+    token = pc.is_in(pc.utf8_lower(trimmed), value_set=tokens)
     return _blank_mask(trimmed) | np.asarray(pc.fill_null(token, False))
 
 
@@ -292,8 +288,7 @@ def _encode_annotation_column(
     blank = _blank_mask(trimmed)
 
     # --- numeric inference (conversion.ts:71-125) --------------------------- #
-    # Only here does a MISSING_TOKENS spelling count as absent, so a column of
-    # ``NA`` stays categorical rather than turning into an all-NaN numeric.
+    # Only here does a missing-token spelling count as absent (``_missing_mask``).
     missing = _missing_mask(trimmed)
     if not missing.all():
         numeric_ok = _regex_ok(trimmed, JS_NUMBER_RE) | missing
@@ -804,12 +799,12 @@ def _decode_categorical(
     """int32 codes back to label cells; ``-1`` (missing) becomes ``""``.
 
     A ``bool`` source column comes back as ``bool`` (missing as null) from its
-    ``true``/``false`` labels, as a v2 bundle's ``BOOLEAN`` column always read.
+    ``ARROW_BOOLEAN_LABELS``, as a v2 bundle's ``BOOLEAN`` column always read.
     """
     codes = _flat(column).to_numpy(zero_copy_only=False)
     cells = labels.take(pa.array(codes, mask=codes < 0))
     if entry.get("sourceType") == "bool":
-        return pc.equal(cells, pa.scalar("true"))
+        return pc.equal(cells, pa.scalar(ARROW_BOOLEAN_LABELS[1]))
     return pc.fill_null(cells, "")
 
 

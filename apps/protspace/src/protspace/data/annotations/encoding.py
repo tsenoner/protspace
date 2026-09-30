@@ -46,6 +46,12 @@ ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
 # second pass reinterprets its own output as raw source data.
 CANONICAL_BOOLEANS = ("False", "True")
 
+# The labels an Arrow ``BOOLEAN`` annotation column is stored as in a v3 bundle:
+# lower case, as the browser has always displayed one (``String(true)``), so
+# legend colours saved against a v2 bundle keep matching. Not CANONICAL_BOOLEANS,
+# which are string cells the pipeline writes itself.
+ARROW_BOOLEAN_LABELS = ("false", "true")
+
 # Chars that must be percent-encoded inside any free-text token.
 _RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
 _ENCODE_TABLE = str.maketrans({c: f"%{ord(c):02X}" for c in _RESERVED})
