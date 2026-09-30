@@ -2219,12 +2219,20 @@ export class ProtspaceScatterplot extends LitElement {
     // stale transform instead of filling the plot (#297).
     this.resetZoom();
 
+    // The isolated subset, not the points this projection places: a protein it does not
+    // place is still isolated and drawn in every projection that does, so neither the
+    // reported size nor the selection lockout below may shrink by it. The lockout is
+    // only lifted by leaving isolation, so judging it on the plotted points would lock
+    // selection out of a subset that another projection draws in full.
+    const currentData = this.getCurrentData();
+    const isolatedSize = currentData?.protein_ids.length ?? 0;
+
     this.dispatchEvent(
       new CustomEvent('data-isolation', {
         detail: {
           isolationHistory: this._isolationHistory,
           isolationMode: this._isolationMode,
-          dataSize: this._plotData.length,
+          dataSize: isolatedSize,
         },
         bubbles: true,
         composed: true,
@@ -2235,7 +2243,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.dispatchEvent(
       new CustomEvent('data-change', {
         detail: {
-          data: this.getCurrentData(),
+          data: currentData,
           isSplitData: true,
           isolationMode: true,
         },
@@ -2244,14 +2252,14 @@ export class ProtspaceScatterplot extends LitElement {
       }),
     );
 
-    // Auto-disable selection mode if only 1 point left
-    if (this._plotData.length <= 1) {
+    // Auto-disable selection mode if only 1 protein is left
+    if (isolatedSize <= 1) {
       this.selectionMode = false;
       this.dispatchEvent(
         new CustomEvent('auto-disable-selection', {
           detail: {
             reason: 'insufficient-data',
-            dataSize: this._plotData.length,
+            dataSize: isolatedSize,
           },
           bubbles: true,
           composed: true,

@@ -53,6 +53,13 @@ points the selected projection places.
   place `P`, and isolates the selection
 - **THEN** the isolation layer holds `P` and `Q`, and `P` is drawn again on the way back to `A`
 
+#### Scenario: Isolating proteins of which the selected projection places one
+
+- **WHEN** `P`, `Q` and `R` are selected in projection `A`, the user switches to `B`, which
+  places only `R`, and isolates the selection
+- **THEN** selection mode stays available, since the isolated subset holds three proteins, and
+  the isolation reports that size
+
 ## MODIFIED Requirements
 
 ### Requirement: Single source of truth for display state

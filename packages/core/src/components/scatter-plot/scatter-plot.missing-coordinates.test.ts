@@ -186,5 +186,33 @@ describe('scatter plot: missing coordinates', () => {
       switchTo(sp, 0);
       expect(plottedIds(sp._plotData)).toEqual(['p0', 'p1']);
     });
+
+    // The selection lockout ("only 1 point remaining") is only cleared by leaving
+    // isolation, so it must judge the isolated subset, which every projection that
+    // places it draws in full, not the points this one happens to place.
+    it('judges the selection lockout on the isolated subset, not the plotted points', () => {
+      const sp = scatter();
+      const lockouts: number[] = [];
+      sp.addEventListener('auto-disable-selection', (event) =>
+        lockouts.push((event as CustomEvent).detail.dataSize),
+      );
+      const sizes: number[] = [];
+      sp.addEventListener('data-isolation', (event) =>
+        sizes.push((event as CustomEvent).detail.dataSize),
+      );
+      sp.selectedProteinIds = ['p0', 'p1'];
+      switchTo(sp, 1);
+      sp.isolateSelection();
+
+      expect(plottedIds(sp._plotData)).toEqual(['p0']);
+      expect(lockouts).toEqual([]);
+      expect(sizes).toEqual([2]);
+
+      // A subset of one is still locked out, whether or not this projection places it.
+      sp.selectedProteinIds = ['p1'];
+      switchTo(sp, 0);
+      sp.isolateSelection();
+      expect(lockouts).toEqual([1]);
+    });
   });
 });

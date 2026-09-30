@@ -112,7 +112,8 @@
       `protspace transfer` writes it, since the overlay leaves no carried `sourceType` to echo
 - [x] 3.18 In isolation mode `getCurrentData` and `isolateSelection` take the isolated subset from
       the isolation layers, so a protein the selected projection does not place stays in the
-      export, the legend counts and a new isolation layer
+      export, the legend counts and a new isolation layer; the isolation's reported size and
+      the one-protein selection lockout are judged on that subset too
 - [x] 3.19 The web exporter echoes an integer `sourceType` on a categorical column of decimal
       labels in the type's range (Python's exact labels for a 64-bit hash) and on a numeric column
       up to ±2^53 inclusive, as Python classifies it; contract coverage variant carries both
