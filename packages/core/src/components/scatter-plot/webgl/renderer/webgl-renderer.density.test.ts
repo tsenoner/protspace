@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { DensityLayerMode } from '@protspace/utils';
 import type { WebGLStyleGetters } from '../types';
+import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import type { GLResources } from './gl-resources';
 import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
 import type { MockGLOptions } from './test-support/mock-webgl2';
@@ -48,6 +49,7 @@ function recordCalls(gl: Record<string, (...a: unknown[]) => unknown>): string[]
 }
 
 const countOf = (calls: string[], needle: string) => calls.filter((c) => c === needle).length;
+const reasons = (degraded: RendererDegradedDetail[]) => degraded.map((d) => d.context.reason);
 
 vi.mock('../color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
@@ -144,7 +146,7 @@ describe('density layer, on', () => {
     on.renderer.destroy();
   });
 
-  it('stays off without the float extensions, and adds no degraded reason', () => {
+  it('stays off without the float extensions, and says so once', () => {
     const on = setup(
       { width: 800, height: 600, densityLayer: 'on' },
       {
@@ -153,9 +155,52 @@ describe('density layer, on', () => {
     );
     const calls = recordCalls(on.glRecord);
     on.renderer.render(plotData(50));
+    on.renderer.render(plotData(50));
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+    // No 'gamma-pipeline-unavailable': that fallback is silent on this path (F-09 lock).
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
+    expect(on.degraded[0].context.detail).toBe('EXT_color_buffer_float missing');
+    expect(on.degraded[0].message).toContain('Contours are unavailable on this device');
+    on.renderer.destroy();
+  });
+
+  it('names EXT_float_blend when only float blending is missing', () => {
+    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
+    const gl = on.gl as unknown as WebGL2RenderingContext;
+    const getExtension = gl.getExtension.bind(gl);
+    vi.spyOn(gl, 'getExtension').mockImplementation((name: string) =>
+      name === 'EXT_float_blend' ? null : getExtension(name),
+    );
+    on.renderer.render(plotData(50));
+
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
+    expect(on.degraded[0].context.detail).toBe('EXT_float_blend missing');
+    on.renderer.destroy();
+  });
+
+  it('says nothing without the float extensions when contours are off', () => {
+    for (const densityLayer of ['off', undefined] as const) {
+      const off = setup(
+        { width: 800, height: 600, densityLayer },
+        { missingFloatExtensions: true },
+      );
+      off.renderer.render(plotData(50));
+      expect(off.degraded).toEqual([]);
+      off.renderer.destroy();
+    }
+  });
+
+  it('waits for points before saying contours are unavailable', () => {
+    const on = setup(
+      { width: 800, height: 600, densityLayer: 'on' },
+      { missingFloatExtensions: true },
+    );
+    on.renderer.render(plotData(0));
     expect(on.degraded).toEqual([]);
+
+    on.renderer.render(plotData(50));
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
     on.renderer.destroy();
   });
 
@@ -177,7 +222,8 @@ describe('density layer, on', () => {
     expect(on.resources.density).toBeNull();
     expect(deleteProgram).toHaveBeenCalledTimes(4);
     expect(deleteVao).toHaveBeenCalledTimes(1);
-    expect(on.degraded.map((d) => d.context.reason)).toEqual(['gamma-pipeline-unavailable']);
+    expect(reasons(on.degraded)).toEqual(['gamma-pipeline-unavailable', 'density-unavailable']);
+    expect(on.degraded[1].context.detail).toBe('linear-light pipeline unavailable');
     on.renderer.destroy();
   });
 
@@ -418,7 +464,8 @@ describe('density layer failure is not a gamma failure', () => {
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
     expect(calls.filter((c) => /^drawArrays\(\d+,0,6\)$/.test(c))).toHaveLength(1);
-    expect(on.degraded).toEqual([]);
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
+    expect(on.degraded[0].context.detail).toBe('density target incomplete');
     expect(warn.mock.calls.flat().join(' ')).toContain('density layer disabled');
     expect(on.resources.density).toBeNull();
     on.renderer.destroy();
@@ -441,6 +488,32 @@ describe('context loss', () => {
     renderer.render(plotData(50));
 
     expect(priv.densityDisabled).toBe(false);
+    renderer.destroy();
+  });
+
+  it('re-arms the density-unavailable report for the next context', () => {
+    const { renderer, gl, degraded, setContextLost } = makeRendererWithStyle(
+      styleGetters(),
+      { missingFloatExtensions: true },
+      { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
+    );
+    renderer.render(plotData(50));
+    renderer.render(plotData(50));
+    expect(reasons(degraded)).toEqual(['density-unavailable']);
+
+    // A dead handle rebuilds the context state through the same reset as a loss.
+    vi.spyOn(gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
+    renderer.render(plotData(50));
+    expect(reasons(degraded)).toEqual(['density-unavailable', 'density-unavailable']);
+
+    setContextLost(true);
+    renderer.render(plotData(50));
+    const priv = renderer as unknown as {
+      degradeReported: Set<string>;
+      missingFloatExtension: string | null;
+    };
+    expect(priv.degradeReported.size).toBe(0);
+    expect(priv.missingFloatExtension).toBeNull();
     renderer.destroy();
   });
 });

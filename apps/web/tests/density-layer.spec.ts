@@ -11,23 +11,40 @@ interface PlotInternals extends Element {
   };
 }
 
-async function gammaPipelineUnavailable(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
-    const win = window as Window & { __densityDegraded__?: string[] };
-    return (win.__densityDegraded__ ?? []).includes('gamma-pipeline-unavailable');
+interface Degraded {
+  reason?: string;
+  detail?: string;
+}
+
+/**
+ * No float render targets here, so contours cannot draw. 'density-unavailable' is
+ * reported only once contours are asked for, so this turns them on to find out. It
+ * skips only on a missing extension. 'gamma-pipeline-unavailable' is never reported
+ * for one, only for a shader or target failure on a capable device, which is a bug
+ * and must still fail.
+ */
+async function floatTargetsUnavailable(page: Page): Promise<boolean> {
+  await setDensity(page, 'on');
+  const unavailable = await page.evaluate(() => {
+    const win = window as Window & { __densityDegraded__?: Degraded[] };
+    return (win.__densityDegraded__ ?? []).some(
+      ({ reason, detail }) =>
+        reason === 'density-unavailable' && /^EXT_\w+ missing$/.test(detail ?? ''),
+    );
   });
+  await setDensity(page, 'off');
+  return unavailable;
 }
 
 async function watchForDegraded(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const win = window as Window & { __densityDegraded__?: string[] };
+    const win = window as Window & { __densityDegraded__?: Degraded[] };
     win.__densityDegraded__ = [];
     document.addEventListener(
       'renderer-degraded',
       (event: Event) => {
-        const reason = (event as CustomEvent<{ context?: { reason?: string } }>).detail?.context
-          ?.reason;
-        if (reason) win.__densityDegraded__?.push(reason);
+        const context = (event as CustomEvent<{ context?: Degraded }>).detail?.context;
+        if (context?.reason) win.__densityDegraded__?.push(context);
       },
       true,
     );
@@ -147,8 +164,8 @@ test.describe('density layer pixels', () => {
     await settle(page);
 
     test.skip(
-      await gammaPipelineUnavailable(page),
-      'renderer reported gamma-pipeline-unavailable: no float render targets here',
+      await floatTargetsUnavailable(page),
+      'renderer reported no float render targets here, so contours cannot draw',
     );
 
     const withoutLayer = await centreAlpha(page);
@@ -191,8 +208,8 @@ test.describe('density layer pixels', () => {
     await settle(page);
 
     test.skip(
-      await gammaPipelineUnavailable(page),
-      'renderer reported gamma-pipeline-unavailable: no float render targets here',
+      await floatTargetsUnavailable(page),
+      'renderer reported no float render targets here, so contours cannot draw',
     );
 
     const first = 'long (4 C-C) scorpion toxin superfamily';
@@ -232,8 +249,8 @@ test.describe('density layer pixels', () => {
     await settle(page);
 
     test.skip(
-      await gammaPipelineUnavailable(page),
-      'renderer reported gamma-pipeline-unavailable: no float render targets here',
+      await floatTargetsUnavailable(page),
+      'renderer reported no float render targets here, so contours cannot draw',
     );
 
     const target = await page.evaluate(() => {

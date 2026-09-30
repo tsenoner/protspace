@@ -9,7 +9,12 @@
  */
 
 import * as d3 from 'd3';
-import { type PlotData, type PlotDataPoint, type ScatterplotConfig } from '@protspace/utils';
+import {
+  DENSITY_DEFAULT,
+  type PlotData,
+  type PlotDataPoint,
+  type ScatterplotConfig,
+} from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -208,6 +213,8 @@ export class WebGLRenderer {
   private styleSignature: string | null = null;
   private gammaPipelineAvailable = true;
   private warnedGammaFallback = false;
+  /** The float extension this context lacks, which is why the gamma pipeline never ran. */
+  private missingFloatExtension: string | null = null;
 
   // Context-loss lifecycle (listener + idempotent "lost" flag) lives in the
   // controller; `markContextLost`/`isContextLost` delegate to it.
@@ -436,6 +443,18 @@ export class WebGLRenderer {
     console.warn(`WebGLRenderer: density layer disabled (${reason}).`);
     if (this.gl) this.resources.destroyDensity(this.gl);
     this.resources.density = null;
+    this.reportDensityUnavailable(reason);
+  }
+
+  /**
+   * Contours were asked for but cannot draw on this context. Without this the
+   * Contours menu reads as on while the plot never changes. It waits for points,
+   * so a `?density=on` link does not toast over the loading screen.
+   */
+  private reportDensityUnavailable(cause: string) {
+    if ((this.getConfig().densityLayer ?? DENSITY_DEFAULT) === 'off') return;
+    if (this.currentPointCount === 0) return;
+    this.reportDegraded('density-unavailable', cause);
   }
 
   private handleGammaFallback(reason?: string) {
@@ -565,6 +584,11 @@ export class WebGLRenderer {
       if (this.gammaPipelineAvailable) {
         this.handleGammaFallback('gamma pipeline unavailable during render');
       }
+      // The density layer draws only in the linear-light pass.
+      const missing = this.missingFloatExtension;
+      this.reportDensityUnavailable(
+        missing ? `${missing} missing` : 'linear-light pipeline unavailable',
+      );
       this.renderDirect(transform);
       return;
     }
@@ -859,6 +883,9 @@ export class WebGLRenderer {
 
     this.gammaPipelineAvailable = !!colorBufferFloatExt && !!floatBlendExt;
     if (!this.gammaPipelineAvailable) {
+      this.missingFloatExtension = colorBufferFloatExt
+        ? 'EXT_float_blend'
+        : 'EXT_color_buffer_float';
       this.handleGammaFallback('required extensions missing');
     }
 
@@ -925,6 +952,7 @@ export class WebGLRenderer {
     this.degradeReported.clear();
     this.gammaPipelineAvailable = true;
     this.warnedGammaFallback = false;
+    this.missingFloatExtension = null;
     this.buffersInitialized = false;
     this.currentPointCount = 0;
     this.visibleCount = 0;
