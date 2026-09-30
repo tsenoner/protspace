@@ -11,7 +11,8 @@ The Figure Editor is a full-screen tool for creating publication-ready figures f
 
 The editor opens as a full-screen modal with a **preview canvas** on the left and a **settings sidebar** on the right.
 
-To export immediately with the last-used settings, use **Quick Export** instead, it skips the editor.
+To download immediately without opening the editor, use **Quick Export**. It always exports your
+current view at 2048 × 1024 px and does not use the editor's settings.
 
 The editor always renders the full view, what a double-click on the plot shows, not your current
 zoom. Its dots are therefore drawn at their unzoomed size, while Quick Export keeps the zoom and the

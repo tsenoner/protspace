@@ -34,7 +34,10 @@ Key features:
 
 ### Quick Export
 
-Click **Quick Export** to download an image immediately using default or previously saved settings. No preview, useful when you've already configured the Figure Editor and want the same output again.
+Click **Quick Export** to download an image immediately, with no preview. It always uses fixed
+defaults, a 2048 × 1024 px image with the legend on the right, and keeps your current zoom and pan;
+it does not use Figure Editor settings. For another size or layout, or for the full plot, use the
+Figure Editor.
 
 ### Dot size in images
 
