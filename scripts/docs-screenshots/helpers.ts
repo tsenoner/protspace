@@ -96,6 +96,8 @@ export async function waitForDataLoad(
  * server left on :8080 by an E2E run serves the app with the startup load
  * pinned to a test fixture (`VITE_STARTUP_DATASET_URL`, a `/@fs/` URL), and
  * this config starts no server of its own, so refuse to capture from it.
+ * (With :8080 taken, start a plain `vite --port <n>` in `apps/web` and set
+ * `PLAYWRIGHT_BASE_URL=http://localhost:<n>`.)
  */
 async function assertProductStartupDataset(page: Page): Promise<void> {
   const pinned = await page.evaluate(
@@ -107,7 +109,7 @@ async function assertProductStartupDataset(page: Page): Promise<void> {
   );
   if (pinned) {
     throw new Error(
-      `The app on :8080 loaded the E2E startup fixture (${pinned}), not the product demo: ` +
+      `The app at ${new URL(page.url()).origin} loaded the E2E startup fixture (${pinned}), not the product demo: ` +
         'stop that dev server and start `pnpm dev` before `pnpm docs:images`.',
     );
   }

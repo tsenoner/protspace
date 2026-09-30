@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   INITIAL_PAUSE,
   getProteinScreenPosition,
@@ -12,7 +12,7 @@ import {
   trackedMouseClick,
   trackedMouseMove,
 } from './helpers';
-import { DEMO_ANNOTATION, loadVenomEatBundle, pickProvenanceDemoPair } from './eat-helpers';
+import { DEMO_ANNOTATION, loadEatExampleBundle, pickProvenanceDemoPair } from './eat-helpers';
 
 /**
  * Animated captures for `docs/explore/eat.md`.
@@ -25,8 +25,60 @@ import { DEMO_ANNOTATION, loadVenomEatBundle, pickProvenanceDemoPair } from './e
 
 const BEAT = 1200;
 
+/**
+ * Step the pointer off the protein it just clicked, into empty plot space, so
+ * the hover tooltip closes: it opens beside the pointer, over the very
+ * connectors the click drew. Tries spots `distance` px from `fromId`, starting
+ * on the side away from `awayId` (the far end of the lines, so the pointer does
+ * not park on them) and turning 30° at a time, and takes the first spot with no
+ * marker within `clearance` px. Positions are read now, after the click opened
+ * the structure viewer beside the plot.
+ */
+async function stepOffMarker(
+  page: Page,
+  fromId: string,
+  awayId: string,
+  distance = 40,
+  clearance = 16,
+): Promise<{ x: number; y: number }> {
+  const spot = await page.evaluate(
+    ({ fromId, awayId, distance, clearance }) => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (Element & {
+            data?: { protein_ids: string[] };
+            getProteinClientPosition?(proteinId: string): { x: number; y: number } | null;
+          })
+        | null;
+      const from = plot?.getProteinClientPosition?.(fromId);
+      const away = plot?.getProteinClientPosition?.(awayId);
+      if (!from || !away) return null;
+      const markers = (plot?.data?.protein_ids ?? [])
+        .map((id) => plot?.getProteinClientPosition?.(id) ?? null)
+        .filter((marker): marker is { x: number; y: number } => marker !== null);
+
+      const start = Math.atan2(from.y - away.y, from.x - away.x);
+      for (let step = 0; step < 12; step++) {
+        // 0°, +30°, −30°, +60°, −60°, … around the side away from the lines.
+        const turn = Math.ceil(step / 2) * (step % 2 ? 1 : -1) * (Math.PI / 6);
+        const x = from.x + distance * Math.cos(start + turn);
+        const y = from.y + distance * Math.sin(start + turn);
+        if (markers.every((marker) => Math.hypot(marker.x - x, marker.y - y) > clearance)) {
+          return { x, y };
+        }
+      }
+      return null;
+    },
+    { fromId, awayId, distance, clearance },
+  );
+  if (!spot) {
+    throw new Error(`No empty spot ${distance} px from ${fromId} to park the pointer on`);
+  }
+  await trackedMouseMove(page, spot.x, spot.y, { steps: 10 });
+  return spot;
+}
+
 test.beforeEach(async ({ page }) => {
-  await loadVenomEatBundle(page);
+  await loadEatExampleBundle(page);
   await selectAnnotation(page, DEMO_ANNOTATION);
   await initVisualIndicators(page);
 });
@@ -45,7 +97,6 @@ test('eat-connectors.gif - Tracing where a transferred value came from', async (
   );
 
   const targetPos = await getProteinScreenPosition(page, target);
-  const sourcePos = await getProteinScreenPosition(page, source);
   const connectors = page.locator('protspace-scatterplot').locator('line.eat-provenance-connector');
 
   // Settle on the plot before the first action; this stretch is trimmed.
@@ -57,7 +108,12 @@ test('eat-connectors.gif - Tracing where a transferred value came from', async (
   await showClickIndicator(page, targetPos.x, targetPos.y);
   await trackedMouseClick(page, targetPos.x, targetPos.y);
   await expect(connectors).toHaveCount(1);
+  await stepOffMarker(page, target, source);
   await page.waitForTimeout(BEAT * 2);
+
+  // Read now, not up front: the first click opens the structure viewer beside the
+  // plot, and a stale position a pixel or two off can land on a neighbour.
+  const sourcePos = await getProteinScreenPosition(page, source);
 
   // The source it borrowed from: lines fan out to everything that used it.
   await trackedMouseMove(page, sourcePos.x, sourcePos.y, { steps: 15 });
@@ -68,10 +124,11 @@ test('eat-connectors.gif - Tracing where a transferred value came from', async (
   // a protein that turns out to be transferred itself) leaves one line or none,
   // and without this the capture would ship a GIF showing the previous frame.
   await expect(connectors).toHaveCount(dependantCount);
+  const parked = await stepOffMarker(page, source, target);
   await page.waitForTimeout(BEAT * 2);
 
-  // Escape clears the connectors without clearing the selection.
-  await showActionLabel(page, 'Esc to clear', sourcePos.x, sourcePos.y);
+  // Escape clears the connectors, and the control bar clears the selection with them.
+  await showActionLabel(page, 'Esc to clear', parked.x, parked.y);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(BEAT);
 });

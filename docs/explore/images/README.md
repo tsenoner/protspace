@@ -25,12 +25,28 @@ To find which pages use an image, grep the docs for its filename.
 
 ## The EAT captures
 
-The EAT captures are the only ones that do not use the app's built-in demo dataset. They load the
-pinned test fixture `apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle` through the real file
-input, because the demo dataset carries no `*__pred_*` columns. They live in `capture-eat-static.spec.ts` and
-`capture-eat-animations.spec.ts` with shared setup in `eat-helpers.ts`. Once the
-[three-finger toxins](../example-datasets.md#three-finger-toxins) example is built, they move to its bundle, the
-Import menu's EAT example (see the note in `eat-helpers.ts`).
+The EAT captures are the only ones that do not use the app's built-in demo dataset, which carries no
+`*__pred_*` columns. They open the Import menu's EAT example,
+[three-finger toxins](../example-datasets.md#three-finger-toxins), by its `?dataset=` link and colour it
+by `toxin_class`. Its bundle is a release asset, so fetch it first:
+
+```bash
+pnpm examples:fetch
+```
+
+They live in `capture-eat-static.spec.ts` and `capture-eat-animations.spec.ts`, with shared setup in
+`eat-helpers.ts`.
+
+## Capturing against another port
+
+The captures start no server of their own: they expect `pnpm dev` on `:8080`, serving the product
+demo. With `:8080` taken (or held by an E2E dev server, which pins the startup load to a test fixture
+and which the captures refuse), start a plain dev server on another port and point the captures at it:
+
+```bash
+pnpm --filter @protspace/app exec vite --port 8095 --strictPort  # in one terminal
+PLAYWRIGHT_BASE_URL=http://localhost:8095 pnpm docs:images        # in another
+```
 
 ## The example thumbnails
 
