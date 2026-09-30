@@ -108,7 +108,7 @@ function makeData(): VisualizationData {
         category: 'B',
         value: 1.5,
       },
-      // Source embedding: only A has a silhouette ceiling; B has none.
+      // Source embedding: only A has a silhouette reference; B has none.
       {
         ...STAT_BASE,
         space_kind: 'embedding',
@@ -175,9 +175,9 @@ describe('legend score strips', () => {
     expect(daviesBouldin.higherIsBetter).toBe(false);
   });
 
-  it('wires the embedding ceiling into the silhouette strip only, from silhouetteEmbedding', async () => {
+  it('wires the embedding reference into the silhouette strip only, from silhouetteEmbedding', async () => {
     // Davies-Bouldin has no embedding-space counterpart on CategoryScore, so only the
-    // silhouette strip's dots may carry a ceiling for the tooltip.
+    // silhouette strip's dots may carry an embedding reference for the tooltip.
     const { legend } = await setup();
 
     const strips = Array.from(
@@ -186,9 +186,9 @@ describe('legend score strips', () => {
     const silhouette = strips.find((strip) => strip.label === SILHOUETTE_LABEL)!;
     const daviesBouldin = strips.find((strip) => strip.label === DAVIES_BOULDIN_LABEL)!;
 
-    expect(silhouette.points.find((point) => point.category === 'A')?.ceiling).toBe(0.42);
-    expect(silhouette.points.find((point) => point.category === 'B')?.ceiling).toBeNull();
-    expect(daviesBouldin.points.every((point) => point.ceiling == null)).toBe(true);
+    expect(silhouette.points.find((point) => point.category === 'A')?.embedding).toBe(0.42);
+    expect(silhouette.points.find((point) => point.category === 'B')?.embedding).toBeNull();
+    expect(daviesBouldin.points.every((point) => point.embedding == null)).toBe(true);
   });
 
   it('re-sorts by separation after a projection switch, not just a data resync', async () => {

@@ -109,7 +109,7 @@ projection gets one on Recovers alone. A bundle carrying none of them shows no i
 The card's header is the projection's own name. Below it, in order:
 
 - **Separation, scored on `<annotation>`**, how cleanly the current annotation's categories separate
-  in this projection, with the source embedding's own scores beside them as a ceiling. Documented on
+  in this projection, with the source embedding's own scores beside them as a reference. Documented on
   [Separation Scores](/explore/separation-scores).
 - **Recovers**, only when the current annotation is a `cluster_elbow_*` / `cluster_silhouette_*`
   clustering: how closely that clustering reproduces each real annotation. Documented under

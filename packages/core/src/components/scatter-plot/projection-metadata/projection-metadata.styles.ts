@@ -290,7 +290,7 @@ export const projectionMetadataStyles = [
       font-variant-numeric: tabular-nums;
     }
 
-    /* No min-width. It was inert while the ceiling heading ("Source embedding") was the wider
+    /* No min-width. It was inert while the embedding heading ("Source embedding") was the wider
      thing sizing this track, but the heading is one word now, so a 4.5rem floor would start
      binding and take the width straight back off the metric-name column. */
     .stat-metric-embedding {

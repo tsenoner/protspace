@@ -522,8 +522,8 @@ protspace stats -i embeddings/prot_t5.h5 -p projections/ -o statistics.parquet \
 `protspace stats` and `prepare --stats` compute three families of metrics:
 
 - **Annotation-based validity**, silhouette, Davies–Bouldin and Calinski–Harabasz scored on an
-  annotation's own category labels, computed once for the source embedding (a separability ceiling)
-  and again for each projection. Rows land in `statistics.parquet` with
+  annotation's own category labels, computed once for the source embedding (the reference a
+  projection is read against) and again for each projection. Rows land in `statistics.parquet` with
   `space_kind ∈ {embedding, projection}` and an `annotation` column. Silhouette and Davies–Bouldin
   are additionally emitted per category, on rows carrying a `category` value (aggregate rows leave
   it null); Calinski–Harabasz stays aggregate-only. A one-member category gets no per-category row

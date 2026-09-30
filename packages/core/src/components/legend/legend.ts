@@ -2732,7 +2732,7 @@ export class ProtspaceLegend extends LitElement {
     // One map for both strips: it is keyed by the same legend items either way.
     const colorByValue = new Map(this._legendItems.map((item) => [item.value, item.color]));
     // Davies-Bouldin has no embedding-space counterpart on CategoryScore, so only the
-    // silhouette strip's tooltip carries a ceiling.
+    // silhouette strip's tooltip carries an embedding reference.
     this._silhouettePoints = this._stripPoints(
       colorByValue,
       (score) => score.silhouette,
@@ -2755,7 +2755,7 @@ export class ProtspaceLegend extends LitElement {
   private _stripPoints(
     colorByValue: Map<string, string>,
     pick: (score: CategoryScore) => number | null,
-    pickCeiling?: (score: CategoryScore) => number | null,
+    pickEmbedding?: (score: CategoryScore) => number | null,
   ): ScoreStripPoint[] {
     const points: ScoreStripPoint[] = [];
     for (const score of this._categoryScores) {
@@ -2765,7 +2765,7 @@ export class ProtspaceLegend extends LitElement {
         category: score.category,
         value,
         color: colorByValue.get(score.category) ?? '#888',
-        ceiling: pickCeiling?.(score) ?? null,
+        embedding: pickEmbedding?.(score) ?? null,
       });
     }
     return points;
