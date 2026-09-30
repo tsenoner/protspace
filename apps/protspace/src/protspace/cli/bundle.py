@@ -86,8 +86,6 @@ def bundle(
     data_table = pq.read_table(str(data_path))
 
     # Rename identifier column to protein_id if needed (bundle format).
-    # Note: pa.Table.rename_columns() drops schema metadata, so the
-    # format-version stamp below must happen *after* this rename.
     col_names = annotations_table.column_names
     if "identifier" in col_names and "protein_id" not in col_names:
         annotations_table = annotations_table.rename_columns(
@@ -95,13 +93,9 @@ def bundle(
         )
 
     # Trust boundary: the -a annotations input is ASSUMED to be produced by the
-    # same-version annotate/prepare pipeline (i.e. already percent-encoded).
-    # We don't inspect its contents, so it's unconditionally stamped as v2 --
-    # there is currently no other producer of this parquet to distrust.
-    # The stamp declares the *cell grammar*, not the container: write_bundle
-    # emits a v3 container either way, and without the v2 stamp its encoder
-    # would take the table for v1 and migrate it, double-escaping every
-    # reserved character.
+    # same-version annotate/prepare pipeline (i.e. already percent-encoded), so
+    # it is stamped v2 unconditionally, after the rename, which drops the stamp
+    # (see migrate_legacy_annotation_table on the double-migration hazard).
     annotations_table = stamp_format_version(annotations_table)
 
     statistics_table = (

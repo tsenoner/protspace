@@ -144,12 +144,19 @@ def encode_legacy_cell(value: str) -> str:
 def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
     """Re-emit every v1 string annotation using unambiguous v2 field encoding.
 
-    Idempotent, and it has to be: :func:`read_format_version` reads an unstamped
-    table as v1, so an unstamped output is exactly the table that looks like it
-    still needs migrating, and a second pass double-escapes every reserved
-    character (``%3B`` to ``%253B``, unrecoverable because :func:`decode_field`
-    is not its own inverse).  An already-migrated table is returned untouched and
-    the result is stamped, so neither the caller nor the next one can repeat it.
+    **The double-migration hazard.**  Migrating a table that is already v2
+    escapes every reserved character a second time (``%3B`` becomes ``%253B``),
+    unrecoverably, because :func:`decode_field` is not its own inverse.  The only
+    thing that tells v1 from v2 is the :data:`FORMAT_VERSION_KEY` stamp, and
+    :func:`read_format_version` reads a missing stamp as v1 -- which a genuine
+    legacy table is.  pyarrow drops schema metadata on ``rename_columns``,
+    ``concat_tables`` and friends, so a v2 table rebuilt that way reads as v1
+    until it is re-stamped with :func:`stamp_format_version`.
+
+    This function is the version guard: a table stamped v2 or later is returned
+    untouched, and the result is stamped, so a second call is a no-op.  A caller
+    whose table may have lost its stamp has to re-stamp it (or decide from the
+    version it read before the stamp was lost) instead of calling this.
     """
     if read_format_version(table) >= BUNDLE_FORMAT_VERSION:
         return table

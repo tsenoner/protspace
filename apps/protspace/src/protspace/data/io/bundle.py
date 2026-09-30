@@ -297,18 +297,10 @@ def write_bundle(
     projections) and go out as a six-part v3 container.
 
     **Precondition: ``tables[0]`` must carry the format-version stamp** unless it
-    really is v1.  An unstamped table reads back as v1 (:func:`read_format_version`
-    defaults it), so :func:`~protspace.data.io.bundle_v3.encode_v3` migrates it --
-    and migrating an already-v2 table double-escapes every reserved character
-    (``%3B`` becomes ``%253B``), unrecoverably, because ``decode_field`` is not
-    its own inverse.  pyarrow drops schema metadata on ``rename_columns``,
-    ``concat_tables`` and friends, so a caller that rebuilds the table must
-    re-apply :func:`~protspace.data.annotations.encoding.stamp_format_version`
-    afterwards, as ``cli/bundle.py`` does.  ``encode_v3`` warns instead of
-    refusing, and this function cannot stamp for its callers the way
-    :func:`replace_annotations_in_bundle` does: it is also the path a genuine
-    legacy bundle is upgraded through, and there the unstamped table really is
-    v1.
+    really is v1, because an unstamped table is migrated (with a warning); see
+    :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`.
+    Unlike :func:`replace_annotations_in_bundle` this cannot stamp for its
+    callers: it is also how a genuine, unstamped v1 table is upgraded.
 
     Args:
         tables: List of 3 Arrow tables (annotations, projections_metadata,
@@ -373,13 +365,9 @@ def replace_annotations_in_bundle(
     """
     core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
 
-    # Re-stamp the format version at this single annotations-write chokepoint.
-    # pyarrow table ops (rename_columns, concat) drop schema metadata, and
-    # callers (transfer, prediction overlay) build the replacement table from
-    # exactly such ops — so without this the stamp is silently lost and the
-    # encoder would migrate an already-v2 table a second time, double-escaping
-    # every reserved character. Callers must provide v2-safe cells; transfer
-    # explicitly migrates legacy v1 categorical grammar before this boundary.
+    # Callers (transfer, prediction overlay) rebuild the table with ops that drop
+    # the stamp, so it is re-applied here and they must hand over v2 cells (see
+    # migrate_legacy_annotation_table on the double-migration hazard).
     annotations_table = stamp_format_version(annotations_table)
 
     if payloads is not None:
@@ -396,9 +384,8 @@ def replace_annotations_in_bundle(
 def convert_bundle(input_path: Path, output_path: Path) -> int:
     """Rewrite a v1/v2 bundle as v3 and return the input's format version.
 
-    A v1 annotations table is migrated to the v2 cell grammar first, exactly as
-    ``protspace transfer`` does, so it is not double-escaped and ``encode_v3``
-    does not warn about it.  Settings and statistics are carried over as stored
+    A v1 annotations table is migrated to the v2 cell grammar here, so
+    ``encode_v3`` does not warn about it.  Settings and statistics are carried over as stored
     bytes.  A v3 input returns :data:`CONTAINER_VERSION` and nothing is written.
     ``output_path`` may be ``input_path``: the write is atomic.
     """

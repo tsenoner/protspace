@@ -45,7 +45,6 @@ from protspace.data.annotations.encoding import (
     decode_field,
     encode_field,
     migrate_legacy_annotation_table,
-    read_format_version,
     stamp_format_version,
 )
 
@@ -539,19 +538,17 @@ def _prepare_annotations(
 
     Returns ``(annotations, id_column, ids)`` with ``ids`` as a string array.
     """
-    if read_format_version(annotations) == 1:
-        # Loud, because the alternative failure is silent and unrecoverable: an
-        # already-v2 table that lost its stamp (pyarrow drops schema metadata on
-        # rename_columns/concat) is migrated twice and every ``%3B`` becomes
-        # ``%253B``.  Refusing instead is not an option -- a genuine legacy
-        # bundle read back is unstamped too, and that upgrade path is the point.
+    migrated = migrate_legacy_annotation_table(annotations)
+    if migrated is not annotations:
+        # Loud rather than refused: a genuine legacy table is unstamped too, and
+        # upgrading it is the point (see migrate_legacy_annotation_table).
         logger.warning(
             "annotations table reads as format v1 (no stamp, or stamped 1); "
             "migrating its cell grammar to v2. If it was already v2, re-apply "
             "stamp_format_version() before writing -- migrating twice escapes "
             "every reserved character a second time."
         )
-        annotations = migrate_legacy_annotation_table(annotations)
+        annotations = migrated
 
     id_column = next(
         (c for c in ("protein_id", "identifier") if c in annotations.column_names), None
@@ -647,10 +644,8 @@ def encode_v3(
 ) -> tuple[bytes, bytes, bytes, bytes]:
     """Encode the v2-shaped pipeline tables as v3 parts 1, 2, 3 and 6.
 
-    ``annotations`` must carry the format-version stamp unless it really is v1:
-    an unstamped v2 table is indistinguishable from a v1 one here and is
-    migrated a second time, double-escaping every reserved character.  See the
-    precondition on :func:`~protspace.data.io.bundle.write_bundle`.
+    ``annotations`` must carry the format-version stamp unless it really is v1;
+    see :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`.
     """
     projected = (
         pc.unique(projections_data.column("identifier")).drop_null()
