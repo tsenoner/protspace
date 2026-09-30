@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { TEST_DEMO, TEST_EXAMPLE } from './example-catalog.fixtures';
 import { progressAfterExampleDownload } from './loading-overlay';
 import { createEmptyExploreViewRequest } from './url-state';
 
@@ -32,6 +32,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock('./example-datasets', async (importOriginal) =>
+  (await import('./example-catalog.fixtures')).withTestCatalog(await importOriginal()),
+);
+
 vi.mock('./data-renderer', () => ({
   createDataRenderer: () => mocks.loadData,
 }));
@@ -55,8 +59,8 @@ vi.mock('./tooltip-annotations-store', () => ({
 
 import { createDatasetController } from './dataset-controller';
 
-const DEMO = EXAMPLE_DATASETS[0];
-const OTHER = EXAMPLE_DATASETS[1];
+const DEMO = TEST_DEMO;
+const OTHER = TEST_EXAMPLE;
 
 const data: VisualizationData = {
   protein_ids: ['P1'],

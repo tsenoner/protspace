@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { TEST_DEMO } from './example-catalog.fixtures';
 
 const notifyMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -24,6 +24,10 @@ vi.mock('./opfs-dataset-store', () => ({
   clearLastImportedFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./example-datasets', async (importOriginal) =>
+  (await import('./example-catalog.fixtures')).withTestCatalog(await importOriginal()),
+);
+
 vi.mock('./recovery-banner', () => ({
   showRecoveryBanner: vi.fn(),
   dismissRecoveryBanner: vi.fn(),
@@ -37,7 +41,7 @@ import {
 } from './startup';
 import { showRecoveryBanner } from './recovery-banner';
 
-const DEMO = EXAMPLE_DATASETS[0];
+const DEMO = TEST_DEMO;
 
 function createDatasetController() {
   return {

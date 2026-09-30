@@ -13,7 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { TEST_DEMO } from './example-catalog.fixtures';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const notifyMock = vi.hoisted(() => ({
@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../lib/notify', () => ({
   notify: notifyMock,
 }));
+
+vi.mock('./example-datasets', async (importOriginal) =>
+  (await import('./example-catalog.fixtures')).withTestCatalog(await importOriginal()),
+);
 
 vi.mock('./data-renderer', () => ({
   createDataRenderer: () => mocks.loadData,
@@ -59,7 +63,7 @@ import {
   saveLastImportedFile,
 } from './opfs-dataset-store';
 
-const DEMO = EXAMPLE_DATASETS[0];
+const DEMO = TEST_DEMO;
 
 const data: VisualizationData = {
   protein_ids: ['P1'],
@@ -163,6 +167,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
       }),
     );
@@ -192,6 +197,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
       }),
     );
@@ -225,6 +231,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
       }),
     );
@@ -254,6 +261,7 @@ describe('example load: the stored import is replaced only once the example has 
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
       }),
     );
@@ -284,7 +292,12 @@ describe('example load: the stored import is replaced only once the example has 
     const { controller } = createRealController(loadSucceeds);
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        headers: new Headers(),
+        status: 500,
+        statusText: 'Server Error',
+      }),
     );
 
     expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
@@ -373,9 +386,11 @@ describe('a load a newer user request supersedes after it has started', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers(),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+      }),
     );
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
@@ -395,9 +410,11 @@ describe('a load a newer user request supersedes after it has started', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers(),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+      }),
     );
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));

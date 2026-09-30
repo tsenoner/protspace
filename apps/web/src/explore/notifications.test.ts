@@ -16,7 +16,7 @@ import {
   getLegendErrorNotification,
   getSelectionDisabledNotification,
 } from './notifications';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { TEST_EXAMPLE } from './example-catalog.fixtures';
 import { FastaPrepError } from './fasta-prep-client';
 import { COLAB_NOTEBOOK_URL } from './fasta-prep-limits';
 
@@ -219,7 +219,7 @@ describe('explore notifications', () => {
   });
 
   it('offers Retry first and "Report this" second when an example download fails', () => {
-    const entry = EXAMPLE_DATASETS[1];
+    const entry = TEST_EXAMPLE;
     const onRetry = vi.fn();
 
     const notification = getExampleLoadFailureNotification(
@@ -237,7 +237,7 @@ describe('explore notifications', () => {
   });
 
   it('offers only "Report this" for an example failure without a retry', () => {
-    const notification = getExampleLoadFailureNotification(EXAMPLE_DATASETS[1], new Error('x'), {
+    const notification = getExampleLoadFailureNotification(TEST_EXAMPLE, new Error('x'), {
       source: 'menu',
     });
 
@@ -246,7 +246,7 @@ describe('explore notifications', () => {
   });
 
   it('dedupes example failures per request kind, so each keeps its own Retry', () => {
-    const entry = EXAMPLE_DATASETS[1];
+    const entry = TEST_EXAMPLE;
     const key = (source: 'menu' | 'url') =>
       getExampleLoadFailureNotification(entry, new Error('x'), { source, onRetry: vi.fn() })
         .dedupeKey;

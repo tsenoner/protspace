@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { TEST_DEMO, TEST_EXAMPLE } from './example-catalog.fixtures';
 
 const notifyMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -11,6 +11,10 @@ const notifyMock = vi.hoisted(() => ({
 vi.mock('../lib/notify', () => ({
   notify: notifyMock,
 }));
+
+vi.mock('./example-datasets', async (importOriginal) =>
+  (await import('./example-catalog.fixtures')).withTestCatalog(await importOriginal()),
+);
 
 vi.mock('./opfs-dataset-store', () => ({
   StoredDatasetCorruptError: class StoredDatasetCorruptError extends Error {},
@@ -33,8 +37,8 @@ import {
 import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
 
-const DEMO = EXAMPLE_DATASETS[0];
-const OTHER = EXAMPLE_DATASETS[1];
+const DEMO = TEST_DEMO;
+const OTHER = TEST_EXAMPLE;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -46,7 +50,11 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const okResponse = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+const okResponse = () => ({
+  ok: true,
+  headers: new Headers(),
+  arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+});
 
 /** The `AbortSignal` the `index`-th fetch was started with. */
 function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSignal {
@@ -106,6 +114,7 @@ describe('loadExampleDataset', () => {
     const arrayBuffer = new ArrayBuffer(4);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       arrayBuffer: () => Promise.resolve(arrayBuffer),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -146,6 +155,7 @@ describe('loadExampleDataset', () => {
   it("resolves 'failed' and never sets name/id when the load reaches data-error (parse failure)", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -173,6 +183,7 @@ describe('loadExampleDataset', () => {
   it("notifies, dismisses the overlay, and resolves 'failed' on an HTTP failure, without registering a load", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
+      headers: new Headers(),
       status: 404,
       statusText: 'Not Found',
     });
@@ -204,6 +215,7 @@ describe('loadExampleDataset', () => {
   it('drops a superseded request: a slow fetch A resolves after a fast fetch B — only B loads', async () => {
     let resolveA: (value: {
       ok: boolean;
+      headers: Headers;
       arrayBuffer: () => Promise<ArrayBuffer>;
     }) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
@@ -212,7 +224,11 @@ describe('loadExampleDataset', () => {
           resolveA = resolve;
         });
       }
-      return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+      return Promise.resolve({
+        ok: true,
+        headers: new Headers(),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+      });
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -227,7 +243,11 @@ describe('loadExampleDataset', () => {
     loadQueue.resolveOutcome(1, true);
 
     // Now let A's fetch resolve — it must see it's been superseded.
-    resolveA({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+    resolveA({
+      ok: true,
+      headers: new Headers(),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+    });
 
     expect(await resultA).toBe('superseded');
     expect(await resultB).toBe('loaded');
@@ -246,6 +266,7 @@ describe('loadExampleDataset', () => {
   it('a superseded request never notifies or touches the overlay once its fetch settles', async () => {
     let resolveA: (value: {
       ok: boolean;
+      headers: Headers;
       arrayBuffer: () => Promise<ArrayBuffer>;
     }) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
@@ -254,7 +275,11 @@ describe('loadExampleDataset', () => {
           resolveA = resolve;
         });
       }
-      return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+      return Promise.resolve({
+        ok: true,
+        headers: new Headers(),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+      });
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -390,6 +415,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
   it('loads the requested example flagged to replace the stored import, without clearing it up front', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -667,7 +693,12 @@ describe('cancelPendingExampleLoad', () => {
   it('is a no-op when nothing is loading, or once the load has settled', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        headers: new Headers(),
+        status: 500,
+        statusText: 'Server Error',
+      }),
     );
     const { controller, overlayController } = createController();
 
@@ -795,7 +826,12 @@ describe('the Cancel button of an example download', () => {
   it('goes when the download fails', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        headers: new Headers(),
+        status: 500,
+        statusText: 'Server Error',
+      }),
     );
     const { controller, overlayController } = createController();
 
@@ -847,7 +883,12 @@ describe('Retry on a failed example download', () => {
   const failThenSucceed = () =>
     vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Server Error' })
+      .mockResolvedValueOnce({
+        ok: false,
+        headers: new Headers(),
+        status: 500,
+        statusText: 'Server Error',
+      })
       .mockResolvedValue(okResponse());
 
   /** The Retry action of the most recent error toast. */
@@ -1071,7 +1112,12 @@ describe('the startup restore and the requests that supersede it', () => {
   it('reports a failed startup demo as default-failed', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Server Error' }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        headers: new Headers(),
+        status: 500,
+        statusText: 'Server Error',
+      }),
     );
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { controller } = createController();
