@@ -61,8 +61,14 @@ describe('DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER', () => {
     const src = DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER;
     expect(src).toContain('step(u_contourFloor, n)');
     expect(src).toContain('step(o, 4.5)');
-    expect(src).toContain('step(w, 1.0)');
+    expect(src).toContain('step(w * u_lineRamp, 2.0)');
     expect(src).not.toContain('u_densityScaler');
+  });
+
+  it('ramps the line over u_lineRamp device px, set per frame from the dpr', () => {
+    const src = DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER;
+    expect(src).toContain('uniform float u_lineRamp;');
+    expect(src).toContain('smoothstep(0.0, max(w * u_lineRamp, 1e-6), min(f, 1.0 - f))');
   });
 
   it('fills 20 % to 80 % in the dominant slot colour only', () => {

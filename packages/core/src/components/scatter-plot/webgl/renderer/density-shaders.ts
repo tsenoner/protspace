@@ -53,9 +53,8 @@ export const DENSITY_FIELD_UNITS = Array.from({ length: DENSITY_CATEGORY_CAP / 4
   g < LABEL_ATLAS_TEXTURE_UNIT ? g : g + 1,
 );
 
-export const DENSITY_CONTOUR_GRID_DIVISOR = 2;
-
-export const DENSITY_CONTOUR_SIGMA_GRID_PX = 6 / DENSITY_CONTOUR_GRID_DIVISOR;
+// In cells of the density grid, which spans the plot: about 6.4 CSS px on an 1100 px plot.
+export const DENSITY_CONTOUR_SIGMA_GRID_PX = 3;
 export const DENSITY_CONTOUR_BLUR_RADIUS = Math.ceil(3 * DENSITY_CONTOUR_SIGMA_GRID_PX);
 export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
   DENSITY_CONTOUR_SIGMA_GRID_PX,
@@ -71,11 +70,13 @@ export const DENSITY_CONTOUR_FLOOR = DENSITY_CONTOUR_MIN_POINTS * DENSITY_ONE_PO
 
 const DENSITY_CONTOUR_LEVELS = 4;
 const DENSITY_CONTOUR_SPACING = 1.0;
-const DENSITY_CONTOUR_LINE_PX = 2;
+// In CSS px, so a line is equally thick at every pixel density: u_lineRamp is this times dpr.
+export const DENSITY_CONTOUR_LINE_CSS_PX = 1;
 export const DENSITY_CONTOUR_LIGHTEN = 0.15;
 const DENSITY_CONTOUR_FILL_CORE = 0.8;
 const DENSITY_CONTOUR_FILL_OUTER = DENSITY_CONTOUR_FILL_CORE / 4;
-const DENSITY_CONTOUR_MAX_SLOPE = 1.0;
+// Levels one line's ramp may span; past that the rings smear together, so none is drawn.
+const DENSITY_CONTOUR_MAX_RAMP = 2.0;
 
 const SLOT_MATCH_TOLERANCE = '0.5 / 255.0';
 
@@ -150,6 +151,7 @@ uniform vec3 u_slotColors[${cap}];
 uniform int u_slotCount;
 uniform float u_densityAlpha;
 uniform float u_contourFloor;
+uniform float u_lineRamp;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
@@ -162,9 +164,9 @@ float ring(float n) {
   float o = level(n);
   float f = fract(o);
   float w = fwidth(o);
-  float line = 1.0 - smoothstep(0.0, max(w * ${DENSITY_CONTOUR_LINE_PX.toFixed(2)}, 1e-6), min(f, 1.0 - f));
+  float line = 1.0 - smoothstep(0.0, max(w * u_lineRamp, 1e-6), min(f, 1.0 - f));
   return line * step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
-       * step(w, ${DENSITY_CONTOUR_MAX_SLOPE.toFixed(1)});
+       * step(w * u_lineRamp, ${DENSITY_CONTOUR_MAX_RAMP.toFixed(1)});
 }
 
 vec4 over(float a, vec3 c, vec4 acc) {

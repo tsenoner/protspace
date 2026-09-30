@@ -7,8 +7,8 @@ import {
   DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CATEGORY_CAP,
   DENSITY_CONTOUR_FLOOR,
-  DENSITY_CONTOUR_GRID_DIVISOR,
   DENSITY_CONTOUR_LIGHTEN,
+  DENSITY_CONTOUR_LINE_CSS_PX,
   DENSITY_FIELD_UNITS,
 } from './density-shaders';
 import { GAMMA_VERTEX_SHADER } from './export-shaders';
@@ -19,8 +19,8 @@ import {
   type CameraUniformLocations,
 } from './render-target';
 
-const DENSITY_PIXEL_RATIO = 2;
-const DENSITY_MAX_GRID_SIDE = 1024;
+// The grid spans the plot, so the rings depend on data and view, not on dpr or window size.
+const DENSITY_GRID_LONG_SIDE = 512;
 
 const QUAD_ATTRIB_INDEX = 0;
 
@@ -62,6 +62,7 @@ export interface DensityResources {
     slotCount: WebGLUniformLocation | null;
     alpha: WebGLUniformLocation | null;
     contourFloor: WebGLUniformLocation | null;
+    lineRamp: WebGLUniformLocation | null;
   };
   quadVao: WebGLVertexArrayObject;
   accum: ColorTarget | null;
@@ -82,10 +83,13 @@ export function computeDensityGrid(
   canvasWidth: number,
   canvasHeight: number,
 ): { width: number; height: number } {
-  const w = canvasWidth / DENSITY_PIXEL_RATIO;
-  const h = canvasHeight / DENSITY_PIXEL_RATIO;
-  const s = Math.min(1, DENSITY_MAX_GRID_SIDE / Math.max(w, h)) / DENSITY_CONTOUR_GRID_DIVISOR;
-  return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) };
+  const long = Math.max(canvasWidth, canvasHeight, 1);
+  // Never finer than the canvas, so a tiny or 1x1 canvas does not allocate a full grid.
+  const s = Math.min(DENSITY_GRID_LONG_SIDE, long) / long;
+  return {
+    width: Math.max(1, Math.round(canvasWidth * s)),
+    height: Math.max(1, Math.round(canvasHeight * s)),
+  };
 }
 
 export function buildSlotPalette(colors: Float32Array, count: number, gamma: number): SlotPalette {
@@ -245,6 +249,7 @@ export function createDensityResources(
       slotCount: loc(categoryCompositeProgram, 'u_slotCount'),
       alpha: loc(categoryCompositeProgram, 'u_densityAlpha'),
       contourFloor: loc(categoryCompositeProgram, 'u_contourFloor'),
+      lineRamp: loc(categoryCompositeProgram, 'u_lineRamp'),
     },
     quadVao,
     accum: null,
@@ -381,7 +386,7 @@ export function accumulateAndBlurDensity(
 }
 
 export function compositeDensity(gl: WebGL2RenderingContext, frame: DensityFrame): void {
-  const { res, alpha, palette } = frame;
+  const { res, camera, alpha, palette } = frame;
   const units = DENSITY_FIELD_UNITS;
   if (res.fields.length < units.length) return;
 
@@ -392,6 +397,7 @@ export function compositeDensity(gl: WebGL2RenderingContext, frame: DensityFrame
   gl.uniform1i(loc.slotCount, palette.count);
   gl.uniform1f(loc.alpha, alpha);
   gl.uniform1f(loc.contourFloor, DENSITY_CONTOUR_FLOOR);
+  gl.uniform1f(loc.lineRamp, DENSITY_CONTOUR_LINE_CSS_PX * camera.dpr);
   units.forEach((unit, g) => {
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, res.fields[g].texture);

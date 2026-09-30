@@ -131,6 +131,7 @@ function resources(fieldCount = 4): DensityResources {
       slotCount: named('slotCount'),
       alpha: named('alpha'),
       contourFloor: named('contourFloor'),
+      lineRamp: named('lineRamp'),
     },
     quadVao: { k: 'quadVao' } as unknown as WebGLVertexArrayObject,
     accum: target('accum', 400, 300),
@@ -167,10 +168,19 @@ const redBytes = (p: SlotPalette) =>
   Array.from({ length: p.count }, (_, s) => Math.round(p.keys[s * 3] * 255));
 
 describe('computeDensityGrid', () => {
-  it('quarters the device canvas, clamps the long side, never goes below 1', () => {
-    expect(computeDensityGrid(1920, 1080)).toEqual({ width: 480, height: 270 });
+  it('puts 512 cells on the long side, never more than the canvas has pixels', () => {
+    expect(computeDensityGrid(1920, 1080)).toEqual({ width: 512, height: 288 });
     expect(computeDensityGrid(4096, 2160)).toEqual({ width: 512, height: 270 });
+    expect(computeDensityGrid(300, 200)).toEqual({ width: 300, height: 200 });
+    expect(computeDensityGrid(100000, 1)).toEqual({ width: 512, height: 1 });
     expect(computeDensityGrid(1, 1)).toEqual({ width: 1, height: 1 });
+  });
+
+  it('gives the same plot the same grid at every pixel density', () => {
+    for (const dpr of [1, 1.25, 1.5, 2, 3]) {
+      const grid = computeDensityGrid(Math.floor(1100 * dpr), Math.floor(712 * dpr));
+      expect(grid).toEqual({ width: 512, height: 331 });
+    }
   });
 });
 
@@ -277,8 +287,8 @@ describe('resizeDensityTargets', () => {
 
     expect(resizeDensityTargets(gl, res, 800, 600)).toBe(true);
     expect(allocations(calls)).toEqual([
-      'texImage2D:34836:200x150',
-      ...Array(5).fill('texImage2D:34842:200x150'),
+      'texImage2D:34836:512x384',
+      ...Array(5).fill('texImage2D:34842:512x384'),
     ]);
     expect(res.fields).toHaveLength(4);
 
@@ -358,6 +368,7 @@ describe('compositeDensity', () => {
     expect(uploads3fv).toEqual([palette.colors]);
     expect(uploads3fv[0]).toBe(palette.colors);
     expect(calls).toContain(`u1f:contourFloor:${DENSITY_CONTOUR_FLOOR}`);
+    expect(calls).toContain('u1f:lineRamp:2');
     const draw = calls.indexOf('drawArrays:4,0,6');
     expect(
       calls.slice(0, draw).filter((c) => c.startsWith('activeTexture') || c.startsWith('bindT')),
@@ -373,5 +384,13 @@ describe('compositeDensity', () => {
     ]);
     expect(calls).not.toContain('activeTexture:33985');
     expect(calls.filter((c) => c.startsWith('activeTexture')).at(-1)).toBe('activeTexture:33984');
+  });
+
+  it('sizes the line ramp in CSS px, so lines keep their thickness at every dpr', () => {
+    for (const dpr of [1, 3]) {
+      const { gl, calls } = mockGL();
+      compositeDensity(gl, { ...contourFrame(paletteOf(1)), camera: { ...camera, dpr } });
+      expect(calls).toContain(`u1f:lineRamp:${dpr}`);
+    }
   });
 });
