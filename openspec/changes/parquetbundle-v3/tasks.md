@@ -28,6 +28,14 @@
 - [x] 2.9 `docs/guide/python-cli.md` (command table and a `protspace convert` section), the
       data-format guide's writer table, missing-coordinate and deprecation notes, and the Colab
       notebooks where they list commands
+- [x] 2.10 Two version keys: `encode_v3` writes `protspace_container_version` = 3 into part 1's
+      footer and strips `protspace_format_version`; `_split` detects v3 from the container key and
+      rejects a part count that disagrees with it; `decode_v3` returns tables stamped grammar 2
+      without the container key; golden fixture regenerated
+- [x] 2.11 `encode_v3` refuses an annotations table not stamped grammar 2; `upgrade_cell_grammar`;
+      `bundle -a` reads the input's stamp before its rename and treats an unstamped table as v1
+      plain text; `transfer` restores the grammar it read; `replace_annotations_in_bundle` no
+      longer stamps; the double-migration warning and its prose are removed
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
@@ -54,6 +62,10 @@
       a v3 bundle with an error naming `decodeParquetBundle` and is marked deprecated
 - [x] 3.10 `docs/developers/embedding.md` and `docs/developers/api/index.md` use
       `decodeParquetBundle`; the web export notes in the data-format guide say exports are v3
+- [x] 3.11 `decodeParquetBundle` detects v3 from `protspace_container_version`, rejects six parts
+      without it and unknown container versions, and still reports format 1/2 from the grammar
+      key for the legacy notice; the web exporter writes `protspace_container_version` and no
+      grammar key
 
 ## 4. Contract suite (`tests/contract`)
 
@@ -64,6 +76,9 @@
 - [x] 4.3 A generated v2 bundle upgraded by `protspace convert` decodes to the same dataset, and
       bundles exported by the web writer are read back by the Python tooling (`read_bundles.py`)
       with the same content as the Python-written originals
+- [x] 4.4 The `annotate` stand-in is stamped v2 as `annotate` stamps it; the layout assertion checks
+      `protspace_container_version` = 3 and no grammar key on every producer and web bundle, and
+      the grammar key `2` without a container key on the legacy v2 input
 
 ## 5. Release and follow-ups
 

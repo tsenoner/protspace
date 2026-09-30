@@ -2,16 +2,21 @@
 
 ### Requirement: Bundles are produced through the real bundle CLI
 
-The generator SHALL invoke the `protspace bundle` command as a subprocess rather than calling `write_bundle` directly, so that the CLI's `identifier` to `protein_id` rename, its cell-grammar stamping and its v3 encoding are inside the tested surface. A non-zero exit from the subprocess SHALL fail the suite with the subprocess's captured stderr included in the failure message.
+The generator SHALL invoke the `protspace bundle` command as a subprocess rather than calling `write_bundle` directly, so that the CLI's `identifier` to `protein_id` rename, its cell-grammar decision and its v3 encoding are inside the tested surface. The generator's stand-in for `protspace annotate` output SHALL be stamped as v2 cell grammar, as `annotate` stamps it. A non-zero exit from the subprocess SHALL fail the suite with the subprocess's captured stderr included in the failure message.
 
 #### Scenario: The producer stops writing v3
 
-- **WHEN** the CLI writes a container other than the six-part layout, or part 1 stops declaring format version `3`
+- **WHEN** the CLI writes a container other than the six-part layout, or part 1 stops declaring `protspace_container_version` `3`, or starts carrying `protspace_format_version`
 - **THEN** the contract suite fails on the layout assertion
 
-#### Scenario: Cell-grammar stamping is removed from the CLI
+#### Scenario: The CLI loses the input's cell grammar
 
-- **WHEN** the annotations table is no longer stamped as v2 grammar before bundling, so the encoder migrates already-encoded cells a second time
+- **WHEN** the CLI stops reading the input's grammar stamp before its rename drops it, so the encoder is handed an unstamped table
+- **THEN** the bundle subprocess fails and the suite reports its stderr
+
+#### Scenario: The CLI treats `annotate` output as plain text
+
+- **WHEN** the CLI migrates the stamped `annotate` stand-in as if it were v1, escaping its cells a second time
 - **THEN** the contract suite fails because the reader surfaces a percent-encoded label still escaped
 
 #### Scenario: The bundle subprocess exits non-zero

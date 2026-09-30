@@ -44,10 +44,19 @@ v1/v2 files.
 - **Public decode API.** `decodeParquetBundle` is exported from `@protspace/core` and is the
   documented way to read a bundle. `extractRowsFromParquetBundle` is documented as v1/v2-only and
   deprecated.
+- **Two version keys.** `protspace_format_version` meant the container version in a v3 part 1
+  (`"3"`) and the annotation cell grammar everywhere else (`"2"`, absent for v1). A v3 part 1 now
+  declares `protspace_container_version` = `"3"` and carries no grammar key;
+  `protspace_format_version` is only the cell grammar, on legacy parts and v2-shaped tables. v3 is
+  unreleased, so the wire format can still change.
+- **No grammar guessing on write.** The Python v3 encoder refuses an annotations table without a
+  v2 grammar stamp instead of migrating it as v1. An already-v2 table that lost its stamp was
+  migrated a second time and double-escaped (`%3B` to `%253B`), guarded only by a warning. Callers
+  that hold v1 cells migrate them explicitly: `convert`, `transfer` on a v1 bundle, and
+  `bundle -a` given an unstamped table, which the CLI reads as plain v1 text.
 
 ### Non-goals
 
-- Splitting `protspace_format_version` into a container key and a cell-grammar key.
 - Marking missing-value labels in the manifest.
 - Moving the unrelated performance work in #477 (grid picking, counting-sort depth order, dataset
   hashing) into separate PRs.
@@ -80,11 +89,14 @@ planned for protspace 5.0.0."
 ## Impact
 
 - Python (`apps/protspace`): `data/io/bundle_v3.py` (NaN coordinates, added identifier rows,
-  dimension from data, boolean spelling, finite-only decode), `data/io/bundle.py` (deprecation
-  warning), a new `cli/convert.py`, the CLI docs and the Colab notebook where they list commands.
+  dimension from data, boolean spelling, finite-only decode, container-version key, grammar
+  refusal), `data/io/bundle.py` (deprecation warning, container-key detection),
+  `data/annotations/encoding.py` (`upgrade_cell_grammar`), `cli/bundle.py` and `cli/transfer.py`
+  (explicit grammar), a new `cli/convert.py`, the CLI docs and the Colab notebook where they list
+  commands.
 - Core (`packages/core`): `data-loader/utils/bundle.ts` and `bundle-v3.ts` (NaN for missing
-  coordinates, protein set, reporting the container version), `src/index.ts` (export
-  `decodeParquetBundle`).
+  coordinates, protein set, detecting and reporting the container version from its own key),
+  `src/index.ts` (export `decodeParquetBundle`).
 - Utils (`packages/utils`): `parquet/bundle-writer.ts` writes v3; `visualization/data-processor.ts`
   culls non-finite points.
 - Web (`apps/web`): `explore/dataset-controller.ts` (persist before render, legacy notice),

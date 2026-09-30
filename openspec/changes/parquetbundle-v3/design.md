@@ -31,7 +31,6 @@ TypeScript track.
 
 **Non-Goals:**
 
-- A second version key separating container from cell grammar.
 - Missing-value labels marked in the manifest.
 - Splitting #477's unrelated performance commits into other PRs.
 
@@ -69,9 +68,10 @@ input. A default output name (say `<stem>.v3.parquetbundle`) was considered and 
 a batch script would then leave a v1 and a v3 copy side by side with nothing to say which one the
 app should load.
 
-It reads through the same legacy reader as every other command. An unstamped (v1) annotations table
-is migrated to the v2 grammar by `encode_v3`, exactly as `write_bundle` already does for a legacy
-bundle. Settings and the statistics part are carried over, and the result goes through
+It reads through the same legacy reader as every other command. The legacy annotations part is
+read with its grammar stamp intact, so `convert` knows whether it is v1 and migrates it to the v2
+grammar explicitly before encoding (see "Two version keys" below: the encoder no longer guesses).
+Settings and the statistics part are carried over, and the result goes through
 `atomic_write_bytes`, so an interrupted run leaves either the old file or the new one. A v3 input is
 reported as already current, and nothing is written, not even to a separate `OUTPUT`.
 
@@ -153,6 +153,47 @@ import with no complete bytes behind it. The deferred `persistBytes` promise als
 across the whole render, and only the load queue's serialisation keeps it from racing the next
 import. Recovery is worth more than the time saved, so `main`'s ordering comes back and the rest of
 the PR's `dataset-controller.ts` changes stay.
+
+### Two version keys: container and cell grammar
+
+Before this change one key, `protspace_format_version`, meant two things. In a v3 part 1, `"3"`
+was the container version. On a legacy part and on every v2-shaped table Python handles, `"2"` was
+the annotation cell grammar (percent-encoded cells), and a missing key meant v1, which the
+encoder answered by migrating the table. `rename_columns` drops schema metadata, so an already-v2
+table that lost its stamp read as v1 and was migrated a second time, escaping every reserved
+character twice (`%3B` to `%253B`) with no way back. Only a warning guarded it. v3 is unreleased,
+so its wire format can still change, and the two meanings get two keys:
+
+- **`protspace_container_version`** is in part 1's footer of a v3 bundle and nowhere else. Its
+  presence is what makes a file v3. Both readers detect v3 from it, and the part count has to
+  agree in both directions: six parts without it, a value other than `3`, or three to five parts
+  with it is rejected. `decodeParquetBundle` still reports one `formatVersion`: `3` from this key,
+  or `1`/`2` from the grammar key for a legacy file, which is what the legacy notice shows.
+- **`protspace_format_version`** is only the cell grammar: `2`, or absent for v1, on a legacy part
+  1 and on every v2-shaped table (the pipeline's parquets, and the tables a v3 read hands back).
+  Legacy detection is unchanged.
+- **A v3 footer does not also carry the grammar key.** Its labels are stored decoded in the
+  payload part, so there are no cells whose grammar it could describe, and no reader needs it. A
+  second key saying `2` next to a container key saying `3` would reintroduce the ambiguity this
+  split removes. The encoder strips it (and any stale container key or manifest) from the table's
+  metadata, and `decode_v3` drops the container key from the tables it returns and stamps them
+  grammar `2`. The web writer never had cells: it encodes already-decoded labels.
+- **The grammar is never guessed on write.** `encode_v3`, and with it `write_bundle` and
+  `replace_annotations_in_bundle`, refuses an annotations table that is not stamped grammar `2`,
+  instead of reading a missing stamp as v1. The callers that hold v1 cells migrate them explicitly:
+  `convert` from the legacy part's own stamp, `transfer` from the version it read off the bundle
+  before its renames dropped the stamp (`upgrade_cell_grammar(table, version)`), and
+  `bundle -a`, which reads the input's stamp before its `identifier` rename. `annotate` stamps its
+  output v2, so pipeline output passes through. An unstamped table given to `bundle -a` is user
+  input, a table written by hand, and the CLI treats it as legacy v1 plain text and migrates it,
+  so a literal `%` or a `;` inside parentheses keeps the meaning the user gave it.
+  `replace_annotations_in_bundle` used to stamp every table v2, which was the opposite guess and
+  would have mislabelled v1 cells; it stamps nothing now. The warning and the prose that guarded
+  the old guess are gone.
+
+The alternative, keeping one key and distinguishing by context (six parts means the key is a
+container version), is what the PR shipped. It worked for reading, but it left the encoder with no
+way to tell a v1 table from a v2 table that lost its stamp, and that is where the data loss was.
 
 ### Public decode API
 

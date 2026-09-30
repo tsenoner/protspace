@@ -2,21 +2,22 @@
 
 ### Requirement: Every bundle ProtSpace writes SHALL be a format v3 container
 
-A written bundle SHALL be a six-part container whose first part carries `protspace_format_version`
-`"3"` and a `protspace_v3_manifest` in its Parquet key-value metadata, with the physical layout
-documented in `docs/guide/data-format.md`. This applies to every bundle written by the Python
+A written bundle SHALL be a six-part container whose first part carries
+`protspace_container_version` `"3"` and a `protspace_v3_manifest` in its Parquet key-value
+metadata, with the physical layout documented in `docs/guide/data-format.md`. This applies to every bundle written by the Python
 package (`prepare`, `bundle`, `transfer`, `convert` and any other command that writes a bundle
 rather than editing settings in place) and by the web app's bundle export.
 
 #### Scenario: The Python pipeline writes a bundle
 
 - **WHEN** `protspace bundle` writes a bundle
-- **THEN** the file has six parts and part 1's footer declares format version `3` with a manifest
+- **THEN** the file has six parts and part 1's footer declares container version `3` with a
+  manifest
 
 #### Scenario: The web app exports a bundle
 
 - **WHEN** a user exports a loaded dataset as a `.parquetbundle` from the web app
-- **THEN** the file has six parts, part 1's footer declares format version `3`, and
+- **THEN** the file has six parts, part 1's footer declares container version `3`, and
   `decodeParquetBundle` reads it back to the same protein IDs, projections, annotation values,
   settings and statistics that were exported
 
@@ -34,7 +35,8 @@ protspace 5.0.0.
 
 #### Scenario: A v1 bundle loads in the browser
 
-- **WHEN** a three-part bundle with no `protspace_format_version` key is loaded
+- **WHEN** a three-part bundle with neither `protspace_container_version` nor
+  `protspace_format_version` in part 1 is loaded
 - **THEN** it renders with the legacy parser, and percent-encoded sequences are not decoded
 
 #### Scenario: A v2 bundle is read in Python
@@ -174,6 +176,74 @@ the spelling the v2 browser reader displayed, by both the Python and the web enc
 - **WHEN** a v2 bundle with a `BOOLEAN` column and legend colours saved for `true` and `false` is
   converted to v3
 - **THEN** the converted bundle's legend applies the same colours to the same proteins
+
+### Requirement: The container version and the cell grammar SHALL be recorded under separate keys
+
+A v3 part 1 SHALL declare its container version under `protspace_container_version` and SHALL NOT
+carry `protspace_format_version`. `protspace_format_version` SHALL mean only the annotation cell
+grammar (`2`, or absent for v1), on legacy parts and on v2-shaped tables. Both readers SHALL
+detect a v3 container from `protspace_container_version` alone, SHALL read a file without it as
+legacy, and SHALL reject a file whose part count disagrees with that key.
+
+#### Scenario: A written v3 bundle's footer
+
+- **WHEN** Python or the web app writes a bundle
+- **THEN** part 1's footer has `protspace_container_version` `"3"` and no
+  `protspace_format_version`
+
+#### Scenario: Python decodes a v3 bundle
+
+- **WHEN** `read_tables` decodes a v3 bundle
+- **THEN** the annotations table is stamped `protspace_format_version` `2` and carries no
+  `protspace_container_version`
+
+#### Scenario: Six parts with only the grammar key
+
+- **WHEN** a six-part file whose part 1 carries `protspace_format_version` `"3"` but no
+  `protspace_container_version` is read, in Python or in the browser
+- **THEN** it is rejected with an error naming `protspace_container_version`, not read as legacy
+
+#### Scenario: A container key in a legacy-sized file
+
+- **WHEN** a three to five part file whose part 1 carries `protspace_container_version` is read
+- **THEN** it is rejected rather than read as legacy cells
+
+#### Scenario: The legacy notice reports the version
+
+- **WHEN** a user imports a v2 bundle
+- **THEN** `decodeParquetBundle` reports format version `2`, read from `protspace_format_version`
+
+### Requirement: The v3 encoder SHALL refuse an annotations table of undeclared cell grammar
+
+The Python v3 encoder SHALL refuse an annotations table that is not stamped with
+`protspace_format_version` `2`, rather than migrating it as v1. A caller that holds v1 cells
+SHALL migrate them explicitly before encoding. `protspace bundle -a` SHALL take the grammar from
+its input's stamp, read before any operation drops it, and SHALL treat an unstamped input table as
+legacy v1 plain text.
+
+#### Scenario: An already-v2 table that lost its stamp
+
+- **WHEN** `write_bundle` is given an annotations table with v2 cells and no stamp
+- **THEN** it raises an error naming `protspace_format_version`, writes nothing, and no cell is
+  escaped a second time
+
+#### Scenario: `annotate` output is bundled
+
+- **WHEN** `protspace bundle -a` is given `protspace annotate` output, stamped v2, whose id column
+  is `identifier`
+- **THEN** the cells in the bundle are the input's cells, not migrated again
+
+#### Scenario: A hand-made annotations table is bundled
+
+- **WHEN** `protspace bundle -a` is given an unstamped table with the cells `50% identity` and
+  `Membrane (single-pass; type I)`
+- **THEN** the bundle shows the labels `50% identity` and `Membrane (single-pass; type I)`, the
+  second as one label
+
+#### Scenario: Transfer on a v1 bundle
+
+- **WHEN** `protspace transfer` rewrites a v1 bundle
+- **THEN** the v1 cells are migrated to v2 once and the output is a v3 bundle
 
 ### Requirement: `decodeParquetBundle` SHALL be the public entry point for reading a bundle
 
