@@ -28,7 +28,9 @@ To find which pages use an image, grep the docs for its filename.
 The EAT captures are the only ones that do not use the app's built-in demo dataset. They load the
 pinned test fixture `apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle` through the real file
 input, because the demo dataset carries no `*__pred_*` columns. They live in `capture-eat-static.spec.ts` and
-`capture-eat-animations.spec.ts` with shared setup in `eat-helpers.ts`.
+`capture-eat-animations.spec.ts` with shared setup in `eat-helpers.ts`. Once the
+[three-finger toxins](../example-datasets.md#three-finger-toxins) example is built, they move to its bundle, the
+Import menu's EAT example (see the note in `eat-helpers.ts`).
 
 ## The example thumbnails
 

@@ -7,6 +7,9 @@
  *     releases, ProtSpace version, command);
  *   - the docs-only prose in `example-details.ts`.
  *
+ * Until the catalog swap, the final examples the app does not serve yet get their cards from the
+ * catalog's `FINAL_EXAMPLE_SPECS`, with ‹pending build› where the manifest has no record yet.
+ *
  * The app links each example's info popover to `#<id>` on this page, and VitePress never checks
  * anchors, so `apps/web/src/explore/example-datasets-docs.test.ts` pins them.
  *
@@ -25,6 +28,8 @@ import {
 } from '../../packages/utils/src/visualization/annotation-metadata.ts';
 import {
   EXAMPLE_DATASETS,
+  FINAL_CATALOG_IS_LIVE,
+  FINAL_EXAMPLE_SPECS,
   formatMegabytes,
   formatProteinCount,
   type ExampleDataset,
@@ -41,6 +46,13 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUTPUT = join(REPO_ROOT, 'docs/explore/example-datasets.md');
 const PUBLIC_DIR = join(REPO_ROOT, 'apps/web/public');
 const THUMBNAIL_DIR = join(REPO_ROOT, 'docs/explore/images/examples');
+/**
+ * Hand-written pages that state facts about the examples. Their ‹…› placeholders wait for the
+ * rebuilt bundles like the generated page's, so the check refuses them after the swap too.
+ */
+const PAGES_WITH_EXAMPLE_FACTS = ['docs/explore/eat.md', 'docs/explore/importing-data.md'];
+/** A build command must not publish a path of the machine that ran it. */
+const MACHINE_PATH = /(^|[\s=])(\/private\/|\/tmp\/|\/Users\/|\/home\/)/;
 
 /** A value still to come. Rendered as is; the check refuses it once the catalog swap is done. */
 const PENDING = '‹pending build›';
@@ -73,10 +85,15 @@ interface Card {
   record: BundleRecord | undefined;
   insight: string;
   defaultView: ExampleDataset['defaultView'];
-  large: ExampleDataset['large'] | 'pending' | undefined;
+  large: ExampleDataset['large'];
+  figure: string | undefined;
 }
 
 const catalogIds = new Set(EXAMPLE_DATASETS.map((entry) => entry.id));
+/** Final examples the app does not serve yet: their cards come from the final catalog. */
+const pendingSpecs = FINAL_CATALOG_IS_LIVE
+  ? []
+  : FINAL_EXAMPLE_SPECS.filter((spec) => !catalogIds.has(spec.id));
 const interimIds = new Set(INTERIM_CATALOG_IDS);
 /** The catalog swap is done once no interim entry is left; from then on every rule applies. */
 const swapped = INTERIM_CATALOG_IDS.length === 0;
@@ -106,18 +123,21 @@ function collectCards(): Card[] {
       insight: entry.insight,
       defaultView: entry.defaultView,
       large: entry.large,
+      figure: entry.figure,
     });
   }
-  for (const [id, details] of Object.entries(EXAMPLE_DETAILS)) {
-    if (catalogIds.has(id) || !details.beforeSwap) continue;
+  for (const spec of pendingSpecs) {
+    const details = EXAMPLE_DETAILS[spec.id];
+    if (!details) continue;
     cards.push({
-      id,
+      id: spec.id,
       details,
       entry: undefined,
-      record: EXAMPLE_MANIFEST.examples[id],
-      insight: details.beforeSwap.insight,
-      defaultView: details.beforeSwap.defaultView,
-      large: details.beforeSwap.large ? 'pending' : undefined,
+      record: EXAMPLE_MANIFEST.examples[spec.id],
+      insight: spec.insight,
+      defaultView: spec.defaultView,
+      large: spec.large,
+      figure: spec.figure,
     });
   }
   return cards;
@@ -135,10 +155,6 @@ function validate(): string[] {
       }
     } else if (!details) {
       errors.push(`Catalog entry "${entry.id}" has no prose in docs/scripts/example-details.ts.`);
-    } else if (details.beforeSwap) {
-      errors.push(
-        `"${entry.id}" is in the catalog now: move its beforeSwap fields into the catalog entry.`,
-      );
     }
 
     // The label is derived from the manifest; this catches a hand edit of the derivation.
@@ -158,22 +174,35 @@ function validate(): string[] {
     }
   }
 
-  for (const [id, details] of Object.entries(EXAMPLE_DETAILS)) {
-    const entry = EXAMPLE_DATASETS.find((candidate) => candidate.id === id);
-    if (!entry && !details.beforeSwap) {
+  // The swap flips FINAL_CATALOG_IS_LIVE, so every final example needs its card beforehand.
+  for (const spec of pendingSpecs) {
+    if (!EXAMPLE_DETAILS[spec.id]) {
       errors.push(
-        `docs/scripts/example-details.ts has prose for "${id}", which is not in the catalog.`,
+        `Final example "${spec.id}" has no prose in docs/scripts/example-details.ts; write its card before the swap.`,
       );
     }
-    if (details.beforeSwap && swapped) {
-      errors.push(`"${id}": beforeSwap is only allowed until the catalog swap; remove it.`);
+  }
+
+  for (const [id, details] of Object.entries(EXAMPLE_DETAILS)) {
+    const entry = EXAMPLE_DATASETS.find((candidate) => candidate.id === id);
+    const spec = pendingSpecs.find((candidate) => candidate.id === id);
+    if (!entry && !spec) {
+      errors.push(
+        `docs/scripts/example-details.ts has prose for "${id}", which is in neither the catalog nor the final catalog.`,
+      );
     }
-    const annotation = (entry ?? details.beforeSwap)?.defaultView.annotation;
+    const listed = entry ?? spec;
+    const annotation = listed?.defaultView.annotation;
     if (annotation && !details.lookAt.includes(code(annotation))) {
       errors.push(`"${id}": lookAt does not name its colour-by annotation ${code(annotation)}.`);
     }
-    if (entry?.figure && !details.paper.includes(entry.figure)) {
-      errors.push(`"${id}": paper does not mention the catalog's figure "${entry.figure}".`);
+    if (listed?.figure && !details.paper.includes(listed.figure)) {
+      errors.push(`"${id}": paper does not mention the catalog's figure "${listed.figure}".`);
+    }
+    if (listed && id !== 'demo' && !listed.figure && !details.builtToShow) {
+      errors.push(
+        `"${id}" is not one of the paper's datasets: say what it was built to show (builtToShow).`,
+      );
     }
 
     const hasThumbnail = existsSync(thumbnailPath(id));
@@ -216,6 +245,14 @@ function validate(): string[] {
           );
         }
       }
+    }
+  }
+
+  for (const [id, record] of Object.entries(EXAMPLE_MANIFEST.examples)) {
+    if (record.command && MACHINE_PATH.test(record.command)) {
+      errors.push(
+        `"${id}": the manifest's build command names a path of the build machine; rebuild with a redacted command (build_command in build_showcase.py).`,
+      );
     }
   }
 
@@ -280,10 +317,9 @@ function builtWith(record: BundleRecord): string {
   return `ProtSpace ${record.protspaceVersion}${sha}${date}.`;
 }
 
-function largeNote(card: Card): string {
-  if (card.large === 'pending' || !card.record) return PENDING;
-  const { memory, loadTime } = card.large as NonNullable<ExampleDataset['large']>;
-  return `a ${formatMegabytes(card.record.bytes)} download that needs ${memory} of browser memory and takes ${loadTime} to load.`;
+function largeNote(large: NonNullable<Card['large']>, record: BundleRecord | undefined): string {
+  const size = record ? formatMegabytes(record.bytes) : PENDING;
+  return `a ${size} download that needs ${large.memory} of browser memory and takes ${large.loadTime} to load.`;
 }
 
 const downloadHref = (record: BundleRecord) =>
@@ -310,7 +346,7 @@ function renderCard(card: Card): string[] {
   lines.push(`- **Extras:** ${record ? extras(record) : PENDING}`);
   lines.push(`- **Built with:** ${record ? builtWith(record) : PENDING}`);
   lines.push(`- **In the paper:** ${details.paper}`);
-  if (card.large) lines.push(`- **Large:** ${largeNote(card)}`);
+  if (card.large) lines.push(`- **Large:** ${largeNote(card.large, record)}`);
   lines.push('');
 
   for (const note of details.notes ?? []) lines.push(note, '');
@@ -356,7 +392,9 @@ function renderPage(cards: readonly Card[]): string {
     '# Example Datasets',
     '',
     "The **Import** menu's **Examples** section opens these datasets: the ones behind the figures " +
-      'of the ProtSpace paper, plus the small demo ProtSpace starts with. A link of the form ' +
+      'of the ProtSpace paper, the small demo ProtSpace starts with' +
+      showcaseClause(cards) +
+      '. A link of the form ' +
       "`/explore?dataset=<id>` opens one directly, as each section's **Open in ProtSpace** link " +
       'does. An example opens on a view chosen to show its structure straight away.',
     '',
@@ -369,9 +407,13 @@ function renderPage(cards: readonly Card[]): string {
     '',
     "The paper's datasets keep the paper's proteins and projection coordinates, so their layouts " +
       'match the figures, while their annotations were fetched again with a current ProtSpace; ' +
-      "each section gives the releases. The two EAT examples also keep the paper's transferred " +
-      'values.' +
+      'each section gives the releases.' +
       zenodoSentence(),
+    '',
+    'Every example has a UMAP, which it opens on because UMAP draws clusters most clearly, and a ' +
+      'PCA, a linear projection that keeps the coarse geometry UMAP distorts and stacks identical ' +
+      'sequences on one point. Switching between the two shows how much of a picture belongs to ' +
+      'the proteins and how much to the layout.',
     '',
     'Figure numbers refer to the ProtSpace web-server paper and may differ from its preprint ' +
       `([doi:${PREPRINT_DOI}](https://doi.org/${PREPRINT_DOI})). To cite ProtSpace, see ` +
@@ -402,6 +444,19 @@ function renderPage(cards: readonly Card[]): string {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * ", and one example built for the web to show …: <link>" for the examples that are neither the
+ * demo nor a paper dataset, or nothing when there are none.
+ */
+function showcaseClause(cards: readonly Card[]): string {
+  const showcases = cards.filter((card) => card.details.builtToShow);
+  if (showcases.length === 0) return '';
+  const names = showcases.map((card) => `[${card.details.title}](#${card.id})`);
+  const purposes = [...new Set(showcases.map((card) => card.details.builtToShow as string))];
+  const count = showcases.length === 1 ? 'one example' : `${showcases.length} examples`;
+  return `, and ${count} built for the web to show ${list(purposes)}: ${list(names)}`;
+}
+
 function zenodoSentence(): string {
   const dois = [
     ...new Set(
@@ -420,8 +475,17 @@ const errors = validate();
 const unformatted = renderPage(cards);
 if (swapped && PLACEHOLDER.test(unformatted)) {
   errors.push(
-    'The catalog swap is done, but the page still has ‹…› placeholders; fill in the prose or rebuild the bundles.',
+    'The catalog swap is done, but the page still has ‹…› placeholders; fill in the prose or the catalog, or rebuild the bundles.',
   );
+}
+if (swapped) {
+  for (const page of PAGES_WITH_EXAMPLE_FACTS) {
+    if (PLACEHOLDER.test(readFileSync(join(REPO_ROOT, page), 'utf8'))) {
+      errors.push(
+        `The catalog swap is done, but ${page} still has ‹…› placeholders; fill them in from the built bundles.`,
+      );
+    }
+  }
 }
 if (errors.length > 0) {
   console.error(

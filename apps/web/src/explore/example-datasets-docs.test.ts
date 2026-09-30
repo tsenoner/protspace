@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLE_DETAILS, INTERIM_CATALOG_IDS } from '../../../../docs/scripts/example-details';
-import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL } from './example-datasets';
+import { INTERIM_CATALOG_IDS } from '../../../../docs/scripts/example-details';
+import {
+  EXAMPLE_DATASETS,
+  EXAMPLES_DOCS_URL,
+  FINAL_CATALOG_IS_LIVE,
+  FINAL_EXAMPLE_SPECS,
+} from './example-datasets';
 
 /**
  * Pins the catalog against the generated Example datasets page
@@ -12,10 +17,10 @@ import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL } from './example-datasets';
  * Node types.
  *
  * Until the catalog swap, the interim catalog's test bundles have no section
- * (`INTERIM_CATALOG_IDS`) and the final examples not yet in the catalog have a
- * section with placeholder values (`beforeSwap` in example-details.ts). Both
- * lists are empty afterwards, and `pnpm docs:examples:check` fails while
- * either outlives its reason.
+ * (`INTERIM_CATALOG_IDS`), and the final examples the app does not serve yet
+ * (`FINAL_EXAMPLE_SPECS`) have a section with placeholder values. The swap
+ * empties the first list and serves the second, and `pnpm docs:examples:check`
+ * fails while either outlives its reason.
  */
 const docsModules = import.meta.glob('../../../../docs/explore/example-datasets.md', {
   query: '?raw',
@@ -29,6 +34,10 @@ const SECTION_IDS = [...(PAGE ?? '').matchAll(/^## .* \{#([^}]+)\}$/gm)].map((ma
 
 const interim = new Set(INTERIM_CATALOG_IDS);
 const DOCUMENTED = EXAMPLE_DATASETS.filter((entry) => !interim.has(entry.id));
+/** Final examples not served yet, whose sections wait for the swap. */
+const PENDING_IDS = new Set(
+  FINAL_CATALOG_IS_LIVE ? [] : FINAL_EXAMPLE_SPECS.map((spec) => spec.id),
+);
 
 describe('example-datasets.md', () => {
   it('is found', () => {
@@ -46,7 +55,7 @@ describe('example-datasets.md', () => {
   it('has no section for an id outside the catalog, except one waiting for the swap', () => {
     const catalogIds = new Set(EXAMPLE_DATASETS.map((entry) => entry.id));
     for (const id of SECTION_IDS) {
-      expect(catalogIds.has(id) || Boolean(EXAMPLE_DETAILS[id]?.beforeSwap), id).toBe(true);
+      expect(catalogIds.has(id) || PENDING_IDS.has(id), id).toBe(true);
     }
     // And the page isn't accidentally empty.
     expect(SECTION_IDS.length).toBeGreaterThanOrEqual(DOCUMENTED.length);
@@ -54,5 +63,9 @@ describe('example-datasets.md', () => {
 
   it('documents the startup demo', () => {
     expect(SECTION_IDS).toContain(EXAMPLE_DATASETS[0].id);
+  });
+
+  it.each([...PENDING_IDS])('already has the section of the final example %s', (id) => {
+    expect(SECTION_IDS).toContain(id);
   });
 });

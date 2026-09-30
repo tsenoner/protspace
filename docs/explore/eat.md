@@ -131,11 +131,11 @@ Exporting a bundle with settings included stores the **Show** state and the lowe
 
 ## Trying It
 
-The **Venom toxins (EAT)** example holds 811 reviewed, secreted animal toxins with two transferred columns, `ec` (384 transferred values) and `protein_families` (14), across the `ProtT5 — PCA 2` and `ProtT5 — UMAP 2` projections.
+The **Snake three-finger toxins (EAT)** example holds ‹1,089› three-finger toxins from snakes. UniProt curators have classified the ‹537› reviewed ones. The ‹552› unreviewed ones, sequenced from venom glands, have no class, and EAT transferred one to each from the nearest reviewed toxin in the ProtT5 embedding. To make the transfers checkable, a fifth of the reviewed toxins, ‹107›, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` keeps the truth.
 
-Open the **Import** menu's **Examples** section and choose it, or visit `/explore?dataset=venom-eat` directly. [Its section of Example Datasets](/explore/example-datasets#venom-eat) says how it was built.
+Open the **Import** menu's **Examples** section and choose it, or visit `/explore?dataset=three-finger-toxins` directly. [Its section of Example Datasets](/explore/example-datasets#three-finger-toxins) says how it was built.
 
-It opens coloured by `ec`, where the effect is strongest: all 384 transfers are shown, so nearly half the dataset is a ring, and the shape of the ringed region tells you which parts of the embedding EAT reached into. The reliability filter starts at 0, which also keeps the [separation score](/explore/separation-scores) strips visible. Drag it to 0.5 to keep the 244 transfers EAT was most confident in.
+It opens coloured by `toxin_class` with every transfer shown: the ‹659› rings sit in the islands of the classes they borrowed. The reliability filter starts at 0, which also keeps the [separation score](/explore/separation-scores) strips visible. Hover a held-out toxin (colour by `eat_split` to find them) and its tooltip shows the borrowed class next to `toxin_class_withheld`; they agree for ‹about 95 %› of the held-out toxins. Drag the filter to 0.5 to keep the ‹count at 0.5› transfers EAT was most confident in: the rings between the islands go first.
 
 ## Next Steps
 

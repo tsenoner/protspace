@@ -171,4 +171,4 @@ Or open the **Import** menu's **Examples** section and choose the startup demo o
 datasets behind the ProtSpace paper's figures; [Example Datasets](/explore/example-datasets) says
 what each one contains and how it was built. To try [transferred annotations](/explore/eat) and
 [separation scores](/explore/separation-scores) together, choose
-[Venom toxins (EAT)](/explore/example-datasets#venom-eat).
+[Snake three-finger toxins (EAT)](/explore/example-datasets#three-finger-toxins).

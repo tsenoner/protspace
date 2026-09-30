@@ -10,6 +10,14 @@ import { dismissProductTour, waitForDataLoad } from './helpers';
  * actually has `*__pred_*` columns, so these captures load the pinned venom
  * fixture by hand: 811 proteins, `ec` with 384 transferred values and
  * `protein_families` with 14, plus a statistics part.
+ *
+ * After the rebuild (curated-example-datasets task 7.11) the captures move to
+ * the Import menu's EAT example, `three-finger-toxins`: point
+ * `VENOM_EAT_BUNDLE` at its file in `apps/web/public/examples/` (after `pnpm
+ * examples:fetch`), the count at its manifest record and `DEMO_ANNOTATION` at
+ * `toxin_class`, then re-capture and check the `docs/explore/eat.md` alt texts.
+ * The E2E fixture `example_role_eat_811` is no stand-in: its toxin classes are
+ * the venom fixture's EC numbers relabelled.
  */
 const VENOM_EAT_BUNDLE = path.join(
   __dirname,
