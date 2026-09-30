@@ -118,6 +118,8 @@
 - [x] 3.22 The web exporter judges a carried `sourceType` on the dictionary it writes for the
       column, not on the annotation's values, so an EAT prediction's labels do not turn a `bool`
       column into `string`
+- [x] 3.23 The v3 reader refuses a null or repeated protein id, as the format and Python's
+      encoder do
 
 ## 4. Contract suite (`tests/contract`)
 

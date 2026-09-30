@@ -678,6 +678,43 @@ describe('parquetbundle format v3', () => {
     );
   });
 
+  describe('rejects a protein id column the format forbids', () => {
+    const withIds = (ids: (string | null)[], nullable: boolean) =>
+      new Uint8Array(
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'protein_id', data: ids, type: 'STRING', nullable },
+            { name: 'organism', data: new Int32Array([0, 1, 2, -1, 0, 1, 2, 3]) },
+            { name: 'go_bp__count', data: new Int32Array([0, 2, 1, 0, 3, 1, 2, 0]) },
+            { name: 'keyword__count', data: new Int32Array([1, 3, 2, 1, 0, 4, 1, 2]) },
+            { name: 'length', data: new Float64Array([100, 200, NaN, 300, 400, 500, 600, 700]) },
+            { name: 'score', data: new Float64Array([0.5, 1.5, 2.5, NaN, 4.5, 5.5, 6.5, 7.5]) },
+          ].map((column) => ({ nullable: false, ...column })) as never,
+          statistics: false,
+          kvMetadata: [
+            { key: 'protspace_container_version', value: '3' },
+            { key: 'protspace_v3_manifest', value: JSON.stringify(MANIFEST) },
+          ],
+        }),
+      );
+
+    // Identity (selection, isolation, search, export) is keyed by id, so a repeat would
+    // make two proteins one, and a null would become a protein named ''.
+    it('a repeated id', async () => {
+      const ids = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P2', 'P8'];
+      await expect(decodeParquetBundle(v3Bundle({ 0: withIds(ids, false) }))).rejects.toThrow(
+        /protein id "P2" appears more than once/,
+      );
+    });
+
+    it('a null id', async () => {
+      const ids = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', null, 'P8'];
+      await expect(decodeParquetBundle(v3Bundle({ 0: withIds(ids, true) }))).rejects.toThrow(
+        /id column "protein_id" holds a null at row 6/,
+      );
+    });
+  });
+
   it('decodes non-ASCII labels by byte range, not character offset', async () => {
     // 'Mü' is three bytes but two characters, so slicing the decoded blob by byte
     // offsets would shear every later label.

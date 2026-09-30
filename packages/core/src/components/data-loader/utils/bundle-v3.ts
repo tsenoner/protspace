@@ -305,14 +305,32 @@ function writeChunk(
   rowStart: number,
 ): void {
   if (Array.isArray(target)) {
+    // The id column: a null would become a protein named '', so it is refused, as the
+    // format (and Python's encoder) refuses it.
     for (let i = 0; i < columnData.length; i++) {
       const value = columnData[i];
-      target[rowStart + i] = typeof value === 'string' ? value : String(value ?? '');
+      if (value == null) {
+        throw new Error(`v3 id column "${columnName}" holds a null at row ${rowStart + i}`);
+      }
+      target[rowStart + i] = typeof value === 'string' ? value : String(value);
     }
     return;
   }
   assertTypedChunk(columnName, columnData);
   target.set(columnData, rowStart);
+}
+
+/**
+ * Refuse a repeated protein id. Selection, isolation, search and export all key a protein
+ * by its id, so two rows sharing one would act as one protein; the format forbids it and
+ * Python's encoder never writes it.
+ */
+function assertUniqueIds(ids: readonly string[]): void {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) throw new Error(`v3 bundle protein id "${id}" appears more than once`);
+    seen.add(id);
+  }
 }
 
 /** Preallocate one array per declared column and fill it chunk by chunk. */
@@ -724,6 +742,7 @@ export async function readV3Bundle(
   const columns = await readAnnotationColumns(part1, metadata, manifest, numRows);
   part1 = null;
   const protein_ids = columns.get(manifest.idColumn) as string[];
+  assertUniqueIds(protein_ids);
 
   const projectionsMetadata = (await parquetReadObjects({ file: part2 })) as Rows;
   const projections = await readProjections(
