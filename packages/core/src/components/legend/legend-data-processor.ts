@@ -164,19 +164,14 @@ export class LegendDataProcessor {
   /**
    * Count frequencies of annotation values.
    * Raw null/empty values are converted to NA_VALUE.
-   *
-   * A frequency map (from {@link countFromStorage}) short-circuits: it is
-   * already the answer.
    */
   static countAnnotationFrequencies(
-    annotationValues: (string | null)[] | ReadonlyMap<string, number>,
+    annotationValues: (string | null)[],
     isolationMode: boolean,
     isolationHistory: string[][],
     filteredIndices: Set<number>,
     knownValues: string[] = [],
   ): ReadonlyMap<string, number> {
-    if (!Array.isArray(annotationValues)) return annotationValues;
-
     const freq = new Map<string, number>(knownValues.map((value) => [value, 0] as const));
 
     const countValue = (rawValue: string | null) => {

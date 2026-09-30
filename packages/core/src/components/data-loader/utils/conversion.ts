@@ -251,7 +251,7 @@ function remapCategoricalStorage(
           'annotation_scores_csr / annotation_evidence_csr payloads is not implemented.',
       );
     }
-    return { kind: 'csr', end, codes: codes.slice(0, written), length: source.length };
+    return { kind: 'csr', end, codes, length: source.length };
   }
   return source.map((indices) => indices.map(remap).filter((index) => index >= 0));
 }
