@@ -14,8 +14,10 @@ rather than by calling ``write_bundle`` directly. Two transformations live only
 in the CLI layer and are contract surface the reader depends on:
 
 * the ``identifier`` -> ``protein_id`` column rename, and
-* ``stamp_format_version``, which marks the annotations table's v2 cell grammar
-  so the v3 encoder does not migrate it a second time.
+* the cell-grammar decision: the CLI reads the input's
+  ``protspace_format_version`` stamp *before* that rename drops it, so the
+  annotate output's v2 cells are neither migrated a second time (``%3B`` ->
+  ``%253B``) nor refused by the v3 encoder as grammar-unknown.
 
 A reader that mishandles either still passes a ``write_bundle``-only generator.
 
@@ -97,7 +99,9 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     """Mimic ``protspace annotate`` output: an ``identifier`` column plus annotations.
 
     The CLI renames ``identifier`` to ``protein_id`` while bundling, so emitting
-    the pre-rename name here keeps that rename inside the tested surface.
+    the pre-rename name here keeps that rename inside the tested surface. Like
+    ``annotate``, the table is stamped as v2 cell grammar; an unstamped one
+    would be read as plain v1 text and escaped again.
 
     The payload is positional and identical at every size: protein 1 carries the
     percent-encoded label and the multi-hit cell, protein 4 carries the null
@@ -116,13 +120,15 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     length = [float(100 + i * 10) for i in range(len(ids))]
     length[NULL_LENGTH_INDEX] = None
 
-    return pa.table(
-        {
-            "identifier": pa.array(ids, pa.string()),
-            "family": pa.array(family, pa.string()),
-            "domains": pa.array(domains, pa.string()),
-            "length": pa.array(length, pa.float64()),
-        }
+    return stamp_format_version(
+        pa.table(
+            {
+                "identifier": pa.array(ids, pa.string()),
+                "family": pa.array(family, pa.string()),
+                "domains": pa.array(domains, pa.string()),
+                "length": pa.array(length, pa.float64()),
+            }
+        )
     )
 
 
@@ -257,12 +263,14 @@ def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
     """The coverage variant's annotations: every projected protein but
     ``PROJECTION_ONLY_ID``, plus ``ANNOTATION_ONLY_ID``, with a BOOLEAN column."""
     annotated = [i for i in ids if i != PROJECTION_ONLY_ID] + [ANNOTATION_ONLY_ID]
-    return pa.table(
-        {
-            "identifier": pa.array(annotated, pa.string()),
-            "family": pa.array([encode_field("Hydrolase")] * len(annotated)),
-            "reviewed": pa.array(BOOLEAN_VALUES, pa.bool_()),
-        }
+    return stamp_format_version(
+        pa.table(
+            {
+                "identifier": pa.array(annotated, pa.string()),
+                "family": pa.array([encode_field("Hydrolase")] * len(annotated)),
+                "reviewed": pa.array(BOOLEAN_VALUES, pa.bool_()),
+            }
+        )
     )
 
 

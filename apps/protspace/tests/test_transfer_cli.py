@@ -8,6 +8,7 @@ import pytest
 
 from protspace.analysis.classification import Rule
 from protspace.cli.transfer import run_transfer
+from protspace.data.annotations.encoding import stamp_format_version
 
 
 def _three_protein_inputs(extra_columns=None):
@@ -49,7 +50,7 @@ def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
     cols = {id_col: ["TRINITY_1", "P00001"], "protein_category": ["", "neurotoxin"]}
     if extra_columns:
         cols.update(extra_columns)
-    annotations = pa.table(cols)
+    annotations = stamp_format_version(pa.table(cols))
     proj_meta, proj_data = _projection_tables(["TRINITY_1", "P00001"])
     bundle_path = tmp_path / "in.parquetbundle"
     write_bundle([annotations, proj_meta, proj_data], bundle_path)
@@ -374,8 +375,13 @@ def test_cli_end_to_end_protein_id_bundle(tmp_path):
     from protspace.cli.app import app
     from protspace.data.io.bundle import read_bundle, write_bundle
 
-    annotations = pa.table(
-        {"protein_id": ["TRINITY_1", "P00001"], "protein_category": ["", "neurotoxin"]}
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["TRINITY_1", "P00001"],
+                "protein_category": ["", "neurotoxin"],
+            }
+        )
     )
     proj_meta, proj_data = _projection_tables(["TRINITY_1", "P00001"])
     bundle_path = tmp_path / "in.parquetbundle"

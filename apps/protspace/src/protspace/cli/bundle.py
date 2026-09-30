@@ -28,7 +28,11 @@ def bundle(
         typer.Option(
             "-a",
             "--annotations",
-            help="Annotations parquet file.",
+            help=(
+                "Annotations parquet file. Output of `protspace annotate` is used "
+                "as is; a table without a protspace_format_version stamp is read "
+                "as plain text (legacy v1 cells) and encoded."
+            ),
             exists=True,
         ),
     ],
@@ -61,6 +65,11 @@ def bundle(
     Reads projections_metadata.parquet, projections_data.parquet from the
     projections directory and an annotations parquet file, then writes a
     single .parquetbundle file.
+
+    The annotations' cell grammar comes from their protspace_format_version
+    stamp. `protspace annotate` stamps its output v2 (percent-encoded), so it
+    passes through; an unstamped table, such as one written by hand, is read as
+    legacy v1 plain text and encoded for the bundle.
     """
     setup_logging(verbose)
 
@@ -68,7 +77,11 @@ def bundle(
 
     import pyarrow.parquet as pq
 
-    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.annotations.encoding import (
+        has_format_version,
+        read_format_version,
+        upgrade_cell_grammar,
+    )
     from protspace.data.io.bundle import write_bundle
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
@@ -85,6 +98,17 @@ def bundle(
     metadata_table = pq.read_table(str(metadata_path))
     data_table = pq.read_table(str(data_path))
 
+    # Trust boundary: the grammar is decided here, from the input's own stamp, and
+    # before the rename below drops it. `annotate` stamps v2; an unstamped table
+    # is user input in plain text, i.e. legacy v1, and is migrated explicitly.
+    grammar = read_format_version(annotations_table)
+    if not has_format_version(annotations_table):
+        logger.info(
+            "%s has no protspace_format_version stamp; reading its cells as plain "
+            "(v1) text",
+            annotations,
+        )
+
     # Rename identifier column to protein_id if needed (bundle format).
     col_names = annotations_table.column_names
     if "identifier" in col_names and "protein_id" not in col_names:
@@ -92,11 +116,10 @@ def bundle(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
-    # Trust boundary: the -a annotations input is ASSUMED to be produced by the
-    # same-version annotate/prepare pipeline (i.e. already percent-encoded), so
-    # it is stamped v2 unconditionally, after the rename, which drops the stamp
-    # (see migrate_legacy_annotation_table on the double-migration hazard).
-    annotations_table = stamp_format_version(annotations_table)
+    try:
+        annotations_table = upgrade_cell_grammar(annotations_table, grammar)
+    except ValueError as exc:
+        raise typer.BadParameter(f"{annotations}: {exc}") from exc
 
     statistics_table = (
         pq.read_table(str(statistics)) if statistics is not None else None

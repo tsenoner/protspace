@@ -19,6 +19,14 @@ import re
 import pandas as pd
 import pyarrow as pa
 
+#: The annotation **cell grammar** version: ``1`` is the legacy raw-text grammar,
+#: ``2`` the percent-encoded one this module writes.  It is stamped under
+#: :data:`FORMAT_VERSION_KEY` on every v2-shaped annotations table (a legacy
+#: bundle's part 1, the tables a v3 read hands back, the pipeline's own
+#: parquets), and a missing stamp reads as v1.  It does **not** version the
+#: container: a v3 bundle says so under ``protspace_container_version``
+#: (:data:`~protspace.data.io.bundle_v3.CONTAINER_VERSION_KEY`) and carries no
+#: grammar stamp, because its labels are stored decoded.
 BUNDLE_FORMAT_VERSION = 2
 FORMAT_VERSION_KEY = b"protspace_format_version"
 
@@ -71,13 +79,24 @@ def decode_field(s: str) -> str:
 
 
 def read_format_version(table: pa.Table | pa.Schema) -> int:
-    """Return the annotations wire-format version, defaulting legacy tables to v1."""
+    """Return the annotations' cell-grammar version, defaulting unstamped tables to v1.
+
+    Right for a table read from a legacy bundle, whose missing stamp really does
+    mean v1.  Not a test of whether a table *was* stamped: the v3 encoder, which
+    must not guess, uses :func:`has_format_version` for that.
+    """
     schema = table if isinstance(table, pa.Schema) else table.schema
     metadata = schema.metadata or {}
     try:
         return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
     except (TypeError, ValueError):
         return 1
+
+
+def has_format_version(table: pa.Table | pa.Schema) -> bool:
+    """Whether the table carries a :data:`FORMAT_VERSION_KEY` stamp at all."""
+    schema = table if isinstance(table, pa.Schema) else table.schema
+    return FORMAT_VERSION_KEY in (schema.metadata or {})
 
 
 def read_annotation_cache_version(df: pd.DataFrame) -> int:
@@ -141,25 +160,8 @@ def encode_legacy_cell(value: str) -> str:
     return ";".join(encoded_hits)
 
 
-def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
-    """Re-emit every v1 string annotation using unambiguous v2 field encoding.
-
-    **The double-migration hazard.**  Migrating a table that is already v2
-    escapes every reserved character a second time (``%3B`` becomes ``%253B``),
-    unrecoverably, because :func:`decode_field` is not its own inverse.  The only
-    thing that tells v1 from v2 is the :data:`FORMAT_VERSION_KEY` stamp, and
-    :func:`read_format_version` reads a missing stamp as v1 -- which a genuine
-    legacy table is.  pyarrow drops schema metadata on ``rename_columns``,
-    ``concat_tables`` and friends, so a v2 table rebuilt that way reads as v1
-    until it is re-stamped with :func:`stamp_format_version`.
-
-    This function is the version guard: a table stamped v2 or later is returned
-    untouched, and the result is stamped, so a second call is a no-op.  A caller
-    whose table may have lost its stamp has to re-stamp it (or decide from the
-    version it read before the stamp was lost) instead of calling this.
-    """
-    if read_format_version(table) >= BUNDLE_FORMAT_VERSION:
-        return table
+def _migrate_cells(table: pa.Table) -> pa.Table:
+    """Re-emit every string annotation of a v1 table in the v2 grammar, stamped."""
     columns = []
     for name, column in zip(table.column_names, table.columns, strict=True):
         if name in {"identifier", "protein_id"} or not (
@@ -178,6 +180,45 @@ def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
         ]
         columns.append(pa.array(migrated, type=column.type))
     return stamp_format_version(pa.Table.from_arrays(columns, names=table.column_names))
+
+
+def migrate_legacy_annotation_table(table: pa.Table) -> pa.Table:
+    """Re-emit a v1 table's string annotations in the unambiguous v2 grammar.
+
+    The grammar is read from the table's own stamp, so this is for a table whose
+    stamp is intact -- one read straight from a legacy bundle.  A table stamped
+    v2 or later is returned untouched and the result is stamped, so a second call
+    is a no-op.
+
+    **The double-migration hazard.**  Migrating a table that is already v2
+    escapes every reserved character a second time (``%3B`` becomes ``%253B``),
+    unrecoverably, because :func:`decode_field` is not its own inverse.  pyarrow
+    drops schema metadata on ``rename_columns``, so a v2 table renamed that way
+    reads as v1.  A caller holding such a table uses
+    :func:`upgrade_cell_grammar` with the version it read *before* the stamp was
+    lost; the v3 encoder refuses an unstamped table rather than guess.
+    """
+    if read_format_version(table) >= BUNDLE_FORMAT_VERSION:
+        return table
+    return _migrate_cells(table)
+
+
+def upgrade_cell_grammar(table: pa.Table, version: int) -> pa.Table:
+    """Bring a table whose cells are in grammar ``version`` to v2, stamped.
+
+    For callers that know the grammar from somewhere other than the table's own
+    stamp: read before an operation dropped it (``transfer``), or decided at a
+    trust boundary (``protspace bundle -a``).  ``1`` migrates, ``2`` only
+    stamps; anything else is refused.
+    """
+    if version == 1:
+        return _migrate_cells(table)
+    if version == BUNDLE_FORMAT_VERSION:
+        return stamp_format_version(table)
+    raise ValueError(
+        f"unknown annotation cell grammar v{version}; expected 1 (legacy) or "
+        f"{BUNDLE_FORMAT_VERSION}"
+    )
 
 
 def to_display_value(raw, *, decode: bool = True):
@@ -215,7 +256,10 @@ def to_display_value(raw, *, decode: bool = True):
 
 
 def stamp_format_version(table: pa.Table) -> pa.Table:
-    """Attach the bundle format version to a table's schema metadata.
+    """Declare a table's cells to be in the v2 grammar, in its schema metadata.
+
+    Only for cells that really are v2: stamping a v1 table skips the migration
+    it needs (see :func:`upgrade_cell_grammar`).
 
     pyarrow writes these as top-level parquet file key-value metadata, readable
     by hyparquet on the frontend via ``parquetMetadata().key_value_metadata``.

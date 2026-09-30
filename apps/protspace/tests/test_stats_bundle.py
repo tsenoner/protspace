@@ -5,6 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import (
     PARQUET_BUNDLE_DELIMITER,
     extract_bundle_to_dir,
@@ -17,7 +18,7 @@ from protspace.data.io.bundle import (
 
 def _core() -> list[pa.Table]:
     return [
-        pa.table({"protein_id": ["a", "b"]}),
+        stamp_format_version(pa.table({"protein_id": ["a", "b"]})),
         pa.table({"projection_name": ["PCA_2"], "dimensions": [2]}),
         pa.table(
             {

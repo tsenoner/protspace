@@ -9,7 +9,10 @@ from protspace.data.annotations.encoding import (
     FORMAT_VERSION_KEY,
     decode_field,
     encode_field,
+    has_format_version,
+    read_format_version,
     stamp_format_version,
+    upgrade_cell_grammar,
 )
 
 
@@ -64,3 +67,21 @@ def test_stamp_preserves_existing_schema_metadata():
     metadata = stamped.schema.metadata
     assert metadata[b"seeded"] == b"1"
     assert metadata[FORMAT_VERSION_KEY] == str(BUNDLE_FORMAT_VERSION).encode()
+
+
+def test_upgrade_cell_grammar_takes_the_version_from_the_caller():
+    """For a table whose stamp is gone (``rename_columns`` drops it): the caller
+    says which grammar the cells are in, instead of the missing stamp saying v1."""
+    table = pa.table({"protein_id": ["P1"], "cath": ["ACC (a%3Bb; c)"]})
+    assert not has_format_version(table)
+
+    as_v2 = upgrade_cell_grammar(table, 2)
+    assert as_v2.column("cath").to_pylist() == ["ACC (a%3Bb; c)"]
+    assert read_format_version(as_v2) == BUNDLE_FORMAT_VERSION
+
+    as_v1 = upgrade_cell_grammar(table, 1)
+    assert as_v1.column("cath").to_pylist() == ["ACC (a%253Bb%3B c)"]
+    assert read_format_version(as_v1) == BUNDLE_FORMAT_VERSION
+
+    with pytest.raises(ValueError, match="unknown annotation cell grammar v3"):
+        upgrade_cell_grammar(table, 3)

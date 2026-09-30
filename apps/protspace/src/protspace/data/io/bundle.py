@@ -39,7 +39,6 @@ import pyarrow.parquet as pq
 from protspace.data.annotations.encoding import (
     migrate_legacy_annotation_table,
     read_format_version,
-    stamp_format_version,
 )
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle_v3 import (
@@ -296,11 +295,10 @@ def write_bundle(
     The tables come in v2-shaped (all-string annotation cells, long-format
     projections) and go out as a six-part v3 container.
 
-    **Precondition: ``tables[0]`` must carry the format-version stamp** unless it
-    really is v1, because an unstamped table is migrated (with a warning); see
-    :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`.
-    Unlike :func:`replace_annotations_in_bundle` this cannot stamp for its
-    callers: it is also how a genuine, unstamped v1 table is upgraded.
+    **``tables[0]`` must be stamped as v2 cell grammar**; an unstamped or v1
+    table raises ``ValueError``.  A caller holding v1 cells migrates them first
+    (see :func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`), so
+    an already-v2 table that lost its stamp is never migrated a second time.
 
     Args:
         tables: List of 3 Arrow tables (annotations, projections_metadata,
@@ -362,13 +360,13 @@ def replace_annotations_in_bundle(
     settings and statistics are carried over unchanged.  A legacy input
     container comes out as v3, which is correct — this is a write, and every
     write emits v3.
+
+    ``annotations_table`` must be stamped as v2 cell grammar, as for
+    :func:`write_bundle`: a caller whose operations dropped the stamp restores
+    it from the version it read before
+    (:func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`).
     """
     core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
-
-    # Callers (transfer, prediction overlay) rebuild the table with ops that drop
-    # the stamp, so it is re-applied here and they must hand over v2 cells (see
-    # migrate_legacy_annotation_table on the double-migration hazard).
-    annotations_table = stamp_format_version(annotations_table)
 
     if payloads is not None:
         parts = replace_annotations_v3(annotations_table, [*core, payloads])
@@ -384,8 +382,9 @@ def replace_annotations_in_bundle(
 def convert_bundle(input_path: Path, output_path: Path) -> int:
     """Rewrite a v1/v2 bundle as v3 and return the input's format version.
 
-    A v1 annotations table is migrated to the v2 cell grammar here, so
-    ``encode_v3`` does not warn about it.  Settings and statistics are carried over as stored
+    The legacy annotations part is read with its stamp intact, so its grammar is
+    known: a v1 table is migrated to the v2 cell grammar here, explicitly, and a
+    v2 one passes through.  Settings and statistics are carried over as stored
     bytes.  A v3 input returns :data:`CONTAINER_VERSION` and nothing is written.
     ``output_path`` may be ``input_path``: the write is atomic.
     """

@@ -60,11 +60,12 @@ def test_atomic_write_bytes_publishes_with_the_process_umask(
 
 
 def test_a_bundle_is_not_owner_only(tmp_path, permissive_umask):
+    from protspace.data.annotations.encoding import stamp_format_version
     from protspace.data.io.bundle import write_bundle
 
     bundle_path = tmp_path / "data.parquetbundle"
     tables = [
-        pa.table({"identifier": ["P1"]}),
+        stamp_format_version(pa.table({"identifier": ["P1"]})),
         pa.table({"projection_name": ["PCA 2"], "dimensions": [2]}),
         pa.table(
             {"projection_name": ["PCA 2"], "identifier": ["P1"], "x": [1.0], "y": [2.0]}

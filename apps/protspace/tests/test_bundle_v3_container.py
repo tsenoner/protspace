@@ -26,6 +26,7 @@ from protspace.data.annotations.encoding import (
     FORMAT_VERSION_KEY,
     read_format_version,
     stamp_format_version,
+    upgrade_cell_grammar,
 )
 from protspace.data.io.bundle import (
     PARQUET_BUNDLE_DELIMITER,
@@ -286,14 +287,12 @@ def test_replace_annotations_re_encodes_the_payloads(tmp_path):
     assert b"Bacteria" not in payload_blob  # no stale dictionary left behind
 
 
-def test_replace_annotations_keeps_encoded_cells_from_an_unstamped_table(tmp_path):
-    """The re-stamp in ``replace_annotations_in_bundle`` is what stops a second
-    migration.  ``transfer`` and the prediction overlay rebuild the table with
-    ``rename_columns``/``concat_tables``, which drop schema metadata, so what
-    arrives here is v2 cells that *read* as v1 -- and migrating them again turns
-    ``%3B`` into ``%253B``, unrecoverably (``decode_field`` is not its own
-    inverse).  Drop the ``stamp_format_version`` line at the chokepoint and this
-    fails on both cells; nothing else in the suite does."""
+def test_replace_annotations_refuses_an_unstamped_table(tmp_path):
+    """``transfer`` rebuilds the table with ``rename_columns``, which drops the
+    grammar stamp, so what it holds is v2 cells that *read* as v1.  Migrating
+    them again would turn ``%3B`` into ``%253B``, unrecoverably, and stamping
+    them blindly would mislabel a genuine v1 table.  Neither guess is made: the
+    write is refused and the input left alone."""
     src = tmp_path / "b.parquetbundle"
     out = tmp_path / "out.parquetbundle"
     write_bundle(pipeline_tables(), src)
@@ -302,35 +301,33 @@ def test_replace_annotations_keeps_encoded_cells_from_an_unstamped_table(tmp_pat
     unstamped = pa.table({"protein_id": ["p0", "p1", "p2"], "cath": cells})
     assert FORMAT_VERSION_KEY not in (unstamped.schema.metadata or {})
 
-    replace_annotations_in_bundle(src, out, unstamped)
+    with pytest.raises(ValueError, match="no protspace_format_version stamp"):
+        replace_annotations_in_bundle(src, out, unstamped)
+    assert not out.exists()
 
+    # The caller that knows its cells are v2 says so, and they survive as written.
+    replace_annotations_in_bundle(src, out, upgrade_cell_grammar(unstamped, 2))
     assert read_tables(out)[0].column("cath").to_pylist() == cells
 
 
-def test_write_bundle_warns_when_the_annotations_table_is_unstamped(tmp_path, caplog):
-    """``write_bundle`` has no chokepoint re-stamp and cannot have one: it is
-    also the path a genuine legacy bundle is upgraded through, and an unstamped
-    v1 table is indistinguishable from a v2 one that lost its metadata.  So the
-    migration is at least loud -- the docstring states the precondition and the
-    encoder says out loud which of the two it decided it got.  The second half
-    of the assertion is the cost of getting it wrong."""
+def test_write_bundle_refuses_an_unstamped_table(tmp_path):
+    """An unstamped v1 table is indistinguishable from a v2 one that lost its
+    metadata, so ``write_bundle`` does not pick one: the caller migrates v1
+    cells explicitly, and a v2 table keeps its stamp."""
     metadata, data = projection_tables(2, (2,))
     unstamped = pa.table({"protein_id": ["p0", "p1"], "cath": ["ACC (a%3Bb)", "x"]})
     path = tmp_path / "b.parquetbundle"
 
-    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle_v3"):
+    with pytest.raises(ValueError, match="no protspace_format_version stamp"):
         write_bundle([unstamped, metadata, data], path)
+    assert not path.exists()
 
-    assert "format v1" in caplog.text
-    # Migrated a second time, because it looked like v1: the caller was warned.
-    assert read_tables(path)[0].column("cath").to_pylist() == ["ACC (a%253Bb)", "x"]
-
-    caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle_v3"):
-        write_bundle([stamp_format_version(unstamped), metadata, data], path)
-
-    assert caplog.text == ""
+    write_bundle([stamp_format_version(unstamped), metadata, data], path)
     assert read_tables(path)[0].column("cath").to_pylist() == ["ACC (a%3Bb)", "x"]
+
+    # The same cells, declared v1, are migrated: the literal ``%`` is escaped.
+    write_bundle([upgrade_cell_grammar(unstamped, 1), metadata, data], path)
+    assert read_tables(path)[0].column("cath").to_pylist() == ["ACC (a%253Bb)", "x"]
 
 
 def test_write_bundle_rejects_a_fourth_table(tmp_path):

@@ -51,6 +51,7 @@ class TestSettingsOnlyRead:
         import pyarrow as pa
         import pyarrow.parquet as pq
 
+        from protspace.data.annotations.encoding import stamp_format_version
         from protspace.data.io.bundle import (
             PARQUET_BUNDLE_DELIMITER,
             read_bundle,
@@ -60,7 +61,9 @@ class TestSettingsOnlyRead:
 
         settings = {"family": {"categories": {"kinase": {"color": "#FF0000"}}}}
         tables = [
-            pa.table({"protein_id": ["p0", "p1"], "family": ["kinase", ""]}),
+            stamp_format_version(
+                pa.table({"protein_id": ["p0", "p1"], "family": ["kinase", ""]})
+            ),
             pa.table({"projection_name": ["pca2"], "dimensions": [2]}),
             pa.table(
                 {

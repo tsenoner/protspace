@@ -236,8 +236,8 @@ def transfer(
 
     from protspace.analysis.classification import Rule
     from protspace.data.annotations.encoding import (
-        migrate_legacy_annotation_table,
         read_format_version,
+        upgrade_cell_grammar,
     )
     from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
     from protspace.data.loaders import load_h5, split_h5_spec
@@ -332,10 +332,9 @@ def transfer(
             [id_col if n == "identifier" else n for n in augmented.column_names]
         )
 
-    # The renames dropped the stamp, so decide on the version read from the bundle
-    # (see migrate_legacy_annotation_table on the double-migration hazard).
-    if input_format_version < 2:
-        augmented = migrate_legacy_annotation_table(augmented)
+    # The renames dropped the stamp, so restore the grammar from the version read
+    # off the bundle: a v1 bundle's cells are migrated, v2 cells are re-stamped.
+    augmented = upgrade_cell_grammar(augmented, input_format_version)
 
     replace_annotations_in_bundle(bundle, output, augmented)
     logger.info("Wrote transferred bundle to %s", output)

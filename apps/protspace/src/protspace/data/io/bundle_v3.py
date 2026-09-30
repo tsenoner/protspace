@@ -41,10 +41,12 @@ import pyarrow.parquet as pq
 from protspace.core.constants import BROWSER_MISSING_TOKENS
 from protspace.data.annotations.encoding import (
     ARROW_BOOLEAN_LABELS,
+    BUNDLE_FORMAT_VERSION,
     FORMAT_VERSION_KEY,
     decode_field,
     encode_field,
-    migrate_legacy_annotation_table,
+    has_format_version,
+    read_format_version,
     stamp_format_version,
 )
 
@@ -531,24 +533,37 @@ def _add_unannotated_rows(
     return pa.concat_tables([annotations, extra])
 
 
+def _require_v2_grammar(annotations: pa.Table) -> None:
+    """Refuse a table whose cells are not declared to be in the v2 grammar.
+
+    An unstamped table is refused rather than read as v1: a v2 table that lost
+    its stamp (``rename_columns`` drops it) looks exactly like a legacy one, and
+    migrating it escapes every reserved character a second time, unrecoverably.
+    """
+    if not has_format_version(annotations):
+        raise ValueError(
+            "annotations table carries no protspace_format_version stamp, so its "
+            "cell grammar is unknown. Stamp v2 cells with stamp_format_version(); "
+            "migrate v1 (legacy) cells with migrate_legacy_annotation_table() or "
+            "upgrade_cell_grammar(table, 1) first."
+        )
+    version = read_format_version(annotations)
+    if version != BUNDLE_FORMAT_VERSION:
+        raise ValueError(
+            f"annotations table declares cell grammar v{version}; the v3 encoder "
+            f"takes v{BUNDLE_FORMAT_VERSION} cells. Migrate a v1 table with "
+            "migrate_legacy_annotation_table() first."
+        )
+
+
 def _prepare_annotations(
     annotations: pa.Table, projected: pa.Array | None
 ) -> tuple[pa.Table, str, pa.Array]:
-    """Migrate a v1 table, add the ``projected`` rows it lacks, validate its ids.
+    """Check the grammar stamp, add the ``projected`` rows it lacks, validate ids.
 
     Returns ``(annotations, id_column, ids)`` with ``ids`` as a string array.
     """
-    migrated = migrate_legacy_annotation_table(annotations)
-    if migrated is not annotations:
-        # Loud rather than refused: a genuine legacy table is unstamped too, and
-        # upgrading it is the point (see migrate_legacy_annotation_table).
-        logger.warning(
-            "annotations table reads as format v1 (no stamp, or stamped 1); "
-            "migrating its cell grammar to v2. If it was already v2, re-apply "
-            "stamp_format_version() before writing -- migrating twice escapes "
-            "every reserved character a second time."
-        )
-        annotations = migrated
+    _require_v2_grammar(annotations)
 
     id_column = next(
         (c for c in ("protein_id", "identifier") if c in annotations.column_names), None
@@ -644,8 +659,9 @@ def encode_v3(
 ) -> tuple[bytes, bytes, bytes, bytes]:
     """Encode the v2-shaped pipeline tables as v3 parts 1, 2, 3 and 6.
 
-    ``annotations`` must carry the format-version stamp unless it really is v1;
-    see :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`.
+    ``annotations`` must be stamped as v2 cell grammar; an unstamped or v1 table
+    raises ``ValueError`` instead of being migrated on a guess (see
+    :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`).
     """
     projected = (
         pc.unique(projections_data.column("identifier")).drop_null()
@@ -909,12 +925,12 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
     The round trip is not byte-exact, and deliberately so -- v3 stores what the
     browser's v2 reader would have parsed out of the cells, not the cells:
 
-    * an unstamped (v1-reading) input table is migrated to the v2 cell grammar
-      first, which is what every shipped legacy bundle gets: ten of the eleven
-      datasets under ``apps/web/public/data/`` carry no stamp, so regenerating
-      one runs :func:`migrate_legacy_annotation_table` and its reserved
-      characters come back percent-encoded (display-neutral, and a fix -- but it
-      is a difference, and it is the one a regeneration actually hits);
+    * a v1 table has to be migrated to the v2 cell grammar before it can be
+      encoded, which is what every shipped legacy bundle gets: ten of the eleven
+      datasets under ``apps/web/public/data/`` carry no stamp, so converting one
+      runs :func:`migrate_legacy_annotation_table` and its reserved characters
+      come back percent-encoded (display-neutral, and a fix -- but it is a
+      difference, and it is the one a conversion actually hits);
     * hits and cells are whitespace-trimmed, and *blank* hits are dropped
       (``"A;;B"`` comes back ``"A;B"``, ``" A |IDA"`` as ``"A|IDA"``);
     * a missing cell -- null or blank -- comes back as ``""`` (a cell spelled

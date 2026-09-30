@@ -531,13 +531,33 @@ def test_rejects_a_null_projected_identifier():
 
 def test_rejects_annotations_without_an_id_column():
     with pytest.raises(ValueError, match="no 'protein_id' or 'identifier'"):
-        encode_v3(pa.table({"col": ["A"]}), *make_projections((("A", 2),), ["p0"]))
+        encode_v3(
+            stamp_format_version(pa.table({"col": ["A"]})),
+            *make_projections((("A", 2),), ["p0"]),
+        )
 
 
-def test_v1_annotations_are_migrated_before_splitting():
+def test_an_unstamped_table_is_refused_not_guessed():
+    """No stamp means the grammar is unknown: a v2 table that lost its stamp to
+    ``rename_columns`` looks exactly like a v1 one, and migrating it would turn
+    ``%3B`` into ``%253B``, unrecoverably.  So the encoder refuses both."""
+    unstamped = pa.table({"protein_id": ["p0"], "col": ["ACC (a%3Bb)"]})
+    with pytest.raises(ValueError, match="no protspace_format_version stamp"):
+        encode(unstamped)
+
+
+def test_a_v1_stamped_table_is_refused():
+    v1 = pa.table({"protein_id": ["p0"], "col": ["A"]}).replace_schema_metadata(
+        {FORMAT_VERSION_KEY: b"1"}
+    )
+    with pytest.raises(ValueError, match="declares cell grammar v1"):
+        encode(v1)
+
+
+def test_v1_annotations_migrated_first_keep_their_hits():
     """A v1 cell's raw ``;`` inside parens must not become two hits."""
     v1 = pa.table({"protein_id": ["p0"], "col": ["PF1 (a;b)|0.5"]})
-    parts = encode(v1)
+    parts = encode(migrate_legacy_annotation_table(v1))
     assert labels_of(payloads_of(parts[3]), "col") == ["PF1 (a;b)"]
     assert read(parts[0]).column("col__count").to_pylist() == [1]
 
