@@ -137,7 +137,7 @@ _One enzyme superfamily across all of life._
 Coloured by `protein_families`, the serine β-lactamases of Ambler classes A, C and D sit in their own regions, apart from the metallo-β-lactamase superfamily, which makes up about 70 % of the entries and spreads over most of the map. That catch-all is why the separation score for the whole annotation is low. Search for Q02940: curated as class C, it sits away from the other class-C proteins, a candidate misannotation. Then colour by `ec`, whose categories follow the clusters of the layout closely.
 
 - **Opens on:** `ProtT5 — UMAP 2`, coloured by `protein_families`; the tooltip adds `ec` and `species`.
-- **Source:** UniProtKB query `family:"beta-lactamase"` at release 2026_02, the paper's 113,015 proteins; ‹how they were selected from the query's hits: to be confirmed›.
+- **Source:** Every UniProtKB entry returned by the query `family:"beta-lactamase"` at release 2026_02, unfiltered: the paper's 113,015 proteins. The same query returns 116,260 at 2026_03, because 3,324 entries created in 2026_02 received their family annotation only in the next release.
 - **Proteins:** ‹pending build›, from UniProt release ‹pending build›.
 - **Embedding:** ProtT5-XL-U50 per-protein embeddings from UniProt.
 - **Projections:** UMAP 2D (200 neighbours, minimum distance 0.4, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.

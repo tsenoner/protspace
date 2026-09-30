@@ -133,7 +133,7 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     tryNext:
       'Search for Q02940: curated as class C, it sits away from the other class-C proteins, a candidate misannotation. Then colour by `ec`, whose categories follow the clusters of the layout closely.',
     source:
-      'UniProtKB query `family:"beta-lactamase"` at release 2026_02, the paper\'s 113,015 proteins; ‹how they were selected from the query\'s hits: to be confirmed›.',
+      'Every UniProtKB entry returned by the query `family:"beta-lactamase"` at release 2026_02, unfiltered: the paper\'s 113,015 proteins. The same query returns 116,260 at 2026_03, because 3,324 entries created in 2026_02 received their family annotation only in the next release.',
     embedding: 'ProtT5-XL-U50 per-protein embeddings from UniProt.',
     projections: PAPER_UMAP_AND_PCA(200, 0.4),
     paper: 'Fig. 3.',

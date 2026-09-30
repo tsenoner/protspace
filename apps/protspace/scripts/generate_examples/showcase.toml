@@ -423,7 +423,7 @@ name = "β-lactamases"
 hosting = "release"
 proteins = 113015
 figure = "Fig. 3"
-membership = "UniProtKB family:\"beta-lactamase\", the 113,015 entries with a UniProt ProtT5 vector"
+membership = "UniProtKB family:\"beta-lactamase\", all 113,015 hits at 2026_02, unfiltered (every hit has a UniProt ProtT5 vector)"  # derived from the data: 113,015 - 80 retired + 3,325 later-annotated = the 116,260 hits at 2026_03
 membership_release = "2026_02"
 embeddings = ["{nm_data}/beta_lactamase_2026_uniprot.h5:prot_t5"]
 projections_source = "{nm_data}/beta_lactamase_2026_stats/data.parquetbundle"
