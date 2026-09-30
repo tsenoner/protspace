@@ -107,6 +107,8 @@ _FORMAT_KEYS = frozenset({CONTAINER_VERSION_KEY, FORMAT_VERSION_KEY, MANIFEST_KE
 
 #: Counts are prefix-summed into an int32 offset by the reader.
 _INT32_MAX = 2**31 - 1
+#: The largest magnitude up to which every integer is exact as a float64.
+_FLOAT64_EXACT_INT = 2**53
 
 
 def read_container_version(schema: pa.Schema) -> int | None:
@@ -291,6 +293,13 @@ def _numeric_entry(
     return entry, pa.array(values, type=pa.float64()), []
 
 
+def _fits_float64(arr: pa.Array) -> bool:
+    """Whether every value of integer ``arr`` is exact as a float64 (|v| <= 2**53)."""
+    bounds = pc.min_max(arr)
+    low, high = bounds["min"].as_py(), bounds["max"].as_py()
+    return low is None or (low >= -_FLOAT64_EXACT_INT and high <= _FLOAT64_EXACT_INT)
+
+
 def _encode_annotation_column(
     column: pa.ChunkedArray | pa.Array,
     name: str,
@@ -309,7 +318,13 @@ def _encode_annotation_column(
     # Arrow-numeric source columns stay numeric regardless of content.  The
     # browser would call an all-null column categorical, but keeping the kind
     # tied to the Arrow type is what lets `decode_v3` restore `sourceType`.
-    if pa.types.is_integer(arr.type) or pa.types.is_floating(arr.type):
+    # An integer column float64 cannot hold exactly (a 64-bit hash or id) is the
+    # exception: it is stored as its exact decimal labels, as the v2 browser
+    # reader showed a non-safe bigint, and ``decode_v3`` casts them back.
+    exact_labels = pa.types.is_integer(arr.type) and not _fits_float64(arr)
+    if not exact_labels and (
+        pa.types.is_integer(arr.type) or pa.types.is_floating(arr.type)
+    ):
         values = pc.cast(arr, pa.float64()).to_numpy(zero_copy_only=False)
         values = np.where(np.isfinite(values), values, np.nan)
         return _numeric_entry(values, source_type, pa.types.is_integer(arr.type))
@@ -321,7 +336,7 @@ def _encode_annotation_column(
     # --- numeric inference (conversion.ts:71-125) --------------------------- #
     # Only here does a missing-token spelling count as absent (``_missing_mask``).
     missing = _missing_mask(trimmed)
-    if not missing.all():
+    if not exact_labels and not missing.all():
         numeric_ok = _regex_ok(trimmed, JS_NUMBER_RE) | missing
         if numeric_ok.all():
             values = _parse_floats(trimmed, ~missing)
@@ -896,8 +911,13 @@ def _decode_categorical(
     """
     codes = _flat(column).to_numpy(zero_copy_only=False)
     cells = labels.take(pa.array(codes, mask=codes < 0))
-    if entry.get("sourceType") == "bool":
+    source_type = entry.get("sourceType")
+    if source_type == "bool":
         return pc.equal(cells, pa.scalar(ARROW_BOOLEAN_LABELS[1]))
+    # An integer column stored as exact labels (past float64's exact range).
+    type_ = _restorable_type(source_type or _UNRESTORABLE_SOURCE_TYPE)
+    if type_ is not None and pa.types.is_integer(type_):
+        return pc.cast(cells, type_)
     return pc.fill_null(cells, "")
 
 

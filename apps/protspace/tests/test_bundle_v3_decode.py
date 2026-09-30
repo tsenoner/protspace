@@ -282,6 +282,32 @@ def test_source_type_restores_non_string_numeric_columns():
     assert decoded.column("confidence").to_pylist() == [0.5, 1.5, None]
 
 
+@pytest.mark.parametrize("type_", [pa.int64(), pa.uint64()])
+def test_a_64_bit_integer_column_past_2_53_round_trips_exactly(type_):
+    """A 64-bit hash or id column cannot go through float64 without losing
+    digits (and a safe cast refuses it). It is stored as exact labels, as the
+    v2 browser reader showed a non-safe bigint, and restored to its type."""
+    big = [2**60 + 1, None, 3, 2**60 + 1]
+    source = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2", "p3"],
+                "hash": pa.array(big, type=type_),
+            }
+        )
+    )
+    metadata, data = projection_tables(source.num_rows, (2,))
+    parts = encode_v3(source, metadata, data)
+    assert manifest_of(parts[0])["columns"]["hash"] == {
+        "kind": "categorical",
+        "sourceType": str(type_),
+    }
+
+    decoded = decode_v3(parts)[0]
+    assert decoded.schema.field("hash").type == type_
+    assert decoded.column("hash").to_pylist() == big
+
+
 def test_int_columns_never_come_back_with_a_decimal_point():
     assert cells(annotations_table(length=["100", "", "3"]), "length") == [
         "100",

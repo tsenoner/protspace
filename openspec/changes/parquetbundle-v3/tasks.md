@@ -46,6 +46,8 @@
 - [x] 2.14 `bundle -a` reads the `prepare` annotation cache as v2: the cache is stamped when
       written, a cache from before the stamp is recognised by its cache-version attribute, and
       `ArrowReader.save_data` keeps the stamp it read
+- [x] 2.15 An integer column with a value beyond ±2^53 is encoded as exact categorical labels
+      (no lossy or refused float64 cast) and decoded back to its integer type
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

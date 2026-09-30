@@ -545,7 +545,8 @@ value on the loaded annotation and the web exporter writes it back when the colu
 (see [Export and import notes](#export-and-import-notes)), so a bundle re-exported from
 the app decodes in Python to the same column types as the file Python wrote.
 
-Only a numeric source type is ever restored, and only on a numeric column. The decoder declines
+Only a numeric source type is ever restored, and, but for the two exceptions below, only on a
+numeric column. The decoder declines
 everything else and falls back to the per-kind default:
 
 - a type whose alias cannot be parsed back at all, such as a dictionary, list or decimal column,
@@ -555,10 +556,14 @@ everything else and falls back to the per-kind default:
 - `"string"` and `"large_string"` are declined by design, because the v2 spelling of the column is
   what the encoder consumed, so rendering it back is the restoration
 
-A `bool` column is the one categorical exception. It is written with the labels `true` and
-`false`, the spelling the v2 browser reader displayed, and its `sourceType` `"bool"` turns those
-labels back into a `bool` column on decode. Otherwise `sourceType` is consulted only when decoding
-a `numeric` column, so on a `categorical` or `multi` column it is recorded but inert.
+A `bool` column is one categorical exception. It is written with the labels `true` and `false`,
+the spelling the v2 browser reader displayed, and its `sourceType` `"bool"` turns those labels back
+into a `bool` column on decode. The other is an integer column holding a value beyond ±2^53, such
+as a 64-bit hash or ID, which a `DOUBLE` cannot hold exactly: it is written as a `categorical`
+column of its exact decimal labels, as the v2 browser reader showed a bigint it could not hold as a
+number, and its integer `sourceType` casts those labels back on decode. Otherwise `sourceType` is
+consulted only when decoding a `numeric` column, so on a `categorical` or `multi` column it is
+recorded but inert.
 
 ### Scores are float64
 

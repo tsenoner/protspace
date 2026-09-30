@@ -183,6 +183,12 @@ the exporter's own choice. The alternative, re-deriving the type in the writer, 
 float64 column of whole numbers from an integer one or a string column the browser reads as numbers
 from a numeric one.
 
+An integer column with a value beyond ±2^53 (a 64-bit hash or ID) cannot be a `DOUBLE` without
+losing digits, and the encoder's safe cast refused it, so a bundle that `main` wrote could no
+longer be written, converted or styled. The encoder stores such a column as a categorical column
+of its exact decimal labels, which is what the v2 browser reader showed for a bigint it could not
+hold as a number, and `decode_v3` casts the labels back to the recorded integer type.
+
 ### Persist before render
 
 On `main`, a user import is written to OPFS, bytes and metadata, before the render, so a tab that
