@@ -13,19 +13,19 @@
 
 ## 2. Python track (`apps/protspace`)
 
-- [ ] 2.1 Encoder writes NaN, not `0.0`, into part 3 for a protein a projection does not cover
-- [ ] 2.2 `decode_v3` emits long-format projection rows only for finite coordinates
-- [ ] 2.3 Encoder adds projection identifiers missing from the annotations as rows with every
+- [x] 2.1 Encoder writes NaN, not `0.0`, into part 3 for a protein a projection does not cover
+- [x] 2.2 `decode_v3` emits long-format projection rows only for finite coordinates
+- [x] 2.3 Encoder adds projection identifiers missing from the annotations as rows with every
       annotation missing, instead of raising
-- [ ] 2.4 Dimension from the data (non-null `z` means 3); a disagreeing `dimensions` metadata value
+- [x] 2.4 Dimension from the data (non-null `z` means 3); a disagreeing `dimensions` metadata value
       is ignored with a warning naming the projection and both values
-- [ ] 2.5 `BOOLEAN` annotation columns encode as `true` / `false`
-- [ ] 2.6 One deprecation warning per v1/v2 read, naming `protspace convert` and 5.0.0; none for v3
-- [ ] 2.7 `protspace convert INPUT [OUTPUT] [--in-place]`: v1 grammar migration, settings and
+- [x] 2.5 `BOOLEAN` annotation columns encode as `true` / `false`
+- [x] 2.6 One deprecation warning per v1/v2 read, naming `protspace convert` and 5.0.0; none for v3
+- [x] 2.7 `protspace convert INPUT [OUTPUT] [--in-place]`: v1 grammar migration, settings and
       statistics preserved, v3 input reported and left untouched, atomic write, usage error when
       neither `OUTPUT` nor `--in-place` is given
-- [ ] 2.8 Tests for 2.1 to 2.7, including a v1 fixture with a literal `%` and a parenthesised `;`
-- [ ] 2.9 `docs/guide/python-cli.md` (command table and a `protspace convert` section), the
+- [x] 2.8 Tests for 2.1 to 2.7, including a v1 fixture with a literal `%` and a parenthesised `;`
+- [x] 2.9 `docs/guide/python-cli.md` (command table and a `protspace convert` section), the
       data-format guide's writer table, missing-coordinate and deprecation notes, and the Colab
       notebooks where they list commands
 
@@ -52,15 +52,18 @@
       before the render starts
 - [x] 3.9 Export `decodeParquetBundle` from `@protspace/core`; `extractRowsFromParquetBundle` rejects
       a v3 bundle with an error naming `decodeParquetBundle` and is marked deprecated
-- [ ] 3.10 `docs/developers/embedding.md` and `docs/developers/api/index.md` use
+- [x] 3.10 `docs/developers/embedding.md` and `docs/developers/api/index.md` use
       `decodeParquetBundle`; the web export notes in the data-format guide say exports are v3
 
 ## 4. Contract suite (`tests/contract`)
 
-- [ ] 4.1 `emit_bundles.py` adds a `BOOLEAN` annotation column and a protein that one projection
+- [x] 4.1 `emit_bundles.py` adds a `BOOLEAN` annotation column and a protein that one projection
       does not cover
-- [ ] 4.2 Assert `true` / `false`, NaN coordinates in the uncovered projection, and the protein kept
+- [x] 4.2 Assert `true` / `false`, NaN coordinates in the uncovered projection, and the protein kept
       in the protein list
+- [x] 4.3 A generated v2 bundle upgraded by `protspace convert` decodes to the same dataset, and
+      bundles exported by the web writer are read back by the Python tooling (`read_bundles.py`)
+      with the same content as the Python-written originals
 
 ## 5. Release and follow-ups
 
