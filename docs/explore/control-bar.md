@@ -259,6 +259,8 @@ can see where each category concentrates even where its points pile on top of ea
 Auto or Always is selected, the button is highlighted and names the mode: **Contours: Auto** or
 **Contours: Always**.
 
+![Contours menu open with Always selected, listing Off, Auto and Always](./images/control-bar-contours.png)
+
 | Mode              | What it does                                                        |
 | ----------------- | ------------------------------------------------------------------- |
 | **Off** (default) | No contours                                                         |
@@ -268,6 +270,8 @@ Auto or Always is selected, the button is highlighted and names the mode: **Cont
 Auto and Always draw the same rings and fill; only their strength differs. Auto sets it from how
 many points are visible, how large the plot is and how far you have zoomed in. It does not check
 whether points actually overlap.
+
+![Demo dataset with Contours set to Always: each protein family's cluster is outlined by rings in its legend colour](./images/scatterplot-contours.png)
 
 How to read them:
 
