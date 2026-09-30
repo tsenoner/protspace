@@ -101,6 +101,18 @@ _UNRESTORABLE_SOURCE_TYPE = "?"
 _INT32_MAX = 2**31 - 1
 
 
+def write_part(table: pa.Table, **options: Any) -> bytes:
+    """Serialize one bundle part to parquet bytes (``options`` go to pyarrow)."""
+    buf = io.BytesIO()
+    pq.write_table(table, buf, **options)
+    return buf.getvalue()
+
+
+def read_part(part: bytes, columns: list[str] | None = None) -> pa.Table:
+    """Read one bundle part (optionally only ``columns``) back into a table."""
+    return pq.read_table(io.BytesIO(part), columns=columns)
+
+
 # --------------------------------------------------------------------------- #
 # encoder
 # --------------------------------------------------------------------------- #
@@ -108,9 +120,7 @@ _INT32_MAX = 2**31 - 1
 
 def _write(table: pa.Table) -> bytes:
     """Serialize one v3 part: single row group, PLAIN, no dictionary."""
-    buf = io.BytesIO()
-    pq.write_table(table, buf, row_group_size=max(table.num_rows, 1), **_PQ)
-    return buf.getvalue()
+    return write_part(table, row_group_size=max(table.num_rows, 1), **_PQ)
 
 
 def _required_table(
@@ -239,6 +249,21 @@ def _split_last_pipe(hits: pa.Array) -> tuple[pa.Array, pa.Array]:
     return head, suffix
 
 
+def _numeric_entry(
+    values: np.ndarray, source_type: str, empty_is_int: bool = False
+) -> tuple[dict[str, Any], pa.Array, list[tuple[str, bytes]]]:
+    """:func:`_encode_annotation_column`'s result for float64 ``values`` (NaN = missing)."""
+    finite = values[~np.isnan(values)]
+    # ``np.all([]) is True`` would call an all-missing float column int.
+    integral = bool(np.all(np.mod(finite, 1) == 0)) if finite.size else empty_is_int
+    entry = {
+        "kind": "numeric",
+        "numericType": "int" if integral else "float",
+        "sourceType": source_type,
+    }
+    return entry, pa.array(values, type=pa.float64()), []
+
+
 def _encode_annotation_column(
     column: pa.ChunkedArray | pa.Array,
     name: str,
@@ -260,18 +285,7 @@ def _encode_annotation_column(
     if pa.types.is_integer(arr.type) or pa.types.is_floating(arr.type):
         values = pc.cast(arr, pa.float64()).to_numpy(zero_copy_only=False)
         values = np.where(np.isfinite(values), values, np.nan)
-        finite = values[~np.isnan(values)]
-        if finite.size:
-            numeric_type = "int" if np.all(np.mod(finite, 1) == 0) else "float"
-        else:
-            # ``np.all([]) is True`` would call an all-null float column int.
-            numeric_type = "int" if pa.types.is_integer(arr.type) else "float"
-        entry = {
-            "kind": "numeric",
-            "numericType": numeric_type,
-            "sourceType": source_type,
-        }
-        return entry, pa.array(values, type=pa.float64()), []
+        return _numeric_entry(values, source_type, pa.types.is_integer(arr.type))
 
     strings = _as_string(arr)
     trimmed = pc.utf8_trim_whitespace(strings)
@@ -287,14 +301,7 @@ def _encode_annotation_column(
             values = _parse_floats(trimmed, ~missing)
             if np.isfinite(values[~missing]).all():
                 values = np.where(missing, np.nan, values)
-                finite = values[~missing]
-                numeric_type = "int" if np.all(np.mod(finite, 1) == 0) else "float"
-                entry = {
-                    "kind": "numeric",
-                    "numericType": numeric_type,
-                    "sourceType": source_type,
-                }
-                return entry, pa.array(values, type=pa.float64()), []
+                return _numeric_entry(values, source_type)
 
     # --- categorical: split cells into hits --------------------------------- #
     # ``_blank_mask``, not ``_missing_mask``: v3 is a container encoding and must
@@ -668,10 +675,6 @@ def encode_v3(
 # --------------------------------------------------------------------------- #
 
 
-def _read(part: bytes, columns: list[str] | None = None) -> pa.Table:
-    return pq.read_table(io.BytesIO(part), columns=columns)
-
-
 def _read_manifest(part1: bytes) -> tuple[dict[str, Any], dict[bytes, bytes]]:
     """Part 1's manifest and the rest of its footer metadata, without the columns."""
     metadata = dict(pq.read_schema(io.BytesIO(part1)).metadata or {})
@@ -702,7 +705,7 @@ def _finite_rows(wide: pa.Table, projection: dict[str, Any]) -> np.ndarray:
 
 
 def _read_payloads(part: bytes) -> dict[str, bytes]:
-    table = _read(part)
+    table = read_part(part)
     return dict(
         zip(
             table.column("name").to_pylist(),
@@ -712,45 +715,40 @@ def _read_payloads(part: bytes) -> dict[str, bytes]:
     )
 
 
-def _read_labels(payloads: dict[str, bytes], name: str) -> list[str]:
-    """Slice ``dict:<name>`` by the prefix sum of its per-label byte lengths.
+def _offsets(counts: np.ndarray, size: int, what: str, unit: str) -> np.ndarray:
+    """Prefix-sum per-element ``counts`` into ``counts.size + 1`` offsets.
 
-    A v3 bundle is user-supplied input and Python slicing clamps, so a corrupt
-    length array would silently yield duplicated and empty labels instead of an
-    error.  The lengths must therefore tile the blob exactly.
+    A v3 bundle is user-supplied input, and counts that fall short of their
+    buffer fail silently downstream (Python slicing clamps, so labels come out
+    duplicated or empty; Arrow empties the tail lists), as does a negative count
+    (misaligned), so the counts must tile all ``size`` elements exactly.
     """
+    offsets = np.concatenate(([0], np.cumsum(counts, dtype=np.int64)))
+    total = int(offsets[-1])
+    if bool((counts < 0).any()) or total != size:
+        raise ValueError(
+            f"{what} is corrupt: {counts.size} count(s) totalling {total} over "
+            f"{size} {unit}(s)"
+        )
+    return offsets
+
+
+def _read_labels(payloads: dict[str, bytes], name: str) -> list[str]:
+    """Slice ``dict:<name>`` by the prefix sum of its per-label byte lengths."""
     blob = payloads[f"dict:{name}"]
     lengths = np.frombuffer(payloads[f"dict:{name}:len"], "<i4")
-    ends = np.cumsum(lengths, dtype=np.int64)
-    total = int(ends[-1]) if ends.size else 0
-    if bool((lengths < 0).any()) or total != len(blob):
-        raise ValueError(
-            f"payload 'dict:{name}:len' is corrupt: {lengths.size} label length(s) "
-            f"totalling {total} over a {len(blob)}-byte 'dict:{name}' blob"
-        )
+    offsets = _offsets(lengths, len(blob), f"payload 'dict:{name}:len'", "byte")
     return [
-        blob[end - length : end].decode()
-        for length, end in zip(lengths, ends, strict=True)
+        blob[start:end].decode()
+        for start, end in zip(offsets[:-1], offsets[1:], strict=True)
     ]
 
 
 def _list_join(
     counts: np.ndarray, values: pa.Array, separator: str, what: str
 ) -> pa.Array:
-    """Prefix-sum per-element ``counts`` into list offsets, then join each list.
-
-    A total below ``len(values)`` silently empties the tail lists and a negative
-    count misaligns them, so a user-supplied bundle has to tile ``values``
-    exactly.  (A total above it already raises inside Arrow.)
-    """
-    ends = np.cumsum(counts, dtype=np.int64)
-    total = int(ends[-1]) if ends.size else 0
-    if bool((counts < 0).any()) or total != len(values):
-        raise ValueError(
-            f"{what} is corrupt: {counts.size} count(s) totalling {total} over "
-            f"{len(values)} value(s)"
-        )
-    offsets = np.concatenate(([0], ends)).astype(np.int32)
+    """Join each run of ``counts`` consecutive ``values`` with ``separator``."""
+    offsets = _offsets(counts, len(values), what, "value").astype(np.int32)
     lists = pa.ListArray.from_arrays(pa.array(offsets, type=pa.int32()), values)
     return pc.binary_join(lists, separator)
 
@@ -875,7 +873,7 @@ def _decode_projections(
     Only proteins with finite coordinates get a row: NaN is how part 3 says a
     projection does not cover a protein.
     """
-    wide = _read(part)
+    wide = read_part(part)
     num_rows = len(identifiers)
     row = pa.array(np.zeros(num_rows, dtype=np.int32))
     schema = pa.schema(
@@ -962,7 +960,7 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
         )
 
     manifest, metadata = _read_manifest(parts[0])
-    annotations = _read(parts[0])
+    annotations = read_part(parts[0])
     payloads = _read_payloads(parts[3])
 
     evidence_labels = pa.array(
@@ -1000,7 +998,7 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
 
     return (
         stamp_format_version(pa.table(columns).replace_schema_metadata(metadata)),
-        _read(parts[1]),
+        read_part(parts[1]),
         _decode_projections(parts[2], manifest["projections"], columns[id_column]),
     )
 
@@ -1024,8 +1022,8 @@ def replace_annotations_v3(
     """
     manifest, _metadata = _read_manifest(parts[0])
     projections = manifest["projections"]
-    old_ids = _flat(_read(parts[0], columns=[manifest["idColumn"]]).column(0))
-    wide = _read(parts[2])
+    old_ids = _flat(read_part(parts[0], columns=[manifest["idColumn"]]).column(0))
+    wide = read_part(parts[2])
 
     finite = [_finite_rows(wide, projection) for projection in projections]
     # In the order the long table lists them, which is the order they are added.

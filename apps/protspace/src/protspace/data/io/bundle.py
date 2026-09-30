@@ -46,7 +46,9 @@ from protspace.data.io.bundle_v3 import (
     CONTAINER_VERSION,
     decode_v3,
     encode_v3,
+    read_part,
     replace_annotations_v3,
+    write_part,
 )
 
 logger = logging.getLogger(__name__)
@@ -139,15 +141,8 @@ def _core_tables(
     """The three core tables in their v2 shape, from :func:`_split`'s output."""
     if payloads is not None:
         return decode_v3([*core, payloads])
-    annotations, metadata, projections = (pq.read_table(io.BytesIO(p)) for p in core)
+    annotations, metadata, projections = (read_part(p) for p in core)
     return annotations, metadata, projections
-
-
-def _table_to_parquet_bytes(table: pa.Table) -> bytes:
-    """Serialize an Arrow table to in-memory parquet bytes."""
-    buf = io.BytesIO()
-    pq.write_table(table, buf)
-    return buf.getvalue()
 
 
 def _check_no_delimiter(part_bytes: bytes) -> None:
@@ -269,7 +264,7 @@ def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
     """
     core, settings_bytes, _statistics, payloads = _parse_bundle(bundle_path)
     if payloads is not None:
-        core = [_table_to_parquet_bytes(t) for t in decode_v3([*core, payloads])]
+        core = [write_part(t) for t in decode_v3([*core, payloads])]
     settings = read_settings_from_bytes(settings_bytes) if settings_bytes else None
     return core, settings
 
@@ -339,7 +334,7 @@ def write_bundle(
         bundle_path,
         [part1, part2, part3],
         create_settings_parquet(settings) if settings is not None else None,
-        _table_to_parquet_bytes(statistics) if statistics is not None else None,
+        write_part(statistics) if statistics is not None else None,
         payloads,
     )
     logger.info(f"Saved bundled output to: {bundle_path}")
@@ -390,7 +385,7 @@ def replace_annotations_in_bundle(
     if payloads is not None:
         parts = replace_annotations_v3(annotations_table, [*core, payloads])
     else:
-        metadata, projections = (pq.read_table(io.BytesIO(p)) for p in core[1:])
+        metadata, projections = (read_part(p) for p in core[1:])
         parts = encode_v3(annotations_table, metadata, projections)
 
     _write_parts(output_path, list(parts[:3]), settings, statistics, parts[3])
@@ -429,12 +424,12 @@ def create_settings_parquet(settings_dict: dict) -> bytes:
     holding the JSON-encoded settings string.
     """
     settings_json = json.dumps(settings_dict)
-    return _table_to_parquet_bytes(pa.table({"settings_json": [settings_json]}))
+    return write_part(pa.table({"settings_json": [settings_json]}))
 
 
 def read_settings_from_bytes(data: bytes) -> dict:
     """Deserialize settings parquet bytes into a dict."""
-    table = pq.read_table(io.BytesIO(data))
+    table = read_part(data)
     settings_json = table.column("settings_json")[0].as_py()
     return json.loads(settings_json)
 
