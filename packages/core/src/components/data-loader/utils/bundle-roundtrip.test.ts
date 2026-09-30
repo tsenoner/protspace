@@ -619,6 +619,57 @@ describe('legacy import, v3 export', () => {
     expect(Array.from(data.annotation_data.reviewed as Int32Array)).toEqual([0, 1, 0]);
   });
 
+  it('keeps a scored or evidenced hit spelled as a missing value, as v2 showed it', async () => {
+    // v2 tests the whole hit (`none|0.5`) for a missing value, so only the bare `none`
+    // of P4 folds into N/A; v3 stores the bare label and has to fold per hit.
+    const v2 = concatenateBuffers(
+      [
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'identifier', data: ['P1', 'P2', 'P3', 'P4'], type: 'STRING' },
+            {
+              name: 'pfam',
+              data: ['none|0.5', 'PF1|0.2', 'NA|IEA', 'PF1|0.1;none|0.9;none'],
+              type: 'STRING',
+            },
+          ],
+          kvMetadata: [{ key: 'protspace_format_version', value: '2' }],
+        }),
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'projection_name', data: ['pca2'], type: 'STRING' },
+            { name: 'dimensions', data: [2], type: 'INT32' },
+            { name: 'info_json', data: ['{}'], type: 'STRING' },
+          ],
+        }),
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'projection_name', data: ['pca2', 'pca2', 'pca2', 'pca2'], type: 'STRING' },
+            { name: 'identifier', data: ['P1', 'P2', 'P3', 'P4'], type: 'STRING' },
+            { name: 'x', data: [0, 1, 2, 3], type: 'DOUBLE' },
+            { name: 'y', data: [0, 1, 2, 3], type: 'DOUBLE' },
+          ],
+        }),
+      ],
+      BUNDLE_DELIMITER_BYTES,
+    );
+    const legacy = await decodeParquetBundle(v2);
+    expect(meaning(legacy.data).annotations.pfam).toEqual([
+      [{ label: 'none', scores: [0.5], evidence: null }],
+      [{ label: 'PF1', scores: [0.2], evidence: null }],
+      [{ label: 'NA', scores: null, evidence: 'IEA' }],
+      [
+        { label: 'PF1', scores: [0.1], evidence: null },
+        { label: 'none', scores: [0.9], evidence: null },
+      ],
+    ]);
+
+    const exported = await exportAndDecode(legacy.data);
+
+    expect(meaning(exported.data)).toEqual(meaning(legacy.data));
+    expect(exported.data.annotations.pfam.values).toEqual(legacy.data.annotations.pfam.values);
+  });
+
   it('re-exports a shipped v3 dataset (5K proteins) to an equal dataset', async () => {
     const shipped = await decodeParquetBundle(repoFile('apps/web/public/data/5K.parquetbundle'));
     expect(shipped.formatVersion).toBe(3);

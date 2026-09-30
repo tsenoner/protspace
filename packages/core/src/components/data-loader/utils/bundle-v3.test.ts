@@ -279,35 +279,57 @@ describe('parquetbundle format v3', () => {
     ]);
   });
 
-  it('drops a folded CSR hit with its score run and its evidence code', async () => {
+  it('folds a plain missing-value hit but keeps a scored or evidenced one, as v2 did', async () => {
     // `binding` / `none` / `transport`: `none` is 1383 of 1587 rows of
-    // `phosphatase.predicted_transmembrane`, so this is the shipped shape.
+    // `phosphatase.predicted_transmembrane`, so this is the shipped shape. v2 tested the
+    // whole hit for a missing value, so `none|7` and `none|IDA` were ordinary hits there
+    // and only a bare `none` folded into N/A.
     const payloads = {
       ...PAYLOADS,
       'dict:go_bp': utf8('bindingnonetransport'),
       'dict:go_bp:len': i32(7, 4, 9),
-      // Hit 1 is P2's `none` and now owns a score of 7, which must vanish with it
-      // while every later hit keeps its own.
+      // Hit 1 is P2's `none`, scored 7 and evidenced IDA; hit 4 is P5's bare `none`;
+      // hit 6 is P6's `none`, evidenced IDA only.
       'score_count:go_bp': i32(2, 1, 1, 1, 0, 0, 0, 3, 0),
       'scores:go_bp': f64(1.5, 2.5, 7, 9.75, 4, 0.5, 0.25, 0.125),
     };
     const { data } = await decodeParquetBundle(v3Bundle({ 5: payloadPart(payloads) }));
 
-    expect(data.annotations.go_bp.values).toEqual(['binding', 'transport', NA_VALUE]);
+    // `none` counts its two kept hits only, so it ranks after the two labels with three.
+    expect(data.annotations.go_bp.values).toEqual(['binding', 'transport', 'none', NA_VALUE]);
     expect(Array.from((data.annotation_data.go_bp as CsrAnnotationData).offsets)).toEqual([
-      0, 1, 2, 3, 4, 6, 7, 9, 10,
+      0, 1, 3, 4, 5, 7, 8, 10, 11,
     ]);
-    expect(labelsOf(data, 'go_bp', 1)).toEqual(['binding']);
+    expect(labelsOf(data, 'go_bp', 1)).toEqual(['binding', 'none']);
+    expect(getProteinScores(data, 1, 'go_bp')).toEqual([[1.5, 2.5], [7]]);
+    expect(getProteinEvidence(data, 1, 'go_bp')).toEqual([null, 'IDA']);
+    // P5's bare `none` is dropped, and every later hit keeps its own score and evidence.
     expect(labelsOf(data, 'go_bp', 4)).toEqual(['binding', 'transport']);
+    expect(getProteinScores(data, 4, 'go_bp')).toEqual([[4], null]);
+    expect(labelsOf(data, 'go_bp', 5)).toEqual(['none']);
+    expect(getProteinEvidence(data, 5, 'go_bp')).toEqual(['IDA']);
+    expect(getProteinScores(data, 6, 'go_bp')).toEqual([[0.5, 0.25, 0.125], null]);
+    expect(getProteinScores(data, 2, 'go_bp')).toEqual([[9.75]]);
+    expect(getProteinEvidence(data, 2, 'go_bp')).toEqual(['ECO:0000269']);
+  });
+
+  it('drops a folded CSR hit and empties its row into __NA__ when nothing scores it', async () => {
+    const payloads = {
+      ...PAYLOADS,
+      'dict:go_bp': utf8('bindingnonetransport'),
+      'dict:go_bp:len': i32(7, 4, 9),
+      // No `none` hit (1, 4, 6) carries a score or an evidence code.
+      'evidence:go_bp': i32(-1, -1, 1, -1, -1, -1, -1, -1, -1),
+    };
+    const { data } = await decodeParquetBundle(v3Bundle({ 5: payloadPart(payloads) }));
+
+    expect(data.annotations.go_bp.values).toEqual(['binding', 'transport', NA_VALUE]);
+    expect(labelsOf(data, 'go_bp', 1)).toEqual(['binding']);
+    expect(getProteinScores(data, 1, 'go_bp')).toEqual([[1.5, 2.5]]);
     // P6's only hit was `none`, so the row empties out and takes the same __NA__.
     expect(labelsOf(data, 'go_bp', 5)).toEqual([NA_VALUE]);
-    expect(getProteinScores(data, 1, 'go_bp')).toEqual([[1.5, 2.5]]);
-    expect(getProteinScores(data, 2, 'go_bp')).toEqual([[9.75]]);
     expect(getProteinScores(data, 4, 'go_bp')).toEqual([[4], null]);
-    expect(getProteinScores(data, 6, 'go_bp')).toEqual([[0.5, 0.25, 0.125], null]);
     expect(getProteinEvidence(data, 2, 'go_bp')).toEqual(['ECO:0000269']);
-    // P6's IDA went with its hit.
-    expect(getProteinEvidence(data, 5, 'go_bp')).toEqual([null]);
   });
 
   it('leaves a multi column with neither scores nor evidence without those payloads', async () => {

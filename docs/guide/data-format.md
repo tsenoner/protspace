@@ -599,6 +599,9 @@ In a categorical or multi-valued column, only a null cell and an empty cell (aft
 whitespace) are missing in v3. The spellings listed under [Missing Values](#missing-values),
 `none`, `NA`, `n/a`, `nan`, `null` and `__NA__`, are kept in the file as ordinary labels, and the
 browser folds them into its N/A category at read time, on v3 exactly as it always has on v2.
+That includes v2's rule for a hit with a score or an evidence code: the whole hit (`none|0.5`,
+`NA|IEA`) is what is tested, so such a hit is not missing and keeps its label, score and evidence,
+while a bare `none` in the same column still folds into N/A.
 
 The reason is that v3 is a container encoding and must hand back the label it was given.
 Collapsing these spellings in the file broke `protspace style` on the shipped phosphatase

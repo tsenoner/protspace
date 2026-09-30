@@ -20,7 +20,7 @@
  *  - **The dictionaries are faithful, not presentational.** The encoder stopped
  *    collapsing `none`/`NA`/`null` because doing so corrupted the Python side, so
  *    `dict:<col>` can carry those spellings as ordinary labels and this reader folds
- *    them into `__NA__` (see {@link foldMissingLabels}), exactly where the v2 path
+ *    them into `__NA__` (see {@link missingLabels}), exactly where the v2 path
  *    has always applied that rule.
  *  - **Every part 1/3/6 column is REQUIRED and PLAIN**, which is the only shape
  *    hyparquet decodes straight into a typed array. A column that arrives as a plain
@@ -578,24 +578,89 @@ function readLabels(payloads: ReadonlyMap<string, Uint8Array>, name: string): st
  * cannot produce a second NA slot: `__na__` is itself a missing-value token, so
  * `NA_VALUE` never survives this pass and the append below is the only NA there is.
  *
- * Compaction preserves the survivors' relative order, so the encoder's
- * descending-frequency dictionary order — and with it the palette assignment — is
- * unchanged; the colours are generated from the post-fold length.
+ * v2 tests the whole hit, suffix included, so a scored or evidenced hit spelled that way
+ * (`none|0.5`, `NA|IEA`) was never missing there: it kept its label, score and evidence.
+ * `keep` marks those labels (see {@link splitQualifiedMissingHits}), which are then not
+ * dropped.
  *
- * Returns the old-code -> new-code map (`-1` for a dropped entry), or `null` when the
- * dictionary is already clean. `labels` is compacted in place.
+ * Returns the codes to drop, or `null` when there are none.
  */
-function foldMissingLabels(labels: string[]): Int32Array | null {
+function missingLabels(labels: readonly string[], keep: Uint8Array | null): Uint8Array | null {
+  let drop: Uint8Array | null = null;
+  for (let code = 0; code < labels.length; code++) {
+    if (keep?.[code] || normalizeMissingValue(labels[code]) !== null) continue;
+    (drop ??= new Uint8Array(labels.length))[code] = 1;
+  }
+  return drop;
+}
+
+/**
+ * Compact `labels` without the `drop` codes, in place. The survivors keep their relative
+ * order, so the encoder's descending-frequency dictionary order — and with it the palette
+ * assignment — is unchanged; the colours are generated from the post-fold length.
+ *
+ * Returns the old-code -> new-code map (`-1` for a dropped entry), or `null` when nothing
+ * is dropped.
+ */
+function compactLabels(labels: string[], drop: Uint8Array | null): Int32Array | null {
+  if (!drop) return null;
   const remap = new Int32Array(labels.length);
   let kept = 0;
-  for (let i = 0; i < labels.length; i++) {
-    const drop = normalizeMissingValue(labels[i]) === null;
-    remap[i] = drop ? -1 : kept;
-    if (!drop) labels[kept++] = labels[i];
+  for (let code = 0; code < labels.length; code++) {
+    remap[code] = drop[code] ? -1 : kept;
+    if (!drop[code]) labels[kept++] = labels[code];
   }
-  if (kept === labels.length) return null;
   labels.length = kept;
   return remap;
+}
+
+/**
+ * Give the unscored, unevidenced hits of a missing-value label their own code, so the
+ * label can stay for its scored or evidenced hits while those fold into N/A, as in v2.
+ *
+ * v3 stores the bare label of `none|0.5` in the same dictionary entry as a plain `none`,
+ * but v2 kept the first (its whole-hit test saw `none|0.5`) and folded the second. Each
+ * such label with both kinds of hit gets an alias entry appended to `labels`, and its
+ * plain hits are recoded to it; {@link missingLabels} then drops the alias and keeps the
+ * label. `__NA__` is never kept: it is the one N/A slot.
+ *
+ * Returns the labels to keep (indexed by code, aliases included), or `null` when no
+ * missing-value label carries a score or an evidence code.
+ */
+function splitQualifiedMissingHits(csr: CsrAnnotationData, labels: string[]): Uint8Array | null {
+  const { offsets, codes, length, scores, evidence } = csr;
+  if (!scores && !evidence) return null;
+  const qualified = (hit: number) =>
+    (scores !== undefined && scores.offsets[hit + 1] > scores.offsets[hit]) ||
+    (evidence !== undefined && evidence.codes[hit] >= 0);
+  const missing = labels.map(
+    (label) =>
+      normalizeMissingValue(label) === null && label.toLowerCase() !== NA_VALUE.toLowerCase(),
+  );
+
+  const kept = new Uint8Array(labels.length);
+  let any = false;
+  for (let hit = offsets[0]; hit < offsets[length]; hit++) {
+    if (missing[codes[hit]] && qualified(hit)) {
+      kept[codes[hit]] = 1;
+      any = true;
+    }
+  }
+  if (!any) return null;
+
+  const alias = new Int32Array(labels.length).fill(-1);
+  for (let hit = offsets[0]; hit < offsets[length]; hit++) {
+    const code = codes[hit];
+    if (!kept[code] || qualified(hit)) continue;
+    if (alias[code] < 0) {
+      alias[code] = labels.length;
+      labels.push(labels[code]);
+    }
+    codes[hit] = alias[code];
+  }
+  const keep = new Uint8Array(labels.length);
+  keep.set(kept);
+  return keep;
 }
 
 /** Largest offset an Int32Array holds; a larger running sum would wrap. */
@@ -701,17 +766,22 @@ function readCsrColumn(
 
 /**
  * Re-rank `labels` over the hits `storage` holds, as the encoder ranks a dictionary: by
- * descending hit count, ties by first occurrence, labels no hit carries left out. Used
- * once unplaced proteins are dropped, so the dictionary is the one a file holding only
- * the placed proteins would carry. `labels` is rewritten in place; the result maps an old
- * code to its new one, `-1` for a dropped label.
+ * descending hit count, ties by first occurrence, labels no hit carries and `drop` codes
+ * left out. Used once unplaced proteins are dropped, so the dictionary is the one a file
+ * holding only the placed proteins would carry, and once hits have been moved off a label
+ * ({@link splitQualifiedMissingHits}), whose count then changed. `labels` is rewritten in
+ * place; the result maps an old code to its new one, `-1` for a dropped label.
  */
-function rankByHits(storage: Int32Array | CsrAnnotationData, labels: string[]): Int32Array {
+function rankByHits(
+  storage: Int32Array | CsrAnnotationData,
+  labels: string[],
+  drop: Uint8Array | null,
+): Int32Array {
   const counts = new Int32Array(labels.length);
   const first = new Int32Array(labels.length);
   let hit = 0;
   const count = (code: number) => {
-    if (code >= 0 && counts[code]++ === 0) first[code] = hit;
+    if (code >= 0 && !drop?.[code] && counts[code]++ === 0) first[code] = hit;
     hit++;
   };
   if (storage instanceof Int32Array) {
@@ -734,12 +804,6 @@ function rankByHits(storage: Int32Array | CsrAnnotationData, labels: string[]): 
   labels.length = ranked.length;
   for (let code = 0; code < ranked.length; code++) labels[code] = ranked[code];
   return remap;
-}
-
-/** `second` applied after `first` (either may be `null`, the identity). */
-function composeRemaps(first: Int32Array | null, second: Int32Array | null): Int32Array | null {
-  if (!first || !second) return first ?? second;
-  return first.map((code) => (code < 0 ? -1 : second[code]));
 }
 
 /**
@@ -889,8 +953,10 @@ export async function readV3Bundle(
 
   for (const { name, column, labels } of dictionaries) {
     const storage = data.annotation_data[name] as Int32Array | CsrAnnotationData;
-    const rerank = rowsDropped ? rankByHits(storage, labels) : null;
-    const remap = composeRemaps(rerank, foldMissingLabels(labels));
+    const keep = storage instanceof Int32Array ? null : splitQualifiedMissingHits(storage, labels);
+    const drop = missingLabels(labels, keep);
+    const remap =
+      rowsDropped || keep ? rankByHits(storage, labels, drop) : compactLabels(labels, drop);
     const { colors, shapes } = generateColorsAndShapes('kellys', labels.length);
 
     if (storage instanceof Int32Array) {

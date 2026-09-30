@@ -162,6 +162,20 @@ in v2.
 - **THEN** part 1 lists `P1, P2, P3, P4`, the `kingdom` dictionary is `x, y`, and the browser
   shows the colours and dataset hash the same data gave in v2
 
+### Requirement: The browser SHALL fold missing-value spellings per hit, as v2 did
+
+The browser v3 reader SHALL fold a hit whose label is a missing-value spelling (`none`, `NA`,
+`null`, ...) into the N/A category only when the hit carries neither a score nor an evidence code,
+which is how the v2 reader treated the whole hit, and SHALL keep such a label, with its scores and
+evidence, for the hits that carry one.
+
+#### Scenario: A scored `none` hit and a bare one
+
+- **WHEN** a v2 bundle's column holds the cells `none|0.5`, `NA|IEA` and `PF1|0.1;none|0.9;none` and
+  is converted to v3
+- **THEN** the browser shows `none` with score `0.5`, `NA` with evidence `IEA`, and `PF1` and
+  `none` with their scores for the third protein, whose bare `none` is dropped, as for the v2 file
+
 ### Requirement: The encoder SHALL add projection identifiers missing from the annotations
 
 The v3 encoder SHALL add an identifier that the projections data names but the annotations table
