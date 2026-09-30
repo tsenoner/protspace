@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXAMPLE_DATASETS } from './example-datasets';
+import { resolveExampleUrl } from './example-url';
 
 const notifyMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -87,7 +88,8 @@ describe('loadExampleDataset', () => {
     const result = await resultPromise;
 
     expect(result).toBe('loaded');
-    expect(fetchMock).toHaveBeenCalledWith(DEMO.url);
+    // Rooted at the app base so /explore/ (trailing slash) still finds it.
+    expect(fetchMock).toHaveBeenCalledWith('/data.parquetbundle');
     expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
       entry: DEMO,
       source: 'menu',
@@ -167,7 +169,7 @@ describe('loadExampleDataset', () => {
       arrayBuffer: () => Promise<ArrayBuffer>;
     }) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === DEMO.url) {
+      if (url === resolveExampleUrl(DEMO.url)) {
         return new Promise((resolve) => {
           resolveA = resolve;
         });
@@ -209,7 +211,7 @@ describe('loadExampleDataset', () => {
       arrayBuffer: () => Promise<ArrayBuffer>;
     }) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === DEMO.url) {
+      if (url === resolveExampleUrl(DEMO.url)) {
         return new Promise((resolve) => {
           resolveA = resolve;
         });
@@ -349,7 +351,7 @@ describe('startup demo when its bundle cannot be fetched', () => {
     expect(setCurrentExampleId).not.toHaveBeenCalled();
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith('/data.parquetbundle');
     expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
     expect(notifyMock.error).toHaveBeenCalledTimes(1);
     expect(notifyMock.error.mock.calls[0]?.[0]).toMatchObject({

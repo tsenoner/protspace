@@ -5,6 +5,7 @@ import {
   findExampleDataset,
   type ExampleDataset,
 } from './example-datasets';
+import { resolveExampleUrl } from './example-url';
 import {
   StoredDatasetCorruptError,
   clearLastImportedFile,
@@ -81,7 +82,7 @@ export function createPersistedDatasetController({
     overlayController.update(true, 0, `Downloading ${entry.label}…`);
 
     try {
-      const response = await fetch(entry.url);
+      const response = await fetch(resolveExampleUrl(entry.url));
       if (!isCurrentExampleRequest(requestId)) {
         return 'superseded';
       }

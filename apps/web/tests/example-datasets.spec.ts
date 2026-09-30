@@ -96,6 +96,20 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await waitForProteinCount(page, PHOSPHATASE_COUNT);
   });
 
+  test('the demo and a deep link still load under a trailing-slash /explore/', async ({ page }) => {
+    // Catalog URLs are relative (`./data/…`); resolved against this route they
+    // would hit /explore/data/…, which the SPA fallback answers with HTML.
+    await page.goto('/explore/');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+
+    await page.goto('/explore/?dataset=5K');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, FIVE_K_COUNT);
+  });
+
   test('menu choices push dataset= and Back/Forward walk through them', async ({ page }) => {
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
