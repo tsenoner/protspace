@@ -114,6 +114,13 @@ projection are finite.
   than their row groups or pages hold
 - **THEN** it rejects the file rather than adding proteins with empty ids at `0`
 
+#### Scenario: Row groups that split a page
+
+- **WHEN** the browser decodes a v3 bundle whose part 1 or part 3 row groups declare sizes that
+  add up to the footer's row count but split a page, so the decoded rows overlap
+- **THEN** it rejects the file rather than overwriting one protein with the next and leaving the
+  last row empty
+
 #### Scenario: The legacy reader reads the same gap
 
 - **WHEN** the browser decodes a v2 bundle whose projection `B` has no row for `P`

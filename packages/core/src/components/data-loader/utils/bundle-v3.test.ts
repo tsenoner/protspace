@@ -48,12 +48,13 @@ type Column = {
   encoding?: 'PLAIN';
 };
 
-function part(columns: Column[], kv?: Record<string, string>): Uint8Array {
+function part(columns: Column[], kv?: Record<string, string>, rowGroupSize?: number): Uint8Array {
   return new Uint8Array(
     parquetWriteBuffer({
       columnData: columns.map((column) => ({ ...column, nullable: false })) as never,
       statistics: false,
       ...(kv ? { kvMetadata: Object.entries(kv).map(([key, value]) => ({ key, value })) } : {}),
+      ...(rowGroupSize ? { rowGroupSize } : {}),
     }),
   );
 }
@@ -100,6 +101,7 @@ const MANIFEST = {
 const annotationsPart = (
   manifest: unknown = MANIFEST,
   versionKv: Record<string, string> = { protspace_container_version: '3' },
+  rowGroupSize?: number,
 ) =>
   part(
     [
@@ -115,6 +117,7 @@ const annotationsPart = (
       ...versionKv,
       ...(manifest === null ? {} : { protspace_v3_manifest: JSON.stringify(manifest) }),
     },
+    rowGroupSize,
   );
 
 const PROJECTIONS_METADATA = part([
@@ -123,14 +126,15 @@ const PROJECTIONS_METADATA = part([
   { name: 'info_json', data: ['{"note":"flat"}', '{}'] },
 ]);
 
-const PROJECTIONS = part([
+const PROJECTION_COLUMNS: Column[] = [
   { name: 'pca2__x', data: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]) },
   { name: 'pca2__y', data: new Float32Array([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]) },
   // P7 and P8 are absent from umap3, so the encoder wrote NaN for them.
   { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, NaN, NaN]) },
   { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, NaN, NaN]) },
   { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, NaN, NaN]) },
-]);
+];
+const PROJECTIONS = part(PROJECTION_COLUMNS);
 
 const PAYLOADS: Record<string, Uint8Array> = {
   'dict:organism': utf8('HumanMouseYeastFly'),
@@ -776,6 +780,33 @@ describe('parquetbundle format v3', () => {
       const { data } = await decodeParquetBundle(v3Bundle());
       expect(data.protein_ids).toEqual(PROTEIN_IDS);
     });
+
+    /**
+     * `part`, written as row groups of 5 and 3, with the row groups' footers rewritten
+     * to declare 4 and 4: the same total, so the footer check passes, but the first
+     * group's page still holds 5 rows, which hyparquet reads whole, and the second then
+     * starts at row 4 with its 3. Row 4 is decoded twice and row 7 never.
+     */
+    const regrouped = (build: (rowGroupSize: number) => Uint8Array): Uint8Array => {
+      const groups = (m: ReturnType<typeof parquetMetadata>) =>
+        m.row_groups.map((group) => Number(group.num_rows));
+      const first = rewriteFooterI64(build(5), 5, 4, false, (m) => groups(m).join() === '4,3');
+      return rewriteFooterI64(first, 3, 4, true, (m) => groups(m).join() === '4,4');
+    };
+
+    it.each([
+      ['part 1', 0, () => regrouped((size) => annotationsPart(MANIFEST, undefined, size))],
+      ['part 3', 2, () => regrouped((size) => part(PROJECTION_COLUMNS, undefined, size))],
+    ])(
+      'rejects %s row groups whose pages overlap, whatever their sizes add up to',
+      async (label, slot, build) => {
+        // Read as it stands, P5 would be lost to P6's values and the last row left at
+        // its preallocated '' id, code 0 and (0, 0).
+        await expect(decodeParquetBundle(v3Bundle({ [slot]: build() }))).rejects.toThrow(
+          new RegExp(`${label} column "[^"]+" decodes row 4 twice`),
+        );
+      },
+    );
 
     it('caps the cells a footer can make the reader preallocate', async () => {
       // A few KB claiming 2M rows of 500 float64 columns would preallocate 8 GB before

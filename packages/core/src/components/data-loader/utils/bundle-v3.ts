@@ -366,9 +366,16 @@ function assertFooterRows(metadata: FileMetaData, part: string, columns: number)
 }
 
 /**
- * `readColumnChunks` that also refuses a column whose chunks do not fill exactly
- * `numRows` rows, whatever the footer said: an unfilled row would be read as the zero
- * (or `''`) it was preallocated with.
+ * `readColumnChunks` that also refuses a column whose chunks do not fill each of its
+ * `numRows` rows exactly once, whatever the footer said: an unfilled row would be read
+ * as the zero (or `''`) it was preallocated with, and a row filled twice means another
+ * row's value was written over it.
+ *
+ * A total alone is not enough. hyparquet reads a page whole, so row groups whose
+ * footer sizes still add up to `num_rows` but split a page (5 + 3 rows declared 4 + 4)
+ * hand back a first chunk that runs into the second group's rows and a second that
+ * stops short of the end. The chunks' row spans are therefore checked to tile
+ * `[0, numRows)`: a handful per column, one per page.
  */
 async function readFullColumns(
   file: ArrayBuffer,
@@ -378,23 +385,34 @@ async function readFullColumns(
   numRows: number,
   onChunk: (chunk: ColumnData) => void,
 ): Promise<void> {
-  const filled = new Map<string, number>(columns.map((column) => [column, 0]));
+  const spans = new Map<string, [number, number][]>(columns.map((column) => [column, []]));
   await readColumnChunks(file, metadata, columns, (chunk) => {
-    const rows = filled.get(chunk.columnName);
-    if (rows === undefined) return;
-    if (chunk.rowStart < 0 || chunk.rowStart + chunk.columnData.length > numRows) {
+    const columnSpans = spans.get(chunk.columnName);
+    if (columnSpans === undefined) return;
+    const end = chunk.rowStart + chunk.columnData.length;
+    if (chunk.rowStart < 0 || end > numRows) {
       throw new Error(
         `v3 ${part} column "${chunk.columnName}" has rows past the ${numRows} its footer declares`,
       );
     }
-    filled.set(chunk.columnName, rows + chunk.columnData.length);
+    columnSpans.push([chunk.rowStart, end]);
     onChunk(chunk);
   });
-  for (const [column, rows] of filled) {
+  for (const [column, columnSpans] of spans) {
+    const rows = columnSpans.reduce((sum, [start, end]) => sum + end - start, 0);
     if (rows !== numRows) {
       throw new Error(
         `v3 ${part} column "${column}" holds ${rows} rows but its footer declares ${numRows}`,
       );
+    }
+    // With the total right, any gap comes with an overlap, which is what is reported.
+    columnSpans.sort((a, b) => a[0] - b[0]);
+    let next = 0;
+    for (const [start, end] of columnSpans) {
+      if (start < next) {
+        throw new Error(`v3 ${part} column "${column}" decodes row ${start} twice`);
+      }
+      next = end;
     }
   }
 }

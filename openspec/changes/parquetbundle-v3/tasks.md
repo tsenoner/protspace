@@ -129,7 +129,7 @@
 - [x] 3.23 The v3 reader refuses a null or repeated protein id, as the format and Python's
       encoder do
 - [x] 3.24 The v3 reader checks a footer's row count against its row groups and the rows each
-      column actually decodes, and caps the cells it preallocates from it
+      column actually decodes (each row exactly once), and caps the cells it preallocates from it
 - [x] 3.25 The v3 reader folds a missing-value spelling per hit: a scored or evidenced hit keeps
       its label, score and evidence, as v2's whole-hit test kept it
 - [x] 3.26 The v3 reader reads a `placedNumeric` column as numbers over the placed proteins, as
