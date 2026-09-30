@@ -36,8 +36,10 @@ export function SectionHeading({ eyebrow, title, lede, compact }: SectionHeading
       {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
       <h2
         className={cn(
-          'text-balance font-semibold leading-[1.1] tracking-tight text-foreground',
+          'text-balance font-semibold tracking-tight text-foreground',
           compact ? 'text-2xl sm:text-[1.75rem]' : 'text-3xl sm:text-4xl lg:text-[2.75rem]',
+          // After the size classes: tailwind-merge drops a line height that precedes a font size.
+          'leading-[1.1]',
         )}
       >
         {title}
