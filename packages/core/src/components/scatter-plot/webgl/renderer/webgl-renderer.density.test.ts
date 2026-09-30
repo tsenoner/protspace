@@ -418,6 +418,22 @@ describe('density layer, auto', () => {
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
     on.renderer.destroy();
   });
+
+  it('treats a missing densityLayer as off, not auto, on the same view', () => {
+    const configs: Config[] = [
+      { width: 800, height: 600 },
+      { width: 800, height: 600, densityLayer: undefined },
+    ];
+    for (const config of configs) {
+      const off = setup(config);
+      const calls = recordCalls(off.glRecord);
+      off.renderer.render(swissprot());
+
+      expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+      expect(off.resources.density).toBeNull();
+      off.renderer.destroy();
+    }
+  });
 });
 
 describe('N_visible', () => {

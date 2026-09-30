@@ -635,7 +635,8 @@ export class WebGLRenderer {
 
   private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
     const config = this.getConfig();
-    const mode = config.densityLayer;
+    // Missing means Off here too, as in reportDensityUnavailable and the menu.
+    const mode = config.densityLayer ?? DENSITY_DEFAULT;
     if (mode === 'off') return null;
 
     if (this.densityDisabled || this.currentPointCount === 0) return null;
