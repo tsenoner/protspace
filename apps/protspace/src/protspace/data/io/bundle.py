@@ -440,11 +440,69 @@ def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
     annotations, projections_metadata, projections_data = _core_tables(core, None)
     version = read_format_version(annotations)
     part1, part2, part3, payloads = encode_v3(
-        migrate_legacy_annotation_table(annotations),
+        _keyed_as_the_legacy_reader_keyed_it(
+            migrate_legacy_annotation_table(annotations)
+        ),
         projections_metadata,
         projections_data,
     )
     return [part1, part2, part3], payloads, version
+
+
+#: The id-column candidates of the v2 browser reader (``bundle.ts``,
+#: ``extractRowsFromParts``), each matched as a case-insensitive substring.
+_LEGACY_ID_CANDIDATES = ("protein_id", "identifier", "id", "uniprot", "entry")
+
+
+def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
+    """A legacy annotations table with the one id per protein the v2 browser saw.
+
+    The encoder takes its ids from a unique, non-null ``protein_id`` or
+    ``identifier`` column, and v3 refuses anything else.  The v2 browser reader
+    was looser, and a bundle it rendered has to convert (and ``style``) to the
+    same dataset: it took the first column whose name contains ``protein_id``,
+    ``identifier``, ``id``, ``uniprot`` or ``entry``, in that order, else the
+    first column; it skipped a row with a null id; and a later row with the same
+    id replaced an earlier one.  A column the encoder would not recognise is
+    renamed ``protein_id``, which it then is, and the rows the browser never
+    showed are dropped, each time with a warning.
+    """
+    names = annotations.column_names
+    metadata = annotations.schema.metadata
+    id_column = next((c for c in ("protein_id", "identifier") if c in names), None)
+    if id_column is None and names:
+        id_column = next(
+            (
+                name
+                for candidate in _LEGACY_ID_CANDIDATES
+                for name in names
+                if candidate in name.lower()
+            ),
+            names[0],
+        )
+        logger.warning(
+            "legacy annotations have no 'protein_id' or 'identifier' column; "
+            "reading '%s' as the protein id, as the v2 browser did",
+            id_column,
+        )
+        annotations = annotations.rename_columns(
+            ["protein_id" if name == id_column else name for name in names]
+        )
+        id_column = "protein_id"
+    if id_column is None:
+        return annotations
+
+    ids = annotations.column(id_column).to_pylist()
+    last = {str(value): row for row, value in enumerate(ids) if value is not None}
+    if len(last) != len(ids):
+        logger.warning(
+            "legacy annotations hold %d row(s) with a null or repeated '%s'; keeping "
+            "the last row per id, as the v2 browser did",
+            len(ids) - len(last),
+            id_column,
+        )
+        annotations = annotations.take(pa.array(sorted(last.values()), pa.int64()))
+    return annotations.replace_schema_metadata(metadata)
 
 
 def create_settings_parquet(settings_dict: dict) -> bytes:

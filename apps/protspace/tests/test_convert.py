@@ -72,23 +72,34 @@ def _legacy_bundle(
     stamp: bool = True,
     settings: bytes | None = None,
     statistics: bytes | None = None,
-    ids: list[str] | None = None,
+    ids: list[str | None] | None = None,
+    id_column: str = "protein_id",
+    projection_names: list[str] | None = None,
 ) -> list[bytes]:
-    """Write a v1 (``stamp=False``) or v2 container by hand; return its parts."""
+    """Write a v1 (``stamp=False``) or v2 container by hand; return its parts.
+
+    The projection rows cover each distinct non-null id once, and
+    ``projection_names`` replaces the metadata's projection list.
+    """
     ids = ids or [f"p{i}" for i in range(len(cells))]
-    annotations = pa.table({"protein_id": ids, "cat": cells})
+    annotations = pa.table({id_column: ids, "cat": cells})
     if stamp:
         annotations = stamp_format_version(annotations)
     metadata = pa.table(
-        {"projection_name": ["PCA 2"], "dimensions": [2], "info_json": ["{}"]}
+        {
+            "projection_name": projection_names or ["PCA 2"],
+            "dimensions": [2] * len(projection_names or ["PCA 2"]),
+            "info_json": ["{}"] * len(projection_names or ["PCA 2"]),
+        }
     )
+    projected = list(dict.fromkeys(i for i in ids if i is not None))
     data = pa.table(
         {
-            "projection_name": ["PCA 2"] * len(ids),
-            "identifier": ids,
-            "x": [float(i) for i in range(len(ids))],
-            "y": [0.5] * len(ids),
-            "z": pa.array([None] * len(ids), type=pa.float32()),
+            "projection_name": ["PCA 2"] * len(projected),
+            "identifier": projected,
+            "x": [float(i) for i in range(len(projected))],
+            "y": [0.5] * len(projected),
+            "z": pa.array([None] * len(projected), type=pa.float32()),
         }
     )
     parts = [_serialized(t) for t in (annotations, metadata, data)]
@@ -266,18 +277,98 @@ def test_missing_input(tmp_path):
 
 
 def test_failed_in_place_conversion_leaves_the_input(tmp_path):
-    """Encoding refuses duplicated identifiers; the input must survive intact
-    and no staging file may be left beside it."""
+    """Encoding refuses a projection the metadata names and the data lacks; the
+    input must survive intact and no staging file may be left beside it."""
     src = tmp_path / "old.parquetbundle"
-    _legacy_bundle(src, cells=["a", "b"], ids=["p0", "p0"])
+    _legacy_bundle(src, cells=["a", "b"], projection_names=["PCA 2", "UMAP 2"])
     before = src.read_bytes()
 
     result = _convert(str(src), "--in-place")
 
     assert result.exit_code != 0
-    assert "duplicated" in result.output
+    assert "disagree on the projection" in result.output
     assert src.read_bytes() == before
     assert [p.name for p in tmp_path.iterdir()] == ["old.parquetbundle"]
+
+
+# --------------------------------------------------------------------------- #
+# legacy shapes the v2 browser read and the v3 encoder does not take as given
+# --------------------------------------------------------------------------- #
+
+
+def _style(*args: str):
+    return CliRunner().invoke(app, ["style", *args])
+
+
+STYLES = '{"cat": {"colors": {"a": "#ff0000"}}}'
+
+
+@pytest.mark.parametrize("id_column", ["id", "uniprot_acc", "Entry"])
+@pytest.mark.parametrize("command", ["convert", "style"])
+def test_a_legacy_id_column_is_found_as_the_v2_browser_found_it(
+    tmp_path, id_column, command
+):
+    """The v2 browser took the first column whose name contains ``id``,
+    ``uniprot`` or ``entry`` as the protein id; the encoder only knows
+    ``protein_id`` and ``identifier``.  ``protspace style`` styled such a
+    bundle before it re-encoded legacy input, so it has to keep doing so."""
+    src, out = tmp_path / "old.parquetbundle", tmp_path / "new.parquetbundle"
+    _legacy_bundle(src, cells=["a", "b"], ids=["P1", "P2"], id_column=id_column)
+
+    if command == "convert":
+        result = _convert(str(src), str(out))
+    else:
+        result = _style(str(src), str(out), "--annotation-styles", STYLES)
+
+    assert result.exit_code == 0, result.output
+    annotations = read_tables(out)[0]
+    assert annotations.column("protein_id").to_pylist() == ["P1", "P2"]
+    assert annotations.column("cat").to_pylist() == ["a", "b"]
+
+
+@pytest.mark.parametrize("command", ["convert", "style"])
+def test_a_repeated_or_null_legacy_id_keeps_the_last_row(tmp_path, command):
+    """The v2 browser keyed annotation rows by id in a Map, so the last row for
+    an id won and a null id was skipped; v3 refuses both, so the conversion
+    keeps what the browser showed."""
+    src, out = tmp_path / "old.parquetbundle", tmp_path / "new.parquetbundle"
+    _legacy_bundle(src, cells=["a", "b", "c", "d"], ids=["P1", "P2", "P2", None])
+
+    if command == "convert":
+        result = _convert(str(src), str(out))
+    else:
+        result = _style(str(src), str(out), "--annotation-styles", STYLES)
+
+    assert result.exit_code == 0, result.output
+    annotations = read_tables(out)[0]
+    assert annotations.column("protein_id").to_pylist() == ["P1", "P2"]
+    assert annotations.column("cat").to_pylist() == ["a", "c"]
+
+
+def test_style_reports_a_legacy_input_v3_cannot_hold_as_a_usage_error(tmp_path):
+    """What the encoder still refuses ends as ``protspace convert`` ends it: a
+    usage error naming the reason, no traceback and no output."""
+    src, out = tmp_path / "old.parquetbundle", tmp_path / "new.parquetbundle"
+    _legacy_bundle(src, cells=["a", "b"], projection_names=["PCA 2", "UMAP 2"])
+
+    result = _style(str(src), str(out), "--annotation-styles", STYLES)
+
+    assert result.exit_code == 2, result.output
+    assert "cannot style" in result.output
+    assert "disagree on the projection" in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert not out.exists()
+
+
+def test_style_reports_a_corrupt_bundle_as_a_usage_error(tmp_path):
+    src = tmp_path / "notes.parquetbundle"
+    src.write_bytes(b"just some text")
+
+    result = _style(str(src), "--dump-settings")
+
+    assert result.exit_code == 2, result.output
+    assert "cannot style" in result.output
+    assert isinstance(result.exception, SystemExit)
 
 
 # --------------------------------------------------------------------------- #

@@ -690,7 +690,8 @@ The output path is only required when you are writing styles, not for `--dump-se
 The output is always a format v3 bundle. A v3 input keeps its data parts byte for byte and only
 its settings change. A v1 or v2 input is upgraded on the way, exactly as
 [`protspace convert`](#protspace-convert) would write it, and `style` logs a warning saying so,
-because builds from before format v3 cannot open the result.
+because builds from before format v3 cannot open the result. A legacy input that `convert`
+refuses is refused here too, with the same reason, and nothing is written.
 
 ## `protspace convert`
 
@@ -711,6 +712,14 @@ Give either an output path or `--in-place`; the input is never overwritten other
 (legend colors, shapes, order) and projection statistics are kept as they are, and the file is
 written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
 is reported as current and nothing is written.
+
+The converted bundle holds the proteins the web app showed for the old file. Older web builds
+were lenient about the protein ID column, and `convert` reads it the way they did, with a
+warning each time: without a `protein_id` or `identifier` column, the first column whose name
+contains `id`, `uniprot` or `entry` (else the first column) is the ID; a row with no ID is
+dropped; and when two rows share an ID, the later one is kept. A bundle whose projection metadata
+and projection rows name different projections, or that has two rows for one protein in one
+projection, is refused with a message saying so.
 
 Without a Python install, load the bundle at [protspace.app/explore](https://protspace.app/explore)
 and export it again: the web app always exports v3. See

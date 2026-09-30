@@ -91,6 +91,17 @@ version and saying the output is v3, since builds from before v3 cannot open it.
 written, so `style old.parquetbundle old.parquetbundle` is the only way it replaces a legacy file,
 as for `convert`.
 
+A legacy file the encoder cannot take as it stands is the cost of that choice: before this
+change `style` copied the core parts through, whatever they held. Two shapes the v2 browser
+reader accepted and v3 refuses are common enough in hand-built bundles to matter, and the
+conversion helper now reads them the way the browser did, with a warning each: an id column
+named other than `protein_id` or `identifier` (the browser took the first column whose name
+contains `protein_id`, `identifier`, `id`, `uniprot` or `entry`, else the first column), and null
+or repeated ids (it skipped a null, and a later row replaced an earlier one in its `Map`). Both
+`convert` and `style` go through it. What is still refused (projection sets that disagree
+between metadata and data, two rows for one protein in one projection) is a usage error with
+the encoder's reason in both commands, never a traceback, and nothing is written.
+
 The alternative, keeping `style` a pure settings edit and leaving `convert` as the only upgrade
 path, was the first version of this change. It was dropped because "every write emits v3" is the
 rule users can rely on, and the cost is a re-encode that `transfer` already pays.

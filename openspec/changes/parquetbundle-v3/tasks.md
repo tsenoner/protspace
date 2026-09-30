@@ -53,6 +53,9 @@
 - [x] 2.17 A list annotation column is encoded as a multi-valued column (one literal hit per
       element), a struct, map or list-of-lists column is refused by name, and `protspace bundle`
       reports the encoder's input errors as a usage error
+- [x] 2.18 `convert` and `style` key a legacy bundle's annotation rows as the v2 browser did (its
+      id-column fallback, null ids dropped, the last row per repeated id kept), and `style`
+      reports a legacy input the encoder still refuses, or a corrupt bundle, as a usage error
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

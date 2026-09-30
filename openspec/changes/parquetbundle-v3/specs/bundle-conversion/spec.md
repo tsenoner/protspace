@@ -23,6 +23,33 @@ is encoded, so its labels keep their parsed hit structure.
 - **WHEN** a v1 cell reads `Membrane (single-pass; type I)`
 - **THEN** the converted bundle holds it as one label, not two hits
 
+### Requirement: A legacy bundle's protein ids SHALL be read as the v2 browser read them
+
+When converting a v1 or v2 bundle, the package SHALL key its annotation rows as the v2 browser
+reader did, logging a warning for each departure from the v3 rules. Without a `protein_id` or
+`identifier` column, the id column SHALL be the first column whose name contains `protein_id`,
+`identifier`, `id`, `uniprot` or `entry` (case-insensitive, tried in that order), else the first
+column, and it SHALL be written as `protein_id`. A row with a null id SHALL be dropped, and of the
+rows sharing an id only the last SHALL be kept.
+
+#### Scenario: The id column is named `id`
+
+- **WHEN** a v2 bundle whose annotations key their rows by a column `id` is converted
+- **THEN** the conversion succeeds, and the v3 bundle's `protein_id` holds that column's values
+
+#### Scenario: Two rows share an id
+
+- **WHEN** a v2 bundle's annotations hold two rows for `P2` and one row with a null id
+- **THEN** the converted bundle has one `P2`, carrying the later row's annotations, and no row
+  for the null id
+
+#### Scenario: A legacy bundle v3 cannot hold
+
+- **WHEN** a v2 bundle whose projections metadata and data name different projections is
+  converted
+- **THEN** the command exits with a usage error that says why, without a traceback, and writes
+  nothing
+
 ### Requirement: `protspace convert` SHALL NOT overwrite its input unless explicitly asked
 
 The command SHALL require either an `OUTPUT` path or `--in-place`. It SHALL write over `INPUT` only
@@ -101,6 +128,12 @@ and says the output is v3. A v3 input SHALL keep every part other than the setti
 - **WHEN** `protspace style` runs on a v1 bundle
 - **THEN** its cells are migrated to the v2 grammar once, as by `protspace convert`, and the output
   is v3
+
+#### Scenario: A legacy input that `protspace convert` refuses
+
+- **WHEN** `protspace style` runs on a v2 bundle that `protspace convert` refuses
+- **THEN** it exits with a usage error that gives convert's reason, without a traceback, and
+  writes no output
 
 #### Scenario: Styling a v3 bundle
 
