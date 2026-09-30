@@ -2,7 +2,12 @@
 
 ## Purpose
 
-TBD - created by archiving change annotation-retrieval-robustness. Update Purpose after archive.
+How each annotation source turns a set of proteins into requests, and when a failed request
+is retried rather than counted as lost, so a large run loses no values without saying so.
+Covers InterPro's per-sequence fan-out, match retry and member-database filter, Biocentral's
+bounded batches, length limits and split on failure, TED's final retry pass, the shared
+connection pool and bounded concurrency of the TED, InterPro and UniProt lookups, the taxonomy
+`root`, and the label of a negative TMbed prediction.
 
 ## Requirements
 

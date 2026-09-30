@@ -2,7 +2,9 @@
 
 ## Purpose
 
-TBD - created by archiving change annotation-retrieval-robustness. Update Purpose after archive.
+Which UniProtKB release a run's annotations came from, so a bundle's values can be traced back
+to the data behind them: the release the annotation cache records with its UniProt values, and
+the `uniprot_release:` line of `run.log`, which also holds for a run served from the cache.
 
 ## Requirements
 
