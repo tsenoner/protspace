@@ -44,7 +44,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
-import { extractSettings, extractStatistics } from './bundle';
+import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
 import {
   appendSyntheticNACategoryToCodes,
   buildProjectionsMetadataMap,
@@ -309,7 +309,6 @@ async function readProjections(
   numRows: number,
   metadataMap: ReadonlyMap<string, Record<string, unknown>>,
 ): Promise<Projection[]> {
-  assertValidParquetMagic(part);
   const metadata = parquetMetadata(part);
   const schemaColumns = leafColumnTypes(metadata);
 
@@ -580,21 +579,21 @@ function foldCsrColumn(
 /**
  * Read a format v3 bundle into `VisualizationData`.
  *
- * `parts` comes from `splitBundleParts`; `metadata` is part 1's already-parsed footer.
+ * `parts` comes from `splitBundleParts`, which has already checked the three core parts;
+ * `metadata` is part 1's already-parsed footer.
  */
 export async function readV3Bundle(
-  parts: (ArrayBuffer | null)[],
+  parts: BundleParts,
   metadata: FileMetaData,
 ): Promise<{ data: VisualizationData; settings: BundleSettings | null }> {
   const [, part2, , part4, part5] = parts;
   // The three large parts are released as soon as they are decoded.
-  let [part1, , part3, , , part6] = parts;
+  let part1: ArrayBuffer | null = parts[0];
+  let part3: ArrayBuffer | null = parts[2];
+  let part6 = parts[5] ?? null;
   // Take ownership so each large part can be released once decoded, rather than
   // pinned by the caller's array until the whole read returns.
   parts.fill(null);
-  if (!part1 || !part2 || !part3) {
-    throw new Error('Parquetbundle is missing one of its three required core parts');
-  }
   if (!part6) {
     throw new Error('Bundle declares format v3 but carries no payloads part (part 6)');
   }
@@ -618,7 +617,6 @@ export async function readV3Bundle(
   part1 = null;
   const protein_ids = columns.get(manifest.idColumn) as string[];
 
-  assertValidParquetMagic(part2);
   const projectionsMetadata = (await parquetReadObjects({ file: part2 })) as Rows;
   const projections = await readProjections(
     part3,

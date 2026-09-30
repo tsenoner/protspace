@@ -16,6 +16,7 @@ import {
 } from '@protspace/utils';
 import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
 import { readV3Bundle } from './bundle-v3';
+import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
 
 /**
@@ -574,16 +575,8 @@ describe('parquetbundle format v3', () => {
     ['past the safe-integer range', 9_007_199_254_740_993n],
     ['absent', undefined],
   ])('rejects a footer whose row count is %s before allocating on it', async (_label, rows) => {
-    const part1 = annotationsPart();
-    const parts = [
-      part1,
-      PROJECTIONS_METADATA,
-      PROJECTIONS,
-      EMPTY,
-      EMPTY,
-      payloadPart(PAYLOADS),
-    ].map((buffer) => (buffer.byteLength > 0 ? (buffer.slice().buffer as ArrayBuffer) : null));
-    const metadata = parquetMetadata(parts[0]!);
+    const parts = splitBundleParts(v3Bundle());
+    const metadata = parquetMetadata(parts[0]);
 
     await expect(readV3Bundle(parts, { ...metadata, num_rows: rows as bigint })).rejects.toThrow(
       /rows, outside 0\.\.2000000/,
